@@ -728,6 +728,54 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
+  /// 打开页面但不关闭校园服务侧边栏：直接在 rootNavigator 上 push，
+  /// 返回时露出下方仍在的侧边栏。与社区版块入口行为一致。
+  void _openPageKeepingPanel(Widget page) {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(builder: (_) => page),
+    );
+  }
+
+  /// 打开成绩页（保留侧边栏），保留原有的渐入+轻位移+缩放动画与登录判断。
+  void _openGradeKeepingPanel() {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) {
+      _openPageKeepingPanel(const LoginScreen());
+      return;
+    }
+
+    Navigator.of(context, rootNavigator: true).push(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 260),
+        reverseTransitionDuration: const Duration(milliseconds: 200),
+        pageBuilder: (_, __, ___) => const EduGradeScreen(),
+        transitionsBuilder: (_, animation, __, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: AppMotion.incoming,
+            reverseCurve: AppMotion.outgoing,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.035),
+                end: Offset.zero,
+              ).animate(curved),
+              child: ScaleTransition(
+                scale: Tween<double>(
+                  begin: 0.995,
+                  end: 1.0,
+                ).animate(curved),
+                child: child,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _openHomeServicePanel() async {
     await _ensureCheckinStatusLoaded();
     if (!mounted) return;
@@ -764,91 +812,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   _closePanelThenOpen(dialogContext, _doCheckIn);
                 },
                 onOpenToolbox: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ToolboxScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const ToolboxScreen());
                 },
                 onOpenAnnouncements: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const AnnouncementScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const AnnouncementScreen());
                 },
                 onOpenCompetitions: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const CompetitionCenterScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const CompetitionCenterScreen());
                 },
                 onOpenGrades: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    final auth = context.read<AuthProvider>();
-                    if (!auth.isLoggedIn || auth.user == null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      );
-                      return;
-                    }
-                    Navigator.push(
-                      context,
-                      PageRouteBuilder(
-                        transitionDuration: const Duration(milliseconds: 260),
-                        reverseTransitionDuration:
-                            const Duration(milliseconds: 200),
-                        pageBuilder: (_, __, ___) => const EduGradeScreen(),
-                        transitionsBuilder: (_, animation, __, child) {
-                          final curved = CurvedAnimation(
-                            parent: animation,
-                            curve: AppMotion.incoming,
-                            reverseCurve: AppMotion.outgoing,
-                          );
-                          return FadeTransition(
-                            opacity: curved,
-                            child: SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0, 0.035),
-                                end: Offset.zero,
-                              ).animate(curved),
-                              child: ScaleTransition(
-                                scale: Tween<double>(
-                                  begin: 0.995,
-                                  end: 1.0,
-                                ).animate(curved),
-                                child: child,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  });
+                  _openGradeKeepingPanel();
                 },
                 onOpenExamSchedule: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const ExamScheduleScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const ExamScheduleScreen());
                 },
                 onOpenFeedback: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const FeedbackScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const FeedbackScreen());
                 },
                 onOpenWaterSectionDirectory: () {
                   _openWaterSectionDirectoryKeepingPanel();

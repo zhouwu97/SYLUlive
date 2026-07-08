@@ -669,35 +669,48 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     return Container(
       color: Colors.transparent,
+      padding: EdgeInsets.only(top: 8),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 标题栏卡片
-          Container(
-            margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            padding: const EdgeInsets.all(16),
-            decoration: CampusTheme.cardDecoration(isDark),
+          // 标题栏无背景卡片，紧凑布局
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        academicWeek != null ? '第 $academicWeek 周' : '未设置开学周',
-                        style: TextStyle(
-                          color: titleColor,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
+                      GestureDetector(
+                        onTap: () => _pickSemesterStart(context),
+                        child: Text(
+                          academicWeek != null ? '第 $academicWeek 周' : '未设置开学周',
+                          style: TextStyle(
+                            color: titleColor,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${sc.currentTerm.title}  ${_weekStart.month}/${_weekStart.day} - ${_weekStart.add(const Duration(days: 6)).month}/${_weekStart.add(const Duration(days: 6)).day}',
-                        style: TextStyle(
-                          color: secondaryColor,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
+                      const SizedBox(height: 6),
+                      GestureDetector(
+                        onTap: () => _openCourseImportSheet(context),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${sc.currentTerm.title}  ${_weekStart.month}/${_weekStart.day} - ${_weekStart.add(const Duration(days: 6)).month}/${_weekStart.add(const Duration(days: 6)).day}',
+                              style: TextStyle(
+                                color: secondaryColor,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.arrow_drop_down, size: 16, color: secondaryColor),
+                          ],
                         ),
                       ),
                     ],
@@ -713,9 +726,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       case CourseMenuAction.switchTerm:
                         _openCourseImportSheet(context);
                         break;
-                      case CourseMenuAction.setStartWeek:
-                        _pickSemesterStart(context);
-                        break;
+
                       case CourseMenuAction.archives:
                         _showArchiveSheet(context, sc);
                         break;
@@ -746,18 +757,18 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         _wd[i],
                         style: TextStyle(
                           color: isToday ? primaryColor : titleColor,
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
-                        _md(d),
+                        '${d.month}/${d.day}',
                         style: TextStyle(
                           color: isToday ? primaryColor : secondaryColor,
                           fontSize: 12,
                           fontWeight:
-                              isToday ? FontWeight.w600 : FontWeight.w400,
+                              isToday ? FontWeight.w600 : FontWeight.w500,
                         ),
                       ),
                     ],
@@ -766,6 +777,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               }),
             ],
           ),
+          const SizedBox(height: 8),
         ],
       ),
     );

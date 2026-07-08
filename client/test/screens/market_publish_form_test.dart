@@ -6,6 +6,7 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/screens/publish/market_publish_form.dart';
+import 'package:image_picker/image_picker.dart';
 
 class _FakeAuthProvider extends Fake
     with ChangeNotifier

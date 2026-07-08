@@ -116,10 +116,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.widget<Text>(find.text('自提')).style?.color,
-        const Color(0xFF4F5AF7));
+        const Color(0xFFFF7A45));
     expect(tester.widget<Text>(find.text('可小刀')).style?.color,
-        const Color(0xFF4F5AF7));
+        const Color(0xFFFF7A45));
     expect(tester.widget<Text>(find.text('急出')).style?.color,
-        const Color(0xFF6F7585));
+        const Color(0xFF747B82));
   });
 }

@@ -1,9 +1,11 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
+import '../utils/app_feedback.dart';
 import 'post_detail_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -25,6 +27,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _loadReplies() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _notifications = [];
+          _errorMessage = null;
+        });
+      }
+      return;
+    }
+
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -55,6 +69,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           });
         }
       }
+    } on DioException catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '通知加载失败');
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -78,6 +99,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final auth = context.watch<AuthProvider>();
+
+    if (!auth.isLoggedIn) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('通知'), elevation: 0),
+        body: _buildLoginRequiredView(isDark),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('通知'), elevation: 0),
@@ -275,6 +304,45 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               onPressed: _loadReplies,
               icon: const Icon(Icons.refresh),
               label: const Text('重试'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoginRequiredView(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.lock_outline,
+              size: 64,
+              color: isDark ? Colors.white30 : Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '登录后查看通知\n评论回复、系统提醒、管理通知会显示在这里',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: isDark ? Colors.white60 : Colors.grey[600],
+                fontSize: 16,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () async {
+                await Navigator.pushNamed(context, '/login');
+                if (mounted && context.read<AuthProvider>().isLoggedIn) {
+                  _loadReplies();
+                }
+              },
+              icon: const Icon(Icons.login),
+              label: const Text('去登录'),
             ),
           ],
         ),

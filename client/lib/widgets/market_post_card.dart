@@ -410,7 +410,10 @@ class MarketPostCard extends StatelessWidget {
       height: height,
       fadeInDuration: const Duration(milliseconds: 200),
       placeholder: (_, __) => _buildSkeleton(isDark),
-      errorWidget: (_, __, ___) => _buildSkeleton(isDark),
+      errorWidget: (context, url, error) {
+        Future.microtask(() => PostImageCache.manager.removeFile(url));
+        return _buildSkeleton(isDark);
+      },
     );
 
     if (isGrid) {

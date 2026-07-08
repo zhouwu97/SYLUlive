@@ -62,6 +62,37 @@ class MessageProvider extends ChangeNotifier {
     _drafts.remove(targetUserId);
   }
 
+  int? _sessionUserId;
+
+  void syncSessionUser(int? userId) {
+    if (_sessionUserId == userId) return;
+    _sessionUserId = userId;
+    resetSession();
+  }
+
+  void resetSession() {
+    _messageRequestVersion++;
+    _conversations = [];
+    _messages = [];
+    _messageCache.clear();
+    _hasMoreCache.clear();
+    _refreshingConversationIds.clear();
+    _lastMarkedReadMessageIds.clear();
+    _drafts.clear();
+
+    _conversationLoading = false;
+    _messageLoading = false;
+    _loadingMore = false;
+    _sending = false;
+    _hasMore = true;
+    _conversationError = null;
+    _messageError = null;
+    _currentConversationId = null;
+    _hasLoadedConversations = false;
+
+    notifyListeners();
+  }
+
   Future<void> loadConversations({bool silent = false}) async {
     _conversationError = null;
     if (!silent) {
@@ -130,11 +161,9 @@ class MessageProvider extends ChangeNotifier {
 
   Conversation? _findConversation(int currentUserId, int targetUserId) {
     for (final conversation in _conversations) {
-      final matchesForward =
-          conversation.user1Id == currentUserId &&
+      final matchesForward = conversation.user1Id == currentUserId &&
           conversation.user2Id == targetUserId;
-      final matchesReverse =
-          conversation.user1Id == targetUserId &&
+      final matchesReverse = conversation.user1Id == targetUserId &&
           conversation.user2Id == currentUserId;
       if (matchesForward || matchesReverse) {
         return conversation;
@@ -156,8 +185,7 @@ class MessageProvider extends ChangeNotifier {
     final requestVersion = ++_messageRequestVersion;
     _currentConversationId = conversationId;
     final cachedMessages = _messageCache[conversationId];
-    final cacheContainsTarget =
-        aroundMessageId == null ||
+    final cacheContainsTarget = aroundMessageId == null ||
         cachedMessages?.any((message) => message.id == aroundMessageId) == true;
     if (preferCache && cachedMessages != null && cacheContainsTarget) {
       _messages = List<Message>.of(cachedMessages);

@@ -233,9 +233,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     try {
       // 未登录不请求
       if (!context.read<AuthProvider>().isLoggedIn) return;
-      await sc.loadCourses(forceRefresh: true);
       await _syncCourseReminders(sc);
-      // 新数据自动覆盖旧缓存
     } catch (_) {}
   }
 
@@ -1354,8 +1352,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       if (!mounted) return;
 
       if (importedCount == 0) {
+        final rawCount = result.courses.length;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('没有可导入的课程，请确认学期是否正确')),
+          SnackBar(
+            content: Text(
+              rawCount == 0
+                  ? '该学期没有可导入的课程，请确认学期是否正确'
+                  : '课表已获取但解析失败，请检查课程字段格式',
+            ),
+          ),
         );
         return;
       }

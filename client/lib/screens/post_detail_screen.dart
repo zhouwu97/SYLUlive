@@ -3363,8 +3363,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     int depth = 0,
   }) {
     final allChildren = _collectThreadChildren(thread.parent.id);
-    final visibleChildren = allChildren.take(1).toList();
-    final hasMore = allChildren.length > 1;
+    final targetChild = widget.targetReplyId == null
+        ? null
+        : allChildren
+            .where((reply) => reply.id == widget.targetReplyId)
+            .firstOrNull;
+    final visibleChildren =
+        targetChild != null ? [targetChild] : allChildren.take(1).toList();
+    final hasMore = allChildren.length > visibleChildren.length;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -3563,45 +3569,50 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final threadParentId = _findTopLevelParentId(r);
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
-    return Padding(
-      padding: EdgeInsets.only(bottom: 6, left: depth * 4.0),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          final parent = _replies.firstWhere(
-            (rp) => rp.id == threadParentId,
-            orElse: () => r,
-          );
-          _showReplyThreadSheet(
-            parentReply: parent,
-            anchorReply: r,
-          );
-        },
-        onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(
-                  text: '${r.author?.nickname ?? '匿名'}：',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w400,
-                    color: isDark ? Colors.white54 : const Color(0xFF6B7280),
-                  ),
-                ),
-                _buildCompactContentSpan(r, isDark),
-              ],
+    return _buildReplyAnchor(
+      reply: r,
+      isDark: isDark,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: 6, left: depth * 4.0),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            final parent = _replies.firstWhere(
+              (rp) => rp.id == threadParentId,
+              orElse: () => r,
+            );
+            _showReplyThreadSheet(
+              parentReply: parent,
+              anchorReply: r,
+            );
+          },
+          onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color:
+                  isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
+              borderRadius: BorderRadius.circular(10),
             ),
-            style: const TextStyle(height: 1.35),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: '${r.author?.nickname ?? '匿名'}：',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w400,
+                      color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+                    ),
+                  ),
+                  _buildCompactContentSpan(r, isDark),
+                ],
+              ),
+              style: const TextStyle(height: 1.35),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       ),

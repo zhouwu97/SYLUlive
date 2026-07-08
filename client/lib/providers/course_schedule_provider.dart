@@ -260,6 +260,16 @@ class CourseScheduleProvider extends ChangeNotifier {
   }) async {
     if (_userId == null) return 0;
 
+    debugPrint(
+      'Schedule applyFetchedCourses: '
+      'term=${_currentTerm.id}, raw=${rawCourses.length}, '
+      'hidden=${_hiddenCourseIds.length}',
+    );
+
+    if (rawCourses.isNotEmpty) {
+      debugPrint('Schedule first raw course: ${rawCourses.first}');
+    }
+
     if (resetHidden) {
       _hiddenCourseIds = {};
       await _saveHiddenCourses();
@@ -283,6 +293,12 @@ class CourseScheduleProvider extends ChangeNotifier {
       }
     }
 
+    debugPrint(
+      'Schedule applyFetchedCourses done: '
+      'imported=$importedCount, total=${parsedCourses.length}, '
+      'cacheKey=$_currentCacheKey',
+    );
+
     _courses = parsedCourses;
     _buildGrid();
     _isLoading = false;
@@ -301,19 +317,52 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   CourseBlock _courseFromFetchedMap(Map<String, dynamic> map) {
-    final name = _asString(map['name']);
-    final time = _asInt(map['time'], fallback: 1);
-    final endTime = _asInt(map['end_time'], fallback: time + 1);
-    final weekday = _asInt(map['week_day'], fallback: 1);
-    final teacher = _asString(map['teacher']);
-    final loc = _asString(map['location']);
-    final rawWeeks = map['weeks'];
-    final weeks = rawWeeks is List
-        ? rawWeeks
-            .map((value) => _asInt(value, fallback: 0))
-            .where((value) => value > 0)
-            .toList()
-        : <int>[];
+    final name = _firstString(map, [
+      'name',
+      'course_name',
+      'courseName',
+      'kcmc',
+      'title',
+    ]);
+
+    final time = _firstInt(map, [
+      'time',
+      'start_time',
+      'startSection',
+      'start_section',
+      'jc_start',
+    ], fallback: 1);
+
+    final endTime = _firstInt(map, [
+      'end_time',
+      'endSection',
+      'end_section',
+      'jc_end',
+    ], fallback: time);
+
+    final weekday = _firstInt(map, [
+      'week_day',
+      'weekday',
+      'dayOfWeek',
+      'day_of_week',
+      'xqj',
+    ], fallback: 1);
+
+    final teacher = _firstString(map, [
+      'teacher',
+      'teacher_name',
+      'teacherName',
+      'jsxm',
+    ]);
+
+    final loc = _firstString(map, [
+      'location',
+      'classroom',
+      'room',
+      'jxdd',
+    ]);
+
+    final weeks = _parseWeeks(map['weeks'] ?? map['week_list'] ?? map['zcd']);
 
     // 生成稳定的正数 ID
     final idStr = '$name-$weekday-$time-$endTime-$teacher-$loc';
@@ -332,6 +381,71 @@ class CourseScheduleProvider extends ChangeNotifier {
       endSection: endTime,
       weeks: weeks,
     );
+  }
+
+  String _firstString(Map<String, dynamic> map, List<String> keys) {
+    for (final key in keys) {
+      final value = map[key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString().trim();
+      }
+    }
+    return '';
+  }
+
+  int _firstInt(
+    Map<String, dynamic> map,
+    List<String> keys, {
+    required int fallback,
+  }) {
+    for (final key in keys) {
+      final value = map[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) {
+        final parsed = int.tryParse(value.trim());
+        if (parsed != null) return parsed;
+      }
+    }
+    return fallback;
+  }
+
+  List<int> _parseWeeks(Object? raw) {
+    if (raw is List) {
+      return raw
+          .map((e) => _asInt(e, fallback: 0))
+          .where((e) => e > 0)
+          .toSet()
+          .toList()
+        ..sort();
+    }
+
+    if (raw is String) {
+      final result = <int>{};
+      final text = raw.replaceAll('周', '').replaceAll(' ', '');
+
+      for (final part in text.split(',')) {
+        if (part.contains('-')) {
+          final seg = part.split('-');
+          if (seg.length == 2) {
+            final start = int.tryParse(seg[0]);
+            final end = int.tryParse(seg[1]);
+            if (start != null && end != null) {
+              for (var i = start; i <= end; i++) {
+                result.add(i);
+              }
+            }
+          }
+        } else {
+          final v = int.tryParse(part);
+          if (v != null) result.add(v);
+        }
+      }
+
+      return result.toList()..sort();
+    }
+
+    return <int>[];
   }
 
   int _asInt(Object? value, {required int fallback}) {

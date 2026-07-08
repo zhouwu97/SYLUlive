@@ -174,11 +174,13 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
               padding: EdgeInsets.symmetric(horizontal: 24),
               child: Row(
                 children: [
-                  Text(
-                    '拉取当前展示学期会刷新当前页，拉取其他学期会自动切换到对应学期',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: CampusTheme.subText,
+                  Expanded(
+                    child: Text(
+                      '拉取当前展示学期会刷新当前页，拉取其他学期会自动切换到对应学期',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: CampusTheme.subText,
+                      ),
                     ),
                   ),
                 ],

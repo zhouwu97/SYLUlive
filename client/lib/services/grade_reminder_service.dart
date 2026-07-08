@@ -56,6 +56,27 @@ class GradeReminderService {
     }
   }
 
+  /// 确保后台周期检查任务仍在调度中（check-then-enqueue）。
+  /// 只在任务不存在/未排队时补建，不重置正在排队的周期计时器。
+  Future<void> ensureScheduledIfEnabled() async {
+    if (!_isAndroid) return;
+    try {
+      await _channel.invokeMethod<void>('ensureGradeReminderScheduled');
+    } catch (e) {
+      debugPrint('确认成绩提醒后台任务失败: $e');
+    }
+  }
+
+  /// 立即触发一次成绩检查（OneTimeWorkRequest），用于调试/手动验证后台逻辑。
+  Future<void> runCheckNow() async {
+    if (!_isAndroid) return;
+    try {
+      await _channel.invokeMethod<void>('runGradeReminderCheckNow');
+    } catch (e) {
+      debugPrint('立即检查成绩更新失败: $e');
+    }
+  }
+
   Future<GradeReminderStatus> setEnabled({
     required bool enabled,
     required String userId,

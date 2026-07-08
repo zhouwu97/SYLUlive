@@ -140,7 +140,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   static const Duration _courseFetchTimeout = Duration(seconds: 25);
 
   // 左右滑动切周
-  late PageController _weekPageController;
   Offset? _weekSwipeStart;
   DateTime? _weekSwipeStartTime;
   int? _weekSwipePointer;
@@ -172,7 +171,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   void initState() {
     super.initState();
     _weekStart = _mondayOf(DateTime.now());
-    _weekPageController = PageController(initialPage: 500);
     _loadSettings();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -192,7 +190,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   @override
   void dispose() {
-    _weekPageController.dispose();
     super.dispose();
   }
 
@@ -270,12 +267,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     });
   }
 
-  // PageView 滑动切换周
-  void _onWeekPageChanged(int index) {
-    final sc = context.read<CourseScheduleProvider>();
-    final anchor = _pageAnchorDate(sc);
-    final targetMonday = anchor.add(Duration(days: (index - 500) * 7));
-    if (mounted) setState(() => _weekStart = targetMonday);
+  void _changeWeek(int direction) {
+    if (!mounted) return;
+    setState(() {
+      _weekStart = _weekStart.add(Duration(days: direction * 7));
+    });
   }
 
   void _handleWeekPointerDown(PointerDownEvent event) {
@@ -303,14 +299,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       elapsed: DateTime.now().difference(_weekSwipeStartTime!),
     );
     _resetWeekSwipe();
-    if (direction == 0 || !_weekPageController.hasClients) return;
+    if (direction == 0) return;
 
-    final currentPage = _weekPageController.page?.round() ?? 500;
-    _weekPageController.animateToPage(
-      currentPage + direction,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
+    _changeWeek(direction);
   }
 
   void _handleWeekPointerCancel(PointerCancelEvent event) {
@@ -361,13 +352,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   _autoLoad(edu, sc);
 
                   // 当学期切换时重置视图
-                  if (sc.currentTerm.id != _lastTermId &&
-                      sc.currentTerm.startDate != null) {
+                  if (sc.currentTerm.id != _lastTermId) {
                     _lastTermId = sc.currentTerm.id;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_weekPageController.hasClients) {
-                        _weekPageController.jumpToPage(500);
-                      }
                       if (mounted) {
                         setState(() {
                           _weekStart = _pageAnchorDate(sc);
@@ -410,28 +397,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           onPointerDown: _handleWeekPointerDown,
                           onPointerUp: _handleWeekPointerUp,
                           onPointerCancel: _handleWeekPointerCancel,
-                          child: PageView.builder(
-                            controller: _weekPageController,
-                            physics: const NeverScrollableScrollPhysics(),
-                            onPageChanged: _onWeekPageChanged,
-                            itemBuilder: (_, index) {
-                              final anchor = _pageAnchorDate(sc);
-                              final targetMonday = anchor.add(
-                                Duration(days: (index - 500) * 7),
-                              );
-                              return SingleChildScrollView(
-                                padding: EdgeInsets.only(
-                                  bottom: MediaQuery.of(
-                                        context,
-                                      ).padding.bottom +
-                                      100,
-                                ),
-                                child: _buildCourseGridForWeek(
-                                  sc,
-                                  targetMonday,
-                                ),
-                              );
-                            },
+                          child: SingleChildScrollView(
+                            padding: EdgeInsets.only(
+                              bottom: MediaQuery.of(context).padding.bottom + 100,
+                            ),
+                            child: _buildCourseGrid(sc),
                           ),
                         ),
                       ),
@@ -1348,9 +1318,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     unawaited(edu.syncCourses(result.year, result.semester, result.courses));
     await _syncCourseReminders(sc);
 
-    if (_weekPageController.hasClients) {
-      _weekPageController.jumpToPage(500);
-    }
+
 
     if (mounted) {
       setState(() {
@@ -3928,14 +3896,11 @@ $classFilterRule
     );
   }
 
-  // ====== 课程网格（指定某一周） ======
-  Widget _buildCourseGridForWeek(
-    CourseScheduleProvider sc,
-    DateTime weekStart,
-  ) {
+  // ====== 课程网格 ======
+  Widget _buildCourseGrid(CourseScheduleProvider sc) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wn = sc.getAcademicWeek(weekStart);
+        final wn = sc.getAcademicWeek(_weekStart);
         final totalH = 12 * _slotHeight;
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final cleanLightMode =
@@ -3959,9 +3924,10 @@ $classFilterRule
         final inactiveSeen = <String>{};
 
         for (final c in sc.courses) {
+          if (c.weekday < 1 || c.weekday > 7) continue;
           final key = '${c.weekday}_${c.startSection}';
           if (wn == null || c.weeks.isEmpty || c.weeks.contains(wn)) {
-            // 当前周课程：直接加入，优先级最高
+            // 当前周课程或未设置开学周：直接加入，优先级最高
             if (!activeSlots.contains(key)) {
               allActive.add(c);
               activeSlots.add(key);
@@ -3972,6 +3938,7 @@ $classFilterRule
         // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显示
         // 已完全结课的课程（所有周数 < 当前周）不显示
         for (final c in sc.courses) {
+          if (c.weekday < 1 || c.weekday > 7) continue;
           final key = '${c.weekday}_${c.startSection}';
           if (wn != null && c.weeks.isNotEmpty && !c.weeks.contains(wn)) {
             // 跳过已完全结课的课程

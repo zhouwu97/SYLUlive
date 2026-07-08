@@ -791,13 +791,14 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null) return false;
 
     final kbList = courses.map((c) {
-      final time = c['time'] as int? ?? 1;
+      final time = (c['time'] as num?)?.toInt() ?? 1;
+      final endTime = (c['end_time'] as num?)?.toInt() ?? time;
       return {
         'kcmc': c['name'] ?? '',
         'xm': c['teacher'] ?? '',
         'cdmc': c['location'] ?? '',
         'jc':
-            '${time.toString().padLeft(2, '0')}${(time + 1).toString().padLeft(2, '0')}',
+            '${time.toString().padLeft(2, '0')}${endTime.toString().padLeft(2, '0')}',
         'xqj': (c['week_day'] as int? ?? 1).toString(),
         'zcd': (c['weeks'] as List?)?.join(',') ?? '',
       };

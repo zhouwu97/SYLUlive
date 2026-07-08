@@ -1016,11 +1016,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
-  /// 无缓存时显示引导（用户刚注册或首次使用）
-  Widget _buildNoCacheView(BuildContext context, bool isDark) {
-    return _buildEmptyView(context, isDark);
-  }
-
   /// 从教务系统重新获取课表。
   Future<void> _fetchCourses(BuildContext context) async {
     if (_isFetchingCourses) return;

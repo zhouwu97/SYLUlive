@@ -263,13 +263,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               if (authProvider.isLoggedIn) {
                 _showAvatarOptions(context, authProvider);
               } else {
-                Navigator.push(
-                  context,
-                  PageRouteBuilder(
-                    opaque: false,
-                    pageBuilder: (_, __, ___) => const LoginScreen(),
-                  ),
-                );
+                Navigator.pushNamed(context, '/login');
               }
             },
             child: Container(
@@ -319,13 +313,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     MaterialPageRoute(builder: (_) => const UserHomeScreen()),
                   );
                 } else {
-                  Navigator.push(
-                    context,
-                    PageRouteBuilder(
-                      opaque: false,
-                      pageBuilder: (_, __, ___) => const LoginScreen(),
-                    ),
-                  );
+                  Navigator.pushNamed(context, '/login');
                 }
               },
               child: Row(

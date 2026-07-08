@@ -460,13 +460,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _doCheckIn() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          opaque: false,
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-        ),
-      );
+      Navigator.pushNamed(context, '/login');
       return;
     }
     if (_checkInLoading || _checkedIn) return;
@@ -697,13 +691,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void _openMessages() {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          opaque: false,
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-        ),
-      );
+      Navigator.pushNamed(context, '/login');
       return;
     }
     Navigator.push(
@@ -1480,13 +1468,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
-              onPressed: () => Navigator.push(
-                context,
-                PageRouteBuilder(
-                  opaque: false,
-                  pageBuilder: (_, __, ___) => const LoginScreen(),
-                ),
-              ),
+              onPressed: () => Navigator.pushNamed(context, '/login'),
               icon: const Icon(Icons.login, size: 18),
               label: const Text('去登录'),
               style: OutlinedButton.styleFrom(

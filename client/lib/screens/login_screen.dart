@@ -494,8 +494,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: pageBg,
-      body: SafeArea(
-        child: Stack(
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: SafeArea(
+          child: Stack(
           children: [
             SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
@@ -832,6 +835,6 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }

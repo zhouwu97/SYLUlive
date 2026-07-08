@@ -966,13 +966,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    PageRouteBuilder(
-                      opaque: false,
-                      pageBuilder: (_, __, ___) => LoginScreen(),
-                    ),
-                  ),
+                  onPressed: () => Navigator.pushNamed(context, '/login'),
                   icon: const Icon(Icons.login),
                   label: const Text('去登录', style: TextStyle(fontSize: 16)),
                   style: ElevatedButton.styleFrom(

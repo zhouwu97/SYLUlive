@@ -858,13 +858,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       onTap: () {
         final auth = context.read<AuthProvider>();
         if (!auth.isLoggedIn) {
-          Navigator.push(
-            context,
-            PageRouteBuilder(
-              opaque: false,
-              pageBuilder: (_, __, ___) => const LoginScreen(),
-            ),
-          );
+          Navigator.pushNamed(context, '/login');
           return;
         }
         Navigator.push(

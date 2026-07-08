@@ -55,6 +55,77 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   final List<PostImage> _existingImages = [];
   final Set<String> _selectedMarketTags = {};
 
+  bool _hasTriedSubmit = false;
+  bool _skipDraftGuard = false;
+
+  bool get _hasDraft {
+    if (_isLoading || _skipDraftGuard) return false;
+
+    final hasText = _titleController.text.trim().isNotEmpty ||
+        _contentController.text.trim().isNotEmpty ||
+        _priceController.text.trim().isNotEmpty ||
+        _contactController.text.trim().isNotEmpty;
+
+    final hasMediaOrTags = _selectedImages.isNotEmpty ||
+        _selectedMarketTags.isNotEmpty ||
+        _existingImages.length != (widget.editingPost?.images.length ?? 0);
+
+    if (!_isEditing) return hasText || hasMediaOrTags;
+
+    final p = widget.editingPost!;
+    return _postType != p.postType ||
+        _titleController.text != p.title ||
+        _contentController.text != p.content ||
+        _priceController.text != p.price.toString() ||
+        _contactController.text != p.contact ||
+        _selectedImages.isNotEmpty ||
+        _existingImages.length != p.images.length ||
+        _selectedMarketTags.join('|') != p.marketTags.join('|');
+  }
+
+  Future<void> _maybePop() async {
+    if (!_hasDraft) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('放弃编辑？'),
+        content: const Text('当前填写的内容还没有发布，返回后会丢失。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('继续编辑'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('放弃'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      _skipDraftGuard = true;
+      Navigator.of(context).pop();
+    }
+  }
+
+  List<String> get _availableMarketTags {
+    switch (_postType) {
+      case 'sell':
+        return ['自提', '可送宿舍楼下', '可小刀', '急出'];
+      case 'buy':
+        return ['自提', '可上门', '长期求', '急需'];
+      case 'proxy':
+        return ['可跑腿', '当日完成', '可议价'];
+      default:
+        return const [];
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // PublishImagePickerMixin abstract impl
   // ---------------------------------------------------------------------------
@@ -219,7 +290,20 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   void _onTypeChanged(String newType) {
-    if (mounted) setState(() => _postType = newType);
+    if (!mounted || _postType == newType) return;
+
+    setState(() {
+      _postType = newType;
+      _attentionFields = {};
+      _attentionPulse++;
+      _selectedMarketTags.retainWhere((tag) => _availableMarketTags.contains(tag));
+    });
+
+    if (_hasTriedSubmit) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _formKey.currentState?.validate();
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -287,6 +371,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   bool _validate() {
+    _hasTriedSubmit = true;
     final missingFields = _collectMissingRequiredFields();
     if (missingFields.isNotEmpty) {
       _triggerRequiredHint(missingFields);
@@ -331,7 +416,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       final List<int> fileIds = [];
       bool hasUploadError = false;
       for (final image in _selectedImages) {
-        final fileId = await postProvider.uploadImage(image.path);
+        final fileId = await postProvider.uploadImage(image);
         if (fileId != null) {
           fileIds.add(fileId);
         } else {
@@ -382,6 +467,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
       if (!mounted) return;
       if (result.success) {
+        _skipDraftGuard = true;
         Navigator.of(context).pop(true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -414,8 +500,13 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF111315) : _marketPageBg,
+    return PopScope(
+      canPop: !_hasDraft,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _maybePop();
+      },
+      child: Scaffold(
+        backgroundColor: isDark ? const Color(0xFF111315) : _marketPageBg,
       extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
@@ -431,7 +522,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           fontSize: 20,
           fontWeight: FontWeight.w800,
         ),
-        leading: const BackButton(),
+        leading: BackButton(onPressed: _maybePop),
       ),
       bottomNavigationBar: PublishBottomBar(
         isLoading: _isLoading,
@@ -475,6 +566,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -612,6 +704,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         children: [
           if (_showsTitleField)
             _buildLabeledTextFormField(
+              key: ValueKey('market-title-$_postType'),
               field: _PublishField.title,
               label: _titleLabel,
               controller: _titleController,
@@ -653,6 +746,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildLabeledTextFormField({
+    Key? key,
     required _PublishField field,
     required String label,
     required TextEditingController controller,
@@ -670,6 +764,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           _buildRequiredLabel(label, field),
           const SizedBox(height: 6),
           TextFormField(
+            key: key,
             controller: controller,
             decoration: _inlineInputDecoration(
               hint: hint,

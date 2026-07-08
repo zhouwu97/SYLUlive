@@ -70,17 +70,51 @@ class _MarketScreenState extends State<MarketScreen> {
 
   static const _marketPostTypes = ['sell', 'buy', 'lost', 'found', 'proxy'];
 
-  static const _categoryOptions = <MapEntry<String, String>>[
-    MapEntry('all', '全部'),
-    MapEntry('sell', '二手'),
-    MapEntry('buy', '求购'),
-    MapEntry('proxy', '办事'),
+  List<MapEntry<String, String>> get _visibleCategoryOptions => [
+    const MapEntry('all', '全部'),
+    for (final type in _allowedTypes) MapEntry(type, _typeLabel(type)),
   ];
 
   List<String> get _allowedTypes =>
       widget.onlyPostTypes == null || widget.onlyPostTypes!.isEmpty
           ? _marketPostTypes
           : widget.onlyPostTypes!;
+
+  String get _defaultPublishTypeForCurrentView {
+    if (_typeFilter != 'all' && _allowedTypes.contains(_typeFilter)) {
+      return _typeFilter;
+    }
+    if (_allowedTypes.contains('sell')) return 'sell';
+    return _allowedTypes.first;
+  }
+
+  String _publishLabel(String type) {
+    switch (type) {
+      case 'buy':
+        return '发布求购';
+      case 'lost':
+        return '发布失物';
+      case 'found':
+        return '发布招领';
+      case 'proxy':
+        return '发布办事';
+      case 'sell':
+      default:
+        return '发布商品';
+    }
+  }
+
+  String _emptyTitle() {
+    if (_searchQuery.isNotEmpty) return '没有找到匹配内容';
+    if (_typeFilter != 'all') return '还没有${_typeLabel(_typeFilter)}';
+    return '还没有商品';
+  }
+
+  String _emptySubtitle() {
+    if (_searchQuery.isNotEmpty) return '换个关键词试试';
+    if (_typeFilter != 'all') return '发布第一条${_typeLabel(_typeFilter)}信息';
+    return '发布第一条闲置、求购或办事信息';
+  }
 
   @override
   void initState() {
@@ -121,6 +155,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
     final results = await context.read<PostProvider>().searchPosts(
           boardId: 2,
+          type: _typeFilter == 'all' ? null : _typeFilter,
           sort: _sortType,
           query: query,
           limit: 100,
@@ -191,6 +226,9 @@ class _MarketScreenState extends State<MarketScreen> {
     setState(() {
       _typeFilter = value;
     });
+    if (_searchQuery.isNotEmpty) {
+      _runSearch(_searchQuery);
+    }
   }
 
   List<Post> _applyLocalTypeFilter(List<Post> posts) {
@@ -557,15 +595,7 @@ class _MarketScreenState extends State<MarketScreen> {
                       )
                     else if (marketPosts.isEmpty)
                       SliverToBoxAdapter(
-                        child: _buildEmptyState(
-                          isDark,
-                          _searchQuery.isNotEmpty
-                              ? '没有找到匹配内容'
-                              : '还没有商品',
-                          _searchQuery.isNotEmpty
-                              ? '换个关键词试试'
-                              : '发布第一条闲置、求购或办事信息',
-                        ),
+                        child: _buildEmptyState(isDark),
                       )
                     else if (themeProvider.marketIsListView)
                       SliverPadding(
@@ -669,12 +699,7 @@ class _MarketScreenState extends State<MarketScreen> {
                             MaterialPageRoute(
                               builder: (_) => CreatePostScreen(
                                 boardId: 2,
-                                defaultPostType:
-                                    widget.onlyPostTypes != null &&
-                                            widget.onlyPostTypes!
-                                                .contains('lost')
-                                        ? 'lost'
-                                        : 'sell',
+                                defaultPostType: _defaultPublishTypeForCurrentView,
                                 allowedPostTypes: widget.onlyPostTypes,
                               ),
                             ),
@@ -934,10 +959,10 @@ class _MarketScreenState extends State<MarketScreen> {
       height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: _categoryOptions.length,
+        itemCount: _visibleCategoryOptions.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
-          final entry = _categoryOptions[index];
+          final entry = _visibleCategoryOptions[index];
           final selected = _typeFilter == entry.key;
           return _buildChip(
             isDark: isDark,
@@ -1084,7 +1109,10 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-  Widget _buildEmptyState(bool isDark, String title, String subtitle) {
+  Widget _buildEmptyState(bool isDark) {
+    final title = _emptyTitle();
+    final subtitle = _emptySubtitle();
+    final defaultType = _defaultPublishTypeForCurrentView;
     final accent = _MarketTokens.accent(isDark);
     final isNoResults = title.contains('没有找到');
     return Padding(
@@ -1155,9 +1183,10 @@ class _MarketScreenState extends State<MarketScreen> {
                       await Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => const CreatePostScreen(
+                          builder: (_) => CreatePostScreen(
                             boardId: 2,
-                            defaultPostType: 'sell',
+                            defaultPostType: defaultType,
+                            allowedPostTypes: widget.onlyPostTypes,
                           ),
                         ),
                       );
@@ -1166,9 +1195,9 @@ class _MarketScreenState extends State<MarketScreen> {
                       }
                     },
                     icon: const Icon(Icons.add, size: 18),
-                    label: const Text(
-                      '发布商品',
-                      style: TextStyle(fontWeight: FontWeight.w800),
+                    label: Text(
+                      _publishLabel(defaultType),
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: accent,

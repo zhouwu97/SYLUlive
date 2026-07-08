@@ -1307,7 +1307,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final canEdit = _isCurrentUserPostOwner();
     final isOwn = _isCurrentUserPostOwner();
     final isAdmin = currentUser?.isAdmin ?? false;
-    final overlayStyle = (!isDark && !widget.isMarket
+    final overlayStyle = (!isDark
             ? SystemUiOverlayStyle.dark
             : SystemUiOverlayStyle.light)
         .copyWith(
@@ -1331,11 +1331,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 elevation: 0,
                 automaticallyImplyLeading: false,
               )
-            : _buildWaterAppBar(isDark,
-                canEdit: canEdit,
-                canDelete: canDelete,
-                isOwn: isOwn,
-                isAdmin: isAdmin),
+            : widget.isMarket
+                ? _buildMarketAppBar(
+                    isDark,
+                    canEdit: canEdit,
+                    canDelete: canDelete,
+                    isOwn: isOwn,
+                    isAdmin: isAdmin,
+                  )
+                : _buildWaterAppBar(isDark,
+                    canEdit: canEdit,
+                    canDelete: canDelete,
+                    isOwn: isOwn,
+                    isAdmin: isAdmin),
         body: Stack(
           children: [
             if (_isLoading)
@@ -1359,6 +1367,59 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
       ),
     );
+  }
+
+  PreferredSizeWidget _buildMarketAppBar(
+    bool isDark, {
+    required bool canEdit,
+    required bool canDelete,
+    required bool isOwn,
+    required bool isAdmin,
+  }) {
+    return AppBar(
+      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
+      elevation: 0.5,
+      automaticallyImplyLeading: !widget.hideBackButton,
+      leading: widget.hideBackButton ? null : const BackButton(),
+      titleSpacing: widget.hideBackButton ? 16 : 0,
+      title: Text(
+        _marketTypeTitle(_post?.postType ?? ''),
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: isDark ? Colors.white : Colors.black87,
+        ),
+      ),
+      actions: [
+        if (_post != null)
+          _buildPostMoreMenu(
+            isDark: isDark,
+            canEdit: canEdit,
+            canDelete: canDelete,
+            isOwn: isOwn,
+            isAdmin: isAdmin,
+          ),
+      ],
+    );
+  }
+
+  String _marketTypeTitle(String type) {
+    switch (type) {
+      case 'sell':
+        return '出售详情';
+      case 'buy':
+        return '求购详情';
+      case 'lost':
+        return '失物详情';
+      case 'found':
+        return '招领详情';
+      case 'proxy':
+        return '办事详情';
+      case 'exposure':
+        return '曝光详情';
+      default:
+        return '集市详情';
+    }
   }
 
   Future<void> _openWaterCategoryFromDetail() async {

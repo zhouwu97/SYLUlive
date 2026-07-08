@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../models/post.dart';
 import '../services/post_cache_service.dart';
@@ -726,20 +727,21 @@ class PostProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<int?> uploadImage(String filePath) async {
+  Future<int?> uploadImage(XFile file) async {
     try {
-      String uploadPath = filePath;
-      if (filePath.startsWith('content://')) {
-        final tempDir = Directory.systemTemp;
-        final tempFile = File(
-          '${tempDir.path}/upload_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        );
-        await File(filePath).copy(tempFile.path);
-        uploadPath = tempFile.path;
-      }
+      final bytes = await file.readAsBytes();
+      final rawName = file.name.trim().isNotEmpty
+          ? file.name.trim()
+          : file.path.split('/').last;
+      final filename = _safeUploadFilename(rawName);
+
       final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(uploadPath),
+        'file': MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+        ),
       });
+
       final response = await _dio.post('/upload', data: formData);
       if (response.statusCode == 200 && response.data != null) {
         return response.data['file_id'] as int?;
@@ -748,6 +750,17 @@ class PostProvider extends ChangeNotifier {
       debugPrint('上传图片失败: $e');
     }
     return null;
+  }
+
+  String _safeUploadFilename(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.gif')) {
+      return name;
+    }
+    return 'upload_${DateTime.now().millisecondsSinceEpoch}.jpg';
   }
 
   Future<DeletePostResult> deletePostDetailed(int postId) async {

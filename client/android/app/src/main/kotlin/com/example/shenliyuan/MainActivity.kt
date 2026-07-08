@@ -520,6 +520,14 @@ class MainActivity : FlutterActivity() {
                     "openGradeNotificationSettings" -> {
                         result.success(GradeReminderScheduler.openNotificationSettings(this))
                     }
+                    "ensureGradeReminderScheduled" -> {
+                        GradeReminderScheduler.ensureScheduledIfEnabled(this)
+                        result.success(true)
+                    }
+                    "runGradeReminderCheckNow" -> {
+                        GradeReminderScheduler.runCheckNow(this)
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) {

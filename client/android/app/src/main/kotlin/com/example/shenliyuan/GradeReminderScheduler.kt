@@ -10,10 +10,14 @@ import android.provider.Settings
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import org.json.JSONObject
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 object GradeReminderScheduler {
@@ -220,6 +224,77 @@ object GradeReminderScheduler {
             WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
             request,
+        )
+    }
+
+    private val ioExecutor by lazy { Executors.newSingleThreadExecutor() }
+
+    /**
+     * Check-then-enqueue：只在成绩提醒已开启、且 WorkManager 没有处于 ENQUEUED/RUNNING 的周期任务时
+     * 才补建任务。避免每次调用都 UPDATE 周期任务导致下次执行时间被反复推迟（"永远不到 4 小时"）。
+     */
+    fun ensureScheduledIfEnabled(context: Context) {
+        val appContext = context.applicationContext
+        val p = prefs(appContext)
+        val userId = runtimeUserId(appContext)
+        if (userId.isNullOrBlank()) return
+        if (!p.getBoolean(enabledKey(userId), false)) return
+
+        val future = WorkManager.getInstance(appContext)
+            .getWorkInfosForUniqueWork(WORK_NAME)
+        future.addListener({
+            try {
+                val infos = future.get()
+                val active = infos.any {
+                    it.state == WorkInfo.State.ENQUEUED ||
+                        it.state == WorkInfo.State.RUNNING
+                }
+                if (!active) {
+                    enqueue(appContext)
+                    DiagnosticLogStore.info(
+                        appContext,
+                        source = "成绩提醒",
+                        type = "补建任务",
+                        summary = "检测到周期任务缺失，已重新调度",
+                        detail = "userId=$userId",
+                    )
+                }
+            } catch (_: Exception) {
+                // 查询失败时按"缺失"处理，补建一次
+                enqueue(appContext)
+            }
+        }, ioExecutor)
+    }
+
+    /**
+     * 立即触发一次成绩检查（OneTimeWorkRequest），用于调试/手动验证后台逻辑。
+     * 使用独立的 one-shot 唯一名称，不影响周期任务的调度节奏。
+     */
+    fun runCheckNow(context: Context) {
+        val appContext = context.applicationContext
+        val p = prefs(appContext)
+        val userId = runtimeUserId(appContext)
+        if (userId.isNullOrBlank()) return
+        if (!p.getBoolean(enabledKey(userId), false)) return
+
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = OneTimeWorkRequestBuilder<GradeReminderWorker>()
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
+            .build()
+        WorkManager.getInstance(appContext).enqueueUniqueWork(
+            "$WORK_NAME-oneshot",
+            ExistingWorkPolicy.REPLACE,
+            request,
+        )
+        DiagnosticLogStore.info(
+            appContext,
+            source = "成绩提醒",
+            type = "立即检查",
+            summary = "手动触发一次成绩检查",
+            detail = "userId=$userId",
         )
     }
 

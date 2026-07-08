@@ -259,10 +259,15 @@ class CourseScheduleProvider extends ChangeNotifier {
   ) async {
     if (_userId == null) return;
 
-    final parsedCourses = <CourseBlock>[];
+    final customCourses = _courses.where((c) => c.id < 0).toList();
+    final parsedCourses = <CourseBlock>[...customCourses];
+
     for (final rawCourse in rawCourses) {
       try {
-        parsedCourses.add(_courseFromFetchedMap(rawCourse));
+        final parsed = _courseFromFetchedMap(rawCourse);
+        if (!_hiddenCourseIds.contains(parsed.id)) {
+          parsedCourses.add(parsed);
+        }
       } catch (e, stackTrace) {
         debugPrint('解析课程失败: $e\n$stackTrace\n$rawCourse');
       }
@@ -275,6 +280,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (_courses.isNotEmpty) {
       await _saveToCache(_currentCacheKey, _courses);
     }
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_activeArchiveKey);
 
     notifyListeners();
     _syncWidget(); // 更新桌面小部件
@@ -804,11 +812,13 @@ class CourseScheduleProvider extends ChangeNotifier {
     int semester, {
     bool clearCurrent = true,
   }) async {
+    final inferred = CourseTerm.inferCurrentTerm();
     _currentTerm = CourseTerm(
       id: '${year}_$semester',
       year: year,
       semester: semester,
       title: CourseTermCatalog.titleFor(year, semester),
+      isCurrent: year == inferred.year && semester == inferred.semester,
     );
 
     if (clearCurrent) {

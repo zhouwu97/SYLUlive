@@ -25,6 +25,7 @@ import '../models/course_term.dart';
 import '../widgets/course/course_empty_state_card.dart';
 import '../widgets/course/course_action_menu.dart';
 import '../widgets/course/course_import_sheet.dart';
+import '../widgets/course/course_term_switch_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
 import '../widgets/campus/campus_theme.dart';
 
@@ -134,6 +135,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _courseReminderBusy = false;
   int _scheduledReminderCount = 0;
   bool _isFetchingCourses = false;
+  bool _isImportingCourses = false;
   CourseBackgroundKeepAliveStatus _backgroundKeepAliveStatus =
       const CourseBackgroundKeepAliveStatus.unsupported();
   bool _backgroundKeepAliveBusy = false;
@@ -194,6 +196,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
+    if (_isFetchingCourses || _isImportingCourses) return;
     if (_didLoad) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
@@ -696,7 +699,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ),
                       const SizedBox(height: 6),
                       GestureDetector(
-                        onTap: () => _openCourseImportSheet(context),
+                        onTap: () => _openTermSwitchSheet(context),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -721,10 +724,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   onSelected: (action) {
                     switch (action) {
                       case CourseMenuAction.syncFromEdu:
-                        _fetchCourses(context);
+                        _openCoursePullSheet(context);
                         break;
                       case CourseMenuAction.switchTerm:
-                        _openCourseImportSheet(context);
+                        _openTermSwitchSheet(context);
                         break;
 
                       case CourseMenuAction.archives:
@@ -924,8 +927,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             isDark: isDark,
             recommendedTerm:
                 isCurrentTerm ? sc.currentTerm : CourseTerm.inferCurrentTerm(),
-            onMainAction: () => _openCourseImportSheet(context),
-            onSecondaryAction: () => _openCourseImportSheet(context),
+            onMainAction: () => _openCoursePullSheet(context),
+            onSecondaryAction: () => _openTermSwitchSheet(context),
           ),
         ],
       ),
@@ -1293,15 +1296,24 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
-  Future<void> _openCourseImportSheet(BuildContext context) async {
+  Future<void> _openCoursePullSheet(BuildContext context) async {
+    if (_isFetchingCourses || _isImportingCourses) return;
+
     final edu = context.read<EduProvider>();
     final sc = context.read<CourseScheduleProvider>();
+
+    if (!edu.isBound) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先绑定教务账号')),
+      );
+      return;
+    }
 
     final result = await CourseImportSheet.show(
       context,
       eduProvider: edu,
-      initialYear: sc.selectedYear,
-      initialSemester: sc.selectedSemester,
+      initialYear: sc.currentTerm.year,
+      initialSemester: sc.currentTerm.semester,
     );
 
     if (result == null || !mounted) return;
@@ -1316,39 +1328,117 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     if (confirm != true || !mounted) return;
 
-    final isSameTerm =
-        sc.selectedYear == result.year &&
-        sc.selectedSemester == result.semester;
+    final oldTerm = sc.currentTerm;
+    final sameTerm =
+        oldTerm.year == result.year &&
+        oldTerm.semester == result.semester;
 
-    await sc.selectTerm(
-      result.year,
-      result.semester,
-      clearCurrent: !isSameTerm,
-    );
+    final targetTerm = sameTerm
+        ? oldTerm
+        : sc.buildTerm(result.year, result.semester);
 
-    await sc.applyFetchedCourses(result.courses);
-    unawaited(edu.syncCourses(result.year, result.semester, result.courses));
-    await _syncCourseReminders(sc);
+    setState(() {
+      _isFetchingCourses = true;
+      _isImportingCourses = true;
+      _didLoad = true;
+      _initializing = false;
+    });
 
+    try {
+      final importedCount = await sc.applyFetchedCoursesForTerm(
+        term: targetTerm,
+        rawCourses: result.courses,
+        resetHidden: true,
+      );
 
+      if (!mounted) return;
 
-    if (mounted) {
+      if (importedCount == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('没有可导入的课程，请确认学期是否正确')),
+        );
+        return;
+      }
+
+      unawaited(
+        edu.syncCourses(result.year, result.semester, result.courses).catchError(
+          (Object error, StackTrace stackTrace) {
+            debugPrint('课表后台同步异常: $error\n$stackTrace');
+            return false;
+          },
+        ),
+      );
+
+      await _syncCourseReminders(sc);
+
+      if (!mounted) return;
+
       setState(() {
         _weekStart = _pageAnchorDate(sc);
         _initializing = false;
         _didLoad = true;
         _hasCache = sc.courses.isNotEmpty;
       });
-    }
 
-    if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('课表已导入，建议设置开学第一周'),
-          duration: Duration(seconds: 3),
+        SnackBar(
+          content: Text(
+            sameTerm
+                ? '当前学期课表已刷新'
+                : '已拉取并切换到 ${sc.currentTerm.title}',
+          ),
         ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('课表拉取失败：$e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetchingCourses = false;
+          _isImportingCourses = false;
+          _initializing = false;
+          _hasCache = sc.courses.isNotEmpty;
+        });
+      }
     }
+  }
+
+  Future<void> _openTermSwitchSheet(BuildContext context) async {
+    if (_isFetchingCourses || _isImportingCourses) return;
+
+    final edu = context.read<EduProvider>();
+    final sc = context.read<CourseScheduleProvider>();
+
+    final term = await CourseTermSwitchSheet.show(
+      context,
+      currentTerm: sc.currentTerm,
+      enrollmentYear: edu.enrollmentYear,
+    );
+
+    if (term == null || !mounted) return;
+
+    setState(() {
+      _didLoad = true;
+      _initializing = false;
+    });
+
+    await sc.switchTerm(term, loadCache: true);
+
+    if (!mounted) return;
+
+    setState(() {
+      _weekStart = _pageAnchorDate(sc);
+      _hasCache = sc.courses.isNotEmpty;
+      _initializing = false;
+      _didLoad = true;
+    });
+  }
+
+  Future<void> _openCourseImportSheet(BuildContext context) {
+    return _openCoursePullSheet(context);
   }
 
   Future<void> _shareSchedule(CourseScheduleProvider sc) async {
@@ -1533,7 +1623,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           initialSnapshot: initialSnapshot,
           callbacks: CourseScheduleSettingsCallbacks(
             reloadSnapshot: () => _reloadCourseSettingsSnapshot(sc),
-            refreshCourses: () => _fetchCourses(context),
+            refreshCourses: () => _openCoursePullSheet(context),
             openArchive: () async {
               _showArchiveSheet(context, sc);
             },

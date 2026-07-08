@@ -254,26 +254,35 @@ class CourseScheduleProvider extends ChangeNotifier {
     return true;
   }
 
-  Future<void> applyFetchedCourses(
-    List<Map<String, dynamic>> rawCourses,
-  ) async {
-    if (_userId == null) return;
+  Future<int> applyFetchedCourses(
+    List<Map<String, dynamic>> rawCourses, {
+    bool resetHidden = false,
+  }) async {
+    if (_userId == null) return 0;
 
-    await _loadHiddenCourses();
+    if (resetHidden) {
+      _hiddenCourseIds = {};
+      await _saveHiddenCourses();
+    } else {
+      await _loadHiddenCourses();
+    }
 
     final customCourses = _courses.where((c) => c.id < 0).toList();
     final parsedCourses = <CourseBlock>[...customCourses];
+    int importedCount = 0;
 
     for (final rawCourse in rawCourses) {
       try {
         final parsed = _courseFromFetchedMap(rawCourse);
         if (!_hiddenCourseIds.contains(parsed.id)) {
           parsedCourses.add(parsed);
+          importedCount++;
         }
       } catch (e, stackTrace) {
         debugPrint('解析课程失败: $e\n$stackTrace\n$rawCourse');
       }
     }
+
     _courses = parsedCourses;
     _buildGrid();
     _isLoading = false;
@@ -282,12 +291,13 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (_courses.isNotEmpty) {
       await _saveToCache(_currentCacheKey, _courses);
     }
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_activeArchiveKey);
 
     notifyListeners();
-    _syncWidget(); // 更新桌面小部件
+    _syncWidget();
+    return importedCount;
   }
 
   CourseBlock _courseFromFetchedMap(Map<String, dynamic> map) {
@@ -535,6 +545,11 @@ class CourseScheduleProvider extends ChangeNotifier {
       } else {
         await clearCache();
       }
+    }
+
+    if (!networkSuccess && backupCourses.isNotEmpty) {
+      _courses = backupCourses;
+      _buildGrid();
     }
 
     _isLoading = false;
@@ -809,48 +824,88 @@ class CourseScheduleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  CourseTerm buildTerm(String year, int semester) {
+    final inferred = CourseTerm.inferCurrentTerm();
+    final id = '${year}_$semester';
+    return CourseTerm(
+      id: id,
+      year: year,
+      semester: semester,
+      title: CourseTermCatalog.titleFor(year, semester),
+      isCurrent: id == inferred.id,
+      maxWeek: 20,
+    );
+  }
+
+  Future<bool> switchTerm(
+    CourseTerm term, {
+    bool loadCache = true,
+  }) async {
+    if (_userId == null) return false;
+
+    _currentTerm = term;
+    _courses = [];
+    _gridData = {};
+    _hiddenCourseIds = {};
+    _archives = [];
+    _errorMessage = null;
+    _isLoading = false;
+
+    await loadSemesterStart();
+    await loadArchiveList();
+
+    bool hasCache = false;
+    if (loadCache) {
+      hasCache = await loadCachedCoursesIfAvailable();
+    } else {
+      notifyListeners();
+    }
+
+    _syncWidget();
+    return hasCache;
+  }
+
   Future<bool> selectTerm(
     String year,
     int semester, {
     bool clearCurrent = true,
   }) async {
-    final inferred = CourseTerm.inferCurrentTerm();
-    _currentTerm = CourseTerm(
-      id: '${year}_$semester',
-      year: year,
-      semester: semester,
-      title: CourseTermCatalog.titleFor(year, semester),
-      isCurrent: year == inferred.year && semester == inferred.semester,
-    );
+    final term = buildTerm(year, semester);
 
-    if (clearCurrent) {
-      _courses = [];
-      _gridData = {};
-      _hiddenCourseIds = {};
-      _archives = [];
-      _errorMessage = null;
-      _isLoading = true;
-      notifyListeners();
+    if (!clearCurrent &&
+        currentTerm.year == year &&
+        currentTerm.semester == semester) {
+      await loadSemesterStart();
+      await loadArchiveList();
+      return courses.isNotEmpty || await loadCachedCoursesIfAvailable();
     }
+
+    return switchTerm(term, loadCache: true);
+  }
+
+  Future<int> applyFetchedCoursesForTerm({
+    required CourseTerm term,
+    required List<Map<String, dynamic>> rawCourses,
+    bool resetHidden = true,
+  }) async {
+    if (_userId == null) return 0;
+
+    _currentTerm = term;
 
     await loadSemesterStart();
     await loadArchiveList();
 
-    final hasCache = await loadCachedCoursesIfAvailable();
-    if (!hasCache && clearCurrent) {
-      _isLoading = false;
-      notifyListeners();
-    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_activeArchiveKey);
 
-    if (await CourseReminderService.instance.isEnabled()) {
-      await CourseReminderService.instance.reschedule(
-        courses: courses,
-        semesterStart: semesterStart,
-      );
-    }
+    final targetCached = await _loadFromCache(_currentCacheKey);
+    _courses = targetCached ?? [];
+    _buildGrid();
 
-    _syncWidget();
-    return hasCache;
+    return applyFetchedCourses(
+      rawCourses,
+      resetHidden: resetHidden,
+    );
   }
 
   // ====== 存档管理 ======

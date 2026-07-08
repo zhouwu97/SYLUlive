@@ -160,7 +160,7 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
               child: Row(
                 children: [
                   Text(
-                    '选择导入学期',
+                    '选择拉取学期',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -175,7 +175,7 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
               child: Row(
                 children: [
                   Text(
-                    '默认推荐当前学期，可切换历史学期',
+                    '拉取当前展示学期会刷新当前页，拉取其他学期会自动切换到对应学期',
                     style: TextStyle(
                       fontSize: 14,
                       color: CampusTheme.subText,
@@ -261,7 +261,7 @@ class _CourseImportSheetState extends State<CourseImportSheet> {
                         ),
                       )
                     : const Text(
-                        '查询课表',
+                        '拉取课表',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,

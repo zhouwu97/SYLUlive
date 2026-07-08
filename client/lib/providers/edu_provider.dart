@@ -473,9 +473,18 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        if (data['courses'] != null && (data['courses'] as List).isNotEmpty) {
+        final courses = data['courses'];
+        final courseCount = courses is List ? courses.length : -1;
+
+        debugPrint(
+          'Edu getCourses result: success=${data['success']}, '
+          'year=${data['year']}, semester=${data['semester']}, '
+          'courses=$courseCount, message=${data['message']}',
+        );
+
+        if (courses != null && (courses as List).isNotEmpty) {
           return OperationResult.ok(
-            List<Map<String, dynamic>>.from(data['courses']),
+            List<Map<String, dynamic>>.from(courses),
           );
         }
         final errorMsg =

@@ -22,76 +22,125 @@ class CourseEmptyStateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const cardPrimary = Color(0xFF168B7D);
+
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 24),
-          decoration: CampusTheme.cardDecoration(isDark),
-          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isDark ? CampusTheme.darkCard : Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: isDark
+                    ? Colors.black.withValues(alpha: 0.3)
+                    : Colors.black.withValues(alpha: 0.05),
+                blurRadius: 16,
+                spreadRadius: 0,
+                offset: const Offset(0, 6),
+              ),
+            ],
+            border: Border.all(
+              color: isDark ? Colors.white12 : Colors.white,
+              width: 1.5,
+            ),
+          ),
+          padding: const EdgeInsets.all(32),
           child: Column(
             children: [
-              Icon(
-                _getIcon(),
-                size: 48,
-                color: CampusTheme.primary,
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      cardPrimary.withValues(alpha: 0.15),
+                      cardPrimary.withValues(alpha: 0.05),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _getIcon(),
+                  size: 42,
+                  color: cardPrimary.withValues(alpha: 0.85),
+                ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               Text(
                 _getTitle(),
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 19,
                   fontWeight: FontWeight.w800,
                   color: isDark ? Colors.white : CampusTheme.text,
+                  letterSpacing: 0.2,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               if (type == CourseEmptyStateType.noCache &&
                   recommendedTerm != null) ...[
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
-                    color: CampusTheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    color: cardPrimary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     '推荐导入 ${recommendedTerm!.title}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: CampusTheme.primary,
+                      color: cardPrimary.withValues(alpha: 0.85),
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
               ],
               Text(
                 _getDescription(),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
-                  color: CampusTheme.subText,
-                  height: 1.5,
+                  color: isDark ? Colors.white70 : CampusTheme.subText,
+                  height: 1.6,
                 ),
               ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: onMainAction,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: CampusTheme.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+              const SizedBox(height: 32),
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: cardPrimary,
+                  boxShadow: [
+                    BoxShadow(
+                      color: cardPrimary.withValues(alpha: 0.18),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  _getMainActionText(),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+                child: ElevatedButton(
+                  onPressed: onMainAction,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    minimumSize: const Size(double.infinity, 52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    _getMainActionText(),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ),
@@ -108,9 +157,10 @@ class CourseEmptyStateCard extends StatelessWidget {
                   ),
                   child: Text(
                     _getSecondaryActionText(),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white60 : CampusTheme.subText,
                     ),
                   ),
                 ),
@@ -220,7 +270,7 @@ class CourseEmptyStateCard extends StatelessWidget {
         return '绑定教务账号';
       case CourseEmptyStateType.noCache:
       case CourseEmptyStateType.currentTermNoCache:
-        return '从教务导入课表';
+        return '课表拉取';
     }
   }
 

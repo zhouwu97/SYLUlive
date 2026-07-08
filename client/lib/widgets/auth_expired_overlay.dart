@@ -305,7 +305,8 @@ class AuthExpiredManager {
   }) {
     if (!shouldShow()) return;
 
-    final overlay = Overlay.of(context);
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
     _currentOverlay?.remove();
 
     _currentOverlay = OverlayEntry(

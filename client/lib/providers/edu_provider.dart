@@ -60,6 +60,7 @@ class EduProvider extends ChangeNotifier {
   final Map<String, EduGradeDetail> _gradeDetailCache = {};
   final Map<String, AcademicSituationCacheEntry> _academicSituationCache = {};
   int _statusGeneration = 0;
+  bool _eduRequestBusy = false;
 
   bool get isBound => _isBound;
   String get studentId => _studentId;
@@ -118,6 +119,18 @@ class EduProvider extends ChangeNotifier {
             : grade.name;
 
     return '${_userId ?? ''}|$year|$semester|$stableId';
+  }
+
+  Future<T> _runEduRequest<T>(Future<T> Function() task) async {
+    while (_eduRequestBusy) {
+      await Future.delayed(const Duration(milliseconds: 120));
+    }
+    _eduRequestBusy = true;
+    try {
+      return await task();
+    } finally {
+      _eduRequestBusy = false;
+    }
   }
 
   EduGradeDetail? getCachedGradeDetail(
@@ -464,72 +477,74 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('用户未登录');
     }
 
-    try {
-      // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
-      final response = await _authDio.post(
-        '/edu/courses',
-        data: {'year': year, 'semester': semester},
-      );
-
-      if (response.statusCode == 200) {
-        final data = response.data;
-        final courses = data['courses'];
-        final courseCount = courses is List ? courses.length : -1;
-
-        debugPrint(
-          'Edu getCourses result: success=${data['success']}, '
-          'year=${data['year']}, semester=${data['semester']}, '
-          'courses=$courseCount, message=${data['message']}',
+    return _runEduRequest(() async {
+      try {
+        // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
+        final response = await _authDio.post(
+          '/edu/courses',
+          data: {'year': year, 'semester': semester},
         );
 
-        if (courses != null && (courses as List).isNotEmpty) {
-          return OperationResult.ok(
-            List<Map<String, dynamic>>.from(courses),
+        if (response.statusCode == 200) {
+          final data = response.data;
+          final courses = data['courses'];
+          final courseCount = courses is List ? courses.length : -1;
+
+          debugPrint(
+            'Edu getCourses result: success=${data['success']}, '
+            'year=${data['year']}, semester=${data['semester']}, '
+            'courses=$courseCount, message=${data['message']}',
           );
-        }
-        final errorMsg =
-            (data['error'] ?? data['message'] ?? data['detail'] ?? '')
-                .toString();
-        if (errorMsg.isNotEmpty) {
-          return OperationResult.fail(errorMsg);
-        }
-        if (data['success'] == false) {
-          return OperationResult.fail(data['message'] ?? '获取课表失败');
-        }
-      }
-      return OperationResult.fail('获取课表失败');
-    } on DioException catch (e) {
-      final errorMsg = _parseDioError(e);
-      if (errorMsg.contains('未登录') ||
-          errorMsg.contains('过期') ||
-          errorMsg.contains('重新登录') ||
-          errorMsg.contains('会话') ||
-          errorMsg.contains('cookie') ||
-          errorMsg.contains('暂未开放') ||
-          errorMsg.contains('失效') ||
-          errorMsg.contains('Cookie')) {
-        final rebindSuccess = await _trySilentRelogin();
-        if (rebindSuccess) {
-          try {
-            final retryResp = await _authDio.post(
-              '/edu/courses',
-              data: {'year': year, 'semester': semester},
+
+          if (courses != null && (courses as List).isNotEmpty) {
+            return OperationResult.ok(
+              List<Map<String, dynamic>>.from(courses),
             );
-            if (retryResp.statusCode == 200 &&
-                retryResp.data['courses'] != null &&
-                (retryResp.data['courses'] as List).isNotEmpty) {
-              return OperationResult.ok(
-                List<Map<String, dynamic>>.from(retryResp.data['courses']),
-              );
-            }
-          } catch (_) {}
-        } else {
-          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+          }
+          final errorMsg =
+              (data['error'] ?? data['message'] ?? data['detail'] ?? '')
+                  .toString();
+          if (errorMsg.isNotEmpty) {
+            return OperationResult.fail(errorMsg);
+          }
+          if (data['success'] == false) {
+            return OperationResult.fail(data['message'] ?? '获取课表失败');
+          }
         }
+        return OperationResult.fail('获取课表失败');
+      } on DioException catch (e) {
+        final errorMsg = _parseDioError(e);
+        if (errorMsg.contains('未登录') ||
+            errorMsg.contains('过期') ||
+            errorMsg.contains('重新登录') ||
+            errorMsg.contains('会话') ||
+            errorMsg.contains('cookie') ||
+            errorMsg.contains('暂未开放') ||
+            errorMsg.contains('失效') ||
+            errorMsg.contains('Cookie')) {
+          final rebindSuccess = await _trySilentRelogin();
+          if (rebindSuccess) {
+            try {
+              final retryResp = await _authDio.post(
+                '/edu/courses',
+                data: {'year': year, 'semester': semester},
+              );
+              if (retryResp.statusCode == 200 &&
+                  retryResp.data['courses'] != null &&
+                  (retryResp.data['courses'] as List).isNotEmpty) {
+                return OperationResult.ok(
+                  List<Map<String, dynamic>>.from(retryResp.data['courses']),
+                );
+              }
+            } catch (_) {}
+          } else {
+            return OperationResult.fail('教务登录状态已失效，请重新绑定');
+          }
+        }
+        debugPrint('获取课表失败: $errorMsg');
+        return OperationResult.fail(errorMsg);
       }
-      debugPrint('获取课表失败: $errorMsg');
-      return OperationResult.fail(errorMsg);
-    }
+    });
   }
 
   /// 获取成绩 — 始终请求网络，返回已解析的 [EduGrade] 列表。
@@ -603,54 +618,56 @@ class EduProvider extends ChangeNotifier {
       );
     }
 
-    try {
-      final response = await request();
-      if (_userId != requestUserId) {
-        return OperationResult.fail('用户已切换');
-      }
-      if (response.statusCode == 200) {
-        final detail = EduGradeDetail.fromJson(
-          Map<String, dynamic>.from(response.data),
-        );
-        if (detail.success && detail.components.isNotEmpty) {
-          _gradeDetailCache[cacheKey] = detail;
+    return _runEduRequest(() async {
+      try {
+        final response = await request();
+        if (_userId != requestUserId) {
+          return OperationResult.fail('用户已切换');
         }
-        return OperationResult.ok(detail);
-      }
-      return OperationResult.fail('获取成绩构成失败');
-    } on DioException catch (e) {
-      final errorMsg = _parseDioError(e);
-      if (errorMsg.contains('未登录') ||
-          errorMsg.contains('过期') ||
-          errorMsg.contains('重新登录') ||
-          errorMsg.contains('会话') ||
-          errorMsg.contains('cookie') ||
-          errorMsg.contains('失效') ||
-          errorMsg.contains('Cookie')) {
-        final rebindSuccess = await _trySilentRelogin();
-        if (rebindSuccess) {
-          try {
-            final retryResp = await request();
-            if (_userId != requestUserId) {
-              return OperationResult.fail('用户已切换');
-            }
-            if (retryResp.statusCode == 200) {
-              final detail = EduGradeDetail.fromJson(
-                Map<String, dynamic>.from(retryResp.data),
-              );
-              if (detail.success && detail.components.isNotEmpty) {
-                _gradeDetailCache[cacheKey] = detail;
+        if (response.statusCode == 200) {
+          final detail = EduGradeDetail.fromJson(
+            Map<String, dynamic>.from(response.data),
+          );
+          if (detail.success && detail.components.isNotEmpty) {
+            _gradeDetailCache[cacheKey] = detail;
+          }
+          return OperationResult.ok(detail);
+        }
+        return OperationResult.fail('获取成绩构成失败');
+      } on DioException catch (e) {
+        final errorMsg = _parseDioError(e);
+        if (errorMsg.contains('未登录') ||
+            errorMsg.contains('过期') ||
+            errorMsg.contains('重新登录') ||
+            errorMsg.contains('会话') ||
+            errorMsg.contains('cookie') ||
+            errorMsg.contains('失效') ||
+            errorMsg.contains('Cookie')) {
+          final rebindSuccess = await _trySilentRelogin();
+          if (rebindSuccess) {
+            try {
+              final retryResp = await request();
+              if (_userId != requestUserId) {
+                return OperationResult.fail('用户已切换');
               }
-              return OperationResult.ok(detail);
-            }
-          } catch (_) {}
-        } else {
-          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+              if (retryResp.statusCode == 200) {
+                final detail = EduGradeDetail.fromJson(
+                  Map<String, dynamic>.from(retryResp.data),
+                );
+                if (detail.success && detail.components.isNotEmpty) {
+                  _gradeDetailCache[cacheKey] = detail;
+                }
+                return OperationResult.ok(detail);
+              }
+            } catch (_) {}
+          } else {
+            return OperationResult.fail('教务登录状态已失效，请重新绑定');
+          }
         }
+        debugPrint('获取成绩构成失败: $errorMsg');
+        return OperationResult.fail(errorMsg);
       }
-      debugPrint('获取成绩构成失败: $errorMsg');
-      return OperationResult.fail(errorMsg);
-    }
+    });
   }
 
   Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation({
@@ -668,65 +685,67 @@ class EduProvider extends ChangeNotifier {
       );
     }
 
-    try {
-      final response = await request();
-      if (_userId != requestUserId) {
-        return OperationResult.fail('用户已切换');
-      }
-      if (response.statusCode == 200) {
-        final situation = EduAcademicSituation.fromJson(
-          Map<String, dynamic>.from(response.data),
-        );
-        _academicSituationCache[_academicSituationCacheKey(requestUserId)] =
-            AcademicSituationCacheEntry(
-          data: situation,
-          updatedAt: DateTime.now(),
-        );
-        if (!situation.success) {
-          return OperationResult.fail(situation.message ?? '获取学业情况失败');
+    return _runEduRequest(() async {
+      try {
+        final response = await request();
+        if (_userId != requestUserId) {
+          return OperationResult.fail('用户已切换');
         }
-        return OperationResult.ok(situation);
-      }
-      return OperationResult.fail('获取学业情况失败');
-    } on DioException catch (e) {
-      final errorMsg = _parseDioError(e);
-      if (errorMsg.contains('未登录') ||
-          errorMsg.contains('过期') ||
-          errorMsg.contains('重新登录') ||
-          errorMsg.contains('会话') ||
-          errorMsg.contains('cookie') ||
-          errorMsg.contains('失效') ||
-          errorMsg.contains('Cookie')) {
-        final rebindSuccess = await _trySilentRelogin();
-        if (rebindSuccess) {
-          try {
-            final retryResp = await request();
-            if (_userId != requestUserId) {
-              return OperationResult.fail('用户已切换');
-            }
-            if (retryResp.statusCode == 200) {
-              final situation = EduAcademicSituation.fromJson(
-                Map<String, dynamic>.from(retryResp.data),
-              );
-              _academicSituationCache[
-                      _academicSituationCacheKey(requestUserId)] =
-                  AcademicSituationCacheEntry(
-                data: situation,
-                updatedAt: DateTime.now(),
-              );
-              if (!situation.success) {
-                return OperationResult.fail(situation.message ?? '获取学业情况失败');
+        if (response.statusCode == 200) {
+          final situation = EduAcademicSituation.fromJson(
+            Map<String, dynamic>.from(response.data),
+          );
+          _academicSituationCache[_academicSituationCacheKey(requestUserId)] =
+              AcademicSituationCacheEntry(
+            data: situation,
+            updatedAt: DateTime.now(),
+          );
+          if (!situation.success) {
+            return OperationResult.fail(situation.message ?? '获取学业情况失败');
+          }
+          return OperationResult.ok(situation);
+        }
+        return OperationResult.fail('获取学业情况失败');
+      } on DioException catch (e) {
+        final errorMsg = _parseDioError(e);
+        if (errorMsg.contains('未登录') ||
+            errorMsg.contains('过期') ||
+            errorMsg.contains('重新登录') ||
+            errorMsg.contains('会话') ||
+            errorMsg.contains('cookie') ||
+            errorMsg.contains('失效') ||
+            errorMsg.contains('Cookie')) {
+          final rebindSuccess = await _trySilentRelogin();
+          if (rebindSuccess) {
+            try {
+              final retryResp = await request();
+              if (_userId != requestUserId) {
+                return OperationResult.fail('用户已切换');
               }
-              return OperationResult.ok(situation);
-            }
-          } catch (_) {}
-        } else {
-          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+              if (retryResp.statusCode == 200) {
+                final situation = EduAcademicSituation.fromJson(
+                  Map<String, dynamic>.from(retryResp.data),
+                );
+                _academicSituationCache[
+                        _academicSituationCacheKey(requestUserId)] =
+                    AcademicSituationCacheEntry(
+                  data: situation,
+                  updatedAt: DateTime.now(),
+                );
+                if (!situation.success) {
+                  return OperationResult.fail(situation.message ?? '获取学业情况失败');
+                }
+                return OperationResult.ok(situation);
+              }
+            } catch (_) {}
+          } else {
+            return OperationResult.fail('教务登录状态已失效，请重新绑定');
+          }
         }
+        debugPrint('获取学业情况失败: $errorMsg');
+        return OperationResult.fail(errorMsg);
       }
-      debugPrint('获取学业情况失败: $errorMsg');
-      return OperationResult.fail(errorMsg);
-    }
+    });
   }
 
   // 获取成绩（原始数据，内部使用）
@@ -738,56 +757,58 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('用户未登录');
     }
 
-    try {
-      // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
-      final response = await _authDio.post(
-        '/edu/grades',
-        data: {'year': year, 'semester': semester},
-      );
+    return _runEduRequest(() async {
+      try {
+        // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
+        final response = await _authDio.post(
+          '/edu/grades',
+          data: {'year': year, 'semester': semester},
+        );
 
-      if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['grades'] != null) {
-          return OperationResult.ok(
-            List<Map<String, dynamic>>.from(data['grades']),
-          );
-        }
-        if (data['error'] != null) {
-          return OperationResult.fail(data['error'].toString());
-        }
-      }
-      return OperationResult.fail('获取成绩失败');
-    } on DioException catch (e) {
-      final errorMsg = _parseDioError(e);
-      if (errorMsg.contains('未登录') ||
-          errorMsg.contains('过期') ||
-          errorMsg.contains('重新登录') ||
-          errorMsg.contains('会话') ||
-          errorMsg.contains('cookie') ||
-          errorMsg.contains('暂未开放') ||
-          errorMsg.contains('失效') ||
-          errorMsg.contains('Cookie')) {
-        final rebindSuccess = await _trySilentRelogin();
-        if (rebindSuccess) {
-          try {
-            final retryResp = await _authDio.post(
-              '/edu/grades',
-              data: {'year': year, 'semester': semester},
+        if (response.statusCode == 200) {
+          final data = response.data;
+          if (data['grades'] != null) {
+            return OperationResult.ok(
+              List<Map<String, dynamic>>.from(data['grades']),
             );
-            if (retryResp.statusCode == 200 &&
-                retryResp.data['grades'] != null) {
-              return OperationResult.ok(
-                List<Map<String, dynamic>>.from(retryResp.data['grades']),
-              );
-            }
-          } catch (_) {}
-        } else {
-          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+          }
+          if (data['error'] != null) {
+            return OperationResult.fail(data['error'].toString());
+          }
         }
+        return OperationResult.fail('获取成绩失败');
+      } on DioException catch (e) {
+        final errorMsg = _parseDioError(e);
+        if (errorMsg.contains('未登录') ||
+            errorMsg.contains('过期') ||
+            errorMsg.contains('重新登录') ||
+            errorMsg.contains('会话') ||
+            errorMsg.contains('cookie') ||
+            errorMsg.contains('暂未开放') ||
+            errorMsg.contains('失效') ||
+            errorMsg.contains('Cookie')) {
+          final rebindSuccess = await _trySilentRelogin();
+          if (rebindSuccess) {
+            try {
+              final retryResp = await _authDio.post(
+                '/edu/grades',
+                data: {'year': year, 'semester': semester},
+              );
+              if (retryResp.statusCode == 200 &&
+                  retryResp.data['grades'] != null) {
+                return OperationResult.ok(
+                  List<Map<String, dynamic>>.from(retryResp.data['grades']),
+                );
+              }
+            } catch (_) {}
+          } else {
+            return OperationResult.fail('教务登录状态已失效，请重新绑定');
+          }
+        }
+        debugPrint('获取成绩失败: $errorMsg');
+        return OperationResult.fail(errorMsg);
       }
-      debugPrint('获取成绩失败: $errorMsg');
-      return OperationResult.fail(errorMsg);
-    }
+    });
   }
 
   /// 将课表同步到本地数据库（供课表页展示）

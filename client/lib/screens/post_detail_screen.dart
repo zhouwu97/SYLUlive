@@ -197,12 +197,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     _activeTargetReplyId = widget.targetReplyId;
     _loadPost();
-    _loadWaterSectionPermission(forceRefresh: true);
   }
 
   Future<void> _loadWaterSectionPermission({bool forceRefresh = false}) async {
     final post = _post ?? widget.initialPost;
     if (post == null || post.boardId != 1 || post.postType.isEmpty) return;
+    if (!mounted) return;
     await context
         .read<WaterModeratorProvider>()
         .loadMyPermission(post.postType, forceRefresh: forceRefresh);

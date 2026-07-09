@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
+import '../screens/image_viewer_screen.dart';
 import '../screens/user_home_screen.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
@@ -394,7 +395,11 @@ class MarketPostCard extends StatelessWidget {
       double? height, bool isDark,
       {required bool isGrid}) {
     final count = images.length;
-    final imgUrl = ApiConstants.fullUrl(images[0].url);
+    final imageUrls = images
+        .where((image) => image.url.trim().isNotEmpty)
+        .map((image) => ApiConstants.fullUrl(image.url))
+        .toList();
+    final imgUrl = imageUrls[0];
 
     Widget imageWidget = CachedNetworkImage(
       cacheManager: PostImageCache.manager,
@@ -414,34 +419,38 @@ class MarketPostCard extends StatelessWidget {
       imageWidget = AspectRatio(aspectRatio: 1, child: imageWidget);
     }
 
-    return ClipRRect(
-      borderRadius: isGrid
-          ? const BorderRadius.vertical(
-              top: Radius.circular(_CardTokens.cardRadius))
-          : BorderRadius.circular(14),
-      child: Stack(
-        children: [
-          imageWidget,
-          Positioned(
-            left: 4,
-            top: 4,
-            child: _buildImageBadge(_marketTypeLabel(post)),
-          ),
-          if (post.status == 'sold' || post.status == 'closed')
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openImageViewer(context, imageUrls, 0),
+      child: ClipRRect(
+        borderRadius: isGrid
+            ? const BorderRadius.vertical(
+                top: Radius.circular(_CardTokens.cardRadius))
+            : BorderRadius.circular(14),
+        child: Stack(
+          children: [
+            imageWidget,
             Positioned(
-              right: 4,
+              left: 4,
               top: 4,
-              child: _buildStatusCornerBadge(
-                post.status == 'sold' ? '已售出' : '已结束',
-              ),
-            )
-          else if (count > 1)
-            Positioned(
-              right: 4,
-              top: 4,
-              child: _buildImageBadge('$count图'),
+              child: _buildImageBadge(_marketTypeLabel(post)),
             ),
-        ],
+            if (post.status == 'sold' || post.status == 'closed')
+              Positioned(
+                right: 4,
+                top: 4,
+                child: _buildStatusCornerBadge(
+                  post.status == 'sold' ? '已售出' : '已结束',
+                ),
+              )
+            else if (count > 1)
+              Positioned(
+                right: 4,
+                top: 4,
+                child: _buildImageBadge('$count图'),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -723,6 +732,23 @@ class MarketPostCard extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => UserHomeScreen(userId: author.id)),
+    );
+  }
+
+  void _openImageViewer(
+    BuildContext context,
+    List<String> imageUrls,
+    int initialIndex,
+  ) {
+    if (imageUrls.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          imageUrls: imageUrls,
+          initialIndex: initialIndex,
+        ),
+      ),
     );
   }
 

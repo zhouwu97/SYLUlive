@@ -24,6 +24,37 @@ class ToolboxScreen extends StatefulWidget {
 }
 
 class _ToolboxScreenState extends State<ToolboxScreen> {
+  static const List<_WebsiteDirectoryItem> _websiteDirectoryItems = [
+    _WebsiteDirectoryItem(
+      title: '学校官网',
+      subtitle: '待添加网址',
+      icon: Icons.account_balance_outlined,
+      color: Color(0xFF55B97A),
+      url: '',
+    ),
+    _WebsiteDirectoryItem(
+      title: '教务相关',
+      subtitle: '待添加网址',
+      icon: Icons.school_outlined,
+      color: Color(0xFF826FE8),
+      url: '',
+    ),
+    _WebsiteDirectoryItem(
+      title: '比赛平台',
+      subtitle: '待添加网址',
+      icon: Icons.emoji_events_outlined,
+      color: Color(0xFFE9A23B),
+      url: '',
+    ),
+    _WebsiteDirectoryItem(
+      title: '学习工具',
+      subtitle: '待添加网址',
+      icon: Icons.auto_stories_outlined,
+      color: Color(0xFF35B7C4),
+      url: '',
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -158,7 +189,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 ),
                                 useCustomBackground: useCustomBackground,
                               ),
-
                               _buildToolCard(
                                 context,
                                 icon: Icons.fitness_center,
@@ -180,6 +210,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                     builder: (_) => const ExamScheduleScreen(),
                                   ),
                                 ),
+                                useCustomBackground: useCustomBackground,
+                              ),
+                              _buildToolCard(
+                                context,
+                                icon: Icons.travel_explore_outlined,
+                                color: const Color(0xFF4F8DF7),
+                                title: '网站大全',
+                                subtitle: '用得到的网站',
+                                onTap: () => _showWebsiteDirectory(context),
                                 useCustomBackground: useCustomBackground,
                               ),
                             ],
@@ -400,6 +439,180 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     }
   }
 
+  void _showWebsiteDirectory(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        final backgroundColor =
+            isDark ? const Color(0xFF171B24) : const Color(0xFFFFFBF5);
+
+        return DraggableScrollableSheet(
+          initialChildSize: 0.58,
+          minChildSize: 0.38,
+          maxChildSize: 0.88,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color:
+                            isDark ? Colors.white24 : const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    '网站大全',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : const Color(0xFF20232A),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '常用网站会放在这里，后续补充网址后可直接打开。',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.white60 : const Color(0xFF7D8492),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  ..._websiteDirectoryItems.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildWebsiteDirectoryCard(
+                        context,
+                        item: item,
+                        isDark: isDark,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildWebsiteDirectoryCard(
+    BuildContext context, {
+    required _WebsiteDirectoryItem item,
+    required bool isDark,
+  }) {
+    final backgroundColor = isDark ? const Color(0xFF202633) : Colors.white;
+    final borderColor = isDark ? Colors.white10 : const Color(0xFFEEF0F5);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _openWebsiteDirectoryItem(context, item),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: borderColor),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: item.color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(item.icon, color: item.color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF20232A),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            isDark ? Colors.white60 : const Color(0xFF7D8492),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.open_in_new,
+                size: 18,
+                color: isDark ? Colors.white38 : const Color(0xFF94A3B8),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openWebsiteDirectoryItem(
+    BuildContext context,
+    _WebsiteDirectoryItem item,
+  ) async {
+    final url = item.url;
+    if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('网站地址待添加')),
+      );
+      return;
+    }
+
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法打开链接')),
+      );
+    }
+  }
+
   Widget _buildToolCard(
     BuildContext context, {
     required IconData icon,
@@ -496,6 +709,22 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       ),
     );
   }
+}
+
+class _WebsiteDirectoryItem {
+  const _WebsiteDirectoryItem({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    this.url,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final String? url;
 }
 
 /// 体测密码输入门控 — 独立的 StatefulWidget，避免 controller 生命周期问题

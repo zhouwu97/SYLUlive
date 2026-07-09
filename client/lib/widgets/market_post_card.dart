@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
-import '../screens/image_viewer_screen.dart';
 import '../screens/user_home_screen.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
@@ -15,9 +14,7 @@ final class _CardTokens {
       isDark ? const Color(0xFF1E2226) : Colors.white;
 
   static Color borderColor(bool isDark) =>
-      isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : const Color(0xFFF1E5DC);
+      isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF1E5DC);
 
   static Color titleColor(bool isDark) =>
       isDark ? Colors.white : const Color(0xFF1F2328);
@@ -28,10 +25,9 @@ final class _CardTokens {
   static Color accent(bool isDark) =>
       isDark ? const Color(0xFFFFA06D) : const Color(0xFFFF7A45);
 
-  static Color accentSoft(bool isDark) =>
-      isDark
-          ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
-          : const Color(0xFFFFF0E8);
+  static Color accentSoft(bool isDark) => isDark
+      ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
+      : const Color(0xFFFFF0E8);
 
   static Color priceColor(bool _) => const Color(0xFFE76F51);
 
@@ -130,8 +126,8 @@ class MarketPostCard extends StatelessWidget {
               children: [
                 // Left: image (96×96, with type badge)
                 if (validImages.isNotEmpty)
-                  _buildCover(
-                      context, validImages, 96, 96, isDark, isGrid: false)
+                  _buildCover(context, validImages, 96, 96, isDark,
+                      isGrid: false)
                 else
                   _buildNoImageCover(96, 96, isDark, isGrid: false),
                 const SizedBox(width: 10),
@@ -186,8 +182,7 @@ class MarketPostCard extends StatelessWidget {
                               ),
                               Text(
                                 post.price.toStringAsFixed(
-                                    post.price.truncateToDouble() ==
-                                            post.price
+                                    post.price.truncateToDouble() == post.price
                                         ? 0
                                         : 2),
                                 style: TextStyle(
@@ -230,8 +225,7 @@ class MarketPostCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                          if (typeLabel.isNotEmpty &&
-                              statusLabel == null) ...[
+                          if (typeLabel.isNotEmpty && statusLabel == null) ...[
                             const SizedBox(width: 4),
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -355,8 +349,8 @@ class MarketPostCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (validImages.isNotEmpty)
-                _buildCover(context, validImages, double.infinity, null,
-                    isDark, isGrid: true)
+                _buildCover(context, validImages, double.infinity, null, isDark,
+                    isGrid: true)
               else
                 _buildNoImageCover(double.infinity, 0, isDark, isGrid: true),
               Padding(
@@ -396,8 +390,8 @@ class MarketPostCard extends StatelessWidget {
 
   // ── Cover & helpers ───────────────────────────────────────────────
 
-  Widget _buildCover(BuildContext context, List<PostImage> images,
-      double width, double? height, bool isDark,
+  Widget _buildCover(BuildContext context, List<PostImage> images, double width,
+      double? height, bool isDark,
       {required bool isGrid}) {
     final count = images.length;
     final imgUrl = ApiConstants.fullUrl(images[0].url);
@@ -427,21 +421,7 @@ class MarketPostCard extends StatelessWidget {
           : BorderRadius.circular(14),
       child: Stack(
         children: [
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ImageViewerScreen(
-                    imageUrls:
-                        images.map((img) => ApiConstants.fullUrl(img.url)).toList(),
-                    initialIndex: 0,
-                  ),
-                ),
-              );
-            },
-            child: imageWidget,
-          ),
+          imageWidget,
           Positioned(
             left: 4,
             top: 4,

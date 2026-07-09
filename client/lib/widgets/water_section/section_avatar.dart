@@ -29,21 +29,29 @@ class SectionAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Color effectiveAccentColor = accentColor ?? Theme.of(context).primaryColor;
-    if (accentColor == null && section.colorHex.isNotEmpty && section.colorHex != '#') {
+    if (accentColor == null &&
+        section.colorHex.isNotEmpty &&
+        section.colorHex != '#') {
       try {
-        effectiveAccentColor = Color(int.parse(section.colorHex.substring(1), radix: 16) + 0xFF000000);
+        effectiveAccentColor = Color(
+            int.parse(section.colorHex.substring(1), radix: 16) + 0xFF000000);
       } catch (_) {}
     }
 
-    final fallbackIcon = iconKeyToIconData(section.iconKey, fallbackSlug: section.slug);
-    final backgroundColor = effectiveAccentColor.withValues(alpha: isDark ? 0.16 : 0.10);
+    final fallbackIcon =
+        iconKeyToIconData(section.iconKey, fallbackSlug: section.slug);
+    final backgroundColor =
+        effectiveAccentColor.withValues(alpha: isDark ? 0.16 : 0.10);
     final iconColor = effectiveAccentColor;
 
-    final border = showBorder 
+    final border = showBorder
         ? Border.all(
-            color: borderColor ?? (isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08)),
+            color: borderColor ??
+                (isDark
+                    ? Colors.white.withValues(alpha: 0.12)
+                    : Colors.black.withValues(alpha: 0.08)),
             width: borderWidth,
-          ) 
+          )
         : null;
 
     Widget avatarContent;
@@ -54,7 +62,8 @@ class SectionAvatar extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
-        errorWidget: (context, url, error) => _buildFallback(fallbackIcon, iconColor, backgroundColor),
+        errorWidget: (context, url, error) =>
+            _buildFallback(fallbackIcon, iconColor, backgroundColor),
         placeholder: (context, url) => Container(color: backgroundColor),
       );
     } else {

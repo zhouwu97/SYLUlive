@@ -30,13 +30,14 @@ class MyCompetitionPlanCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final userNote = '${item['user_note'] ?? ''}'.trim();
-    
+
     // We only show one main status pill in the new design.
-    // If it's archived or finished, we show that. Otherwise we show time status if it's "待通知" or similar, 
-    // but the user spec says "主状态标签：例如 准备中 / 待通知". 
+    // If it's archived or finished, we show that. Otherwise we show time status if it's "待通知" or similar,
+    // but the user spec says "主状态标签：例如 准备中 / 待通知".
     // We can just show planStatus if it's not "关注中" (which we remove as per phase 8), otherwise timeStatus.
-    final String mainStatus = planStatusLabel == '关注中' ? timeStatusLabel : planStatusLabel;
-    
+    final String mainStatus =
+        planStatusLabel == '关注中' ? timeStatusLabel : planStatusLabel;
+
     Color statusColor;
     if (['已结束', '已归档'].contains(mainStatus)) {
       statusColor = CompetitionUiTokens.archivedColor(isDark);
@@ -91,17 +92,18 @@ class MyCompetitionPlanCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _buildInfoRow(
-            Icons.access_time_rounded, 
-            '报名安排：${deadlineText.isEmpty ? '时间待通知' : deadlineText}', 
+            Icons.access_time_rounded,
+            '报名安排：${deadlineText.isEmpty ? '时间待通知' : deadlineText}',
             isDark,
             iconColor: CompetitionUiTokens.warningColor(isDark),
           ),
           const SizedBox(height: 4),
           _buildInfoRow(
-            Icons.file_download_outlined, 
-            '来源：$sourceLabel', 
+            Icons.file_download_outlined,
+            '来源：$sourceLabel',
             isDark,
-            iconColor: CompetitionUiTokens.accent(isDark).withValues(alpha: 0.72),
+            iconColor:
+                CompetitionUiTokens.accent(isDark).withValues(alpha: 0.72),
           ),
           if (userNote.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -139,10 +141,12 @@ class MyCompetitionPlanCard extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String text, bool isDark, {Color? iconColor}) {
+  Widget _buildInfoRow(IconData icon, String text, bool isDark,
+      {Color? iconColor}) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: iconColor ?? CompetitionUiTokens.subColor(isDark)),
+        Icon(icon,
+            size: 14, color: iconColor ?? CompetitionUiTokens.subColor(isDark)),
         const SizedBox(width: 6),
         Expanded(
           child: Text(

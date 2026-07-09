@@ -9,39 +9,47 @@ class CompetitionStatusView {
   const CompetitionStatusView(this.label, this.color);
 }
 
-CompetitionStatusView resolveCompetitionStatus(CompetitionEvent event, bool isDark) {
+CompetitionStatusView resolveCompetitionStatus(
+    CompetitionEvent event, bool isDark) {
   final now = DateTime.now();
 
   // 1. Check registration end
   if (event.registrationEnd != null) {
     final regEnd = event.registrationEnd!;
     if (now.isAfter(regEnd)) {
-      return CompetitionStatusView('已结束', CompetitionUiTokens.archivedColor(isDark));
+      return CompetitionStatusView(
+          '已结束', CompetitionUiTokens.archivedColor(isDark));
     }
-    
+
     final daysLeft = regEnd.difference(now).inDays;
     if (daysLeft <= 3 && daysLeft >= 0) {
-      return CompetitionStatusView('即将截止', CompetitionUiTokens.upcomingColor(isDark));
+      return CompetitionStatusView(
+          '即将截止', CompetitionUiTokens.upcomingColor(isDark));
     }
-    
-    return CompetitionStatusView('报名中', CompetitionUiTokens.warningColor(isDark));
+
+    return CompetitionStatusView(
+        '报名中', CompetitionUiTokens.warningColor(isDark));
   }
-  
+
   // 2. Check event end (we only have eventStart in model, so we check if eventStart is passed)
   if (event.eventStart != null) {
     final evStart = event.eventStart!;
     if (now.isAfter(evStart)) {
-      return CompetitionStatusView('已结束', CompetitionUiTokens.archivedColor(isDark));
+      return CompetitionStatusView(
+          '已结束', CompetitionUiTokens.archivedColor(isDark));
     }
-    return CompetitionStatusView('比赛中', CompetitionUiTokens.warningColor(isDark));
+    return CompetitionStatusView(
+        '比赛中', CompetitionUiTokens.warningColor(isDark));
   }
 
   // 3. Fallbacks
   if (event.timeStatus == 'pending' || event.timeStatus == 'unknown') {
-    return CompetitionStatusView('待通知', CompetitionUiTokens.pendingColor(isDark));
+    return CompetitionStatusView(
+        '待通知', CompetitionUiTokens.pendingColor(isDark));
   }
 
-  return CompetitionStatusView('时间待确认', CompetitionUiTokens.pendingColor(isDark));
+  return CompetitionStatusView(
+      '时间待确认', CompetitionUiTokens.pendingColor(isDark));
 }
 
 String? getCompetitionCriticalTime(CompetitionEvent event) {

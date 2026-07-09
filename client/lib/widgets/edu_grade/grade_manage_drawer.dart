@@ -794,14 +794,13 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _statusRow(
-                  '上次检查', fmt(status.lastCheckAt), subColor, textColor),
+              _statusRow('上次检查', fmt(status.lastCheckAt), subColor, textColor),
               const SizedBox(height: 4),
               _statusRow(
                   '上次成功', fmt(status.lastSuccessAt), subColor, textColor),
               const SizedBox(height: 4),
-              _statusRow('连续失败', '${status.consecutiveFailures} 次',
-                  subColor, textColor),
+              _statusRow('连续失败', '${status.consecutiveFailures} 次', subColor,
+                  textColor),
               if (status.needAction != null) ...[
                 const SizedBox(height: 4),
                 _statusRow('需要处理', _needActionText(status.needAction!),

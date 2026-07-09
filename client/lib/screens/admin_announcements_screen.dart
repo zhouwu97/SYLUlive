@@ -9,7 +9,8 @@ class AdminAnnouncementsScreen extends StatefulWidget {
   const AdminAnnouncementsScreen({super.key});
 
   @override
-  State<AdminAnnouncementsScreen> createState() => _AdminAnnouncementsScreenState();
+  State<AdminAnnouncementsScreen> createState() =>
+      _AdminAnnouncementsScreenState();
 }
 
 class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
@@ -23,7 +24,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     });
   }
 
-  String _announcementDraftKey([int? id]) => 'announcement_draft_${id ?? 'new'}';
+  String _announcementDraftKey([int? id]) =>
+      'announcement_draft_${id ?? 'new'}';
 
   Future<void> _showAnnouncementEditor(
     BuildContext context, {
@@ -61,7 +63,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     final draftIncludeNewUsers = prefs.getBool('${draftKey}_include_new');
 
     titleCtrl.text = draftTitle ?? (announcement?['title']?.toString() ?? '');
-    contentCtrl.text = draftContent ?? (announcement?['content']?.toString() ?? '');
+    contentCtrl.text =
+        draftContent ?? (announcement?['content']?.toString() ?? '');
     isPinned = draftPinned ?? isPinned;
     if (draftStatus != null) status = draftStatus;
     if (draftDisplayMode != null) displayMode = draftDisplayMode;
@@ -90,7 +93,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text(isEditing ? '编辑公告' : '发布公告'),
           content: SingleChildScrollView(
             child: Column(
@@ -134,7 +138,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                   decoration: const InputDecoration(
                     labelText: '发布状态',
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   ),
                   items: const [
                     DropdownMenuItem(value: 'draft', child: Text('草稿')),
@@ -154,7 +159,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                   decoration: const InputDecoration(
                     labelText: '展示方式',
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   ),
                   items: const [
                     DropdownMenuItem(value: 'center', child: Text('公告中心')),
@@ -174,7 +180,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                   decoration: const InputDecoration(
                     labelText: '优先级',
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   ),
                   items: const [
                     DropdownMenuItem(value: 'normal', child: Text('普通')),
@@ -192,11 +199,14 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('定时发布'),
-                  subtitle: Text(publishAt != null ? '${publishAt!.toLocal()}'.substring(0, 16) : '立即发布'),
+                  subtitle: Text(publishAt != null
+                      ? '${publishAt!.toLocal()}'.substring(0, 16)
+                      : '立即发布'),
                   trailing: publishAt != null
                       ? IconButton(
                           icon: const Icon(Icons.clear),
-                          onPressed: () => setDialogState(() => publishAt = null),
+                          onPressed: () =>
+                              setDialogState(() => publishAt = null),
                         )
                       : null,
                   onTap: () async {
@@ -209,11 +219,14 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                     if (date == null || !ctx.mounted) return;
                     final time = await showTimePicker(
                       context: ctx,
-                      initialTime: publishAt != null ? TimeOfDay.fromDateTime(publishAt!) : TimeOfDay.now(),
+                      initialTime: publishAt != null
+                          ? TimeOfDay.fromDateTime(publishAt!)
+                          : TimeOfDay.now(),
                     );
                     if (time == null) return;
                     setDialogState(() {
-                      publishAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+                      publishAt = DateTime(date.year, date.month, date.day,
+                          time.hour, time.minute);
                     });
                     saveDraft();
                   },
@@ -222,11 +235,14 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('过期时间'),
-                  subtitle: Text(expiresAt != null ? '${expiresAt!.toLocal()}'.substring(0, 16) : '永不过期'),
+                  subtitle: Text(expiresAt != null
+                      ? '${expiresAt!.toLocal()}'.substring(0, 16)
+                      : '永不过期'),
                   trailing: expiresAt != null
                       ? IconButton(
                           icon: const Icon(Icons.clear),
-                          onPressed: () => setDialogState(() => expiresAt = null),
+                          onPressed: () =>
+                              setDialogState(() => expiresAt = null),
                         )
                       : null,
                   onTap: () async {
@@ -234,16 +250,20 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                       context: ctx,
                       initialDate: expiresAt ?? DateTime.now(),
                       firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+                      lastDate:
+                          DateTime.now().add(const Duration(days: 365 * 5)),
                     );
                     if (date == null || !ctx.mounted) return;
                     final time = await showTimePicker(
                       context: ctx,
-                      initialTime: expiresAt != null ? TimeOfDay.fromDateTime(expiresAt!) : const TimeOfDay(hour: 23, minute: 59),
+                      initialTime: expiresAt != null
+                          ? TimeOfDay.fromDateTime(expiresAt!)
+                          : const TimeOfDay(hour: 23, minute: 59),
                     );
                     if (time == null) return;
                     setDialogState(() {
-                      expiresAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+                      expiresAt = DateTime(date.year, date.month, date.day,
+                          time.hour, time.minute);
                     });
                     saveDraft();
                   },
@@ -279,7 +299,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     titleCtrl.removeListener(draftListener);
     contentCtrl.removeListener(draftListener);
 
-    if (ok == true && (titleCtrl.text.isNotEmpty || contentCtrl.text.isNotEmpty)) {
+    if (ok == true &&
+        (titleCtrl.text.isNotEmpty || contentCtrl.text.isNotEmpty)) {
       final dio = context.read<AuthProvider>().dio;
       final postData = {
         'title': titleCtrl.text,
@@ -294,7 +315,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
       };
       try {
         if (isEditing) {
-          await dio.put('${ApiConstants.noticesPath}/${announcement['id']}', data: postData);
+          await dio.put('${ApiConstants.noticesPath}/${announcement['id']}',
+              data: postData);
         } else {
           await dio.post(ApiConstants.noticesPath, data: postData);
         }
@@ -347,7 +369,9 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
         color: c.withOpacity(0.15),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Text(label, style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
+      child: Text(label,
+          style:
+              TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -374,7 +398,9 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
         color: c.withOpacity(0.12),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Text(label, style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
+      child: Text(label,
+          style:
+              TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -394,37 +420,46 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
               label: const Text('发布公告'),
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 44),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
           Expanded(
             child: FutureBuilder(
               key: _futureKey,
-              future: context.read<AuthProvider>().dio.get('${ApiConstants.noticesPath}/admin/list'),
+              future: context
+                  .read<AuthProvider>()
+                  .dio
+                  .get('${ApiConstants.noticesPath}/admin/list'),
               builder: (_, snap) {
-                if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+                if (!snap.hasData)
+                  return const Center(child: CircularProgressIndicator());
                 final list = (snap.data!.data as List?) ?? [];
                 if (list.isEmpty) {
                   return Center(
                     child: Text(
                       '暂无公告',
-                      style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]),
+                      style: TextStyle(
+                          color: isDark ? Colors.white54 : Colors.grey[600]),
                     ),
                   );
                 }
                 return ListView.builder(
-                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                  physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics()),
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                   itemCount: list.length,
                   itemBuilder: (_, i) {
                     final a = list[i];
                     return Card(
                       color: isDark ? Colors.grey[850] : Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                       margin: const EdgeInsets.only(bottom: 10),
                       child: ListTile(
-                        onTap: () => _showAnnouncementEditor(context, announcement: a),
+                        onTap: () =>
+                            _showAnnouncementEditor(context, announcement: a),
                         title: Row(
                           children: [
                             _announcementStatusChip(a, isDark),
@@ -447,30 +482,38 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                         ),
                         trailing: PopupMenuButton(
                           itemBuilder: (_) => [
-                            const PopupMenuItem(value: 'edit', child: Text('编辑')),
+                            const PopupMenuItem(
+                                value: 'edit', child: Text('编辑')),
                             PopupMenuItem(
                               value: 'pin',
-                              child: Text(a['is_pinned'] == true ? '取消置顶' : '置顶'),
+                              child:
+                                  Text(a['is_pinned'] == true ? '取消置顶' : '置顶'),
                             ),
                             const PopupMenuItem(
                               value: 'delete',
-                              child: Text('删除', style: TextStyle(color: Colors.red)),
+                              child: Text('删除',
+                                  style: TextStyle(color: Colors.red)),
                             ),
                           ],
                           onSelected: (v) async {
                             final dio = context.read<AuthProvider>().dio;
                             if (v == 'edit') {
-                              await _showAnnouncementEditor(context, announcement: a);
+                              await _showAnnouncementEditor(context,
+                                  announcement: a);
                             } else if (v == 'pin') {
                               try {
                                 await dio.put(
                                   '${ApiConstants.noticesPath}/${a['id']}',
-                                  data: {'is_pinned': !(a['is_pinned'] == true)},
+                                  data: {
+                                    'is_pinned': !(a['is_pinned'] == true)
+                                  },
                                 );
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text(a['is_pinned'] == true ? '已取消置顶' : '已置顶公告'),
+                                      content: Text(a['is_pinned'] == true
+                                          ? '已取消置顶'
+                                          : '已置顶公告'),
                                       backgroundColor: Colors.green,
                                     ),
                                   );
@@ -479,10 +522,13 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                               } catch (_) {}
                             } else if (v == 'delete') {
                               try {
-                                await dio.delete('${ApiConstants.noticesPath}/${a['id']}');
+                                await dio.delete(
+                                    '${ApiConstants.noticesPath}/${a['id']}');
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('公告已删除'), backgroundColor: Colors.green),
+                                    const SnackBar(
+                                        content: Text('公告已删除'),
+                                        backgroundColor: Colors.green),
                                   );
                                   _refresh();
                                 }

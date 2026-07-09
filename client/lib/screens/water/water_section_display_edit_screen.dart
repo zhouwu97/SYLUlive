@@ -47,8 +47,18 @@ class _WaterSectionDisplayEditScreenState
   bool _isUploadingAvatar = false;
 
   static const List<String> _presetColors = [
-    '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#EF4444',
-    '#F97316', '#EAB308', '#14B8A6', '#06B6D4', '#84CC16', '#64748B',
+    '#10B981',
+    '#3B82F6',
+    '#6366F1',
+    '#8B5CF6',
+    '#EC4899',
+    '#EF4444',
+    '#F97316',
+    '#EAB308',
+    '#14B8A6',
+    '#06B6D4',
+    '#84CC16',
+    '#64748B',
     '#7ED321',
   ];
 
@@ -93,7 +103,8 @@ class _WaterSectionDisplayEditScreenState
       final provider = context.read<WaterSectionProvider>();
       final service = provider.iconReviewService;
       if (service == null) return;
-      final state = await service.getCurrentSectionIconReview(widget.section.slug);
+      final state =
+          await service.getCurrentSectionIconReview(widget.section.slug);
       if (mounted) {
         setState(() {
           _pendingIconReview = state.pending;
@@ -174,7 +185,7 @@ class _WaterSectionDisplayEditScreenState
     final croppedBytes = await cropped.readAsBytes();
     final croppedName =
         'section_cover_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    
+
     if (!mounted) return null;
     final auth = context.read<AuthProvider>();
     final formData = FormData.fromMap({
@@ -244,7 +255,8 @@ class _WaterSectionDisplayEditScreenState
         final provider = context.read<WaterSectionProvider>();
         final service = provider.iconReviewService;
         if (service != null) {
-          final review = await service.submitSectionIconReview(widget.section.slug, avatarUrl, '更换版块头像申请');
+          final review = await service.submitSectionIconReview(
+              widget.section.slug, avatarUrl, '更换版块头像申请');
           setState(() {
             _pendingIconReview = review;
           });
@@ -264,7 +276,8 @@ class _WaterSectionDisplayEditScreenState
       final provider = context.read<WaterSectionProvider>();
       final service = provider.iconReviewService;
       if (service != null) {
-        await service.cancelSectionIconReview(widget.section.slug, _pendingIconReview!.id);
+        await service.cancelSectionIconReview(
+            widget.section.slug, _pendingIconReview!.id);
         setState(() {
           _pendingIconReview = null;
         });
@@ -351,8 +364,10 @@ class _WaterSectionDisplayEditScreenState
         : Theme.of(context).colorScheme.primary;
   }
 
-  InputDecoration _inputDecoration(String label, {String? hint, required bool isDark}) {
-    final borderColor = isDark ? Colors.white.withValues(alpha: 0.1) : const Color(0xFFE5E7EB);
+  InputDecoration _inputDecoration(String label,
+      {String? hint, required bool isDark}) {
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.1) : const Color(0xFFE5E7EB);
     return InputDecoration(
       labelText: label,
       hintText: hint,
@@ -374,7 +389,11 @@ class _WaterSectionDisplayEditScreenState
     );
   }
 
-  Widget _buildCard({required String title, required List<Widget> children, required bool isDark, String? subtitle}) {
+  Widget _buildCard(
+      {required String title,
+      required List<Widget> children,
+      required bool isDark,
+      String? subtitle}) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 14),
@@ -383,7 +402,9 @@ class _WaterSectionDisplayEditScreenState
         color: isDark ? const Color(0xFF1A1D21) : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFEDEFF3),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : const Color(0xFFEDEFF3),
         ),
         boxShadow: [
           if (!isDark)
@@ -423,10 +444,17 @@ class _WaterSectionDisplayEditScreenState
   }
 
   Widget _buildPreviewCard(bool isDark) {
-    final title = _titleController.text.isNotEmpty ? _titleController.text : '校园生活';
-    final subtitle = _subtitleController.text.isNotEmpty ? _subtitleController.text : '日常、宿舍、食堂、校园见闻';
-    final desc = _descriptionController.text.isNotEmpty ? _descriptionController.text : '分享校园日常...';
-    final btnText = _publishActionController.text.isNotEmpty ? _publishActionController.text : '发布帖子';
+    final title =
+        _titleController.text.isNotEmpty ? _titleController.text : '校园生活';
+    final subtitle = _subtitleController.text.isNotEmpty
+        ? _subtitleController.text
+        : '日常、宿舍、食堂、校园见闻';
+    final desc = _descriptionController.text.isNotEmpty
+        ? _descriptionController.text
+        : '分享校园日常...';
+    final btnText = _publishActionController.text.isNotEmpty
+        ? _publishActionController.text
+        : '发布帖子';
 
     return Container(
       width: double.infinity,
@@ -467,7 +495,8 @@ class _WaterSectionDisplayEditScreenState
                 ),
                 child: _avatarUrl == null || _avatarUrl!.isEmpty
                     ? Icon(
-                        iconKeyToIconData(widget.section.iconKey, fallbackSlug: widget.section.slug),
+                        iconKeyToIconData(widget.section.iconKey,
+                            fallbackSlug: widget.section.slug),
                         color: _activeColor,
                       )
                     : null,
@@ -490,19 +519,25 @@ class _WaterSectionDisplayEditScreenState
                       subtitle,
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark ? Colors.white70 : const Color(0xFF525A66),
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF525A66),
                       ),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: isDark ? Colors.black26 : Colors.white54,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text('预览', style: TextStyle(fontSize: 10, color: _activeColor, fontWeight: FontWeight.w700)),
+                child: Text('预览',
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: _activeColor,
+                        fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -547,14 +582,20 @@ class _WaterSectionDisplayEditScreenState
       children: [
         // 头像审核区块
         if (_isLoadingReview)
-          const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+          const Center(
+              child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator()))
         else if (_pendingIconReview != null)
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFFFF7ED),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : const Color(0xFFFFF7ED),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: isDark ? Colors.white12 : const Color(0xFFFFEDD5)),
+              border: Border.all(
+                  color: isDark ? Colors.white12 : const Color(0xFFFFEDD5)),
             ),
             child: Row(
               children: [
@@ -564,7 +605,8 @@ class _WaterSectionDisplayEditScreenState
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     image: DecorationImage(
-                      image: CachedNetworkImageProvider(ApiConstants.fullUrl(_pendingIconReview!.newAvatarUrl)),
+                      image: CachedNetworkImageProvider(ApiConstants.fullUrl(
+                          _pendingIconReview!.newAvatarUrl)),
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -579,7 +621,8 @@ class _WaterSectionDisplayEditScreenState
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.orange[300] : Colors.orange[800],
+                          color:
+                              isDark ? Colors.orange[300] : Colors.orange[800],
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -587,7 +630,8 @@ class _WaterSectionDisplayEditScreenState
                         '您有一条更换版块头像的申请正在等待管理员审核。',
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white70 : const Color(0xFF525A66),
+                          color:
+                              isDark ? Colors.white70 : const Color(0xFF525A66),
                         ),
                       ),
                     ],
@@ -612,7 +656,8 @@ class _WaterSectionDisplayEditScreenState
                   shape: BoxShape.circle,
                   image: _avatarUrl != null && _avatarUrl!.isNotEmpty
                       ? DecorationImage(
-                          image: CachedNetworkImageProvider(ApiConstants.fullUrl(_avatarUrl!)),
+                          image: CachedNetworkImageProvider(
+                              ApiConstants.fullUrl(_avatarUrl!)),
                           fit: BoxFit.cover,
                         )
                       : null,
@@ -621,7 +666,8 @@ class _WaterSectionDisplayEditScreenState
                   ),
                 ),
                 child: _avatarUrl == null || _avatarUrl!.isEmpty
-                    ? Icon(Icons.image_outlined, color: isDark ? Colors.white38 : Colors.black26)
+                    ? Icon(Icons.image_outlined,
+                        color: isDark ? Colors.white38 : Colors.black26)
                     : null,
               ),
               const SizedBox(width: 16),
@@ -643,10 +689,14 @@ class _WaterSectionDisplayEditScreenState
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size(0, 32),
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                       ),
                       child: _isUploadingAvatar
-                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2))
                           : const Text('更换新头像', style: TextStyle(fontSize: 13)),
                     ),
                   ],
@@ -655,7 +705,7 @@ class _WaterSectionDisplayEditScreenState
             ],
           ),
         const SizedBox(height: 20),
-        
+
         // 背景图
         Text(
           '版块背景图',
@@ -672,15 +722,18 @@ class _WaterSectionDisplayEditScreenState
           decoration: BoxDecoration(
             color: isDark ? Colors.white10 : const Color(0xFFF3F4F6),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: isDark ? Colors.white12 : const Color(0xFFE5E7EB)),
+            border: Border.all(
+                color: isDark ? Colors.white12 : const Color(0xFFE5E7EB)),
             image: _coverLandscapeUrl != null && _coverLandscapeUrl!.isNotEmpty
                 ? DecorationImage(
-                    image: CachedNetworkImageProvider(ApiConstants.fullUrl(_coverLandscapeUrl!)),
+                    image: CachedNetworkImageProvider(
+                        ApiConstants.fullUrl(_coverLandscapeUrl!)),
                     fit: BoxFit.cover,
                   )
                 : (_coverPortraitUrl != null && _coverPortraitUrl!.isNotEmpty
                     ? DecorationImage(
-                        image: CachedNetworkImageProvider(ApiConstants.fullUrl(_coverPortraitUrl!)),
+                        image: CachedNetworkImageProvider(
+                            ApiConstants.fullUrl(_coverPortraitUrl!)),
                         fit: BoxFit.cover,
                       )
                     : null),
@@ -690,9 +743,14 @@ class _WaterSectionDisplayEditScreenState
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.wallpaper_outlined, color: isDark ? Colors.white38 : Colors.black26, size: 28),
+                      Icon(Icons.wallpaper_outlined,
+                          color: isDark ? Colors.white38 : Colors.black26,
+                          size: 28),
                       const SizedBox(height: 4),
-                      Text('未设置背景图', style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.black38)),
+                      Text('未设置背景图',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white38 : Colors.black38)),
                     ],
                   ),
                 )
@@ -704,14 +762,20 @@ class _WaterSectionDisplayEditScreenState
           children: [
             Text(
               '建议上传 16:9 或 3:4，系统自动适配',
-              style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
+              style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
             ),
             Row(
               children: [
                 if (_coverPortraitUrl != null && _coverPortraitUrl!.isNotEmpty)
                   TextButton(
                     onPressed: _clearCover,
-                    style: TextButton.styleFrom(foregroundColor: Colors.red, minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                    style: TextButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4)),
                     child: const Text('清除', style: TextStyle(fontSize: 12)),
                   ),
                 OutlinedButton(
@@ -719,10 +783,14 @@ class _WaterSectionDisplayEditScreenState
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 30),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
                   child: _isUploadingCover
-                      ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2))
                       : const Text('上传', style: TextStyle(fontSize: 12)),
                 ),
               ],
@@ -730,7 +798,7 @@ class _WaterSectionDisplayEditScreenState
           ],
         ),
         const SizedBox(height: 20),
-        
+
         // 主题色
         Text(
           '主题颜色',
@@ -745,7 +813,8 @@ class _WaterSectionDisplayEditScreenState
           spacing: 12,
           runSpacing: 12,
           children: _presetColors.map((hex) {
-            final color = Color(int.parse(hex.substring(1), radix: 16) + 0xFF000000);
+            final color =
+                Color(int.parse(hex.substring(1), radix: 16) + 0xFF000000);
             final isSelected = _colorHex.toUpperCase() == hex.toUpperCase();
             return GestureDetector(
               onTap: () {
@@ -894,9 +963,14 @@ class _WaterSectionDisplayEditScreenState
         actions: [
           TextButton(
             onPressed: _isSubmitting ? null : _submit,
-            child: _isSubmitting 
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              : Text('保存', style: TextStyle(color: _activeColor, fontWeight: FontWeight.w700)),
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Text('保存',
+                    style: TextStyle(
+                        color: _activeColor, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -921,7 +995,9 @@ class _WaterSectionDisplayEditScreenState
                 color: isDark ? const Color(0xFF111315) : Colors.white,
                 border: Border(
                   top: BorderSide(
-                    color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFEDEFF3),
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : const Color(0xFFEDEFF3),
                   ),
                 ),
               ),
@@ -937,10 +1013,15 @@ class _WaterSectionDisplayEditScreenState
                     ),
                   ),
                   child: _isSubmitting
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
                       : const Text(
                           '保存展示设置',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w700),
                         ),
                 ),
               ),

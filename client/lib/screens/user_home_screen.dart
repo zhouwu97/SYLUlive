@@ -66,7 +66,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       final user = await provider.getUserProfile(targetId);
       final posts = await provider.getUserPosts(targetId);
       final marketResult = await provider.getUserMarketPosts(targetId);
-      
+
       final normalPosts = posts.where((post) => !_isMarketPost(post)).toList();
 
       if (mounted) {
@@ -1154,8 +1154,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 children: [
                   const Text(
                     '性别',
-                    style:
-                        TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 8),
                   SizedBox(

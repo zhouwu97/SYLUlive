@@ -347,9 +347,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
   Widget _buildArticleItem(bool isDark, CampusArticleSummary article) {
     final primary = Theme.of(context).colorScheme.primary;
     // 比赛通知用橙金色，教务通知/公告保持主色
-    final tagColor = article.source == 'cxcy'
-        ? const Color(0xFFE89B30)
-        : primary;
+    final tagColor =
+        article.source == 'cxcy' ? const Color(0xFFE89B30) : primary;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),

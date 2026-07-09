@@ -91,22 +91,36 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _checkAdminTasks(AuthProvider auth) async {
     try {
       final futures = await Future.wait([
-        auth.dio.get('/teachers/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
-        auth.dio.get('/majors/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
-        auth.dio.get('/admin/invitations/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
-        auth.dio.get('/admin/removals/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/teachers/pending').catchError((_) =>
+            Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/majors/pending').catchError((_) =>
+            Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/admin/invitations/pending').catchError((_) =>
+            Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/admin/removals/pending').catchError((_) =>
+            Response(requestOptions: RequestOptions(path: ''), data: [])),
       ]);
       int count = 0;
       if (futures[0].data is List) count += (futures[0].data as List).length;
       if (futures[1].data is List) count += (futures[1].data as List).length;
-      if (futures[2].data is List) count += (futures[2].data as List).where((i) => i['my_vote'] != true).length;
-      if (futures[3].data is List) count += (futures[3].data as List).where((r) => r['can_vote'] == true).length;
-      
+      if (futures[2].data is List)
+        count +=
+            (futures[2].data as List).where((i) => i['my_vote'] != true).length;
+      if (futures[3].data is List)
+        count += (futures[3].data as List)
+            .where((r) => r['can_vote'] == true)
+            .length;
+
       if (auth.user?.isSuperAdmin == true) {
-        final superRes = await auth.dio.get('/super/invitations/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: []));
-        if (superRes.data is List) count += (superRes.data as List).where((i) => i['my_vote'] != true).length;
+        final superRes = await auth.dio
+            .get('/super/invitations/pending')
+            .catchError((_) =>
+                Response(requestOptions: RequestOptions(path: ''), data: []));
+        if (superRes.data is List)
+          count +=
+              (superRes.data as List).where((i) => i['my_vote'] != true).length;
       }
-      
+
       if (mounted && _hasAdminTasks != (count > 0)) {
         setState(() => _hasAdminTasks = count > 0);
       }
@@ -150,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _bootstrapHome() {
     final auth = context.read<AuthProvider>();
-    
+
     // 1. Current tab data is already loading naturally because the widget is in the tree.
 
     // 2. Delay lightweight badges (notices unread-count, messages unread-count)
@@ -221,7 +235,8 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  void _syncAnnouncementPolling(AuthProvider auth, {bool skipAdminTasks = false}) {
+  void _syncAnnouncementPolling(AuthProvider auth,
+      {bool skipAdminTasks = false}) {
     final authKey = auth.isLoggedIn ? '${auth.user?.id}:${auth.token}' : null;
     if (_announcementAuthKey == authKey) return;
 
@@ -238,7 +253,8 @@ class _HomeScreenState extends State<HomeScreen>
     unawaited(_initializeAnnouncementPolling(skipAdminTasks: skipAdminTasks));
   }
 
-  Future<void> _initializeAnnouncementPolling({bool skipAdminTasks = false}) async {
+  Future<void> _initializeAnnouncementPolling(
+      {bool skipAdminTasks = false}) async {
     await _loadSeenAnnouncements();
     if (!mounted) return;
     await _checkUnreadAnnouncements(skipAdminTasks: skipAdminTasks);

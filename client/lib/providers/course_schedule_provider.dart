@@ -325,28 +325,37 @@ class CourseScheduleProvider extends ChangeNotifier {
       'title',
     ]);
 
-    final time = _firstInt(map, [
-      'time',
-      'start_time',
-      'startSection',
-      'start_section',
-      'jc_start',
-    ], fallback: 1);
+    final time = _firstInt(
+        map,
+        [
+          'time',
+          'start_time',
+          'startSection',
+          'start_section',
+          'jc_start',
+        ],
+        fallback: 1);
 
-    final endTime = _firstInt(map, [
-      'end_time',
-      'endSection',
-      'end_section',
-      'jc_end',
-    ], fallback: time);
+    final endTime = _firstInt(
+        map,
+        [
+          'end_time',
+          'endSection',
+          'end_section',
+          'jc_end',
+        ],
+        fallback: time);
 
-    final weekday = _firstInt(map, [
-      'week_day',
-      'weekday',
-      'dayOfWeek',
-      'day_of_week',
-      'xqj',
-    ], fallback: 1);
+    final weekday = _firstInt(
+        map,
+        [
+          'week_day',
+          'weekday',
+          'dayOfWeek',
+          'day_of_week',
+          'xqj',
+        ],
+        fallback: 1);
 
     final teacher = _firstString(map, [
       'teacher',

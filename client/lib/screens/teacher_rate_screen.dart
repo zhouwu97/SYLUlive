@@ -260,7 +260,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setBool('has_shown_teacher_disclaimer', true);
               },
-              child: Icon(Icons.close, size: 16, color: RankingTokens.subColor(isDark)),
+              child: Icon(Icons.close,
+                  size: 16, color: RankingTokens.subColor(isDark)),
             ),
           ],
         ),
@@ -889,8 +890,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                           hintStyle: TextStyle(
                             color: RankingTokens.subColor(isDark),
                           ),
-                          prefixIcon:
-                              const Icon(Icons.restaurant_rounded),
+                          prefixIcon: const Icon(Icons.restaurant_rounded),
                           filled: true,
                           fillColor: RankingTokens.pageBg(isDark),
                           contentPadding: const EdgeInsets.symmetric(
@@ -899,13 +899,13 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                           ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide:
-                                BorderSide(color: RankingTokens.borderColor(isDark)),
+                            borderSide: BorderSide(
+                                color: RankingTokens.borderColor(isDark)),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide:
-                                BorderSide(color: RankingTokens.borderColor(isDark)),
+                            borderSide: BorderSide(
+                                color: RankingTokens.borderColor(isDark)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -1344,8 +1344,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                 onPressed: () {
                                   final courseTeachers = teachers
                                       .where((t) =>
-                                          t.course.trim() ==
-                                          determinedCourse)
+                                          t.course.trim() == determinedCourse)
                                       .toList();
                                   Navigator.pop(sheetContext);
                                   if (mounted) {
@@ -1440,13 +1439,11 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                       color: selectedCourse == s.name
                                           ? accentSoft
                                           : RankingTokens.pageBg(isDark),
-                                      borderRadius:
-                                          BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
                                         color: selectedCourse == s.name
                                             ? accent
-                                            : RankingTokens.borderColor(
-                                                isDark),
+                                            : RankingTokens.borderColor(isDark),
                                       ),
                                     ),
                                     child: Row(
@@ -1473,14 +1470,13 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                               Text(
                                                 s.name,
                                                 maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
                                                   fontSize: 14,
-                                                  fontWeight:
-                                                      FontWeight.w600,
-                                                  color: RankingTokens
-                                                      .titleColor(isDark),
+                                                  fontWeight: FontWeight.w600,
+                                                  color:
+                                                      RankingTokens.titleColor(
+                                                          isDark),
                                                 ),
                                               ),
                                               const SizedBox(height: 2),
@@ -1488,8 +1484,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                                 '${s.teacherCount} 位教师 · ${s.ratingCount} 条评价',
                                                 style: TextStyle(
                                                   fontSize: 11,
-                                                  color: RankingTokens
-                                                      .subColor(isDark),
+                                                  color: RankingTokens.subColor(
+                                                      isDark),
                                                 ),
                                               ),
                                             ],
@@ -1518,11 +1514,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                       horizontal: 12,
                                     ),
                                     decoration: BoxDecoration(
-                                      borderRadius:
-                                          BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
-                                        color:
-                                            accent.withValues(alpha: 0.5),
+                                        color: accent.withValues(alpha: 0.5),
                                       ),
                                     ),
                                     child: Row(
@@ -1555,9 +1549,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         isDark: isDark,
                         accent: accent,
                         submitting: submitting,
-                        canSubmit: nameInput.isNotEmpty &&
-                            courseReady &&
-                            !duplicate,
+                        canSubmit:
+                            nameInput.isNotEmpty && courseReady && !duplicate,
                         onCancel: () => Navigator.pop(sheetContext),
                         onSubmit: () async {
                           final name = nameCtrl.text.trim();
@@ -1676,8 +1669,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                       ),
                       const SizedBox(height: 12),
                       Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         decoration: BoxDecoration(
                           color: RankingTokens.pageBg(isDark),
                           borderRadius: BorderRadius.circular(16),
@@ -1690,8 +1682,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                             value: level,
                             isExpanded: true,
                             items: const [
-                              DropdownMenuItem(
-                                  value: '本科', child: Text('本科')),
+                              DropdownMenuItem(value: '本科', child: Text('本科')),
                               DropdownMenuItem(
                                   value: '研究生', child: Text('研究生')),
                             ],
@@ -1769,13 +1760,11 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                       color: selectedMajor == s.name
                                           ? accentSoft
                                           : RankingTokens.pageBg(isDark),
-                                      borderRadius:
-                                          BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
                                         color: selectedMajor == s.name
                                             ? accent
-                                            : RankingTokens.borderColor(
-                                                isDark),
+                                            : RankingTokens.borderColor(isDark),
                                       ),
                                     ),
                                     child: Row(
@@ -1789,8 +1778,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                                 BorderRadius.circular(10),
                                           ),
                                           child: Icon(
-                                              Icons
-                                                  .workspace_premium_rounded,
+                                              Icons.workspace_premium_rounded,
                                               size: 18,
                                               color: accent),
                                         ),
@@ -1805,14 +1793,13 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                               Text(
                                                 s.name,
                                                 maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
                                                   fontSize: 14,
-                                                  fontWeight:
-                                                      FontWeight.w600,
-                                                  color: RankingTokens
-                                                      .titleColor(isDark),
+                                                  fontWeight: FontWeight.w600,
+                                                  color:
+                                                      RankingTokens.titleColor(
+                                                          isDark),
                                                 ),
                                               ),
                                               const SizedBox(height: 2),
@@ -1820,8 +1807,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                                 '${s.level} · ${s.ratingCount} 条评价',
                                                 style: TextStyle(
                                                   fontSize: 11,
-                                                  color: RankingTokens
-                                                      .subColor(isDark),
+                                                  color: RankingTokens.subColor(
+                                                      isDark),
                                                 ),
                                               ),
                                             ],
@@ -1850,11 +1837,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                       horizontal: 12,
                                     ),
                                     decoration: BoxDecoration(
-                                      borderRadius:
-                                          BorderRadius.circular(14),
+                                      borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
-                                        color:
-                                            accent.withValues(alpha: 0.5),
+                                        color: accent.withValues(alpha: 0.5),
                                       ),
                                     ),
                                     child: Row(

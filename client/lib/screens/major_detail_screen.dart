@@ -130,8 +130,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
-          statusBarIconBrightness:
-              isDark ? Brightness.light : Brightness.dark,
+          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
         ),
         centerTitle: true,
         titleTextStyle: TextStyle(

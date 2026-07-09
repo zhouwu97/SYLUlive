@@ -190,7 +190,8 @@ class CompetitionEvent {
       'organizer': organizer,
       'registration_time_text': registrationTimeText,
       'event_time_text': eventTimeText,
-      if (registrationEnd != null) 'registration_end': registrationEnd!.toIso8601String(),
+      if (registrationEnd != null)
+        'registration_end': registrationEnd!.toIso8601String(),
       if (eventStart != null) 'event_start': eventStart!.toIso8601String(),
       'time_precision': timePrecision,
       'time_status': timeStatus,

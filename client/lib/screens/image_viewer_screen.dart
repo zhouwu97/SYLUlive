@@ -244,7 +244,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         _ => 'png',
       };
 
-      final String filename = 'sylulive_${DateTime.now().millisecondsSinceEpoch}.$extension';
+      final String filename =
+          'sylulive_${DateTime.now().millisecondsSinceEpoch}.$extension';
 
       final tempDir = await getTemporaryDirectory();
       final tempPath = '${tempDir.path}/$filename';

@@ -296,7 +296,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       _postType = newType;
       _attentionFields = {};
       _attentionPulse++;
-      _selectedMarketTags.retainWhere((tag) => _availableMarketTags.contains(tag));
+      _selectedMarketTags
+          .retainWhere((tag) => _availableMarketTags.contains(tag));
     });
 
     if (_hasTriedSubmit) {
@@ -507,66 +508,66 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       },
       child: Scaffold(
         backgroundColor: isDark ? const Color(0xFF111315) : _marketPageBg,
-      extendBodyBehindAppBar: true,
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        forceMaterialTransparency: true,
-        centerTitle: true,
-        title: Text(_pageTitle),
-        titleTextStyle: TextStyle(
-          color: isDark ? Colors.white : const Color(0xFF1F2328),
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
+        extendBodyBehindAppBar: true,
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          forceMaterialTransparency: true,
+          centerTitle: true,
+          title: Text(_pageTitle),
+          titleTextStyle: TextStyle(
+            color: isDark ? Colors.white : const Color(0xFF1F2328),
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+          leading: BackButton(onPressed: _maybePop),
         ),
-        leading: BackButton(onPressed: _maybePop),
-      ),
-      bottomNavigationBar: PublishBottomBar(
-        isLoading: _isLoading,
-        onPressed: _isLoading ? null : _submit,
-        label: _bottomBarLabel,
-        accent: _marketAccent,
-      ),
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF111315) : _marketPageBg,
+        bottomNavigationBar: PublishBottomBar(
+          isLoading: _isLoading,
+          onPressed: _isLoading ? null : _submit,
+          label: _bottomBarLabel,
+          accent: _marketAccent,
         ),
-        child: SafeArea(
-          bottom: false,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildCampusHeader(isDark),
-                  const SizedBox(height: 14),
-                  _buildImageSection(colorScheme),
-                  const SizedBox(height: 16),
-                  if (_postType != 'exposure')
-                    _buildMarketDetailsCard(isDark, colorScheme)
-                  else ...[
-                    _buildTypeSection(isDark),
+        body: DecoratedBox(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF111315) : _marketPageBg,
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildCampusHeader(isDark),
                     const SizedBox(height: 14),
-                    _buildExposureWarning(),
+                    _buildImageSection(colorScheme),
                     const SizedBox(height: 16),
-                    _buildExposureAmountField(isDark),
-                    const SizedBox(height: 14),
-                    _buildDescriptionField(isDark, colorScheme),
-                    const SizedBox(height: 14),
-                    _buildContactField(isDark),
+                    if (_postType != 'exposure')
+                      _buildMarketDetailsCard(isDark, colorScheme)
+                    else ...[
+                      _buildTypeSection(isDark),
+                      const SizedBox(height: 14),
+                      _buildExposureWarning(),
+                      const SizedBox(height: 16),
+                      _buildExposureAmountField(isDark),
+                      const SizedBox(height: 14),
+                      _buildDescriptionField(isDark, colorScheme),
+                      const SizedBox(height: 14),
+                      _buildContactField(isDark),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -1221,7 +1222,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       prefixStyle: TextStyle(
         fontSize: _marketFormFontSize,
         fontWeight: FontWeight.w800,
-        color: prefixText == '¥ ' ? _marketAccent : colorScheme.onSurfaceVariant,
+        color:
+            prefixText == '¥ ' ? _marketAccent : colorScheme.onSurfaceVariant,
       ),
     );
   }
@@ -1255,7 +1257,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       ),
       prefixStyle: TextStyle(
         fontSize: prefixText == '¥ ' ? 22 : 15,
-        color: prefixText == '¥ ' ? _marketAccent : colorScheme.onSurfaceVariant,
+        color:
+            prefixText == '¥ ' ? _marketAccent : colorScheme.onSurfaceVariant,
         fontWeight: FontWeight.w800,
       ),
       suffixIcon: suffixIcon == null

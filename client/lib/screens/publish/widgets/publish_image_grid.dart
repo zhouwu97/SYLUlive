@@ -96,74 +96,76 @@ class PublishImageGrid extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               ClipRRect(
-              borderRadius: BorderRadius.circular(_radius),
-              child: isExisting
-                  ? CachedNetworkImage(
-                      imageUrl: ApiConstants.fullUrl(existingImages[index].url),
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(
-                        color: Colors.grey[300],
-                        child: const Icon(Icons.broken_image),
+                borderRadius: BorderRadius.circular(_radius),
+                child: isExisting
+                    ? CachedNetworkImage(
+                        imageUrl:
+                            ApiConstants.fullUrl(existingImages[index].url),
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(
+                          color: Colors.grey[300],
+                          child: const Icon(Icons.broken_image),
+                        ),
+                      )
+                    : Image.file(
+                        File(
+                            selectedImages[index - existingImages.length].path),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.grey[300],
+                          child: const Icon(Icons.broken_image),
+                        ),
                       ),
-                    )
-                  : Image.file(
-                      File(selectedImages[index - existingImages.length].path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: Colors.grey[300],
-                        child: const Icon(Icons.broken_image),
-                      ),
+              ),
+
+              // 封面角标
+              if (isFirst)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(4),
                     ),
-            ),
+                    child: const Text(
+                      '封面',
+                      style: TextStyle(color: Colors.white, fontSize: 11),
+                    ),
+                  ),
+                ),
 
-            // 封面角标
-            if (isFirst)
+              // 删除按钮
               Positioned(
-                top: 6,
-                left: 6,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    '封面',
-                    style: TextStyle(color: Colors.white, fontSize: 11),
-                  ),
-                ),
-              ),
-
-            // 删除按钮
-            Positioned(
-              top: 4,
-              right: 4,
-              child: GestureDetector(
-                onTap: () => isExisting
-                    ? onRemoveExistingImage(index)
-                    : onRemoveNewImage(index - existingImages.length),
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: Colors.black54,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.close,
-                    color: Colors.white,
-                    size: 14,
+                top: 4,
+                right: 4,
+                child: GestureDetector(
+                  onTap: () => isExisting
+                      ? onRemoveExistingImage(index)
+                      : onRemoveNewImage(index - existingImages.length),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 14,
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-      );
-    },
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -269,9 +271,8 @@ class PublishImageGrid extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color:
-                  (accent ?? Theme.of(context).colorScheme.primary)
-                      .withValues(alpha: 0.88),
+              color: (accent ?? Theme.of(context).colorScheme.primary)
+                  .withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(999),
             ),
             child: const Text(

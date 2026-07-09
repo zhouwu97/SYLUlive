@@ -20,7 +20,8 @@ class UpdateChecker {
     await prefs.setString(_ignoredUpdateVersionKey, version);
   }
 
-  static Future<void> _clearIgnoredVersionIfChanged(String remoteVersion) async {
+  static Future<void> _clearIgnoredVersionIfChanged(
+      String remoteVersion) async {
     final prefs = await SharedPreferences.getInstance();
     final ignored = prefs.getString(_ignoredUpdateVersionKey);
     if (ignored != null && ignored != remoteVersion) {
@@ -66,9 +67,8 @@ class UpdateChecker {
 
         if (_hasNewVersion(localVersion, remoteVersion)) {
           final bool isForceUpdate = releaseNotes.contains('[force_update]');
-          final String displayNotes = releaseNotes
-              .replaceAll('[force_update]', '')
-              .trim();
+          final String displayNotes =
+              releaseNotes.replaceAll('[force_update]', '').trim();
 
           if (!isForceUpdate && !manual) {
             final ignoredVersion = await _getIgnoredVersion();
@@ -177,9 +177,8 @@ class UpdateChecker {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).colorScheme.primary;
     final bgColor = isDark ? const Color(0xFF1E2226) : Colors.white;
-    final borderColor = isDark 
-        ? Colors.white.withValues(alpha: 0.08) 
-        : const Color(0xFFECE4DA);
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFECE4DA);
 
     await showDialog(
       context: context,
@@ -188,7 +187,8 @@ class UpdateChecker {
         return PopScope(
           canPop: !isForceUpdate,
           child: Dialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
             backgroundColor: Colors.transparent,
             child: Container(
               padding: const EdgeInsets.all(20),
@@ -209,7 +209,8 @@ class UpdateChecker {
                           color: primaryColor.withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.system_update_rounded, color: primaryColor, size: 28),
+                        child: Icon(Icons.system_update_rounded,
+                            color: primaryColor, size: 28),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -239,14 +240,16 @@ class UpdateChecker {
                   const SizedBox(height: 16),
                   if (isForceUpdate) ...[
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, size: 16, color: const Color(0xFFF59E0B)),
+                          Icon(Icons.info_outline,
+                              size: 16, color: const Color(0xFFF59E0B)),
                           const SizedBox(width: 8),
                           const Expanded(
                             child: Text(
@@ -269,7 +272,9 @@ class UpdateChecker {
                     ),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFFFFAF4),
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.04)
+                          : const Color(0xFFFFFAF4),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: borderColor),
                     ),
@@ -277,36 +282,48 @@ class UpdateChecker {
                       child: MarkdownBody(
                         data: releaseNotes,
                         selectable: true,
-                        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
-                            .copyWith(
+                        styleSheet:
+                            MarkdownStyleSheet.fromTheme(Theme.of(context))
+                                .copyWith(
                           p: TextStyle(
                             fontSize: 14,
                             height: 1.55,
-                            color: isDark ? Colors.white70 : const Color(0xFF1F2937),
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF1F2937),
                           ),
                           tableHead: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : const Color(0xFF111827),
+                            color:
+                                isDark ? Colors.white : const Color(0xFF111827),
                           ),
                           tableBody: TextStyle(
                             fontSize: 14,
                             height: 1.55,
-                            color: isDark ? Colors.white70 : const Color(0xFF111827),
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF111827),
                           ),
                           tableHeadAlign: TextAlign.left,
                           tablePadding: EdgeInsets.zero,
                           tableBorder: TableBorder(
                             top: BorderSide(
-                              color: Theme.of(context).dividerColor.withValues(alpha: 0.85),
+                              color: Theme.of(context)
+                                  .dividerColor
+                                  .withValues(alpha: 0.85),
                               width: 0.8,
                             ),
                             bottom: BorderSide(
-                              color: Theme.of(context).dividerColor.withValues(alpha: 0.85),
+                              color: Theme.of(context)
+                                  .dividerColor
+                                  .withValues(alpha: 0.85),
                               width: 0.8,
                             ),
                             horizontalInside: BorderSide(
-                              color: Theme.of(context).dividerColor.withValues(alpha: 0.55),
+                              color: Theme.of(context)
+                                  .dividerColor
+                                  .withValues(alpha: 0.55),
                               width: 0.8,
                             ),
                           ),
@@ -331,7 +348,9 @@ class UpdateChecker {
                         ),
                       ),
                       onPressed: () => _openDownloadUrl(context, downloadUrl),
-                      child: const Text("立即更新", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      child: const Text("立即更新",
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold)),
                     )
                   else
                     Column(
@@ -342,7 +361,8 @@ class UpdateChecker {
                             Expanded(
                               child: TextButton(
                                 style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -350,14 +370,19 @@ class UpdateChecker {
                                 onPressed: () {
                                   Navigator.of(context).pop();
                                 },
-                                child: Text("稍后再说", style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
+                                child: Text("稍后再说",
+                                    style: TextStyle(
+                                        color: isDark
+                                            ? Colors.white70
+                                            : Colors.black54)),
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -368,7 +393,9 @@ class UpdateChecker {
                                     Navigator.of(context).pop();
                                   }
                                 },
-                                child: const Text("立即更新", style: TextStyle(fontWeight: FontWeight.bold)),
+                                child: const Text("立即更新",
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold)),
                               ),
                             ),
                           ],
@@ -387,7 +414,12 @@ class UpdateChecker {
                               Navigator.of(context).pop();
                             }
                           },
-                          child: Text("忽略当前版本", style: TextStyle(fontSize: 13, color: isDark ? Colors.white38 : Colors.black38)),
+                          child: Text("忽略当前版本",
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  color: isDark
+                                      ? Colors.white38
+                                      : Colors.black38)),
                         ),
                       ],
                     ),

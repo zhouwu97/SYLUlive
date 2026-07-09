@@ -50,9 +50,10 @@ class _PublishImagePreviewScreenState extends State<PublishImagePreviewScreen> {
       return CachedNetworkImage(
         imageUrl: ApiConstants.fullUrl(image.url),
         fit: BoxFit.contain,
-        placeholder: (_, __) => const Center(child: CircularProgressIndicator()),
-        errorWidget: (_, __, ___) =>
-            const Icon(Icons.broken_image_rounded, color: Colors.white, size: 48),
+        placeholder: (_, __) =>
+            const Center(child: CircularProgressIndicator()),
+        errorWidget: (_, __, ___) => const Icon(Icons.broken_image_rounded,
+            color: Colors.white, size: 48),
       );
     }
 

@@ -31,8 +31,8 @@ class CourseActionMenu extends StatelessWidget {
       elevation: 8,
       onSelected: onSelected,
       itemBuilder: (context) => [
-        _buildItem(
-            context, CourseMenuAction.syncFromEdu, Icons.cloud_download_rounded, '课表拉取'),
+        _buildItem(context, CourseMenuAction.syncFromEdu,
+            Icons.cloud_download_rounded, '课表拉取'),
         _buildItem(context, CourseMenuAction.switchTerm,
             Icons.swap_horiz_rounded, '切换学期'),
         const PopupMenuDivider(),

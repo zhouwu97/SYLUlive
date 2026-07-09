@@ -165,8 +165,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
 
     if (mounted) setState(() {});
-    _loadAcademicSituation();
-    _loadGrades();
+    await _loadGrades();
+    if (!mounted) return;
+    await _loadAcademicSituation();
   }
 
   bool _tryUseInitialSemester(String userId) {

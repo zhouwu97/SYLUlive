@@ -43,9 +43,12 @@ class AppFeedback {
         return '操作过于频繁，请稍后再试';
       case 500:
       case 502:
-      case 503:
       case 504:
         return '$serviceName暂时不可用，请稍后再试';
+      case 503:
+        return serviceName == '教务服务'
+            ? '学校教务系统会话异常，请稍后重试，不需要重新绑定'
+            : '$serviceName暂时不可用，请稍后再试';
     }
 
     switch (e.type) {

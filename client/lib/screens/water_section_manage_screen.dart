@@ -39,6 +39,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   final List<TextEditingController> _levelTitleControllers =
       List.generate(8, (_) => TextEditingController());
   bool _savingLevelTitles = false;
+  bool _showArchivedTags = false;
 
   @override
   void dispose() {
@@ -81,14 +82,18 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   Future<void> _refreshAll() async {
     final sectionProvider = context.read<WaterSectionProvider>();
     final moderatorProvider = context.read<WaterModeratorProvider>();
-    await sectionProvider.refreshSection(widget.section.slug);
-    if (!mounted) return;
     await moderatorProvider.loadMyPermission(
       widget.section.slug,
       forceRefresh: true,
     );
     if (!mounted) return;
     final perm = moderatorProvider.permissionOf(widget.section.slug);
+    if (perm.canManageTags || perm.isGlobalAdmin) {
+      await sectionProvider.refreshSectionForManage(widget.section.slug);
+    } else {
+      await sectionProvider.refreshSection(widget.section.slug);
+    }
+    if (!mounted) return;
     if (perm.canManageModerators) {
       await _loadModerators();
     }
@@ -729,6 +734,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   Widget _buildTagManagement(WaterSection section, bool isDark) {
     final tags = [...section.tags]
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final enabledTags = tags.where((tag) => tag.isEnabled).toList();
+    final archivedTags = tags.where((tag) => !tag.isEnabled).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -744,7 +751,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              '${tags.length}',
+              '${enabledTags.length}启用 · ${archivedTags.length}归档',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -762,9 +769,72 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         const SizedBox(height: 8),
         if (tags.isEmpty)
           _buildEmptyList(isDark, '暂无标签')
-        else
-          ...tags.map((tag) => _buildTagCard(section, tag, isDark)),
+        else ...[
+          _buildTagGroupHeader('启用中', enabledTags.length, isDark),
+          if (enabledTags.isEmpty)
+            _buildEmptyList(isDark, '暂无启用标签')
+          else
+            ...enabledTags.map((tag) => _buildTagCard(section, tag, isDark)),
+          if (archivedTags.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            _buildArchivedTagHeader(archivedTags.length, isDark),
+            if (_showArchivedTags)
+              ...archivedTags.map((tag) => _buildTagCard(section, tag, isDark)),
+          ],
+        ],
       ],
+    );
+  }
+
+  Widget _buildTagGroupHeader(String label, int count, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, top: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white70 : const Color(0xFF3B4050),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildArchivedTagHeader(int count, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          _buildTagGroupHeader('已归档', count, isDark),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: () {
+              setState(() => _showArchivedTags = !_showArchivedTags);
+            },
+            icon: Icon(
+              _showArchivedTags
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              size: 18,
+            ),
+            label: Text(_showArchivedTags ? '收起' : '查看'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -804,7 +874,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        tag.isEnabled ? '启用' : '停用',
+                        tag.isEnabled ? '启用' : '已归档',
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
@@ -864,12 +934,12 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                   children: [
                     Icon(
                       tag.isEnabled
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
+                          ? Icons.archive_outlined
+                          : Icons.unarchive_outlined,
                       size: 18,
                     ),
                     const SizedBox(width: 8),
-                    Text(tag.isEnabled ? '停用标签' : '启用标签',
+                    Text(tag.isEnabled ? '归档标签' : '恢复标签',
                         style: const TextStyle(fontSize: 14)),
                   ],
                 ),
@@ -953,11 +1023,11 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(willEnable ? '启用标签' : '停用标签'),
+        title: Text(willEnable ? '恢复标签' : '归档标签'),
         content: Text(
           willEnable
-              ? '确认重新启用「${tag.name}」标签吗？'
-              : '停用后旧帖仍保留该标签，但新发帖不能再选择它。确认停用「${tag.name}」吗？',
+              ? '恢复后，学生发帖时可以重新选择「${tag.name}」，版块页也会重新显示该标签入口。'
+              : '归档后，学生发帖时不能再选择「${tag.name}」，版块页也不再显示该标签入口。已有帖子不会删除，仍会出现在综合、最新、精华、推荐中。',
         ),
         actions: [
           TextButton(
@@ -972,26 +1042,28 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                   ? await provider.enableTag(
                       sectionSlug: section.slug,
                       tagId: tag.id,
-                      reason: '启用标签',
+                      reason: '恢复标签',
+                      includeDisabledTags: true,
                     )
                   : await provider.disableTag(
                       sectionSlug: section.slug,
                       tagId: tag.id,
-                      reason: '停用标签',
+                      reason: '归档标签',
+                      includeDisabledTags: true,
                     );
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
                     ok
-                        ? (willEnable ? '标签已启用' : '标签已停用')
+                        ? (willEnable ? '标签已恢复' : '标签已归档')
                         : provider.error ?? '操作失败',
                   ),
                 ),
               );
               if (ok) _loadLogs();
             },
-            child: Text(willEnable ? '确认启用' : '确认停用'),
+            child: Text(willEnable ? '确认恢复' : '确认归档'),
           ),
         ],
       ),
@@ -1916,6 +1988,7 @@ class _TagFormSheetState extends State<_TagFormSheet> {
         ? await provider.updateTag(
             sectionSlug: widget.sectionSlug,
             tagId: widget.existing!.id,
+            includeDisabledTags: true,
             fields: {
               'name': name,
               'description': _descriptionController.text.trim(),
@@ -1926,6 +1999,7 @@ class _TagFormSheetState extends State<_TagFormSheet> {
           )
         : await provider.createTag(
             sectionSlug: widget.sectionSlug,
+            includeDisabledTags: true,
             fields: {
               'slug': slug,
               'name': name,

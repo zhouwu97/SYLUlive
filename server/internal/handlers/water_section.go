@@ -637,11 +637,16 @@ func (h *WaterSectionHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少版块标识"})
 		return
 	}
+
+	includeDisabledTags := c.Query("include_disabled_tags") == "true"
 	var section models.WaterSection
-	err := h.db.
-		Where("slug = ? AND status = ?", slug, "active").
-		Preload("Tags", "is_enabled = ?", true).
-		First(&section).Error
+	query := h.db.Where("slug = ? AND status = ?", slug, "active")
+	if includeDisabledTags {
+		query = query.Preload("Tags")
+	} else {
+		query = query.Preload("Tags", "is_enabled = ?", true)
+	}
+	err := query.First(&section).Error
 	if err == gorm.ErrRecordNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
 		return
@@ -649,6 +654,15 @@ func (h *WaterSectionHandler) Get(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取版块失败"})
 		return
+	}
+	if includeDisabledTags {
+		operator, ok := h.currentUserOr401(c)
+		if !ok {
+			return
+		}
+		if !h.ensureCanManageTags(c, section.ID, operator) {
+			return
+		}
 	}
 	resp := toSectionResponse(section)
 	respArr := h.fillIsFollowed(c, []waterSectionResponse{resp})
@@ -1796,4 +1810,3 @@ func (h *WaterSectionHandler) AdminRejectSectionIconReview(c *gin.Context) {
 	h.db.Preload("Section").Preload("Requester").Preload("Reviewer").First(&review, review.ID)
 	c.JSON(http.StatusOK, formatIconReviewResponse(review))
 }
-

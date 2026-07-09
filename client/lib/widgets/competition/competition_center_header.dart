@@ -59,7 +59,8 @@ class CompetitionCenterHeader extends StatelessWidget {
 
   Widget _buildSearchField(bool isDark) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: CompetitionUiTokens.pagePadding),
+      padding: const EdgeInsets.symmetric(
+          horizontal: CompetitionUiTokens.pagePadding),
       child: Container(
         height: 46,
         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -70,7 +71,8 @@ class CompetitionCenterHeader extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.search_rounded, color: CompetitionUiTokens.subColor(isDark), size: 21),
+            Icon(Icons.search_rounded,
+                color: CompetitionUiTokens.subColor(isDark), size: 21),
             const SizedBox(width: 8),
             Expanded(
               child: TextField(
@@ -79,18 +81,23 @@ class CompetitionCenterHeader extends StatelessWidget {
                 onSubmitted: onSearchSubmitted,
                 decoration: InputDecoration(
                   hintText: '搜索比赛名称 / 主办方 / 标签',
-                  hintStyle: TextStyle(color: CompetitionUiTokens.subColor(isDark), fontSize: 14),
+                  hintStyle: TextStyle(
+                      color: CompetitionUiTokens.subColor(isDark),
+                      fontSize: 14),
                   border: InputBorder.none,
                   isCollapsed: true,
                 ),
-                style: TextStyle(fontSize: 14, color: CompetitionUiTokens.titleColor(isDark)),
+                style: TextStyle(
+                    fontSize: 14,
+                    color: CompetitionUiTokens.titleColor(isDark)),
               ),
             ),
             if (searchController.text.isNotEmpty)
               IconButton(
                 visualDensity: VisualDensity.compact,
                 onPressed: onClearSearch,
-                icon: Icon(Icons.close_rounded, size: 18, color: CompetitionUiTokens.subColor(isDark)),
+                icon: Icon(Icons.close_rounded,
+                    size: 18, color: CompetitionUiTokens.subColor(isDark)),
               ),
           ],
         ),
@@ -100,7 +107,8 @@ class CompetitionCenterHeader extends StatelessWidget {
 
   Widget _buildFilterBar(bool isDark) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: CompetitionUiTokens.pagePadding),
+      padding: const EdgeInsets.symmetric(
+          horizontal: CompetitionUiTokens.pagePadding),
       child: SizedBox(
         height: 36,
         child: ListView(
@@ -144,7 +152,8 @@ class CompetitionCenterHeader extends StatelessWidget {
 
   Widget _buildOverviewBar(bool isDark) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: CompetitionUiTokens.pagePadding),
+      padding: const EdgeInsets.symmetric(
+          horizontal: CompetitionUiTokens.pagePadding),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -159,7 +168,8 @@ class CompetitionCenterHeader extends StatelessWidget {
                   _overviewItem('已归档', adminArchivedCount, isDark),
                 ]
               : [
-                  _overviewItem('我的计划', myPlanCount, isDark, onTap: onMyPlanTap),
+                  _overviewItem('我的计划', myPlanCount, isDark,
+                      onTap: onMyPlanTap),
                   const SizedBox(width: 16),
                   _overviewItem('待确认', pendingTimeCount, isDark),
                 ],
@@ -168,7 +178,8 @@ class CompetitionCenterHeader extends StatelessWidget {
     );
   }
 
-  Widget _overviewItem(String label, int count, bool isDark, {VoidCallback? onTap}) {
+  Widget _overviewItem(String label, int count, bool isDark,
+      {VoidCallback? onTap}) {
     final child = Row(
       mainAxisSize: MainAxisSize.min,
       children: [

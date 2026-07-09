@@ -20,7 +20,6 @@ import 'login_screen.dart';
 import 'chat_list_screen.dart';
 import '../widgets/water_section/section_floating_dock.dart';
 
-
 class WaterCategoryFeedScreen extends StatefulWidget {
   final WaterPostCategory category;
   final WaterSection? section;
@@ -512,8 +511,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 isLoggedIn: context.read<AuthProvider>().isLoggedIn,
                 myLevel: _myLevel,
                 topContentInset: heroTopContentInset,
-                bottomContentInset:
-                    _collapsedSheetSize(context) * MediaQuery.sizeOf(context).height + 20,
+                bottomContentInset: _collapsedSheetSize(context) *
+                        MediaQuery.sizeOf(context).height +
+                    20,
                 onToggleFollow: _toggleFollowSection,
               ),
 
@@ -963,7 +963,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         ? section.starterQuestions
         : widget.category.starterQuestions;
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 18, 16, 96 + MediaQuery.paddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+          16, 18, 16, 96 + MediaQuery.paddingOf(context).bottom),
       child: Align(
         alignment: Alignment.topCenter,
         child: Container(

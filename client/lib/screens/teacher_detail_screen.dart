@@ -266,8 +266,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                         context: context,
                         initialStar: provider.myRating?.star ?? 0,
                         initialComment: provider.myRating?.comment ?? '',
-                        title:
-                            provider.myRating == null ? '写评价' : '修改评价',
+                        title: provider.myRating == null ? '写评价' : '修改评价',
                         maxCommentLength: 200,
                         accentOverride: accent,
                         onSubmit: (star, comment) async {

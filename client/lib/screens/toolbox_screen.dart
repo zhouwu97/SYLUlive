@@ -158,7 +158,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 ),
                                 useCustomBackground: useCustomBackground,
                               ),
-
                               _buildToolCard(
                                 context,
                                 icon: Icons.fitness_center,

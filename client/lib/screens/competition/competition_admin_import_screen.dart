@@ -10,7 +10,8 @@ import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 
-const _competitionCategorySlugHint = 'innovation_startup、computer_ai、electronic_info、smart_manufacturing_vehicle、art_design、business_economics、math_science、materials_chem_env、language_humanities、defense_security_other';
+const _competitionCategorySlugHint =
+    'innovation_startup、computer_ai、electronic_info、smart_manufacturing_vehicle、art_design、business_economics、math_science、materials_chem_env、language_humanities、defense_security_other';
 const _competitionAiPrompt = '''
 你是校园竞赛信息整理助手。请把我提供的比赛通知整理成校园 App 可导入的 JSON。
 
@@ -1315,7 +1316,6 @@ class _CompetitionAdminImportScreenState
   }
 }
 
-
 String _timeStatusLabel(String value) {
   switch (value) {
     case 'confirmed':
@@ -1330,8 +1330,6 @@ String _timeStatusLabel(String value) {
       return value.isEmpty ? '待通知' : value;
   }
 }
-
-
 
 bool _draftHasExactDate(Map<String, dynamic> event) {
   final d1 = event['registration_start']?.toString() ?? '';
@@ -1366,16 +1364,23 @@ DateTime? _draftSortDate(Map<String, dynamic> event) {
   return null;
 }
 
-
 String _sourceLabel(String value) {
   switch (value) {
-    case 'school_catalog': return '学校目录';
-    case 'college_notice': return '学院通知';
-    case 'enterprise': return '企业赛';
-    case 'industry_association': return '行业协会';
-    case 'platform': return '竞赛平台';
-    case 'admin_manual': return '管理员录入';
-    case 'ai_import': return 'AI 导入';
-    default: return value.isEmpty ? '未知来源' : value;
+    case 'school_catalog':
+      return '学校目录';
+    case 'college_notice':
+      return '学院通知';
+    case 'enterprise':
+      return '企业赛';
+    case 'industry_association':
+      return '行业协会';
+    case 'platform':
+      return '竞赛平台';
+    case 'admin_manual':
+      return '管理员录入';
+    case 'ai_import':
+      return 'AI 导入';
+    default:
+      return value.isEmpty ? '未知来源' : value;
   }
 }

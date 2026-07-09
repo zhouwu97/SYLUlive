@@ -19,8 +19,8 @@ class SectionChannelCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cfg = _channelConfig(section.slug);
-    final sensitiveSlug =
-        section.sensitiveLevel == 'caution' || section.sensitiveLevel == 'strict';
+    final sensitiveSlug = section.sensitiveLevel == 'caution' ||
+        section.sensitiveLevel == 'strict';
     final noticeText = section.noticeText.isNotEmpty
         ? section.noticeText
         : (sensitiveSlug ? cfg.defaultNotice : null);

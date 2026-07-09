@@ -151,9 +151,8 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
                                 onPressed: widget.onDismiss,
                                 icon: Icon(
                                   Icons.close,
-                                  color: isDark
-                                      ? Colors.white60
-                                      : Colors.black38,
+                                  color:
+                                      isDark ? Colors.white60 : Colors.black38,
                                 ),
                               ),
                             ],

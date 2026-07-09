@@ -7,7 +7,8 @@ import 'evaluation_models.dart';
 class EvaluationPageDetector {
   const EvaluationPageDetector();
 
-  EvaluationPageType classify(EvaluationProbeResult probe, [String? lastHttpError]) {
+  EvaluationPageType classify(EvaluationProbeResult probe,
+      [String? lastHttpError]) {
     if (probe.error != null && probe.error!.isNotEmpty) {
       return EvaluationPageType.unknown;
     }
@@ -29,7 +30,8 @@ class EvaluationPageDetector {
     }
 
     // 3. Access denied or maintenance
-    if (lastHttpError != null && (lastHttpError.contains('401') || lastHttpError.contains('403'))) {
+    if (lastHttpError != null &&
+        (lastHttpError.contains('401') || lastHttpError.contains('403'))) {
       return EvaluationPageType.accessDenied;
     }
     if (probe.hasAccessDeniedText || probe.hasMaintenanceText) {
@@ -78,13 +80,11 @@ class EvaluationPageDetector {
   bool _isEvaluationFormPage(EvaluationProbeResult probe) {
     if (!probe.url.contains('/xspjgl/')) return false;
 
-    final radioGroups = probe.radioGroups
-        .where((group) => group.options.length >= 2)
-        .length;
+    final radioGroups =
+        probe.radioGroups.where((group) => group.options.length >= 2).length;
 
-    final scoreInputs = probe.scoreInputs
-        .where((input) => input.isReliableScore)
-        .length;
+    final scoreInputs =
+        probe.scoreInputs.where((input) => input.isReliableScore).length;
 
     if (radioGroups >= 3 || scoreInputs >= 3) {
       return true;

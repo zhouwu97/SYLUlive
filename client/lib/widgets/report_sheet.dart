@@ -252,8 +252,8 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
               color: selected
                   ? (Colors.red[400]!.withValues(alpha: isDark ? 0.2 : 0.1))
                   : (isDark
-                        ? Colors.white.withValues(alpha: 0.04)
-                        : Colors.grey.withValues(alpha: 0.06)),
+                      ? Colors.white.withValues(alpha: 0.04)
+                      : Colors.grey.withValues(alpha: 0.06)),
               border: selected
                   ? Border.all(
                       color: Colors.red[400]!.withValues(alpha: 0.5),

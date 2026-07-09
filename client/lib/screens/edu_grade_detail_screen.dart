@@ -280,7 +280,9 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
           ),
           Expanded(
             flex: 2,
-            child: Text('占比', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: _subColor(isDark))),
+            child: Text('占比',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: _subColor(isDark))),
           ),
           Expanded(
             flex: 2,
@@ -530,10 +532,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _tag(
-                  context,
-                  grade.isDegree ? '学位课' : '非学位课',
-                  _TagTone.neutral),
+              _tag(context, grade.isDegree ? '学位课' : '非学位课', _TagTone.neutral),
               if (grade.examType != null)
                 _tag(context, grade.examType!, _TagTone.neutral),
               if (grade.assessmentMethod != null)

@@ -11,8 +11,9 @@ class CompetitionUiTokens {
   static Color accent(bool isDark) =>
       isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
 
-  static Color accentSoft(bool isDark) =>
-      isDark ? const Color(0xFF7ED6C5).withValues(alpha: 0.12) : const Color(0xFFEAF6F3);
+  static Color accentSoft(bool isDark) => isDark
+      ? const Color(0xFF7ED6C5).withValues(alpha: 0.12)
+      : const Color(0xFFEAF6F3);
 
   static Color borderColor(bool isDark) =>
       isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE6EFEA);

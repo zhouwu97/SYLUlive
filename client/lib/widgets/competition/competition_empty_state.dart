@@ -24,7 +24,8 @@ class CompetitionEmptyState extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: CompetitionUiTokens.pagePadding, vertical: 12),
+      margin: const EdgeInsets.symmetric(
+          horizontal: CompetitionUiTokens.pagePadding, vertical: 12),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
       child: Column(
@@ -64,14 +65,17 @@ class CompetitionEmptyState extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: CompetitionUiTokens.accent(isDark),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(CompetitionUiTokens.cardRadius),
+                    borderRadius:
+                        BorderRadius.circular(CompetitionUiTokens.cardRadius),
                   ),
                 ),
                 child: Text(
                   primaryText,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 14),
                 ),
               ),
               const SizedBox(width: 12),
@@ -79,15 +83,19 @@ class CompetitionEmptyState extends StatelessWidget {
                 onPressed: onSecondaryTap,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: CompetitionUiTokens.titleColor(isDark),
-                  side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  side: BorderSide(
+                      color: CompetitionUiTokens.borderColor(isDark)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(CompetitionUiTokens.cardRadius),
+                    borderRadius:
+                        BorderRadius.circular(CompetitionUiTokens.cardRadius),
                   ),
                 ),
                 child: Text(
                   secondaryText,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 14),
                 ),
               ),
             ],

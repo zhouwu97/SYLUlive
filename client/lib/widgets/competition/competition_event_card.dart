@@ -32,7 +32,7 @@ class CompetitionEventCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final status = resolveCompetitionStatus(event, isDark);
     final criticalTime = getCompetitionCriticalTime(event);
-    
+
     final levelAndCategory = [
       if (event.competitionLevel.isNotEmpty) event.competitionLevel,
       event.primaryCategory?.name ?? '未分类',
@@ -61,7 +61,8 @@ class CompetitionEventCard extends StatelessWidget {
                         child: Checkbox(
                           value: isSelected,
                           onChanged: (_) => onTap(),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                         ),
                       ),
                     ),
@@ -82,9 +83,11 @@ class CompetitionEventCard extends StatelessWidget {
                   const SizedBox(width: 12),
                   if (event.status == 'draft') ...[
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
-                        color: CompetitionUiTokens.subColor(isDark).withValues(alpha: 0.1),
+                        color: CompetitionUiTokens.subColor(isDark)
+                            .withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -108,14 +111,16 @@ class CompetitionEventCard extends StatelessWidget {
                 const SizedBox(height: 4),
               ],
               if (event.organizer.isNotEmpty) ...[
-                _buildInfoRow(Icons.account_balance_outlined, '主办方：${event.organizer}', isDark),
+                _buildInfoRow(Icons.account_balance_outlined,
+                    '主办方：${event.organizer}', isDark),
                 const SizedBox(height: 4),
               ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: _buildInfoRow(Icons.label_outline_rounded, levelAndCategory, isDark),
+                    child: _buildInfoRow(
+                        Icons.label_outline_rounded, levelAndCategory, isDark),
                   ),
                   const SizedBox(width: 8),
                   if (!isAdmin)
@@ -135,7 +140,9 @@ class CompetitionEventCard extends StatelessWidget {
                           visualDensity: VisualDensity.compact,
                         ),
                         icon: const Icon(Icons.add_rounded, size: 16),
-                        label: const Text('加入计划', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        label: const Text('加入计划',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 13)),
                       ),
                     )
                   else if (!selectionMode) ...[
@@ -143,7 +150,8 @@ class CompetitionEventCard extends StatelessWidget {
                       if (onEdit != null)
                         TextButton(
                           onPressed: onEdit,
-                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                          style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact),
                           child: const Text('编辑'),
                         ),
                       if (onPublish != null)
@@ -159,7 +167,8 @@ class CompetitionEventCard extends StatelessWidget {
                       if (onEdit != null)
                         TextButton(
                           onPressed: onEdit,
-                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                          style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact),
                           child: const Text('编辑'),
                         ),
                       if (onArchive != null && event.status != 'archived')
@@ -167,7 +176,8 @@ class CompetitionEventCard extends StatelessWidget {
                           onPressed: onArchive,
                           style: TextButton.styleFrom(
                             visualDensity: VisualDensity.compact,
-                            foregroundColor: CompetitionUiTokens.dangerColor(isDark),
+                            foregroundColor:
+                                CompetitionUiTokens.dangerColor(isDark),
                           ),
                           child: const Text('归档'),
                         ),

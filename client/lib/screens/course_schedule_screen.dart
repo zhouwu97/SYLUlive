@@ -400,7 +400,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           onPointerCancel: _handleWeekPointerCancel,
                           child: SingleChildScrollView(
                             padding: EdgeInsets.only(
-                              bottom: MediaQuery.of(context).padding.bottom + 100,
+                              bottom:
+                                  MediaQuery.of(context).padding.bottom + 100,
                             ),
                             child: _buildCourseGrid(sc),
                           ),
@@ -710,7 +711,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                               ),
                             ),
                             const SizedBox(width: 4),
-                            Icon(Icons.arrow_drop_down, size: 16, color: secondaryColor),
+                            Icon(Icons.arrow_drop_down,
+                                size: 16, color: secondaryColor),
                           ],
                         ),
                       ),
@@ -1328,12 +1330,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     final oldTerm = sc.currentTerm;
     final sameTerm =
-        oldTerm.year == result.year &&
-        oldTerm.semester == result.semester;
+        oldTerm.year == result.year && oldTerm.semester == result.semester;
 
-    final targetTerm = sameTerm
-        ? oldTerm
-        : sc.buildTerm(result.year, result.semester);
+    final targetTerm =
+        sameTerm ? oldTerm : sc.buildTerm(result.year, result.semester);
 
     setState(() {
       _isFetchingCourses = true;
@@ -1356,9 +1356,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              rawCount == 0
-                  ? '该学期没有可导入的课程，请确认学期是否正确'
-                  : '课表已获取但解析失败，请检查课程字段格式',
+              rawCount == 0 ? '该学期没有可导入的课程，请确认学期是否正确' : '课表已获取但解析失败，请检查课程字段格式',
             ),
           ),
         );
@@ -1366,7 +1364,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       }
 
       unawaited(
-        edu.syncCourses(result.year, result.semester, result.courses).catchError(
+        edu
+            .syncCourses(result.year, result.semester, result.courses)
+            .catchError(
           (Object error, StackTrace stackTrace) {
             debugPrint('课表后台同步异常: $error\n$stackTrace');
             return false;
@@ -1388,9 +1388,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            sameTerm
-                ? '当前学期课表已刷新'
-                : '已拉取并切换到 ${sc.currentTerm.title}',
+            sameTerm ? '当前学期课表已刷新' : '已拉取并切换到 ${sc.currentTerm.title}',
           ),
         ),
       );

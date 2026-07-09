@@ -67,7 +67,8 @@ class CourseBlock {
       startSection: (json['start_section'] as num?)?.toInt() ?? 1,
       endSection: (json['end_section'] as num?)?.toInt() ?? 1,
       weeks: (json['weeks'] as List<dynamic>?)
-              ?.map((e) => (e as num).toInt())
+              ?.map((e) => int.tryParse(e.toString()) ?? 0)
+              .where((e) => e > 0)
               .toList() ??
           [],
       note: json['note']?.toString(),
@@ -289,7 +290,7 @@ class CourseScheduleProvider extends ChangeNotifier {
           importedCount++;
         }
       } catch (e, stackTrace) {
-        debugPrint('解析课程失败: $e\n$stackTrace\n$rawCourse');
+        debugPrint('解析课程失败: $e\n$stackTrace\nrawCourse=$rawCourse');
       }
     }
 
@@ -412,8 +413,15 @@ class CourseScheduleProvider extends ChangeNotifier {
       if (value is int) return value;
       if (value is num) return value.toInt();
       if (value is String) {
-        final parsed = int.tryParse(value.trim());
-        if (parsed != null) return parsed;
+        final text = value.trim();
+        final direct = int.tryParse(text);
+        if (direct != null) return direct;
+
+        final match = RegExp(r'\d+').firstMatch(text);
+        if (match != null) {
+          final parsed = int.tryParse(match.group(0)!);
+          if (parsed != null) return parsed;
+        }
       }
     }
     return fallback;

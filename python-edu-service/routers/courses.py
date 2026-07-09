@@ -52,7 +52,10 @@ async def fetch_courses(
                 raw_courses = await crawler.fetch_courses(cookie, input.year, input.semester)
             except CookieLapseError:
                 if attempt == 1:
-                    raise HTTPException(status_code=401, detail="Cookie已失效且自动登录失败，请重新绑定教务账号")
+                    raise HTTPException(
+                        status_code=503,
+                        detail="教务系统会话异常，请稍后重试，不需要重新绑定"
+                    )
                 if not edu_user.raw_password:
                     raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定教务账号")
                 print(f"  [AUTO] Cookie过期，使用存储密码自动重新登录...")

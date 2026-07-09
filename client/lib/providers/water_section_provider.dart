@@ -100,9 +100,23 @@ class WaterSectionProvider extends ChangeNotifier {
   Future<void> refreshSections() => loadSections(forceRefresh: true);
 
   Future<WaterSection?> refreshSection(String slug) async {
+    return _refreshSection(slug);
+  }
+
+  Future<WaterSection?> refreshSectionForManage(String slug) async {
+    return _refreshSection(slug, includeDisabledTags: true);
+  }
+
+  Future<WaterSection?> _refreshSection(
+    String slug, {
+    bool includeDisabledTags = false,
+  }) async {
     if (_service == null) return getBySlug(slug);
     try {
-      final fresh = await _service!.fetchSection(slug);
+      final fresh = await _service!.fetchSection(
+        slug,
+        includeDisabledTags: includeDisabledTags,
+      );
       _upsertSection(fresh);
       _error = null;
       notifyListeners();
@@ -130,10 +144,14 @@ class WaterSectionProvider extends ChangeNotifier {
   Future<bool> createTag({
     required String sectionSlug,
     required Map<String, dynamic> fields,
+    bool includeDisabledTags = false,
   }) async {
     return _save(() async {
       await _service!.createTag(sectionSlug: sectionSlug, fields: fields);
-      await _refreshSectionAfterMutation(sectionSlug);
+      await _refreshSectionAfterMutation(
+        sectionSlug,
+        includeDisabledTags: includeDisabledTags,
+      );
     });
   }
 
@@ -141,6 +159,7 @@ class WaterSectionProvider extends ChangeNotifier {
     required String sectionSlug,
     required int tagId,
     required Map<String, dynamic> fields,
+    bool includeDisabledTags = false,
   }) async {
     return _save(() async {
       await _service!.updateTag(
@@ -148,7 +167,10 @@ class WaterSectionProvider extends ChangeNotifier {
         tagId: tagId,
         fields: fields,
       );
-      await _refreshSectionAfterMutation(sectionSlug);
+      await _refreshSectionAfterMutation(
+        sectionSlug,
+        includeDisabledTags: includeDisabledTags,
+      );
     });
   }
 
@@ -156,12 +178,14 @@ class WaterSectionProvider extends ChangeNotifier {
     required String sectionSlug,
     required int tagId,
     String? reason,
+    bool includeDisabledTags = false,
   }) {
     return updateTagStatus(
       sectionSlug: sectionSlug,
       tagId: tagId,
       isEnabled: true,
       reason: reason,
+      includeDisabledTags: includeDisabledTags,
     );
   }
 
@@ -169,12 +193,14 @@ class WaterSectionProvider extends ChangeNotifier {
     required String sectionSlug,
     required int tagId,
     String? reason,
+    bool includeDisabledTags = false,
   }) {
     return updateTagStatus(
       sectionSlug: sectionSlug,
       tagId: tagId,
       isEnabled: false,
       reason: reason,
+      includeDisabledTags: includeDisabledTags,
     );
   }
 
@@ -183,6 +209,7 @@ class WaterSectionProvider extends ChangeNotifier {
     required int tagId,
     required bool isEnabled,
     String? reason,
+    bool includeDisabledTags = false,
   }) async {
     return _save(() async {
       await _service!.updateTagStatus(
@@ -191,7 +218,10 @@ class WaterSectionProvider extends ChangeNotifier {
         isEnabled: isEnabled,
         reason: reason,
       );
-      await _refreshSectionAfterMutation(sectionSlug);
+      await _refreshSectionAfterMutation(
+        sectionSlug,
+        includeDisabledTags: includeDisabledTags,
+      );
     });
   }
 
@@ -229,8 +259,14 @@ class WaterSectionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _refreshSectionAfterMutation(String slug) async {
-    final fresh = await _service!.fetchSection(slug);
+  Future<void> _refreshSectionAfterMutation(
+    String slug, {
+    bool includeDisabledTags = false,
+  }) async {
+    final fresh = await _service!.fetchSection(
+      slug,
+      includeDisabledTags: includeDisabledTags,
+    );
     _upsertSection(fresh);
   }
 

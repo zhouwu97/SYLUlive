@@ -11,14 +11,13 @@ import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_empty_state.dart';
-import '../../widgets/competition/competition_event_card.dart';
 import '../../widgets/competition/competition_status_helper.dart';
+import '../../widgets/competition/competition_student_event_card.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import '../../widgets/competition/my_competition_plan_card.dart';
 import 'competition_calendar_item_detail_screen.dart';
 
-import 'competition_admin_import_screen.dart';
-import 'competition_official_event_editor_screen.dart';
+import 'competition_admin_center_screen.dart';
 
 const _competitionBg = Color(0xFFFAF8FF);
 const _competitionPrimary = Color(0xFF7367C6);
@@ -49,15 +48,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   final Set<String> _sources = {};
   int? _calendarCount;
 
-  String _adminStatusFilter = 'all'; // all, draft, published, archived
-  String? _maintenanceFilter;
   String _studentFocusFilter = 'recommended';
-  int _adminTotalCount = 0;
-  int _adminDraftCount = 0;
-  int _adminPublishedCount = 0;
-  int _adminArchivedCount = 0;
-  bool _selectionMode = false;
-  final Set<int> _selectedEventIds = {};
 
   @override
   void initState() {
@@ -76,32 +67,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     if (!mounted) return;
     setState(() => _loading = true);
     final user = context.read<AuthProvider>().user;
-    final isAdmin = user?.isAdmin == true || user?.isSuperAdmin == true;
 
     try {
       final futures = <Future>[
         _dio.get('/competitions/categories'),
+        _dio.get('/competitions/events', queryParameters: _queryParams()),
       ];
-
-      if (isAdmin) {
-        // Fetch stats independently
-        futures.add(_dio.get('/admin/competitions/events',
-            queryParameters: {'page_size': 1}));
-        futures.add(_dio.get('/admin/competitions/events',
-            queryParameters: {'status': 'draft', 'page_size': 1}));
-        futures.add(_dio.get('/admin/competitions/events',
-            queryParameters: {'status': 'published', 'page_size': 1}));
-        futures.add(_dio.get('/admin/competitions/events',
-            queryParameters: {'status': 'archived', 'page_size': 1}));
-
-        // Fetch specific list based on filter
-        futures.add(_dio.get('/admin/competitions/events',
-            queryParameters: _queryParams(isAdmin: true)));
-      } else {
-        // Normal user fetch
-        futures.add(_dio.get('/competitions/events',
-            queryParameters: _queryParams(isAdmin: false)));
-      }
 
       final results = await Future.wait(futures);
 
@@ -122,22 +93,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             .map((e) => CompetitionCategory.fromJson(e))
             .toList();
 
-        if (isAdmin) {
-          _adminTotalCount = results[1].data['total'] ?? 0;
-          _adminDraftCount = results[2].data['total'] ?? 0;
-          _adminPublishedCount = results[3].data['total'] ?? 0;
-          _adminArchivedCount = results[4].data['total'] ?? 0;
-
-          final listData = results[5].data as Map<String, dynamic>;
-          _events = ((listData['items'] as List?) ?? [])
-              .map((e) => CompetitionEvent.fromJson(e))
-              .toList();
-        } else {
-          final listData = results[1].data as Map<String, dynamic>;
-          _events = ((listData['items'] as List?) ?? [])
-              .map((e) => CompetitionEvent.fromJson(e))
-              .toList();
-        }
+        final listData = results[1].data as Map<String, dynamic>;
+        _events = ((listData['items'] as List?) ?? [])
+            .map((e) => CompetitionEvent.fromJson(e))
+            .toList();
 
         _calendarCount = calendarCount;
         _loading = false;
@@ -153,7 +112,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     }
   }
 
-  Map<String, dynamic> _queryParams({required bool isAdmin}) {
+  Map<String, dynamic> _queryParams() {
     final params = <String, dynamic>{
       'page_size': 50,
       if (_searchController.text.trim().isNotEmpty)
@@ -166,33 +125,22 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       if (_sources.isNotEmpty) 'source_channel': _sources.join(','),
     };
 
-    if (!isAdmin) {
-      switch (_studentFocusFilter) {
-        case 'recommended':
-          params['recommendation_level'] = 'S,A,B+';
-          break;
-        case 'deadline':
-          params['date_status'] = 'deadline_soon';
-          break;
-        case 'recognized':
-          params['school_recognition_status'] = 'recognized';
-          break;
-        case 'fit':
-          params['recommendation_level'] = 'S,A,B+,B';
-          break;
-        case 'pending':
-          params['date_status'] = 'time_pending';
-          break;
-      }
-    }
-
-    if (isAdmin) {
-      if (_adminStatusFilter != 'all') {
-        params['status'] = _adminStatusFilter;
-      }
-      if (_maintenanceFilter != null) {
-        params['maintenance_status'] = _maintenanceFilter;
-      }
+    switch (_studentFocusFilter) {
+      case 'recommended':
+        params['recommendation_level'] = 'S,A,B+';
+        break;
+      case 'deadline':
+        params['date_status'] = 'deadline_soon';
+        break;
+      case 'recognized':
+        params['school_recognition_status'] = 'recognized';
+        break;
+      case 'fit':
+        params['recommendation_level'] = 'S,A,B+,B';
+        break;
+      case 'pending':
+        params['date_status'] = 'time_pending';
+        break;
     }
     return params;
   }
@@ -235,9 +183,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         actions: [
           if (isAdmin)
             TextButton.icon(
-              onPressed: _openAdminImport,
-              icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-              label: const Text('AI导入'),
+              onPressed: _openAdminCenter,
+              icon: const Icon(Icons.admin_panel_settings_rounded, size: 18),
+              label: const Text('管理'),
               style: TextButton.styleFrom(
                 foregroundColor: CompetitionUiTokens.accent(isDark),
               ),
@@ -249,8 +197,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: 32),
-          children:
-              isAdmin ? _buildAdminHome(isDark) : _buildStudentHome(isDark),
+          children: _buildStudentHome(isDark),
         ),
       ),
     );
@@ -273,28 +220,6 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         isDark: isDark,
       ),
       _buildEventList(isAdmin: false, isDark: isDark),
-    ];
-  }
-
-  List<Widget> _buildAdminHome(bool isDark) {
-    return [
-      _buildHomeTitle(
-        title: '竞赛库管理',
-        actionLabel: 'AI导入',
-        onActionTap: _openAdminImport,
-        isDark: isDark,
-      ),
-      _buildAdminStats(isDark),
-      _buildSearchAndFilters(isDark),
-      _buildAdminActions(isDark),
-      _buildAdminFilterRows(isDark),
-      if (_selectionMode) _buildSelectionBar(isDark),
-      _buildSectionTitle(
-        title: '维护列表',
-        subtitle: '官方库 $_adminTotalCount 条，已归档 $_adminArchivedCount 条',
-        isDark: isDark,
-      ),
-      _buildEventList(isAdmin: true, isDark: isDark),
     ];
   }
 
@@ -459,27 +384,6 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     );
   }
 
-  Widget _buildAdminStats(bool isDark) {
-    final missingTime = _events
-        .where((event) =>
-            event.registrationEnd == null && event.registrationTimeText.isEmpty)
-        .length;
-    final needsReview = _events
-        .where((event) =>
-            event.timeStatus == 'pending' ||
-            event.schoolRecognitionStatus == 'pending')
-        .length;
-    return _buildStatBand(
-      isDark,
-      [
-        ('草稿', '$_adminDraftCount', () => _selectAdminStatus('draft')),
-        ('缺时间', '$missingTime', () => _selectMaintenance('time_pending')),
-        ('已发布', '$_adminPublishedCount', () => _selectAdminStatus('published')),
-        ('待核验', '$needsReview', () => _selectMaintenance('stale')),
-      ],
-    );
-  }
-
   Widget _buildStatBand(
     bool isDark,
     List<(String, String, VoidCallback?)> items,
@@ -585,126 +489,6 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     );
   }
 
-  Widget _buildAdminActions(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        CompetitionUiTokens.pagePadding,
-        0,
-        CompetitionUiTokens.pagePadding,
-        12,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: _openAdminImport,
-              icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-              label: const Text('AI导入'),
-              style: FilledButton.styleFrom(
-                backgroundColor: CompetitionUiTokens.accent(isDark),
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _openAdminManualCreate,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('新建'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: CompetitionUiTokens.titleColor(isDark),
-                side:
-                    BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _selectionMode = !_selectionMode;
-                  if (!_selectionMode) _selectedEventIds.clear();
-                });
-              },
-              icon: Icon(
-                _selectionMode ? Icons.close_rounded : Icons.checklist_rounded,
-                size: 18,
-              ),
-              label: Text(_selectionMode ? '取消' : '批量发布'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _selectionMode
-                    ? CompetitionUiTokens.dangerColor(isDark)
-                    : CompetitionUiTokens.titleColor(isDark),
-                side:
-                    BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAdminFilterRows(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        CompetitionUiTokens.pagePadding,
-        0,
-        CompetitionUiTokens.pagePadding,
-        14,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildAdminChip('全部', 'all', isDark),
-                const SizedBox(width: 8),
-                _buildAdminChip('草稿', 'draft', isDark),
-                const SizedBox(width: 8),
-                _buildAdminChip('已发布', 'published', isDark),
-                const SizedBox(width: 8),
-                _buildAdminChip('已归档', 'archived', isDark),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _buildSoftButton(
-                icon: Icons.build_circle_outlined,
-                label: '维护筛选',
-                isDark: isDark,
-                highlight: _maintenanceFilter != null,
-                onTap: _openMaintenanceFilters,
-              ),
-              const SizedBox(width: 8),
-              _buildSoftButton(
-                icon: Icons.category_outlined,
-                label: '分类筛选',
-                isDark: isDark,
-                highlight: _categorySlug != null,
-                onTap: _openFilters,
-              ),
-              const SizedBox(width: 8),
-              _buildSoftButton(
-                icon: Icons.star_border_rounded,
-                label: '推荐等级',
-                isDark: isDark,
-                highlight: _recommendations.isNotEmpty,
-                onTap: _openFilters,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSectionTitle({
     required String title,
     required String subtitle,
@@ -754,10 +538,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       return CompetitionEmptyState(
         title: isAdmin ? '列表还没有内容' : '暂时没有符合条件的比赛',
         message: isAdmin ? '可以 AI 导入或手动新建官方草稿。' : '换一个筛选条件看看，或先导入同学整理的计划。',
-        primaryText: isAdmin ? 'AI导入' : '导入计划',
-        onPrimaryTap: isAdmin ? _openAdminImport : _openShareImport,
-        secondaryText: isAdmin ? '新建比赛' : '刷新',
-        onSecondaryTap: isAdmin ? _openAdminManualCreate : _load,
+        primaryText: '导入计划',
+        onPrimaryTap: _openShareImport,
+        secondaryText: '刷新',
+        onSecondaryTap: _load,
       );
     }
     return Padding(
@@ -785,139 +569,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     }
   }
 
-  void _selectAdminStatus(String status) {
-    setState(() => _adminStatusFilter = status);
-    _load();
-  }
-
-  void _selectMaintenance(String? value) {
-    setState(() => _maintenanceFilter = value);
-    _load();
-  }
-
-  Widget _buildAdminChip(String label, String value, bool isDark) {
-    final selected = _adminStatusFilter == value;
-    return Material(
-      color: selected
-          ? CompetitionUiTokens.titleColor(isDark)
-          : Colors.transparent,
-      shape: StadiumBorder(
-        side: BorderSide(
-          color: selected
-              ? Colors.transparent
-              : CompetitionUiTokens.borderColor(isDark),
-        ),
-      ),
-      child: InkWell(
-        onTap: () {
-          if (_adminStatusFilter == value) return;
-          setState(() {
-            _adminStatusFilter = value;
-          });
-          _load();
-        },
-        customBorder: const StadiumBorder(),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-              color: selected
-                  ? CompetitionUiTokens.pageBg(isDark)
-                  : CompetitionUiTokens.titleColor(isDark),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   // Removed hero card, import button, stat items, search field, filter bar
 
   Widget _buildEventCard(CompetitionEvent event, bool isAdmin) {
-    return CompetitionEventCard(
+    return CompetitionStudentEventCard(
       event: event,
-      isAdmin: isAdmin,
-      selectionMode: _selectionMode,
-      isSelected: _selectedEventIds.contains(event.id),
       onTap: () {
-        if (_selectionMode) {
-          setState(() {
-            if (_selectedEventIds.contains(event.id)) {
-              _selectedEventIds.remove(event.id);
-            } else {
-              _selectedEventIds.add(event.id);
-            }
-          });
-        } else if (isAdmin && event.status == 'draft') {
-          _openAdminDetail(event);
-        } else {
-          _openDetail(event);
-        }
+        _openDetail(event);
       },
       onAddPlan: () => _copyToCalendar(event.id),
-      onEdit: isAdmin ? () => _openAdminDetail(event) : null,
-      onPublish: isAdmin && event.status == 'draft'
-          ? () => _singleAction(event.id, '发布',
-              (id) => _dio.post('/admin/competitions/events/$id/publish'))
-          : null,
-      onArchive:
-          isAdmin && event.status != 'draft' && event.status != 'archived'
-              ? () => _singleAction(event.id, '归档',
-                  (id) => _dio.post('/admin/competitions/events/$id/archive'))
-              : null,
     );
-  }
-
-  Future<void> _singleAction(int eventId, String actionName,
-      Future<void> Function(int id) actionFn) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('确认$actionName'),
-        content: Text('确认要将该比赛$actionName吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-    if (!mounted) return;
-
-    AppFeedback.showSnackBar(context, '正在$actionName...');
-    try {
-      await actionFn(eventId);
-      if (!mounted) return;
-      AppFeedback.showSnackBar(context, '$actionName成功');
-      _load();
-    } catch (e) {
-      if (!mounted) return;
-      AppFeedback.showSnackBar(context, '$actionName失败');
-    }
-  }
-
-  Future<void> _openAdminDetail(CompetitionEvent event) async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CompetitionOfficialEventEditorScreen(
-          initialData: event.toJson(),
-        ),
-      ),
-    );
-    if (result == true) {
-      _load();
-    }
   }
 
   Widget _buildSoftButton({
@@ -968,211 +629,6 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildSelectionBar(bool isDark) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(CompetitionUiTokens.pagePadding, 0,
-          CompetitionUiTokens.pagePadding, 16),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: CompetitionUiTokens.cardBg(isDark),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: CompetitionUiTokens.borderColor(isDark)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Text(
-            '已选 ${_selectedEventIds.length} 项',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: CompetitionUiTokens.titleColor(isDark),
-            ),
-          ),
-          const SizedBox(width: 16),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                if (_selectedEventIds.length == _events.length) {
-                  _selectedEventIds.clear();
-                } else {
-                  _selectedEventIds.addAll(_events.map((e) => e.id));
-                }
-              });
-            },
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              foregroundColor: CompetitionUiTokens.accent(isDark),
-            ),
-            child: Text(
-                _selectedEventIds.length == _events.length ? '取消全选' : '全选当前页'),
-          ),
-          const Spacer(),
-          if (_selectedEventIds.isNotEmpty) ...[
-            FilledButton.tonal(
-              onPressed: () => _batchAction('发布',
-                  (id) => _dio.post('/admin/competitions/events/$id/publish')),
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              child: const Text('发布'),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.tonal(
-              onPressed: () => _batchAction('移入归档',
-                  (id) => _dio.post('/admin/competitions/events/$id/archive')),
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                backgroundColor: isDark
-                    ? Colors.red.withValues(alpha: 0.2)
-                    : Colors.red.shade50,
-                foregroundColor: CompetitionUiTokens.dangerColor(isDark),
-              ),
-              child: const Text('移入归档'),
-            ),
-          ]
-        ],
-      ),
-    );
-  }
-
-  Future<void> _batchAction(
-      String actionName, Future<void> Function(int id) actionFn) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('确认批量$actionName'),
-        content: Text(
-            '即将对选中的 ${_selectedEventIds.length} 项比赛进行“$actionName”操作，是否继续？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    if (!mounted) return;
-    AppFeedback.showSnackBar(context, '正在$actionName...');
-
-    int successCount = 0;
-    int failCount = 0;
-
-    for (final id in _selectedEventIds) {
-      try {
-        await actionFn(id);
-        successCount++;
-      } catch (e) {
-        failCount++;
-      }
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _selectionMode = false;
-      _selectedEventIds.clear();
-    });
-
-    AppFeedback.showSnackBar(
-      context,
-      '$actionName完成: 成功 $successCount, 失败 $failCount',
-    );
-    _load();
-  }
-
-  void _openMaintenanceFilters() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        final isDark = Theme.of(context).brightness == Brightness.dark;
-        return Container(
-          decoration: BoxDecoration(
-            color: CompetitionUiTokens.pageBg(isDark),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.all(24),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '维护筛选',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: CompetitionUiTokens.titleColor(isDark),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildMaintenanceOption('全部', null, isDark),
-                _buildMaintenanceOption('AI导入草稿', 'ai_draft', isDark),
-                _buildMaintenanceOption('缺时间', 'time_pending', isDark),
-                _buildMaintenanceOption('可能过期', 'stale', isDark),
-                _buildMaintenanceOption('临近截止', 'ending_soon', isDark),
-                _buildMaintenanceOption('已结束', 'expired', isDark),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildMaintenanceOption(String label, String? value, bool isDark) {
-    final selected = _maintenanceFilter == value;
-    return ListTile(
-      title: Text(
-        label,
-        style: TextStyle(
-          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-          color: selected
-              ? CompetitionUiTokens.accent(isDark)
-              : CompetitionUiTokens.titleColor(isDark),
-        ),
-      ),
-      trailing: selected
-          ? Icon(Icons.check, color: CompetitionUiTokens.accent(isDark))
-          : null,
-      onTap: () {
-        Navigator.pop(context);
-        setState(() {
-          _maintenanceFilter = value;
-          if (value == 'ai_draft') {
-            _adminStatusFilter = 'draft';
-          }
-        });
-        _load();
-      },
     );
   }
 
@@ -1244,31 +700,11 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     );
   }
 
-  Future<void> _openAdminImport() async {
-    final result = await Navigator.push(
+  Future<void> _openAdminCenter() async {
+    await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const CompetitionAdminImportScreen()),
+      MaterialPageRoute(builder: (_) => const CompetitionAdminCenterScreen()),
     );
-    if (result == true) {
-      setState(() {
-        _adminStatusFilter = 'draft';
-        _maintenanceFilter = 'ai_draft';
-        _selectionMode = false;
-        _selectedEventIds.clear();
-      });
-      _load();
-    }
-  }
-
-  Future<void> _openAdminManualCreate() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-          builder: (_) => const CompetitionOfficialEventEditorScreen()),
-    );
-    if (result == true) {
-      _load();
-    }
   }
 }
 

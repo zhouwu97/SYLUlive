@@ -57,6 +57,7 @@ class _CompetitionOfficialEventEditorScreenState
   String _sourceChannel = 'admin_manual';
   bool _isOnline = false;
   bool _loadingCategories = true;
+  bool _categoryLoadFailed = false;
   bool _isSubmitting = false;
 
   @override
@@ -140,6 +141,10 @@ class _CompetitionOfficialEventEditorScreenState
   }
 
   Future<void> _loadCategories() async {
+    setState(() {
+      _loadingCategories = true;
+      _categoryLoadFailed = false;
+    });
     try {
       final resp = await context.read<AuthProvider>().dio.get(
             '/competitions/categories',
@@ -157,10 +162,14 @@ class _CompetitionOfficialEventEditorScreenState
           _categorySlug = categories.first.slug;
         }
         _loadingCategories = false;
+        _categoryLoadFailed = false;
       });
     } on DioException catch (e) {
       if (!mounted) return;
-      setState(() => _loadingCategories = false);
+      setState(() {
+        _loadingCategories = false;
+        _categoryLoadFailed = true;
+      });
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '加载分类失败'),
@@ -267,6 +276,7 @@ class _CompetitionOfficialEventEditorScreenState
           children: [
             _section(
               '基础信息',
+              Icons.article_outlined,
               isDark,
               [
                 _input(_titleController, '比赛名称', isDark, required: true),
@@ -284,6 +294,7 @@ class _CompetitionOfficialEventEditorScreenState
             ),
             _section(
               '推荐与认定',
+              Icons.workspace_premium_outlined,
               isDark,
               [
                 Row(
@@ -368,6 +379,7 @@ class _CompetitionOfficialEventEditorScreenState
             ),
             _section(
               '时间安排',
+              Icons.event_note_outlined,
               isDark,
               [
                 Row(
@@ -443,7 +455,7 @@ class _CompetitionOfficialEventEditorScreenState
                     Expanded(
                       child: _input(
                         _sortMonthController,
-                        'sort_month',
+                        '排序月份',
                         isDark,
                         keyboardType: TextInputType.number,
                       ),
@@ -466,6 +478,7 @@ class _CompetitionOfficialEventEditorScreenState
             ),
             _section(
               '来源与发布',
+              Icons.source_outlined,
               isDark,
               [
                 _input(_organizerController, '主办方', isDark),
@@ -516,10 +529,13 @@ class _CompetitionOfficialEventEditorScreenState
                 child: OutlinedButton(
                   onPressed: _isSubmitting ? null : () => _submit('draft'),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    minimumSize: const Size.fromHeight(44),
                     foregroundColor: CompetitionUiTokens.titleColor(isDark),
                     side: BorderSide(
                       color: CompetitionUiTokens.borderColor(isDark),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   child: const Text('保存草稿'),
@@ -532,7 +548,10 @@ class _CompetitionOfficialEventEditorScreenState
                   style: FilledButton.styleFrom(
                     backgroundColor: CompetitionUiTokens.accent(isDark),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   child: Text(_isSubmitting ? '提交中...' : '发布'),
                 ),
@@ -544,7 +563,12 @@ class _CompetitionOfficialEventEditorScreenState
     );
   }
 
-  Widget _section(String title, bool isDark, List<Widget> children) {
+  Widget _section(
+    String title,
+    IconData icon,
+    bool isDark,
+    List<Widget> children,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
@@ -552,13 +576,23 @@ class _CompetitionOfficialEventEditorScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              color: CompetitionUiTokens.titleColor(isDark),
-            ),
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: CompetitionUiTokens.accent(isDark),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  color: CompetitionUiTokens.titleColor(isDark),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           for (final child in children) ...[
@@ -592,13 +626,28 @@ class _CompetitionOfficialEventEditorScreenState
   }
 
   Widget _categoryDropdown(bool isDark) {
+    if (_categoryLoadFailed && _categories.isEmpty) {
+      return OutlinedButton.icon(
+        onPressed: _loadingCategories ? null : _loadCategories,
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: const Text('重新加载分类'),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(44),
+          foregroundColor: CompetitionUiTokens.accent(isDark),
+          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      );
+    }
     final value = _categories.any((item) => item.slug == _categorySlug)
         ? _categorySlug
         : null;
     return DropdownButtonFormField<String>(
       initialValue: value,
       decoration: _inputDecoration(
-        _loadingCategories ? '分类加载中...' : '分类 *',
+        _loadingCategories ? '正在加载分类' : '分类 *',
         isDark,
       ),
       items: _categories
@@ -610,7 +659,9 @@ class _CompetitionOfficialEventEditorScreenState
           )
           .toList(),
       validator: (value) => value == null || value.isEmpty ? '请选择分类' : null,
-      onChanged: (value) => setState(() => _categorySlug = value ?? ''),
+      onChanged: _loadingCategories
+          ? null
+          : (value) => setState(() => _categorySlug = value ?? ''),
     );
   }
 
@@ -645,7 +696,7 @@ class _CompetitionOfficialEventEditorScreenState
       labelText: label,
       filled: true,
       fillColor: CompetitionUiTokens.cardBg(isDark),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),

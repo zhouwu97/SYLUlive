@@ -16,8 +16,9 @@ import '../widgets/cached_avatar.dart';
 import 'social_list_screen.dart';
 import 'image_viewer_screen.dart';
 import 'chat_detail_screen.dart';
-import 'post_detail_screen.dart';
+
 import '../widgets/level_progress_pill.dart';
+import '../utils/app_navigation.dart';
 
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
@@ -107,28 +108,11 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     Post post, {
     bool isMarket = false,
   }) async {
-    final originUserId = _profileUserId;
-
-    await Navigator.push(
+    await AppNavigation.openPostDetail(
       context,
-      MaterialPageRoute(
-        builder: (detailContext) => PostDetailScreen(
-          postId: post.id,
-          isMarket: isMarket,
-          initialPost: post,
-          onAuthorTap: (authorId) {
-            if (originUserId != null && authorId == originUserId) {
-              Navigator.of(detailContext).maybePop();
-              return;
-            }
-            Navigator.of(detailContext).pushReplacement(
-              MaterialPageRoute(
-                builder: (_) => UserHomeScreen(userId: authorId),
-              ),
-            );
-          },
-        ),
-      ),
+      post: post,
+      isMarket: isMarket,
+      sourceUserId: _profileUserId,
     );
 
     if (mounted) {

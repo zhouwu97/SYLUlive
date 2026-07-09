@@ -10,7 +10,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
-import '../../widgets/competition/competition_center_header.dart';
 import '../../widgets/competition/competition_empty_state.dart';
 import '../../widgets/competition/competition_event_card.dart';
 import '../../widgets/competition/competition_status_helper.dart';
@@ -29,8 +28,6 @@ const _competitionBorder = Color(0xFFE8E4F0);
 const _competitionMuted = Color(0xFF8B8794);
 const _competitionOrange = Color(0xFFF59E0B);
 const _competitionDanger = Color(0xFFEF4444);
-const _competitionCategorySlugHint =
-    'innovation_startup、computer_ai、electronic_info、smart_manufacturing_vehicle、art_design、business_economics、math_science、materials_chem_env、language_humanities、defense_security_other';
 
 class CompetitionCenterScreen extends StatefulWidget {
   const CompetitionCenterScreen({super.key});
@@ -54,6 +51,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
   String _adminStatusFilter = 'all'; // all, draft, published, archived
   String? _maintenanceFilter;
+  String _studentFocusFilter = 'recommended';
   int _adminTotalCount = 0;
   int _adminDraftCount = 0;
   int _adminPublishedCount = 0;
@@ -168,6 +166,26 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       if (_sources.isNotEmpty) 'source_channel': _sources.join(','),
     };
 
+    if (!isAdmin) {
+      switch (_studentFocusFilter) {
+        case 'recommended':
+          params['recommendation_level'] = 'S,A,B+';
+          break;
+        case 'deadline':
+          params['date_status'] = 'deadline_soon';
+          break;
+        case 'recognized':
+          params['school_recognition_status'] = 'recognized';
+          break;
+        case 'fit':
+          params['recommendation_level'] = 'S,A,B+,B';
+          break;
+        case 'pending':
+          params['date_status'] = 'time_pending';
+          break;
+      }
+    }
+
     if (isAdmin) {
       if (_adminStatusFilter != 'all') {
         params['status'] = _adminStatusFilter;
@@ -231,195 +249,550 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: 32),
+          children:
+              isAdmin ? _buildAdminHome(isDark) : _buildStudentHome(isDark),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildStudentHome(bool isDark) {
+    return [
+      _buildHomeTitle(
+        title: '竞赛中心',
+        actionLabel: '我的计划',
+        onActionTap: _openCalendar,
+        isDark: isDark,
+      ),
+      _buildSearchAndFilters(isDark),
+      _buildStudentOverview(isDark),
+      _buildStudentFocusTabs(isDark),
+      _buildSectionTitle(
+        title: _studentFocusTitle,
+        subtitle: '官方比赛库由管理员维护，加入后会复制到我的计划',
+        isDark: isDark,
+      ),
+      _buildEventList(isAdmin: false, isDark: isDark),
+    ];
+  }
+
+  List<Widget> _buildAdminHome(bool isDark) {
+    return [
+      _buildHomeTitle(
+        title: '竞赛库管理',
+        actionLabel: 'AI导入',
+        onActionTap: _openAdminImport,
+        isDark: isDark,
+      ),
+      _buildAdminStats(isDark),
+      _buildSearchAndFilters(isDark),
+      _buildAdminActions(isDark),
+      _buildAdminFilterRows(isDark),
+      if (_selectionMode) _buildSelectionBar(isDark),
+      _buildSectionTitle(
+        title: '维护列表',
+        subtitle: '官方库 $_adminTotalCount 条，已归档 $_adminArchivedCount 条',
+        isDark: isDark,
+      ),
+      _buildEventList(isAdmin: true, isDark: isDark),
+    ];
+  }
+
+  Widget _buildHomeTitle({
+    required String title,
+    required String actionLabel,
+    required VoidCallback onActionTap,
+    required bool isDark,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        12,
+        CompetitionUiTokens.pagePadding,
+        10,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                color: CompetitionUiTokens.titleColor(isDark),
+              ),
+            ),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: onActionTap,
+            icon: Icon(
+              actionLabel == 'AI导入'
+                  ? Icons.auto_awesome_rounded
+                  : Icons.event_note_rounded,
+              size: 18,
+            ),
+            label: Text(actionLabel),
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: CompetitionUiTokens.accent(isDark),
+              backgroundColor: CompetitionUiTokens.accentSoft(isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchAndFilters(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        12,
+      ),
+      child: Column(
+        children: [
+          Container(
+            height: 46,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: CompetitionUiTokens.cardBg(isDark),
+              borderRadius:
+                  BorderRadius.circular(CompetitionUiTokens.cardRadius),
+              border:
+                  Border.all(color: CompetitionUiTokens.borderColor(isDark)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.search_rounded,
+                    color: CompetitionUiTokens.subColor(isDark), size: 21),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _load(),
+                    decoration: InputDecoration(
+                      hintText: '搜索比赛 / 专业方向 / 标签',
+                      hintStyle: TextStyle(
+                        color: CompetitionUiTokens.subColor(isDark),
+                        fontSize: 14,
+                      ),
+                      border: InputBorder.none,
+                      isCollapsed: true,
+                    ),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: CompetitionUiTokens.titleColor(isDark),
+                    ),
+                  ),
+                ),
+                if (_searchController.text.isNotEmpty)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {});
+                      _load();
+                    },
+                    icon: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: CompetitionUiTokens.subColor(isDark),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _buildSoftButton(
+                icon: Icons.tune_rounded,
+                label: '分类',
+                isDark: isDark,
+                highlight: _filterSummary != '全部比赛',
+                onTap: _openFilters,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _filterSummary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _filterSummary == '全部比赛'
+                        ? CompetitionUiTokens.subColor(isDark)
+                        : CompetitionUiTokens.accent(isDark),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudentOverview(bool isDark) {
+    final pending =
+        _events.where((event) => event.registrationEnd == null).length;
+    final thisMonth = _events.where((event) {
+      final now = DateTime.now();
+      final end = event.registrationEnd;
+      return end != null && end.year == now.year && end.month == now.month;
+    }).length;
+    final recognized = _events
+        .where((event) => event.schoolRecognitionStatus == 'recognized')
+        .length;
+    return _buildStatBand(
+      isDark,
+      [
+        ('我的计划', '${_calendarCount ?? 0}', _openCalendar),
+        ('待通知', '$pending', null),
+        ('本月可关注', '$thisMonth', null),
+        ('学校认定', '$recognized', null),
+      ],
+    );
+  }
+
+  Widget _buildAdminStats(bool isDark) {
+    final missingTime = _events
+        .where((event) =>
+            event.registrationEnd == null && event.registrationTimeText.isEmpty)
+        .length;
+    final needsReview = _events
+        .where((event) =>
+            event.timeStatus == 'pending' ||
+            event.schoolRecognitionStatus == 'pending')
+        .length;
+    return _buildStatBand(
+      isDark,
+      [
+        ('草稿', '$_adminDraftCount', () => _selectAdminStatus('draft')),
+        ('缺时间', '$missingTime', () => _selectMaintenance('time_pending')),
+        ('已发布', '$_adminPublishedCount', () => _selectAdminStatus('published')),
+        ('待核验', '$needsReview', () => _selectMaintenance('stale')),
+      ],
+    );
+  }
+
+  Widget _buildStatBand(
+    bool isDark,
+    List<(String, String, VoidCallback?)> items,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        14,
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: CompetitionUiTokens.cardDecoration(isDark),
+        child: Row(
           children: [
-            CompetitionCenterHeader(
-              myPlanCount: _calendarCount ?? 0,
-              pendingTimeCount: _events
-                  .where((event) => event.registrationEnd == null)
-                  .length,
-              adminTotalCount: _adminTotalCount,
-              adminDraftCount: _adminDraftCount,
-              adminPublishedCount: _adminPublishedCount,
-              adminArchivedCount: _adminArchivedCount,
-              onPrimaryTap: _openAdminImport,
-              onSecondaryTap: _openAdminManualCreate,
-              searchController: _searchController,
-              onSearchSubmitted: (_) => _load(),
-              onClearSearch: () {
-                _searchController.clear();
-                setState(() {});
-                _load();
-              },
-              onCategoryFilterTap: _openFilters,
-              onStatusFilterTap: () =>
-                  AppFeedback.showSnackBar(context, '当前按时间安排排序'),
-              onMyPlanTap: _openCalendar,
-              filterSummary: _filterSummary,
-              isAdmin: isAdmin,
-            ),
-
-            // 官方比赛库标题区
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  CompetitionUiTokens.pagePadding,
-                  8,
-                  CompetitionUiTokens.pagePadding,
-                  12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '官方比赛库',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: CompetitionUiTokens.titleColor(isDark),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          isAdmin ? '管理公开展示、草稿和已发布比赛' : '由管理员维护，加入后会复制到我的计划',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: CompetitionUiTokens.subColor(isDark),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (isAdmin) ...[
-                    OutlinedButton(
-                      onPressed: _openAdminManualCreate,
-                      style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        foregroundColor: CompetitionUiTokens.titleColor(isDark),
-                        side: BorderSide(
-                            color: CompetitionUiTokens.borderColor(isDark)),
-                      ),
-                      child: const Text('新建'),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: _openAdminImport,
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        backgroundColor: CompetitionUiTokens.accent(isDark),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('AI导入'),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-
-            // 管理员 Chips
-            if (isAdmin)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                    CompetitionUiTokens.pagePadding,
-                    0,
-                    CompetitionUiTokens.pagePadding,
-                    16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _buildAdminChip('全部', 'all', isDark),
-                            const SizedBox(width: 8),
-                            _buildAdminChip('草稿', 'draft', isDark),
-                            const SizedBox(width: 8),
-                            _buildAdminChip('已发布', 'published', isDark),
-                            const SizedBox(width: 8),
-                            _buildAdminChip('已归档', 'archived', isDark),
-                          ],
+            for (var i = 0; i < items.length; i++) ...[
+              Expanded(
+                child: InkWell(
+                  onTap: items[i].$3,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Column(
+                    children: [
+                      Text(
+                        items[i].$2,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: CompetitionUiTokens.titleColor(isDark),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildSoftButton(
-                      icon: Icons.filter_alt_outlined,
-                      label: '维护',
-                      isDark: isDark,
-                      highlight: _maintenanceFilter != null,
-                      onTap: _openMaintenanceFilters,
-                    ),
-                    const SizedBox(width: 8),
-                    _buildSoftButton(
-                      icon: _selectionMode
-                          ? Icons.close
-                          : Icons.checklist_rounded,
-                      label: _selectionMode ? '取消' : '选择',
-                      isDark: isDark,
-                      highlight: _selectionMode,
-                      onTap: () {
-                        setState(() {
-                          _selectionMode = !_selectionMode;
-                          if (!_selectionMode) {
-                            _selectedEventIds.clear();
-                          }
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-            if (isAdmin && _selectionMode) _buildSelectionBar(isDark),
-
-            // 内容区
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.only(top: 40),
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: _competitionPrimary,
+                      const SizedBox(height: 4),
+                      Text(
+                        items[i].$1,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: CompetitionUiTokens.subColor(isDark),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              )
-            else if (_events.isEmpty)
-              CompetitionEmptyState(
-                title: isAdmin
-                    ? (_adminStatusFilter == 'draft'
-                        ? '草稿列表还没有内容'
-                        : (_adminStatusFilter == 'published'
-                            ? '已发布列表还没有内容'
-                            : '列表还没有内容'))
-                    : '暂时没有官方推荐比赛',
-                message: isAdmin
-                    ? (_adminStatusFilter == 'draft'
-                        ? '可以 AI 导入或手动新建官方草稿。'
-                        : (_adminStatusFilter == 'published'
-                            ? '可以先导入草稿，确认后再发布。'
-                            : '没有找到符合条件的比赛。'))
-                    : '暂时没有官方推荐比赛。你可以先导入同学整理的计划，或手动添加想关注的比赛。',
-                primaryText: isAdmin ? 'AI导入' : '导入计划',
-                onPrimaryTap: isAdmin ? _openAdminImport : _openShareImport,
-                secondaryText: isAdmin ? '新建比赛' : '刷新',
-                onSecondaryTap: isAdmin ? _openAdminManualCreate : _load,
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: CompetitionUiTokens.pagePadding),
-                child: Column(
-                  children:
-                      _events.map((e) => _buildEventCard(e, isAdmin)).toList(),
-                ),
               ),
+              if (i != items.length - 1)
+                Container(
+                  width: 1,
+                  height: 30,
+                  color: CompetitionUiTokens.borderColor(isDark),
+                ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildStudentFocusTabs(bool isDark) {
+    final tabs = [
+      ('recommended', '推荐'),
+      ('deadline', '临近截止'),
+      ('recognized', '学校认定'),
+      ('fit', '适合我'),
+      ('pending', '待通知'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        14,
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final tab in tabs) ...[
+              ChoiceChip(
+                label: Text(tab.$2),
+                selected: _studentFocusFilter == tab.$1,
+                onSelected: (_) {
+                  setState(() => _studentFocusFilter = tab.$1);
+                  _load();
+                },
+                selectedColor: CompetitionUiTokens.accent(isDark),
+                backgroundColor: CompetitionUiTokens.cardBg(isDark),
+                side:
+                    BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+                labelStyle: TextStyle(
+                  color: _studentFocusFilter == tab.$1
+                      ? Colors.white
+                      : CompetitionUiTokens.titleColor(isDark),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdminActions(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        12,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: _openAdminImport,
+              icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+              label: const Text('AI导入'),
+              style: FilledButton.styleFrom(
+                backgroundColor: CompetitionUiTokens.accent(isDark),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _openAdminManualCreate,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('新建'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: CompetitionUiTokens.titleColor(isDark),
+                side:
+                    BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _selectionMode = !_selectionMode;
+                  if (!_selectionMode) _selectedEventIds.clear();
+                });
+              },
+              icon: Icon(
+                _selectionMode ? Icons.close_rounded : Icons.checklist_rounded,
+                size: 18,
+              ),
+              label: Text(_selectionMode ? '取消' : '批量发布'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _selectionMode
+                    ? CompetitionUiTokens.dangerColor(isDark)
+                    : CompetitionUiTokens.titleColor(isDark),
+                side:
+                    BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminFilterRows(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        14,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildAdminChip('全部', 'all', isDark),
+                const SizedBox(width: 8),
+                _buildAdminChip('草稿', 'draft', isDark),
+                const SizedBox(width: 8),
+                _buildAdminChip('已发布', 'published', isDark),
+                const SizedBox(width: 8),
+                _buildAdminChip('已归档', 'archived', isDark),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _buildSoftButton(
+                icon: Icons.build_circle_outlined,
+                label: '维护筛选',
+                isDark: isDark,
+                highlight: _maintenanceFilter != null,
+                onTap: _openMaintenanceFilters,
+              ),
+              const SizedBox(width: 8),
+              _buildSoftButton(
+                icon: Icons.category_outlined,
+                label: '分类筛选',
+                isDark: isDark,
+                highlight: _categorySlug != null,
+                onTap: _openFilters,
+              ),
+              const SizedBox(width: 8),
+              _buildSoftButton(
+                icon: Icons.star_border_rounded,
+                label: '推荐等级',
+                isDark: isDark,
+                highlight: _recommendations.isNotEmpty,
+                onTap: _openFilters,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle({
+    required String title,
+    required String subtitle,
+    required bool isDark,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        2,
+        CompetitionUiTokens.pagePadding,
+        12,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: CompetitionUiTokens.titleColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 13,
+              color: CompetitionUiTokens.subColor(isDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventList({required bool isAdmin, required bool isDark}) {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 40),
+        child: Center(
+          child: CircularProgressIndicator(color: _competitionPrimary),
+        ),
+      );
+    }
+    if (_events.isEmpty) {
+      return CompetitionEmptyState(
+        title: isAdmin ? '列表还没有内容' : '暂时没有符合条件的比赛',
+        message: isAdmin ? '可以 AI 导入或手动新建官方草稿。' : '换一个筛选条件看看，或先导入同学整理的计划。',
+        primaryText: isAdmin ? 'AI导入' : '导入计划',
+        onPrimaryTap: isAdmin ? _openAdminImport : _openShareImport,
+        secondaryText: isAdmin ? '新建比赛' : '刷新',
+        onSecondaryTap: isAdmin ? _openAdminManualCreate : _load,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: CompetitionUiTokens.pagePadding,
+      ),
+      child: Column(
+        children: _events.map((e) => _buildEventCard(e, isAdmin)).toList(),
+      ),
+    );
+  }
+
+  String get _studentFocusTitle {
+    switch (_studentFocusFilter) {
+      case 'deadline':
+        return '临近截止';
+      case 'recognized':
+        return '学校认定';
+      case 'fit':
+        return '适合我';
+      case 'pending':
+        return '待通知';
+      default:
+        return '推荐关注';
+    }
+  }
+
+  void _selectAdminStatus(String status) {
+    setState(() => _adminStatusFilter = status);
+    _load();
+  }
+
+  void _selectMaintenance(String? value) {
+    setState(() => _maintenanceFilter = value);
+    _load();
   }
 
   Widget _buildAdminChip(String label, String value, bool isDark) {

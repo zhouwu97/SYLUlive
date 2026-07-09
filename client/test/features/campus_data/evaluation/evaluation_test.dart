@@ -449,20 +449,44 @@ void main() {
       expect(detector.classify(p), EvaluationPageType.courseList);
     });
 
-    test('mixed course list and evaluation form prioritizes evaluation form', () {
+    test('mixed course list and evaluation form prioritizes evaluation form',
+        () {
       final p = EvaluationProbeResult.fromJson(
         _makeProbe(
-          url: 'https://jxw.sylu.edu.cn/xspjgl/xspj_cxXspjIndex.html',
-          possibleCourseRows: [
-            {'index': 0, 'cells': ['高数']},
-            {'index': 1, 'cells': ['英语']},
-          ],
-          scoreInputs: [
-            {'id': 'i1', 'minScore': 0, 'maxScore': 8, 'rangeSource': 'placeholder', 'isVisible': true},
-            {'id': 'i2', 'minScore': 0, 'maxScore': 6, 'rangeSource': 'placeholder', 'isVisible': true},
-            {'id': 'i3', 'minScore': 0, 'maxScore': 10, 'rangeSource': 'placeholder', 'isVisible': true},
-          ]
-        ),
+            url: 'https://jxw.sylu.edu.cn/xspjgl/xspj_cxXspjIndex.html',
+            possibleCourseRows: [
+              {
+                'index': 0,
+                'cells': ['高数']
+              },
+              {
+                'index': 1,
+                'cells': ['英语']
+              },
+            ],
+            scoreInputs: [
+              {
+                'id': 'i1',
+                'minScore': 0,
+                'maxScore': 8,
+                'rangeSource': 'placeholder',
+                'isVisible': true
+              },
+              {
+                'id': 'i2',
+                'minScore': 0,
+                'maxScore': 6,
+                'rangeSource': 'placeholder',
+                'isVisible': true
+              },
+              {
+                'id': 'i3',
+                'minScore': 0,
+                'maxScore': 10,
+                'rangeSource': 'placeholder',
+                'isVisible': true
+              },
+            ]),
       );
       expect(detector.classify(p), EvaluationPageType.evaluationForm);
     });

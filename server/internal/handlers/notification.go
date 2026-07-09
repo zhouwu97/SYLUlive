@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"time"
 )
 
 // NotificationHandler 通知处理器
@@ -85,6 +86,96 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "已全部标记为已读"})
+}
+
+// MarkSelectedRead 标记指定的通知为已读
+func (h *NotificationHandler) MarkSelectedRead(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid := userID.(uint)
+
+	var req struct {
+		IDs []uint `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ids不能为空"})
+		return
+	}
+
+	if len(req.IDs) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "单次最多标记100条"})
+		return
+	}
+
+	res := h.db.Model(&models.Notification{}).
+		Where("user_id = ? AND id IN ?", uid, req.IDs).
+		Update("is_read", true)
+
+	if res.Error != nil {
+		log.Printf("[DB_WARN] Failed to mark selected read: %v", res.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "操作失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"updated": res.RowsAffected})
+}
+
+// GetPostUnreadReplyNotifications 获取帖子内的未读回复通知
+func (h *NotificationHandler) GetPostUnreadReplyNotifications(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid := userID.(uint)
+
+	postID := c.Param("id")
+
+	var notifications []models.Notification
+	if err := h.db.Where("user_id = ? AND post_id = ? AND type = ? AND is_read = ?", uid, postID, "reply", false).
+		Order("created_at asc").
+		Find(&notifications).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读通知失败"})
+		return
+	}
+
+	type UserInfo struct {
+		ID       uint   `json:"id"`
+		Nickname string `json:"nickname"`
+		Avatar   string `json:"avatar"`
+	}
+
+	type UnreadRes struct {
+		ID        uint      `json:"id"`
+		PostID    uint      `json:"post_id"`
+		RelatedID uint      `json:"related_id"`
+		Content   string    `json:"content"`
+		CreatedAt string    `json:"created_at"`
+		FromUser  *UserInfo `json:"from_user"`
+	}
+
+	var items []UnreadRes
+	for _, n := range notifications {
+		item := UnreadRes{
+			ID:        n.ID,
+			PostID:    n.PostID,
+			RelatedID: n.RelatedID,
+			Content:   n.Content,
+			CreatedAt: n.CreatedAt.Format(time.RFC3339),
+		}
+		if n.FromUID > 0 {
+			var u models.User
+			if h.db.Where("id = ?", n.FromUID).Select("id, nickname, avatar").First(&u).Error == nil {
+				item.FromUser = &UserInfo{ID: u.ID, Nickname: u.Nickname, Avatar: u.Avatar}
+			}
+		}
+		items = append(items, item)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"count": len(items),
+		"items": items,
+	})
 }
 
 // CreateReplyNotification 创建回复通知（被 reply handler 调用）

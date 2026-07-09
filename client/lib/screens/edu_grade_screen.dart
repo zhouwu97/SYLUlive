@@ -273,6 +273,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _isRefreshing = false;
         _errorMessage = null;
       });
+      _syncBaselineAndCancelNotification(
+          _selectedYear, _selectedSemester, result.data!);
     } else {
       final errorMsg = result.errorMessage ?? '成绩加载失败';
       if (_grades.isNotEmpty) {
@@ -319,6 +321,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             : GradePageState.content;
         _isRefreshing = false;
       });
+      _syncBaselineAndCancelNotification(
+          _selectedYear, _selectedSemester, result.data!);
       if (mounted && !silent) _showSnackBar('成绩已更新');
       return result.data;
     }
@@ -391,6 +395,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           _grades.isEmpty ? GradePageState.empty : GradePageState.content;
     });
 
+    _syncBaselineAndCancelNotification(year, semester, result.data!);
     _saveSelectedSemester(year, semester);
     return true;
   }
@@ -399,6 +404,23 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     final userId = _lastUserId;
     if (userId == null) return;
     _saveSelectedSemesterFor(userId, year, semester);
+  }
+
+  void _syncBaselineAndCancelNotification(
+      String year, int semester, List<EduGrade> grades) {
+    final userId = _lastUserId;
+    if (userId == null) return;
+    unawaited(
+      GradeReminderService.instance.syncBaselineIfEnabled(
+        userId: userId,
+        year: year,
+        semester: semester,
+        grades: grades,
+      ),
+    );
+    unawaited(
+      GradeReminderService.instance.clearGradeUpdateNotifications(),
+    );
   }
 
   void _saveSelectedSemesterFor(String userId, String year, int semester) {
@@ -434,6 +456,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _pageState =
             _grades.isEmpty ? GradePageState.empty : GradePageState.content;
       });
+      _syncBaselineAndCancelNotification(year, semester, result.data!);
     }
   }
 

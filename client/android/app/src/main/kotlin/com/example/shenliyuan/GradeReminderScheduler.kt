@@ -168,6 +168,22 @@ object GradeReminderScheduler {
         )
     }
 
+    fun clearAllGradeUpdateNotifications(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        
+        manager.activeNotifications
+            ?.filter { it.packageName == context.packageName }
+            ?.filter { it.notification.channelId == GradeReminderWorker.CHANNEL_ID }
+            ?.forEach { notification ->
+                if (notification.tag != null) {
+                    manager.cancel(notification.tag, notification.id)
+                } else {
+                    manager.cancel(notification.id)
+                }
+            }
+    }
+
     fun status(context: Context, userIdArg: String?): Map<String, Any?> {
         val p = prefs(context)
         val userId = userIdArg?.takeIf { it.isNotBlank() }

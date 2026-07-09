@@ -262,7 +262,7 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     debugPrint(
       'Schedule applyFetchedCourses: '
-      'term=${_currentTerm.id}, raw=${rawCourses.length}, '
+      'term=${currentTerm.id}, raw=${rawCourses.length}, '
       'hidden=${_hiddenCourseIds.length}',
     );
 

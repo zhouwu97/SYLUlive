@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_constants.dart';
 import '../services/home_widget_service.dart';
-import '../services/course_reminder_service.dart';
 import '../models/course_term.dart';
 
 /// 单个课程块，用于课表网格展示
@@ -117,7 +116,6 @@ class CourseScheduleProvider extends ChangeNotifier {
   String? _errorMessage;
 
   // 学期管理
-  List<CourseTerm> _terms = [];
   CourseTerm? _currentTerm;
 
   CourseTerm get currentTerm => _currentTerm ?? CourseTerm.inferCurrentTerm();
@@ -263,7 +261,7 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     debugPrint(
       'Schedule applyFetchedCourses: '
-      'term=${_currentTerm?.id}, raw=${rawCourses.length}, '
+      'term=${currentTerm.id}, raw=${rawCourses.length}, '
       'hidden=${_hiddenCourseIds.length}',
     );
 
@@ -470,10 +468,6 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value.trim()) ?? fallback;
     return fallback;
-  }
-
-  String _asString(Object? value) {
-    return value?.toString() ?? '';
   }
 
   Future<void> _loadHiddenCourses() async {

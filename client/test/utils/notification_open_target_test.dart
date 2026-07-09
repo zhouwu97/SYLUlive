@@ -11,9 +11,9 @@ void main() {
           'reply_id': 456,
         }
       };
-      
+
       final target = NotificationOpenTarget.parse(message);
-      
+
       expect(target, isNotNull);
       expect(target!.type, NotificationOpenType.reply);
       expect(target.postId, 123);
@@ -37,7 +37,7 @@ void main() {
         replyId: 2,
         createdAt: DateTime(2026),
       );
-      
+
       final t2 = NotificationOpenTarget(
         type: NotificationOpenType.reply,
         postId: 1,

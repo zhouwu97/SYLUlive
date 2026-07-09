@@ -7,12 +7,13 @@ import '../models/post.dart';
 import '../models/water_section.dart';
 import '../models/user.dart';
 import '../providers/water_section_provider.dart';
+import '../screens/image_viewer_screen.dart';
+import '../screens/user_home_screen.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../screens/user_home_screen.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
@@ -611,7 +612,8 @@ class _PostCardState extends State<PostCard>
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: GestureDetector(
-                onTap: widget.onTap,
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openImageViewer(context, imageUrls, 0),
                 child: SizedBox(
                   width: imageWidth,
                   height: imageHeight,
@@ -658,7 +660,8 @@ class _PostCardState extends State<PostCard>
             itemBuilder: (context, index) {
               if (index == 2 && count > 3) {
                 return GestureDetector(
-                  onTap: widget.onTap,
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _openImageViewer(context, imageUrls, 2),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -691,7 +694,8 @@ class _PostCardState extends State<PostCard>
                 );
               }
               return GestureDetector(
-                onTap: widget.onTap,
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openImageViewer(context, imageUrls, index),
                 child: CachedNetworkImage(
                   cacheManager: PostImageCache.manager,
                   imageUrl: imageUrls[index],
@@ -709,6 +713,23 @@ class _PostCardState extends State<PostCard>
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+
+  void _openImageViewer(
+    BuildContext context,
+    List<String> imageUrls,
+    int initialIndex,
+  ) {
+    if (imageUrls.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          imageUrls: imageUrls,
+          initialIndex: initialIndex,
         ),
       ),
     );

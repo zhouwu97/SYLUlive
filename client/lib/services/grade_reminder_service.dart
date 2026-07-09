@@ -182,6 +182,15 @@ class GradeReminderService {
     }
   }
 
+  Future<void> clearGradeUpdateNotifications() async {
+    if (!_isAndroid) return;
+    try {
+      await _channel.invokeMethod<void>('clearGradeUpdateNotifications');
+    } catch (e) {
+      debugPrint('清理历史成绩通知失败: $e');
+    }
+  }
+
   Future<bool> openNotificationSettings() async {
     if (!_isAndroid) return false;
     try {

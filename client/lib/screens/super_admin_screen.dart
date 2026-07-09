@@ -675,7 +675,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                                 ? NetworkImage(
                                     avatar.startsWith('http')
                                         ? avatar
-                                        : 'https://sylu.zhouwu.ccwu.cc$avatar',
+                                        : 'http://156.233.229.232$avatar',
                                   )
                                 : null,
                             child: avatar.isEmpty

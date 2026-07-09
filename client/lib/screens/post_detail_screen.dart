@@ -26,7 +26,7 @@ import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
 import 'water_category_feed_route.dart';
 
-import 'user_home_screen.dart';
+import '../utils/app_navigation.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final int postId;
@@ -3076,10 +3076,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       handler(userId);
       return;
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => UserHomeScreen(userId: userId)),
-    );
+    AppNavigation.openUserHome(context, userId: userId);
   }
 
   // ---- 操作栏（集市复用，保持不变） ----

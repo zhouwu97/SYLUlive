@@ -39,8 +39,10 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
     final pageBg = isDark ? const Color(0xFF101219) : const Color(0xFFFFFAF4);
     final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
     final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
-    final accentSoft = isDark ? accent.withValues(alpha: 0.14) : const Color(0xFFEAF6F3);
-    final border = isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFECE4DA);
+    final accentSoft =
+        isDark ? accent.withValues(alpha: 0.14) : const Color(0xFFEAF6F3);
+    final border =
+        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFECE4DA);
     final text = isDark ? Colors.white : const Color(0xFF1F2328);
     final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
 
@@ -121,7 +123,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       ),
                       const SizedBox(height: 12),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: accentSoft,
                           borderRadius: BorderRadius.circular(12),
@@ -147,18 +150,26 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                         ),
                         child: Column(
                           children: [
-                            _buildInfoRow('当前版本', _currentVersion, text, subText, height: 52),
-                            Divider(height: 1, color: border, indent: 16, endIndent: 16),
+                            _buildInfoRow(
+                                '当前版本', _currentVersion, text, subText,
+                                height: 52),
+                            Divider(
+                                height: 1,
+                                color: border,
+                                indent: 16,
+                                endIndent: 16),
                             InkWell(
                               onTap: () {
                                 Navigator.pop(context);
-                                UpdateChecker.check(context, showNoUpdateToast: true, manual: true);
+                                UpdateChecker.check(context,
+                                    showNoUpdateToast: true, manual: true);
                               },
                               borderRadius: const BorderRadius.only(
                                 bottomLeft: Radius.circular(20),
                                 bottomRight: Radius.circular(20),
                               ),
-                              child: _buildActionRow('检查更新', text, subText, height: 52),
+                              child: _buildActionRow('检查更新', text, subText,
+                                  height: 52),
                             ),
                           ],
                         ),
@@ -169,7 +180,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       _buildSectionTitle('开发者', text),
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 16),
                         decoration: BoxDecoration(
                           color: cardBg,
                           borderRadius: BorderRadius.circular(20),
@@ -184,7 +196,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                                 color: accentSoft,
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: Icon(Icons.code_rounded, size: 20, color: accent),
+                              child: Icon(Icons.code_rounded,
+                                  size: 20, color: accent),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -234,24 +247,41 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                               text: text,
                               subText: subText,
                               border: border,
-                              onTap: () => _launchUrl('https://github.com/zhouwu97/SYLUlive'),
+                              onTap: () => _launchUrl(
+                                  'https://github.com/zhouwu97/SYLUlive'),
                             ),
-                            Divider(height: 1, color: border, indent: 56, endIndent: 16),
+                            Divider(
+                                height: 1,
+                                color: border,
+                                indent: 56,
+                                endIndent: 16),
                             _buildLinkRow(
                               icon: Icons.group_rounded,
                               iconColor: const Color(0xFF2F80ED),
-                              iconBg: isDark ? const Color(0xFF2F80ED).withValues(alpha: 0.14) : const Color(0xFF2F80ED).withValues(alpha: 0.1),
+                              iconBg: isDark
+                                  ? const Color(0xFF2F80ED)
+                                      .withValues(alpha: 0.14)
+                                  : const Color(0xFF2F80ED)
+                                      .withValues(alpha: 0.1),
                               title: '加入群聊',
                               text: text,
                               subText: subText,
                               border: border,
                               onTap: () => showGroupChatDialog(context),
                             ),
-                            Divider(height: 1, color: border, indent: 56, endIndent: 16),
+                            Divider(
+                                height: 1,
+                                color: border,
+                                indent: 56,
+                                endIndent: 16),
                             _buildLinkRow(
                               icon: Icons.email_rounded,
                               iconColor: const Color(0xFFF59E0B),
-                              iconBg: isDark ? const Color(0xFFF59E0B).withValues(alpha: 0.14) : const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                              iconBg: isDark
+                                  ? const Color(0xFFF59E0B)
+                                      .withValues(alpha: 0.14)
+                                  : const Color(0xFFF59E0B)
+                                      .withValues(alpha: 0.1),
                               title: '联系作者',
                               text: text,
                               subText: subText,
@@ -301,7 +331,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
     );
   }
 
-  Widget _buildInfoRow(String title, String value, Color text, Color subText, {required double height}) {
+  Widget _buildInfoRow(String title, String value, Color text, Color subText,
+      {required double height}) {
     return SizedBox(
       height: height,
       child: Padding(
@@ -317,7 +348,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
     );
   }
 
-  Widget _buildActionRow(String title, Color text, Color subText, {required double height}) {
+  Widget _buildActionRow(String title, Color text, Color subText,
+      {required double height}) {
     return SizedBox(
       height: height,
       child: Padding(
@@ -347,7 +379,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
     return InkWell(
       onTap: onTap,
       borderRadius: isLast
-          ? const BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))
+          ? const BorderRadius.only(
+              bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))
           : BorderRadius.zero,
       child: SizedBox(
         height: 56,
@@ -391,8 +424,10 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
     final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
     final labelColor = isDark ? Colors.white54 : const Color(0xFF9094A6);
     final descriptionColor = isDark ? Colors.white70 : const Color(0xFF4F5568);
-    final valuePanelColor = isDark ? const Color(0x0AFFFFFF) : const Color(0x08000000);
-    final valueBorderColor = isDark ? const Color(0x0DFFFFFF) : const Color(0x0D000000);
+    final valuePanelColor =
+        isDark ? const Color(0x0AFFFFFF) : const Color(0x08000000);
+    final valueBorderColor =
+        isDark ? const Color(0x0DFFFFFF) : const Color(0x0D000000);
     const accent = Colors.orange;
 
     showDialog<void>(
@@ -436,7 +471,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.alternate_email_rounded, size: 18, color: accent),
+                    const Icon(Icons.alternate_email_rounded,
+                        size: 18, color: accent),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(

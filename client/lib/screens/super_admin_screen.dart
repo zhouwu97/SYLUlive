@@ -151,8 +151,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       appBar: AppBar(
         title: const Text('超级管理员面板'),
         leading: const BackButton(),
-        actions: [
-        ],
+        actions: [],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -238,10 +237,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       _showChangeRoleDialog(user);
     else if (action == 'reset')
       _resetPassword(user['id']);
-    else if (action == 'delete')
-      _deleteUser(user['id']);
+    else if (action == 'delete') _deleteUser(user['id']);
   }
-
 
   Widget _buildApprovalsTab() {
     if (_pendingInvitations.isEmpty)

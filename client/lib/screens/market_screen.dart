@@ -29,15 +29,12 @@ final class _MarketTokens {
   static Color accent(bool isDark) =>
       isDark ? const Color(0xFFFFA06D) : const Color(0xFFFF7A45);
 
-  static Color accentSoft(bool isDark) =>
-      isDark
-          ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
-          : const Color(0xFFFFF0E8);
+  static Color accentSoft(bool isDark) => isDark
+      ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
+      : const Color(0xFFFFF0E8);
 
   static Color borderColor(bool isDark) =>
-      isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : const Color(0xFFF1E5DC);
+      isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF1E5DC);
 
   static Color titleColor(bool isDark) =>
       isDark ? Colors.white : const Color(0xFF1F2328);
@@ -71,9 +68,9 @@ class _MarketScreenState extends State<MarketScreen> {
   static const _marketPostTypes = ['sell', 'buy', 'lost', 'found', 'proxy'];
 
   List<MapEntry<String, String>> get _visibleCategoryOptions => [
-    const MapEntry('all', '全部'),
-    for (final type in _allowedTypes) MapEntry(type, _typeLabel(type)),
-  ];
+        const MapEntry('all', '全部'),
+        for (final type in _allowedTypes) MapEntry(type, _typeLabel(type)),
+      ];
 
   List<String> get _allowedTypes =>
       widget.onlyPostTypes == null || widget.onlyPostTypes!.isEmpty
@@ -234,8 +231,7 @@ class _MarketScreenState extends State<MarketScreen> {
   List<Post> _applyLocalTypeFilter(List<Post> posts) {
     return posts.where((post) {
       final typeAllowed = _allowedTypes.contains(post.postType);
-      final typeMatched =
-          _typeFilter == 'all' || post.postType == _typeFilter;
+      final typeMatched = _typeFilter == 'all' || post.postType == _typeFilter;
       return typeAllowed && typeMatched;
     }).toList();
   }
@@ -331,15 +327,12 @@ class _MarketScreenState extends State<MarketScreen> {
               child: Text(
                 label,
                 style: TextStyle(
-                  color: isSelected
-                      ? accent
-                      : _MarketTokens.titleColor(isDark),
+                  color: isSelected ? accent : _MarketTokens.titleColor(isDark),
                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
             ),
-            if (isSelected)
-              Icon(Icons.check_rounded, color: accent, size: 20),
+            if (isSelected) Icon(Icons.check_rounded, color: accent, size: 20),
           ],
         ),
       ),
@@ -473,7 +466,8 @@ class _MarketScreenState extends State<MarketScreen> {
                                       setSheetState(() => draftType = 'all');
                                     },
                               style: TextButton.styleFrom(
-                                backgroundColor: _MarketTokens.accentSoft(isDark),
+                                backgroundColor:
+                                    _MarketTokens.accentSoft(isDark),
                                 foregroundColor: accent,
                                 disabledForegroundColor:
                                     accent.withValues(alpha: 0.35),
@@ -692,7 +686,8 @@ class _MarketScreenState extends State<MarketScreen> {
                             MaterialPageRoute(
                               builder: (_) => CreatePostScreen(
                                 boardId: 2,
-                                defaultPostType: _defaultPublishTypeForCurrentView,
+                                defaultPostType:
+                                    _defaultPublishTypeForCurrentView,
                                 allowedPostTypes: widget.onlyPostTypes,
                               ),
                             ),
@@ -777,8 +772,7 @@ class _MarketScreenState extends State<MarketScreen> {
           ),
           const SizedBox(width: 8),
           if (showBuy)
-            _buildGuidanceChip(
-                '发布求购', isDark, () => _openMarketPublish('buy')),
+            _buildGuidanceChip('发布求购', isDark, () => _openMarketPublish('buy')),
           if (showBuy && showProxy) const SizedBox(width: 8),
           if (showProxy)
             _buildGuidanceChip(
@@ -1105,95 +1099,95 @@ class _MarketScreenState extends State<MarketScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 48, 16, 0),
       child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
-          decoration: BoxDecoration(
-            color: _MarketTokens.cardBg(isDark),
-            borderRadius: BorderRadius.circular(_MarketTokens.cardRadius),
-            border: Border.all(color: _MarketTokens.borderColor(isDark)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: _MarketTokens.accentSoft(isDark),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.inventory_2_outlined,
-                  size: 34,
-                  color: accent.withValues(alpha: 0.8),
-                ),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+        decoration: BoxDecoration(
+          color: _MarketTokens.cardBg(isDark),
+          borderRadius: BorderRadius.circular(_MarketTokens.cardRadius),
+          border: Border.all(color: _MarketTokens.borderColor(isDark)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: _MarketTokens.accentSoft(isDark),
+                shape: BoxShape.circle,
               ),
-              const SizedBox(height: 20),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _MarketTokens.titleColor(isDark),
-                ),
+              child: Icon(
+                Icons.inventory_2_outlined,
+                size: 34,
+                color: accent.withValues(alpha: 0.8),
               ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _MarketTokens.subColor(isDark),
-                  height: 1.4,
-                ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: _MarketTokens.titleColor(isDark),
               ),
-              if (!isNoResults) ...[
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: 200,
-                  height: 44,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final authProvider = context.read<AuthProvider>();
-                      if (!authProvider.isLoggedIn) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('请先登录')),
-                        );
-                        Navigator.pushNamed(context, '/login');
-                        return;
-                      }
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CreatePostScreen(
-                            boardId: 2,
-                            defaultPostType: defaultType,
-                            allowedPostTypes: widget.onlyPostTypes,
-                          ),
-                        ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: _MarketTokens.subColor(isDark),
+                height: 1.4,
+              ),
+            ),
+            if (!isNoResults) ...[
+              const SizedBox(height: 24),
+              SizedBox(
+                width: 200,
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final authProvider = context.read<AuthProvider>();
+                    if (!authProvider.isLoggedIn) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('请先登录')),
                       );
-                      if (mounted) {
-                        await _refreshCurrent();
-                      }
-                    },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text(
-                      _publishLabel(defaultType),
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                      Navigator.pushNamed(context, '/login');
+                      return;
+                    }
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CreatePostScreen(
+                          boardId: 2,
+                          defaultPostType: defaultType,
+                          allowedPostTypes: widget.onlyPostTypes,
+                        ),
                       ),
+                    );
+                    if (mounted) {
+                      await _refreshCurrent();
+                    }
+                  },
+                  icon: const Icon(Icons.add, size: 18),
+                  label: Text(
+                    _publishLabel(defaultType),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                 ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
-      );
+      ),
+    );
   }
 }

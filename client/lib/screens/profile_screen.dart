@@ -49,8 +49,7 @@ import 'social_list_screen.dart';
   final showPrivateBadge = unreadMessageCount > 0;
   final showNotificationBadge = unreadNotificationCount > 0;
   return (
-    privateSubtitle:
-        showPrivateBadge ? '$unreadMessageCount条新私信' : '查看私信',
+    privateSubtitle: showPrivateBadge ? '$unreadMessageCount条新私信' : '查看私信',
     showPrivateBadge: showPrivateBadge,
     notificationSubtitle:
         showNotificationBadge ? '$unreadNotificationCount条新通知' : null,
@@ -666,7 +665,6 @@ class _ProfileScreenState extends State<ProfileScreen>
               );
             },
           ),
-
         ];
 
         return _buildSectionLayout(context, '管理员', items, isDark);
@@ -955,7 +953,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ),
       ),
-
     ];
     return _buildSectionLayout(context, '教务', items, isDark);
   }

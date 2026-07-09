@@ -237,7 +237,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     super.dispose();
   }
 
-
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {

@@ -49,10 +49,14 @@ class EvaluationListItem {
       if (lower.contains('未评') || lower.contains('pending')) {
         return EvaluationItemStatus.pending;
       }
-      if (lower.contains('已评') || lower.contains('已保存') || lower.contains('saved')) {
+      if (lower.contains('已评') ||
+          lower.contains('已保存') ||
+          lower.contains('saved')) {
         return EvaluationItemStatus.saved;
       }
-      if (lower.contains('已提交') || lower.contains('提交') || lower.contains('submitted')) {
+      if (lower.contains('已提交') ||
+          lower.contains('提交') ||
+          lower.contains('submitted')) {
         return EvaluationItemStatus.submitted;
       }
       return EvaluationItemStatus.unknown;

@@ -34,9 +34,8 @@ class GradeCourseItem extends StatelessWidget {
     final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
     final metaColor = isDark ? Colors.grey.shade400 : const Color(0xFF747B82);
 
-    final gpaText = grade.gpa != null
-        ? '绩点 ${grade.gpa!.toStringAsFixed(2)}'
-        : '绩点 --';
+    final gpaText =
+        grade.gpa != null ? '绩点 ${grade.gpa!.toStringAsFixed(2)}' : '绩点 --';
 
     final content = Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -67,10 +66,16 @@ class GradeCourseItem extends StatelessWidget {
                 margin: const EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
                   color: grade.isPassed == false
-                      ? (isDark ? const Color(0xFFFF8A80) : const Color(0xFFE54848))
+                      ? (isDark
+                          ? const Color(0xFFFF8A80)
+                          : const Color(0xFFE54848))
                       : grade.isDegree
-                          ? (isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72))
-                          : (isDark ? const Color(0xFF5E646A) : const Color(0xFFD6DFDA)),
+                          ? (isDark
+                              ? const Color(0xFF7ED6C5)
+                              : const Color(0xFF147C72))
+                          : (isDark
+                              ? const Color(0xFF5E646A)
+                              : const Color(0xFFD6DFDA)),
                   shape: BoxShape.circle,
                 ),
               ),
@@ -126,7 +131,8 @@ class GradeCourseItem extends StatelessWidget {
               runSpacing: 6,
               children: [
                 if (grade.isDegree) _tag(context, '学位课', _TagTone.neutral),
-                if (grade.isPassed == false) _tag(context, '未通过', _TagTone.danger),
+                if (grade.isPassed == false)
+                  _tag(context, '未通过', _TagTone.danger),
               ],
             ),
           ],
@@ -162,20 +168,14 @@ class GradeCourseItem extends StatelessWidget {
 
     switch (tone) {
       case _TagTone.danger:
-        bg = isDark
-            ? const Color(0xFF4A2525)
-            : const Color(0xFFFFEEEE);
-        fg = isDark
-            ? const Color(0xFFFFB4B4)
-            : const Color(0xFFC84242);
+        bg = isDark ? const Color(0xFF4A2525) : const Color(0xFFFFEEEE);
+        fg = isDark ? const Color(0xFFFFB4B4) : const Color(0xFFC84242);
         break;
       case _TagTone.neutral:
         bg = isDark
             ? Colors.white.withValues(alpha: 0.07)
             : const Color(0xFFEAF6F3);
-        fg = isDark
-            ? const Color(0xFF7ED6C5)
-            : const Color(0xFF147C72);
+        fg = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
         break;
     }
 

@@ -74,8 +74,7 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
       margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 20),
       decoration: BoxDecoration(
         color: RankingTokens.cardBg(isDark),
-        borderRadius:
-            const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       padding: EdgeInsets.only(
         left: 20,
@@ -145,9 +144,8 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: isDark
-                    ? const Color(0x33FFFFFF)
-                    : const Color(0x0A000000),
+                fillColor:
+                    isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),

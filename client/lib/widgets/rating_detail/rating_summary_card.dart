@@ -25,7 +25,8 @@ class RatingSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surfaceColor = backgroundColor ?? (isDark ? const Color(0xFF1C2230) : Colors.white);
+    final surfaceColor =
+        backgroundColor ?? (isDark ? const Color(0xFF1C2230) : Colors.white);
     final mutedTextColor = isDark ? Colors.grey.shade300 : Colors.grey.shade600;
 
     return Card(

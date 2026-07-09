@@ -2,7 +2,8 @@ class Announcement {
   final int id;
   final String title;
   final String content;
-  final int createdBy; // was authorId — backward compat: parsed from created_by or author_id
+  final int
+      createdBy; // was authorId — backward compat: parsed from created_by or author_id
   final Map<String, dynamic>? creator;
   final DateTime createdAt;
   final DateTime? updatedAt;
@@ -41,8 +42,7 @@ class Announcement {
       creator: json['creator'] is Map
           ? Map<String, dynamic>.from(json['creator'])
           : null,
-      createdAt:
-          DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+      createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       updatedAt: json['updated_at'] != null
           ? DateTime.tryParse(json['updated_at'])
           : null,

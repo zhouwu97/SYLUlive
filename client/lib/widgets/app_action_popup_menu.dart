@@ -40,9 +40,8 @@ class AppActionPopupMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF1E2226) : Colors.white;
-    final border = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : const Color(0xFFE8E8E8);
+    final border =
+        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE8E8E8);
     final textColor = isDark ? Colors.white : const Color(0xFF222222);
     final subColor = isDark ? Colors.white70 : const Color(0xFF666666);
     final danger = dangerColor ?? const Color(0xFFE54848);

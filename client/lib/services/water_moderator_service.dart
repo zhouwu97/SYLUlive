@@ -32,8 +32,7 @@ class WaterModeratorService {
     final data = response.data;
     final list = data['moderators'] as List<dynamic>? ?? [];
     return list
-        .map((e) =>
-            WaterSectionModerator.fromJson(e as Map<String, dynamic>))
+        .map((e) => WaterSectionModerator.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

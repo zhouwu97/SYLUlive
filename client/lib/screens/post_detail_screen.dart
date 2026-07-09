@@ -1307,10 +1307,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final canEdit = _isCurrentUserPostOwner();
     final isOwn = _isCurrentUserPostOwner();
     final isAdmin = currentUser?.isAdmin ?? false;
-    final overlayStyle = (!isDark
-            ? SystemUiOverlayStyle.dark
-            : SystemUiOverlayStyle.light)
-        .copyWith(
+    final overlayStyle =
+        (!isDark ? SystemUiOverlayStyle.dark : SystemUiOverlayStyle.light)
+            .copyWith(
       statusBarColor: Colors.transparent,
       systemNavigationBarColor: Colors.transparent,
     );
@@ -1322,6 +1321,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         backgroundColor: transparentMode
             ? Colors.transparent
             : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
@@ -1569,9 +1569,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             value: _post?.waterSectionPinned == true
                 ? 'section_unpin'
                 : 'section_pin',
-            label: _post?.waterSectionPinned == true
-                ? '取消版块置顶'
-                : '设为版块置顶',
+            label: _post?.waterSectionPinned == true ? '取消版块置顶' : '设为版块置顶',
             icon: _post?.waterSectionPinned == true
                 ? Icons.push_pin_outlined
                 : Icons.push_pin_rounded,
@@ -1583,9 +1581,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             value: _post?.waterSectionFeatured == true
                 ? 'section_unfeature'
                 : 'section_feature',
-            label: _post?.waterSectionFeatured == true
-                ? '取消版块精华'
-                : '设为版块精华',
+            label: _post?.waterSectionFeatured == true ? '取消版块精华' : '设为版块精华',
             icon: _post?.waterSectionFeatured == true
                 ? Icons.star_border_rounded
                 : Icons.auto_awesome_rounded,
@@ -2702,131 +2698,146 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // ---- 水帖底部回复栏 ----
 
-  Widget _buildWaterReplyBar(bool isDark) {
-    if (_isReplyComposerOpen) {
-      // 展开的输入框
-      return Container(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+  Widget _buildComposerBody(bool isDark) {
+    final viewInsets = MediaQuery.viewInsetsOf(context);
+    final bottomPadding = viewInsets.bottom;
+
+    return AnimatedPadding(
+      padding: EdgeInsets.only(bottom: bottomPadding),
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      child: Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 12,
-              offset: const Offset(0, -3),
+          color: isDark ? const Color(0xFF131720) : Colors.white,
+          border: Border(
+            top: BorderSide(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : const Color(0xFFEDEDED),
+              width: 0.5,
             ),
-          ],
+          ),
         ),
         child: SafeArea(
-          child: Container(
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E1E32) : Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : const Color(0xFFE5E7EB),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
-              child: Row(
-                children: [
-                  // 关闭按钮
-                  GestureDetector(
-                    onTap: () {
-                      _replyController.clear();
-                      _replyFocus.unfocus();
-                      if (mounted) {
-                        setState(() {
-                          _isReplyComposerOpen = false;
-                          _parentReplyId = null;
-                          _replyToName = null;
-                          _replyToUserId = null;
-                        });
-                      }
-                    },
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white10
-                            : Colors.black.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.close,
-                        size: 18,
-                        color: isDark ? Colors.white54 : Colors.grey[700],
-                      ),
+          top: false,
+          bottom: bottomPadding == 0,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    _replyController.clear();
+                    _replyFocus.unfocus();
+                    if (mounted) {
+                      setState(() {
+                        _isReplyComposerOpen = false;
+                        _parentReplyId = null;
+                        _replyToName = null;
+                        _replyToUserId = null;
+                      });
+                    }
+                  },
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    margin: const EdgeInsets.only(bottom: 3),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : const Color(0xFFF3F4F6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: isDark ? Colors.white54 : Colors.grey[600],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 42),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(21),
+                    ),
                     child: TextField(
                       controller: _replyController,
                       focusNode: _replyFocus,
+                      minLines: 1,
+                      maxLines: 3,
+                      textAlignVertical: TextAlignVertical.center,
+                      textInputAction: TextInputAction.newline,
                       decoration: InputDecoration(
                         hintText: _replyToName != null
-                            ? '回复 @$_replyToName...'
+                            ? '回复 @$_replyToName'
                             : '写下你的想法...',
                         hintStyle: TextStyle(
                           color: isDark ? Colors.white30 : Colors.grey[400],
                           fontSize: 14,
                         ),
                         border: InputBorder.none,
+                        isDense: true,
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
+                          horizontal: 14,
                           vertical: 10,
                         ),
                       ),
                       style: TextStyle(
                         fontSize: 14,
                         color: isDark ? Colors.white : Colors.black87,
+                        height: 1.3,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  // 发送按钮
-                  GestureDetector(
-                    onTap: _isSending ? null : _sendReply,
-                    child: Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        gradient: _isSending
-                            ? const LinearGradient(
-                                colors: [Color(0xFF9CA3AF), Color(0xFF9CA3AF)],
-                              )
-                            : const LinearGradient(
-                                colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                              ),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: _isSending
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.send_rounded,
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _isSending ? null : _sendReply,
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _isSending
+                          ? (isDark ? Colors.white24 : Colors.grey[300])
+                          : (isDark ? const Color(0xFF82A0FF) : const Color(0xFF6B8EFF)),
+                      shape: BoxShape.circle,
+                    ),
+                    child: _isSending
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
                               color: Colors.white,
-                              size: 20,
                             ),
-                    ),
+                          )
+                        : const Icon(
+                            Icons.send_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
+
+  Widget _buildWaterReplyBar(bool isDark) {
+    if (_isReplyComposerOpen) {
+      return _buildComposerBody(isDark);
     }
 
     // 折叠状态：说点什么… 入口
@@ -2838,13 +2849,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             color: isDark
                 ? Colors.white.withValues(alpha: 0.08)
                 : const Color(0xFFEDEDED),
+            width: 0.5,
           ),
         ),
       ),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 7, 12, 7),
+          padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
           child: Row(
             children: [
               Expanded(
@@ -2852,19 +2864,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   onTap: () => _openReplyComposer(),
                   child: Container(
                     height: 38,
-                    padding: const EdgeInsets.symmetric(horizontal: 13),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                     decoration: BoxDecoration(
                       color: isDark
                           ? Colors.white.withValues(alpha: 0.08)
-                          : const Color(0xFFF5F6F8),
+                          : const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(19),
                     ),
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      '说点什么...',
+                      '写下你的想法...',
                       style: TextStyle(
                         fontSize: 14,
-                        color: isDark ? Colors.white38 : Colors.grey[500],
+                        color: isDark ? Colors.white30 : Colors.grey[400],
                       ),
                     ),
                   ),
@@ -3591,8 +3603,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
-              color:
-                  isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
+              color: isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text.rich(
@@ -4189,117 +4200,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildReplyBar(bool isDark) {
     if (!_isReplyComposerOpen) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF1E1E32).withValues(alpha: 0.92)
-            : Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 12,
-            offset: const Offset(0, -3),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
-          child: Row(
-            children: [
-              GestureDetector(
-                onTap: () {
-                  _replyController.clear();
-                  _replyFocus.unfocus();
-                  if (mounted)
-                    setState(() {
-                      _isReplyComposerOpen = false;
-                      _parentReplyId = null;
-                      _replyToName = null;
-                      _replyToUserId = null;
-                    });
-                },
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white10
-                        : Colors.black.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.close,
-                    size: 18,
-                    color: isDark ? Colors.white54 : Colors.grey[700],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _replyController,
-                  focusNode: _replyFocus,
-                  decoration: InputDecoration(
-                    hintText: _replyToName != null
-                        ? '回复 @$_replyToName...'
-                        : '写下你的想法...',
-                    hintStyle: TextStyle(
-                      color: isDark ? Colors.white30 : Colors.grey[400],
-                      fontSize: 14,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                  ),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? Colors.white : Colors.black87,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: _isSending ? null : _sendReply,
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    gradient: _isSending
-                        ? const LinearGradient(
-                            colors: [Color(0xFF9CA3AF), Color(0xFF9CA3AF)],
-                          )
-                        : const LinearGradient(
-                            colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                          ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: _isSending
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.send_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return _buildComposerBody(isDark);
   }
 
   // ---- 工具 ----

@@ -118,7 +118,9 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   Color _borderColor(bool isDark) {
-    return isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2EFEA);
+    return isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : const Color(0xFFE2EFEA);
   }
 
   BoxDecoration _manageCardDecoration(bool isDark, {Color? borderColor}) {
@@ -289,11 +291,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6),
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : const Color(0xFFF3F4F6),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
-                    iconKeyToIconData(section.iconKey, fallbackSlug: section.slug),
+                    iconKeyToIconData(section.iconKey,
+                        fallbackSlug: section.slug),
                     color: accent,
                   ),
                 ),
@@ -307,14 +312,18 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
-                          color: isDark ? Colors.white : const Color(0xFF20232A),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF20232A),
                         ),
                       ),
                       Text(
-                        section.subtitle.isNotEmpty ? section.subtitle : section.description,
+                        section.subtitle.isNotEmpty
+                            ? section.subtitle
+                            : section.description,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+                          color:
+                              isDark ? Colors.white54 : const Color(0xFF7B818C),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -323,20 +332,24 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     '管理中',
-                    style: TextStyle(fontSize: 11, color: accent, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: accent,
+                        fontWeight: FontWeight.w700),
                   ),
                 ),
               ],
             ),
           ),
-          
+
           // ── 胶囊工具栏 ──
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -356,13 +369,17 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
               labelColor: accent,
-              unselectedLabelColor: isDark ? Colors.white60 : const Color(0xFF6B7280),
-              labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-              tabs: tabs.map((tab) => Tab(text: tab.label, height: 34)).toList(),
+              unselectedLabelColor:
+                  isDark ? Colors.white60 : const Color(0xFF6B7280),
+              labelStyle:
+                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              unselectedLabelStyle:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              tabs:
+                  tabs.map((tab) => Tab(text: tab.label, height: 34)).toList(),
             ),
           ),
-          
+
           Expanded(
             child: TabBarView(
               children: tabs
@@ -446,7 +463,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                   color: isDark ? Colors.white12 : Colors.white,
                 ),
                 child: Icon(
-                  iconKeyToIconData(section.iconKey, fallbackSlug: section.slug),
+                  iconKeyToIconData(section.iconKey,
+                      fallbackSlug: section.slug),
                   color: accent,
                 ),
               ),
@@ -465,10 +483,13 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      section.subtitle.isNotEmpty ? section.subtitle : '这里可以写一句简单的副标题',
+                      section.subtitle.isNotEmpty
+                          ? section.subtitle
+                          : '这里可以写一句简单的副标题',
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark ? Colors.white70 : const Color(0xFF525A66),
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF525A66),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -477,18 +498,25 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: isDark ? Colors.black26 : Colors.white54,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text('展示预览', style: TextStyle(fontSize: 10, color: accent, fontWeight: FontWeight.w700)),
+                child: Text('展示预览',
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: accent,
+                        fontWeight: FontWeight.w700)),
               ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
-            section.description.isNotEmpty ? section.description : '版块描述空空如也...',
+            section.description.isNotEmpty
+                ? section.description
+                : '版块描述空空如也...',
             style: TextStyle(
               fontSize: 13,
               color: isDark ? Colors.white60 : const Color(0xFF525A66),
@@ -506,7 +534,9 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                section.publishActionText.isNotEmpty ? section.publishActionText : '发布帖子',
+                section.publishActionText.isNotEmpty
+                    ? section.publishActionText
+                    : '发布帖子',
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -537,7 +567,12 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _buildConfigItem(isDark, '发帖按钮', section.publishActionText.isNotEmpty ? section.publishActionText : '默认'),
+          _buildConfigItem(
+              isDark,
+              '发帖按钮',
+              section.publishActionText.isNotEmpty
+                  ? section.publishActionText
+                  : '默认'),
           _buildConfigItem(isDark, '默认排序', _sortLabel(section.defaultSort)),
           _buildConfigItem(
             isDark,
@@ -550,7 +585,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     );
   }
 
-  Widget _buildConfigItem(bool isDark, String label, String value, {String? subtitle}) {
+  Widget _buildConfigItem(bool isDark, String label, String value,
+      {String? subtitle}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -641,37 +677,49 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: questions.take(3).map((q) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                q,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.white70 : const Color(0xFF525A66),
-                ),
-              ),
-            )).toList()..addAll([
-              if (questions.length > 3)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '+${questions.length - 3}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white70 : const Color(0xFF525A66),
+            children: questions
+                .take(3)
+                .map((q) => Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.05)
+                            : const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        q,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color:
+                              isDark ? Colors.white70 : const Color(0xFF525A66),
+                        ),
+                      ),
+                    ))
+                .toList()
+              ..addAll([
+                if (questions.length > 3)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '+${questions.length - 3}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF525A66),
+                      ),
                     ),
                   ),
-                ),
-            ]),
+              ]),
           ),
         ],
       ),
@@ -741,12 +789,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
-                          color: isDark ? Colors.white : const Color(0xFF20232A),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF20232A),
                         ),
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: tag.isEnabled
                             ? const Color(0xFF16A34A).withValues(alpha: 0.12)
@@ -795,7 +845,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
               color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
             ),
             color: isDark ? const Color(0xFF2C3136) : Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             itemBuilder: (context) => [
               const PopupMenuItem(
                 value: 'edit',
@@ -818,7 +869,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                       size: 18,
                     ),
                     const SizedBox(width: 8),
-                    Text(tag.isEnabled ? '停用标签' : '启用标签', style: const TextStyle(fontSize: 14)),
+                    Text(tag.isEnabled ? '停用标签' : '启用标签',
+                        style: const TextStyle(fontSize: 14)),
                   ],
                 ),
               ),
@@ -1047,8 +1099,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: mod.role == 'owner'
                             ? const Color(0xFFF59E0B).withValues(alpha: 0.15)
@@ -1072,9 +1124,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                   'ID: ${mod.userId}',
                   style: TextStyle(
                       fontSize: 11,
-                      color: isDark
-                          ? Colors.white38
-                          : const Color(0xFF9CA3AF)),
+                      color: isDark ? Colors.white38 : const Color(0xFF9CA3AF)),
                 ),
                 if (mod.enabledPermissions.isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -1115,7 +1165,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
               color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
             ),
             color: isDark ? const Color(0xFF2C3136) : Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             itemBuilder: (context) => [
               const PopupMenuItem(
                 value: 'edit',
@@ -1131,9 +1182,11 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                 value: 'revoke',
                 child: Row(
                   children: [
-                    Icon(Icons.remove_circle_outline, size: 18, color: Colors.red),
+                    Icon(Icons.remove_circle_outline,
+                        size: 18, color: Colors.red),
                     SizedBox(width: 8),
-                    Text('罢免版主', style: TextStyle(fontSize: 14, color: Colors.red)),
+                    Text('罢免版主',
+                        style: TextStyle(fontSize: 14, color: Colors.red)),
                   ],
                 ),
               ),
@@ -1420,7 +1473,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         log.action == 'delete_post' &&
         log.targetType == 'post' &&
         log.targetId > 0;
-        
+
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1447,7 +1500,11 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: _sectionAccent(),
-                      border: Border.all(color: isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4), width: 2),
+                      border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF111315)
+                              : const Color(0xFFFFFAF4),
+                          width: 2),
                     ),
                   ),
                 ),
@@ -1470,22 +1527,25 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                             style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color:
-                                    isDark ? Colors.white : const Color(0xFF20232A))),
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF20232A))),
                         const SizedBox(height: 4),
                         Text(log.reason.isNotEmpty ? log.reason : '无原因',
                             style: TextStyle(
                                 fontSize: 12,
-                                color:
-                                    isDark ? Colors.white54 : const Color(0xFF7B818C)),
+                                color: isDark
+                                    ? Colors.white54
+                                    : const Color(0xFF7B818C)),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 6),
                         Text(time,
                             style: TextStyle(
                                 fontSize: 11,
-                                color:
-                                    isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
+                                color: isDark
+                                    ? Colors.white38
+                                    : const Color(0xFF9CA3AF))),
                       ],
                     ),
                   ),
@@ -1494,12 +1554,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         TextButton.icon(
-                          onPressed:
-                              context.watch<WaterModerationProvider>().isOperating
-                                  ? null
-                                  : () => _confirmRestorePost(log),
+                          onPressed: context
+                                  .watch<WaterModerationProvider>()
+                                  .isOperating
+                              ? null
+                              : () => _confirmRestorePost(log),
                           icon: const Icon(Icons.restore_rounded, size: 14),
-                          label: const Text('恢复', style: TextStyle(fontSize: 11)),
+                          label:
+                              const Text('恢复', style: TextStyle(fontSize: 11)),
                           style: TextButton.styleFrom(
                             minimumSize: const Size(0, 28),
                             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1635,7 +1697,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         ),
       );
     }
-    
+
     final accent = _sectionAccent();
 
     return Column(
@@ -1672,9 +1734,12 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6),
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.05)
+                              : const Color(0xFFF3F4F6),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -1682,7 +1747,9 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 13,
-                            color: isDark ? Colors.white70 : const Color(0xFF374151),
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF374151),
                           ),
                         ),
                       ),
@@ -1694,11 +1761,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                             controller: _levelTitleControllers[i],
                             style: TextStyle(
                               fontSize: 13,
-                              color: isDark ? Colors.white : const Color(0xFF20232A),
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF20232A),
                             ),
                             decoration: _manageInputDecoration(
                               context,
-                              hint: _levelTitles != null && i < _levelTitles!.length
+                              hint: _levelTitles != null &&
+                                      i < _levelTitles!.length
                                   ? _levelTitles![i].title
                                   : '',
                             ),
@@ -1728,9 +1798,12 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2),
                   )
-                : const Text('保存等级称号', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                : const Text('保存等级称号',
+                    style:
+                        TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
           ),
         ),
       ],
@@ -1764,8 +1837,6 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     final minute = local.minute.toString().padLeft(2, '0');
     return '$month/$day $hour:$minute';
   }
-
-
 }
 
 class _TagFormSheet extends StatefulWidget {

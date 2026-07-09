@@ -68,19 +68,18 @@ class _SubjectRankingDetailScreenState
     await context.read<TeacherProvider>().loadTeachers();
     if (!mounted) return;
 
-    final refreshed =
-        context
-            .read<TeacherProvider>()
-            .teachers
-            .where((item) => item.course.trim() == widget.subjectName.trim())
-            .toList()
-          ..sort((a, b) {
-            final ratingCompare = b.averageStar.compareTo(a.averageStar);
-            if (ratingCompare != 0) return ratingCompare;
-            final countCompare = b.ratingCount.compareTo(a.ratingCount);
-            if (countCompare != 0) return countCompare;
-            return a.name.compareTo(b.name);
-          });
+    final refreshed = context
+        .read<TeacherProvider>()
+        .teachers
+        .where((item) => item.course.trim() == widget.subjectName.trim())
+        .toList()
+      ..sort((a, b) {
+        final ratingCompare = b.averageStar.compareTo(a.averageStar);
+        if (ratingCompare != 0) return ratingCompare;
+        final countCompare = b.ratingCount.compareTo(a.ratingCount);
+        if (countCompare != 0) return countCompare;
+        return a.name.compareTo(b.name);
+      });
 
     if (mounted)
       setState(() {
@@ -93,8 +92,7 @@ class _SubjectRankingDetailScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final accent = RankingTokens.teacherAccent(isDark);
-    final sorted = [..._teachers]
-      ..sort((a, b) {
+    final sorted = [..._teachers]..sort((a, b) {
         final ratingCompare = b.averageStar.compareTo(a.averageStar);
         if (ratingCompare != 0) return ratingCompare;
         final countCompare = b.ratingCount.compareTo(a.ratingCount);
@@ -134,8 +132,7 @@ class _SubjectRankingDetailScreenState
             fontSize: 18,
             fontWeight: FontWeight.w800,
           ),
-          iconTheme:
-              IconThemeData(color: RankingTokens.titleColor(isDark)),
+          iconTheme: IconThemeData(color: RankingTokens.titleColor(isDark)),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.pop(context, _changed),
@@ -261,8 +258,7 @@ class _SubjectRankingDetailScreenState
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     teacher.name,

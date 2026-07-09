@@ -1408,7 +1408,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     newController.dispose();
   }
 
-
   // ── 推送诊断 ──
 
   static final _pushDiagChannel = MethodChannel(

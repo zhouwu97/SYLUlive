@@ -48,9 +48,8 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
     final auth = context.watch<AuthProvider>();
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF10131A)
-          : kCleanWarmBackgroundLight,
+      backgroundColor:
+          isDark ? const Color(0xFF10131A) : kCleanWarmBackgroundLight,
       appBar: AppBar(
         title: const Text('管理人员'),
         backgroundColor: Colors.transparent,
@@ -85,20 +84,19 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
             );
           }
 
-          final members =
-              (snap.data ?? const [])
-                  .where(
-                    (u) => u['role'] == 'admin' || u['role'] == 'super_admin',
-                  )
-                  .toList()
-                ..sort((a, b) {
-                  final roleA = a['role'] == 'super_admin' ? 0 : 1;
-                  final roleB = b['role'] == 'super_admin' ? 0 : 1;
-                  if (roleA != roleB) return roleA.compareTo(roleB);
-                  return (a['nickname'] ?? '').toString().compareTo(
+          final members = (snap.data ?? const [])
+              .where(
+                (u) => u['role'] == 'admin' || u['role'] == 'super_admin',
+              )
+              .toList()
+            ..sort((a, b) {
+              final roleA = a['role'] == 'super_admin' ? 0 : 1;
+              final roleB = b['role'] == 'super_admin' ? 0 : 1;
+              if (roleA != roleB) return roleA.compareTo(roleB);
+              return (a['nickname'] ?? '').toString().compareTo(
                     (b['nickname'] ?? '').toString(),
                   );
-                });
+            });
 
           if (members.isEmpty) {
             return const Center(child: Text('暂无管理人员'));
@@ -262,9 +260,8 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                                     : '未填写学号',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: isDark
-                                      ? Colors.white60
-                                      : Colors.black54,
+                                  color:
+                                      isDark ? Colors.white60 : Colors.black54,
                                 ),
                               ),
                             ],

@@ -23,7 +23,8 @@ class WaterSectionProvider extends ChangeNotifier {
 
   WaterSectionProvider(Dio? dio)
       : _service = dio != null ? WaterSectionService(dio) : null,
-        _iconReviewService = dio != null ? WaterSectionIconReviewService(dio) : null;
+        _iconReviewService =
+            dio != null ? WaterSectionIconReviewService(dio) : null;
 
   List<WaterSection> get sections => _sections;
   bool get isLoading => _isLoading;

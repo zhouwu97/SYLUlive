@@ -72,8 +72,8 @@ class CampusServiceGrid extends StatelessWidget {
             color: isDark ? CampusTheme.darkCard : Colors.white,
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: isDark 
-                  ? Colors.white.withValues(alpha: 0.04) 
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.04)
                   : CampusTheme.softBorder.withValues(alpha: 0.5),
             ),
             boxShadow: [

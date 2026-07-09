@@ -33,7 +33,8 @@ class LevelProgressPill extends StatelessWidget {
             : Colors.white.withValues(alpha: 0.85));
 
     final pillBorderColor = accentColor.withValues(alpha: 0.15);
-    final textColor = (darkOnImage || isDark) ? Colors.white : const Color(0xFF151922);
+    final textColor =
+        (darkOnImage || isDark) ? Colors.white : const Color(0xFF151922);
     final mutedTextColor = darkOnImage
         ? Colors.white70
         : (isDark ? Colors.white60 : const Color(0xFF60646C));

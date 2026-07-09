@@ -154,9 +154,11 @@ class CoursePreviewSheet extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: ElevatedButton(
-                onPressed: courses.isEmpty ? null : () {
-                  Navigator.pop(context, true);
-                },
+                onPressed: courses.isEmpty
+                    ? null
+                    : () {
+                        Navigator.pop(context, true);
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: CampusTheme.primary,
                   foregroundColor: Colors.white,

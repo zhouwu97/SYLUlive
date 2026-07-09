@@ -103,7 +103,8 @@ class _CompetitionOfficialEventEditorScreenState
           data: payload,
         );
         if (!mounted) return;
-        AppFeedback.showSnackBar(context, status == 'draft' ? '已保存为草稿' : '发布成功');
+        AppFeedback.showSnackBar(
+            context, status == 'draft' ? '已保存为草稿' : '发布成功');
       }
 
       Navigator.pop(context, true);
@@ -168,12 +169,15 @@ class _CompetitionOfficialEventEditorScreenState
               value: _categorySlug,
               decoration: const InputDecoration(labelText: '分类 *'),
               items: const [
-                DropdownMenuItem(value: 'innovation_startup', child: Text('创新创业')),
+                DropdownMenuItem(
+                    value: 'innovation_startup', child: Text('创新创业')),
                 DropdownMenuItem(value: 'computer_ai', child: Text('计算机与AI')),
                 DropdownMenuItem(value: 'math_science', child: Text('数学与基础科学')),
                 DropdownMenuItem(value: 'art_design', child: Text('艺术与设计')),
-                DropdownMenuItem(value: 'business_economics', child: Text('商管与经济')),
-                DropdownMenuItem(value: 'language_humanities', child: Text('语言与人文')),
+                DropdownMenuItem(
+                    value: 'business_economics', child: Text('商管与经济')),
+                DropdownMenuItem(
+                    value: 'language_humanities', child: Text('语言与人文')),
               ],
               onChanged: (v) => setState(() => _categorySlug = v!),
             ),
@@ -219,7 +223,8 @@ class _CompetitionOfficialEventEditorScreenState
                 Expanded(
                   child: TextFormField(
                     initialValue: _registrationStart,
-                    decoration: const InputDecoration(labelText: '报名开始 (YYYY-MM-DD)'),
+                    decoration:
+                        const InputDecoration(labelText: '报名开始 (YYYY-MM-DD)'),
                     onSaved: (v) => _registrationStart = v!.trim(),
                   ),
                 ),
@@ -227,7 +232,8 @@ class _CompetitionOfficialEventEditorScreenState
                 Expanded(
                   child: TextFormField(
                     initialValue: _registrationEnd,
-                    decoration: const InputDecoration(labelText: '报名结束 (YYYY-MM-DD)'),
+                    decoration:
+                        const InputDecoration(labelText: '报名结束 (YYYY-MM-DD)'),
                     onSaved: (v) => _registrationEnd = v!.trim(),
                   ),
                 ),
@@ -239,7 +245,8 @@ class _CompetitionOfficialEventEditorScreenState
                 Expanded(
                   child: TextFormField(
                     initialValue: _eventStart,
-                    decoration: const InputDecoration(labelText: '比赛开始 (YYYY-MM-DD)'),
+                    decoration:
+                        const InputDecoration(labelText: '比赛开始 (YYYY-MM-DD)'),
                     onSaved: (v) => _eventStart = v!.trim(),
                   ),
                 ),
@@ -247,7 +254,8 @@ class _CompetitionOfficialEventEditorScreenState
                 Expanded(
                   child: TextFormField(
                     initialValue: _eventEnd,
-                    decoration: const InputDecoration(labelText: '比赛结束 (YYYY-MM-DD)'),
+                    decoration:
+                        const InputDecoration(labelText: '比赛结束 (YYYY-MM-DD)'),
                     onSaved: (v) => _eventEnd = v!.trim(),
                   ),
                 ),
@@ -286,7 +294,8 @@ class _CompetitionOfficialEventEditorScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton(
-                    onPressed: _isSubmitting ? null : () => _submit('published'),
+                    onPressed:
+                        _isSubmitting ? null : () => _submit('published'),
                     style: FilledButton.styleFrom(
                       backgroundColor: primary,
                       padding: const EdgeInsets.symmetric(vertical: 14),

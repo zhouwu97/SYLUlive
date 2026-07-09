@@ -224,9 +224,9 @@ class _WaterSectionDirectoryScreenState
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => WaterCategoryFeedRoute.fromSection(
-                                  s,
-                                  initialFilterKey: 'mode:recommend'),
+                              builder: (_) =>
+                                  WaterCategoryFeedRoute.fromSection(s,
+                                      initialFilterKey: 'mode:recommend'),
                             ),
                           );
                         },

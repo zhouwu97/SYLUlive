@@ -5,8 +5,6 @@ import 'package:shenliyuan/models/water_section.dart';
 import 'package:shenliyuan/widgets/water_section/section_hero_header.dart';
 
 void main() {
-
-
   testWidgets('真机高状态栏下 sheet 不遮挡关注按钮', (tester) async {
     tester.view.devicePixelRatio = 3;
     tester.view.physicalSize = const Size(1179, 2556);

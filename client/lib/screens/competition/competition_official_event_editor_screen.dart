@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
@@ -20,76 +21,202 @@ class _CompetitionOfficialEventEditorScreenState
     extends State<CompetitionOfficialEventEditorScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  late String _title;
-  late String _summary;
-  late String _description;
-  late String _categorySlug;
-  late String _recommendationLevel;
-  late String _schoolRecognitionStatus;
-  late String _competitionLevel;
-  late String _organizer;
-  late String _registrationStart;
-  late String _registrationEnd;
-  late String _eventStart;
-  late String _eventEnd;
-  late String _timeNote;
-  late String _officialUrl;
-  late String _noticeUrl;
-  late String _sourceNote;
+  final _titleController = TextEditingController();
+  final _summaryController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _tagsController = TextEditingController();
+  final _importanceController = TextEditingController();
+  final _competitionLevelController = TextEditingController();
+  final _schoolGradeController = TextEditingController();
+  final _targetAudienceController = TextEditingController();
+  final _recommendationReasonController = TextEditingController();
+  final _participationTypeController = TextEditingController();
+  final _teamSizeMinController = TextEditingController();
+  final _teamSizeMaxController = TextEditingController();
+  final _organizerController = TextEditingController();
+  final _hostUnitController = TextEditingController();
+  final _registrationStartController = TextEditingController();
+  final _registrationEndController = TextEditingController();
+  final _eventStartController = TextEditingController();
+  final _eventEndController = TextEditingController();
+  final _registrationTextController = TextEditingController();
+  final _eventTextController = TextEditingController();
+  final _sortMonthController = TextEditingController();
+  final _timeNoteController = TextEditingController();
+  final _officialUrlController = TextEditingController();
+  final _noticeUrlController = TextEditingController();
+  final _sourceNoteController = TextEditingController();
+  final _attachmentUrlsController = TextEditingController();
 
+  List<CompetitionCategory> _categories = [];
+  String _categorySlug = '';
+  String _recommendationLevel = 'B';
+  String _schoolRecognitionStatus = 'pending';
+  String _timeStatus = 'pending';
+  String _timePrecision = 'unknown';
+  String _sourceChannel = 'admin_manual';
+  bool _isOnline = false;
+  bool _loadingCategories = true;
   bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
+    _fillInitialData();
+    _loadCategories();
+  }
+
+  @override
+  void dispose() {
+    for (final controller in [
+      _titleController,
+      _summaryController,
+      _descriptionController,
+      _tagsController,
+      _importanceController,
+      _competitionLevelController,
+      _schoolGradeController,
+      _targetAudienceController,
+      _recommendationReasonController,
+      _participationTypeController,
+      _teamSizeMinController,
+      _teamSizeMaxController,
+      _organizerController,
+      _hostUnitController,
+      _registrationStartController,
+      _registrationEndController,
+      _eventStartController,
+      _eventEndController,
+      _registrationTextController,
+      _eventTextController,
+      _sortMonthController,
+      _timeNoteController,
+      _officialUrlController,
+      _noticeUrlController,
+      _sourceNoteController,
+      _attachmentUrlsController,
+    ]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _fillInitialData() {
     final d = widget.initialData ?? {};
-    _title = d['title'] ?? '';
-    _summary = d['summary'] ?? '';
-    _description = d['description'] ?? '';
-    _categorySlug = d['primary_category_slug'] ?? 'innovation_startup';
-    _recommendationLevel = d['recommendation_level'] ?? 'B';
-    _schoolRecognitionStatus = d['school_recognition_status'] ?? 'pending';
-    _competitionLevel = d['competition_level'] ?? '省级';
-    _organizer = d['organizer'] ?? '';
-    _registrationStart = d['registration_start'] ?? '';
-    _registrationEnd = d['registration_end'] ?? '';
-    _eventStart = d['event_start'] ?? '';
-    _eventEnd = d['event_end'] ?? '';
-    _timeNote = d['time_note'] ?? '';
-    _officialUrl = d['official_url'] ?? '';
-    _noticeUrl = d['notice_url'] ?? '';
-    _sourceNote = d['source_note'] ?? 'admin_manual';
+    _titleController.text = '${d['title'] ?? ''}';
+    _summaryController.text = '${d['summary'] ?? ''}';
+    _descriptionController.text = '${d['description'] ?? ''}';
+    _tagsController.text = _joinList(d['tags']);
+    _categorySlug = _initialCategorySlug(d);
+    _recommendationLevel = '${d['recommendation_level'] ?? 'B'}';
+    _schoolRecognitionStatus = '${d['school_recognition_status'] ?? 'pending'}';
+    _importanceController.text = '${d['importance_score'] ?? ''}';
+    _competitionLevelController.text = '${d['competition_level'] ?? ''}';
+    _schoolGradeController.text = '${d['school_recognition_grade'] ?? ''}';
+    _targetAudienceController.text = '${d['target_audience'] ?? ''}';
+    _recommendationReasonController.text =
+        '${d['recommendation_reason'] ?? ''}';
+    _participationTypeController.text = '${d['participation_type'] ?? ''}';
+    _teamSizeMinController.text = _blankZero(d['team_size_min']);
+    _teamSizeMaxController.text = _blankZero(d['team_size_max']);
+    _organizerController.text = '${d['organizer'] ?? ''}';
+    _hostUnitController.text = '${d['host_unit'] ?? ''}';
+    _timeStatus = '${d['time_status'] ?? 'pending'}';
+    _timePrecision = '${d['time_precision'] ?? 'unknown'}';
+    _registrationStartController.text = _dateOnly(d['registration_start']);
+    _registrationEndController.text = _dateOnly(d['registration_end']);
+    _eventStartController.text = _dateOnly(d['event_start']);
+    _eventEndController.text = _dateOnly(d['event_end']);
+    _registrationTextController.text = '${d['registration_time_text'] ?? ''}';
+    _eventTextController.text = '${d['event_time_text'] ?? ''}';
+    _sortMonthController.text = _blankZero(d['sort_month']);
+    _timeNoteController.text = '${d['time_note'] ?? ''}';
+    _officialUrlController.text = '${d['official_url'] ?? ''}';
+    _noticeUrlController.text = '${d['notice_url'] ?? ''}';
+    _sourceChannel = '${d['source_channel'] ?? 'admin_manual'}';
+    _sourceNoteController.text = '${d['source_note'] ?? ''}';
+    _attachmentUrlsController.text = _joinList(d['attachment_urls']);
+    _isOnline = d['is_online'] == true;
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final resp = await context.read<AuthProvider>().dio.get(
+            '/competitions/categories',
+          );
+      if (!mounted) return;
+      final categories = ((resp.data as List?) ?? [])
+          .map((item) => CompetitionCategory.fromJson(item))
+          .toList();
+      setState(() {
+        _categories = categories;
+        if (_categorySlug.isEmpty && categories.isNotEmpty) {
+          _categorySlug = categories.first.slug;
+        } else if (categories.isNotEmpty &&
+            !categories.any((item) => item.slug == _categorySlug)) {
+          _categorySlug = categories.first.slug;
+        }
+        _loadingCategories = false;
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingCategories = false);
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '加载分类失败'),
+        isError: true,
+      );
+    }
   }
 
   Future<void> _submit(String status) async {
     if (!_formKey.currentState!.validate()) return;
-    _formKey.currentState!.save();
+    if (_categorySlug.isEmpty) {
+      AppFeedback.showSnackBar(context, '请选择分类', isError: true);
+      return;
+    }
 
     setState(() => _isSubmitting = true);
-
     try {
       final payload = {
-        'title': _title,
-        'summary': _summary,
-        'description': _description,
+        'title': _titleController.text.trim(),
+        'summary': _summaryController.text.trim(),
+        'description': _descriptionController.text.trim(),
         'primary_category_slug': _categorySlug,
+        'tags': _splitList(_tagsController.text),
         'recommendation_level': _recommendationLevel,
+        'importance_score':
+            int.tryParse(_importanceController.text.trim()) ?? 0,
+        'competition_level': _competitionLevelController.text.trim(),
         'school_recognition_status': _schoolRecognitionStatus,
-        'competition_level': _competitionLevel,
-        'organizer': _organizer,
-        'registration_start': _registrationStart,
-        'registration_end': _registrationEnd,
-        'event_start': _eventStart,
-        'event_end': _eventEnd,
-        'time_note': _timeNote,
-        'official_url': _officialUrl,
-        'notice_url': _noticeUrl,
-        'source_note': _sourceNote,
+        'school_recognition_grade': _schoolGradeController.text.trim(),
+        'target_audience': _targetAudienceController.text.trim(),
+        'recommendation_reason': _recommendationReasonController.text.trim(),
+        'participation_type': _participationTypeController.text.trim(),
+        'team_size_min': int.tryParse(_teamSizeMinController.text.trim()) ?? 0,
+        'team_size_max': int.tryParse(_teamSizeMaxController.text.trim()) ?? 0,
+        'organizer': _organizerController.text.trim(),
+        'host_unit': _hostUnitController.text.trim(),
+        'time_status': _timeStatus,
+        'time_precision': _timePrecision,
+        'registration_start': _registrationStartController.text.trim(),
+        'registration_end': _registrationEndController.text.trim(),
+        'event_start': _eventStartController.text.trim(),
+        'event_end': _eventEndController.text.trim(),
+        'registration_time_text': _registrationTextController.text.trim(),
+        'event_time_text': _eventTextController.text.trim(),
+        'sort_month': int.tryParse(_sortMonthController.text.trim()) ?? 0,
+        'time_note': _timeNoteController.text.trim(),
+        'official_url': _officialUrlController.text.trim(),
+        'notice_url': _noticeUrlController.text.trim(),
+        'attachment_urls': _splitList(_attachmentUrlsController.text),
+        'source_channel': _sourceChannel,
+        'source_note': _sourceNoteController.text.trim(),
+        'is_online': _isOnline,
         'status': status,
       };
 
       final dio = context.read<AuthProvider>().dio;
-
       if (widget.initialData != null && widget.initialData!['id'] != null) {
         await dio.put(
           '/admin/competitions/events/${widget.initialData!['id']}',
@@ -98,15 +225,13 @@ class _CompetitionOfficialEventEditorScreenState
         if (!mounted) return;
         AppFeedback.showSnackBar(context, '更新成功');
       } else {
-        await dio.post(
-          '/admin/competitions/events',
-          data: payload,
-        );
+        await dio.post('/admin/competitions/events', data: payload);
         if (!mounted) return;
         AppFeedback.showSnackBar(
-            context, status == 'draft' ? '已保存为草稿' : '发布成功');
+          context,
+          status == 'draft' ? '已保存为草稿' : '发布成功',
+        );
       }
-
       Navigator.pop(context, true);
     } on DioException catch (e) {
       if (!mounted) return;
@@ -117,11 +242,7 @@ class _CompetitionOfficialEventEditorScreenState
       );
     } catch (e) {
       if (!mounted) return;
-      AppFeedback.showSnackBar(
-        context,
-        '发生错误：$e',
-        isError: true,
-      );
+      AppFeedback.showSnackBar(context, '发生错误：$e', isError: true);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -131,7 +252,6 @@ class _CompetitionOfficialEventEditorScreenState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = CompetitionUiTokens.pageBg(isDark);
-    final primary = CompetitionUiTokens.accent(isDark);
 
     return Scaffold(
       backgroundColor: bg,
@@ -143,171 +263,516 @@ class _CompetitionOfficialEventEditorScreenState
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 108),
           children: [
-            TextFormField(
-              initialValue: _title,
-              decoration: const InputDecoration(labelText: '比赛名称 *'),
-              validator: (v) => v!.isEmpty ? '必填' : null,
-              onSaved: (v) => _title = v!.trim(),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: _summary,
-              decoration: const InputDecoration(labelText: '一句话简介'),
-              onSaved: (v) => _summary = v!.trim(),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: _description,
-              decoration: const InputDecoration(labelText: '比赛说明'),
-              maxLines: 3,
-              onSaved: (v) => _description = v!.trim(),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _categorySlug,
-              decoration: const InputDecoration(labelText: '分类 *'),
-              items: const [
-                DropdownMenuItem(
-                    value: 'innovation_startup', child: Text('创新创业')),
-                DropdownMenuItem(value: 'computer_ai', child: Text('计算机与AI')),
-                DropdownMenuItem(value: 'math_science', child: Text('数学与基础科学')),
-                DropdownMenuItem(value: 'art_design', child: Text('艺术与设计')),
-                DropdownMenuItem(
-                    value: 'business_economics', child: Text('商管与经济')),
-                DropdownMenuItem(
-                    value: 'language_humanities', child: Text('语言与人文')),
-              ],
-              onChanged: (v) => setState(() => _categorySlug = v!),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _recommendationLevel,
-              decoration: const InputDecoration(labelText: '推荐等级'),
-              items: const [
-                DropdownMenuItem(value: 'S', child: Text('S级 - 极力推荐')),
-                DropdownMenuItem(value: 'A', child: Text('A级 - 推荐')),
-                DropdownMenuItem(value: 'B', child: Text('B级 - 普通')),
-                DropdownMenuItem(value: 'C', child: Text('C级 - 谨慎参加')),
-              ],
-              onChanged: (v) => setState(() => _recommendationLevel = v!),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _schoolRecognitionStatus,
-              decoration: const InputDecoration(labelText: '学校认定状态'),
-              items: const [
-                DropdownMenuItem(value: 'recognized', child: Text('学校认定')),
-                DropdownMenuItem(value: 'not_recognized', child: Text('学校不认定')),
-                DropdownMenuItem(value: 'pending', child: Text('待认定/无通知')),
-                DropdownMenuItem(value: 'unknown', child: Text('认定未知')),
-              ],
-              onChanged: (v) => setState(() => _schoolRecognitionStatus = v!),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: _competitionLevel,
-              decoration: const InputDecoration(labelText: '比赛级别 (如国家级)'),
-              onSaved: (v) => _competitionLevel = v!.trim(),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: _organizer,
-              decoration: const InputDecoration(labelText: '主办方'),
-              onSaved: (v) => _organizer = v!.trim(),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _registrationStart,
-                    decoration:
-                        const InputDecoration(labelText: '报名开始 (YYYY-MM-DD)'),
-                    onSaved: (v) => _registrationStart = v!.trim(),
-                  ),
+            _section(
+              '基础信息',
+              isDark,
+              [
+                _input(_titleController, '比赛名称', isDark, required: true),
+                _input(_summaryController, '一句话简介', isDark),
+                _input(
+                  _descriptionController,
+                  '比赛说明',
+                  isDark,
+                  minLines: 3,
+                  maxLines: 5,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _registrationEnd,
-                    decoration:
-                        const InputDecoration(labelText: '报名结束 (YYYY-MM-DD)'),
-                    onSaved: (v) => _registrationEnd = v!.trim(),
-                  ),
-                ),
+                _categoryDropdown(isDark),
+                _input(_tagsController, '标签，逗号分隔', isDark),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _eventStart,
-                    decoration:
-                        const InputDecoration(labelText: '比赛开始 (YYYY-MM-DD)'),
-                    onSaved: (v) => _eventStart = v!.trim(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextFormField(
-                    initialValue: _eventEnd,
-                    decoration:
-                        const InputDecoration(labelText: '比赛结束 (YYYY-MM-DD)'),
-                    onSaved: (v) => _eventEnd = v!.trim(),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: _timeNote,
-              decoration: const InputDecoration(labelText: '时间说明 (如：往年参考)'),
-              onSaved: (v) => _timeNote = v!.trim(),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: _officialUrl,
-              decoration: const InputDecoration(labelText: '官网链接'),
-              onSaved: (v) => _officialUrl = v!.trim(),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: _noticeUrl,
-              decoration: const InputDecoration(labelText: '通知链接'),
-              onSaved: (v) => _noticeUrl = v!.trim(),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _isSubmitting ? null : () => _submit('draft'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+            _section(
+              '推荐与认定',
+              isDark,
+              [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _dropdown(
+                        label: '推荐等级',
+                        value: _recommendationLevel,
+                        items: const ['S', 'A', 'B+', 'B', 'B-', 'C'],
+                        isDark: isDark,
+                        onChanged: (value) =>
+                            setState(() => _recommendationLevel = value),
+                      ),
                     ),
-                    child: const Text('保存到官方草稿'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed:
-                        _isSubmitting ? null : () => _submit('published'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _input(
+                        _importanceController,
+                        '重要分',
+                        isDark,
+                        keyboardType: TextInputType.number,
+                      ),
                     ),
-                    child: const Text('直接发布'),
-                  ),
+                  ],
+                ),
+                _input(_competitionLevelController, '比赛级别', isDark),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _dropdown(
+                        label: '学校认定状态',
+                        value: _schoolRecognitionStatus,
+                        items: const [
+                          'recognized',
+                          'not_recognized',
+                          'pending',
+                          'unknown',
+                        ],
+                        labelBuilder: _recognitionLabel,
+                        isDark: isDark,
+                        onChanged: (value) =>
+                            setState(() => _schoolRecognitionStatus = value),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _input(_schoolGradeController, '学校目录类别', isDark),
+                    ),
+                  ],
+                ),
+                _input(_targetAudienceController, '适合人群', isDark),
+                _input(_participationTypeController, '参赛形式', isDark),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _input(
+                        _teamSizeMinController,
+                        '最少人数',
+                        isDark,
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _input(
+                        _teamSizeMaxController,
+                        '最多人数',
+                        isDark,
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
+                ),
+                _input(
+                  _recommendationReasonController,
+                  '推荐理由',
+                  isDark,
+                  minLines: 2,
+                  maxLines: 4,
+                ),
+              ],
+            ),
+            _section(
+              '时间安排',
+              isDark,
+              [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _dropdown(
+                        label: '时间状态',
+                        value: _timeStatus,
+                        items: const [
+                          'confirmed',
+                          'estimated',
+                          'historical',
+                          'pending',
+                        ],
+                        labelBuilder: _timeStatusLabel,
+                        isDark: isDark,
+                        onChanged: (value) =>
+                            setState(() => _timeStatus = value),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _dropdown(
+                        label: '时间精度',
+                        value: _timePrecision,
+                        items: const [
+                          'exact',
+                          'month',
+                          'month_range',
+                          'quarter',
+                          'half_year',
+                          'season',
+                          'unknown',
+                        ],
+                        labelBuilder: _timePrecisionLabel,
+                        isDark: isDark,
+                        onChanged: (value) =>
+                            setState(() => _timePrecision = value),
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _input(
+                        _registrationStartController,
+                        '报名开始',
+                        isDark,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _input(_registrationEndController, '报名结束', isDark),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _input(_eventStartController, '比赛开始', isDark),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _input(_eventEndController, '比赛结束', isDark),
+                    ),
+                  ],
+                ),
+                _input(_registrationTextController, '原文报名时间', isDark),
+                _input(_eventTextController, '原文比赛时间', isDark),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _input(
+                        _sortMonthController,
+                        'sort_month',
+                        isDark,
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SwitchListTile(
+                        value: _isOnline,
+                        onChanged: (value) => setState(() => _isOnline = value),
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('线上比赛'),
+                        activeThumbColor: Colors.white,
+                        activeTrackColor: CompetitionUiTokens.accent(isDark),
+                      ),
+                    ),
+                  ],
+                ),
+                _input(_timeNoteController, '时间说明', isDark),
+              ],
+            ),
+            _section(
+              '来源与发布',
+              isDark,
+              [
+                _input(_organizerController, '主办方', isDark),
+                _input(_hostUnitController, '承办/指导单位', isDark),
+                _input(_officialUrlController, '官网链接', isDark),
+                _input(_noticeUrlController, '通知链接', isDark),
+                _input(_attachmentUrlsController, '附件链接，逗号分隔', isDark),
+                _dropdown(
+                  label: '来源渠道',
+                  value: _sourceChannel,
+                  items: const [
+                    'school_catalog',
+                    'college_notice',
+                    'enterprise',
+                    'industry_association',
+                    'platform',
+                    'admin_manual',
+                    'ai_import',
+                  ],
+                  labelBuilder: _sourceLabel,
+                  isDark: isDark,
+                  onChanged: (value) => setState(() => _sourceChannel = value),
+                ),
+                _input(
+                  _sourceNoteController,
+                  '来源说明',
+                  isDark,
+                  minLines: 2,
+                  maxLines: 4,
                 ),
               ],
             ),
           ],
         ),
       ),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          decoration: BoxDecoration(
+            color: bg,
+            border: Border(
+              top: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isSubmitting ? null : () => _submit('draft'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    foregroundColor: CompetitionUiTokens.titleColor(isDark),
+                    side: BorderSide(
+                      color: CompetitionUiTokens.borderColor(isDark),
+                    ),
+                  ),
+                  child: const Text('保存草稿'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: _isSubmitting ? null : () => _submit('published'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: CompetitionUiTokens.accent(isDark),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: Text(_isSubmitting ? '提交中...' : '发布'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
+  }
+
+  Widget _section(String title, bool isDark, List<Widget> children) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: CompetitionUiTokens.cardDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: CompetitionUiTokens.titleColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 14),
+          for (final child in children) ...[
+            child,
+            if (child != children.last) const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _input(
+    TextEditingController controller,
+    String label,
+    bool isDark, {
+    bool required = false,
+    int minLines = 1,
+    int maxLines = 1,
+    TextInputType? keyboardType,
+  }) {
+    return TextFormField(
+      controller: controller,
+      minLines: minLines,
+      maxLines: maxLines,
+      keyboardType: keyboardType,
+      decoration: _inputDecoration(required ? '$label *' : label, isDark),
+      validator: required
+          ? (value) => (value ?? '').trim().isEmpty ? '必填' : null
+          : null,
+    );
+  }
+
+  Widget _categoryDropdown(bool isDark) {
+    final value = _categories.any((item) => item.slug == _categorySlug)
+        ? _categorySlug
+        : null;
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: _inputDecoration(
+        _loadingCategories ? '分类加载中...' : '分类 *',
+        isDark,
+      ),
+      items: _categories
+          .map(
+            (category) => DropdownMenuItem(
+              value: category.slug,
+              child: Text(category.name),
+            ),
+          )
+          .toList(),
+      validator: (value) => value == null || value.isEmpty ? '请选择分类' : null,
+      onChanged: (value) => setState(() => _categorySlug = value ?? ''),
+    );
+  }
+
+  Widget _dropdown({
+    required String label,
+    required String value,
+    required List<String> items,
+    required bool isDark,
+    required ValueChanged<String> onChanged,
+    String Function(String value)? labelBuilder,
+  }) {
+    final selected = items.contains(value) ? value : items.first;
+    return DropdownButtonFormField<String>(
+      initialValue: selected,
+      decoration: _inputDecoration(label, isDark),
+      items: items
+          .map(
+            (item) => DropdownMenuItem(
+              value: item,
+              child: Text(labelBuilder?.call(item) ?? item),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        if (value != null) onChanged(value);
+      },
+    );
+  }
+
+  InputDecoration _inputDecoration(String label, bool isDark) {
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: CompetitionUiTokens.cardBg(isDark),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(
+          color: CompetitionUiTokens.accent(isDark),
+          width: 1.3,
+        ),
+      ),
+    );
+  }
+
+  String _initialCategorySlug(Map<String, dynamic> data) {
+    final direct = '${data['primary_category_slug'] ?? ''}'.trim();
+    if (direct.isNotEmpty) return direct;
+    final category = data['primary_category'];
+    if (category is Map) return '${category['slug'] ?? ''}'.trim();
+    return '';
+  }
+
+  String _dateOnly(dynamic value) {
+    final raw = '${value ?? ''}'.trim();
+    if (raw.isEmpty || raw == 'null') return '';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw;
+    return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+  }
+
+  String _blankZero(dynamic value) {
+    final text = '${value ?? ''}'.trim();
+    if (text == '0' || text == 'null') return '';
+    return text;
+  }
+
+  String _joinList(dynamic value) {
+    if (value is List) {
+      return value
+          .map((item) => '$item'.trim())
+          .where((item) => item.isNotEmpty)
+          .join('，');
+    }
+    return '${value ?? ''}'.trim();
+  }
+
+  List<String> _splitList(String value) {
+    return value
+        .split(RegExp(r'[,，\n]'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+}
+
+String _recognitionLabel(String value) {
+  switch (value) {
+    case 'recognized':
+      return '已认定';
+    case 'not_recognized':
+      return '未认定';
+    case 'pending':
+      return '待确认';
+    case 'unknown':
+      return '未知';
+    default:
+      return value;
+  }
+}
+
+String _timeStatusLabel(String value) {
+  switch (value) {
+    case 'confirmed':
+      return '已确认';
+    case 'estimated':
+      return '预计时间';
+    case 'historical':
+      return '往年参考';
+    case 'pending':
+      return '待通知';
+    default:
+      return value;
+  }
+}
+
+String _timePrecisionLabel(String value) {
+  switch (value) {
+    case 'exact':
+      return '精确到日';
+    case 'month':
+      return '按月份';
+    case 'month_range':
+      return '月份范围';
+    case 'quarter':
+      return '季度';
+    case 'half_year':
+      return '半年';
+    case 'season':
+      return '季节';
+    case 'unknown':
+      return '未知';
+    default:
+      return value;
+  }
+}
+
+String _sourceLabel(String value) {
+  switch (value) {
+    case 'school_catalog':
+      return '学校目录';
+    case 'college_notice':
+      return '学院通知';
+    case 'enterprise':
+      return '企业赛事';
+    case 'industry_association':
+      return '行业协会';
+    case 'platform':
+      return '平台赛事';
+    case 'admin_manual':
+      return '管理员录入';
+    case 'ai_import':
+      return 'AI导入';
+    default:
+      return value;
   }
 }

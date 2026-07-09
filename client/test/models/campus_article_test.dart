@@ -291,7 +291,8 @@ void main() {
     });
 
     test('拒绝 HTTP 协议', () {
-      expect(isSafeCampusUrl('http://cxcyxy.sylu.edu.cn/info/1089/3293.htm'), false);
+      expect(isSafeCampusUrl('http://cxcyxy.sylu.edu.cn/info/1089/3293.htm'),
+          false);
     });
 
     test('拒绝非白名单域名', () {
@@ -307,7 +308,8 @@ void main() {
 
     test('拒绝伪造子域名', () {
       expect(
-        isSafeCampusUrl('https://cxcyxy.sylu.edu.cn.attacker.com/info/1089/3293.htm'),
+        isSafeCampusUrl(
+            'https://cxcyxy.sylu.edu.cn.attacker.com/info/1089/3293.htm'),
         false,
       );
     });

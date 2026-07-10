@@ -19,6 +19,7 @@ class TeamRecruitmentApplicationsScreen extends StatefulWidget {
 class _TeamRecruitmentApplicationsScreenState
     extends State<TeamRecruitmentApplicationsScreen> {
   String _filter = 'pending';
+  Post? _latestPost;
 
   TeamRecruitmentMeta? get _meta => widget.post.teamRecruitment;
 
@@ -52,9 +53,16 @@ class _TeamRecruitmentApplicationsScreenState
         : provider.applicationsFor(meta.recruitmentId);
     final filtered = _filtered(apps);
     return Scaffold(
-      appBar: AppBar(title: const Text('申请管理'), actions: [
-        IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded))
-      ]),
+      appBar: AppBar(
+          title: const Text('申请管理'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context, _latestPost),
+          ),
+          actions: [
+            IconButton(
+                onPressed: _load, icon: const Icon(Icons.refresh_rounded))
+          ]),
       body: Column(children: [
         Container(
           width: double.infinity,
@@ -152,10 +160,13 @@ class _TeamRecruitmentApplicationsScreenState
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(result != null
+        content: Text(result.isSuccess
             ? (accept ? '已通过申请' : '已拒绝申请')
-            : (provider.errorFor(application.recruitmentId) ?? '操作失败'))));
-    if (result != null) setState(() {});
+            : (result.error ?? '操作失败'))));
+    if (result.hasPost) {
+      _latestPost = result.post!;
+    }
+    if (result.isSuccess) setState(() {});
   }
 
   Future<String?> _showReplyDialog() async {

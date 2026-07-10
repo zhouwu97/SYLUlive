@@ -1,32 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/post.dart';
 import '../../providers/water_team_provider.dart';
 
 /// 申请加入组队招募的轻量底部表单。
 ///
-/// 返回操作后最新的 [Post]，供详情页直接更新；失败返回 `null`。
+/// 返回 [TeamMutationResult]：业务成功且帖子已刷新时 [result.post] 非空；
+/// 业务成功但帖子同步失败时 [result.isSuccess]=true 但 [result.post]=null。
+/// 返回 `null` 表示用户取消操作。
 class TeamApplicationSheet extends StatefulWidget {
   final int recruitmentId;
+  final int postId;
 
   const TeamApplicationSheet({
     super.key,
     required this.recruitmentId,
+    required this.postId,
   });
 
-  /// 弹出申请表单。返回最新 [Post] 或 `null`（取消/失败）。
-  static Future<Post?> show(
+  /// 弹出申请表单。返回 [TeamMutationResult] 或 `null`（取消/失败）。
+  static Future<TeamMutationResult?> show(
     BuildContext context, {
     required int recruitmentId,
+    required int postId,
   }) {
-    return showModalBottomSheet<Post?>(
+    return showModalBottomSheet<TeamMutationResult?>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
       builder: (_) => TeamApplicationSheet(
         recruitmentId: recruitmentId,
+        postId: postId,
       ),
     );
   }
@@ -52,20 +57,19 @@ class _TeamApplicationSheetState extends State<TeamApplicationSheet> {
     final provider = context.read<WaterTeamProvider>();
     final result = await provider.apply(
       recruitmentId: widget.recruitmentId,
+      postId: widget.postId,
       message: _messageController.text.trim(),
       availability: _availabilityController.text.trim(),
     );
     if (!mounted) return;
-    if (result != null) {
-      Navigator.of(context).pop(null);
+    if (result.isSuccess) {
+      Navigator.of(context).pop(result);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('申请已提交')),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                provider.errorFor(widget.recruitmentId) ?? '申请提交失败')),
+        SnackBar(content: Text(result.error ?? '申请提交失败')),
       );
     }
   }

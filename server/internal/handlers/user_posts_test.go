@@ -13,12 +13,12 @@ import (
 	"shenliyuan/internal/models"
 )
 
-func TestGetUserPostsIncludesMarketTagsAndImagesForEditEntry(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+func TestGetUserMarketPostsIncludesMarketTagsAndImagesForEditEntry(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:user_market_posts?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{}, 
+	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
 		&models.File{},
 		&models.Post{},
@@ -70,18 +70,22 @@ func TestGetUserPostsIncludesMarketTagsAndImagesForEditEntry(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
-	context.Request = httptest.NewRequest(http.MethodGet, "/api/user/1/posts", nil)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/user/1/market-posts", nil)
 	context.Params = gin.Params{{Key: "id", Value: "1"}}
 
-	NewUserHandler(db).GetUserPosts(context)
+	NewUserHandler(db).GetUserMarketPosts(context)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 
-	var posts []models.Post
-	if err := json.Unmarshal(recorder.Body.Bytes(), &posts); err != nil {
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
+	}
+	var posts []models.Post
+	if err := json.Unmarshal(body["items"], &posts); err != nil {
+		t.Fatalf("decode items: %v", err)
 	}
 	if len(posts) != 1 {
 		t.Fatalf("posts length=%d, want 1; body=%s", len(posts), recorder.Body.String())

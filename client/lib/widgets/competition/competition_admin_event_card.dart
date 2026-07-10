@@ -12,6 +12,8 @@ class CompetitionAdminEventCard extends StatelessWidget {
   final VoidCallback? onEdit;
   final VoidCallback? onPublish;
   final VoidCallback? onArchive;
+  final VoidCallback? onRestore;
+  final VoidCallback? onDelete;
 
   const CompetitionAdminEventCard({
     super.key,
@@ -22,6 +24,8 @@ class CompetitionAdminEventCard extends StatelessWidget {
     this.onEdit,
     this.onPublish,
     this.onArchive,
+    this.onRestore,
+    this.onDelete,
   });
 
   @override
@@ -106,7 +110,7 @@ class CompetitionAdminEventCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Column(
                   children: [
-                    if (onPublish != null)
+                    if (event.status == 'draft' && onPublish != null)
                       FilledButton(
                         onPressed: onPublish,
                         style: FilledButton.styleFrom(
@@ -116,32 +120,59 @@ class CompetitionAdminEventCard extends StatelessWidget {
                           foregroundColor: Colors.white,
                         ),
                         child: const Text('发布'),
-                      ),
-                    TextButton(
-                      onPressed: onEdit,
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        foregroundColor: CompetitionUiTokens.titleColor(isDark),
-                      ),
-                      child: const Text('编辑'),
-                    ),
-                    if (onArchive != null)
-                      PopupMenuButton<String>(
-                        tooltip: '更多操作',
-                        icon: Icon(
-                          Icons.more_horiz_rounded,
-                          color: CompetitionUiTokens.subColor(isDark),
+                      )
+                    else if (event.status == 'published' && onEdit != null)
+                      FilledButton(
+                        onPressed: onEdit,
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          backgroundColor: CompetitionUiTokens.accent(isDark),
+                          foregroundColor: Colors.white,
                         ),
-                        onSelected: (value) {
-                          if (value == 'archive') onArchive?.call();
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(
+                        child: const Text('编辑'),
+                      )
+                    else if (event.status == 'archived' && onRestore != null)
+                      FilledButton(
+                        onPressed: onRestore,
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          backgroundColor: CompetitionUiTokens.accent(isDark),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('恢复草稿'),
+                      ),
+                    
+                    PopupMenuButton<String>(
+                      tooltip: '更多操作',
+                      icon: Icon(
+                        Icons.more_horiz_rounded,
+                        color: CompetitionUiTokens.subColor(isDark),
+                      ),
+                      onSelected: (value) {
+                        if (value == 'edit') onEdit?.call();
+                        if (value == 'archive') onArchive?.call();
+                        if (value == 'delete') onDelete?.call();
+                      },
+                      itemBuilder: (_) => [
+                        if (event.status != 'published')
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Text('编辑'),
+                          ),
+                        if (event.status != 'archived')
+                          const PopupMenuItem(
                             value: 'archive',
                             child: Text('归档'),
                           ),
-                        ],
-                      ),
+                        if (event.status != 'published')
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('删除', style: TextStyle(color: Colors.red)),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ],

@@ -86,6 +86,7 @@ type CompetitionEvent struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	ArchivedAt *time.Time `json:"archived_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 
 	FitLevel   string   `gorm:"-" json:"fit_level,omitempty"`
 	FitReasons []string `gorm:"-" json:"fit_reasons,omitempty"`

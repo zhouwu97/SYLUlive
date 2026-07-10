@@ -682,7 +682,19 @@ func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取比赛失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": events, "total": total})
+	
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       events,
+		"total":       total,
+		"page":        page,
+		"page_size":   pageSize,
+		"total_pages": totalPages,
+	})
 }
 
 func (h *CompetitionHandler) applyMaintenanceFilters(c *gin.Context, query *gorm.DB) *gorm.DB {
@@ -847,18 +859,22 @@ func (h *CompetitionHandler) eventFromInput(input competitionEventInput) (models
 }
 
 func (h *CompetitionHandler) AdminArchiveEvent(c *gin.Context) {
-	h.adminSetEventStatus(c, "archived")
+	h.performSingleAction(c, "archive")
 }
 
 func (h *CompetitionHandler) AdminPublishEvent(c *gin.Context) {
-	h.adminSetEventStatus(c, "published")
+	h.performSingleAction(c, "publish")
+}
+
+func (h *CompetitionHandler) AdminRestoreEvent(c *gin.Context) {
+	h.performSingleAction(c, "restore_to_draft")
 }
 
 func (h *CompetitionHandler) AdminDeleteEvent(c *gin.Context) {
-	h.adminSetEventStatus(c, "archived")
+	h.performSingleAction(c, "delete")
 }
 
-func (h *CompetitionHandler) adminSetEventStatus(c *gin.Context, status string) {
+func (h *CompetitionHandler) performSingleAction(c *gin.Context, action string) {
 	userID, ok := currentUserID(c)
 	if !ok {
 		return
@@ -867,16 +883,256 @@ func (h *CompetitionHandler) adminSetEventStatus(c *gin.Context, status string) 
 	if !ok {
 		return
 	}
-	updates := map[string]interface{}{"status": status, "updated_by": userID}
-	if status == "archived" {
-		now := time.Now()
-		updates["archived_at"] = &now
-	}
-	if err := h.db.Model(&models.CompetitionEvent{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新比赛状态失败"})
+	var event models.CompetitionEvent
+	if err := h.db.First(&event, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "比赛不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已更新状态"})
+
+	newStatus, err := checkEventStatusTransition(event.Status, action)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+
+	if action == "delete" {
+		if err := h.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&event).UpdateColumn("updated_by", userID).Error; err != nil {
+				return err
+			}
+			return tx.Delete(&event).Error
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+		return
+	}
+
+	updates := map[string]interface{}{"status": newStatus, "updated_by": userID}
+	if newStatus == "archived" {
+		now := time.Now()
+		updates["archived_at"] = &now
+	} else if newStatus == "draft" || newStatus == "published" {
+		updates["archived_at"] = gorm.Expr("NULL")
+	}
+
+	if err := h.db.Model(&event).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "操作失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "操作成功"})
+}
+
+func checkEventStatusTransition(currentStatus, action string) (string, error) {
+	switch action {
+	case "publish":
+		if currentStatus == "draft" {
+			return "published", nil
+		}
+		if currentStatus == "published" {
+			return "published", fmt.Errorf("已经是发布状态")
+		}
+		return "", fmt.Errorf("已归档比赛需要先恢复为草稿")
+	case "archive":
+		if currentStatus == "archived" {
+			return "archived", fmt.Errorf("已经是归档状态")
+		}
+		return "archived", nil
+	case "restore_to_draft":
+		if currentStatus == "archived" {
+			return "draft", nil
+		}
+		if currentStatus == "draft" {
+			return "draft", fmt.Errorf("已经是草稿状态")
+		}
+		return "", fmt.Errorf("只有已归档的比赛才能恢复为草稿")
+	case "delete":
+		if currentStatus == "draft" || currentStatus == "archived" {
+			return "deleted", nil
+		}
+		return "", fmt.Errorf("已发布的比赛必须先归档后才能删除")
+	default:
+		return "", fmt.Errorf("未知的操作")
+	}
+}
+
+type batchActionInput struct {
+	IDs    []uint `json:"ids"`
+	Action string `json:"action"`
+}
+
+type batchSkippedDetail struct {
+	ID     uint   `json:"id"`
+	Reason string `json:"reason"`
+}
+
+func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	var input batchActionInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	if len(input.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择比赛"})
+		return
+	}
+	if len(input.IDs) > 200 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "单次批量操作最多 200 项"})
+		return
+	}
+
+	uniqueIDs := make(map[uint]struct{}, len(input.IDs))
+	var cleanIDs []uint
+	for _, id := range input.IDs {
+		if _, exists := uniqueIDs[id]; !exists {
+			uniqueIDs[id] = struct{}{}
+			cleanIDs = append(cleanIDs, id)
+		}
+	}
+
+	if input.Action == "verify" {
+		if err := h.adminBatchVerify(c, cleanIDs, userID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	var events []models.CompetitionEvent
+	if err := h.db.Where("id IN ?", cleanIDs).Find(&events).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询比赛失败"})
+		return
+	}
+
+	foundIDs := make(map[uint]bool)
+	for _, event := range events {
+		foundIDs[event.ID] = true
+	}
+
+	var skipped []batchSkippedDetail
+	var toUpdateIDs []uint
+	var toDeleteIDs []uint
+	newStatus := ""
+
+	for _, id := range cleanIDs {
+		if !foundIDs[id] {
+			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: "比赛不存在或已删除"})
+			continue
+		}
+		
+		var event models.CompetitionEvent
+		for _, e := range events {
+			if e.ID == id {
+				event = e
+				break
+			}
+		}
+
+		targetStatus, err := checkEventStatusTransition(event.Status, input.Action)
+		if err != nil {
+			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: err.Error()})
+			continue
+		}
+
+		if input.Action == "delete" {
+			toDeleteIDs = append(toDeleteIDs, id)
+		} else {
+			newStatus = targetStatus
+			toUpdateIDs = append(toUpdateIDs, id)
+		}
+	}
+
+	if len(toDeleteIDs) > 0 {
+		h.db.Transaction(func(tx *gorm.DB) error {
+			tx.Model(&models.CompetitionEvent{}).Where("id IN ?", toDeleteIDs).UpdateColumn("updated_by", userID)
+			return tx.Where("id IN ?", toDeleteIDs).Delete(&models.CompetitionEvent{}).Error
+		})
+	}
+
+	if len(toUpdateIDs) > 0 {
+		updates := map[string]interface{}{"status": newStatus, "updated_by": userID}
+		if newStatus == "archived" {
+			now := time.Now()
+			updates["archived_at"] = &now
+		} else if newStatus == "draft" || newStatus == "published" {
+			updates["archived_at"] = gorm.Expr("NULL")
+		}
+		h.db.Model(&models.CompetitionEvent{}).Where("id IN ?", toUpdateIDs).Updates(updates)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success_count": len(toUpdateIDs) + len(toDeleteIDs),
+		"skipped_count": len(skipped),
+		"skipped":       skipped,
+	})
+}
+
+func (h *CompetitionHandler) adminBatchVerify(c *gin.Context, ids []uint, userID uint) error {
+	now := time.Now()
+	var events []models.CompetitionEvent
+	if err := h.db.Where("id IN ?", ids).Find(&events).Error; err != nil {
+		return fmt.Errorf("查询比赛失败")
+	}
+	
+	foundIDs := make(map[uint]bool)
+	var toVerifyIDs []uint
+	var skipped []batchSkippedDetail
+	for _, e := range events {
+		foundIDs[e.ID] = true
+		toVerifyIDs = append(toVerifyIDs, e.ID)
+	}
+	for _, id := range ids {
+		if !foundIDs[id] {
+			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: "比赛不存在或已删除"})
+		}
+	}
+
+	if len(toVerifyIDs) > 0 {
+		if err := h.db.Model(&models.CompetitionEvent{}).Where("id IN ?", toVerifyIDs).Updates(map[string]interface{}{
+			"is_verified": true, "verified_by": userID, "verified_at": &now,
+		}).Error; err != nil {
+			return fmt.Errorf("批量核验失败")
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success_count": len(toVerifyIDs),
+		"skipped_count": len(skipped),
+		"skipped":       skipped,
+	})
+	return nil
+}
+
+func (h *CompetitionHandler) AdminGetEventsOverview(c *gin.Context) {
+	now := time.Now()
+	var total, draft, published, archived, timePending, stale, unverified int64
+
+	base := h.db.Model(&models.CompetitionEvent{})
+	base.Count(&total)
+	base.Where("status = ?", "draft").Count(&draft)
+	base.Where("status = ?", "published").Count(&published)
+	base.Where("status = ?", "archived").Count(&archived)
+
+	base.Where("registration_end IS NULL").
+		Where("time_status IN ?", []string{"pending", "historical", "estimated"}).
+		Count(&timePending)
+
+	currentMonth := int(now.Month())
+	nextMonth := int(now.AddDate(0, 1, 0).Month())
+	base.Where("updated_at < ? OR (registration_end IS NULL AND sort_month IN ?)",
+		now.AddDate(0, 0, -180), []int{currentMonth, nextMonth}).
+		Count(&stale)
+
+	base.Where("is_verified = ? OR time_status = ? OR school_recognition_status = ?", false, "pending", "pending").
+		Count(&unverified)
+
+	c.JSON(http.StatusOK, gin.H{
+		"total": total, "draft": draft, "published": published, "archived": archived,
+		"time_pending": timePending, "stale": stale, "unverified": unverified,
+	})
 }
 
 func (h *CompetitionHandler) AdminVerifyEvent(c *gin.Context) {

@@ -8,13 +8,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/models"
 )
@@ -47,6 +51,9 @@ type competitionEventInput struct {
 	HostUnit                string   `json:"host_unit"`
 	UndertakeUnit           string   `json:"undertake_unit"`
 	TargetAudience          string   `json:"target_audience"`
+	EligibleEntryYears      []string `json:"eligible_entry_years"`
+	EligibleColleges        []string `json:"eligible_colleges"`
+	EligibleMajors          []string `json:"eligible_majors"`
 	ParticipationType       string   `json:"participation_type"`
 	TeamSizeMin             int      `json:"team_size_min"`
 	TeamSizeMax             int      `json:"team_size_max"`
@@ -100,6 +107,154 @@ func jsonArray(values []string) datatypes.JSON {
 	}
 	b, _ := json.Marshal(values)
 	return datatypes.JSON(b)
+}
+
+var entryYearPattern = regexp.MustCompile(`(?:19|20)\d{2}`)
+
+var recommendationRanks = map[string]int{
+	"S": 8, "A": 7, "B+": 6, "B": 5, "B-": 4, "C": 3, "D": 2, "E": 1,
+}
+
+type competitionProfile struct {
+	EntryYear string
+	College   string
+	Major     string
+}
+
+func shanghaiLocation() *time.Location {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("Asia/Shanghai", 8*60*60)
+	}
+	return location
+}
+
+func competitionOverviewBounds(now time.Time) (time.Time, time.Time) {
+	location := shanghaiLocation()
+	localNow := now.In(location)
+	start := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, location)
+	return start, start.AddDate(0, 0, 15)
+}
+
+func normalizeEntryYear(value string, now time.Time) string {
+	matches := entryYearPattern.FindAllString(value, -1)
+	unique := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		unique[match] = struct{}{}
+	}
+	if len(unique) != 1 {
+		return ""
+	}
+	var year string
+	for match := range unique {
+		year = match
+	}
+	parsed, err := strconv.Atoi(year)
+	if err != nil || parsed < now.Year()-10 || parsed > now.Year()+1 {
+		return ""
+	}
+	return year
+}
+
+func normalizeAcademicName(value string) string {
+	value = strings.TrimFunc(strings.TrimSpace(value), unicode.IsPunct)
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
+}
+
+func normalizeStringValues(values []string, normalizer func(string) string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := normalizer(value)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func normalizeEntryYears(values []string, now time.Time) ([]string, error) {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := normalizeEntryYear(value, now)
+		if normalized == "" {
+			return nil, fmt.Errorf("无法识别入学年份：%s", value)
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result, nil
+}
+
+func normalizeRecommendationLevel(value string) (string, error) {
+	value = strings.TrimSpace(strings.ToUpper(value))
+	if value == "" {
+		return "B", nil
+	}
+	if _, ok := recommendationRanks[value]; !ok {
+		return "", fmt.Errorf("推荐等级只能是 S/A/B+/B/B-/C/D/E")
+	}
+	return value, nil
+}
+
+func decodeStringArray(value datatypes.JSON) []string {
+	if len(value) == 0 {
+		return []string{}
+	}
+	var result []string
+	if err := json.Unmarshal(value, &result); err != nil || result == nil {
+		return []string{}
+	}
+	return result
+}
+
+func containsNormalized(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func matchCompetitionForProfile(event models.CompetitionEvent, profile competitionProfile) (bool, string, []string) {
+	years := decodeStringArray(event.EligibleEntryYears)
+	colleges := decodeStringArray(event.EligibleColleges)
+	majors := decodeStringArray(event.EligibleMajors)
+	reasons := make([]string, 0, 2)
+	if len(years) > 0 {
+		if !containsNormalized(years, profile.EntryYear) {
+			return false, "", nil
+		}
+		reasons = append(reasons, "符合"+profile.EntryYear+"级")
+	}
+	if len(majors) > 0 {
+		if !containsNormalized(majors, profile.Major) {
+			return false, "", nil
+		}
+		return true, "major", append(reasons, "专业匹配："+profile.Major)
+	}
+	if len(colleges) > 0 {
+		if !containsNormalized(colleges, profile.College) {
+			return false, "", nil
+		}
+		return true, "college", append(reasons, "学院匹配："+profile.College)
+	}
+	if len(reasons) == 0 {
+		reasons = append(reasons, "不限专业与年级")
+	} else {
+		reasons = append(reasons, "面向本年级")
+	}
+	return true, "general", reasons
 }
 
 func sortDate(regEnd, eventStart *time.Time, sortMonth int, fallback time.Time) *time.Time {
@@ -189,6 +344,185 @@ func (h *CompetitionHandler) GetCategories(c *gin.Context) {
 	c.JSON(http.StatusOK, categories)
 }
 
+func (h *CompetitionHandler) GetOverview(c *gin.Context) {
+	start, end := competitionOverviewBounds(time.Now())
+	base := h.db.Model(&models.CompetitionEvent{}).Where("status = ?", "published")
+	var publishedTotal, deadlineSoonCount, timePendingCount, recognizedCount int64
+	if err := base.Count(&publishedTotal).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
+		return
+	}
+	if err := h.db.Model(&models.CompetitionEvent{}).
+		Where("status = ?", "published").
+		Where("registration_end >= ? AND registration_end < ?", start, end).
+		Count(&deadlineSoonCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
+		return
+	}
+	if err := h.db.Model(&models.CompetitionEvent{}).
+		Where("status = ?", "published").
+		Where("registration_end IS NULL").
+		Where("time_status IN ?", []string{"pending", "historical", "estimated"}).
+		Count(&timePendingCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
+		return
+	}
+	if err := h.db.Model(&models.CompetitionEvent{}).
+		Where("status = ? AND school_recognition_status = ?", "published", "recognized").
+		Count(&recognizedCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"published_total": publishedTotal, "deadline_soon_count": deadlineSoonCount,
+		"time_pending_count": timePendingCount, "recognized_count": recognizedCount,
+	})
+}
+
+func profileFromUser(user models.User, now time.Time) (competitionProfile, bool) {
+	profile := competitionProfile{
+		EntryYear: normalizeEntryYear(user.EduGrade, now),
+		College:   normalizeAcademicName(user.EduCollege),
+		Major:     normalizeAcademicName(user.EduMajor),
+	}
+	return profile, user.EduBound && profile.EntryYear != "" && profile.College != "" && profile.Major != ""
+}
+
+func (h *CompetitionHandler) GetUserCompetitionState(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	var calendarCount int64
+	if err := h.db.Model(&models.UserCompetitionCalendarItem{}).
+		Where("user_id = ?", userID).Count(&calendarCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛状态失败"})
+		return
+	}
+	var joinedIDs []uint
+	if err := h.db.Model(&models.UserCompetitionCalendarItem{}).
+		Where("user_id = ? AND source_type = ? AND source_event_id IS NOT NULL", userID, "official").
+		Distinct().Pluck("source_event_id", &joinedIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛状态失败"})
+		return
+	}
+	_, profileReady := profileFromUser(user, time.Now())
+	c.JSON(http.StatusOK, gin.H{
+		"calendar_count": calendarCount, "joined_event_ids": joinedIDs, "profile_ready": profileReady,
+	})
+}
+
+func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	profile, ready := profileFromUser(user, time.Now())
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 50 {
+		pageSize = 20
+	}
+	if !ready {
+		c.JSON(http.StatusOK, gin.H{"profile_ready": false, "items": []models.CompetitionEvent{}, "total": 0, "page": page, "page_size": pageSize})
+		return
+	}
+	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory").Where("status = ?", "published")
+	query = h.applyEventFilters(c, query)
+	var candidates []models.CompetitionEvent
+	if err := query.Find(&candidates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取个性化比赛失败"})
+		return
+	}
+	matched := make([]models.CompetitionEvent, 0, len(candidates))
+	for _, event := range candidates {
+		isMatch, level, reasons := matchCompetitionForProfile(event, profile)
+		if !isMatch {
+			continue
+		}
+		event.FitLevel = level
+		event.FitReasons = reasons
+		matched = append(matched, event)
+	}
+	fitRank := map[string]int{"major": 3, "college": 2, "general": 1}
+	sort.SliceStable(matched, func(i, j int) bool {
+		left, right := matched[i], matched[j]
+		if fitRank[left.FitLevel] != fitRank[right.FitLevel] {
+			return fitRank[left.FitLevel] > fitRank[right.FitLevel]
+		}
+		if recommendationRanks[left.RecommendationLevel] != recommendationRanks[right.RecommendationLevel] {
+			return recommendationRanks[left.RecommendationLevel] > recommendationRanks[right.RecommendationLevel]
+		}
+		if left.ImportanceScore != right.ImportanceScore {
+			return left.ImportanceScore > right.ImportanceScore
+		}
+		if left.SortDate == nil || right.SortDate == nil {
+			if left.SortDate != nil || right.SortDate != nil {
+				return left.SortDate != nil
+			}
+		} else if !left.SortDate.Equal(*right.SortDate) {
+			return left.SortDate.Before(*right.SortDate)
+		}
+		return left.ID < right.ID
+	})
+	total := len(matched)
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	finish := start + pageSize
+	if finish > total {
+		finish = total
+	}
+	c.JSON(http.StatusOK, gin.H{"profile_ready": true, "items": matched[start:finish], "total": total, "page": page, "page_size": pageSize})
+}
+
+func (h *CompetitionHandler) AdminCompetitionAudienceOptions(c *gin.Context) {
+	var users []models.User
+	if err := h.db.Select("edu_grade", "edu_college", "edu_major").Where("edu_bound = ?", true).Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取画像选项失败"})
+		return
+	}
+	yearSet := map[string]struct{}{}
+	collegeSet := map[string]struct{}{}
+	majorSet := map[string]struct{}{}
+	for _, user := range users {
+		if year := normalizeEntryYear(user.EduGrade, time.Now()); year != "" {
+			yearSet[year] = struct{}{}
+		}
+		if college := normalizeAcademicName(user.EduCollege); college != "" {
+			collegeSet[college] = struct{}{}
+		}
+		if major := normalizeAcademicName(user.EduMajor); major != "" {
+			majorSet[major] = struct{}{}
+		}
+	}
+	toSorted := func(values map[string]struct{}) []string {
+		result := make([]string, 0, len(values))
+		for value := range values {
+			result = append(result, value)
+		}
+		sort.Strings(result)
+		return result
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"entry_years": toSorted(yearSet), "colleges": toSorted(collegeSet), "majors": toSorted(majorSet),
+	})
+}
+
 func (h *CompetitionHandler) ListEvents(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -235,7 +569,8 @@ func (h *CompetitionHandler) applyEventFilters(c *gin.Context, query *gorm.DB) *
 	}
 	switch c.Query("date_status") {
 	case "deadline_soon":
-		query = query.Where("registration_end IS NOT NULL AND registration_end BETWEEN ? AND ?", time.Now(), time.Now().AddDate(0, 0, 14))
+		start, end := competitionOverviewBounds(time.Now())
+		query = query.Where("registration_end IS NOT NULL AND registration_end >= ? AND registration_end < ?", start, end)
 	case "registering":
 		query = query.Where("(registration_start IS NULL OR registration_start <= ?) AND (registration_end IS NULL OR registration_end >= ?)", time.Now(), time.Now())
 	case "not_started":
@@ -471,6 +806,16 @@ func (h *CompetitionHandler) eventFromInput(input competitionEventInput) (models
 		return models.CompetitionEvent{}, fmt.Errorf("请选择主分类")
 	}
 	now := time.Now()
+	recommendationLevel, err := normalizeRecommendationLevel(input.RecommendationLevel)
+	if err != nil {
+		return models.CompetitionEvent{}, err
+	}
+	entryYears, err := normalizeEntryYears(input.EligibleEntryYears, now)
+	if err != nil {
+		return models.CompetitionEvent{}, err
+	}
+	colleges := normalizeStringValues(input.EligibleColleges, normalizeAcademicName)
+	majors := normalizeStringValues(input.EligibleMajors, normalizeAcademicName)
 	sortMonth := normalizeSortMonth(input.SortMonth)
 	timePrecision := normalizeTimePrecision(input.TimePrecision)
 	timeStatus := normalizeTimeStatus(input.TimeStatus)
@@ -484,10 +829,11 @@ func (h *CompetitionHandler) eventFromInput(input competitionEventInput) (models
 		Title: input.Title, Subtitle: input.Subtitle, Summary: input.Summary, Description: input.Description,
 		PrimaryCategoryID: categoryID, Tags: jsonArray(input.Tags), CompetitionLevel: input.CompetitionLevel,
 		SchoolRecognitionStatus: input.SchoolRecognitionStatus, SchoolRecognitionGrade: input.SchoolRecognitionGrade,
-		RecommendationLevel: input.RecommendationLevel, ImportanceScore: input.ImportanceScore,
+		RecommendationLevel: recommendationLevel, ImportanceScore: input.ImportanceScore,
 		RecommendationReason: input.RecommendationReason, IsFeatured: input.IsFeatured, IsVerified: input.IsVerified,
 		Organizer: input.Organizer, HostUnit: input.HostUnit, UndertakeUnit: input.UndertakeUnit,
-		TargetAudience: input.TargetAudience, ParticipationType: input.ParticipationType,
+		TargetAudience: input.TargetAudience, EligibleEntryYears: jsonArray(entryYears),
+		EligibleColleges: jsonArray(colleges), EligibleMajors: jsonArray(majors), ParticipationType: input.ParticipationType,
 		TeamSizeMin: input.TeamSizeMin, TeamSizeMax: input.TeamSizeMax,
 		RegistrationStart: regStart, RegistrationEnd: regEnd, EventStart: eventStart, EventEnd: eventEnd,
 		RegistrationTimeText: input.RegistrationTimeText, EventTimeText: input.EventTimeText,
@@ -672,6 +1018,8 @@ func (h *CompetitionHandler) CopyOfficialToCalendar(c *gin.Context) {
 	if !ok {
 		return
 	}
+	var responseItem models.UserCompetitionCalendarItem
+	alreadyExists := false
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		var event models.CompetitionEvent
 		if err := tx.First(&event, "id = ? AND status = ?", eventID, "published").Error; err != nil {
@@ -682,12 +1030,26 @@ func (h *CompetitionHandler) CopyOfficialToCalendar(c *gin.Context) {
 			return err
 		}
 		item := calendarItemFromEvent(calendar.ID, userID, event, "official", &event.ID, "", nil)
-		return tx.Create(&item).Error
+		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&item)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			responseItem = item
+			return nil
+		}
+		alreadyExists = true
+		return tx.Where("user_id = ? AND source_type = ? AND source_event_id = ?", userID, "official", event.ID).
+			First(&responseItem).Error
 	}); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "加入我的计划失败"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"message": "已加入我的计划"})
+	status := http.StatusCreated
+	if alreadyExists {
+		status = http.StatusOK
+	}
+	c.JSON(status, gin.H{"already_exists": alreadyExists, "item": responseItem})
 }
 
 func (h *CompetitionHandler) ensureCalendarTx(tx *gorm.DB, userID uint) (models.UserCompetitionCalendar, error) {
@@ -1131,10 +1493,11 @@ func (h *CompetitionHandler) AdminImportJSONPreview(c *gin.Context) {
 		return
 	}
 	raw, _ := json.Marshal(payload)
-	result := h.validateImportPayload(payload)
+	normalizedPayload, result := h.normalizeImportPayload(payload)
+	normalizedRaw, _ := json.Marshal(normalizedPayload)
 	batch := models.CompetitionImportBatch{
 		BatchID: randomCode("BATCH", 8), UserID: userID, SourceType: "ai_import",
-		RawPayload: datatypes.JSON(raw), NormalizedPayload: datatypes.JSON(raw),
+		RawPayload: datatypes.JSON(raw), NormalizedPayload: datatypes.JSON(normalizedRaw),
 		PayloadSize: len(raw), Status: "previewed", ExpiresAt: time.Now().Add(24 * time.Hour),
 		ItemCount: result["item_count"].(int), ValidCount: result["valid_count"].(int),
 		ErrorCount: len(result["errors"].([]gin.H)),
@@ -1149,6 +1512,41 @@ func (h *CompetitionHandler) AdminImportJSONPreview(c *gin.Context) {
 }
 
 func (h *CompetitionHandler) validateImportPayload(payload map[string]interface{}) gin.H {
+	_, result := h.normalizeImportPayload(payload)
+	return result
+}
+
+func stringArrayFromImportField(value interface{}) ([]string, bool) {
+	if value == nil {
+		return []string{}, true
+	}
+	rawValues, ok := value.([]interface{})
+	if !ok {
+		if typed, typedOK := value.([]string); typedOK {
+			return typed, true
+		}
+		return nil, false
+	}
+	values := make([]string, 0, len(rawValues))
+	for _, raw := range rawValues {
+		value, ok := raw.(string)
+		if !ok {
+			return nil, false
+		}
+		values = append(values, value)
+	}
+	return values, true
+}
+
+func importString(item map[string]interface{}, key string) string {
+	value, exists := item[key]
+	if !exists || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func (h *CompetitionHandler) normalizeImportPayload(payload map[string]interface{}) (map[string]interface{}, gin.H) {
 	errors := []gin.H{}
 	warnings := []gin.H{}
 	events, _ := payload["events"].([]interface{})
@@ -1156,14 +1554,21 @@ func (h *CompetitionHandler) validateImportPayload(payload map[string]interface{
 		errors = append(errors, gin.H{"index": -1, "field": "events", "message": "events 不能为空"})
 	}
 	validCount := 0
+	normalizedEvents := make([]interface{}, 0, len(events))
 	for i, raw := range events {
 		item, _ := raw.(map[string]interface{})
+		normalized := make(map[string]interface{}, len(item))
+		for key, value := range item {
+			normalized[key] = value
+		}
 		hasError := false
-		if strings.TrimSpace(fmt.Sprint(item["title"])) == "" {
+		title := importString(item, "title")
+		normalized["title"] = title
+		if title == "" {
 			errors = append(errors, gin.H{"index": i, "field": "title", "message": "标题不能为空"})
 			hasError = true
 		}
-		slug := strings.TrimSpace(fmt.Sprint(item["primary_category_slug"]))
+		slug := importString(item, "primary_category_slug")
 		var count int64
 		h.db.Model(&models.CompetitionCategory{}).Where("slug = ?", slug).Count(&count)
 		if count == 0 {
@@ -1171,25 +1576,93 @@ func (h *CompetitionHandler) validateImportPayload(payload map[string]interface{
 			hasError = true
 		}
 		for _, field := range []string{"official_url", "notice_url"} {
-			if !validURL(strings.TrimSpace(fmt.Sprint(item[field]))) {
+			value := importString(item, field)
+			normalized[field] = value
+			if !validURL(value) {
 				errors = append(errors, gin.H{"index": i, "field": field, "message": "URL 必须是 http/https"})
 				hasError = true
 			}
 		}
-		if strings.TrimSpace(fmt.Sprint(item["registration_end"])) == "" &&
-			strings.TrimSpace(fmt.Sprint(item["event_start"])) == "" &&
-			strings.TrimSpace(fmt.Sprint(item["time_note"])) == "" {
+		parsedDates := map[string]*time.Time{}
+		for _, field := range []string{"registration_start", "registration_end", "event_start", "event_end"} {
+			value := importString(item, field)
+			normalized[field] = value
+			parsed, err := parseDatePtr(value)
+			if err != nil {
+				errors = append(errors, gin.H{"index": i, "field": field, "message": "日期格式应为 YYYY-MM-DD"})
+				hasError = true
+				continue
+			}
+			parsedDates[field] = parsed
+		}
+		if start, end := parsedDates["registration_start"], parsedDates["registration_end"]; start != nil && end != nil && end.Before(*start) {
+			errors = append(errors, gin.H{"index": i, "field": "registration_end", "message": "报名截止不能早于报名开始"})
+			hasError = true
+		}
+		if start, end := parsedDates["event_start"], parsedDates["event_end"]; start != nil && end != nil && end.Before(*start) {
+			errors = append(errors, gin.H{"index": i, "field": "event_end", "message": "比赛结束不能早于比赛开始"})
+			hasError = true
+		}
+		if importString(item, "registration_end") == "" &&
+			importString(item, "event_start") == "" &&
+			importString(item, "time_note") == "" {
 			warnings = append(warnings, gin.H{"index": i, "field": "time_note", "message": "时间为空时建议说明来源"})
 		}
-		if strings.TrimSpace(fmt.Sprint(item["school_recognition_status"])) == "recognized" &&
-			strings.TrimSpace(fmt.Sprint(item["source_note"])) == "" {
+		if importString(item, "school_recognition_status") == "recognized" &&
+			importString(item, "source_note") == "" {
 			warnings = append(warnings, gin.H{"index": i, "field": "source_note", "message": "学校认定为已认定时建议填写来源说明"})
+		}
+		recommendation, recommendationErr := normalizeRecommendationLevel(importString(item, "recommendation_level"))
+		if recommendationErr != nil {
+			errors = append(errors, gin.H{"index": i, "field": "recommendation_level", "message": recommendationErr.Error()})
+			hasError = true
+		} else {
+			normalized["recommendation_level"] = recommendation
+		}
+		entryYears, entryYearsOK := stringArrayFromImportField(item["eligible_entry_years"])
+		if !entryYearsOK {
+			errors = append(errors, gin.H{"index": i, "field": "eligible_entry_years", "message": "必须是字符串数组"})
+			hasError = true
+			entryYears = []string{}
+		}
+		normalizedEntryYears, entryYearsErr := normalizeEntryYears(entryYears, time.Now())
+		if entryYearsErr != nil {
+			errors = append(errors, gin.H{"index": i, "field": "eligible_entry_years", "message": entryYearsErr.Error()})
+			hasError = true
+			normalizedEntryYears = []string{}
+		}
+		colleges, collegesOK := stringArrayFromImportField(item["eligible_colleges"])
+		if !collegesOK {
+			errors = append(errors, gin.H{"index": i, "field": "eligible_colleges", "message": "必须是字符串数组"})
+			hasError = true
+			colleges = []string{}
+		}
+		majors, majorsOK := stringArrayFromImportField(item["eligible_majors"])
+		if !majorsOK {
+			errors = append(errors, gin.H{"index": i, "field": "eligible_majors", "message": "必须是字符串数组"})
+			hasError = true
+			majors = []string{}
+		}
+		normalizedColleges := normalizeStringValues(colleges, normalizeAcademicName)
+		normalizedMajors := normalizeStringValues(majors, normalizeAcademicName)
+		normalized["eligible_entry_years"] = normalizedEntryYears
+		normalized["eligible_colleges"] = normalizedColleges
+		normalized["eligible_majors"] = normalizedMajors
+		if len(normalizedEntryYears) == 0 && len(normalizedColleges) == 0 && len(normalizedMajors) == 0 {
+			warnings = append(warnings, gin.H{"index": i, "field": "eligible_entry_years", "message": "适用范围为空，将按通用比赛处理"})
 		}
 		if !hasError {
 			validCount++
 		}
+		normalizedEvents = append(normalizedEvents, normalized)
 	}
-	return gin.H{"item_count": len(events), "valid_count": validCount, "errors": errors, "warnings": warnings}
+	normalizedPayload := make(map[string]interface{}, len(payload))
+	for key, value := range payload {
+		normalizedPayload[key] = value
+	}
+	normalizedPayload["events"] = normalizedEvents
+	result := gin.H{"item_count": len(events), "valid_count": validCount, "errors": errors, "warnings": warnings, "items": normalizedEvents}
+	return normalizedPayload, result
 }
 
 func (h *CompetitionHandler) AdminImportJSONCommit(c *gin.Context) {
@@ -1210,19 +1683,48 @@ func (h *CompetitionHandler) AdminImportJSONCommit(c *gin.Context) {
 		return
 	}
 	var batch models.CompetitionImportBatch
-	if err := h.db.Where("batch_id = ? AND status = ?", input.BatchID, "previewed").First(&batch).Error; err != nil {
+	if err := h.db.Where("batch_id = ? AND user_id = ? AND status = ? AND expires_at > ?", input.BatchID, userID, "previewed", time.Now()).First(&batch).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "导入批次不存在或已提交"})
 		return
 	}
 	var payload struct {
 		Events []competitionEventInput `json:"events"`
 	}
-	if err := json.Unmarshal(batch.RawPayload, &payload); err != nil {
+	if err := json.Unmarshal(batch.NormalizedPayload, &payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "批次数据损坏"})
 		return
 	}
+	var validationSummary struct {
+		Errors []struct {
+			Index int `json:"index"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(batch.ErrorSummary, &validationSummary); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "批次校验结果损坏"})
+		return
+	}
+	invalidIndexes := make(map[uint]struct{}, len(validationSummary.Errors))
+	for _, itemError := range validationSummary.Errors {
+		if itemError.Index >= 0 {
+			invalidIndexes[uint(itemError.Index)] = struct{}{}
+		}
+	}
 	actionMap := map[uint]string{}
 	for _, action := range input.Actions {
+		if int(action.Index) >= len(payload.Events) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "selected_actions 包含越界条目"})
+			return
+		}
+		if action.Action != "create" && action.Action != "skip" && action.Action != "manual_review" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的导入动作"})
+			return
+		}
+		if action.Action == "create" {
+			if _, invalid := invalidIndexes[action.Index]; invalid {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("第 %d 条存在校验错误，不能提交", action.Index+1)})
+				return
+			}
+		}
 		actionMap[action.Index] = action.Action
 	}
 	created := 0

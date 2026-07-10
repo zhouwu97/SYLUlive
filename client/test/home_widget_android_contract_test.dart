@@ -11,9 +11,9 @@ void main() {
     );
     for (final variant in const [
       'COURSE_2X2',
-      'COURSE_2X4',
+      'COURSE_4X2',
       'EXAM_2X2',
-      'EXAM_2X4',
+      'EXAM_4X2',
     ]) {
       expect(registry, contains(variant));
     }
@@ -22,14 +22,14 @@ void main() {
         registry, contains('HomeWidgetRenderer.build(context, id, variant)'));
   });
 
-  test('2×2 和 2×4 使用不同布局及不同数量限制', () {
+  test('2×2 和 4×2 使用不同布局及不同数量限制', () {
     final registry = source(
       'android/app/src/main/kotlin/com/example/shenliyuan/HomeWidgetRegistry.kt',
     );
     expect(registry, contains('R.layout.widget_course_2x2'));
-    expect(registry, contains('R.layout.widget_course_2x4'));
+    expect(registry, contains('R.layout.widget_course_4x2'));
     expect(registry, contains('R.layout.widget_exam_2x2'));
-    expect(registry, contains('R.layout.widget_exam_2x4'));
+    expect(registry, contains('R.layout.widget_exam_4x2'));
     expect(registry, contains('R.layout.widget_course_item_compact'));
     expect(registry, contains('R.layout.widget_course_item_detailed'));
   });

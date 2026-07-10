@@ -241,7 +241,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
                     padding: const EdgeInsets.only(left: 6),
                     child: ChoiceChip(
                       label:
-                          Text(size == HomeWidgetSize.size2x2 ? '2×2' : '2×4'),
+                          Text(size == HomeWidgetSize.size2x2 ? '2×2' : '4×2'),
                       selected: size == previewSize,
                       onSelected: (_) =>
                           setState(() => _previewSizes[kind] = size),
@@ -293,12 +293,12 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
             ),
             const Divider(height: 1),
             _WidgetSizeRow(
-              title: '2×4 列表版',
+              title: '4×2 列表版',
               subtitle: kind == HomeWidgetKind.course
                   ? '显示更多课程、教师与地点'
                   : '显示更多考试的日期、时间与地点',
-              count: _counts.countFor(kind, HomeWidgetSize.size2x4),
-              onAdd: () => _requestPin(kind, HomeWidgetSize.size2x4),
+              count: _counts.countFor(kind, HomeWidgetSize.size4x2),
+              onAdd: () => _requestPin(kind, HomeWidgetSize.size4x2),
             ),
             const Divider(height: 1),
             _WidgetSettingRow(
@@ -336,7 +336,7 @@ class _HomeWidgetPreview extends StatelessWidget {
       appearance.theme,
       systemBrightness: Theme.of(context).brightness,
     );
-    final isTall = size == HomeWidgetSize.size2x4;
+    final isTall = size == HomeWidgetSize.size4x2;
     final maxItems = isTall ? 5 : 2;
     final items = data.items.take(maxItems).toList();
 

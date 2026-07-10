@@ -27,11 +27,11 @@ abstract class BaseHomeWidgetProvider(
 class TodayCourseWidget2x2Provider :
     BaseHomeWidgetProvider(NativeWidgetVariant.COURSE_2X2)
 
-class TodayCourseWidget2x4Provider :
-    BaseHomeWidgetProvider(NativeWidgetVariant.COURSE_2X4)
+class TodayCourseWidget4x2Provider :
+    BaseHomeWidgetProvider(NativeWidgetVariant.COURSE_4X2)
 
 class ExamWidget2x2Provider :
     BaseHomeWidgetProvider(NativeWidgetVariant.EXAM_2X2)
 
-class ExamWidget2x4Provider :
-    BaseHomeWidgetProvider(NativeWidgetVariant.EXAM_2X4)
+class ExamWidget4x2Provider :
+    BaseHomeWidgetProvider(NativeWidgetVariant.EXAM_4X2)

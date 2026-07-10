@@ -50,36 +50,36 @@ class HomeWidgetPreviewData {
 class HomeWidgetInstalledCounts {
   const HomeWidgetInstalledCounts({
     this.course2x2 = 0,
-    this.course2x4 = 0,
+    this.course4x2 = 0,
     this.exam2x2 = 0,
-    this.exam2x4 = 0,
+    this.exam4x2 = 0,
   });
 
   final int course2x2;
-  final int course2x4;
+  final int course4x2;
   final int exam2x2;
-  final int exam2x4;
+  final int exam4x2;
 
   int totalFor(HomeWidgetKind kind) => switch (kind) {
-        HomeWidgetKind.course => course2x2 + course2x4,
-        HomeWidgetKind.exam => exam2x2 + exam2x4,
+        HomeWidgetKind.course => course2x2 + course4x2,
+        HomeWidgetKind.exam => exam2x2 + exam4x2,
       };
 
   int countFor(HomeWidgetKind kind, HomeWidgetSize size) =>
       switch ((kind, size)) {
         (HomeWidgetKind.course, HomeWidgetSize.size2x2) => course2x2,
-        (HomeWidgetKind.course, HomeWidgetSize.size2x4) => course2x4,
+        (HomeWidgetKind.course, HomeWidgetSize.size4x2) => course4x2,
         (HomeWidgetKind.exam, HomeWidgetSize.size2x2) => exam2x2,
-        (HomeWidgetKind.exam, HomeWidgetSize.size2x4) => exam2x4,
+        (HomeWidgetKind.exam, HomeWidgetSize.size4x2) => exam4x2,
       };
 
   factory HomeWidgetInstalledCounts.fromMap(Map<Object?, Object?> map) {
     int read(String key) => (map[key] as num?)?.toInt() ?? 0;
     return HomeWidgetInstalledCounts(
       course2x2: read('course2x2'),
-      course2x4: read('course2x4'),
+      course4x2: read('course4x2'),
       exam2x2: read('exam2x2'),
-      exam2x4: read('exam2x4'),
+      exam4x2: read('exam4x2'),
     );
   }
 }

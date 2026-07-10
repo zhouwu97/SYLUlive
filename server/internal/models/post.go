@@ -67,10 +67,28 @@ type Post struct {
 	// 旧客户端会忽略此字段；新增为空时不输出。
 	ExpAwards              []ExpAward              `gorm:"-" json:"exp_awards,omitempty"`
 	WaterSectionAuthorMeta *WaterSectionAuthorMeta `gorm:"-" json:"water_section_author_meta,omitempty"`
+	TeamRecruitmentMeta    *TeamRecruitmentMeta    `gorm:"-" json:"team_recruitment_meta,omitempty"`
 	Images                 []PostImage             `gorm:"foreignKey:PostID" json:"images"`
 	Author                 User                    `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt              time.Time               `json:"created_at"`
 	UpdatedAt              time.Time               `json:"updated_at"`
+}
+
+// TeamRecruitmentMeta 组队招募前端所需数据
+type TeamRecruitmentMeta struct {
+	RecruitmentID       uint       `json:"recruitment_id"`
+	NeededCount         int        `json:"needed_count"`
+	AcceptedCount       int        `json:"accepted_count"`
+	RemainingCount      int        `json:"remaining_count"`
+	Roles               []string   `json:"roles"`
+	Deadline            *time.Time `json:"deadline"`
+	Status              string     `json:"status"`
+	EffectiveStatus     string     `json:"effective_status"`
+	ApplicationCount    int64      `json:"application_count"`
+	MyApplicationStatus *string    `json:"my_application_status"`
+	IsOwner             bool       `json:"is_owner"`
+	CanApply            bool       `json:"can_apply"`
+	CanManage           bool       `json:"can_manage"`
 }
 
 // PostImage 帖子图片关联

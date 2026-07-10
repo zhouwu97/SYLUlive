@@ -21,6 +21,8 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
   late DateTime _baseMonth;
   late int _currentPage;
   DateTime? _selectedMonday;
+  bool _pickingYearMonth = false;
+  late int _pickerYear;
 
   @override
   void initState() {
@@ -45,6 +47,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
 
     _currentPage = 6;
     _pageController = PageController(initialPage: _currentPage);
+    _pickerYear = _baseMonth.year;
   }
 
   @override
@@ -61,24 +64,112 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
   String _formatDate(DateTime d) => '${d.month}月${d.day}日';
   String _formatMonth(DateTime d) => '${d.year}年${d.month}月';
 
-  Future<void> _pickDateAndJump() async {
-    final DateTime initialDate = _selectedMonday ?? _monthForPage(_currentPage);
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: initialDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-      helpText: '选择开学周的任意一天',
+  void _toggleYearMonthPicker() {
+    setState(() {
+      if (!_pickingYearMonth) {
+        _pickerYear = _monthForPage(_currentPage).year;
+      }
+      _pickingYearMonth = !_pickingYearMonth;
+    });
+  }
+
+  void _jumpToMonth(int month) {
+    setState(() {
+      _baseMonth = DateTime(_pickerYear, month, 1);
+      _currentPage = 6;
+      _pickingYearMonth = false;
+    });
+    _pageController.jumpToPage(6);
+  }
+
+  Widget _buildInlineYearMonthPicker() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final currentMonth = _monthForPage(_currentPage).month;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          // 年份行
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: () => setState(() => _pickerYear--),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                decoration: BoxDecoration(
+                  color: primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$_pickerYear 年',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: primaryColor,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: () => setState(() => _pickerYear++),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // 月份网格
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              childAspectRatio: 1.8,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: 12,
+            itemBuilder: (ctx, index) {
+              final month = index + 1;
+              final isSelected = _pickerYear == _monthForPage(_currentPage).year && month == currentMonth;
+              return GestureDetector(
+                onTap: () => _jumpToMonth(month),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? primaryColor
+                        : (isDark ? Colors.white.withOpacity(0.06) : Colors.grey[100]),
+                    borderRadius: BorderRadius.circular(12),
+                    border: isSelected
+                        ? null
+                        : Border.all(
+                            color: isDark
+                                ? Colors.white.withOpacity(0.1)
+                                : Colors.grey.withOpacity(0.15),
+                          ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '$month月',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: isSelected
+                          ? Colors.white
+                          : (isDark ? Colors.white70 : Colors.black87),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
-    if (picked != null) {
-      setState(() {
-        DateTime monday = picked.subtract(Duration(days: picked.weekday - 1));
-        _selectedMonday = DateTime(monday.year, monday.month, monday.day);
-        _baseMonth = DateTime(picked.year, picked.month, 1);
-        _currentPage = 6;
-      });
-      _pageController.jumpToPage(6);
-    }
   }
 
   Widget _buildMonthSelector() {
@@ -101,7 +192,7 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
-          onPressed: _pickDateAndJump,
+          onPressed: _toggleYearMonthPicker,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -114,10 +205,14 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(
-                Icons.arrow_drop_down,
-                size: 20,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              AnimatedRotation(
+                turns: _pickingYearMonth ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  Icons.arrow_drop_down,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                ),
               ),
             ],
           ),
@@ -382,21 +477,25 @@ class _CourseSemesterStartSheetState extends State<CourseSemesterStartSheet> {
           ),
           const SizedBox(height: 8),
           _buildMonthSelector(),
-          _buildWeekdaysHeader(),
-          Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              onPageChanged: (idx) {
-                setState(() {
-                  _currentPage = idx;
-                });
-              },
-              itemCount: 13,
-              itemBuilder: (context, index) {
-                return _buildMonthCalendar(_monthForPage(index));
-              },
+          if (_pickingYearMonth)
+            Expanded(child: _buildInlineYearMonthPicker())
+          else ...[
+            _buildWeekdaysHeader(),
+            Expanded(
+              child: PageView.builder(
+                controller: _pageController,
+                onPageChanged: (idx) {
+                  setState(() {
+                    _currentPage = idx;
+                  });
+                },
+                itemCount: 13,
+                itemBuilder: (context, index) {
+                  return _buildMonthCalendar(_monthForPage(index));
+                },
+              ),
             ),
-          ),
+          ],
           _buildBottomArea(),
         ],
       ),

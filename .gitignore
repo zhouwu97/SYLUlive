@@ -69,3 +69,11 @@ python-edu-service/tools/*/output/
 /before-low-conflict-cleanup.txt
 /server/shenliyuan.new
 
+
+# 本地服务器运维脚本、临时输出和敏感凭据
+/remote_exec.py
+/ssh_run.py
+/step12.py
+/step4_7.py
+/server/handler_test_output*.txt
+/server/tmp_server

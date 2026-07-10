@@ -21,7 +21,6 @@ import org.json.JSONObject
  */
 data class WidgetExamData(
     val title: String = "考试日程",
-    val textColor: String = "#333333",
     val exams: List<Exam> = emptyList(),
 ) {
     data class Exam(
@@ -49,14 +48,14 @@ object ExamDataReader {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val raw = prefs.getString(KEY, null)
             if (raw.isNullOrBlank()) return WidgetExamData()
-            parse(raw, context)
+            parse(raw)
         } catch (e: Exception) {
             android.util.Log.e("ExamDataReader", "读取考试数据失败", e)
             WidgetExamData()
         }
     }
 
-    private fun parse(raw: String, context: Context): WidgetExamData {
+    private fun parse(raw: String): WidgetExamData {
         val arr = JSONArray(raw)
         val exams = mutableListOf<WidgetExamData.Exam>()
         for (i in 0 until arr.length()) {
@@ -108,10 +107,6 @@ object ExamDataReader {
             ))
         }
 
-        // 读取文本颜色配置（如果存在）
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val textColor = prefs.getString("flutter.widget_text_color", "#333333") ?: "#333333"
-
-        return WidgetExamData(textColor = textColor, exams = exams)
+        return WidgetExamData(exams = exams)
     }
 }

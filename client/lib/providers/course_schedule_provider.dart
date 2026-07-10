@@ -689,7 +689,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   void _syncWidget() {
     if (_userId == null) return;
     // 使用 microtask 避免阻塞 UI
-    Future.microtask(() => HomeWidgetService.syncTodayCourses(this));
+    Future.microtask(() => HomeWidgetService.syncCourseData(this));
   }
 
   /// 保存课程到 SharedPreferences

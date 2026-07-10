@@ -104,6 +104,10 @@ class SectionPostCard extends StatelessWidget {
                     color: isDark ? Colors.white70 : const Color(0xFF3B4050),
                   ),
                 ),
+              if (post.teamRecruitment != null) ...[
+                const SizedBox(height: 9),
+                _buildTeamSummary(post.teamRecruitment!, isDark),
+              ],
               // 图片区
               if (imageCount > 0) ...[
                 const SizedBox(height: 8),
@@ -121,6 +125,42 @@ class SectionPostCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildTeamSummary(TeamRecruitmentMeta meta, bool isDark) {
+    final status = switch (meta.effectiveStatus) {
+      'full' => '已满员',
+      'closed' => '已关闭',
+      'expired' => '已截止',
+      _ => '招募中',
+    };
+    final color = meta.isRecruiting
+        ? accentColor
+        : (isDark ? Colors.white54 : const Color(0xFF7C8798));
+    final roles = meta.roles.length > 2
+        ? '${meta.roles.take(2).join(' · ')} · 等 ${meta.roles.length} 个方向'
+        : meta.roles.join(' · ');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: isDark ? 0.12 : 0.07),
+          borderRadius: BorderRadius.circular(10)),
+      child: Row(children: [
+        Icon(Icons.groups_2_outlined, size: 16, color: color),
+        const SizedBox(width: 6),
+        Text(status,
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w800, color: color)),
+        const SizedBox(width: 8),
+        Expanded(
+            child: Text('还缺 ${meta.remainingCount} 人 · $roles',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 11.5,
+                    color: isDark ? Colors.white70 : const Color(0xFF596273)))),
+      ]),
     );
   }
 

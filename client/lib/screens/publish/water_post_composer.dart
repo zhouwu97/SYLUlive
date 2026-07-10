@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
-import '../../models/user.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
@@ -477,7 +476,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     );
 
     if (selected != null && mounted) {
-      // 切换版块时清空标签
       setState(() {
         _selectedPostType = selected;
         _selectedTagId = null;
@@ -489,8 +487,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     final section = _selectedSection;
     final color =
         section.colorHex.isNotEmpty ? colorHexToColor(section.colorHex) : _teal;
-    final icon = iconKeyToIconData(section.iconKey, fallbackSlug: section.slug);
-    final tags = section.enabledTags;
+    final tags = section.enabledTags
+        .where((tag) => !tag.isTeamRecruitment)
+        .toList(growable: false);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: InkWell(

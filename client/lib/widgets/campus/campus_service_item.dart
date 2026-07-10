@@ -37,8 +37,8 @@ class CampusServiceCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: service.color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
@@ -56,7 +56,7 @@ class CampusServiceCard extends StatelessWidget {
                 service.title,
                 maxLines: 1,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11.5,
                   height: 1.0,
                   fontWeight: FontWeight.w700,
                   color: isDark ? Colors.white : CampusTheme.text,

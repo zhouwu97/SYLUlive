@@ -82,6 +82,10 @@ func createExamPaperTestUser(t *testing.T, db *gorm.DB, studentID string, role m
 }
 
 func buildHandlerTestPDF() []byte {
+	return buildHandlerTestPDFWithComment("")
+}
+
+func buildHandlerTestPDFWithComment(comment string) []byte {
 	objects := []string{
 		"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
 		"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
@@ -90,6 +94,9 @@ func buildHandlerTestPDF() []byte {
 	}
 	var pdf bytes.Buffer
 	pdf.WriteString("%PDF-1.4\n")
+	if comment != "" {
+		pdf.WriteString("% " + comment + "\n")
+	}
 	offsets := make([]int, len(objects)+1)
 	for index, object := range objects {
 		offsets[index+1] = pdf.Len()
@@ -300,6 +307,61 @@ func TestExamPaperUploadRequiresPrivacyAndCreatesPendingSubmission(t *testing.T)
 	}
 }
 
+func TestExamPaperUploadRejectsWhenPendingQuotaReachedBeforeReadingBody(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "quota-user", models.RoleUser, true, 0)
+	for index := 0; index < 5; index++ {
+		paper := models.ExamPaper{
+			Status:       models.ExamPaperStatusPending,
+			Source:       models.ExamPaperSourceUser,
+			SubmitterID:  user.ID,
+			CourseName:   fmt.Sprintf("quota-%d", index),
+			AcademicYear: "2025-2026",
+			Semester:     models.ExamPaperSemesterFirst,
+			ExamType:     models.ExamPaperTypeFinal,
+			Title:        fmt.Sprintf("quota-%d", index),
+			FileKey:      fmt.Sprintf("quota-%d.pdf", index),
+			FileSize:     1,
+			SHA256:       fmt.Sprintf("quota-hash-%d", index),
+		}
+		if err := env.db.Create(&paper).Error; err != nil {
+			t.Fatalf("创建待审核配额记录失败: %v", err)
+		}
+	}
+
+	response := performExamPaperRequest(
+		env.handler.Upload,
+		http.MethodPost,
+		"/api/exam-papers",
+		nil,
+		user.ID,
+		[]byte("not a multipart body"),
+		"application/octet-stream",
+	)
+	if response.Code != http.StatusTooManyRequests || decodeErrorCode(t, response) != "exam_paper_pending_limit_reached" {
+		t.Fatalf("超过待审核配额应先返回 429，status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestExamPaperUploadRateLimitsBurstSubmissions(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "burst-user", models.RoleUser, true, 0)
+
+	for index := 0; index < 3; index++ {
+		body, contentType := buildExamPaperUploadBody(t, true, buildHandlerTestPDFWithComment(fmt.Sprintf("burst-%d", index)))
+		response := performExamPaperRequest(env.handler.Upload, http.MethodPost, "/api/exam-papers", nil, user.ID, body, contentType)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("第 %d 次突发上传应成功: status=%d body=%s", index+1, response.Code, response.Body.String())
+		}
+	}
+
+	body, contentType := buildExamPaperUploadBody(t, true, buildHandlerTestPDFWithComment("burst-limited"))
+	response := performExamPaperRequest(env.handler.Upload, http.MethodPost, "/api/exam-papers", nil, user.ID, body, contentType)
+	if response.Code != http.StatusTooManyRequests || decodeErrorCode(t, response) != "exam_paper_upload_rate_limited" {
+		t.Fatalf("短时间第 4 次上传应被限流: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestExamPaperPreviewDoesNotCountAndDownloadCountsOnce(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	user := createExamPaperTestUser(t, env.db, "reader", models.RoleUser, true, 0)
@@ -344,6 +406,26 @@ func TestExamPaperWithdrawDeletesPendingRecordAndFile(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); !os.IsNotExist(err) {
 		t.Fatalf("撤回后私有文件仍存在: %v", err)
+	}
+}
+
+func TestExamPaperWithdrawCleansRecordWhenStoredFileAlreadyMissing(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "withdraw-missing-file", models.RoleUser, true, 0)
+	paper := createStoredExamPaper(t, env, user, models.ExamPaperStatusPending)
+	if err := os.Remove(filepath.Join(env.root, paper.FileKey)); err != nil {
+		t.Fatalf("删除测试 PDF 失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, user.ID, nil, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("文件已丢失时撤回应清理记录: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var count int64
+	env.db.Model(&models.ExamPaper{}).Where("id = ?", paper.ID).Count(&count)
+	if count != 0 {
+		t.Fatalf("撤回后记录应删除: %d", count)
 	}
 }
 

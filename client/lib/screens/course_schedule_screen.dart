@@ -26,6 +26,7 @@ import '../widgets/course/course_action_menu.dart';
 import '../widgets/course/course_import_sheet.dart';
 import '../widgets/course/course_term_switch_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
+import '../widgets/course/course_semester_start_picker.dart';
 import '../widgets/campus/campus_theme.dart';
 
 /// 每节课槽的默认高度
@@ -2762,14 +2763,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   Future<void> _pickSemesterStart(BuildContext context) async {
     final sc = context.read<CourseScheduleProvider>();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: sc.semesterStart ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-      helpText: '选择开学第一周',
-      cancelText: '取消',
-      confirmText: '确定',
+    final picked = await CourseSemesterStartPicker.show(
+      context,
+      term: sc.currentTerm,
+      initialMonday: sc.semesterStart,
     );
     if (picked != null && mounted && context.mounted) {
       await sc.setSemesterStart(picked);

@@ -241,6 +241,46 @@ class MainActivity : FlutterActivity() {
                     WidgetUpdateWorker.enqueue(this)
                     result.success(true)
                 }
+                "requestPinWidget" -> {
+                    val variant = HomeWidgetRegistry.find(
+                        call.argument<String>("kind"),
+                        call.argument<String>("size"),
+                    )
+                    if (variant == null) {
+                        result.error("INVALID_WIDGET_VARIANT", "未知的小组件类型或尺寸", null)
+                    } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                        result.success(
+                            mapOf(
+                                "status" to "unsupported",
+                                "message" to "当前 Android 版本不支持应用内添加",
+                            ),
+                        )
+                    } else {
+                        val manager = AppWidgetManager.getInstance(this)
+                        if (!manager.isRequestPinAppWidgetSupported) {
+                            result.success(
+                                mapOf(
+                                    "status" to "unsupported",
+                                    "message" to "当前桌面不支持应用内添加",
+                                ),
+                            )
+                        } else {
+                            val accepted = manager.requestPinAppWidget(
+                                ComponentName(this, variant.providerClass),
+                                null,
+                                null,
+                            )
+                            result.success(
+                                mapOf(
+                                    "status" to if (accepted) "requested" else "rejected",
+                                ),
+                            )
+                        }
+                    }
+                }
+                "getInstalledWidgetCounts" -> {
+                    result.success(HomeWidgetRegistry.installedCounts(this))
+                }
                 else -> result.notImplemented()
             }
         }
@@ -553,29 +593,7 @@ class MainActivity : FlutterActivity() {
 
     /** 立即刷新所有桌面 widget 实例 */
     private fun refreshWidgets() {
-        val appWidgetManager = AppWidgetManager.getInstance(this)
-        
-        // 刷新课表小组件
-        val courseComponent = ComponentName(this, TodayCourseWidgetProvider::class.java)
-        val courseIds = appWidgetManager.getAppWidgetIds(courseComponent)
-        for (id in courseIds) {
-            val views = TodayCourseWidgetProvider.buildRemoteViews(this, id)
-            appWidgetManager.updateAppWidget(id, views)
-        }
-        if (courseIds.isNotEmpty()) {
-            appWidgetManager.notifyAppWidgetViewDataChanged(courseIds, R.id.course_list_view)
-        }
-
-        // 刷新考试小组件
-        val examComponent = ComponentName(this, ExamWidgetProvider::class.java)
-        val examIds = appWidgetManager.getAppWidgetIds(examComponent)
-        for (id in examIds) {
-            val views = ExamWidgetProvider.buildRemoteViews(this, id)
-            appWidgetManager.updateAppWidget(id, views)
-        }
-        if (examIds.isNotEmpty()) {
-            appWidgetManager.notifyAppWidgetViewDataChanged(examIds, R.id.exam_list_view)
-        }
+        HomeWidgetRegistry.refreshAll(this)
     }
 
     private fun handleDeepLink(intent: Intent?) {

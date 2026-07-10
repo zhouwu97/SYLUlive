@@ -1,5 +1,6 @@
 """学业情况路由"""
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -7,10 +8,10 @@ from models.database import EduUser, get_db
 from models.schemas import AcademicSituationInput, AcademicSituationResponse
 from services.crawler import (
     CookieLapseError,
-    EduCrawler,
     LoginFailedError,
     NetworkError,
 )
+from services.session import execute_with_session_refresh
 
 router = APIRouter(prefix="/api/edu/academic-situation", tags=["学业情况"])
 
@@ -30,28 +31,28 @@ async def get_academic_situation(
     if not edu_user.cookie:
         raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定")
 
-    async with EduCrawler(timeout=15.0) as crawler:
-        cookie = edu_user.cookie
+    try:
+        payload = await execute_with_session_refresh(
+            db=db,
+            edu_user=edu_user,
+            operation=lambda crawler, cookie: crawler.fetch_academic_situation(cookie),
+            timeout=15.0,
+        )
+    except CookieLapseError as e:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "code": getattr(e, "code", "SESSION_EXPIRED"),
+                "error": str(e),
+            },
+        )
+    except NetworkError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except LoginFailedError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except Exception as e:
+        return AcademicSituationResponse(
+            success=False, message=f"学业情况解析失败: {e}",
+        )
 
-        for attempt in range(2):
-            try:
-                payload = await crawler.fetch_academic_situation(cookie)
-            except CookieLapseError:
-                if attempt == 1:
-                    raise HTTPException(status_code=401, detail="Cookie已失效且自动登录失败，请重新绑定教务账号")
-                if not edu_user.raw_password:
-                    raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定教务账号")
-                try:
-                    cookie = await crawler.login(edu_user.student_id, edu_user.raw_password)
-                    edu_user.cookie = cookie
-                    await db.commit()
-                except LoginFailedError as e:
-                    raise HTTPException(status_code=401, detail=f"账号密码可能已变更: {e}")
-                continue
-            except NetworkError as e:
-                raise HTTPException(status_code=503, detail=str(e))
-            except Exception as e:
-                return AcademicSituationResponse(success=False, message=f"学业情况解析失败: {e}")
-            break
-
-        return AcademicSituationResponse(**payload)
+    return AcademicSituationResponse(**payload)

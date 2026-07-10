@@ -25,6 +25,7 @@ import '../models/unread_reply_notification.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
 import 'water_category_feed_route.dart';
+import 'team/team_recruitment_detail_screen.dart';
 
 import '../utils/app_navigation.dart';
 
@@ -224,6 +225,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       });
     try {
       final response = await _dio.get('/posts/${widget.postId}');
+      final fetchedPost = Post.fromJson(response.data);
+      final recruitmentId = fetchedPost.teamRecruitment?.recruitmentId;
+      if (recruitmentId != null && recruitmentId > 0 && mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => TeamRecruitmentDetailScreen(
+              recruitmentId: recruitmentId,
+            ),
+          ),
+        );
+        return;
+      }
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
 
       try {
@@ -238,7 +251,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         // ignore status check failure
       }
 
-      final fetchedPost = Post.fromJson(response.data);
       final fallbackPost = widget.initialPost;
       final mergedPost = fallbackPost != null &&
               fallbackPost.images.length > fetchedPost.images.length

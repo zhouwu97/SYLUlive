@@ -1,14 +1,10 @@
 package com.example.shenliyuan
 
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -32,14 +28,9 @@ class WidgetUpdateWorker(
         private const val WORK_NAME = "today_course_widget_update"
 
         fun enqueue(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
-
             val request = PeriodicWorkRequestBuilder<WidgetUpdateWorker>(
                 15, TimeUnit.MINUTES,
             )
-                .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
 
@@ -56,25 +47,12 @@ class WidgetUpdateWorker(
 
     override suspend fun doWork(): Result {
         return try {
-            val appWidgetManager = AppWidgetManager.getInstance(applicationContext)
-            val component = ComponentName(applicationContext, TodayCourseWidgetProvider::class.java)
-            val ids = appWidgetManager.getAppWidgetIds(component)
-
-            if (ids.isEmpty()) {
+            val refreshed = HomeWidgetRegistry.refreshAll(applicationContext)
+            if (refreshed == 0) {
                 Log.d(TAG, "无小组件实例，跳过刷新")
-                return Result.success()
+            } else {
+                Log.d(TAG, "四类小组件刷新完成（$refreshed 个实例）")
             }
-
-            // 重建每个 widget 实例的 RemoteViews（更新标题/日期）
-            for (id in ids) {
-                val views = TodayCourseWidgetProvider.buildRemoteViews(applicationContext, id)
-                appWidgetManager.updateAppWidget(id, views)
-            }
-
-            // 通知 ListView 数据已变化 → 触发 onDataSetChanged() 重新读 SP
-            appWidgetManager.notifyAppWidgetViewDataChanged(ids, R.id.course_list_view)
-
-            Log.d(TAG, "小组件刷新完成 (${ids.size} 个实例)")
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "小组件刷新失败", e)

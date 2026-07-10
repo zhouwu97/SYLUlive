@@ -38,8 +38,8 @@ class CompetitionBatchConfirmDialog extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = CompetitionUiTokens.cardBg(isDark);
     final titleColor = CompetitionUiTokens.titleColor(isDark);
-    final dangerColor = CompetitionUiTokens.danger(isDark);
-    final primaryColor = CompetitionUiTokens.primary(isDark);
+    final dangerColor = CompetitionUiTokens.dangerColor(isDark);
+    final primaryColor = CompetitionUiTokens.accent(isDark);
 
     return AlertDialog(
       backgroundColor: bg,
@@ -56,7 +56,7 @@ class CompetitionBatchConfirmDialog extends StatelessWidget {
         content,
         style: TextStyle(
           fontSize: 15,
-          color: titleColor.withOpacity(0.8),
+          color: titleColor.withValues(alpha: 0.8),
         ),
       ),
       actions: [
@@ -65,7 +65,7 @@ class CompetitionBatchConfirmDialog extends StatelessWidget {
           child: Text(
             '取消',
             style: TextStyle(
-              color: titleColor.withOpacity(0.6),
+              color: titleColor.withValues(alpha: 0.6),
               fontWeight: FontWeight.w500,
             ),
           ),

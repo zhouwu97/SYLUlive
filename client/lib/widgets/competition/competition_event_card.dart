@@ -45,6 +45,7 @@ class CompetitionEventCard extends StatelessWidget {
       event: event,
       onTap: onTap,
       onAddPlan: onAddPlan,
+      onJoinedTap: onTap,
     );
   }
 }

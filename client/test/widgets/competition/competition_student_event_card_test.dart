@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import '../../../lib/widgets/competition/competition_student_event_card.dart';
-import '../../../lib/models/competition.dart';
+import 'package:shenliyuan/widgets/competition/competition_student_event_card.dart';
+import 'package:shenliyuan/models/competition.dart';
 
 void main() {
-  testWidgets('CompetitionStudentEventCard basic render', (WidgetTester tester) async {
+  testWidgets('CompetitionStudentEventCard basic render',
+      (WidgetTester tester) async {
     final event = CompetitionEvent(
       id: 1,
       title: 'Test Competition',

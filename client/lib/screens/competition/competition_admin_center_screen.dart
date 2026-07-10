@@ -108,7 +108,8 @@ class _CompetitionAdminCenterScreenState
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final res = await _dio.get('/admin/competitions/events', queryParameters: _queryParams());
+      final res = await _dio.get('/admin/competitions/events',
+          queryParameters: _queryParams());
       if (!mounted) return;
       final data = res.data as Map<String, dynamic>;
       setState(() {
@@ -122,7 +123,8 @@ class _CompetitionAdminCenterScreenState
           _loadEvents();
           return;
         }
-        _selectedEventIds.removeWhere((id) => !_events.any((event) => event.id == id));
+        _selectedEventIds
+            .removeWhere((id) => !_events.any((event) => event.id == id));
         _loading = false;
       });
     } on DioException catch (e) {
@@ -161,7 +163,8 @@ class _CompetitionAdminCenterScreenState
   int get _selectedCount {
     switch (_selectionScope) {
       case _AdminSelectionScope.allMatching:
-        return (_filteredTotal - _excludedEventIds.length).clamp(0, _filteredTotal);
+        return (_filteredTotal - _excludedEventIds.length)
+            .clamp(0, _filteredTotal);
       case _AdminSelectionScope.page:
         return _selectedEventIds.length;
       case _AdminSelectionScope.none:
@@ -296,7 +299,12 @@ class _CompetitionAdminCenterScreenState
                 controller: _searchController,
                 textInputAction: TextInputAction.search,
                 onSubmitted: (_) {
-                  _currentPage = 1;
+                  setState(() {
+                    _currentPage = 1;
+                    _selectionScope = _AdminSelectionScope.none;
+                    _selectedEventIds.clear();
+                    _excludedEventIds.clear();
+                  });
                   _loadEvents();
                 },
                 decoration: InputDecoration(
@@ -320,7 +328,6 @@ class _CompetitionAdminCenterScreenState
                 onPressed: () {
                   _searchController.clear();
                   _currentPage = 1;
-                  _selectionMode = false;
                   _selectionScope = _AdminSelectionScope.none;
                   _selectedEventIds.clear();
                   _excludedEventIds.clear();
@@ -379,12 +386,10 @@ class _CompetitionAdminCenterScreenState
               onPressed: () {
                 setState(() {
                   if (_selectionMode) {
-                    _selectionMode = false;
                     _selectionScope = _AdminSelectionScope.none;
                     _selectedEventIds.clear();
                     _excludedEventIds.clear();
                   } else {
-                    _selectionMode = true;
                     _selectionScope = _AdminSelectionScope.page;
                     _selectedEventIds.clear();
                     _selectedEventIds.addAll(_events.map((e) => e.id));
@@ -455,14 +460,18 @@ class _CompetitionAdminCenterScreenState
   Widget _buildSelectionBar(bool isDark) {
     return CompetitionBatchSelectionBar(
       selectedCount: _selectedCount,
-      allItemsSelected: _selectionScope == _AdminSelectionScope.allMatching && _excludedEventIds.isEmpty,
-      allItemsLabel: _selectionScope == _AdminSelectionScope.allMatching 
-          ? '全选 $_filteredTotal 项 (已选符合筛选的所有项目)' 
+      allItemsSelected: _selectionScope == _AdminSelectionScope.allMatching &&
+          _excludedEventIds.isEmpty,
+      allItemsLabel: _selectionScope == _AdminSelectionScope.allMatching
+          ? '全选 $_filteredTotal 项 (已选符合筛选的所有项目)'
           : '选择符合当前筛选的全部 $_filteredTotal 项',
       onToggleSelectAll: () {
         setState(() {
           if (_selectionScope == _AdminSelectionScope.allMatching) {
             _selectionScope = _AdminSelectionScope.page;
+            _selectedEventIds
+              ..clear()
+              ..addAll(_events.map((event) => event.id));
             _excludedEventIds.clear();
           } else {
             _selectionScope = _AdminSelectionScope.allMatching;
@@ -549,7 +558,7 @@ class _CompetitionAdminCenterScreenState
       ),
       child: Column(
         children: [
-          ..._events.map(_buildEventCard).toList(),
+          ..._events.map(_buildEventCard),
           if (_totalPages > 1) _buildPagination(isDark),
         ],
       ),
@@ -794,17 +803,26 @@ class _CompetitionAdminCenterScreenState
 
   List<CompetitionBatchAction> _adminBatchActions() {
     return [
-      const CompetitionBatchAction(value: 'publish', label: '发布', icon: Icons.public),
-      const CompetitionBatchAction(value: 'archive', label: '归档', icon: Icons.inventory_2_outlined),
+      const CompetitionBatchAction(
+          value: 'publish', label: '发布', icon: Icons.public),
+      const CompetitionBatchAction(
+          value: 'archive', label: '归档', icon: Icons.inventory_2_outlined),
       if (_adminStatusFilter == 'archived' || _adminStatusFilter == 'all')
-        const CompetitionBatchAction(value: 'restore_to_draft', label: '恢复为草稿', icon: Icons.restore_page_outlined),
-      const CompetitionBatchAction(value: 'delete', label: '删除', icon: Icons.delete_outline_rounded, danger: true),
+        const CompetitionBatchAction(
+            value: 'restore_to_draft',
+            label: '恢复为草稿',
+            icon: Icons.restore_page_outlined),
+      const CompetitionBatchAction(
+          value: 'delete',
+          label: '删除',
+          icon: Icons.delete_outline_rounded,
+          danger: true),
     ];
   }
 
   Future<void> _batchAction(String backendAction) async {
     final isAll = _selectionScope == _AdminSelectionScope.allMatching;
-    
+
     String actionName = '操作';
     if (backendAction == 'publish') actionName = '发布';
     if (backendAction == 'archive') actionName = '归档';
@@ -819,11 +837,14 @@ class _CompetitionAdminCenterScreenState
       payload['selection'] = {
         'mode': 'query',
         'filters': {
-          if (_searchController.text.trim().isNotEmpty) 'keyword': _searchController.text.trim(),
+          if (_searchController.text.trim().isNotEmpty)
+            'keyword': _searchController.text.trim(),
           if (_adminStatusFilter != 'all') 'status': _adminStatusFilter,
-          if (_maintenanceFilter != null) 'maintenance_status': _maintenanceFilter,
+          if (_maintenanceFilter != null)
+            'maintenance_status': _maintenanceFilter,
           if (_categorySlug != null) 'category_slug': _categorySlug,
-          if (_recommendations.isNotEmpty) 'recommendation_levels': _recommendations.toList(),
+          if (_recommendations.isNotEmpty)
+            'recommendation_levels': _recommendations.toList(),
         },
         'excluded_ids': _excludedEventIds.toList(),
       };
@@ -834,10 +855,11 @@ class _CompetitionAdminCenterScreenState
       };
     }
 
-    // Dry run
+    // 先执行预检查
     payload['dry_run'] = true;
     try {
-      final dryRes = await _dio.post('/admin/competitions/events/batch-action', data: payload);
+      final dryRes = await _dio.post('/admin/competitions/events/batch-action',
+          data: payload);
       if (!mounted) return;
       final data = dryRes.data as Map<String, dynamic>?;
       final requested = (data?['requested_count'] as num?)?.toInt() ?? 0;
@@ -860,15 +882,17 @@ class _CompetitionAdminCenterScreenState
       return;
     }
 
-    // Execute
+    // 执行正式批量操作
     payload['dry_run'] = false;
     try {
-      final res = await _dio.post('/admin/competitions/events/batch-action', data: payload);
+      final res = await _dio.post('/admin/competitions/events/batch-action',
+          data: payload);
       if (!mounted) return;
       final data = res.data as Map<String, dynamic>?;
       final success = data?['success_count'] ?? 0;
       final skipped = data?['skipped_count'] ?? 0;
-      AppFeedback.showSnackBar(context, '$actionName完成：成功 $success，跳过 $skipped');
+      AppFeedback.showSnackBar(
+          context, '$actionName完成：成功 $success，跳过 $skipped');
     } catch (_) {
       if (!mounted) return;
       AppFeedback.showSnackBar(context, '批量操作失败', isError: true);
@@ -1010,6 +1034,10 @@ class _CompetitionAdminCenterScreenState
       _recommendations
         ..clear()
         ..addAll(result.recommendations);
+      _selectionScope = _AdminSelectionScope.none;
+      _selectedEventIds.clear();
+      _excludedEventIds.clear();
+      _currentPage = 1;
     });
     _load();
   }

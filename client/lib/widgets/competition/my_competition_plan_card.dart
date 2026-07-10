@@ -38,10 +38,7 @@ class MyCompetitionPlanCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final userNote = '${item['user_note'] ?? ''}'.trim();
 
-    // We only show one main status pill in the new design.
-    // If it's archived or finished, we show that. Otherwise we show time status if it's "待通知" or similar,
-    // but the user spec says "主状态标签：例如 准备中 / 待通知".
-    // We can just show planStatus if it's not "关注中" (which we remove as per phase 8), otherwise timeStatus.
+    // 卡片只展示一个主状态：非“关注中”时优先展示计划状态，否则展示时间状态。
     final String mainStatus =
         planStatusLabel == '关注中' ? timeStatusLabel : planStatusLabel;
 
@@ -57,8 +54,9 @@ class MyCompetitionPlanCard extends StatelessWidget {
     } else {
       statusColor = CompetitionUiTokens.accent(isDark);
     }
-    
-    final manualLabel = competitionManualRatingShort('${item['recommendation_level'] ?? ''}');
+
+    final manualLabel =
+        competitionManualRatingShort('${item['recommendation_level'] ?? ''}');
     final schoolLabel = competitionSchoolRecognitionShort(
       status: '${item['school_recognition_status'] ?? ''}',
       grade: '${item['school_recognition_grade'] ?? ''}',

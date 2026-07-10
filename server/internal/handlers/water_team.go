@@ -486,7 +486,7 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 		AuthorAvatar   string
 		AuthorMajor    string
 	}
-	if err := query.Select("water_team_recruitments.*, posts.title as post_title, posts.content as post_content, posts.status as post_status, posts.view_count as post_view_count, posts.reply_count as post_reply_count, users.id as author_id, users.nickname as author_name, users.avatar_url as author_avatar, users.major as author_major").
+	if err := query.Select("water_team_recruitments.*, posts.title as post_title, posts.content as post_content, posts.status as post_status, posts.view_count as post_view_count, posts.reply_count as post_reply_count, users.id as author_id, users.nickname as author_name, users.avatar as author_avatar, users.edu_major as author_major").
 		Offset(offset).Limit(limit).
 		Find(&recruitments).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取组队列表失败"})

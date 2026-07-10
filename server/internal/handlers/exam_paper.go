@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,19 +20,52 @@ import (
 )
 
 const (
-	defaultExamPaperPageSize = 20
-	maxExamPaperPageSize     = 50
+	defaultExamPaperPageSize              = 20
+	maxExamPaperPageSize                  = 50
+	maxPendingExamPaperSubmissionsPerUser = 5
+	maxExamPaperUploadsPerWindow          = 3
+	examPaperUploadRateWindow             = time.Minute
 )
 
 // ExamPaperHandler 提供试卷投稿、浏览、下载与审核接口。
 type ExamPaperHandler struct {
-	db    *gorm.DB
-	files *services.ExamPaperFileService
+	db            *gorm.DB
+	files         *services.ExamPaperFileService
+	uploadLimiter *examPaperUploadLimiter
 }
 
 // NewExamPaperHandler 创建试卷处理器。
 func NewExamPaperHandler(db *gorm.DB, files *services.ExamPaperFileService) *ExamPaperHandler {
-	return &ExamPaperHandler{db: db, files: files}
+	return &ExamPaperHandler{db: db, files: files, uploadLimiter: newExamPaperUploadLimiter()}
+}
+
+type examPaperUploadLimiter struct {
+	mu   sync.Mutex
+	hits map[uint][]time.Time
+}
+
+func newExamPaperUploadLimiter() *examPaperUploadLimiter {
+	return &examPaperUploadLimiter{hits: make(map[uint][]time.Time)}
+}
+
+func (l *examPaperUploadLimiter) allow(userID uint, now time.Time) bool {
+	windowStart := now.Add(-examPaperUploadRateWindow)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	recent := l.hits[userID][:0]
+	for _, hit := range l.hits[userID] {
+		if hit.After(windowStart) {
+			recent = append(recent, hit)
+		}
+	}
+	if len(recent) >= maxExamPaperUploadsPerWindow {
+		l.hits[userID] = recent
+		return false
+	}
+	recent = append(recent, now)
+	l.hits[userID] = recent
+	return true
 }
 
 type examPaperContributorResponse struct {
@@ -122,11 +156,15 @@ func (h *ExamPaperHandler) currentExamPaperUser(c *gin.Context) (models.User, bo
 		writeExamPaperError(c, http.StatusUnauthorized, "authentication_required", "登录用户不存在")
 		return models.User{}, false
 	}
-	if user.Role != models.RoleAdmin && user.Role != models.RoleSuperAdmin && !user.EduBound {
+	if !isExamPaperAdmin(user) && !user.EduBound {
 		writeExamPaperError(c, http.StatusForbidden, "edu_verification_required", "完成教务认证后才能使用试卷库")
 		return models.User{}, false
 	}
 	return user, true
+}
+
+func isExamPaperAdmin(user models.User) bool {
+	return user.Role == models.RoleAdmin || user.Role == models.RoleSuperAdmin
 }
 
 func parseExamPaperPositiveInt(raw string, defaultValue int) int {
@@ -245,6 +283,9 @@ func (h *ExamPaperHandler) Upload(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !isExamPaperAdmin(user) && !h.ensureExamPaperUploadAllowed(c, user) {
+		return
+	}
 
 	formValues, stored, err := h.readExamPaperUpload(c)
 	if err != nil {
@@ -324,6 +365,25 @@ func (h *ExamPaperHandler) Upload(c *gin.Context) {
 	keepStoredFile = true
 	paper.Submitter = user
 	c.JSON(http.StatusCreated, examPaperToResponse(paper))
+}
+
+func (h *ExamPaperHandler) ensureExamPaperUploadAllowed(c *gin.Context, user models.User) bool {
+	var pendingCount int64
+	if err := h.db.Model(&models.ExamPaper{}).
+		Where("submitter_id = ? AND status = ?", user.ID, models.ExamPaperStatusPending).
+		Count(&pendingCount).Error; err != nil {
+		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "检查投稿配额失败")
+		return false
+	}
+	if pendingCount >= maxPendingExamPaperSubmissionsPerUser {
+		writeExamPaperError(c, http.StatusTooManyRequests, "exam_paper_pending_limit_reached", "待审核投稿过多，请等待审核后再继续上传")
+		return false
+	}
+	if h.uploadLimiter != nil && !h.uploadLimiter.allow(user.ID, time.Now()) {
+		writeExamPaperError(c, http.StatusTooManyRequests, "exam_paper_upload_rate_limited", "上传太频繁，请稍后再试")
+		return false
+	}
+	return true
 }
 
 const maxExamPaperFormFieldBytes int64 = 4 * 1024
@@ -520,7 +580,7 @@ func (h *ExamPaperHandler) serveExamPaperFile(c *gin.Context, paper models.ExamP
 	http.ServeContent(c.Writer, c.Request, paper.Title+".pdf", info.ModTime(), file)
 }
 
-// Withdraw 允许投稿人撤回自己的待审核记录，并在事务提交后物理删除文件。
+// Withdraw 允许投稿人撤回自己的待审核记录，并在事务提交后尽力删除私有文件。
 func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 	user, ok := h.currentExamPaperUser(c)
 	if !ok {
@@ -539,13 +599,9 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 		writeExamPaperError(c, http.StatusConflict, "exam_paper_not_pending", "只有待审核投稿可以撤回")
 		return
 	}
-	move, err := h.files.StageDelete(paper.FileKey)
-	if err != nil {
-		writeExamPaperError(c, http.StatusInternalServerError, "exam_paper_file_unavailable", "暂时无法撤回投稿")
-		return
-	}
+	fileKey := paper.FileKey
 
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ? AND submitter_id = ?", id, user.ID)
 		if tx.Dialector.Name() == "postgres" {
@@ -560,7 +616,6 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 		return tx.Delete(&locked).Error
 	})
 	if err != nil {
-		_ = h.files.RestoreDelete(move)
 		if errors.Is(err, errExamPaperNotPending) {
 			writeExamPaperError(c, http.StatusConflict, "exam_paper_not_pending", "投稿已不处于待审核状态")
 			return
@@ -568,8 +623,16 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "撤回投稿失败")
 		return
 	}
-	_ = h.files.PurgeDelete(move)
+	h.removeExamPaperFileAfterCommit(fileKey)
 	c.JSON(http.StatusOK, gin.H{"message": "投稿已撤回"})
+}
+
+func (h *ExamPaperHandler) removeExamPaperFileAfterCommit(fileKey string) {
+	if fileKey == "" {
+		return
+	}
+	// 数据库状态已经提交，文件清理失败不再回滚用户可见状态；孤儿文件可由后续巡检清理。
+	_ = h.files.Remove(fileKey)
 }
 
 var errExamPaperNotPending = errors.New("exam paper not pending")
@@ -771,7 +834,7 @@ func (h *ExamPaperHandler) AdminApprove(c *gin.Context) {
 	c.JSON(http.StatusOK, examPaperToResponse(paper))
 }
 
-// AdminReject 拒绝待审核投稿，并通过 .trash 保证数据库回滚时可恢复文件。
+// AdminReject 拒绝待审核投稿，并在事务提交后尽力删除私有文件。
 func (h *ExamPaperHandler) AdminReject(c *gin.Context) {
 	admin, ok := h.currentExamPaperAdmin(c)
 	if !ok {
@@ -805,13 +868,9 @@ func (h *ExamPaperHandler) AdminReject(c *gin.Context) {
 		writeExamPaperError(c, http.StatusConflict, "exam_paper_not_pending", "试卷已不处于待审核状态")
 		return
 	}
-	move, err := h.files.StageDelete(paper.FileKey)
-	if err != nil {
-		writeExamPaperError(c, http.StatusInternalServerError, "exam_paper_file_unavailable", "暂时无法删除试卷文件")
-		return
-	}
+	fileKey := paper.FileKey
 
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ?", id)
 		if tx.Dialector.Name() == "postgres" {
@@ -842,11 +901,10 @@ func (h *ExamPaperHandler) AdminReject(c *gin.Context) {
 		return tx.Delete(&locked).Error
 	})
 	if err != nil {
-		_ = h.files.RestoreDelete(move)
 		h.writeAdminTransactionError(c, err)
 		return
 	}
-	_ = h.files.PurgeDelete(move)
+	h.removeExamPaperFileAfterCommit(fileKey)
 	c.JSON(http.StatusOK, gin.H{"message": "投稿已拒绝并删除"})
 }
 
@@ -941,13 +999,9 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 		writeExamPaperError(c, http.StatusConflict, "exam_paper_not_published", "只有已发布试卷可以下架")
 		return
 	}
-	move, err := h.files.StageDelete(paper.FileKey)
-	if err != nil {
-		writeExamPaperError(c, http.StatusInternalServerError, "exam_paper_file_unavailable", "暂时无法删除试卷文件")
-		return
-	}
+	fileKey := paper.FileKey
 	now := time.Now()
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ?", id)
 		if tx.Dialector.Name() == "postgres" {
@@ -978,11 +1032,10 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 		}).Error
 	})
 	if err != nil {
-		_ = h.files.RestoreDelete(move)
 		h.writeAdminTransactionError(c, err)
 		return
 	}
-	_ = h.files.PurgeDelete(move)
+	h.removeExamPaperFileAfterCommit(fileKey)
 	var refreshed models.ExamPaper
 	if err := h.db.Preload("Submitter").First(&refreshed, id).Error; err != nil {
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "读取已下架试卷失败")

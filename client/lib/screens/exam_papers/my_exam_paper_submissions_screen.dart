@@ -91,6 +91,10 @@ class _MyExamPaperSubmissionsScreenState
         _page = result.page;
         _hasMore = result.hasMore;
       });
+    } on ExamPaperApiException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } catch (_) {
+      if (mounted) _showMessage('加载更多失败，请稍后重试');
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }

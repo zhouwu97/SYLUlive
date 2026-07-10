@@ -112,6 +112,27 @@ func TestAdminRejectExamPaperRequiresReasonAndDeletesRecordAndFile(t *testing.T)
 	}
 }
 
+func TestAdminRejectExamPaperDeletesRecordWhenStoredFileAlreadyMissing(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "reject-missing-contributor", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "reject-missing-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPending)
+	if err := os.Remove(filepath.Join(env.root, paper.FileKey)); err != nil {
+		t.Fatalf("删除测试 PDF 失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminReject, http.MethodPost, "/api/admin/exam-papers/1/reject", params, admin.ID, map[string]any{"reason": "文件已不可用"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("文件已丢失时拒绝应清理记录: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var count int64
+	env.db.Model(&models.ExamPaper{}).Where("id = ?", paper.ID).Count(&count)
+	if count != 0 {
+		t.Fatalf("拒绝后记录应删除: %d", count)
+	}
+}
+
 func TestAdminUpdateAndUnpublishExamPaper(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	contributor := createExamPaperTestUser(t, env.db, "unpublish-contributor", models.RoleUser, true, 80)
@@ -157,6 +178,29 @@ func TestAdminUpdateAndUnpublishExamPaper(t *testing.T) {
 	env.db.Model(&models.Message{}).Count(&messages)
 	if messages != 1 {
 		t.Fatalf("unpublish must create one system message: %d", messages)
+	}
+}
+
+func TestAdminUnpublishExamPaperMarksUnavailableWhenStoredFileAlreadyMissing(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "unpublish-missing-contributor", models.RoleUser, true, 80)
+	admin := createExamPaperTestUser(t, env.db, "unpublish-missing-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	if err := os.Remove(filepath.Join(env.root, paper.FileKey)); err != nil {
+		t.Fatalf("删除测试 PDF 失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, map[string]any{"reason": "文件已不可用"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("文件已丢失时下架应更新状态: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var refreshed models.ExamPaper
+	if err := env.db.First(&refreshed, paper.ID).Error; err != nil {
+		t.Fatalf("读取下架记录失败: %v", err)
+	}
+	if refreshed.Status != models.ExamPaperStatusUnpublished || refreshed.FileKey != "" {
+		t.Fatalf("下架状态错误: %#v", refreshed)
 	}
 }
 

@@ -21,6 +21,7 @@ import '../utils/post_image_cache.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
+import '../widgets/water_team/team_recruitment_panel.dart';
 import '../models/unread_reply_notification.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
@@ -214,6 +215,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _replyFocus.dispose();
     _highlightTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _refreshTeamPost() async {
+    if (_post == null) return;
+    try {
+      final response = await _dio.get('/posts/${_post!.id}');
+      final updated = Post.fromJson(response.data as Map<String, dynamic>);
+      if (!mounted) return;
+      setState(() => _post = updated);
+      context.read<PostProvider>().updatePostInCache(updated);
+    } catch (error) {
+      debugPrint('刷新组队详情失败: $error');
+    }
   }
 
   Future<void> _loadPost() async {
@@ -2222,6 +2236,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   const SizedBox(height: 8),
                   _buildAdaptiveWaterImages(p, isDark),
                 ],
+                if (p.teamRecruitment != null)
+                  TeamRecruitmentPanel(post: p, onChanged: _refreshTeamPost),
                 const SizedBox(height: 6),
                 _buildWaterActionBar(isDark),
               ],

@@ -1,5 +1,6 @@
 """成绩路由"""
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -36,13 +37,20 @@ async def get_grades(
 
     try:
         raw_grades = await execute_with_session_refresh(
+            db=db,
             edu_user=edu_user,
             operation=lambda crawler, cookie: crawler.fetch_grades(
                 cookie, input.year, input.semester
             ),
         )
     except CookieLapseError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        return JSONResponse(
+            status_code=401,
+            content={
+                "code": getattr(e, "code", "SESSION_EXPIRED"),
+                "error": str(e),
+            },
+        )
     except GradesNotOpenError as e:
         return GradesResponse(
             success=False, year=input.year, semester=input.semester,
@@ -52,8 +60,6 @@ async def get_grades(
         raise HTTPException(status_code=503, detail=str(e))
     except LoginFailedError as e:
         raise HTTPException(status_code=401, detail=str(e))
-
-    await db.commit()  # 持久化可能刷新的 Cookie
 
     # 转换为GradeInfo
     grades = []
@@ -102,6 +108,7 @@ async def get_grade_detail(
 
     try:
         detail = await execute_with_session_refresh(
+            db=db,
             edu_user=edu_user,
             operation=lambda crawler, cookie: crawler.fetch_grade_detail(
                 cookie=cookie,
@@ -114,13 +121,17 @@ async def get_grade_detail(
             ),
         )
     except CookieLapseError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        return JSONResponse(
+            status_code=401,
+            content={
+                "code": getattr(e, "code", "SESSION_EXPIRED"),
+                "error": str(e),
+            },
+        )
     except NetworkError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except LoginFailedError as e:
         raise HTTPException(status_code=401, detail=str(e))
-
-    await db.commit()
 
     return GradeDetailResponse(**detail)
 

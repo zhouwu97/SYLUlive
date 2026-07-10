@@ -361,6 +361,19 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 		return
 	}
 
+	// 防止Python返回200+非JSON导致Flutter解析异常
+	if !json.Valid(resp.Body()) {
+		log.Printf(
+			"[EDU] courses returned non-JSON: status=%d content_type=%q",
+			resp.StatusCode(),
+			resp.Header().Get("Content-Type"),
+		)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "教务服务返回异常，请稍后再试",
+		})
+		return
+	}
+
 	// 直接透传给前端
 	c.Data(http.StatusOK, "application/json", resp.Body())
 }

@@ -1,5 +1,6 @@
 """学业情况路由"""
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -32,12 +33,19 @@ async def get_academic_situation(
 
     try:
         payload = await execute_with_session_refresh(
+            db=db,
             edu_user=edu_user,
             operation=lambda crawler, cookie: crawler.fetch_academic_situation(cookie),
             timeout=15.0,
         )
     except CookieLapseError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        return JSONResponse(
+            status_code=401,
+            content={
+                "code": getattr(e, "code", "SESSION_EXPIRED"),
+                "error": str(e),
+            },
+        )
     except NetworkError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except LoginFailedError as e:
@@ -46,7 +54,5 @@ async def get_academic_situation(
         return AcademicSituationResponse(
             success=False, message=f"学业情况解析失败: {e}",
         )
-
-    await db.commit()
 
     return AcademicSituationResponse(**payload)

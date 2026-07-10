@@ -42,7 +42,7 @@ class _MyTeamApplicationsScreenState extends State<MyTeamApplicationsScreen> {
       appBar: AppBar(title: const Text('我的组队申请'), actions: [
         IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded))
       ]),
-      body: provider.isLoading && apps.isEmpty
+      body: provider.isLoadingMyApplications && apps.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
@@ -141,7 +141,7 @@ class _MyApplicationCard extends StatelessWidget {
         applicationId: application.id, postId: application.postId);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success ? '申请已取消' : (provider.error ?? '取消申请失败'))));
+        content: Text(success ? '申请已取消' : (provider.errorFor(0) ?? '取消申请失败'))));
     if (success) await provider.loadMyApplications(force: true);
   }
 }

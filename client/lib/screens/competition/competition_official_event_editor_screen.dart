@@ -49,6 +49,12 @@ class _CompetitionOfficialEventEditorScreenState
   final _attachmentUrlsController = TextEditingController();
 
   List<CompetitionCategory> _categories = [];
+  List<String> _eligibleEntryYears = [];
+  List<String> _eligibleColleges = [];
+  List<String> _eligibleMajors = [];
+  List<String> _entryYearOptions = [];
+  List<String> _collegeOptions = [];
+  List<String> _majorOptions = [];
   String _categorySlug = '';
   String _recommendationLevel = 'B';
   String _schoolRecognitionStatus = 'pending';
@@ -65,6 +71,7 @@ class _CompetitionOfficialEventEditorScreenState
     super.initState();
     _fillInitialData();
     _loadCategories();
+    _loadAudienceOptions();
   }
 
   @override
@@ -115,6 +122,9 @@ class _CompetitionOfficialEventEditorScreenState
     _competitionLevelController.text = '${d['competition_level'] ?? ''}';
     _schoolGradeController.text = '${d['school_recognition_grade'] ?? ''}';
     _targetAudienceController.text = '${d['target_audience'] ?? ''}';
+    _eligibleEntryYears = _listValue(d['eligible_entry_years']);
+    _eligibleColleges = _listValue(d['eligible_colleges']);
+    _eligibleMajors = _listValue(d['eligible_majors']);
     _recommendationReasonController.text =
         '${d['recommendation_reason'] ?? ''}';
     _participationTypeController.text = '${d['participation_type'] ?? ''}';
@@ -178,6 +188,24 @@ class _CompetitionOfficialEventEditorScreenState
     }
   }
 
+  Future<void> _loadAudienceOptions() async {
+    try {
+      final response = await context
+          .read<AuthProvider>()
+          .dio
+          .get('/admin/competitions/audience-options');
+      final data = Map<String, dynamic>.from(response.data as Map);
+      if (!mounted) return;
+      setState(() {
+        _entryYearOptions = _listValue(data['entry_years']);
+        _collegeOptions = _listValue(data['colleges']);
+        _majorOptions = _listValue(data['majors']);
+      });
+    } catch (_) {
+      // 画像选项只是录入建议，加载失败时仍允许管理员手动输入。
+    }
+  }
+
   Future<void> _submit(String status) async {
     if (!_formKey.currentState!.validate()) return;
     if (_categorySlug.isEmpty) {
@@ -200,6 +228,9 @@ class _CompetitionOfficialEventEditorScreenState
         'school_recognition_status': _schoolRecognitionStatus,
         'school_recognition_grade': _schoolGradeController.text.trim(),
         'target_audience': _targetAudienceController.text.trim(),
+        'eligible_entry_years': _eligibleEntryYears,
+        'eligible_colleges': _eligibleColleges,
+        'eligible_majors': _eligibleMajors,
         'recommendation_reason': _recommendationReasonController.text.trim(),
         'participation_type': _participationTypeController.text.trim(),
         'team_size_min': int.tryParse(_teamSizeMinController.text.trim()) ?? 0,
@@ -303,7 +334,7 @@ class _CompetitionOfficialEventEditorScreenState
                       child: _dropdown(
                         label: '推荐等级',
                         value: _recommendationLevel,
-                        items: const ['S', 'A', 'B+', 'B', 'B-', 'C'],
+                        items: const ['S', 'A', 'B+', 'B', 'B-', 'C', 'D', 'E'],
                         isDark: isDark,
                         onChanged: (value) =>
                             setState(() => _recommendationLevel = value),
@@ -346,6 +377,33 @@ class _CompetitionOfficialEventEditorScreenState
                   ],
                 ),
                 _input(_targetAudienceController, '适合人群', isDark),
+                _multiValueEditor(
+                  label: '适用入学年份',
+                  hint: '例如 2023；留空表示不限',
+                  values: _eligibleEntryYears,
+                  options: _entryYearOptions,
+                  isDark: isDark,
+                  onChanged: (values) =>
+                      setState(() => _eligibleEntryYears = values),
+                ),
+                _multiValueEditor(
+                  label: '适用学院',
+                  hint: '选择或输入学院；留空表示不限',
+                  values: _eligibleColleges,
+                  options: _collegeOptions,
+                  isDark: isDark,
+                  onChanged: (values) =>
+                      setState(() => _eligibleColleges = values),
+                ),
+                _multiValueEditor(
+                  label: '适用专业',
+                  hint: '选择或输入专业；留空表示不限',
+                  values: _eligibleMajors,
+                  options: _majorOptions,
+                  isDark: isDark,
+                  onChanged: (values) =>
+                      setState(() => _eligibleMajors = values),
+                ),
                 _input(_participationTypeController, '参赛形式', isDark),
                 Row(
                   children: [
@@ -691,6 +749,68 @@ class _CompetitionOfficialEventEditorScreenState
     );
   }
 
+  Widget _multiValueEditor({
+    required String label,
+    required String hint,
+    required List<String> values,
+    required List<String> options,
+    required bool isDark,
+    required ValueChanged<List<String>> onChanged,
+  }) {
+    void addValue(String raw) {
+      final value = raw.trim();
+      if (value.isEmpty || values.contains(value)) return;
+      onChanged([...values, value]);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Autocomplete<String>(
+          optionsBuilder: (text) {
+            final query = text.text.trim().toLowerCase();
+            if (query.isEmpty) return options.take(12);
+            return options
+                .where((item) => item.toLowerCase().contains(query))
+                .take(12);
+          },
+          onSelected: addValue,
+          fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+            return TextFormField(
+              controller: controller,
+              focusNode: focusNode,
+              decoration: _inputDecoration(label, isDark).copyWith(
+                hintText: hint,
+                helperText: '输入后回车添加；留空表示不限',
+              ),
+              onFieldSubmitted: (value) {
+                addValue(value);
+                controller.clear();
+              },
+            );
+          },
+        ),
+        if (values.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: values
+                .map(
+                  (value) => InputChip(
+                    label: Text(value),
+                    onDeleted: () => onChanged(
+                      values.where((item) => item != value).toList(),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ],
+    );
+  }
+
   InputDecoration _inputDecoration(String label, bool isDark) {
     return InputDecoration(
       labelText: label,
@@ -747,6 +867,14 @@ class _CompetitionOfficialEventEditorScreenState
     return '${value ?? ''}'.trim();
   }
 
+  List<String> _listValue(dynamic value) {
+    if (value is! List) return [];
+    return value
+        .map((item) => '$item'.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
   List<String> _splitList(String value) {
     return value
         .split(RegExp(r'[,，\n]'))
@@ -780,7 +908,7 @@ String _timeStatusLabel(String value) {
     case 'historical':
       return '往年参考';
     case 'pending':
-      return '待通知';
+      return '时间待公布';
     default:
       return value;
   }

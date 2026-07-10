@@ -18,7 +18,7 @@ func TestGetUserPostsIncludesMarketTagsAndImagesForEditEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(
+	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{}, 
 		&models.User{},
 		&models.File{},
 		&models.Post{},

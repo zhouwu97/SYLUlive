@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -86,12 +87,6 @@ func EffectiveRecruitmentStatus(recruitment WaterTeamRecruitment, now time.Time)
 
 // EnsureWaterTeamSchema 确保组队相关数据约束和唯一索引
 func EnsureWaterTeamSchema(db *gorm.DB) error {
-	// Create partial unique index for single team tag per section
-	var count int64
-	db.Raw("SELECT count(*) FROM pg_class WHERE relname = 'idx_water_section_single_team_tag'").Count(&count)
-	
-	// Postgres or SQLite syntax
-	// SQLite supports partial indexes since 3.8.0, PostgreSQL since 8.2
 	err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_water_section_single_team_tag 
 		ON water_section_tags(section_id) 
@@ -113,6 +108,35 @@ func MigrateLegacyTeamRecruitmentTag(db *gorm.DB) error {
 			SELECT id FROM water_sections WHERE slug = 'competition'
 		)
 		AND slug = 'team'
-		AND (content_mode = '' OR content_mode = 'standard');
+		AND (content_mode = '' OR content_mode = 'standard')
+		AND NOT EXISTS (
+			SELECT 1 FROM water_section_tags AS wst 
+			WHERE wst.section_id = water_section_tags.section_id 
+			AND wst.content_mode = 'team_recruitment'
+		);
 	`).Error
 }
+
+// ValidateNoDuplicateTeamTags 校验数据库中是否存在重复的组队栏目数据
+func ValidateNoDuplicateTeamTags(db *gorm.DB) error {
+	var duplicates []struct {
+		SectionID int
+		Count     int
+	}
+	if err := db.Raw(`
+		SELECT section_id, COUNT(*) as count
+		FROM water_section_tags
+		WHERE content_mode = 'team_recruitment'
+		GROUP BY section_id
+		HAVING COUNT(*) > 1
+	`).Scan(&duplicates).Error; err != nil {
+		return err
+	}
+
+	if len(duplicates) > 0 {
+		return fmt.Errorf("数据库中存在重复的组队标签数据，无法安全启动。存在重复标签的 section_id: %v", duplicates)
+	}
+
+	return nil
+}
+

@@ -36,6 +36,11 @@ class CompetitionEvent {
   final String organizer;
   final String hostUnit;
   final String targetAudience;
+  final List<String> eligibleEntryYears;
+  final List<String> eligibleColleges;
+  final List<String> eligibleMajors;
+  final String fitLevel;
+  final List<String> fitReasons;
   final String participationType;
   final int? teamSizeMin;
   final int? teamSizeMax;
@@ -76,6 +81,11 @@ class CompetitionEvent {
     this.organizer = '',
     this.hostUnit = '',
     this.targetAudience = '',
+    this.eligibleEntryYears = const [],
+    this.eligibleColleges = const [],
+    this.eligibleMajors = const [],
+    this.fitLevel = '',
+    this.fitReasons = const [],
     this.participationType = '',
     this.teamSizeMin,
     this.teamSizeMax,
@@ -121,6 +131,11 @@ class CompetitionEvent {
       organizer: json['organizer'] ?? '',
       hostUnit: json['host_unit'] ?? '',
       targetAudience: json['target_audience'] ?? '',
+      eligibleEntryYears: _stringList(json['eligible_entry_years']),
+      eligibleColleges: _stringList(json['eligible_colleges']),
+      eligibleMajors: _stringList(json['eligible_majors']),
+      fitLevel: json['fit_level'] ?? '',
+      fitReasons: _stringList(json['fit_reasons']),
       participationType: json['participation_type'] ?? '',
       teamSizeMin: (json['team_size_min'] as num?)?.toInt(),
       teamSizeMax: (json['team_size_max'] as num?)?.toInt(),
@@ -162,7 +177,7 @@ class CompetitionEvent {
       case 'historical':
         return '往年参考';
       default:
-        return '待通知';
+        return '时间待公布';
     }
   }
 
@@ -199,7 +214,7 @@ class CompetitionEvent {
     if (sortMonth >= 1 && sortMonth <= 12) {
       return '$sortMonth 月左右';
     }
-    return '时间待通知';
+    return '时间待公布';
   }
 
   Map<String, dynamic> toJson() {
@@ -227,6 +242,9 @@ class CompetitionEvent {
       'organizer': organizer,
       'host_unit': hostUnit,
       'target_audience': targetAudience,
+      'eligible_entry_years': eligibleEntryYears,
+      'eligible_colleges': eligibleColleges,
+      'eligible_majors': eligibleMajors,
       'participation_type': participationType,
       'team_size_min': teamSizeMin,
       'team_size_max': teamSizeMax,

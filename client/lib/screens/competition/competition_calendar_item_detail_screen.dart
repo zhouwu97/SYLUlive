@@ -179,9 +179,9 @@ class _CompetitionCalendarItemDetailScreenState
       case 'historical':
         return '参考往届';
       case 'pending':
-        return '待通知';
+        return '时间待公布';
       default:
-        return '待通知';
+        return '时间待公布';
     }
   }
 

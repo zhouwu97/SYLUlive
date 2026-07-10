@@ -12,6 +12,9 @@ class MyCompetitionPlanCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onArchive;
+  final bool selectionMode;
+  final bool isSelected;
+  final VoidCallback? onSelect;
 
   const MyCompetitionPlanCard({
     super.key,
@@ -24,6 +27,9 @@ class MyCompetitionPlanCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onArchive,
+    this.selectionMode = false,
+    this.isSelected = false,
+    this.onSelect,
   });
 
   @override
@@ -61,6 +67,19 @@ class MyCompetitionPlanCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (selectionMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12, top: 4),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: Checkbox(
+                      value: isSelected,
+                      onChanged: (_) => onSelect?.call(),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
               Container(
                 width: 6,
                 height: 6,

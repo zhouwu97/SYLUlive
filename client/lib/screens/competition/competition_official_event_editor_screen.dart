@@ -332,7 +332,7 @@ class _CompetitionOfficialEventEditorScreenState
                   children: [
                     Expanded(
                       child: _dropdown(
-                        label: '推荐等级',
+                        label: '人工评级',
                         value: _recommendationLevel,
                         items: const ['S', 'A', 'B+', 'B', 'B-', 'C', 'D', 'E'],
                         isDark: isDark,
@@ -372,7 +372,7 @@ class _CompetitionOfficialEventEditorScreenState
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _input(_schoolGradeController, '学校目录类别', isDark),
+                      child: _input(_schoolGradeController, '学校认定等级', isDark),
                     ),
                   ],
                 ),

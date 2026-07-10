@@ -233,14 +233,26 @@ List<String> _adminChips(CompetitionEvent event) {
     _statusText(event.status),
     event.timeStatusLabel,
   ];
-  if (event.recommendationLevel.isNotEmpty) {
-    chips.add(event.recommendationLevel);
+  
+  if (event.recommendationLevel.trim().isNotEmpty) {
+    chips.add('人工 ${event.recommendationLevel.trim()}');
   }
-  if (event.schoolRecognitionGrade.isNotEmpty) {
-    chips.add(event.schoolRecognitionGrade);
+
+  final schoolGrade = event.schoolRecognitionGrade.trim();
+  if (event.schoolRecognitionStatus == 'recognized') {
+    chips.add(schoolGrade.isEmpty ? '校认' : '校认 $schoolGrade');
+  } else if (event.schoolRecognitionStatus == 'pending') {
+    chips.add('校认待定');
+  } else if (event.schoolRecognitionStatus == 'not_recognized') {
+    chips.add('校不认');
+  } else {
+    chips.add('校认未知');
   }
-  if (event.registrationEnd == null && event.registrationTimeText.isEmpty) {
-    chips.add('缺时间');
+  
+  if (event.registrationEnd == null && event.registrationTimeText.trim().isEmpty) {
+    if (event.timeStatusLabel != '时间待公布') {
+      chips.add('缺时间');
+    }
   }
   return chips;
 }

@@ -647,7 +647,7 @@ class EduProvider extends ChangeNotifier {
         }
         return OperationResult.fail('获取成绩构成失败');
       } on DioException catch (e) {
-        _parseDioError(e);
+        final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
           if (rebindSuccess) {
@@ -713,7 +713,7 @@ class EduProvider extends ChangeNotifier {
         }
         return OperationResult.fail('获取学业情况失败');
       } on DioException catch (e) {
-        _parseDioError(e);
+        final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
           if (rebindSuccess) {

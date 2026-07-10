@@ -13,9 +13,10 @@ from models.schemas import (
     LocalCourse, LocalCoursesResponse, ManualCourseInput
 )
 from services.crawler import (
-    EduCrawler, CookieLapseError, CourseNotOpenError,
+    CookieLapseError, CourseNotOpenError,
     LoginFailedError, NetworkError, parse_weeks, parse_time_sections
 )
+from services.session import execute_with_session_refresh
 
 router = APIRouter(prefix="/api/edu/courses", tags=["课程"])
 
@@ -44,60 +45,49 @@ async def fetch_courses(
     if not edu_user.cookie:
         raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定")
 
-    async with EduCrawler() as crawler:
-        cookie = edu_user.cookie
-
-        for attempt in range(2):  # 最多试 2 次（第一次用旧cookie，第二次自动重登）
-            try:
-                raw_courses = await crawler.fetch_courses(cookie, input.year, input.semester)
-            except CookieLapseError:
-                if attempt == 1:
-                    raise HTTPException(
-                        status_code=503,
-                        detail="教务系统会话异常，请稍后重试，不需要重新绑定"
-                    )
-                if not edu_user.raw_password:
-                    raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定教务账号")
-                print(f"  [AUTO] Cookie过期，使用存储密码自动重新登录...")
-                try:
-                    cookie = await crawler.login(edu_user.student_id, edu_user.raw_password)
-                    edu_user.cookie = cookie
-                    await db.commit()
-                    print(f"  [AUTO] 重新登录成功，重试抓取...")
-                except LoginFailedError as e:
-                    raise HTTPException(status_code=401, detail=f"账号密码可能已变更: {e}")
-                continue
-            except CourseNotOpenError as e:
-                return CourseFetchResponse(
-                    success=False, year=input.year, semester=input.semester,
-                    courses=[], message=str(e)
-                )
-            except NetworkError as e:
-                raise HTTPException(status_code=503, detail=str(e))
-            break  # 成功，跳出循环
-
-        # 格式化返回
-        print(f"  [RAW] 教务返回 {len(raw_courses)} 门课:")
-        for raw in raw_courses:
-            print(f"    name={raw.name!r} teacher={raw.teacher!r} location={raw.location!r} time={raw.time!r} weekday={raw.week_day!r} weeks={raw.week_str!r}")
-
-        courses = []
-        for raw in raw_courses:
-            start_sec, end_sec = parse_time_sections(raw.time)
-            courses.append(CourseInfo(
-                name=raw.name,
-                teacher=raw.teacher if raw.teacher else None,
-                location=raw.location if raw.location else None,
-                time=start_sec,
-                end_time=end_sec,
-                week_day=int(raw.week_day) if raw.week_day.isdigit() else 1,
-                weeks=parse_weeks(raw.week_str)
-            ))
-
-        return CourseFetchResponse(
-            success=True, year=input.year, semester=input.semester,
-            courses=courses, message=None
+    try:
+        raw_courses = await execute_with_session_refresh(
+            edu_user=edu_user,
+            operation=lambda crawler, cookie: crawler.fetch_courses(
+                cookie, input.year, input.semester
+            ),
         )
+    except CookieLapseError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except CourseNotOpenError as e:
+        return CourseFetchResponse(
+            success=False, year=input.year, semester=input.semester,
+            courses=[], message=str(e)
+        )
+    except NetworkError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except LoginFailedError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    await db.commit()  # 持久化可能刷新的 Cookie
+
+    # 格式化返回
+    print(f"  [RAW] 教务返回 {len(raw_courses)} 门课:")
+    for raw in raw_courses:
+        print(f"    name={raw.name!r} teacher={raw.teacher!r} location={raw.location!r} time={raw.time!r} weekday={raw.week_day!r} weeks={raw.week_str!r}")
+
+    courses = []
+    for raw in raw_courses:
+        start_sec, end_sec = parse_time_sections(raw.time)
+        courses.append(CourseInfo(
+            name=raw.name,
+            teacher=raw.teacher if raw.teacher else None,
+            location=raw.location if raw.location else None,
+            time=start_sec,
+            end_time=end_sec,
+            week_day=int(raw.week_day) if raw.week_day.isdigit() else 1,
+            weeks=parse_weeks(raw.week_str)
+        ))
+
+    return CourseFetchResponse(
+        success=True, year=input.year, semester=input.semester,
+        courses=courses, message=None
+    )
 
 
 @router.post("/sync", response_model=CourseSyncResponse)

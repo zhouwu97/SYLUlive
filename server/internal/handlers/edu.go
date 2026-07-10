@@ -75,6 +75,59 @@ func nowTime() string {
 	return strconv.FormatInt(time.Now().UnixMilli(), 10)
 }
 
+// ---------- 统一的 Python 教务服务错误映射 ----------
+
+// EduServiceError Python 教务服务返回的错误结构
+type EduServiceError struct {
+	Detail string `json:"detail"`
+	Error  string `json:"error"`
+	Code   string `json:"code"`
+}
+
+// mapEduServiceError 将 Python 教务服务的响应状态码和 body 映射为前端可用的响应。
+// 对非登录问题保留原始语义：503 → 503, 非 JSON → 502, 真正 Cookie 过期 → 409。
+func mapEduServiceError(c *gin.Context, statusCode int, body []byte) {
+	var svcErr EduServiceError
+	if err := json.Unmarshal(body, &svcErr); err != nil || (svcErr.Detail == "" && svcErr.Error == "") {
+		svcErr.Detail = string(body)
+	}
+
+	msg := svcErr.Detail
+	if msg == "" {
+		msg = svcErr.Error
+	}
+	if msg == "" {
+		msg = "教务服务异常"
+	}
+
+	switch statusCode {
+	case http.StatusUnauthorized:
+		// Python 返回 401 = Cookie 过期且自动重登也失败
+		c.JSON(http.StatusConflict, gin.H{
+			"code":          "EDU_SESSION_EXPIRED",
+			"error":         msg,
+			"upstream_code": svcErr.Code,
+		})
+	case http.StatusServiceUnavailable, http.StatusBadGateway:
+		c.JSON(statusCode, gin.H{
+			"error":         msg,
+			"upstream_code": svcErr.Code,
+		})
+	default:
+		if statusCode >= 500 {
+			c.JSON(statusCode, gin.H{
+				"error":         msg,
+				"upstream_code": svcErr.Code,
+			})
+		} else {
+			c.JSON(statusCode, gin.H{
+				"error":         msg,
+				"upstream_code": svcErr.Code,
+			})
+		}
+	}
+}
+
 // BindEduInput 绑定教务输入
 type BindEduInput struct {
 	StudentID string `json:"student_id" binding:"required,len=10"`
@@ -304,28 +357,7 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 	}
 
 	if resp.StatusCode() != 200 {
-		// 解析Python返回的错误
-		var errResp struct {
-			Detail string `json:"detail"`
-			Error  string `json:"error"`
-		}
-		json.Unmarshal(resp.Body(), &errResp)
-		msg := errResp.Detail
-		if msg == "" {
-			msg = errResp.Error
-		}
-		if msg == "" {
-			msg = "获取课表失败"
-		}
-		if resp.StatusCode() == http.StatusUnauthorized {
-			c.JSON(http.StatusConflict, gin.H{
-				"code": "EDU_SESSION_EXPIRED",
-				"error": msg,
-			})
-			return
-		}
-
-		c.JSON(resp.StatusCode(), gin.H{"error": msg})
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
 		return
 	}
 
@@ -406,11 +438,8 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 		return
 	}
 
-	if resp.StatusCode() == http.StatusUnauthorized {
-		c.JSON(http.StatusConflict, gin.H{
-			"code":  "EDU_SESSION_EXPIRED",
-			"error": "教务登录状态已失效",
-		})
+	if resp.StatusCode() != 200 {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
 		return
 	}
 
@@ -466,11 +495,8 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 		return
 	}
 
-	if resp.StatusCode() == http.StatusUnauthorized {
-		c.JSON(http.StatusConflict, gin.H{
-			"code":  "EDU_SESSION_EXPIRED",
-			"error": "教务登录状态已失效",
-		})
+	if resp.StatusCode() != 200 {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
 		return
 	}
 
@@ -531,11 +557,8 @@ func (h *EduHandler) GetGradeDetail(c *gin.Context) {
 		return
 	}
 
-	if resp.StatusCode() == http.StatusUnauthorized {
-		c.JSON(http.StatusConflict, gin.H{
-			"code":  "EDU_SESSION_EXPIRED",
-			"error": "教务登录状态已失效",
-		})
+	if resp.StatusCode() != 200 {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
 		return
 	}
 

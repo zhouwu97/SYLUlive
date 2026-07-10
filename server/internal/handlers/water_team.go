@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
+	"shenliyuan/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -142,6 +144,11 @@ func (h *WaterTeamHandler) Apply(c *gin.Context) {
 			}).Error; err != nil {
 				return err
 			}
+			
+			if err := tx.First(&existing, existing.ID).Error; err != nil {
+				return err
+			}
+			
 			responseApp = existing
 			return nil
 		}
@@ -184,7 +191,7 @@ func (h *WaterTeamHandler) Apply(c *gin.Context) {
 		case "already_joined":
 			c.JSON(http.StatusConflict, gin.H{"error": "您已加入该招募"})
 		default:
-			if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "unique constraint") {
+			if utils.IsPostgresUniqueViolation(err) {
 				c.JSON(http.StatusConflict, gin.H{"error": "您已经申请过该招募"})
 				return
 			}
@@ -230,10 +237,29 @@ func (h *WaterTeamHandler) reviewApplication(c *gin.Context, newStatus string) {
 	}
 	req.Reply = strings.TrimSpace(req.Reply)
 
+	var initialApp models.WaterTeamApplication
+	if err := h.db.First(&initialApp, appID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "申请不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取申请失败"})
+		return
+	}
+
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var recruitment models.WaterTeamRecruitment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recruitment, initialApp.RecruitmentID).Error; err != nil {
+			return err
+		}
+
 		var app models.WaterTeamApplication
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&app, appID).Error; err != nil {
 			return fmt.Errorf("app_not_found")
+		}
+
+		if app.RecruitmentID != recruitment.ID {
+			return fmt.Errorf("invalid_assoc")
 		}
 
 		if app.OwnerID != userID {
@@ -242,11 +268,6 @@ func (h *WaterTeamHandler) reviewApplication(c *gin.Context, newStatus string) {
 
 		if app.Status != models.ApplicationStatusPending {
 			return fmt.Errorf("invalid_status")
-		}
-
-		var recruitment models.WaterTeamRecruitment
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recruitment, app.RecruitmentID).Error; err != nil {
-			return err
 		}
 
 		if newStatus == models.ApplicationStatusAccepted {
@@ -327,7 +348,7 @@ func (h *WaterTeamHandler) Cancel(c *gin.Context) {
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var app models.WaterTeamApplication
-		if err := tx.First(&app, appID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&app, appID).Error; err != nil {
 			return fmt.Errorf("app_not_found")
 		}
 
@@ -440,15 +461,29 @@ func (h *WaterTeamHandler) UpdateRecruitmentStatus(c *gin.Context) {
 	}
 
 	var responsePost models.Post
+	var initialRecruitment models.WaterTeamRecruitment
+	if err := h.db.First(&initialRecruitment, recruitmentID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "未找到该招募信息"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取招募信息失败"})
+		return
+	}
+
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var post models.Post
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&post, initialRecruitment.PostID).Error; err != nil {
+			return fmt.Errorf("post_not_found")
+		}
+
 		var recruitment models.WaterTeamRecruitment
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recruitment, recruitmentID).Error; err != nil {
 			return fmt.Errorf("recruitment_not_found")
 		}
-
-		var post models.Post
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&post, recruitment.PostID).Error; err != nil {
-			return fmt.Errorf("post_not_found")
+		
+		if recruitment.PostID != post.ID {
+			return fmt.Errorf("mismatch")
 		}
 
 		if post.AuthorID != userID {

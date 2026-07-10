@@ -16,6 +16,7 @@ import (
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
+	"shenliyuan/internal/utils"
 )
 
 // WaterSectionHandler 水帖版块处理器
@@ -992,7 +993,8 @@ func (h *WaterSectionHandler) CreateTag(c *gin.Context) {
 	}
 	if err := h.db.Create(&tag).Error; err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if utils.IsPostgresUniqueViolation(err) {
+			errors.As(err, &pgErr)
 			if strings.Contains(pgErr.Message, "idx_water_section_single_team_tag") {
 				c.JSON(http.StatusConflict, gin.H{"error": "该版块已存在组队栏目，每个版块最多允许一个组队栏目"})
 			} else {

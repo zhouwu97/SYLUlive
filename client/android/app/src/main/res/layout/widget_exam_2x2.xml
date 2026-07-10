@@ -3,38 +3,30 @@
     android:id="@android:id/background"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@drawable/widget_bg_light"
     android:orientation="vertical"
-    android:background="@drawable/widget_bg_rounded"
     android:padding="10dp">
 
-    <RelativeLayout
+    <TextView
+        android:id="@+id/tv_widget_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="6dp">
-
-        <TextView
-            android:id="@+id/tv_widget_title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_alignParentStart="true"
-            android:layout_centerVertical="true"
-            android:text="考试日程"
-            android:textColor="#333333"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end" />
-            
-    </RelativeLayout>
+        android:layout_marginBottom="5dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="考试日程"
+        android:textColor="#111827"
+        android:textSize="13sp"
+        android:textStyle="bold" />
 
     <ListView
         android:id="@+id/exam_list_view"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:fadingEdgeLength="8dp"
-        android:overScrollMode="never"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:divider="@null"
-        android:dividerHeight="0dp" />
+        android:dividerHeight="0dp"
+        android:overScrollMode="never" />
 
     <TextView
         android:id="@+id/empty_view"

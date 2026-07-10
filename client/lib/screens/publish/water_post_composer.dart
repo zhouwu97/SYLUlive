@@ -12,7 +12,6 @@ import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
 import '../../widgets/water_section/section_avatar.dart';
-import '../../widgets/water_team/team_deadline_picker.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/water_post_bottom_bar.dart';
@@ -53,11 +52,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   int? _selectedTagId;
   final List<XFile> _selectedImages = [];
   final List<PostImage> _existingImages = [];
-  final _teamCountController = TextEditingController(text: '1');
-  final _teamRoleController = TextEditingController();
-  final List<String> _teamRoles = [];
-  DateTime? _teamDeadline;
-  bool _editingTeamMode = false;
 
   // ---------------------------------------------------------------------------
   // PublishImagePickerMixin 抽象成员实现
@@ -98,19 +92,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       _canUploadUnlimitedImages || _totalImageCount < _maxImages;
 
   int get _charCount => _contentController.text.length;
-
-  WaterSectionTag? get _selectedWaterTag {
-    final tagId = _selectedTagId;
-    if (tagId == null) return null;
-    for (final tag in _selectedSection.enabledTags) {
-      if (tag.id == tagId) return tag;
-    }
-    return null;
-  }
-
-  // 编辑已有组队帖时，即使版块标签尚未加载，也必须保留组队表单和提交字段。
-  bool get _isTeamMode =>
-      _editingTeamMode || _selectedWaterTag?.isTeamRecruitment == true;
 
   bool get _hasImages => _totalImageCount > 0 || canAddMoreImages;
 
@@ -158,13 +139,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       _contentController.text = post.content;
       _existingImages.addAll(post.images);
       _selectedTagId = post.waterTagId;
-      final team = post.teamRecruitment;
-      if (team != null) {
-        _editingTeamMode = true;
-        _teamCountController.text = team.neededCount.toString();
-        _teamRoles.addAll(team.roles);
-        _teamDeadline = team.deadline;
-      }
     }
     final rawPostType = post?.postType ?? widget.initialPostType;
     _selectedPostType = rawPostType != null && rawPostType.trim().isNotEmpty
@@ -172,7 +146,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         : 'campus_life';
     _titleController.addListener(_onTitleChanged);
     _contentController.addListener(_onContentChanged);
-    _teamCountController.addListener(_onContentChanged);
     // 加载版块列表供标签选择
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<WaterSectionProvider>();
@@ -188,8 +161,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     _titleFocusNode.dispose();
     _titleController.dispose();
     _contentController.dispose();
-    _teamCountController.dispose();
-    _teamRoleController.dispose();
     super.dispose();
   }
 
@@ -226,21 +197,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         );
       }
       return false;
-    }
-    if (_isTeamMode) {
-      final count = int.tryParse(_teamCountController.text.trim()) ?? 0;
-      if (count < 1 || count > 20) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('招募人数需为 1～20 人')),
-        );
-        return false;
-      }
-      if (_teamRoles.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请至少添加一个招募方向')),
-        );
-        return false;
-      }
     }
     if (content.length > _maxContentLength) {
       if (mounted) {
@@ -319,12 +275,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               price: 0,
               contact: '',
               fileIds: mergedFileIds,
-              teamNeededCount:
-                  _isTeamMode ? int.parse(_teamCountController.text) : null,
-              teamRoles: _isTeamMode ? List<String>.from(_teamRoles) : null,
-              teamDeadline: _isTeamMode ? _teamDeadline : null,
-              sendTeamFields: _isTeamMode,
-              sendWaterTagField: true,
             )
           : await postProvider.createPost(
               boardId: 1,
@@ -335,10 +285,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               price: null,
               contact: null,
               fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
-              teamNeededCount:
-                  _isTeamMode ? int.parse(_teamCountController.text) : null,
-              teamRoles: _isTeamMode ? List<String>.from(_teamRoles) : null,
-              teamDeadline: _isTeamMode ? _teamDeadline : null,
             );
 
       if (!mounted) return;
@@ -530,17 +476,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     );
 
     if (selected != null && mounted) {
-      // 编辑组队帖：禁止切换版块，否则标签与组队字段会和新版块无法对齐。
-      if (_editingTeamMode) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('组队招募发布后不能切换到其他版块')),
-        );
-        return;
-      }
       setState(() {
         _selectedPostType = selected;
         _selectedTagId = null;
-        _resetTeamFields();
       });
     }
   }
@@ -549,7 +487,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     final section = _selectedSection;
     final color =
         section.colorHex.isNotEmpty ? colorHexToColor(section.colorHex) : _teal;
-    final tags = section.enabledTags;
+    final tags = section.enabledTags
+        .where((tag) => !tag.isTeamRecruitment)
+        .toList(growable: false);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: InkWell(
@@ -611,20 +551,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     final selected = _selectedTagId == tag.id;
                     return GestureDetector(
                       onTap: () {
-                        // 编辑组队帖时，当前标签只读锁定。
-                        if (_editingTeamMode) return;
-                        // 编辑普通帖时禁止选择组队标签。
-                        if (_isEditing && tag.isTeamRecruitment) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('发布后不能在普通帖子与组队招募之间切换')),
-                          );
-                          return;
-                        }
-                        setState(() {
-                          _selectedTagId = selected ? null : tag.id;
-                          if (!tag.isTeamRecruitment) _resetTeamFields();
-                        });
+                        setState(
+                            () => _selectedTagId = selected ? null : tag.id);
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -711,124 +639,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     );
   }
 
-  void _resetTeamFields() {
-    _teamRoles.clear();
-    _teamDeadline = null;
-    _teamCountController.text = '1';
-  }
-
-  void _addTeamRole() {
-    final role = _teamRoleController.text.trim();
-    if (role.isEmpty) return;
-    if (role.length > 20) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('单个方向最多 20 字')));
-      return;
-    }
-    if (_teamRoles.length >= 8) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('最多添加 8 个方向')));
-      return;
-    }
-    if (_teamRoles.contains(role)) {
-      _teamRoleController.clear();
-      return;
-    }
-    setState(() {
-      _teamRoles.add(role);
-      _teamRoleController.clear();
-    });
-  }
-
-  Future<void> _pickTeamDeadline() async {
-    final now = DateTime.now();
-    final picked = await TeamDeadlinePicker.show(
-      context,
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: DateTime(now.year + 2),
-      initialDate: _teamDeadline ?? now.add(const Duration(days: 7)),
-      accentColor: _teal,
-    );
-    if (picked != null && mounted) {
-      setState(() => _teamDeadline =
-          DateTime(picked.year, picked.month, picked.day, 23, 59));
-    }
-  }
-
-  Widget _buildTeamRecruitmentForm(bool isDark) {
-    const color = _teal;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : const Color(0xFFF3FBFA),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.16)),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Icon(Icons.groups_2_outlined, size: 18, color: color),
-            const SizedBox(width: 7),
-            Text('组队招募设置',
-                style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : color)),
-          ]),
-          const SizedBox(height: 10),
-          TextFormField(
-            controller: _teamCountController,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(
-                labelText: '还需招募人数',
-                isDense: true,
-                border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 10),
-          Wrap(spacing: 6, runSpacing: 6, children: [
-            ..._teamRoles.map((role) => InputChip(
-                label: Text(role),
-                onDeleted: () => setState(() => _teamRoles.remove(role)))),
-            SizedBox(
-                width: 180,
-                child: TextField(
-                  controller: _teamRoleController,
-                  onSubmitted: (_) => _addTeamRole(),
-                  decoration: InputDecoration(
-                      isDense: true,
-                      hintText: '输入方向并回车',
-                      suffixIcon: IconButton(
-                          icon: const Icon(Icons.add),
-                          onPressed: _addTeamRole)),
-                )),
-          ]),
-          const SizedBox(height: 8),
-          Row(children: [
-            Text(
-                _teamDeadline == null
-                    ? '未设置截止时间'
-                    : '截止 ${_teamDeadline!.year} 年 ${_teamDeadline!.month} 月 ${_teamDeadline!.day} 日',
-                style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white60 : Colors.black54)),
-            const Spacer(),
-            TextButton.icon(
-                onPressed: _pickTeamDeadline,
-                icon: const Icon(Icons.event_outlined, size: 16),
-                label: const Text('选择截止时间')),
-            if (_teamDeadline != null)
-              IconButton(
-                  onPressed: () => setState(() => _teamDeadline = null),
-                  icon: const Icon(Icons.close, size: 18)),
-          ]),
-        ]),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -865,7 +675,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildCategorySelector(isDark),
-              if (_isTeamMode) _buildTeamRecruitmentForm(isDark),
               AnimatedBuilder(
                 animation: _titleWarningController,
                 builder: (context, child) {

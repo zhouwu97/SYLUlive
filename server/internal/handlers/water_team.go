@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,6 +26,44 @@ func NewWaterTeamHandler(db *gorm.DB) *WaterTeamHandler {
 	return &WaterTeamHandler{db: db}
 }
 
+// createTeamNotification 写入组队相关站内通知。相同招募的同类提醒仅保留一条，
+// 防止列表刷新或定时任务反复打扰用户。
+func createTeamNotification(db *gorm.DB, userID, fromUID, recruitmentID, postID uint, notificationType, content string) {
+	var count int64
+	if err := db.Model(&models.Notification{}).
+		Where("user_id = ? AND type = ? AND related_id = ?", userID, notificationType, recruitmentID).
+		Count(&count).Error; err != nil || count > 0 {
+		return
+	}
+	db.Create(&models.Notification{
+		UserID: userID, Type: notificationType, Content: content,
+		RelatedID: recruitmentID, PostID: postID, FromUID: fromUID,
+	})
+}
+
+// NotifyDeadlineSoon 为三天内截止、仍在招募中的发起人创建一次提醒。
+func (h *WaterTeamHandler) NotifyDeadlineSoon() {
+	now := time.Now()
+	var rows []struct {
+		RecruitmentID uint
+		PostID        uint
+		OwnerID       uint
+		Title         string
+	}
+	if err := h.db.Table("water_team_recruitments").
+		Select("water_team_recruitments.id AS recruitment_id, water_team_recruitments.post_id, posts.author_id AS owner_id, posts.title").
+		Joins("JOIN posts ON posts.id = water_team_recruitments.post_id").
+		Where("water_team_recruitments.status = ? AND water_team_recruitments.accepted_count < water_team_recruitments.needed_count", models.RecruitmentStatusRecruiting).
+		Where("water_team_recruitments.deadline IS NOT NULL AND water_team_recruitments.deadline > ? AND water_team_recruitments.deadline <= ?", now, now.Add(72*time.Hour)).
+		Where("posts.status != ?", models.PostStatusDeleted).
+		Scan(&rows).Error; err != nil {
+		return
+	}
+	for _, row := range rows {
+		createTeamNotification(h.db, row.OwnerID, 0, row.RecruitmentID, row.PostID, "team_deadline_soon", "你的组队《"+row.Title+"》即将截止")
+	}
+}
+
 // currentUserOr401 获取当前登录用户
 func (h *WaterTeamHandler) currentUserOr401(c *gin.Context) (uint, bool) {
 	val, exists := c.Get("user_id")
@@ -39,7 +78,6 @@ func (h *WaterTeamHandler) currentUserOr401(c *gin.Context) (uint, bool) {
 	}
 	return userID, true
 }
-
 
 type UpdateTeamRecruitmentStatusRequest struct {
 	Status string `json:"status" binding:"required"`
@@ -100,7 +138,7 @@ func (h *WaterTeamHandler) Apply(c *gin.Context) {
 			return fmt.Errorf("invalid_tag")
 		}
 
-		if !tag.IsEnabled || tag.ContentMode != models.WaterTagModeTeamRecruitment {
+		if tag.ContentMode != models.WaterTagModeTeamRecruitment {
 			return fmt.Errorf("tag_disabled")
 		}
 
@@ -144,11 +182,11 @@ func (h *WaterTeamHandler) Apply(c *gin.Context) {
 			}).Error; err != nil {
 				return err
 			}
-			
+
 			if err := tx.First(&existing, existing.ID).Error; err != nil {
 				return err
 			}
-			
+
 			responseApp = existing
 			return nil
 		}
@@ -179,7 +217,7 @@ func (h *WaterTeamHandler) Apply(c *gin.Context) {
 		case "post_deleted":
 			c.JSON(http.StatusBadRequest, gin.H{"error": "该帖子已被删除或屏蔽"})
 		case "invalid_tag", "tag_disabled":
-			c.JSON(http.StatusBadRequest, gin.H{"error": "该标签不支持组队招募或已停用"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该标签不支持组队招募"})
 		case "invalid_section", "section_inactive":
 			c.JSON(http.StatusBadRequest, gin.H{"error": "该版块已归档或不存在"})
 		case "user_muted":
@@ -199,8 +237,883 @@ func (h *WaterTeamHandler) Apply(c *gin.Context) {
 		}
 		return
 	}
+	createTeamNotification(h.db, responseApp.OwnerID, userID, responseApp.RecruitmentID, responseApp.PostID, "team_application", "有人申请加入你的组队")
 
 	c.JSON(http.StatusCreated, responseApp)
+}
+
+// ============================================================================
+// 独立组队 API — /api/team/...
+// 这些接口不再依赖 water_tag content_mode 判断，直接使用独立路由和业务对象。
+// ============================================================================
+
+// CreateTeamRecruitmentRequest 创建招募请求（独立于 Post 创建）
+type CreateTeamRecruitmentRequest struct {
+	Category     string   `json:"category" binding:"required"`
+	Title        string   `json:"title" binding:"required"`
+	Description  string   `json:"description" binding:"required"`
+	NeededCount  int      `json:"needed_count" binding:"required"`
+	Roles        []string `json:"roles"`
+	Deadline     string   `json:"deadline"`
+	ImageFileIDs []uint   `json:"image_file_ids"`
+}
+
+// UpdateTeamRecruitmentRequest 编辑招募请求
+type UpdateTeamRecruitmentRequest struct {
+	Category     string   `json:"category"`
+	Title        string   `json:"title"`
+	Description  string   `json:"description"`
+	NeededCount  int      `json:"needed_count"`
+	Roles        []string `json:"roles"`
+	Deadline     string   `json:"deadline"`
+	ImageFileIDs []uint   `json:"image_file_ids"`
+}
+
+// TeamRecruitmentListItem 列表项（轻量，不含完整 post 内容）
+type TeamRecruitmentListItem struct {
+	ID              uint       `json:"id"`
+	PostID          uint       `json:"post_id"`
+	Category        string     `json:"category"`
+	Title           string     `json:"title"`
+	Description     string     `json:"description"`
+	AuthorID        uint       `json:"author_id"`
+	AuthorName      string     `json:"author_name"`
+	AuthorAvatar    string     `json:"author_avatar"`
+	AuthorMajor     string     `json:"author_major"`
+	NeededCount     int        `json:"needed_count"`
+	AcceptedCount   int        `json:"accepted_count"`
+	RemainingCount  int        `json:"remaining_count"`
+	Roles           []string   `json:"roles"`
+	Deadline        *time.Time `json:"deadline"`
+	Status          string     `json:"status"`
+	EffectiveStatus string     `json:"effective_status"`
+	FirstImageURL   string     `json:"first_image_url"`
+	CreatedAt       time.Time  `json:"created_at"`
+
+	// 登录用户专属
+	MyApplicationStatus *string `json:"my_application_status,omitempty"`
+	IsOwner             bool    `json:"is_owner"`
+	CanApply            bool    `json:"can_apply"`
+	CanManage           bool    `json:"can_manage"`
+}
+
+// TeamRecruitmentDetail 详情（含完整 post 内容）
+type TeamRecruitmentDetail struct {
+	ID               uint           `json:"id"`
+	PostID           uint           `json:"post_id"`
+	Category         string         `json:"category"`
+	Title            string         `json:"title"`
+	Description      string         `json:"description"`
+	Author           UserBrief      `json:"author"`
+	Images           []PostImageDTO `json:"images"`
+	NeededCount      int            `json:"needed_count"`
+	AcceptedCount    int            `json:"accepted_count"`
+	RemainingCount   int            `json:"remaining_count"`
+	Roles            []string       `json:"roles"`
+	Deadline         *time.Time     `json:"deadline"`
+	Status           string         `json:"status"`
+	EffectiveStatus  string         `json:"effective_status"`
+	ApplicationCount int64          `json:"application_count"`
+	ViewCount        int            `json:"view_count"`
+	ReplyCount       int            `json:"reply_count"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
+
+	// 登录用户专属
+	MyApplicationStatus *string `json:"my_application_status,omitempty"`
+	IsOwner             bool    `json:"is_owner"`
+	CanApply            bool    `json:"can_apply"`
+	CanManage           bool    `json:"can_manage"`
+}
+
+// UserBrief 用户简要信息
+type UserBrief struct {
+	ID     uint   `json:"id"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar"`
+	Major  string `json:"major"`
+	Bio    string `json:"bio"`
+}
+
+// PostImageDTO 图片传输对象
+type PostImageDTO struct {
+	ID  uint   `json:"id"`
+	URL string `json:"url"`
+}
+
+// ensureTeamTag 查找系统内部的 team_recruitment 标签（用于底层创建 Post）。
+// 标签对普通水帖已停用，因此这里不能检查 is_enabled。
+func (h *WaterTeamHandler) ensureTeamTag(tx *gorm.DB, sectionSlug string) (uint, uint, error) {
+	var section models.WaterSection
+	if err := tx.Where("slug = ? AND status = ?", sectionSlug, "active").First(&section).Error; err != nil {
+		return 0, 0, fmt.Errorf("未找到对应版块")
+	}
+	var tag models.WaterSectionTag
+	if err := tx.Where("section_id = ? AND content_mode = ?",
+		section.ID, models.WaterTagModeTeamRecruitment).First(&tag).Error; err != nil {
+		return 0, 0, fmt.Errorf("组队标签不可用")
+	}
+	return section.ID, tag.ID, nil
+}
+
+// parseTeamDeadline 解析截止时间字符串
+func parseTeamDeadline(deadlineStr string) (*time.Time, error) {
+	deadlineStr = strings.TrimSpace(deadlineStr)
+	if deadlineStr == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, deadlineStr)
+	if err != nil {
+		return nil, fmt.Errorf("截止时间格式错误")
+	}
+	if !t.After(time.Now()) {
+		return nil, fmt.Errorf("截止时间必须在将来")
+	}
+	return &t, nil
+}
+
+// validateTeamRoles 验证方向列表
+func validateTeamRoles(roles []string) ([]string, error) {
+	if len(roles) == 0 {
+		return nil, nil // 允许空
+	}
+	if len(roles) > 8 {
+		return nil, fmt.Errorf("最多8个方向")
+	}
+	seen := map[string]struct{}{}
+	valid := make([]string, 0, len(roles))
+	for _, r := range roles {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		if len([]rune(r)) > 20 {
+			return nil, fmt.Errorf("单个方向最多20字符")
+		}
+		if _, ok := seen[r]; ok {
+			continue
+		}
+		seen[r] = struct{}{}
+		valid = append(valid, r)
+	}
+	return valid, nil
+}
+
+// ListTeamRecruitments GET /api/team/recruitments
+func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
+	category := c.Query("category")
+	statusFilter := c.Query("status")
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	role := c.Query("role")
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "20")
+
+	page, _ := strconv.Atoi(pageStr)
+	limit, _ := strconv.Atoi(limitStr)
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 50 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	now := time.Now()
+
+	query := h.db.Model(&models.WaterTeamRecruitment{}).
+		Joins("JOIN posts ON posts.id = water_team_recruitments.post_id").
+		Joins("JOIN users ON users.id = posts.author_id").
+		Where("posts.status != ?", models.PostStatusDeleted)
+
+	if category != "" {
+		query = query.Where("water_team_recruitments.category = ?", category)
+	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("(posts.title ILIKE ? OR posts.content ILIKE ?)", like, like)
+	}
+	if role != "" {
+		query = query.Where("water_team_recruitments.roles_json ILIKE ?", "%\""+role+"\"%")
+	}
+
+	if statusFilter == "recruiting" {
+		query = query.Where("water_team_recruitments.status = ?", models.RecruitmentStatusRecruiting).
+			Where("(water_team_recruitments.deadline IS NULL OR water_team_recruitments.deadline > ?)", now).
+			Where("water_team_recruitments.accepted_count < water_team_recruitments.needed_count")
+	} else if statusFilter == "deadline_soon" {
+		query = query.Where("water_team_recruitments.status = ?", models.RecruitmentStatusRecruiting).
+			Where("water_team_recruitments.deadline IS NOT NULL AND water_team_recruitments.deadline > ? AND water_team_recruitments.deadline <= ?",
+				now, now.Add(72*time.Hour)).
+			Where("water_team_recruitments.accepted_count < water_team_recruitments.needed_count")
+	} else if statusFilter == "full" {
+		query = query.Where("(water_team_recruitments.status = ? OR water_team_recruitments.accepted_count >= water_team_recruitments.needed_count)",
+			models.RecruitmentStatusFull)
+	} else if statusFilter != "" {
+		query = query.Where("water_team_recruitments.status = ?", statusFilter)
+	}
+
+	// 排序
+	query = query.Order(clause.Expr{
+		SQL: `CASE
+			WHEN water_team_recruitments.status = ? AND (water_team_recruitments.deadline IS NULL OR water_team_recruitments.deadline > ?)
+			THEN 0
+			WHEN water_team_recruitments.status = ? THEN 1
+			WHEN water_team_recruitments.status = ? THEN 2
+			ELSE 3
+		END ASC,
+		water_team_recruitments.deadline ASC NULLS LAST,
+		water_team_recruitments.created_at DESC`,
+		Vars: []interface{}{
+			models.RecruitmentStatusRecruiting, now,
+			models.RecruitmentStatusFull,
+			models.RecruitmentStatusClosed,
+		},
+		WithoutParentheses: true,
+	})
+
+	var total int64
+	query.Session(&gorm.Session{}).Count(&total)
+
+	var recruitments []struct {
+		models.WaterTeamRecruitment
+		PostTitle      string
+		PostContent    string
+		PostStatus     string
+		PostViewCount  int
+		PostReplyCount int
+		AuthorID       uint
+		AuthorName     string
+		AuthorAvatar   string
+		AuthorMajor    string
+	}
+	if err := query.Select("water_team_recruitments.*, posts.title as post_title, posts.content as post_content, posts.status as post_status, posts.view_count as post_view_count, posts.reply_count as post_reply_count, users.id as author_id, users.nickname as author_name, users.avatar_url as author_avatar, users.major as author_major").
+		Offset(offset).Limit(limit).
+		Find(&recruitments).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取组队列表失败"})
+		return
+	}
+
+	// 填充列表项
+	items := make([]TeamRecruitmentListItem, 0, len(recruitments))
+	for i := range recruitments {
+		r := &recruitments[i]
+
+		var roles []string
+		if r.RolesJSON != "" {
+			json.Unmarshal([]byte(r.RolesJSON), &roles)
+		}
+		if roles == nil {
+			roles = []string{}
+		}
+
+		effectiveStatus := models.EffectiveRecruitmentStatus(r.WaterTeamRecruitment, now)
+
+		remaining := r.NeededCount - r.AcceptedCount
+		if remaining < 0 {
+			remaining = 0
+		}
+
+		firstImageURL := ""
+		var img models.PostImage
+		if err := h.db.Where("post_id = ?", r.PostID).Order("sort_order ASC").First(&img).Error; err == nil {
+			var file models.File
+			if err := h.db.First(&file, img.FileID).Error; err == nil {
+				firstImageURL = file.Path
+			}
+		}
+
+		item := TeamRecruitmentListItem{
+			ID:              r.ID,
+			PostID:          r.PostID,
+			Category:        r.Category,
+			Title:           r.PostTitle,
+			Description:     truncateContent(r.PostContent, 120),
+			AuthorID:        r.AuthorID,
+			AuthorName:      r.AuthorName,
+			AuthorAvatar:    r.AuthorAvatar,
+			AuthorMajor:     r.AuthorMajor,
+			NeededCount:     r.NeededCount,
+			AcceptedCount:   r.AcceptedCount,
+			RemainingCount:  remaining,
+			Roles:           roles,
+			Deadline:        r.Deadline,
+			Status:          r.Status,
+			EffectiveStatus: effectiveStatus,
+			FirstImageURL:   firstImageURL,
+			CreatedAt:       r.CreatedAt,
+		}
+
+		// 登录用户专属字段
+		if userID, ok := c.Get("user_id"); ok {
+			uid := userID.(uint)
+			item.IsOwner = r.AuthorID == uid
+			item.CanManage = item.IsOwner
+			item.CanApply = !item.IsOwner && effectiveStatus == models.RecruitmentStatusRecruiting
+
+			if !item.IsOwner {
+				var app models.WaterTeamApplication
+				if err := h.db.Where("recruitment_id = ? AND applicant_id = ?", r.ID, uid).First(&app).Error; err == nil {
+					item.MyApplicationStatus = &app.Status
+					item.CanApply = app.Status == models.ApplicationStatusRejected || app.Status == models.ApplicationStatusCancelled
+				}
+			}
+		}
+
+		items = append(items, item)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":     items,
+		"total":     total,
+		"page":      page,
+		"page_size": limit,
+		"limit":     limit,
+		"has_more":  int64(offset+len(items)) < total,
+	})
+}
+
+// GetTeamRecruitment GET /api/team/recruitments/:id
+func (h *WaterTeamHandler) GetTeamRecruitment(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的招募ID"})
+		return
+	}
+
+	var recruitment models.WaterTeamRecruitment
+	if err := h.db.Preload("Post").Preload("Post.Author").Preload("Post.Images").Preload("Post.Images.File").First(&recruitment, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "招募信息不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取招募信息失败"})
+		return
+	}
+
+	if recruitment.Post.Status == models.PostStatusDeleted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "该帖子已被删除"})
+		return
+	}
+
+	now := time.Now()
+
+	var roles []string
+	if recruitment.RolesJSON != "" {
+		json.Unmarshal([]byte(recruitment.RolesJSON), &roles)
+	}
+	if roles == nil {
+		roles = []string{}
+	}
+
+	effectiveStatus := models.EffectiveRecruitmentStatus(recruitment, now)
+	remaining := recruitment.NeededCount - recruitment.AcceptedCount
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	// 计算申请总数
+	var appCount int64
+	h.db.Model(&models.WaterTeamApplication{}).Where("recruitment_id = ?", recruitment.ID).Count(&appCount)
+
+	// 图片
+	images := make([]PostImageDTO, 0, len(recruitment.Post.Images))
+	for _, img := range recruitment.Post.Images {
+		images = append(images, PostImageDTO{ID: img.ID, URL: img.File.Path})
+	}
+
+	detail := TeamRecruitmentDetail{
+		ID:          recruitment.ID,
+		PostID:      recruitment.PostID,
+		Category:    recruitment.Category,
+		Title:       recruitment.Post.Title,
+		Description: recruitment.Post.Content,
+		Author: UserBrief{
+			ID:     recruitment.Post.Author.ID,
+			Name:   recruitment.Post.Author.Nickname,
+			Avatar: recruitment.Post.Author.Avatar,
+			Major:  recruitment.Post.Author.EduMajor,
+		},
+		Images:           images,
+		NeededCount:      recruitment.NeededCount,
+		AcceptedCount:    recruitment.AcceptedCount,
+		RemainingCount:   remaining,
+		Roles:            roles,
+		Deadline:         recruitment.Deadline,
+		Status:           recruitment.Status,
+		EffectiveStatus:  effectiveStatus,
+		ApplicationCount: appCount,
+		ViewCount:        recruitment.Post.ViewCount,
+		ReplyCount:       recruitment.Post.ReplyCount,
+		CreatedAt:        recruitment.CreatedAt,
+		UpdatedAt:        recruitment.UpdatedAt,
+	}
+
+	// 登录用户专属
+	if userID, ok := c.Get("user_id"); ok {
+		uid := userID.(uint)
+		detail.IsOwner = recruitment.Post.AuthorID == uid
+		detail.CanManage = detail.IsOwner
+		detail.CanApply = !detail.IsOwner && effectiveStatus == models.RecruitmentStatusRecruiting
+
+		if !detail.IsOwner {
+			var app models.WaterTeamApplication
+			if err := h.db.Where("recruitment_id = ? AND applicant_id = ?", recruitment.ID, uid).First(&app).Error; err == nil {
+				detail.MyApplicationStatus = &app.Status
+				detail.CanApply = app.Status == models.ApplicationStatusRejected || app.Status == models.ApplicationStatusCancelled
+			}
+		}
+	}
+
+	// 增加浏览数
+	h.db.Model(&models.Post{}).Where("id = ?", recruitment.PostID).
+		UpdateColumn("view_count", gorm.Expr("view_count + 1"))
+
+	c.JSON(http.StatusOK, detail)
+}
+
+// CreateTeamRecruitment POST /api/team/recruitments
+func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
+	userID, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+
+	var req CreateTeamRecruitmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+
+	// 验证分类
+	if !models.ValidTeamCategories[req.Category] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的组队类型"})
+		return
+	}
+
+	// 验证标题
+	req.Title = strings.TrimSpace(req.Title)
+	if len([]rune(req.Title)) < 2 || len([]rune(req.Title)) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "标题需在2-100字之间"})
+		return
+	}
+
+	// 验证说明
+	req.Description = strings.TrimSpace(req.Description)
+	if len([]rune(req.Description)) < 10 || len([]rune(req.Description)) > 5000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "说明需在10-5000字之间"})
+		return
+	}
+
+	// 验证人数
+	if req.NeededCount < 1 || req.NeededCount > 20 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "招募人数需在1-20之间"})
+		return
+	}
+
+	// 验证方向
+	roles, err := validateTeamRoles(req.Roles)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	rolesJSON, _ := json.Marshal(roles)
+
+	// 解析截止时间
+	deadline, err := parseTeamDeadline(req.Deadline)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 分类是组队大厅的业务分类；底层统一关联比赛竞赛版块的内部标签。
+	sectionSlug := "competition"
+
+	var detail TeamRecruitmentDetail
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		// 找到系统内部 team_recruitment 标签
+		sectionID, tagID, tagErr := h.ensureTeamTag(tx, sectionSlug)
+		if tagErr != nil {
+			return tagErr
+		}
+
+		// 检查禁言
+		permSvc := services.NewWaterPermissionService(tx)
+		if permSvc.IsMuted(sectionID, userID) {
+			return fmt.Errorf("user_muted")
+		}
+
+		// 创建 Post
+		post := models.Post{
+			Title:      req.Title,
+			Content:    req.Description,
+			BoardID:    models.BoardShuitie,
+			AuthorID:   userID,
+			PostType:   sectionSlug,
+			WaterTagID: &tagID,
+			Status:     models.PostStatusNormal,
+		}
+		if err := tx.Create(&post).Error; err != nil {
+			return err
+		}
+
+		// 创建 WaterTeamRecruitment
+		recruitment := models.WaterTeamRecruitment{
+			PostID:      post.ID,
+			SectionID:   sectionID,
+			TagID:       tagID,
+			Category:    req.Category,
+			NeededCount: req.NeededCount,
+			RolesJSON:   string(rolesJSON),
+			Deadline:    deadline,
+			Status:      models.RecruitmentStatusRecruiting,
+		}
+		if err := tx.Create(&recruitment).Error; err != nil {
+			return err
+		}
+
+		// 关联图片
+		if len(req.ImageFileIDs) > 0 {
+			for i, fileID := range req.ImageFileIDs {
+				postImage := models.PostImage{
+					PostID:    post.ID,
+					FileID:    fileID,
+					SortOrder: i,
+				}
+				if err := tx.Create(&postImage).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		// 重新加载完整数据
+		if err := tx.Preload("Author").Preload("Images").Preload("Images.File").First(&post, post.ID).Error; err != nil {
+			return err
+		}
+
+		// 构建返回的 detail
+		remaining := req.NeededCount
+		if remaining < 0 {
+			remaining = 0
+		}
+
+		images := make([]PostImageDTO, 0, len(post.Images))
+		for _, img := range post.Images {
+			images = append(images, PostImageDTO{ID: img.ID, URL: img.File.Path})
+		}
+
+		detail = TeamRecruitmentDetail{
+			ID:          recruitment.ID,
+			PostID:      recruitment.PostID,
+			Category:    recruitment.Category,
+			Title:       post.Title,
+			Description: post.Content,
+			Author: UserBrief{
+				ID:     post.Author.ID,
+				Name:   post.Author.Nickname,
+				Avatar: post.Author.Avatar,
+				Major:  post.Author.EduMajor,
+			},
+			Images:           images,
+			NeededCount:      recruitment.NeededCount,
+			AcceptedCount:    recruitment.AcceptedCount,
+			RemainingCount:   remaining,
+			Roles:            roles,
+			Deadline:         recruitment.Deadline,
+			Status:           recruitment.Status,
+			EffectiveStatus:  models.RecruitmentStatusRecruiting,
+			ApplicationCount: 0,
+			ViewCount:        0,
+			ReplyCount:       0,
+			CreatedAt:        recruitment.CreatedAt,
+			UpdatedAt:        recruitment.UpdatedAt,
+			IsOwner:          true,
+			CanManage:        true,
+			CanApply:         false,
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		switch err.Error() {
+		case "user_muted":
+			c.JSON(http.StatusForbidden, gin.H{"error": "你已被禁言，暂时无法发布组队"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建组队失败: " + err.Error()})
+		}
+		return
+	}
+
+	// 发放经验（简单版）
+	awards := make([]models.ExpAward, 0)
+	if awarded, globalAward, expErr := services.AwardDailyGlobalExp(h.db, userID, services.GlobalActionPostDaily, services.GlobalExpPostDaily, "post", detail.PostID); expErr == nil && awarded && globalAward != nil {
+		awards = append(awards, *globalAward)
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"recruitment": detail,
+		"exp_awards":  awards,
+	})
+}
+
+// UpdateTeamRecruitment PATCH /api/team/recruitments/:id
+func (h *WaterTeamHandler) UpdateTeamRecruitment(c *gin.Context) {
+	userID, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的招募ID"})
+		return
+	}
+
+	var recruitment models.WaterTeamRecruitment
+	if err := h.db.Preload("Post").First(&recruitment, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "招募信息不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取招募信息失败"})
+		return
+	}
+
+	if recruitment.Post.AuthorID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权编辑"})
+		return
+	}
+
+	var req UpdateTeamRecruitmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{}
+		postUpdates := map[string]interface{}{}
+
+		if req.Category != "" {
+			if !models.ValidTeamCategories[req.Category] {
+				return fmt.Errorf("invalid_category")
+			}
+			updates["category"] = req.Category
+		}
+
+		if req.Title != "" {
+			req.Title = strings.TrimSpace(req.Title)
+			if len([]rune(req.Title)) < 2 || len([]rune(req.Title)) > 100 {
+				return fmt.Errorf("title_too_short")
+			}
+			postUpdates["title"] = req.Title
+		}
+
+		if req.Description != "" {
+			req.Description = strings.TrimSpace(req.Description)
+			if len([]rune(req.Description)) < 10 || len([]rune(req.Description)) > 5000 {
+				return fmt.Errorf("desc_invalid")
+			}
+			postUpdates["content"] = req.Description
+		}
+
+		if req.NeededCount > 0 {
+			if req.NeededCount < 1 || req.NeededCount > 20 {
+				return fmt.Errorf("count_invalid")
+			}
+			updates["needed_count"] = req.NeededCount
+		}
+
+		if req.Roles != nil {
+			roles, err := validateTeamRoles(req.Roles)
+			if err != nil {
+				return err
+			}
+			rolesJSON, _ := json.Marshal(roles)
+			updates["roles_json"] = string(rolesJSON)
+		}
+
+		if req.Deadline != "" {
+			deadline, err := parseTeamDeadline(req.Deadline)
+			if err != nil {
+				return err
+			}
+			if deadline == nil {
+				updates["deadline"] = nil
+			} else {
+				updates["deadline"] = deadline
+			}
+		}
+
+		if len(updates) > 0 {
+			if err := tx.Model(&recruitment).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if len(postUpdates) > 0 {
+			if err := tx.Model(&models.Post{}).Where("id = ?", recruitment.PostID).Updates(postUpdates).Error; err != nil {
+				return err
+			}
+		}
+
+		// 更新图片（全量替换）
+		if req.ImageFileIDs != nil {
+			if err := tx.Where("post_id = ?", recruitment.PostID).Delete(&models.PostImage{}).Error; err != nil {
+				return err
+			}
+			for i, fileID := range req.ImageFileIDs {
+				postImage := models.PostImage{
+					PostID:    recruitment.PostID,
+					FileID:    fileID,
+					SortOrder: i,
+				}
+				if err := tx.Create(&postImage).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+}
+
+// GetMyTeamRecruitments GET /api/team/recruitments/mine
+func (h *WaterTeamHandler) GetMyTeamRecruitments(c *gin.Context) {
+	userID, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "20")
+	statusFilter := c.Query("status")
+
+	page, _ := strconv.Atoi(pageStr)
+	limit, _ := strconv.Atoi(limitStr)
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 50 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	now := time.Now()
+
+	query := h.db.Model(&models.WaterTeamRecruitment{}).
+		Joins("JOIN posts ON posts.id = water_team_recruitments.post_id").
+		Where("posts.author_id = ? AND posts.status != ?", userID, models.PostStatusDeleted)
+
+	if statusFilter != "" {
+		switch statusFilter {
+		case "recruiting":
+			query = query.Where("water_team_recruitments.status = ? AND (water_team_recruitments.deadline IS NULL OR water_team_recruitments.deadline > ?) AND water_team_recruitments.accepted_count < water_team_recruitments.needed_count",
+				models.RecruitmentStatusRecruiting, now)
+		case "full":
+			query = query.Where("water_team_recruitments.status IN ?", []string{models.RecruitmentStatusFull})
+		case "closed":
+			query = query.Where("water_team_recruitments.status = ?", models.RecruitmentStatusClosed)
+		case "expired":
+			query = query.Where("(water_team_recruitments.status = ? OR water_team_recruitments.deadline <= ?)",
+				models.RecruitmentStatusExpired, now)
+		}
+	}
+
+	var total int64
+	query.Session(&gorm.Session{}).Count(&total)
+
+	var recruitments []models.WaterTeamRecruitment
+	if err := query.Select("water_team_recruitments.*").
+		Order("water_team_recruitments.created_at DESC").
+		Offset(offset).Limit(limit).Find(&recruitments).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取我的招募列表失败"})
+		return
+	}
+
+	items := make([]TeamRecruitmentListItem, 0, len(recruitments))
+	for i := range recruitments {
+		r := &recruitments[i]
+
+		var roles []string
+		if r.RolesJSON != "" {
+			json.Unmarshal([]byte(r.RolesJSON), &roles)
+		}
+		if roles == nil {
+			roles = []string{}
+		}
+
+		effectiveStatus := models.EffectiveRecruitmentStatus(*r, now)
+		remaining := r.NeededCount - r.AcceptedCount
+		if remaining < 0 {
+			remaining = 0
+		}
+
+		firstImageURL := ""
+		var img models.PostImage
+		if err := h.db.Where("post_id = ?", r.PostID).Order("sort_order ASC").First(&img).Error; err == nil {
+			var file models.File
+			if err := h.db.First(&file, img.FileID).Error; err == nil {
+				firstImageURL = file.Path
+			}
+		}
+
+		// 加载 title 和 author
+		var post models.Post
+		if err := h.db.Preload("Author").First(&post, r.PostID).Error; err != nil {
+			continue
+		}
+
+		items = append(items, TeamRecruitmentListItem{
+			ID:              r.ID,
+			PostID:          r.PostID,
+			Category:        r.Category,
+			Title:           post.Title,
+			Description:     truncateContent(post.Content, 120),
+			AuthorID:        post.AuthorID,
+			AuthorName:      post.Author.Nickname,
+			AuthorAvatar:    post.Author.Avatar,
+			AuthorMajor:     post.Author.EduMajor,
+			NeededCount:     r.NeededCount,
+			AcceptedCount:   r.AcceptedCount,
+			RemainingCount:  remaining,
+			Roles:           roles,
+			Deadline:        r.Deadline,
+			Status:          r.Status,
+			EffectiveStatus: effectiveStatus,
+			FirstImageURL:   firstImageURL,
+			CreatedAt:       r.CreatedAt,
+			IsOwner:         true,
+			CanManage:       true,
+			CanApply:        false,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":     items,
+		"total":     total,
+		"page":      page,
+		"page_size": limit,
+		"limit":     limit,
+		"has_more":  int64(offset+len(items)) < total,
+	})
+}
+
+// truncateContent 截取纯文本预览
+func truncateContent(content string, maxRunes int) string {
+	runes := []rune(content)
+	if len(runes) <= maxRunes {
+		return content
+	}
+	return string(runes[:maxRunes]) + "……"
 }
 
 type ReviewTeamApplicationRequest struct {
@@ -328,6 +1241,11 @@ func (h *WaterTeamHandler) reviewApplication(c *gin.Context, newStatus string) {
 		}
 		return
 	}
+	resultContent := "你的组队申请已通过"
+	if newStatus == models.ApplicationStatusRejected {
+		resultContent = "你的组队申请未通过"
+	}
+	createTeamNotification(h.db, initialApp.ApplicantID, userID, initialApp.RecruitmentID, initialApp.PostID, "team_application_result", resultContent)
 
 	c.JSON(http.StatusOK, gin.H{"message": "处理成功"})
 }
@@ -481,7 +1399,7 @@ func (h *WaterTeamHandler) UpdateRecruitmentStatus(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recruitment, recruitmentID).Error; err != nil {
 			return fmt.Errorf("recruitment_not_found")
 		}
-		
+
 		if recruitment.PostID != post.ID {
 			return fmt.Errorf("mismatch")
 		}
@@ -513,7 +1431,7 @@ func (h *WaterTeamHandler) UpdateRecruitmentStatus(c *gin.Context) {
 				return fmt.Errorf("invalid_tag")
 			}
 
-			if !tag.IsEnabled || tag.ContentMode != models.WaterTagModeTeamRecruitment {
+			if tag.ContentMode != models.WaterTagModeTeamRecruitment {
 				return fmt.Errorf("tag_disabled")
 			}
 
@@ -569,7 +1487,7 @@ func (h *WaterTeamHandler) UpdateRecruitmentStatus(c *gin.Context) {
 		case "cannot_reopen":
 			c.JSON(http.StatusBadRequest, gin.H{"error": "当前状态无法重新开启"})
 		case "invalid_tag", "tag_disabled":
-			c.JSON(http.StatusBadRequest, gin.H{"error": "该标签不支持组队招募或已停用"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该标签不支持组队招募"})
 		case "invalid_section", "section_inactive":
 			c.JSON(http.StatusBadRequest, gin.H{"error": "该版块已归档或不存在"})
 		case "deadline_passed":

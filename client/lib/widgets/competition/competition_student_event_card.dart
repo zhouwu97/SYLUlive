@@ -8,12 +8,18 @@ class CompetitionStudentEventCard extends StatelessWidget {
   final CompetitionEvent event;
   final VoidCallback onTap;
   final VoidCallback onAddPlan;
+  final VoidCallback onJoinedTap;
+  final bool joined;
+  final bool isAdding;
 
   const CompetitionStudentEventCard({
     super.key,
     required this.event,
     required this.onTap,
     required this.onAddPlan,
+    required this.onJoinedTap,
+    this.joined = false,
+    this.isAdding = false,
   });
 
   @override
@@ -97,6 +103,18 @@ class CompetitionStudentEventCard extends StatelessWidget {
                   ),
                 ),
               ],
+              if (event.fitReasons.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  event.fitReasons.join(' · '),
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: CompetitionUiTokens.accent(isDark),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -118,9 +136,23 @@ class CompetitionStudentEventCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   FilledButton.icon(
-                    onPressed: onAddPlan,
-                    icon: const Icon(Icons.add_rounded, size: 17),
-                    label: const Text('加入计划'),
+                    onPressed: isAdding
+                        ? null
+                        : joined
+                            ? onJoinedTap
+                            : onAddPlan,
+                    icon: isAdding
+                        ? const SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(joined ? Icons.check_rounded : Icons.add_rounded,
+                            size: 17),
+                    label: Text(isAdding
+                        ? '加入中'
+                        : joined
+                            ? '已加入'
+                            : '加入计划'),
                     style: FilledButton.styleFrom(
                       backgroundColor: CompetitionUiTokens.accent(isDark),
                       foregroundColor: Colors.white,

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"unicode/utf8"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -1047,11 +1048,7 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 	h.db.Model(&post).UpdateColumn("view_count", gorm.Expr("view_count + 1"))
 	post.ViewCount++
 
-	if userID, exists := c.Get("user_id"); exists {
-		var count int64
-		h.db.Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id = ?", userID.(uint), "post", post.ID).Count(&count)
-		post.IsLiked = count > 0
-	}
+
 
 	responsePosts := []models.Post{post}
 	h.hydratePosts(c, responsePosts, time.Now())
@@ -1146,7 +1143,12 @@ func (h *PostHandler) Update(c *gin.Context) {
 				var origTag models.WaterSectionTag
 				if err := tx.First(&origTag, *post.WaterTagID).Error; err == nil && origTag.ContentMode == models.WaterTagModeTeamRecruitment {
 					isOriginalTeam = true
-					tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("post_id = ?", post.ID).First(&originalRecruitment)
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("post_id = ?", post.ID).First(&originalRecruitment).Error; err != nil {
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							return fmt.Errorf("recruitment_missing")
+						}
+						return err
+					}
 				}
 			}
 

@@ -324,6 +324,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               teamRoles: _isTeamMode ? List<String>.from(_teamRoles) : null,
               teamDeadline: _isTeamMode ? _teamDeadline : null,
               sendTeamFields: _isTeamMode,
+              sendWaterTagField: true,
             )
           : await postProvider.createPost(
               boardId: 1,
@@ -610,22 +611,15 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     final selected = _selectedTagId == tag.id;
                     return GestureDetector(
                       onTap: () {
-                        // 编辑普通帖时禁止选择组队标签；编辑组队帖时只能选择当前标签。
-                        if (_isEditing) {
-                          if (_editingTeamMode && tag.id != _selectedTagId) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('发布后不能在普通帖子与组队招募之间切换')),
-                            );
-                            return;
-                          }
-                          if (!_editingTeamMode && tag.isTeamRecruitment) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('发布后不能在普通帖子与组队招募之间切换')),
-                            );
-                            return;
-                          }
+                        // 编辑组队帖时，当前标签只读锁定。
+                        if (_editingTeamMode) return;
+                        // 编辑普通帖时禁止选择组队标签。
+                        if (_isEditing && tag.isTeamRecruitment) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('发布后不能在普通帖子与组队招募之间切换')),
+                          );
+                          return;
                         }
                         setState(() {
                           _selectedTagId = selected ? null : tag.id;

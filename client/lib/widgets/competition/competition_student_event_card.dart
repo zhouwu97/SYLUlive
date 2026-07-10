@@ -58,9 +58,7 @@ class CompetitionStudentEventCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   _solidPill(
-                    event.recommendationLevel.isEmpty
-                        ? 'B'
-                        : event.recommendationLevel,
+                    '人工 ${event.recommendationLevel.trim().isEmpty ? 'B' : event.recommendationLevel.trim()}',
                     CompetitionUiTokens.accent(isDark),
                     isDark,
                   ),
@@ -73,8 +71,18 @@ class CompetitionStudentEventCard extends StatelessWidget {
                 children: [
                   if (event.competitionLevel.isNotEmpty)
                     _softPill(event.competitionLevel, isDark),
-                  if (event.schoolRecognitionGrade.isNotEmpty)
-                    _softPill('学校目录 ${event.schoolRecognitionGrade}', isDark),
+                  if (event.schoolRecognitionStatus == 'recognized')
+                    _softPill(
+                        event.schoolRecognitionGrade.trim().isEmpty
+                            ? '校认'
+                            : '校认 ${event.schoolRecognitionGrade.trim()}',
+                        isDark)
+                  else if (event.schoolRecognitionStatus == 'pending')
+                    _softPill('校认待定', isDark)
+                  else if (event.schoolRecognitionStatus == 'not_recognized')
+                    _softPill('校不认', isDark)
+                  else
+                    _softPill('校认未知', isDark),
                   if (event.primaryCategory != null)
                     _softPill(event.primaryCategory!.name, isDark),
                 ],
@@ -124,8 +132,6 @@ class CompetitionStudentEventCard extends StatelessWidget {
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        if (event.schoolRecognitionStatus == 'recognized')
-                          _outlinePill('学校认定', isDark),
                         if (event.participationType.isNotEmpty)
                           _outlinePill(event.participationType, isDark),
                         ...event.tags

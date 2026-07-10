@@ -670,11 +670,8 @@ func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
 		pageSize = 20
 	}
 	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory")
-	if status := strings.TrimSpace(c.Query("status")); status != "" && status != "all" {
-		query = query.Where("status = ?", status)
-	}
-	query = h.applyMaintenanceFilters(c, query)
-	query = h.applyEventFilters(c, query)
+	filter := parseAdminFilterFromQuery(c)
+	query = applyAdminCompetitionFilter(query, filter, time.Now())
 	var total int64
 	query.Count(&total)
 	var events []models.CompetitionEvent
@@ -697,9 +694,39 @@ func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
 	})
 }
 
-func (h *CompetitionHandler) applyMaintenanceFilters(c *gin.Context, query *gorm.DB) *gorm.DB {
-	now := time.Now()
-	switch strings.TrimSpace(c.Query("maintenance_status")) {
+func parseAdminFilterFromQuery(c *gin.Context) adminCompetitionFilter {
+	filter := adminCompetitionFilter{
+		Status:            strings.TrimSpace(c.Query("status")),
+		MaintenanceStatus: strings.TrimSpace(c.Query("maintenance_status")),
+		CategorySlug:      strings.TrimSpace(c.Query("category_slug")),
+		Keyword:           strings.TrimSpace(strings.ToLower(c.Query("keyword"))),
+	}
+	if recStr := strings.TrimSpace(c.Query("recommendation_level")); recStr != "" {
+		filter.RecommendationLevels = strings.Split(recStr, ",")
+	}
+	return filter
+}
+
+func applyAdminCompetitionFilter(query *gorm.DB, filter adminCompetitionFilter, now time.Time) *gorm.DB {
+	if filter.Status != "" && filter.Status != "all" {
+		query = query.Where("status = ?", filter.Status)
+	}
+
+	if filter.Keyword != "" {
+		like := "%" + filter.Keyword + "%"
+		query = query.Where("(LOWER(title) LIKE ? OR LOWER(organizer) LIKE ? OR LOWER(CAST(tags AS TEXT)) LIKE ?)", like, like, like)
+	}
+
+	if filter.CategorySlug != "" {
+		query = query.Joins("JOIN competition_categories cc ON cc.id = competition_events.primary_category_id").
+			Where("cc.slug = ?", filter.CategorySlug)
+	}
+
+	if len(filter.RecommendationLevels) > 0 {
+		query = query.Where("recommendation_level IN ?", filter.RecommendationLevels)
+	}
+
+	switch filter.MaintenanceStatus {
 	case "time_pending":
 		query = query.Where("registration_end IS NULL").
 			Where("time_status IN ?", []string{"pending", "historical", "estimated"})
@@ -717,6 +744,13 @@ func (h *CompetitionHandler) applyMaintenanceFilters(c *gin.Context, query *gorm
 		query = query.Where("registration_end IS NOT NULL AND registration_end BETWEEN ? AND ?", now, now.AddDate(0, 0, 14))
 	case "expired":
 		query = query.Where("COALESCE(event_end, registration_end, event_start) < ?", now)
+	case "unverified":
+		query = query.Where(
+			"(is_verified = ? OR time_status = ? OR school_recognition_status = ?)",
+			false,
+			"pending",
+			"pending",
+		)
 	}
 	return query
 }
@@ -957,9 +991,26 @@ func checkEventStatusTransition(currentStatus, action string) (string, error) {
 	}
 }
 
-type batchActionInput struct {
-	IDs    []uint `json:"ids"`
-	Action string `json:"action"`
+type adminCompetitionFilter struct {
+	Status               string   `json:"status"`
+	MaintenanceStatus    string   `json:"maintenance_status"`
+	CategorySlug         string   `json:"category_slug"`
+	RecommendationLevels []string `json:"recommendation_levels"`
+	Keyword              string   `json:"keyword"`
+}
+
+type adminBatchSelection struct {
+	Mode        string                 `json:"mode"`
+	IDs         []uint                 `json:"ids,omitempty"`
+	ExcludedIDs []uint                 `json:"excluded_ids,omitempty"`
+	Filters     adminCompetitionFilter `json:"filters,omitempty"`
+}
+
+type adminBatchActionInput struct {
+	Action    string               `json:"action"`
+	IDs       []uint               `json:"ids,omitempty"`
+	Selection *adminBatchSelection `json:"selection,omitempty"`
+	DryRun    bool                 `json:"dry_run,omitempty"`
 }
 
 type batchSkippedDetail struct {
@@ -972,69 +1023,108 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var input batchActionInput
+	var input adminBatchActionInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
-	if len(input.IDs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择比赛"})
-		return
-	}
-	if len(input.IDs) > 200 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "单次批量操作最多 200 项"})
+
+	var targetIDs []uint
+	var totalMatched int64
+
+	if input.Selection != nil && input.Selection.Mode == "query" {
+		queryCount := applyAdminCompetitionFilter(h.db.Model(&models.CompetitionEvent{}), input.Selection.Filters, time.Now())
+		if err := queryCount.Count(&totalMatched).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "计算匹配数量失败"})
+			return
+		}
+		
+		if totalMatched > 5000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "单次查询模式批量操作最多匹配 5000 项"})
+			return
+		}
+
+		query := applyAdminCompetitionFilter(h.db.Model(&models.CompetitionEvent{}), input.Selection.Filters, time.Now())
+		if len(input.Selection.ExcludedIDs) > 0 {
+			query = query.Where("id NOT IN ?", input.Selection.ExcludedIDs)
+		}
+		
+		if err := query.Pluck("id", &targetIDs).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询匹配数据失败"})
+			return
+		}
+	} else if input.Selection != nil && input.Selection.Mode == "ids" {
+		targetIDs = input.Selection.IDs
+		totalMatched = int64(len(targetIDs))
+	} else if len(input.IDs) > 0 {
+		targetIDs = input.IDs // legacy fallback
+		totalMatched = int64(len(targetIDs))
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供批量操作目标"})
 		return
 	}
 
-	uniqueIDs := make(map[uint]struct{}, len(input.IDs))
+	if len(targetIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"matched_count": totalMatched, "requested_count": 0, "success_count": 0, "skipped_count": 0, "skipped_reasons": []interface{}{}, "skipped": []interface{}{},
+		})
+		return
+	}
+	
+	if (input.Selection == nil || input.Selection.Mode != "query") && len(targetIDs) > 200 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "单次 IDs 模式批量操作最多 200 项"})
+		return
+	}
+
+	uniqueIDs := make(map[uint]struct{}, len(targetIDs))
 	var cleanIDs []uint
-	for _, id := range input.IDs {
+	for _, id := range targetIDs {
 		if _, exists := uniqueIDs[id]; !exists {
 			uniqueIDs[id] = struct{}{}
 			cleanIDs = append(cleanIDs, id)
 		}
 	}
 
-	if input.Action == "verify" {
-		if err := h.adminBatchVerify(c, cleanIDs, userID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
+	type batchEventState struct {
+		ID     uint
+		Status string
+	}
+	var states []batchEventState
+	if err := h.db.Model(&models.CompetitionEvent{}).Select("id", "status").Where("id IN ?", cleanIDs).Find(&states).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询比赛状态失败"})
 		return
 	}
 
-	var events []models.CompetitionEvent
-	if err := h.db.Where("id IN ?", cleanIDs).Find(&events).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询比赛失败"})
-		return
-	}
-
-	foundIDs := make(map[uint]bool)
-	for _, event := range events {
-		foundIDs[event.ID] = true
+	foundIDs := make(map[uint]string, len(states))
+	for _, st := range states {
+		foundIDs[st.ID] = st.Status
 	}
 
 	var skipped []batchSkippedDetail
 	var toUpdateIDs []uint
 	var toDeleteIDs []uint
+	var toVerifyIDs []uint
 	newStatus := ""
+	
+	reasonCounts := make(map[string]int)
 
 	for _, id := range cleanIDs {
-		if !foundIDs[id] {
+		status, exists := foundIDs[id]
+		if !exists {
 			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: "比赛不存在或已删除"})
+			reasonCounts["比赛不存在或已删除"]++
 			continue
 		}
 		
-		var event models.CompetitionEvent
-		for _, e := range events {
-			if e.ID == id {
-				event = e
-				break
-			}
+		if input.Action == "verify" {
+			toVerifyIDs = append(toVerifyIDs, id)
+			continue
 		}
 
-		targetStatus, err := checkEventStatusTransition(event.Status, input.Action)
+		targetStatus, err := checkEventStatusTransition(status, input.Action)
 		if err != nil {
 			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: err.Error()})
+			reasonCounts[err.Error()]++
 			continue
 		}
 
@@ -1045,29 +1135,72 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 			toUpdateIDs = append(toUpdateIDs, id)
 		}
 	}
-
-	if len(toDeleteIDs) > 0 {
-		h.db.Transaction(func(tx *gorm.DB) error {
-			tx.Model(&models.CompetitionEvent{}).Where("id IN ?", toDeleteIDs).UpdateColumn("updated_by", userID)
-			return tx.Where("id IN ?", toDeleteIDs).Delete(&models.CompetitionEvent{}).Error
+	
+	var skippedReasons []map[string]interface{}
+	for reason, count := range reasonCounts {
+		skippedReasons = append(skippedReasons, map[string]interface{}{
+			"reason": reason, "count": count,
 		})
 	}
 
-	if len(toUpdateIDs) > 0 {
-		updates := map[string]interface{}{"status": newStatus, "updated_by": userID}
-		if newStatus == "archived" {
-			now := time.Now()
-			updates["archived_at"] = &now
-		} else if newStatus == "draft" || newStatus == "published" {
-			updates["archived_at"] = gorm.Expr("NULL")
+	if input.DryRun {
+		c.JSON(http.StatusOK, gin.H{
+			"matched_count":   totalMatched,
+			"requested_count": len(cleanIDs),
+			"success_count":   len(toUpdateIDs) + len(toDeleteIDs) + len(toVerifyIDs),
+			"skipped_count":   len(skipped),
+			"skipped_reasons": skippedReasons,
+			"skipped":         skipped,
+		})
+		return
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if len(toDeleteIDs) > 0 {
+			if err := tx.Model(&models.CompetitionEvent{}).Where("id IN ?", toDeleteIDs).UpdateColumn("updated_by", userID).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", toDeleteIDs).Delete(&models.CompetitionEvent{}).Error; err != nil {
+				return err
+			}
 		}
-		h.db.Model(&models.CompetitionEvent{}).Where("id IN ?", toUpdateIDs).Updates(updates)
+
+		if len(toUpdateIDs) > 0 {
+			updates := map[string]interface{}{"status": newStatus, "updated_by": userID}
+			if newStatus == "archived" {
+				now := time.Now()
+				updates["archived_at"] = &now
+			} else if newStatus == "draft" || newStatus == "published" {
+				updates["archived_at"] = gorm.Expr("NULL")
+			}
+			if err := tx.Model(&models.CompetitionEvent{}).Where("id IN ?", toUpdateIDs).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		
+		if len(toVerifyIDs) > 0 {
+			now := time.Now()
+			if err := tx.Model(&models.CompetitionEvent{}).Where("id IN ?", toVerifyIDs).Updates(map[string]interface{}{
+				"is_verified": true, "verified_by": userID, "verified_at": &now,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量操作失败"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success_count": len(toUpdateIDs) + len(toDeleteIDs),
-		"skipped_count": len(skipped),
-		"skipped":       skipped,
+		"matched_count":   totalMatched,
+		"requested_count": len(cleanIDs),
+		"success_count":   len(toUpdateIDs) + len(toDeleteIDs) + len(toVerifyIDs),
+		"skipped_count":   len(skipped),
+		"skipped_reasons": skippedReasons,
+		"skipped":         skipped,
 	})
 }
 
@@ -2031,4 +2164,110 @@ func (h *CompetitionHandler) AdminGetImportBatch(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, batch)
+}
+
+type batchCalendarItemActionInput struct {
+	IDs        []uint `json:"ids"`
+	Action     string `json:"action"`
+	PlanStatus string `json:"plan_status,omitempty"`
+}
+
+func (h *CompetitionHandler) BatchCalendarItemAction(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	var input batchCalendarItemActionInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	if len(input.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择计划项目"})
+		return
+	}
+
+	uniqueIDs := make(map[uint]struct{}, len(input.IDs))
+	var cleanIDs []uint
+	for _, id := range input.IDs {
+		if _, exists := uniqueIDs[id]; !exists {
+			uniqueIDs[id] = struct{}{}
+			cleanIDs = append(cleanIDs, id)
+		}
+	}
+	if len(cleanIDs) > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "单次最多批量操作 1000 项"})
+		return
+	}
+
+	var items []models.UserCompetitionCalendarItem
+	if err := h.db.Where("id IN ? AND user_id = ?", cleanIDs, userID).Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询计划项目失败"})
+		return
+	}
+
+	foundIDs := make(map[uint]bool)
+	for _, it := range items {
+		foundIDs[it.ID] = true
+	}
+
+	var skipped []batchSkippedDetail
+	var toUpdateIDs []uint
+	var toDeleteIDs []uint
+	newStatus := ""
+
+	for _, id := range cleanIDs {
+		if !foundIDs[id] {
+			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: "项目不存在或无权限"})
+			continue
+		}
+
+		switch input.Action {
+		case "set_plan_status":
+			validStatuses := map[string]bool{"watching": true, "preparing": true, "registered": true, "submitted": true, "finished": true, "archived": true}
+			if !validStatuses[input.PlanStatus] {
+				skipped = append(skipped, batchSkippedDetail{ID: id, Reason: "无效的计划状态"})
+				continue
+			}
+			newStatus = input.PlanStatus
+			toUpdateIDs = append(toUpdateIDs, id)
+		case "archive":
+			newStatus = "archived"
+			toUpdateIDs = append(toUpdateIDs, id)
+		case "restore":
+			newStatus = "watching"
+			toUpdateIDs = append(toUpdateIDs, id)
+		case "delete":
+			toDeleteIDs = append(toDeleteIDs, id)
+		default:
+			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: "未知的操作"})
+		}
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if len(toDeleteIDs) > 0 {
+			if err := tx.Where("id IN ?", toDeleteIDs).Delete(&models.UserCompetitionCalendarItem{}).Error; err != nil {
+				return err
+			}
+		}
+
+		if len(toUpdateIDs) > 0 {
+			updates := map[string]interface{}{"plan_status": newStatus, "is_custom_modified": true}
+			if err := tx.Model(&models.UserCompetitionCalendarItem{}).Where("id IN ?", toUpdateIDs).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量操作失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success_count": len(toUpdateIDs) + len(toDeleteIDs),
+		"skipped_count": len(skipped),
+		"skipped":       skipped,
+	})
 }

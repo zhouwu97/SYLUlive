@@ -9,10 +9,12 @@ class AdminWaterIconReviewScreen extends StatefulWidget {
   const AdminWaterIconReviewScreen({super.key});
 
   @override
-  State<AdminWaterIconReviewScreen> createState() => _AdminWaterIconReviewScreenState();
+  State<AdminWaterIconReviewScreen> createState() =>
+      _AdminWaterIconReviewScreenState();
 }
 
-class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen> {
+class _AdminWaterIconReviewScreenState
+    extends State<AdminWaterIconReviewScreen> {
   List<WaterSectionIconReview> _reviews = [];
   bool _isLoading = true;
   String _statusFilter = 'pending';
@@ -29,7 +31,8 @@ class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen>
       final provider = context.read<WaterSectionProvider>();
       final service = provider.iconReviewService;
       if (service == null) return;
-      final reviews = await service.adminListSectionIconReviews(status: _statusFilter);
+      final reviews =
+          await service.adminListSectionIconReviews(status: _statusFilter);
       if (mounted) {
         setState(() {
           _reviews = reviews;
@@ -37,14 +40,16 @@ class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加载失败: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('加载失败: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _handleReview(WaterSectionIconReview review, bool isApprove) async {
+  Future<void> _handleReview(
+      WaterSectionIconReview review, bool isApprove) async {
     final reasonController = TextEditingController();
     final bool? confirm = await showDialog<bool>(
       context: context,
@@ -71,7 +76,8 @@ class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen>
           FilledButton(
             onPressed: () {
               if (reasonController.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('必须填写处理原因')));
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('必须填写处理原因')));
                 return;
               }
               Navigator.pop(context, true);
@@ -88,17 +94,22 @@ class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen>
       final provider = context.read<WaterSectionProvider>();
       final service = provider.iconReviewService;
       if (service == null) return;
-      
+
       if (isApprove) {
-        await service.adminApproveSectionIconReview(review.id, reasonController.text.trim());
+        await service.adminApproveSectionIconReview(
+            review.id, reasonController.text.trim());
       } else {
-        await service.adminRejectSectionIconReview(review.id, reasonController.text.trim());
+        await service.adminRejectSectionIconReview(
+            review.id, reasonController.text.trim());
       }
-      
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('处理成功')));
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('处理成功')));
       _loadReviews();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('处理失败: $e')));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('处理失败: $e')));
     }
   }
 
@@ -138,7 +149,9 @@ class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen>
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                        side: BorderSide(
+                            color:
+                                Theme.of(context).colorScheme.outlineVariant),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -149,31 +162,40 @@ class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen>
                               children: [
                                 Text(
                                   review.sectionTitle,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16),
                                 ),
                                 const Spacer(),
                                 _buildStatusChip(review.status),
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Text('申请人: ${review.requesterName ?? "未知"} (ID: ${review.requestedBy})'),
+                            Text(
+                                '申请人: ${review.requesterName ?? "未知"} (ID: ${review.requestedBy})'),
                             const SizedBox(height: 4),
-                            Text('申请理由: ${review.reason}', style: const TextStyle(color: Colors.grey)),
+                            Text('申请理由: ${review.reason}',
+                                style: const TextStyle(color: Colors.grey)),
                             const SizedBox(height: 16),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
                                 Column(
                                   children: [
-                                    const Text('旧头像', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                    const Text('旧头像',
+                                        style: TextStyle(
+                                            fontSize: 12, color: Colors.grey)),
                                     const SizedBox(height: 4),
                                     _buildAvatar(review.oldAvatarUrl),
                                   ],
                                 ),
-                                const Icon(Icons.arrow_forward, color: Colors.grey),
+                                const Icon(Icons.arrow_forward,
+                                    color: Colors.grey),
                                 Column(
                                   children: [
-                                    const Text('新头像', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                    const Text('新头像',
+                                        style: TextStyle(
+                                            fontSize: 12, color: Colors.grey)),
                                     const SizedBox(height: 4),
                                     _buildAvatar(review.newAvatarUrl),
                                   ],
@@ -186,13 +208,16 @@ class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen>
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
                                   TextButton(
-                                    onPressed: () => _handleReview(review, false),
-                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    onPressed: () =>
+                                        _handleReview(review, false),
+                                    style: TextButton.styleFrom(
+                                        foregroundColor: Colors.red),
                                     child: const Text('拒绝'),
                                   ),
                                   const SizedBox(width: 8),
                                   FilledButton(
-                                    onPressed: () => _handleReview(review, true),
+                                    onPressed: () =>
+                                        _handleReview(review, true),
                                     child: const Text('通过'),
                                   ),
                                 ],
@@ -203,10 +228,13 @@ class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen>
                               Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Text('审核回复: ${review.reviewReason}', style: const TextStyle(fontSize: 13)),
+                                child: Text('审核回复: ${review.reviewReason}',
+                                    style: const TextStyle(fontSize: 13)),
                               ),
                             ],
                           ],
@@ -276,7 +304,8 @@ class _AdminWaterIconReviewScreenState extends State<AdminWaterIconReviewScreen>
       ),
       child: Text(
         text,
-        style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.bold),
+        style:
+            TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.bold),
       ),
     );
   }

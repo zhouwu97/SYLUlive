@@ -517,8 +517,20 @@ class MainActivity : FlutterActivity() {
                         }
                         result.success(true)
                     }
+                    "clearGradeUpdateNotifications" -> {
+                        GradeReminderScheduler.clearAllGradeUpdateNotifications(this)
+                        result.success(true)
+                    }
                     "openGradeNotificationSettings" -> {
                         result.success(GradeReminderScheduler.openNotificationSettings(this))
+                    }
+                    "ensureGradeReminderScheduled" -> {
+                        GradeReminderScheduler.ensureScheduledIfEnabled(this)
+                        result.success(true)
+                    }
+                    "runGradeReminderCheckNow" -> {
+                        GradeReminderScheduler.runCheckNow(this)
+                        result.success(true)
                     }
                     else -> result.notImplemented()
                 }

@@ -31,7 +31,8 @@ class EvaluationAutomationBar extends StatelessWidget {
     );
   }
 
-  Widget _buildIdleBar(BuildContext context, EvaluationAutomationProgress progress, bool isDark) {
+  Widget _buildIdleBar(BuildContext context,
+      EvaluationAutomationProgress progress, bool isDark) {
     final state = progress.state;
     String statusText = '空闲';
     Color statusColor = isDark ? Colors.white70 : Colors.black87;
@@ -68,13 +69,16 @@ class EvaluationAutomationBar extends StatelessWidget {
                 Expanded(
                   child: Text(
                     statusText,
-                    style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: statusColor, fontWeight: FontWeight.bold),
                   ),
                 ),
                 if (progress.completedCount > 0)
                   Text(
                     '已处理: ${progress.completedCount} 项',
-                    style: TextStyle(color: isDark ? Colors.grey[400] : Colors.grey[600], fontSize: 12),
+                    style: TextStyle(
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        fontSize: 12),
                   ),
               ],
             ),
@@ -116,7 +120,8 @@ class EvaluationAutomationBar extends StatelessWidget {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () async {
-                      final confirm = await _showSubmitConfirmDialog(context, isDark);
+                      final confirm =
+                          await _showSubmitConfirmDialog(context, isDark);
                       if (confirm == true) {
                         controller.startBatch(submitMode: true);
                       }
@@ -136,7 +141,8 @@ class EvaluationAutomationBar extends StatelessWidget {
     );
   }
 
-  Widget _buildRunningBar(BuildContext context, EvaluationAutomationProgress progress, bool isDark) {
+  Widget _buildRunningBar(BuildContext context,
+      EvaluationAutomationProgress progress, bool isDark) {
     final isPaused = progress.state == EvaluationAutomationState.paused;
     final isPauseRequested = progress.pauseRequested;
 
@@ -180,8 +186,7 @@ class EvaluationAutomationBar extends StatelessWidget {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                if (!isPaused && !isPauseRequested)
-                  const SizedBox(width: 12),
+                if (!isPaused && !isPauseRequested) const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     progress.message ?? '运行中...',
@@ -207,7 +212,9 @@ class EvaluationAutomationBar extends StatelessWidget {
                 else
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: isPauseRequested ? null : () => controller.pauseBatch(),
+                      onPressed: isPauseRequested
+                          ? null
+                          : () => controller.pauseBatch(),
                       icon: const Icon(Icons.pause),
                       label: Text(isPauseRequested ? '暂停中...' : '暂停'),
                     ),

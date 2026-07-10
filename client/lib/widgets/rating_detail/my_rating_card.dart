@@ -78,8 +78,9 @@ class MyRatingCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 12,
-                backgroundColor:
-                    isDark ? accent.withValues(alpha: 0.18) : accent.withValues(alpha: 0.08),
+                backgroundColor: isDark
+                    ? accent.withValues(alpha: 0.18)
+                    : accent.withValues(alpha: 0.08),
                 child: Text(
                   '我',
                   style: TextStyle(

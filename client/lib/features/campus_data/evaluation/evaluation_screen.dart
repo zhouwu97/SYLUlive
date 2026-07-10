@@ -35,7 +35,8 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
   @override
   void initState() {
     super.initState();
-    _automationCtrl = EvaluationAutomationController(webViewController: _evalCtrl);
+    _automationCtrl =
+        EvaluationAutomationController(webViewController: _evalCtrl);
     _evalCtrl.onPageTypeChanged = _onPageTypeChanged;
     _evalCtrl.onFillCompleted = _onFillCompleted;
     _evalCtrl.onError = _onError;
@@ -94,7 +95,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
 
     setState(() {}); // Show loading if needed? Actually let probe happen
     final type = await _evalCtrl.probePage();
-    
+
     if (type != EvaluationPageType.evaluationForm) {
       _onError('未检测到足够的评价项，请先在网页中选择一门待评价课程。');
       return;
@@ -174,8 +175,8 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageType = _evalCtrl.currentPageType;
-    final isEvaluationPath = _currentUrl?.host == 'jxw.sylu.edu.cn' && 
-                             _currentUrl?.path.contains('/xspjgl/') == true;
+    final isEvaluationPath = _currentUrl?.host == 'jxw.sylu.edu.cn' &&
+        _currentUrl?.path.contains('/xspjgl/') == true;
     final canFill = isEvaluationPath && !_evalCtrl.isFilling;
 
     return Scaffold(
@@ -517,13 +518,13 @@ class EvaluationResultSheet {
                     hasError
                         ? Icons.error_outline
                         : result.hasUnresolved
-                        ? Icons.warning_amber_rounded
-                        : Icons.check_circle_outline,
+                            ? Icons.warning_amber_rounded
+                            : Icons.check_circle_outline,
                     color: hasError
                         ? Colors.red
                         : result.hasUnresolved
-                        ? Colors.orange
-                        : Colors.green,
+                            ? Colors.orange
+                            : Colors.green,
                     size: 28,
                   ),
                   const SizedBox(width: 12),
@@ -543,23 +544,31 @@ class EvaluationResultSheet {
                 Text(result.error!, style: const TextStyle(color: Colors.red))
               else ...[
                 if (result.radioTotalGroups > 0) ...[
-                  _ResultRow(label: '单选评价项', value: '${result.radioTotalGroups} 组'),
-                  _ResultRow(label: '单选已填写', value: '${result.radioCompletedGroups} 组'),
+                  _ResultRow(
+                      label: '单选评价项', value: '${result.radioTotalGroups} 组'),
+                  _ResultRow(
+                      label: '单选已填写',
+                      value: '${result.radioCompletedGroups} 组'),
                 ],
                 if (result.scoreInputCount > 0) ...[
-                  _ResultRow(label: '评分输入框', value: '${result.scoreInputCount} 项'),
-                  _ResultRow(label: '评分已填写', value: '${result.scoreInputCompletedCount} 项'),
+                  _ResultRow(
+                      label: '评分输入框', value: '${result.scoreInputCount} 项'),
+                  _ResultRow(
+                      label: '评分已填写',
+                      value: '${result.scoreInputCompletedCount} 项'),
                 ],
                 if (result.hasUnresolved)
                   _ResultRow(
                     label: '无法识别',
-                    value: '${result.unresolvedRadioGroups.length + result.unresolvedScoreInputs.length} 项',
+                    value:
+                        '${result.unresolvedRadioGroups.length + result.unresolvedScoreInputs.length} 项',
                   ),
                 if (result.optionalCommentCount > 0) ...[
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.edit_note, size: 18, color: Colors.orange),
+                      const Icon(Icons.edit_note,
+                          size: 18, color: Colors.orange),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
@@ -576,9 +585,7 @@ class EvaluationResultSheet {
                     '提示',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  ...result.warnings
-                      .take(3)
-                      .map(
+                  ...result.warnings.take(3).map(
                         (w) => Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
@@ -615,7 +622,7 @@ class EvaluationResultSheet {
                         child: Text(
                           result.hasUnresolved
                               ? '已填写，另有 '
-                                    '${result.unresolvedRadioGroups.length + result.unresolvedScoreInputs.length} 项无法可靠判断，请手动完成。'
+                                  '${result.unresolvedRadioGroups.length + result.unresolvedScoreInputs.length} 项无法可靠判断，请手动完成。'
                               : '已自动填写，请检查后在官方页面中提交。',
                           style: const TextStyle(
                             color: Colors.blue,

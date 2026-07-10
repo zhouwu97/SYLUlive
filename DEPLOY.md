@@ -422,6 +422,20 @@ systemctl status shenliyuan
 # 查
 `
 ## 数据库引擎切换与迁移
+
+### 竞赛计划官方条目去重迁移（20260710_01）
+
+竞赛计划条件唯一索引不由 `AutoMigrate` 创建。部署包含该版本的后端前，必须先完成数据库备份，并在 `server` 目录按顺序执行：
+
+```bash
+# 1. 只读检查，输出重复组、保留 ID 和待软删除 ID
+go run ./cmd/migrate_competition_calendar
+
+# 2. 人工核对报告并确认备份后执行
+go run ./cmd/migrate_competition_calendar --apply --backup-confirmed
+```
+
+迁移按 `is_custom_modified DESC, is_pinned DESC, updated_at DESC, id DESC` 保留记录，并创建只约束有效官方副本的条件唯一索引。迁移完成前，新后端会因只读约束校验失败而拒绝启动；不要通过删除校验绕过迁移。
 `
 代码层面已经原生支持了 PostgreSQL。在 server/cmd/main.go 中，系统会通过判断环境变量 DSN 是否包含 host= 或 port= 来自动决定使用哪个数据库驱动。
 `

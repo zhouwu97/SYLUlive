@@ -8,10 +8,12 @@ class AdminFeaturedApplicationsScreen extends StatefulWidget {
   const AdminFeaturedApplicationsScreen({super.key});
 
   @override
-  State<AdminFeaturedApplicationsScreen> createState() => _AdminFeaturedApplicationsScreenState();
+  State<AdminFeaturedApplicationsScreen> createState() =>
+      _AdminFeaturedApplicationsScreenState();
 }
 
-class _AdminFeaturedApplicationsScreenState extends State<AdminFeaturedApplicationsScreen> {
+class _AdminFeaturedApplicationsScreenState
+    extends State<AdminFeaturedApplicationsScreen> {
   List<dynamic> _featuredApplications = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -90,7 +92,8 @@ class _AdminFeaturedApplicationsScreenState extends State<AdminFeaturedApplicati
                     value: points,
                     isExpanded: true,
                     items: [0, 2, 5, 10]
-                        .map((e) => DropdownMenuItem(value: e, child: Text('$e分')))
+                        .map((e) =>
+                            DropdownMenuItem(value: e, child: Text('$e分')))
                         .toList(),
                     onChanged: (val) {
                       if (val != null) setState(() => points = val);
@@ -188,11 +191,13 @@ class _AdminFeaturedApplicationsScreenState extends State<AdminFeaturedApplicati
     return RefreshIndicator(
       onRefresh: _loadData,
       child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics()),
         padding: const EdgeInsets.all(16),
         itemCount: _featuredApplications.length,
         itemBuilder: (context, index) {
-          final item = Map<String, dynamic>.from(_featuredApplications[index] as Map);
+          final item =
+              Map<String, dynamic>.from(_featuredApplications[index] as Map);
           final post = item['post'] as Map?;
           final applicant = item['applicant'] as Map?;
           return Card(
@@ -234,7 +239,8 @@ class _AdminFeaturedApplicationsScreenState extends State<AdminFeaturedApplicati
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => PostDetailScreen(postId: item['post_id']),
+                              builder: (_) =>
+                                  PostDetailScreen(postId: item['post_id']),
                             ),
                           );
                         },

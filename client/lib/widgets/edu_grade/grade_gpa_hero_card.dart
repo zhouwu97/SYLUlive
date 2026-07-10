@@ -22,8 +22,8 @@ class GradeGpaHeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: isDrawerMode 
-          ? const EdgeInsets.symmetric(horizontal: 0) 
+      padding: isDrawerMode
+          ? const EdgeInsets.symmetric(horizontal: 0)
           : const EdgeInsets.fromLTRB(16, 10, 16, 8),
       child: Container(
         padding: const EdgeInsets.all(16),

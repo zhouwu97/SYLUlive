@@ -69,9 +69,23 @@ class AuthProvider extends ChangeNotifier {
           handler.next(options);
         },
         onError: (error, handler) {
-          if (error.response?.statusCode == 401 && _token != null) {
+          final status = error.response?.statusCode;
+          final rawPath = error.requestOptions.path;
+          final uriPath = error.requestOptions.uri.path;
+
+          final isEduApi = rawPath.startsWith('/edu/') ||
+              uriPath.startsWith('/edu/') ||
+              uriPath.startsWith('/api/edu/');
+
+          if (status == 401 && _token != null) {
+            if (isEduApi) {
+              // 教务登录态失效，不代表 App 登录失效
+              handler.next(error);
+              return;
+            }
+
             // 无效令牌，自动登出
-            debugPrint('检测到 401，自动登出');
+            debugPrint('检测到 App 401，自动登出');
             // 统一走 _clearLocalSession，与手动退出相同路径
             // 不 await — 拦截器内部不能阻塞
             _clearLocalSession(clearPushAlias: true);
@@ -143,6 +157,7 @@ class AuthProvider extends ChangeNotifier {
     await GradeReminderService.instance.syncRuntimeConfig(
       userId: _user?.id.toString(),
     );
+    await GradeReminderService.instance.ensureScheduledIfEnabled();
     notifyListeners();
   }
 
@@ -168,6 +183,7 @@ class AuthProvider extends ChangeNotifier {
     await GradeReminderService.instance.syncRuntimeConfig(
       userId: _user?.id.toString(),
     );
+    await GradeReminderService.instance.ensureScheduledIfEnabled();
   }
 
   Future<void> _saveEduPassword(String studentId, String password) async {

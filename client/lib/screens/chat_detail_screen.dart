@@ -449,7 +449,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: _buildTitle(),
-        backgroundColor: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+        backgroundColor:
+            isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
         foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -528,7 +529,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       child: Align(
         alignment: Alignment.centerLeft,
         child: DefaultTextStyle.merge(
-          style: TextStyle(color: isDark ? Colors.white : const Color(0xFF111827)),
+          style:
+              TextStyle(color: isDark ? Colors.white : const Color(0xFF111827)),
           child: _buildTitle(),
         ),
       ),

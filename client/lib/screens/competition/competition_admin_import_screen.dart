@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_const_constructors
+
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
@@ -10,7 +12,8 @@ import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 
-const _competitionCategorySlugHint = 'innovation_startup、computer_ai、electronic_info、smart_manufacturing_vehicle、art_design、business_economics、math_science、materials_chem_env、language_humanities、defense_security_other';
+const _competitionCategorySlugHint =
+    'innovation_startup、computer_ai、electronic_info、smart_manufacturing_vehicle、art_design、business_economics、math_science、materials_chem_env、language_humanities、defense_security_other';
 const _competitionAiPrompt = '''
 你是校园竞赛信息整理助手。请把我提供的比赛通知整理成校园 App 可导入的 JSON。
 
@@ -39,12 +42,15 @@ const _competitionAiPrompt = '''
       "competition_level": "国家级/省级/校级/企业赛/平台赛/其他",
       "school_recognition_status": "recognized/not_recognized/pending/unknown",
       "school_recognition_grade": "",
-      "recommendation_level": "S/A/B/C",
+      "recommendation_level": "S/A/B+/B/B-/C/D/E",
       "importance_score": 80,
       "recommendation_reason": "推荐理由，60字以内",
       "organizer": "主办方",
       "host_unit": "承办/指导单位，没有就空字符串",
       "target_audience": "参赛对象",
+      "eligible_entry_years": ["2023", "2024"],
+      "eligible_colleges": ["信息科学与工程学院"],
+      "eligible_majors": ["计算机科学与技术"],
       "participation_type": "个人/团队/个人或团队",
       "team_size_min": 1,
       "team_size_max": 5,
@@ -73,7 +79,7 @@ const _competitionAiPrompt = '''
 规则：
 1. 日期字段必须是 YYYY-MM-DD，不能确定就留空字符串。
 2. URL 必须是 http 或 https，不确定就留空字符串。
-3. recommendation_level 只能是 S/A/B/C。
+3. recommendation_level 只能是 S/A/B+/B/B-/C/D/E。
 4. school_recognition_status 只能是 recognized/not_recognized/pending/unknown。
 5. source_channel 优先用 college_notice、school_catalog、enterprise、platform。
 6. primary_category_slug 必须使用系统已有分类：$_competitionCategorySlugHint。
@@ -99,6 +105,9 @@ const _competitionAiExampleJson = '''
       "organizer": "相关主办单位",
       "host_unit": "",
       "target_audience": "在校大学生",
+      "eligible_entry_years": [],
+      "eligible_colleges": [],
+      "eligible_majors": [],
       "participation_type": "个人",
       "team_size_min": 1,
       "team_size_max": 1,
@@ -175,9 +184,6 @@ class _CompetitionAdminImportScreenState
       return;
     }
     if (_jsonController.text == _previewedJsonText) {
-      return;
-    }
-    if (_jsonFileName != null) {
       return;
     }
     setState(() {
@@ -282,23 +288,40 @@ class _CompetitionAdminImportScreenState
   }
 
   List<Map<String, dynamic>> get _draftEvents {
+    final normalizedItems = _preview?['items'];
+    if (normalizedItems is List) {
+      return normalizedItems
+          .asMap()
+          .entries
+          .where((entry) => entry.value is Map)
+          .map(
+        (entry) {
+          return Map<String, dynamic>.from(entry.value as Map)
+            ..['__preview_index'] = entry.key;
+        },
+      ).toList();
+    }
     if (_fileJsonPayload != null) {
       final events = _fileJsonPayload!['events'];
       if (events is! List) return [];
-      return events
-          .whereType<Map>()
-          .map((event) => Map<String, dynamic>.from(event))
-          .toList();
+      return events.asMap().entries.where((entry) => entry.value is Map).map(
+        (entry) {
+          return Map<String, dynamic>.from(entry.value as Map)
+            ..['__preview_index'] = entry.key;
+        },
+      ).toList();
     }
     try {
       final data = jsonDecode(_jsonController.text);
       if (data is! Map<String, dynamic>) return [];
       final events = data['events'];
       if (events is! List) return [];
-      return events
-          .whereType<Map>()
-          .map((event) => Map<String, dynamic>.from(event))
-          .toList();
+      return events.asMap().entries.where((entry) => entry.value is Map).map(
+        (entry) {
+          return Map<String, dynamic>.from(entry.value as Map)
+            ..['__preview_index'] = entry.key;
+        },
+      ).toList();
     } catch (_) {
       return [];
     }
@@ -334,6 +357,12 @@ class _CompetitionAdminImportScreenState
           return _draftValue(event, 'time_status') == 'confirmed';
         case 'warning':
           return _draftEventHasWarning(event);
+        case 'missing_url':
+          return _draftMissingOfficialUrl(event);
+        case 'category_invalid':
+          return _draftCategoryInvalid(event);
+        case 'recommendation_invalid':
+          return _draftRecommendationInvalid(event);
         default:
           return true;
       }
@@ -431,7 +460,7 @@ class _CompetitionAdminImportScreenState
         backgroundColor: _competitionBg,
         surfaceTintColor: Colors.transparent,
         centerTitle: true,
-        title: Text('AI 辅助导入比赛'),
+        title: Text('AI辅助导入比赛'),
       ),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 10, 16, 24),
@@ -446,7 +475,7 @@ class _CompetitionAdminImportScreenState
               minLines: 8,
               maxLines: 16,
               decoration: InputDecoration(
-                labelText: '第 2 步 粘贴 AI 结果',
+                labelText: '或粘贴 AI 结果',
                 hintText: '可以粘贴，也可以从上方选择 .json 文件',
                 filled: true,
                 fillColor: _cardBg,
@@ -535,7 +564,7 @@ class _CompetitionAdminImportScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '或者从文件导入',
+            '第 2 步：导入数据',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w900,
@@ -545,7 +574,7 @@ class _CompetitionAdminImportScreenState
           SizedBox(height: 6),
           Text(
             _jsonFileName == null
-                ? '适合 100 条以上的大 JSON，不用再复制粘贴。'
+                ? '选择 JSON 文件，或在下方直接粘贴 AI 结果。'
                 : '当前文件：$_jsonFileName',
             style: TextStyle(
               color: _competitionMuted,
@@ -608,7 +637,7 @@ class _CompetitionAdminImportScreenState
           ),
           SizedBox(height: 10),
           Text(
-            '把比赛通知发送给 AI，获取对应的 JSON。',
+            '生成标准 JSON 后先检查预览，不会直接写入正式比赛库。',
             style: TextStyle(
               color: _competitionMuted,
               fontSize: 13,
@@ -706,7 +735,7 @@ class _CompetitionAdminImportScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '预览结果',
+            '第 3 步：预览校验',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w900,
@@ -714,17 +743,7 @@ class _CompetitionAdminImportScreenState
             ),
           ),
           SizedBox(height: 10),
-          Row(
-            children: [
-              _previewPill('条目', '${_preview!['item_count'] ?? 0}'),
-              SizedBox(width: 8),
-              _previewPill('有效', '${_preview!['valid_count'] ?? 0}'),
-              SizedBox(width: 8),
-              _previewPill('错误', '${errors.length}'),
-              SizedBox(width: 8),
-              _previewPill('警告', '${warnings.length}'),
-            ],
-          ),
+          _buildValidationMetrics(draftEvents, errors, warnings),
           SizedBox(height: 12),
           _buildImportConclusionCard(draftEvents, errors, warnings),
           if (draftEvents.isNotEmpty) ...[
@@ -904,15 +923,102 @@ class _CompetitionAdminImportScreenState
     );
   }
 
+  Future<void> _commitSingle(int index) async {
+    try {
+      await context.read<AuthProvider>().dio.post(
+        '/admin/competitions/import-json/commit',
+        data: {
+          'batch_id': _batchId,
+          'selected_actions': [
+            {'index': index, 'action': 'create'}
+          ],
+        },
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '已保存为官方草稿');
+      Navigator.pop(context, true);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '保存草稿失败'),
+        isError: true,
+      );
+    }
+  }
+
+  Widget _buildValidationMetrics(
+    List<Map<String, dynamic>> events,
+    List<dynamic> errors,
+    List<dynamic> warnings,
+  ) {
+    final missingTime =
+        _countWhere(events, (event) => !_draftHasAnyTime(event));
+    final missingUrl = _countWhere(events, _draftMissingOfficialUrl);
+    final categoryInvalid = _countWhere(events, _draftCategoryInvalid);
+    final recommendationInvalid =
+        _countWhere(events, _draftRecommendationInvalid);
+    final validCount = (_preview?['valid_count'] as num?)?.toInt() ?? 0;
+    final total = (_preview?['item_count'] as num?)?.toInt() ?? events.length;
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _metricPill('总数', '$total', _competitionPrimary),
+        _metricPill('可保存', '$validCount', _competitionPrimary),
+        _metricPill('缺时间', '$missingTime', _competitionOrange),
+        _metricPill('缺官网', '$missingUrl', _competitionOrange),
+        _metricPill('分类异常', '$categoryInvalid', _competitionDanger),
+        _metricPill('推荐等级异常', '$recommendationInvalid', _competitionDanger),
+        if (errors.isNotEmpty)
+          _metricPill('错误', '${errors.length}', _competitionDanger),
+        if (warnings.isNotEmpty)
+          _metricPill('警告', '${warnings.length}', _competitionOrange),
+      ],
+    );
+  }
+
+  Widget _metricPill(String label, String value, Color color) {
+    return Container(
+      width: 96,
+      padding: EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          SizedBox(height: 3),
+          Text(
+            label,
+            style: TextStyle(
+              color: _competitionMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildIssueOverview(List<Map<String, dynamic>> events) {
-    final missingRegistration = _countWhere(
-      events,
-      (event) => _draftValue(event, 'registration_end').isEmpty,
-    );
-    final missingEvent = _countWhere(
-      events,
-      (event) => _draftValue(event, 'event_start').isEmpty,
-    );
+    final missingTime =
+        _countWhere(events, (event) => !_draftHasAnyTime(event));
+    final missingUrl = _countWhere(events, _draftMissingOfficialUrl);
+    final categoryInvalid = _countWhere(events, _draftCategoryInvalid);
+    final recommendationInvalid =
+        _countWhere(events, _draftRecommendationInvalid);
     final pending = _countWhere(
       events,
       (event) =>
@@ -928,9 +1034,11 @@ class _CompetitionAdminImportScreenState
       spacing: 8,
       runSpacing: 8,
       children: [
-        _issuePill('缺报名日期', missingRegistration),
-        _issuePill('缺比赛日期', missingEvent),
-        _issuePill('待通知', pending),
+        _issuePill('缺时间', missingTime),
+        _issuePill('缺官网', missingUrl),
+        _issuePill('分类异常', categoryInvalid),
+        _issuePill('推荐异常', recommendationInvalid),
+        _issuePill('时间待公布', pending),
         _issuePill('已确认', confirmed),
       ],
     );
@@ -965,14 +1073,17 @@ class _CompetitionAdminImportScreenState
   Widget _buildPreviewFilters(List<Map<String, dynamic>> events) {
     final filters = [
       ('all', '全部', events.length),
+      ('missing_date', '缺时间', _countWhere(events, (e) => !_draftHasAnyTime(e))),
+      ('missing_url', '缺官网', _countWhere(events, _draftMissingOfficialUrl)),
+      ('category_invalid', '分类异常', _countWhere(events, _draftCategoryInvalid)),
       (
-        'missing_date',
-        '缺日期',
-        _countWhere(events, (e) => !_draftHasExactDate(e))
+        'recommendation_invalid',
+        '推荐异常',
+        _countWhere(events, _draftRecommendationInvalid)
       ),
       (
         'pending',
-        '待通知',
+        '时间待公布',
         _countWhere(
           events,
           (e) =>
@@ -1026,39 +1137,6 @@ class _CompetitionAdminImportScreenState
     );
   }
 
-  Widget _previewPill(String label, String value) {
-    return Expanded(
-      child: Container(
-        padding: EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: _competitionLight.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                color: _competitionPrimaryDark,
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                color: _competitionMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildDraftEventCompactCard(Map<String, dynamic> event) {
     final title = _draftValue(event, 'title');
     final category = _draftValue(event, 'primary_category_slug');
@@ -1071,8 +1149,14 @@ class _CompetitionAdminImportScreenState
     final timeStatus = _timeStatusLabel(_draftValue(event, 'time_status'));
     final timeNote = _draftValue(event, 'time_note');
     final sortMonth = _draftValue(event, 'sort_month');
+    final entryYears = _draftStringList(event, 'eligible_entry_years');
+    final colleges = _draftStringList(event, 'eligible_colleges');
+    final majors = _draftStringList(event, 'eligible_majors');
     final hasExactDate = _draftHasExactDate(event);
     final timeSummary = _draftTimeSummary(event);
+    final problems = _draftProblems(event);
+    final previewIndex =
+        int.tryParse(_draftValue(event, '__preview_index')) ?? 0;
     return Container(
       margin: EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -1142,11 +1226,41 @@ class _CompetitionAdminImportScreenState
                     _draftChip('$recommendation 推荐'),
                   _draftChip(recognition),
                   _draftChip(source),
+                  if (entryYears.isNotEmpty)
+                    _draftChip('入学年份 ${entryYears.join('/')}'),
+                  if (majors.isNotEmpty) _draftChip('专业 ${majors.join('/')}'),
+                  if (majors.isEmpty && colleges.isNotEmpty)
+                    _draftChip('学院 ${colleges.join('/')}'),
+                  if (entryYears.isEmpty && colleges.isEmpty && majors.isEmpty)
+                    _draftChip('通用适配'),
                 ],
               ),
             ],
           ),
           children: [
+            if (problems.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                margin: EdgeInsets.only(bottom: 8),
+                padding: EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _competitionOrange.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _competitionOrange.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: Text(
+                  '问题：${problems.join('、')}',
+                  style: TextStyle(
+                    color: _competitionOrange,
+                    fontSize: 12,
+                    height: 1.35,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
             _draftLine(
               Icons.alarm_rounded,
               '报名截止',
@@ -1176,6 +1290,40 @@ class _CompetitionAdminImportScreenState
               _draftLine(Icons.notes_rounded, '时间说明', timeNote),
             if (organizer.isNotEmpty)
               _draftLine(Icons.account_balance_outlined, '主办方', organizer),
+            SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => AppFeedback.showSnackBar(
+                      context,
+                      '请在上方 JSON 中修改该条目后重新检查预览',
+                    ),
+                    icon: Icon(Icons.edit_outlined, size: 17),
+                    label: Text('编辑'),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: _competitionPrimary,
+                    ),
+                  ),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _canCommitPreview
+                        ? () => _commitSingle(previewIndex)
+                        : null,
+                    icon: Icon(Icons.save_outlined, size: 17),
+                    label: Text('保存为草稿'),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: _competitionPrimary,
+                      foregroundColor: _cardBg,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -1245,11 +1393,43 @@ class _CompetitionAdminImportScreenState
         _draftValue(event, 'event_start').isNotEmpty;
   }
 
-  bool _draftEventHasWarning(Map<String, dynamic> event) {
-    final hasAnyTime = _draftValue(event, 'registration_end').isNotEmpty ||
+  bool _draftHasAnyTime(Map<String, dynamic> event) {
+    return _draftValue(event, 'registration_start').isNotEmpty ||
+        _draftValue(event, 'registration_end').isNotEmpty ||
         _draftValue(event, 'event_start').isNotEmpty ||
+        _draftValue(event, 'event_end').isNotEmpty ||
         _draftValue(event, 'registration_time_text').isNotEmpty ||
-        _draftValue(event, 'event_time_text').isNotEmpty;
+        _draftValue(event, 'event_time_text').isNotEmpty ||
+        _draftValue(event, 'sort_month').isNotEmpty;
+  }
+
+  bool _draftMissingOfficialUrl(Map<String, dynamic> event) {
+    return _draftValue(event, 'official_url').isEmpty &&
+        _draftValue(event, 'notice_url').isEmpty;
+  }
+
+  bool _draftCategoryInvalid(Map<String, dynamic> event) {
+    final slug = _draftValue(event, 'primary_category_slug');
+    if (slug.isEmpty) return true;
+    return !_competitionCategorySlugHint.split('、').contains(slug);
+  }
+
+  bool _draftRecommendationInvalid(Map<String, dynamic> event) {
+    const levels = {'S', 'A', 'B+', 'B', 'B-', 'C'};
+    return !levels.contains(_draftValue(event, 'recommendation_level'));
+  }
+
+  List<String> _draftProblems(Map<String, dynamic> event) {
+    final problems = <String>[];
+    if (!_draftHasAnyTime(event)) problems.add('缺时间');
+    if (_draftMissingOfficialUrl(event)) problems.add('缺通知链接');
+    if (_draftCategoryInvalid(event)) problems.add('分类异常');
+    if (_draftRecommendationInvalid(event)) problems.add('推荐等级异常');
+    return problems;
+  }
+
+  bool _draftEventHasWarning(Map<String, dynamic> event) {
+    final hasAnyTime = _draftHasAnyTime(event);
     if (!hasAnyTime && _draftValue(event, 'time_note').isEmpty) {
       return true;
     }
@@ -1303,6 +1483,15 @@ class _CompetitionAdminImportScreenState
     return '${event[key] ?? ''}'.trim();
   }
 
+  List<String> _draftStringList(Map<String, dynamic> event, String key) {
+    final value = event[key];
+    if (value is! List) return [];
+    return value
+        .map((item) => '$item'.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
   String _previewErrorText(dynamic error) {
     if (error is Map) {
       final index = error['index'];
@@ -1315,7 +1504,6 @@ class _CompetitionAdminImportScreenState
   }
 }
 
-
 String _timeStatusLabel(String value) {
   switch (value) {
     case 'confirmed':
@@ -1325,57 +1513,29 @@ String _timeStatusLabel(String value) {
     case 'historical':
       return '往年参考';
     case 'pending':
-      return '待通知';
+      return '时间待公布';
     default:
-      return value.isEmpty ? '待通知' : value;
+      return value.isEmpty ? '时间待公布' : value;
   }
 }
-
-
-
-bool _draftHasExactDate(Map<String, dynamic> event) {
-  final d1 = event['registration_start']?.toString() ?? '';
-  final d2 = event['registration_end']?.toString() ?? '';
-  final d3 = event['event_start']?.toString() ?? '';
-  final d4 = event['event_end']?.toString() ?? '';
-  return d1.isNotEmpty || d2.isNotEmpty || d3.isNotEmpty || d4.isNotEmpty;
-}
-
-String _draftValue(Map<String, dynamic> event, String key) {
-  return event[key]?.toString() ?? '';
-}
-
-bool _draftEventHasWarning(Map<String, dynamic> event) {
-  final level = _draftValue(event, 'recommendation_level');
-  if (level.isEmpty) return true;
-  return false;
-}
-
-DateTime? _draftSortDate(Map<String, dynamic> event) {
-  final starts = [
-    event['registration_start'],
-    event['event_start'],
-  ];
-  for (var s in starts) {
-    if (s != null && s.toString().isNotEmpty) {
-      try {
-        return DateTime.parse(s.toString());
-      } catch (_) {}
-    }
-  }
-  return null;
-}
-
 
 String _sourceLabel(String value) {
   switch (value) {
-    case 'school_catalog': return '学校目录';
-    case 'college_notice': return '学院通知';
-    case 'enterprise': return '企业赛';
-    case 'industry_association': return '行业协会';
-    case 'platform': return '竞赛平台';
-    case 'admin_manual': return '管理员录入';
-    case 'ai_import': return 'AI 导入';
-    default: return value.isEmpty ? '未知来源' : value;
+    case 'school_catalog':
+      return '学校目录';
+    case 'college_notice':
+      return '学院通知';
+    case 'enterprise':
+      return '企业赛';
+    case 'industry_association':
+      return '行业协会';
+    case 'platform':
+      return '竞赛平台';
+    case 'admin_manual':
+      return '管理员录入';
+    case 'ai_import':
+      return 'AI 导入';
+    default:
+      return value.isEmpty ? '未知来源' : value;
   }
 }

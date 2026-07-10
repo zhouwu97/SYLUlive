@@ -204,6 +204,9 @@ func main() {
 	if err := models.EnsureConversationIndexes(db); err != nil {
 		log.Fatal("私信索引迁移失败:", err)
 	}
+	if err := models.VerifyCompetitionCalendarDedupMigration(db); err != nil {
+		log.Fatal("竞赛计划数据约束未就绪:", err)
+	}
 	if err := models.EnsureCompetitionCategories(db); err != nil {
 		log.Fatal("竞赛分类种子初始化失败:", err)
 	}
@@ -475,6 +478,7 @@ func main() {
 		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
 		user.GET("/notifications/unread-count", notificationHandler.GetUnreadCount)
 		user.POST("/notifications/read", notificationHandler.MarkAllRead)
+		user.POST("/notifications/read-selected", notificationHandler.MarkSelectedRead)
 
 		user.GET("/competition-calendar", competitionHandler.GetCalendar)
 		user.POST("/competition-calendar/init", competitionHandler.InitCalendar)
@@ -484,6 +488,7 @@ func main() {
 		user.POST("/competition-calendar/items/copy-from-official/:event_id", competitionHandler.CopyOfficialToCalendar)
 		user.PUT("/competition-calendar/items/:id", competitionHandler.UpdateCalendarItem)
 		user.DELETE("/competition-calendar/items/:id", competitionHandler.DeleteCalendarItem)
+		user.POST("/competition-calendar/items/batch-action", competitionHandler.BatchCalendarItemAction)
 		user.POST("/competition-calendar/items/:id/pin", competitionHandler.PinCalendarItem)
 		user.POST("/competition-calendar/items/reorder", competitionHandler.ReorderCalendarItems)
 		user.POST("/competition-calendar/share", competitionHandler.ShareCalendar)
@@ -492,6 +497,8 @@ func main() {
 		user.POST("/competition-calendar/import-share/commit", competitionHandler.CommitShareImport)
 		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
 		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
+		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
+		user.GET("/competitions/fit", competitionHandler.ListFitEvents)
 		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
 		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)
 		user.GET("/collaboration-applications/received", postHandler.GetMyCollaborationApplicationsReceived)
@@ -522,6 +529,7 @@ func main() {
 	r.GET("/api/notifications/unread-count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount)
 	r.GET("/api/notifications/unread_count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount) // keep for backwards compatibility just in case
 	r.POST("/api/notifications/read", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkAllRead)
+	r.POST("/api/notifications/read-selected", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkSelectedRead)
 
 	// 帖子路由
 
@@ -615,6 +623,7 @@ func main() {
 	competitions := r.Group("/api/competitions")
 	{
 		competitions.GET("/categories", competitionHandler.GetCategories)
+		competitions.GET("/overview", competitionHandler.GetOverview)
 		competitions.GET("/events", competitionHandler.ListEvents)
 		competitions.GET("/events/:id", competitionHandler.GetEvent)
 	}
@@ -641,6 +650,8 @@ func main() {
 		postsAuth.POST("/:id/replies", replyHandler.Create)
 
 		postsAuth.POST("/:id/appeal", appealHandler.Create)
+
+		postsAuth.GET("/:id/notifications/unread", notificationHandler.GetPostUnreadReplyNotifications)
 
 	}
 
@@ -854,11 +865,15 @@ func main() {
 		admin.PUT("/competitions/categories/:id", competitionHandler.AdminUpdateCategory)
 		admin.DELETE("/competitions/categories/:id", competitionHandler.AdminDeleteCategory)
 		admin.GET("/competitions/events", competitionHandler.AdminListEvents)
+		admin.GET("/competitions/audience-options", competitionHandler.AdminCompetitionAudienceOptions)
+		admin.GET("/competitions/overview", competitionHandler.AdminGetEventsOverview)
+		admin.POST("/competitions/events/batch-action", competitionHandler.AdminBatchAction)
 		admin.POST("/competitions/events", competitionHandler.AdminCreateEvent)
 		admin.PUT("/competitions/events/:id", competitionHandler.AdminUpdateEvent)
 		admin.DELETE("/competitions/events/:id", competitionHandler.AdminDeleteEvent)
 		admin.POST("/competitions/events/:id/archive", competitionHandler.AdminArchiveEvent)
 		admin.POST("/competitions/events/:id/publish", competitionHandler.AdminPublishEvent)
+		admin.POST("/competitions/events/:id/restore", competitionHandler.AdminRestoreEvent)
 		admin.POST("/competitions/events/:id/verify", competitionHandler.AdminVerifyEvent)
 		admin.POST("/competitions/import-json/preview", competitionHandler.AdminImportJSONPreview)
 		admin.POST("/competitions/import-json/commit", competitionHandler.AdminImportJSONCommit)

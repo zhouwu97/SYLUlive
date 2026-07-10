@@ -109,21 +109,26 @@ class GradeReminderWorker(
             return Result.success()
         }
 
-        if (oldSnapshot == null || oldSnapshot.isPendingOnly() || !oldSnapshot.initialized) {
+        val isBaselineProtection = oldSnapshot != null && oldSnapshot.initialized &&
+            oldSnapshot.effectiveCount() <= 2 && newSnapshot.effectiveCount() >= 10
+
+        if (oldSnapshot == null || oldSnapshot.isPendingOnly() || !oldSnapshot.initialized || isBaselineProtection) {
             p.edit()
                 .putString(snapshotKey, newSnapshot.toJson().toString())
                 .putString(GradeReminderScheduler.stateKey(userId), "ready")
                 .apply()
             markSuccess(userId)
             val isFix = oldSnapshot != null && oldSnapshot.initialized && oldSnapshot.isPendingOnly()
-            if (isFix) {
-                clearGradeUpdateNotifications()
+            if (isFix || isBaselineProtection) {
+                GradeReminderScheduler.clearAllGradeUpdateNotifications(context)
             }
             DiagnosticLogStore.info(
                 context,
                 source = "成绩提醒",
-                type = if (isFix) "基线修复" else "基线",
-                summary = if (isFix) "旧成绩提醒基线为空或仅包含占位成绩，已用本次结果重建基线并跳过历史批量提醒" else "已保存成绩提醒首次基线",
+                type = if (isBaselineProtection) "基线保护" else if (isFix) "基线修复" else "基线",
+                summary = if (isBaselineProtection) "检测到疑似历史成绩批量变化，已重建基线并跳过历史批量提醒" 
+                          else if (isFix) "旧成绩提醒基线为空或仅包含占位成绩，已用本次结果重建基线并跳过历史批量提醒" 
+                          else "已保存成绩提醒首次基线",
                 detail = "userId=$userId year=$year semester=$semester count=${grades.length()}",
             )
             return Result.success()
@@ -376,8 +381,10 @@ class GradeReminderWorker(
 
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
             ?: return
-        val notificationId =
-            (userId + year + semester + diff.changeHash()).hashCode() and 0x7fffffff
+            
+        GradeReminderScheduler.clearAllGradeUpdateNotifications(applicationContext)
+        
+        val notificationId = (userId + year + semester).hashCode() and 0x7fffffff
         runCatching {
             manager.notify(notificationId, builder.build())
         }.onFailure {
@@ -414,22 +421,7 @@ class GradeReminderWorker(
         manager.createNotificationChannel(channel)
     }
 
-    private fun clearGradeUpdateNotifications() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
-        val manager = applicationContext.getSystemService(NotificationManager::class.java) ?: return
-
-        manager.activeNotifications
-            ?.filter { it.packageName == applicationContext.packageName }
-            ?.filter { it.notification.channelId == CHANNEL_ID }
-            ?.forEach { notification ->
-                if (notification.tag != null) {
-                    manager.cancel(notification.tag, notification.id)
-                } else {
-                    manager.cancel(notification.id)
-                }
-            }
-    }
 
     companion object {
         const val CHANNEL_ID = "grade_updates"

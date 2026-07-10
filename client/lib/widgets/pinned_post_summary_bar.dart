@@ -80,7 +80,8 @@ class PinnedPostSummaryBar extends StatelessWidget {
               if (posts.length > 1) ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.06)
@@ -94,14 +95,16 @@ class PinnedPostSummaryBar extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white70 : const Color(0xFF222222),
+                          color:
+                              isDark ? Colors.white70 : const Color(0xFF222222),
                         ),
                       ),
                       const SizedBox(width: 3),
                       Icon(
                         Icons.keyboard_arrow_down_rounded,
                         size: 17,
-                        color: isDark ? Colors.white70 : const Color(0xFF222222),
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF222222),
                       ),
                     ],
                   ),

@@ -46,20 +46,17 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 		keyword = strings.TrimSpace(c.Query("student_id"))
 	}
 
-	if keyword == "" {
-		c.JSON(http.StatusOK, []models.User{})
-		return
-	}
-
-	like := "%" + keyword + "%"
-
 	query := h.db.Model(&models.User{}).
 		Select("id, nickname, student_id, avatar, credit_score, role, report_count").
-		Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser).
-		Where("student_id LIKE ? OR nickname LIKE ?", like, like)
+		Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser)
+
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("student_id LIKE ? OR nickname LIKE ?", like, like)
+	}
 
 	var candidates []models.User
-	if err := query.Order("credit_score DESC, created_at DESC").Limit(30).Find(&candidates).Error; err != nil {
+	if err := query.Order("credit_score DESC, created_at DESC").Limit(50).Find(&candidates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取候选人列表失败"})
 		return
 	}

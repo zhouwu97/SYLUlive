@@ -239,7 +239,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       final List<int> fileIds = [];
       bool hasUploadError = false;
       for (final image in _selectedImages) {
-        final fileId = await postProvider.uploadImage(image.path);
+        final fileId = await postProvider.uploadImage(image);
         if (fileId != null) {
           fileIds.add(fileId);
         } else {

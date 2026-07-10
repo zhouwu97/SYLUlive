@@ -23,7 +23,7 @@ class ApiConstants {
     const configured = String.fromEnvironment('EDU_URL');
     if (configured.isNotEmpty) return configured;
     if (kIsWeb) return '/edu-api';
-    return 'https://sylu.zhouwu.ccwu.cc/edu-api';
+    return 'http://156.233.229.232/edu-api';
   }
 
   // 极光推送 AppKey

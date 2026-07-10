@@ -46,9 +46,7 @@ class _CompetitionCalendarItemDetailScreenState
     );
 
     if (changed == true && mounted) {
-      // Re-fetch or we just pop and let parent refresh. The easiest way is pop with true, 
-      // but if we want to stay on detail page, we would need to fetch the updated item here.
-      // But since there's no single item fetch API provided, we should just pop(true).
+      // 当前没有单项重新获取接口，编辑成功后返回上一页并由父页面刷新。
       Navigator.pop(context, true);
     }
   }
@@ -72,8 +70,8 @@ class _CompetitionCalendarItemDetailScreenState
       ),
     );
     if (confirmed != true || !mounted) return;
-    
-    // Construct data like original
+
+    // 按原有字段结构组装编辑数据
     final data = Map<String, dynamic>.from(_item);
     data['plan_status'] = 'archived';
 
@@ -138,10 +136,12 @@ class _CompetitionCalendarItemDetailScreenState
   String _calendarTimeStatus() {
     final value = '${_item['time_status'] ?? ''}'.trim();
     if (value.isNotEmpty) return value;
-    if (_item['registration_end'] != null && _item['registration_end'].toString().isNotEmpty) {
+    if (_item['registration_end'] != null &&
+        _item['registration_end'].toString().isNotEmpty) {
       return 'confirmed';
     }
-    final text = '${_item['registration_time_text'] ?? ''} ${_item['event_time_text'] ?? ''}';
+    final text =
+        '${_item['registration_time_text'] ?? ''} ${_item['event_time_text'] ?? ''}';
     if (text.contains('预计') || text.contains('暂定') || text.contains('计划')) {
       return 'estimated';
     }
@@ -153,22 +153,33 @@ class _CompetitionCalendarItemDetailScreenState
 
   String _planStatusLabel(String value) {
     switch (value) {
-      case 'preparing': return '准备中';
-      case 'registered': return '已报名';
-      case 'submitted': return '已提交';
-      case 'finished': return '已结束';
-      case 'archived': return '已归档';
-      default: return '关注中';
+      case 'preparing':
+        return '准备中';
+      case 'registered':
+        return '已报名';
+      case 'submitted':
+        return '已提交';
+      case 'finished':
+        return '已结束';
+      case 'archived':
+        return '已归档';
+      default:
+        return '关注中';
     }
   }
 
   String _timeStatusLabel(String value) {
     switch (value) {
-      case 'confirmed': return '时间已确认';
-      case 'estimated': return '预计时间';
-      case 'historical': return '参考往届';
-      case 'pending': return '待通知';
-      default: return '待通知';
+      case 'confirmed':
+        return '时间已确认';
+      case 'estimated':
+        return '预计时间';
+      case 'historical':
+        return '参考往届';
+      case 'pending':
+        return '时间待公布';
+      default:
+        return '时间待公布';
     }
   }
 
@@ -202,7 +213,7 @@ class _CompetitionCalendarItemDetailScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 70,
+            width: 88,
             child: Text(
               label,
               style: TextStyle(
@@ -233,21 +244,37 @@ class _CompetitionCalendarItemDetailScreenState
 
     final title = '${_item['title'] ?? '未命名比赛'}';
     final summary = '${_item['summary'] ?? ''}';
-    final description = '${_item['description'] ?? ''}';
+    final description =
+        cleanCompetitionDescription('${_item['description'] ?? ''}');
 
     final regEnd = '${_item['registration_end'] ?? ''}';
     final regText = '${_item['registration_time_text'] ?? ''}';
-    final regDisplay = regEnd.isNotEmpty ? regEnd : (regText.isNotEmpty ? regText : '原表未提供报名时间');
+    final regDisplay = regEnd.isNotEmpty
+        ? regEnd
+        : (regText.isNotEmpty ? regText : '原表未提供报名时间');
 
     final evStart = '${_item['event_start'] ?? ''}';
     final evText = '${_item['event_time_text'] ?? ''}';
-    final evDisplay = evStart.isNotEmpty ? evStart : (evText.isNotEmpty ? evText : '原表未提供比赛时间');
+    final evDisplay = evStart.isNotEmpty
+        ? evStart
+        : (evText.isNotEmpty ? evText : '原表未提供比赛时间');
 
     final source = competitionSourceLabel('${_item['source_type'] ?? ''}');
     final planStatus = _planStatusLabel(_calendarPlanStatus());
     final timeStatus = _timeStatusLabel(_calendarTimeStatus());
-    final recommendation = '${_item['recommendation_level'] ?? '未知'}';
-    final recognition = competitionRecognitionLabel('${_item['school_recognition_status'] ?? ''}');
+
+    final recommendation = '${_item['recommendation_level'] ?? ''}'.trim();
+    final manualShort = competitionManualRatingShort(recommendation);
+
+    final recognitionStatus = competitionRecognitionLabel(
+        '${_item['school_recognition_status'] ?? ''}');
+    final recognitionGrade =
+        '${_item['school_recognition_grade'] ?? ''}'.trim();
+    final schoolRecognitionShort = competitionSchoolRecognitionShort(
+      status: '${_item['school_recognition_status'] ?? ''}',
+      grade: recognitionGrade,
+    );
+
     final level = '${_item['competition_level'] ?? _item['level'] ?? '未知'}';
 
     final location = '${_item['location'] ?? ''}';
@@ -300,7 +327,7 @@ class _CompetitionCalendarItemDetailScreenState
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
         children: [
-          // Hero
+          // 顶部信息
           Container(
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.all(16),
@@ -321,60 +348,85 @@ class _CompetitionCalendarItemDetailScreenState
                   spacing: 6,
                   runSpacing: 6,
                   children: [
-                    _buildPill(planStatus, CompetitionUiTokens.warningColor(isDark)),
+                    _buildPill(
+                        planStatus, CompetitionUiTokens.warningColor(isDark)),
                     _buildPill(timeStatus, CompetitionUiTokens.accent(isDark)),
-                    _buildPill(source, CompetitionUiTokens.subColor(isDark)),
-                    if (recommendation.isNotEmpty && recommendation != '未知')
-                      _buildPill('$recommendation推荐', CompetitionUiTokens.upcomingColor(isDark)),
+                    if (manualShort.isNotEmpty)
+                      _buildPill(manualShort,
+                          CompetitionUiTokens.upcomingColor(isDark)),
+                    if (schoolRecognitionShort.isNotEmpty)
+                      _buildPill(schoolRecognitionShort,
+                          CompetitionUiTokens.accent(isDark)),
                   ],
                 ),
               ],
             ),
           ),
 
-          // Time
-          _buildSection('时间安排', [
-            _buildRow('报名安排', regDisplay, isDark),
-            _buildRow('比赛时间', evDisplay, isDark),
-            _buildRow('举办地点', isOnline ? '线上比赛' : (location.isEmpty ? '未提供' : location), isDark),
-          ], isDark),
+          // 时间信息
+          _buildSection(
+              '时间安排',
+              [
+                _buildRow('报名安排', regDisplay, isDark),
+                _buildRow('比赛时间', evDisplay, isDark),
+                _buildRow(
+                    '举办地点',
+                    isOnline ? '线上比赛' : (location.isEmpty ? '未提供' : location),
+                    isDark),
+              ],
+              isDark),
 
-          // Desc
-          _buildSection('比赛说明', [
-            if (summary.isNotEmpty) ...[
-              Text(
-                summary,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: titleColor,
+          // 说明信息
+          _buildSection(
+              '比赛说明',
+              [
+                if (summary.isNotEmpty) ...[
+                  Text(
+                    summary,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: titleColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Text(
+                  description.isEmpty ? '暂无详细说明' : description,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: CompetitionUiTokens.subColor(isDark),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            Text(
-              description.isEmpty ? '暂无详细说明' : description,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.5,
-                color: CompetitionUiTokens.subColor(isDark),
-              ),
-            ),
-          ], isDark),
+              ],
+              isDark),
 
-          // Recognition
-          _buildSection('推荐与认定', [
-            _buildRow('推荐程度', recommendation, isDark),
-            _buildRow('学校认定', recognition, isDark),
-            _buildRow('竞赛级别', level, isDark),
-          ], isDark),
+          // 学校认定信息
+          _buildSection(
+              '评级与认定',
+              [
+                _buildRow('人工评级',
+                    recommendation.isEmpty ? '暂未评级' : recommendation, isDark),
+                _buildRow('认定状态', recognitionStatus, isDark),
+                _buildRow(
+                    '认定等级',
+                    recognitionGrade.isEmpty ? '暂无等级' : recognitionGrade,
+                    isDark),
+                _buildRow('竞赛级别', level, isDark),
+              ],
+              isDark),
 
-          // Source
-          _buildSection('来源与链接', [
-            _buildRow('数据来源', source, isDark),
-            _buildRow('官网链接', officialUrl.isEmpty ? '暂无' : officialUrl, isDark),
-            _buildRow('通知链接', noticeUrl.isEmpty ? '暂无' : noticeUrl, isDark),
-          ], isDark),
+          // 来源信息
+          _buildSection(
+              '来源与链接',
+              [
+                _buildRow('数据来源', source, isDark),
+                _buildRow(
+                    '官网链接', officialUrl.isEmpty ? '暂无' : officialUrl, isDark),
+                _buildRow('通知链接', noticeUrl.isEmpty ? '暂无' : noticeUrl, isDark),
+              ],
+              isDark),
 
           const SizedBox(height: 16),
           FilledButton.icon(
@@ -411,4 +463,15 @@ class _CompetitionCalendarItemDetailScreenState
       ),
     );
   }
+}
+
+String cleanCompetitionDescription(String raw) {
+  return raw
+      .replaceFirst(
+        RegExp(
+          r'^\s*学校目录类别[：:]\s*[^；;，,\n]+[；;，,]\s*人工评级[：:]\s*[^；;，,\n]+[；;，,]?\s*',
+        ),
+        '',
+      )
+      .trim();
 }

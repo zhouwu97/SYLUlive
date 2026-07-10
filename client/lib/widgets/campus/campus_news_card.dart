@@ -28,7 +28,9 @@ class CampusNewsCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : CampusTheme.softBorder,
             ),
           ),
           child: Column(
@@ -38,7 +40,8 @@ class CampusNewsCard extends StatelessWidget {
               Row(
                 children: [
                   CampusNoticeTag(
-                    category: article.category.isNotEmpty ? article.category : '校园资讯',
+                    category:
+                        article.category.isNotEmpty ? article.category : '校园资讯',
                   ),
                   const Spacer(),
                   Text(

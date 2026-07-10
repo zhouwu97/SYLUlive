@@ -100,7 +100,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
             else
               SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildReviewItem(reviews[index], isDark, accent),
+                  (context, index) =>
+                      _buildReviewItem(reviews[index], isDark, accent),
                   childCount: reviews.length,
                 ),
               ),
@@ -448,16 +449,15 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w700,
-            color: selected
-                ? Colors.white
-                : RankingTokens.subColor(isDark),
+            color: selected ? Colors.white : RankingTokens.subColor(isDark),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildFilterChip(String value, String label, bool isDark, Color accent) {
+  Widget _buildFilterChip(
+      String value, String label, bool isDark, Color accent) {
     final selected = _reviewFilter == value;
     return GestureDetector(
       onTap: () async {
@@ -491,7 +491,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  Widget _buildReviewItem(Map<String, dynamic> review, bool isDark, Color accent) {
+  Widget _buildReviewItem(
+      Map<String, dynamic> review, bool isDark, Color accent) {
     final id = (review['id'] as num?)?.toInt() ?? 0;
     final userId = (review['user_id'] as num?)?.toInt() ?? 0;
     final currentUserId = context.read<AuthProvider>().user?.id;
@@ -600,7 +601,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                   accent: accent,
                   onTap: _isVoting
                       ? null
-                      : () => _voteRating(id, myVote == 'up' ? 'none' : 'up', isDark),
+                      : () => _voteRating(
+                          id, myVote == 'up' ? 'none' : 'up', isDark),
                 ),
                 const SizedBox(width: 8),
                 _buildVoteButton(
@@ -611,8 +613,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                   accent: accent,
                   onTap: _isVoting
                       ? null
-                      : () =>
-                          _voteRating(id, myVote == 'down' ? 'none' : 'down', isDark),
+                      : () => _voteRating(
+                          id, myVote == 'down' ? 'none' : 'down', isDark),
                 ),
               ],
             ],
@@ -653,10 +655,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
-          color: selected ? RankingTokens.canteenAccentSoft(isDark) : RankingTokens.pageBg(isDark),
+          color: selected
+              ? RankingTokens.canteenAccentSoft(isDark)
+              : RankingTokens.pageBg(isDark),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? RankingTokens.canteenAccent(isDark).withValues(alpha: 0.3) : RankingTokens.borderColor(isDark),
+            color: selected
+                ? RankingTokens.canteenAccent(isDark).withValues(alpha: 0.3)
+                : RankingTokens.borderColor(isDark),
           ),
         ),
         child: Row(
@@ -664,8 +670,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
             Icon(
               icon,
               size: 14,
-              color:
-                  selected ? RankingTokens.canteenAccent(isDark) : RankingTokens.subColor(isDark),
+              color: selected
+                  ? RankingTokens.canteenAccent(isDark)
+                  : RankingTokens.subColor(isDark),
             ),
             const SizedBox(width: 4),
             Text(
@@ -992,7 +999,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                           enabled: !isSubmitting,
                           decoration: InputDecoration(
                             hintText: '比如味道、价格、排队情况、推荐窗口...',
-                            hintStyle: TextStyle(color: RankingTokens.subColor(isDark)),
+                            hintStyle: TextStyle(
+                                color: RankingTokens.subColor(isDark)),
                             filled: true,
                             fillColor: RankingTokens.pageBg(isDark),
                             border: OutlineInputBorder(
@@ -1184,7 +1192,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: accent,
-                          side: BorderSide(color: accent.withValues(alpha: 0.4)),
+                          side:
+                              BorderSide(color: accent.withValues(alpha: 0.4)),
                           minimumSize: const Size.fromHeight(44),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),

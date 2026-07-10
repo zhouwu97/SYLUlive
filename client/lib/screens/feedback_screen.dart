@@ -86,12 +86,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   ) {
     final isSelected = _type == type;
     final primaryColor = Theme.of(context).colorScheme.primary;
-    final borderColor = isSelected
-        ? primaryColor
-        : Theme.of(context).dividerColor;
-    final bgColor = isSelected
-        ? primaryColor.withValues(alpha: 0.1)
-        : Colors.transparent;
+    final borderColor =
+        isSelected ? primaryColor : Theme.of(context).dividerColor;
+    final bgColor =
+        isSelected ? primaryColor.withValues(alpha: 0.1) : Colors.transparent;
     final contentColor = isSelected ? primaryColor : Colors.grey[600];
 
     return Expanded(
@@ -192,17 +190,16 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
               controller: _contentController,
               maxLines: 10,
               maxLength: 500,
-              buildCounter:
-                  (
-                    context, {
-                    required currentLength,
-                    required isFocused,
-                    maxLength,
-                  }) => null,
+              buildCounter: (
+                context, {
+                required currentLength,
+                required isFocused,
+                maxLength,
+              }) =>
+                  null,
               decoration: InputDecoration(
-                hintText: _type == 'bug'
-                    ? '请描述您遇到的问题、设备型号及复现步骤...'
-                    : '请输入您的宝贵建议...',
+                hintText:
+                    _type == 'bug' ? '请描述您遇到的问题、设备型号及复现步骤...' : '请输入您的宝贵建议...',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),

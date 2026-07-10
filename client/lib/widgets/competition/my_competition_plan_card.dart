@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'competition_ui_tokens.dart';
 import '../app_action_popup_menu.dart';
+import 'competition_status_helper.dart';
 
 class MyCompetitionPlanCard extends StatelessWidget {
   final Map<String, dynamic> item;
@@ -12,6 +13,9 @@ class MyCompetitionPlanCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onArchive;
+  final bool selectionMode;
+  final bool isSelected;
+  final VoidCallback? onSelect;
 
   const MyCompetitionPlanCard({
     super.key,
@@ -24,19 +28,20 @@ class MyCompetitionPlanCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onArchive,
+    this.selectionMode = false,
+    this.isSelected = false,
+    this.onSelect,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final userNote = '${item['user_note'] ?? ''}'.trim();
-    
-    // We only show one main status pill in the new design.
-    // If it's archived or finished, we show that. Otherwise we show time status if it's "待通知" or similar, 
-    // but the user spec says "主状态标签：例如 准备中 / 待通知". 
-    // We can just show planStatus if it's not "关注中" (which we remove as per phase 8), otherwise timeStatus.
-    final String mainStatus = planStatusLabel == '关注中' ? timeStatusLabel : planStatusLabel;
-    
+
+    // 卡片只展示一个主状态：非“关注中”时优先展示计划状态，否则展示时间状态。
+    final String mainStatus =
+        planStatusLabel == '关注中' ? timeStatusLabel : planStatusLabel;
+
     Color statusColor;
     if (['已结束', '已归档'].contains(mainStatus)) {
       statusColor = CompetitionUiTokens.archivedColor(isDark);
@@ -44,11 +49,18 @@ class MyCompetitionPlanCard extends StatelessWidget {
       statusColor = CompetitionUiTokens.warningColor(isDark);
     } else if (['即将截止'].contains(mainStatus)) {
       statusColor = CompetitionUiTokens.upcomingColor(isDark);
-    } else if (['待通知', '时间待确认'].contains(mainStatus)) {
+    } else if (['待通知', '时间待公布', '时间待确认'].contains(mainStatus)) {
       statusColor = CompetitionUiTokens.accent(isDark);
     } else {
       statusColor = CompetitionUiTokens.accent(isDark);
     }
+
+    final manualLabel =
+        competitionManualRatingShort('${item['recommendation_level'] ?? ''}');
+    final schoolLabel = competitionSchoolRecognitionShort(
+      status: '${item['school_recognition_status'] ?? ''}',
+      grade: '${item['school_recognition_grade'] ?? ''}',
+    );
 
     final card = Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -60,6 +72,19 @@ class MyCompetitionPlanCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (selectionMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12, top: 4),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: Checkbox(
+                      value: isSelected,
+                      onChanged: (_) => onSelect?.call(),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
               Container(
                 width: 6,
                 height: 6,
@@ -85,23 +110,60 @@ class MyCompetitionPlanCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               _buildStatusPill(mainStatus, statusColor),
-              const SizedBox(width: 8),
-              _buildMoreMenu(isDark, context),
+              if (!selectionMode) ...[
+                const SizedBox(width: 8),
+                _buildMoreMenu(isDark, context),
+              ],
             ],
           ),
+          if (manualLabel.isNotEmpty || schoolLabel.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (manualLabel.isNotEmpty)
+                  Text(
+                    manualLabel,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: CompetitionUiTokens.accent(isDark),
+                    ),
+                  ),
+                if (manualLabel.isNotEmpty && schoolLabel.isNotEmpty)
+                  Text(
+                    ' · ',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: CompetitionUiTokens.subColor(isDark),
+                    ),
+                  ),
+                if (schoolLabel.isNotEmpty)
+                  Text(
+                    schoolLabel,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: CompetitionUiTokens.accent(isDark),
+                    ),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           _buildInfoRow(
-            Icons.access_time_rounded, 
-            '报名安排：${deadlineText.isEmpty ? '时间待通知' : deadlineText}', 
+            Icons.access_time_rounded,
+            '报名安排：${deadlineText.isEmpty ? '时间待公布' : deadlineText}',
             isDark,
             iconColor: CompetitionUiTokens.warningColor(isDark),
           ),
           const SizedBox(height: 4),
           _buildInfoRow(
-            Icons.file_download_outlined, 
-            '来源：$sourceLabel', 
+            Icons.file_download_outlined,
+            '来源：$sourceLabel',
             isDark,
-            iconColor: CompetitionUiTokens.accent(isDark).withValues(alpha: 0.72),
+            iconColor:
+                CompetitionUiTokens.accent(isDark).withValues(alpha: 0.72),
           ),
           if (userNote.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -139,10 +201,12 @@ class MyCompetitionPlanCard extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String text, bool isDark, {Color? iconColor}) {
+  Widget _buildInfoRow(IconData icon, String text, bool isDark,
+      {Color? iconColor}) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: iconColor ?? CompetitionUiTokens.subColor(isDark)),
+        Icon(icon,
+            size: 14, color: iconColor ?? CompetitionUiTokens.subColor(isDark)),
         const SizedBox(width: 6),
         Expanded(
           child: Text(

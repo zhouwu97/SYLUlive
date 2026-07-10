@@ -1,32 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/post.dart';
 import '../../providers/water_team_provider.dart';
 
 /// 申请加入组队招募的轻量底部表单。
+///
+/// 返回操作后最新的 [Post]，供详情页直接更新；失败返回 `null`。
 class TeamApplicationSheet extends StatefulWidget {
   final int recruitmentId;
-  final int postId;
 
   const TeamApplicationSheet({
     super.key,
     required this.recruitmentId,
-    required this.postId,
   });
 
-  static Future<bool?> show(
+  /// 弹出申请表单。返回最新 [Post] 或 `null`（取消/失败）。
+  static Future<Post?> show(
     BuildContext context, {
     required int recruitmentId,
-    required int postId,
   }) {
-    return showModalBottomSheet<bool>(
+    return showModalBottomSheet<Post?>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
       builder: (_) => TeamApplicationSheet(
         recruitmentId: recruitmentId,
-        postId: postId,
       ),
     );
   }
@@ -52,27 +52,29 @@ class _TeamApplicationSheetState extends State<TeamApplicationSheet> {
     final provider = context.read<WaterTeamProvider>();
     final result = await provider.apply(
       recruitmentId: widget.recruitmentId,
-      postId: widget.postId,
       message: _messageController.text.trim(),
       availability: _availabilityController.text.trim(),
     );
     if (!mounted) return;
     if (result != null) {
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop(null);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('申请已提交')),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(provider.errorFor(widget.recruitmentId) ?? '申请提交失败')),
+        SnackBar(
+            content: Text(
+                provider.errorFor(widget.recruitmentId) ?? '申请提交失败')),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isLoading =
-        context.watch<WaterTeamProvider>().isRecruitmentProcessing(widget.recruitmentId);
+    final processing = context
+        .watch<WaterTeamProvider>()
+        .isRecruitmentProcessing(widget.recruitmentId);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         20,
@@ -127,8 +129,8 @@ class _TeamApplicationSheetState extends State<TeamApplicationSheet> {
               width: double.infinity,
               height: 46,
               child: FilledButton(
-                onPressed: isLoading ? null : _submit,
-                child: isLoading
+                onPressed: processing ? null : _submit,
+                child: processing
                     ? const SizedBox(
                         width: 20,
                         height: 20,

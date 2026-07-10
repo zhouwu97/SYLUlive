@@ -8,9 +8,11 @@ import '../../screens/water_team/team_recruitment_applications_screen.dart';
 import 'team_application_sheet.dart';
 
 /// 帖子详情中的招募摘要。审批列表独立跳转，避免详情页承担长列表状态。
+///
+/// [onChanged] 接收操作后最新的 [Post]，供详情页直接更新避免二次 GET。
 class TeamRecruitmentPanel extends StatelessWidget {
   final Post post;
-  final VoidCallback? onChanged;
+  final ValueChanged<Post>? onChanged;
 
   const TeamRecruitmentPanel({super.key, required this.post, this.onChanged});
 
@@ -35,12 +37,11 @@ class TeamRecruitmentPanel extends StatelessWidget {
   }
 
   Future<void> _apply(BuildContext context, TeamRecruitmentMeta meta) async {
-    final changed = await TeamApplicationSheet.show(
+    final result = await TeamApplicationSheet.show(
       context,
       recruitmentId: meta.recruitmentId,
-      postId: post.id,
     );
-    if (changed == true) onChanged?.call();
+    if (result != null) onChanged?.call(result);
   }
 
   Future<void> _cancel(BuildContext context, TeamRecruitmentMeta meta) async {
@@ -71,12 +72,17 @@ class TeamRecruitmentPanel extends StatelessWidget {
           .showSnackBar(const SnackBar(content: Text('未找到申请记录，请稍后重试')));
       return;
     }
-    final success =
-        await provider.cancel(applicationId: application.id, postId: post.id);
+    if (provider.isApplicationProcessing(application.id)) return;
+    final success = await provider.cancel(
+      applicationId: application.id,
+      recruitmentId: meta.recruitmentId,
+    );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success ? '申请已取消' : (provider.errorFor(0) ?? '取消申请失败'))));
-    if (success) onChanged?.call();
+        content: Text(success
+            ? '申请已取消'
+            : (provider.errorFor(meta.recruitmentId) ?? '取消申请失败'))));
+    if (success) onChanged?.call(post);
   }
 
   @override
@@ -85,6 +91,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
     if (meta == null) return const SizedBox.shrink();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final color = _statusColor(meta, isDark);
+    final provider = context.watch<WaterTeamProvider>();
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -140,37 +147,53 @@ class TeamRecruitmentPanel extends StatelessWidget {
                     MaterialPageRoute(
                         builder: (_) =>
                             TeamRecruitmentApplicationsScreen(post: post)));
-                onChanged?.call();
+                onChanged?.call(post);
               },
               icon: const Icon(Icons.fact_check_outlined, size: 17),
               label: const Text('管理申请'),
             ),
             const SizedBox(width: 8),
-            TextButton(
-              onPressed: meta.isExpired
-                  ? null
-                  : () => _toggleStatus(context, meta),
-              child: Text(meta.isClosed ? '重新开启招募' : '关闭招募'),
-            ),
+            Builder(builder: (context) {
+              final processing =
+                  provider.isRecruitmentProcessing(meta.recruitmentId);
+              return TextButton(
+                onPressed: processing || meta.isExpired
+                    ? null
+                    : () => _toggleStatus(context, meta),
+                child: Text(meta.isClosed ? '重新开启招募' : '关闭招募'),
+              );
+            }),
           ]),
         ] else if (meta.isPending) ...[
           _statusRow('申请状态：等待处理', isDark),
           Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
-                  onPressed: () => _cancel(context, meta),
-                  child: const Text('取消申请'))),
+              child: Builder(builder: (context) {
+                // 取消按钮需要找到申请 ID 才能判断处理状态。
+                // 加载我的申请以获取本地状态；实际 ID 来自首次 cancel 调用。
+                return TextButton(
+                    onPressed: () => _cancel(context, meta),
+                    child: const Text('取消申请'));
+              })),
         ] else if (meta.isAccepted) ...[
           _statusRow('申请状态：已加入', isDark),
         ] else if (meta.canApply) ...[
           Align(
               alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                  onPressed: () => _apply(context, meta),
-                  icon: const Icon(Icons.person_add_alt_1, size: 17),
-                  label: Text(
-                      meta.isRejected || meta.isCancelled ? '重新申请' : '申请加入'))),
-        ] else if (!context.read<AuthProvider>().isLoggedIn && meta.isRecruiting) ...[
+              child: Builder(builder: (context) {
+                final processing =
+                    provider.isRecruitmentProcessing(meta.recruitmentId);
+                return FilledButton.icon(
+                    onPressed: processing
+                        ? null
+                        : () => _apply(context, meta),
+                    icon: const Icon(Icons.person_add_alt_1, size: 17),
+                    label: Text(meta.isRejected || meta.isCancelled
+                        ? '重新申请'
+                        : '申请加入'));
+              })),
+        ] else if (!context.read<AuthProvider>().isLoggedIn &&
+            meta.isRecruiting) ...[
           Align(
               alignment: Alignment.centerRight,
               child: FilledButton.icon(
@@ -196,7 +219,9 @@ class TeamRecruitmentPanel extends StatelessWidget {
         context: context,
         builder: (_) => AlertDialog(
               title: Text('$action招募？'),
-              content: Text(close ? '关闭后其他用户将不能继续申请。' : '重新开启后，符合条件的用户可以继续申请。'),
+              content: Text(close
+                  ? '关闭后其他用户将不能继续申请。'
+                  : '重新开启后，符合条件的用户可以继续申请。'),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(context, false),
@@ -208,14 +233,15 @@ class TeamRecruitmentPanel extends StatelessWidget {
             ));
     if (ok != true || !context.mounted) return;
     final provider = context.read<WaterTeamProvider>();
-    final success = await provider.updateRecruitmentStatus(
+    final updated = await provider.updateRecruitmentStatus(
         recruitmentId: meta.recruitmentId,
         status: close ? 'closed' : 'recruiting');
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content:
-            Text(success ? '$action成功' : (provider.errorFor(meta.recruitmentId) ?? '$action失败'))));
-    if (success) onChanged?.call();
+        content: Text(updated != null
+            ? '$action成功'
+            : (provider.errorFor(meta.recruitmentId) ?? '$action失败'))));
+    if (updated != null) onChanged?.call(updated);
   }
 
   Widget _statusRow(String text, bool isDark) => Padding(

@@ -175,12 +175,15 @@ func TestUpdateMarketPostStoresTagsFromMultipartForm(t *testing.T) {
 
 func newMarketTagsTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	dbName := strings.ReplaceAll(t.Name(), "/", "_")
+	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{}, 
+	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
+		&models.ExpLog{},
+		&models.Like{},
 		&models.Post{},
 		&models.PostImage{},
 	); err != nil {

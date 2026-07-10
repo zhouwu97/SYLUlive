@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
+import '../../utils/competition_batch_action_payload.dart';
 import '../../widgets/competition/competition_empty_state.dart';
 import '../../widgets/competition/competition_status_helper.dart';
 import '../../widgets/competition/competition_student_event_card.dart';
@@ -760,7 +761,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     }
   }
 
-  // Removed hero card, import button, stat items, search field, filter bar
+  // 已移除头图、导入按钮、统计项、搜索框和筛选栏
 
   Widget _buildEventCard(CompetitionEvent event, bool isAdmin) {
     return CompetitionStudentEventCard(
@@ -1448,7 +1449,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
   List<dynamic> _items = [];
   List<CompetitionCategory> _categories = [];
   bool _loading = true;
-  
+
   final _searchController = TextEditingController();
   final Set<int> _selectedEventIds = {};
   bool _selectionMode = false;
@@ -1553,6 +1554,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
   }
 
   Future<void> _deleteItem(Map<String, dynamic> item) async {
+    final dio = context.read<AuthProvider>().dio;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1571,7 +1573,6 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    final dio = context.read<AuthProvider>().dio;
     try {
       await dio.delete('/user/competition-calendar/items/${item['id']}');
       if (!mounted) return;
@@ -1647,7 +1648,8 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
                 if (!_selectionMode) _selectedEventIds.clear();
               });
             },
-            icon: Icon(_selectionMode ? Icons.close_rounded : Icons.checklist_rounded),
+            icon: Icon(
+                _selectionMode ? Icons.close_rounded : Icons.checklist_rounded),
           ),
           IconButton(
             tooltip: '新增比赛',
@@ -1675,14 +1677,17 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
                 if (_selectionMode)
                   CompetitionBatchSelectionBar(
                     selectedCount: _selectedEventIds.length,
-                    allItemsSelected: _selectedEventIds.length == items.length && items.isNotEmpty,
+                    allItemsSelected:
+                        _selectedEventIds.length == items.length &&
+                            items.isNotEmpty,
                     allItemsLabel: '全选 (${items.length})',
                     onToggleSelectAll: () {
                       setState(() {
                         if (_selectedEventIds.length == items.length) {
                           _selectedEventIds.clear();
                         } else {
-                          _selectedEventIds.addAll(items.map((e) => _calendarInt(e['id'])));
+                          _selectedEventIds
+                              .addAll(items.map((e) => _calendarInt(e['id'])));
                         }
                       });
                     },
@@ -1725,7 +1730,8 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
                             itemBuilder: (context, index) {
                               final row = flattenedRows[index];
                               if (row['isHeader'] == true) {
-                                return _buildGroupHeader(row['title'], row['count'], isDark);
+                                return _buildGroupHeader(
+                                    row['title'], row['count'], isDark);
                               }
                               return _buildPlanCard(row);
                             },
@@ -1739,7 +1745,8 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     );
   }
 
-  List<dynamic> _flattenedList(Map<String, List<Map<String, dynamic>>> grouped) {
+  List<dynamic> _flattenedList(
+      Map<String, List<Map<String, dynamic>>> grouped) {
     final groups = {
       'now': '现在该做',
       'soon': '近期关注',
@@ -1750,7 +1757,11 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     for (final key in groups.keys) {
       final groupItems = grouped[key]!;
       if (groupItems.isNotEmpty) {
-        flattened.add({'isHeader': true, 'title': groups[key], 'count': groupItems.length});
+        flattened.add({
+          'isHeader': true,
+          'title': groups[key],
+          'count': groupItems.length
+        });
         flattened.addAll(groupItems);
       }
     }
@@ -1763,13 +1774,15 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .where((item) {
-          if (keyword.isEmpty) return true;
-          final title = '${item['title'] ?? ''}'.toLowerCase();
-          final userNote = '${item['user_note'] ?? ''}'.toLowerCase();
-          final source = competitionSourceLabel('${item['source_type'] ?? ''}').toLowerCase();
-          return title.contains(keyword) || userNote.contains(keyword) || source.contains(keyword);
-        })
-        .toList();
+      if (keyword.isEmpty) return true;
+      final title = '${item['title'] ?? ''}'.toLowerCase();
+      final userNote = '${item['user_note'] ?? ''}'.toLowerCase();
+      final source =
+          competitionSourceLabel('${item['source_type'] ?? ''}').toLowerCase();
+      return title.contains(keyword) ||
+          userNote.contains(keyword) ||
+          source.contains(keyword);
+    }).toList();
   }
 
   Widget _buildSearchBox(bool isDark) {
@@ -1783,25 +1796,29 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
       ),
       child: Row(
         children: [
-          Icon(Icons.search_rounded, color: CompetitionUiTokens.subColor(isDark), size: 18),
+          Icon(Icons.search_rounded,
+              color: CompetitionUiTokens.subColor(isDark), size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
                 hintText: '搜索比赛名称 / 备注 / 来源',
-                hintStyle: TextStyle(color: CompetitionUiTokens.subColor(isDark), fontSize: 14),
+                hintStyle: TextStyle(
+                    color: CompetitionUiTokens.subColor(isDark), fontSize: 14),
                 border: InputBorder.none,
                 isCollapsed: true,
               ),
-              style: TextStyle(fontSize: 14, color: CompetitionUiTokens.titleColor(isDark)),
+              style: TextStyle(
+                  fontSize: 14, color: CompetitionUiTokens.titleColor(isDark)),
             ),
           ),
           if (_searchController.text.isNotEmpty)
             IconButton(
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
-              icon: Icon(Icons.close_rounded, size: 16, color: CompetitionUiTokens.subColor(isDark)),
+              icon: Icon(Icons.close_rounded,
+                  size: 16, color: CompetitionUiTokens.subColor(isDark)),
               onPressed: () => _searchController.clear(),
             ),
         ],
@@ -1901,13 +1918,33 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
       builder: (_) => CompetitionBatchActionSheet(
         selectedCount: _selectedEventIds.length,
         actions: const [
-          CompetitionBatchAction(value: 'watching', label: '恢复关注', icon: Icons.visibility_outlined),
-          CompetitionBatchAction(value: 'preparing', label: '设为准备中', icon: Icons.model_training_rounded),
-          CompetitionBatchAction(value: 'registered', label: '设为已报名', icon: Icons.how_to_reg_rounded),
-          CompetitionBatchAction(value: 'submitted', label: '设为已提交', icon: Icons.upload_file_rounded),
-          CompetitionBatchAction(value: 'finished', label: '标记已结束', icon: Icons.emoji_events_outlined),
-          CompetitionBatchAction(value: 'archived', label: '归档', icon: Icons.inventory_2_outlined),
-          CompetitionBatchAction(value: 'delete', label: '删除', icon: Icons.delete_outline_rounded, danger: true),
+          CompetitionBatchAction(
+              value: 'watching',
+              label: '恢复关注',
+              icon: Icons.visibility_outlined),
+          CompetitionBatchAction(
+              value: 'preparing',
+              label: '设为准备中',
+              icon: Icons.model_training_rounded),
+          CompetitionBatchAction(
+              value: 'registered',
+              label: '设为已报名',
+              icon: Icons.how_to_reg_rounded),
+          CompetitionBatchAction(
+              value: 'submitted',
+              label: '设为已提交',
+              icon: Icons.upload_file_rounded),
+          CompetitionBatchAction(
+              value: 'finished',
+              label: '标记已结束',
+              icon: Icons.emoji_events_outlined),
+          CompetitionBatchAction(
+              value: 'archived', label: '归档', icon: Icons.inventory_2_outlined),
+          CompetitionBatchAction(
+              value: 'delete',
+              label: '删除',
+              icon: Icons.delete_outline_rounded,
+              danger: true),
         ],
         onActionSelected: (value) {
           final labels = {
@@ -1926,18 +1963,18 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
   }
 
   Future<void> _batchAction(String action, String actionLabel) async {
-    Navigator.pop(context);
     final ids = _selectedEventIds.toList();
     if (ids.isEmpty) return;
 
     final isDelete = action == 'delete';
+    final dio = context.read<AuthProvider>().dio;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => CompetitionBatchConfirmDialog(
         title: '确认批量$actionLabel',
         content: '即将对选中的 ${ids.length} 项比赛执行$actionLabel。'
-                 '${isDelete ? '\n\n注意：这些项目只会从“我的竞赛计划”移除，不会删除官方竞赛库中的比赛。' : ''}',
+            '${isDelete ? '\n\n注意：这些项目只会从“我的竞赛计划”移除，不会删除官方竞赛库中的比赛。' : ''}',
         confirmLabel: '确认',
         isDanger: isDelete,
       ),
@@ -1945,25 +1982,30 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     if (confirmed != true) return;
 
     try {
-      final dio = context.read<AuthProvider>().dio;
-      await dio.post(
+      final response = await dio.post(
         '/user/competition-calendar/items/batch-action',
-        data: {
-          'ids': ids,
-          'action': action,
-        },
+        data: buildCompetitionCalendarBatchActionPayload(
+          ids: ids,
+          action: action,
+        ),
       );
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '批量$actionLabel完成');
+      final data = response.data as Map<String, dynamic>?;
+      final success = (data?['success_count'] as num?)?.toInt() ?? 0;
+      final skipped = (data?['skipped_count'] as num?)?.toInt() ?? 0;
+      AppFeedback.showSnackBar(
+        context,
+        '批量$actionLabel完成：成功 $success，跳过 $skipped',
+      );
       setState(() {
         _selectionMode = false;
         _selectedEventIds.clear();
       });
-      _loadAll();
+      await _load();
     } catch (_) {
       if (!mounted) return;
       AppFeedback.showSnackBar(context, '批量$actionLabel部分或全部失败', isError: true);
-      _loadAll();
+      await _load();
     }
   }
 

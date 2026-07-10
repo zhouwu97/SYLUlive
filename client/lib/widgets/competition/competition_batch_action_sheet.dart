@@ -32,8 +32,8 @@ class CompetitionBatchActionSheet extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = CompetitionUiTokens.pageBg(isDark);
     final titleColor = CompetitionUiTokens.titleColor(isDark);
-    final dangerColor = CompetitionUiTokens.danger(isDark);
-    final primaryColor = CompetitionUiTokens.primary(isDark);
+    final dangerColor = CompetitionUiTokens.dangerColor(isDark);
+    final primaryColor = CompetitionUiTokens.accent(isDark);
 
     return Container(
       decoration: BoxDecoration(
@@ -48,7 +48,7 @@ class CompetitionBatchActionSheet extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: Colors.grey.withOpacity(0.3),
+              color: Colors.grey.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -67,9 +67,10 @@ class CompetitionBatchActionSheet extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: primaryColor.withOpacity(0.1),
+                    color: primaryColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -85,9 +86,10 @@ class CompetitionBatchActionSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          ...actions.map((action) => _buildActionTile(context, action, titleColor, dangerColor)),
+          ...actions.map((action) =>
+              _buildActionTile(context, action, titleColor, dangerColor)),
           const SizedBox(height: 8),
-          Divider(color: Colors.grey.withOpacity(0.2)),
+          Divider(color: Colors.grey.withValues(alpha: 0.2)),
           ListTile(
             title: const Center(
               child: Text(
@@ -105,7 +107,8 @@ class CompetitionBatchActionSheet extends StatelessWidget {
     );
   }
 
-  Widget _buildActionTile(BuildContext context, CompetitionBatchAction action, Color titleColor, Color dangerColor) {
+  Widget _buildActionTile(BuildContext context, CompetitionBatchAction action,
+      Color titleColor, Color dangerColor) {
     final color = action.danger ? dangerColor : titleColor;
     return ListTile(
       leading: Icon(action.icon, color: color),

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import '../../../lib/widgets/competition/competition_batch_selection_bar.dart';
+import 'package:shenliyuan/widgets/competition/competition_batch_selection_bar.dart';
 
 void main() {
-  testWidgets('CompetitionBatchSelectionBar basic interactions', (WidgetTester tester) async {
+  testWidgets('CompetitionBatchSelectionBar basic interactions',
+      (WidgetTester tester) async {
     bool selectAllToggled = false;
     bool actionClicked = false;
     bool cancelClicked = false;

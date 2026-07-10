@@ -50,7 +50,7 @@ class CourseRemoteViewsFactory(
         views.setTextViewText(R.id.tv_course_teacher, course.teacher)
         views.setViewVisibility(
             R.id.tv_course_location,
-            if (variant.size == NativeHomeWidgetSize.SIZE_2X4 && course.location.isNotBlank()) {
+            if (variant.size == NativeHomeWidgetSize.SIZE_4X2 && course.location.isNotBlank()) {
                 View.VISIBLE
             } else {
                 View.GONE
@@ -58,7 +58,7 @@ class CourseRemoteViewsFactory(
         )
         views.setViewVisibility(
             R.id.tv_course_teacher,
-            if (variant.size == NativeHomeWidgetSize.SIZE_2X4 && course.teacher.isNotBlank()) {
+            if (variant.size == NativeHomeWidgetSize.SIZE_4X2 && course.teacher.isNotBlank()) {
                 View.VISIBLE
             } else {
                 View.GONE

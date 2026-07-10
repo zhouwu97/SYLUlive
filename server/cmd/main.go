@@ -117,6 +117,8 @@ func main() {
 		&models.WaterModerationLog{},
 
 		&models.PostImage{},
+		&models.WaterTeamRecruitment{},
+		&models.WaterTeamApplication{},
 		&models.FeaturedApplication{},
 		&models.CollaborationApplication{},
 		&models.PostRevisionProposal{},
@@ -211,7 +213,13 @@ func main() {
 		log.Fatal("竞赛分类种子初始化失败:", err)
 	}
 	if err := models.EnsureWaterSections(db); err != nil {
-		log.Fatal("水帖版块种子初始化失败:", err)
+		log.Fatal("初始化默认版块失败:", err)
+	}
+	if err := models.MigrateLegacyTeamRecruitmentTag(db); err != nil {
+		log.Fatal("迁移历史组队标签失败:", err)
+	}
+	if err := models.EnsureWaterTeamSchema(db); err != nil {
+		log.Fatal("确保组队模块数据库约束失败:", err)
 	}
 	if err := ensureFeatureCollaborationIndexes(db); err != nil {
 		log.Fatal("精华共同创作索引迁移失败:", err)
@@ -285,6 +293,7 @@ func main() {
 	waterSectionHandler := handlers.NewWaterSectionHandler(db)
 	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
 	waterModerationHandler := handlers.NewWaterModerationHandler(db)
+	waterTeamHandler := handlers.NewWaterTeamHandler(db)
 
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
@@ -619,6 +628,17 @@ func main() {
 	r.POST("/api/collaboration-applications/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectCollaborationApplication)
 	r.POST("/api/revision-proposals/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveRevisionProposal)
 	r.POST("/api/revision-proposals/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectRevisionProposal)
+
+	waterTeam := r.Group("/api/water/team")
+	waterTeam.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		waterTeam.POST("/recruitments/:id/apply", waterTeamHandler.Apply)
+		waterTeam.GET("/recruitments/:id/applications", waterTeamHandler.GetRecruitmentApplications)
+		waterTeam.POST("/applications/:id/accept", waterTeamHandler.Accept)
+		waterTeam.POST("/applications/:id/reject", waterTeamHandler.Reject)
+		waterTeam.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+		waterTeam.GET("/my_applications", waterTeamHandler.GetMyApplications)
+	}
 
 	competitions := r.Group("/api/competitions")
 	{

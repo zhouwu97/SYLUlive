@@ -157,15 +157,15 @@
         </receiver>
 
         <receiver
-            android:name=".TodayCourseWidget2x4Provider"
+            android:name=".TodayCourseWidget4x2Provider"
             android:exported="true"
-            android:label="@string/widget_course_2x4_label">
+            android:label="@string/widget_course_4x2_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/course_widget_2x4_info" />
+                android:resource="@xml/course_widget_4x2_info" />
         </receiver>
 
         <!-- RemoteViewsService: ListView 跨进程数据网关 -->
@@ -199,15 +199,15 @@
         </receiver>
 
         <receiver
-            android:name=".ExamWidget2x4Provider"
+            android:name=".ExamWidget4x2Provider"
             android:exported="true"
-            android:label="@string/widget_exam_2x4_label">
+            android:label="@string/widget_exam_4x2_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/exam_widget_2x4_info" />
+                android:resource="@xml/exam_widget_4x2_info" />
         </receiver>
 
         <!-- RemoteViewsService: 考试 ListView 跨进程数据网关 -->

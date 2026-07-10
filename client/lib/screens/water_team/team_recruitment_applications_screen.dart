@@ -143,7 +143,7 @@ class _TeamRecruitmentApplicationsScreenState
       reply = value;
     }
     if (!mounted) return;
-    final success = await provider.review(
+    final result = await provider.review(
       applicationId: application.id,
       accept: accept,
       reply: reply,
@@ -152,10 +152,10 @@ class _TeamRecruitmentApplicationsScreenState
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success
+        content: Text(result != null
             ? (accept ? '已通过申请' : '已拒绝申请')
             : (provider.errorFor(application.recruitmentId) ?? '操作失败'))));
-    if (success) setState(() {});
+    if (result != null) setState(() {});
   }
 
   Future<String?> _showReplyDialog() async {

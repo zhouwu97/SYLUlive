@@ -195,12 +195,31 @@ class EduProvider extends ChangeNotifier {
 
   /// 解析Dio异常并返回友好的错误信息
   String _parseDioError(DioException e) {
-    debugPrint('Edu Dio error: ${e.requestOptions.uri} ${e.type} ${e.error}');
+    final statusCode = e.response?.statusCode;
+    final data = e.response?.data;
+    debugPrint(
+      'Edu Dio error: uri=${e.requestOptions.uri} '
+      'status=$statusCode type=${e.type} '
+      'data=${data is Map ? {'code': data['code'], 'error': data['error'], 'upstream_code': data['upstream_code']} : data} '
+      'error=${e.error}',
+    );
     return AppFeedback.dioErrorMessage(
       e,
       serviceName: '教务服务',
       fallback: '教务操作失败，请稍后再试',
     );
+  }
+
+  /// 判断 DioException 是否是教务会话过期（按结构化 error code，不按中文文字）
+  bool _isEduSessionExpired(DioException e) {
+    final data = e.response?.data;
+    if (data is Map) {
+      final code = data['code'];
+      if (code == 'EDU_SESSION_EXPIRED') return true;
+      final upstream = data['upstream_code'];
+      if (upstream == 'SESSION_EXPIRED') return true;
+    }
+    return false;
   }
 
   // 获取绑定状态
@@ -514,14 +533,7 @@ class EduProvider extends ChangeNotifier {
         return OperationResult.fail('获取课表失败');
       } on DioException catch (e) {
         final errorMsg = _parseDioError(e);
-        if (errorMsg.contains('未登录') ||
-            errorMsg.contains('过期') ||
-            errorMsg.contains('重新登录') ||
-            errorMsg.contains('会话') ||
-            errorMsg.contains('cookie') ||
-            errorMsg.contains('暂未开放') ||
-            errorMsg.contains('失效') ||
-            errorMsg.contains('Cookie')) {
+        if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
           if (rebindSuccess) {
             try {
@@ -635,14 +647,8 @@ class EduProvider extends ChangeNotifier {
         }
         return OperationResult.fail('获取成绩构成失败');
       } on DioException catch (e) {
-        final errorMsg = _parseDioError(e);
-        if (errorMsg.contains('未登录') ||
-            errorMsg.contains('过期') ||
-            errorMsg.contains('重新登录') ||
-            errorMsg.contains('会话') ||
-            errorMsg.contains('cookie') ||
-            errorMsg.contains('失效') ||
-            errorMsg.contains('Cookie')) {
+        _parseDioError(e);
+        if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
           if (rebindSuccess) {
             try {
@@ -707,14 +713,8 @@ class EduProvider extends ChangeNotifier {
         }
         return OperationResult.fail('获取学业情况失败');
       } on DioException catch (e) {
-        final errorMsg = _parseDioError(e);
-        if (errorMsg.contains('未登录') ||
-            errorMsg.contains('过期') ||
-            errorMsg.contains('重新登录') ||
-            errorMsg.contains('会话') ||
-            errorMsg.contains('cookie') ||
-            errorMsg.contains('失效') ||
-            errorMsg.contains('Cookie')) {
+        _parseDioError(e);
+        if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
           if (rebindSuccess) {
             try {
@@ -779,14 +779,7 @@ class EduProvider extends ChangeNotifier {
         return OperationResult.fail('获取成绩失败');
       } on DioException catch (e) {
         final errorMsg = _parseDioError(e);
-        if (errorMsg.contains('未登录') ||
-            errorMsg.contains('过期') ||
-            errorMsg.contains('重新登录') ||
-            errorMsg.contains('会话') ||
-            errorMsg.contains('cookie') ||
-            errorMsg.contains('暂未开放') ||
-            errorMsg.contains('失效') ||
-            errorMsg.contains('Cookie')) {
+        if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
           if (rebindSuccess) {
             try {

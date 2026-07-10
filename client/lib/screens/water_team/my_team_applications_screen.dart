@@ -44,33 +44,59 @@ class _MyTeamApplicationsScreenState extends State<MyTeamApplicationsScreen> {
       ]),
       body: provider.isLoadingMyApplications && apps.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                  children: [
-                    for (final entry in groups.entries) ...[
-                      if (entry.value.isNotEmpty)
-                        Padding(
-                            padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
-                            child: Text(
-                                '${_label(entry.key)} ${entry.value.length}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800))),
-                      ...entry.value.map((app) => _MyApplicationCard(
-                          application: app,
-                          onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => PostDetailScreen(
-                                      postId: app.postId,
-                                      initialPost: app.post))))),
-                    ],
-                    if (apps.isEmpty)
-                      const Padding(
-                          padding: EdgeInsets.only(top: 160),
-                          child: Center(child: Text('还没有组队申请'))),
-                  ])),
+          : apps.isEmpty && provider.myApplicationsError != null
+              ? _buildErrorView(provider)
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                      children: [
+                        for (final entry in groups.entries) ...[
+                          if (entry.value.isNotEmpty)
+                            Padding(
+                                padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+                                child: Text(
+                                    '${_label(entry.key)} ${entry.value.length}',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w800))),
+                          ...entry.value.map((app) => _MyApplicationCard(
+                              application: app,
+                              onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => PostDetailScreen(
+                                          postId: app.postId,
+                                          initialPost: app.post))))),
+                        ],
+                        if (apps.isEmpty && provider.myApplicationsError == null)
+                          const Padding(
+                              padding: EdgeInsets.only(top: 160),
+                              child: Center(child: Text('还没有组队申请'))),
+                      ])),
+    );
+  }
+
+  Widget _buildErrorView(WaterTeamProvider provider) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
+            const SizedBox(height: 14),
+            Text(provider.myApplicationsError ?? '加载失败',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey, fontSize: 15)),
+            const SizedBox(height: 18),
+            OutlinedButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('重试'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -137,11 +163,16 @@ class _MyApplicationCard extends StatelessWidget {
 
   Future<void> _cancel(BuildContext context) async {
     final provider = context.read<WaterTeamProvider>();
+    if (provider.isApplicationProcessing(application.id)) return;
     final success = await provider.cancel(
-        applicationId: application.id, postId: application.postId);
+      applicationId: application.id,
+      recruitmentId: application.recruitmentId,
+    );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success ? '申请已取消' : (provider.errorFor(0) ?? '取消申请失败'))));
+        content: Text(success
+            ? '申请已取消'
+            : (provider.errorFor(application.recruitmentId) ?? '取消申请失败'))));
     if (success) await provider.loadMyApplications(force: true);
   }
 }

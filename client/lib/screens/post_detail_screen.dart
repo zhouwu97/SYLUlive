@@ -2243,7 +2243,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   _buildAdaptiveWaterImages(p, isDark),
                 ],
                 if (p.teamRecruitment != null)
-                  TeamRecruitmentPanel(post: p, onChanged: _refreshTeamPost),
+                  TeamRecruitmentPanel(
+                      post: p,
+                      onChanged: (updated) =>
+                          _refreshTeamPost(updatedPost: updated)),
                 const SizedBox(height: 6),
                 _buildWaterActionBar(isDark),
               ],

@@ -684,6 +684,7 @@ class PostProvider extends ChangeNotifier {
     List<String>? teamRoles,
     DateTime? teamDeadline,
     bool sendTeamFields = false,
+    bool sendWaterTagField = false,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -693,7 +694,9 @@ class PostProvider extends ChangeNotifier {
         'post_type': postType ?? '',
         'price': price ?? 0,
         'contact': contact ?? '',
-        if (waterTagId != null && waterTagId > 0) 'water_tag_id': waterTagId,
+        if (sendWaterTagField) 'water_tag_id': waterTagId ?? 0,
+        if (!sendWaterTagField && waterTagId != null && waterTagId > 0)
+          'water_tag_id': waterTagId,
         'file_ids': fileIds?.join(',') ?? '',
         'market_tags': marketTags?.join(',') ?? '',
         if (sendTeamFields) 'team_needed_count': teamNeededCount ?? 0,

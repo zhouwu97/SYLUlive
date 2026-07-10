@@ -170,13 +170,26 @@ class TeamRecruitmentMeta {
     required this.canManage,
   });
 
+  /// 服务端返回的 effective_status 是按钮矩阵的唯一状态依据。
+  bool get isRecruiting => effectiveStatus == 'recruiting';
+  bool get isFull => effectiveStatus == 'full';
+  bool get isClosed => effectiveStatus == 'closed';
+  bool get isExpired => effectiveStatus == 'expired';
+  bool get isPending => myApplicationStatus == 'pending';
+  bool get isAccepted => myApplicationStatus == 'accepted';
+  bool get isRejected => myApplicationStatus == 'rejected';
+  bool get isCancelled => myApplicationStatus == 'cancelled';
+
   factory TeamRecruitmentMeta.fromJson(Map<String, dynamic> json) {
     return TeamRecruitmentMeta(
       recruitmentId: json['recruitment_id'] ?? 0,
       neededCount: json['needed_count'] ?? 0,
       acceptedCount: json['accepted_count'] ?? 0,
       remainingCount: json['remaining_count'] ?? 0,
-      roles: (json['roles'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      roles: (json['roles'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
       deadline: DateTime.tryParse(json['deadline'] ?? ''),
       status: json['status'] ?? '',
       effectiveStatus: json['effective_status'] ?? '',
@@ -199,7 +212,8 @@ class TeamRecruitmentMeta {
       'status': status,
       'effective_status': effectiveStatus,
       'application_count': applicationCount,
-      if (myApplicationStatus != null) 'my_application_status': myApplicationStatus,
+      if (myApplicationStatus != null)
+        'my_application_status': myApplicationStatus,
       'is_owner': isOwner,
       'can_apply': canApply,
       'can_manage': canManage,
@@ -419,6 +433,8 @@ class Post {
     bool? homeFeaturedPending,
     WaterSectionAuthorMeta? waterSectionAuthorMeta,
     TeamRecruitmentMeta? teamRecruitment,
+    bool clearTeamRecruitment = false,
+    bool clearTeamRecruitmentMeta = false,
     int? expEarned,
     List<ExpAward>? expAwards,
     List<PostImage>? images,
@@ -460,7 +476,9 @@ class Post {
       homeFeaturedPending: homeFeaturedPending ?? this.homeFeaturedPending,
       waterSectionAuthorMeta:
           waterSectionAuthorMeta ?? this.waterSectionAuthorMeta,
-      teamRecruitment: teamRecruitment ?? this.teamRecruitment,
+      teamRecruitment: (clearTeamRecruitment || clearTeamRecruitmentMeta)
+          ? null
+          : (teamRecruitment ?? this.teamRecruitment),
       expEarned: expEarned ?? this.expEarned,
       expAwards: expAwards ?? this.expAwards,
       images: images ?? this.images,

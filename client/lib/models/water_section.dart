@@ -61,7 +61,7 @@ class WaterSectionTag {
     this.sortOrder = 0,
     this.isDefault = false,
     this.isEnabled = true,
-    this.contentMode = 'normal',
+    this.contentMode = 'standard',
   });
 
   factory WaterSectionTag.fromJson(Map<String, dynamic> json) {
@@ -74,7 +74,7 @@ class WaterSectionTag {
       sortOrder: json['sort_order'] ?? 0,
       isDefault: json['is_default'] == true,
       isEnabled: json['is_enabled'] != false,
-      contentMode: json['content_mode'] ?? 'normal',
+      contentMode: json['content_mode'] ?? 'standard',
     );
   }
 

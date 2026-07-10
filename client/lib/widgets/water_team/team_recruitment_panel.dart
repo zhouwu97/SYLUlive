@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/post.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/water_team_provider.dart';
 import '../../screens/water_team/team_recruitment_applications_screen.dart';
 import 'team_application_sheet.dart';
@@ -74,7 +75,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
         await provider.cancel(applicationId: application.id, postId: post.id);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success ? '申请已取消' : (provider.error ?? '取消申请失败'))));
+        content: Text(success ? '申请已取消' : (provider.errorFor(0) ?? '取消申请失败'))));
     if (success) onChanged?.call();
   }
 
@@ -146,7 +147,7 @@ class TeamRecruitmentPanel extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             TextButton(
-              onPressed: meta.isExpired || meta.isFull
+              onPressed: meta.isExpired
                   ? null
                   : () => _toggleStatus(context, meta),
               child: Text(meta.isClosed ? '重新开启招募' : '关闭招募'),
@@ -169,6 +170,13 @@ class TeamRecruitmentPanel extends StatelessWidget {
                   icon: const Icon(Icons.person_add_alt_1, size: 17),
                   label: Text(
                       meta.isRejected || meta.isCancelled ? '重新申请' : '申请加入'))),
+        ] else if (!context.read<AuthProvider>().isLoggedIn && meta.isRecruiting) ...[
+          Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                  onPressed: () => Navigator.pushNamed(context, '/login'),
+                  icon: const Icon(Icons.login_rounded, size: 17),
+                  label: const Text('登录后申请'))),
         ] else if (meta.isFull) ...[
           _statusRow('当前已满员', isDark),
         ] else if (meta.isClosed) ...[
@@ -202,12 +210,11 @@ class TeamRecruitmentPanel extends StatelessWidget {
     final provider = context.read<WaterTeamProvider>();
     final success = await provider.updateRecruitmentStatus(
         recruitmentId: meta.recruitmentId,
-        postId: post.id,
         status: close ? 'closed' : 'recruiting');
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content:
-            Text(success ? '$action成功' : (provider.error ?? '$action失败'))));
+            Text(success ? '$action成功' : (provider.errorFor(meta.recruitmentId) ?? '$action失败'))));
     if (success) onChanged?.call();
   }
 

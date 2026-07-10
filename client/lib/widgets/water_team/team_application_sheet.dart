@@ -64,14 +64,15 @@ class _TeamApplicationSheetState extends State<TeamApplicationSheet> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(provider.error ?? '申请提交失败')),
+        SnackBar(content: Text(provider.errorFor(widget.recruitmentId) ?? '申请提交失败')),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = context.watch<WaterTeamProvider>().isLoading;
+    final isLoading =
+        context.watch<WaterTeamProvider>().isRecruitmentProcessing(widget.recruitmentId);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         20,

@@ -921,6 +921,19 @@ class PostProvider extends ChangeNotifier {
     ]);
   }
 
+  /// 刷新指定标签的组队信息流，用于状态变化后重新排序。
+  Future<void> refreshTeamTagFeeds({
+    required int tagId,
+    required String postType,
+  }) async {
+    await refresh(
+      boardId: 1,
+      type: postType,
+      tagId: tagId,
+      sort: 'all',
+    );
+  }
+
   Future<bool> likePost(int postId) async {
     try {
       await _dio.post('/posts/$postId/like');

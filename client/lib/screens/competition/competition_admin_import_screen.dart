@@ -42,12 +42,15 @@ const _competitionAiPrompt = '''
       "competition_level": "国家级/省级/校级/企业赛/平台赛/其他",
       "school_recognition_status": "recognized/not_recognized/pending/unknown",
       "school_recognition_grade": "",
-      "recommendation_level": "S/A/B/C",
+      "recommendation_level": "S/A/B+/B/B-/C/D/E",
       "importance_score": 80,
       "recommendation_reason": "推荐理由，60字以内",
       "organizer": "主办方",
       "host_unit": "承办/指导单位，没有就空字符串",
       "target_audience": "参赛对象",
+      "eligible_entry_years": ["2023", "2024"],
+      "eligible_colleges": ["信息科学与工程学院"],
+      "eligible_majors": ["计算机科学与技术"],
       "participation_type": "个人/团队/个人或团队",
       "team_size_min": 1,
       "team_size_max": 5,
@@ -76,7 +79,7 @@ const _competitionAiPrompt = '''
 规则：
 1. 日期字段必须是 YYYY-MM-DD，不能确定就留空字符串。
 2. URL 必须是 http 或 https，不确定就留空字符串。
-3. recommendation_level 只能是 S/A/B/C。
+3. recommendation_level 只能是 S/A/B+/B/B-/C/D/E。
 4. school_recognition_status 只能是 recognized/not_recognized/pending/unknown。
 5. source_channel 优先用 college_notice、school_catalog、enterprise、platform。
 6. primary_category_slug 必须使用系统已有分类：$_competitionCategorySlugHint。
@@ -102,6 +105,9 @@ const _competitionAiExampleJson = '''
       "organizer": "相关主办单位",
       "host_unit": "",
       "target_audience": "在校大学生",
+      "eligible_entry_years": [],
+      "eligible_colleges": [],
+      "eligible_majors": [],
       "participation_type": "个人",
       "team_size_min": 1,
       "team_size_max": 1,
@@ -178,9 +184,6 @@ class _CompetitionAdminImportScreenState
       return;
     }
     if (_jsonController.text == _previewedJsonText) {
-      return;
-    }
-    if (_jsonFileName != null) {
       return;
     }
     setState(() {
@@ -285,6 +288,19 @@ class _CompetitionAdminImportScreenState
   }
 
   List<Map<String, dynamic>> get _draftEvents {
+    final normalizedItems = _preview?['items'];
+    if (normalizedItems is List) {
+      return normalizedItems
+          .asMap()
+          .entries
+          .where((entry) => entry.value is Map)
+          .map(
+        (entry) {
+          return Map<String, dynamic>.from(entry.value as Map)
+            ..['__preview_index'] = entry.key;
+        },
+      ).toList();
+    }
     if (_fileJsonPayload != null) {
       final events = _fileJsonPayload!['events'];
       if (events is! List) return [];
@@ -1022,7 +1038,7 @@ class _CompetitionAdminImportScreenState
         _issuePill('缺官网', missingUrl),
         _issuePill('分类异常', categoryInvalid),
         _issuePill('推荐异常', recommendationInvalid),
-        _issuePill('待通知', pending),
+        _issuePill('时间待公布', pending),
         _issuePill('已确认', confirmed),
       ],
     );
@@ -1067,7 +1083,7 @@ class _CompetitionAdminImportScreenState
       ),
       (
         'pending',
-        '待通知',
+        '时间待公布',
         _countWhere(
           events,
           (e) =>
@@ -1133,6 +1149,9 @@ class _CompetitionAdminImportScreenState
     final timeStatus = _timeStatusLabel(_draftValue(event, 'time_status'));
     final timeNote = _draftValue(event, 'time_note');
     final sortMonth = _draftValue(event, 'sort_month');
+    final entryYears = _draftStringList(event, 'eligible_entry_years');
+    final colleges = _draftStringList(event, 'eligible_colleges');
+    final majors = _draftStringList(event, 'eligible_majors');
     final hasExactDate = _draftHasExactDate(event);
     final timeSummary = _draftTimeSummary(event);
     final problems = _draftProblems(event);
@@ -1207,6 +1226,13 @@ class _CompetitionAdminImportScreenState
                     _draftChip('$recommendation 推荐'),
                   _draftChip(recognition),
                   _draftChip(source),
+                  if (entryYears.isNotEmpty)
+                    _draftChip('入学年份 ${entryYears.join('/')}'),
+                  if (majors.isNotEmpty) _draftChip('专业 ${majors.join('/')}'),
+                  if (majors.isEmpty && colleges.isNotEmpty)
+                    _draftChip('学院 ${colleges.join('/')}'),
+                  if (entryYears.isEmpty && colleges.isEmpty && majors.isEmpty)
+                    _draftChip('通用适配'),
                 ],
               ),
             ],
@@ -1457,6 +1483,15 @@ class _CompetitionAdminImportScreenState
     return '${event[key] ?? ''}'.trim();
   }
 
+  List<String> _draftStringList(Map<String, dynamic> event, String key) {
+    final value = event[key];
+    if (value is! List) return [];
+    return value
+        .map((item) => '$item'.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
   String _previewErrorText(dynamic error) {
     if (error is Map) {
       final index = error['index'];
@@ -1478,9 +1513,9 @@ String _timeStatusLabel(String value) {
     case 'historical':
       return '往年参考';
     case 'pending':
-      return '待通知';
+      return '时间待公布';
     default:
-      return value.isEmpty ? '待通知' : value;
+      return value.isEmpty ? '时间待公布' : value;
   }
 }
 

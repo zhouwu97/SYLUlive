@@ -23,12 +23,30 @@ const (
 	ApplicationStatusCancelled = "cancelled"
 )
 
+// Team Recruitment Category
+const (
+	TeamCategoryCompetition = "competition"
+	TeamCategoryProject     = "project"
+	TeamCategoryStudy       = "study"
+	TeamCategoryActivity    = "activity"
+	TeamCategoryOther       = "other"
+)
+
+var ValidTeamCategories = map[string]bool{
+	TeamCategoryCompetition: true,
+	TeamCategoryProject:     true,
+	TeamCategoryStudy:       true,
+	TeamCategoryActivity:    true,
+	TeamCategoryOther:       true,
+}
+
 // WaterTeamRecruitment 组队招募信息
 type WaterTeamRecruitment struct {
 	ID            uint       `gorm:"primaryKey" json:"id"`
 	PostID        uint       `gorm:"not null;uniqueIndex" json:"post_id"`
 	SectionID     uint       `gorm:"not null;index" json:"section_id"`
 	TagID         uint       `gorm:"not null;index" json:"tag_id"`
+	Category      string     `gorm:"size:32;not null;default:'competition';index" json:"category"`
 	NeededCount   int        `gorm:"not null;default:1" json:"needed_count"`
 	AcceptedCount int        `gorm:"not null;default:0" json:"accepted_count"`
 	RolesJSON     string     `gorm:"type:text;not null" json:"roles_json"`
@@ -99,21 +117,28 @@ func EnsureWaterTeamSchema(db *gorm.DB) error {
 	return nil
 }
 
-// MigrateLegacyTeamRecruitmentTag 将现有的 competition / team 标签迁移为 team_recruitment 模式
+// MigrateLegacyTeamRecruitmentTag 将历史 team 标签转为仅供内部关联的标签。
+//
+// 组队大厅仍会使用该标签关联底层帖子，但普通水帖的标签接口不会再返回它，
+// 以避免用户从普通发帖页重新进入组队链路。
 func MigrateLegacyTeamRecruitmentTag(db *gorm.DB) error {
-	return db.Exec(`
+	if err := db.Exec(`
 		UPDATE water_section_tags
-		SET content_mode = 'team_recruitment'
+		SET content_mode = 'team_recruitment', is_enabled = FALSE
 		WHERE section_id = (
 			SELECT id FROM water_sections WHERE slug = 'competition'
 		)
 		AND slug = 'team'
-		AND (content_mode = '' OR content_mode = 'standard')
-		AND NOT EXISTS (
-			SELECT 1 FROM water_section_tags AS wst 
-			WHERE wst.section_id = water_section_tags.section_id 
-			AND wst.content_mode = 'team_recruitment'
-		);
+		AND (content_mode = '' OR content_mode = 'standard' OR content_mode = 'team_recruitment');
+	`).Error; err != nil {
+		return err
+	}
+
+	// 历史记录创建时尚未区分业务类型，统一归入竞赛分类。
+	return db.Exec(`
+		UPDATE water_team_recruitments
+		SET category = 'competition'
+		WHERE category IS NULL OR category = '';
 	`).Error
 }
 
@@ -139,4 +164,3 @@ func ValidateNoDuplicateTeamTags(db *gorm.DB) error {
 
 	return nil
 }
-

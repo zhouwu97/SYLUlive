@@ -16,7 +16,6 @@ import '../widgets/water_section/section_post_card.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import 'water_section_manage_screen.dart';
-import 'water_team/my_team_applications_screen.dart';
 import 'chat_list_screen.dart';
 import '../widgets/water_section/section_floating_dock.dart';
 
@@ -571,8 +570,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           _buildBackButton(),
           const Spacer(),
           _buildManageAction(isDark),
-          if (_activeSection.enabledTags.any((tag) => tag.isTeamRecruitment))
-            _buildMyTeamApplicationsAction(isDark),
           _buildMessageAction(),
         ],
       ),
@@ -900,31 +897,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           size: 16,
           color: Colors.white,
         ),
-      ),
-    );
-  }
-
-  Widget _buildMyTeamApplicationsAction(bool isDark) {
-    return GestureDetector(
-      onTap: () {
-        if (!context.read<AuthProvider>().isLoggedIn) {
-          Navigator.pushNamed(context, '/login');
-          return;
-        }
-        Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (_) => const MyTeamApplicationsScreen()));
-      },
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.18),
-            shape: BoxShape.circle),
-        child: const Icon(Icons.assignment_outlined,
-            size: 18, color: Colors.white),
       ),
     );
   }

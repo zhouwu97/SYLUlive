@@ -23,8 +23,15 @@ class WaterSectionService {
     throw Exception('获取水帖版块失败 (${response.statusCode})');
   }
 
-  Future<WaterSection> fetchSection(String slug) async {
-    final response = await _dio.get('/water/sections/$slug');
+  Future<WaterSection> fetchSection(
+    String slug, {
+    bool includeDisabledTags = false,
+  }) async {
+    final response = await _dio.get(
+      '/water/sections/$slug',
+      queryParameters:
+          includeDisabledTags ? {'include_disabled_tags': true} : null,
+    );
     if (response.statusCode == 200 && response.data != null) {
       final data = response.data;
       final section = data['section'];

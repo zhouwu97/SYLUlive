@@ -8,12 +8,12 @@ import '../models/water_section.dart';
 import '../models/user.dart';
 import '../providers/water_section_provider.dart';
 import '../screens/image_viewer_screen.dart';
+import '../screens/user_home_screen.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../screens/user_home_screen.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
@@ -603,87 +603,117 @@ class _PostCardState extends State<PostCard>
         validImages.map((image) => ApiConstants.fullUrl(image.url)).toList();
 
     if (count == 1) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: GestureDetector(
-          onTap: () => _openImageViewer(context, imageUrls, 0),
-          child: Container(
-            height: 220,
-            color: Colors.black.withValues(alpha: widget.showPrice ? 0.04 : 0),
-            child: CachedNetworkImage(
-              cacheManager: PostImageCache.manager,
-              imageUrl: imageUrls[0],
-              width: double.infinity,
-              fit: widget.showPrice ? BoxFit.contain : BoxFit.cover,
-              placeholder: (_, __) => Container(color: Colors.grey[300]),
-              errorWidget: (_, __, ___) => Container(
-                color: Colors.grey[300],
-                child: const Icon(Icons.image),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: count == 2 ? 2 : 3,
-          mainAxisSpacing: 4,
-          crossAxisSpacing: 4,
-          childAspectRatio: 1,
-        ),
-        itemCount: count > 3 ? 3 : count,
-        itemBuilder: (context, index) {
-          if (index == 2 && count > 3) {
-            return GestureDetector(
-              onTap: () => _openImageViewer(context, imageUrls, index),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CachedNetworkImage(
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final imageWidth = (constraints.maxWidth * 0.72).clamp(220.0, 300.0);
+          final imageHeight = (imageWidth * 0.68).clamp(170.0, 220.0);
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openImageViewer(context, imageUrls, 0),
+                child: SizedBox(
+                  width: imageWidth,
+                  height: imageHeight,
+                  child: CachedNetworkImage(
                     cacheManager: PostImageCache.manager,
-                    imageUrl: imageUrls[index],
+                    imageUrl: imageUrls[0],
                     fit: BoxFit.cover,
                     placeholder: (_, __) => Container(color: Colors.grey[300]),
-                    errorWidget: (_, __, ___) =>
-                        Container(color: Colors.grey[300]),
+                    errorWidget: (context, url, error) {
+                      Future.microtask(
+                          () => PostImageCache.manager.removeFile(url));
+                      return Container(
+                        color: Colors.grey[300],
+                        child: const Icon(Icons.broken_image,
+                            color: Colors.grey, size: 32),
+                      );
+                    },
                   ),
-                  Container(
-                    color: Colors.black54,
-                    alignment: Alignment.center,
-                    child: Text(
-                      '+${count - 2}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          return GestureDetector(
-            onTap: () => _openImageViewer(context, imageUrls, index),
-            child: CachedNetworkImage(
-              cacheManager: PostImageCache.manager,
-              imageUrl: imageUrls[index],
-              fit: BoxFit.cover,
-              placeholder: (_, __) => Container(color: Colors.grey[300]),
-              errorWidget: (_, __, ___) => Container(
-                color: Colors.grey[300],
-                child: const Icon(Icons.image),
+                ),
               ),
             ),
           );
         },
+      );
+    }
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: count == 2 ? 2 : 3,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
+              childAspectRatio: 1,
+            ),
+            itemCount: count > 3 ? 3 : count,
+            itemBuilder: (context, index) {
+              if (index == 2 && count > 3) {
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _openImageViewer(context, imageUrls, 2),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CachedNetworkImage(
+                        cacheManager: PostImageCache.manager,
+                        imageUrl: imageUrls[index],
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) =>
+                            Container(color: Colors.grey[300]),
+                        errorWidget: (context, url, error) {
+                          Future.microtask(
+                              () => PostImageCache.manager.removeFile(url));
+                          return Container(color: Colors.grey[300]);
+                        },
+                      ),
+                      Container(
+                        color: Colors.black54,
+                        alignment: Alignment.center,
+                        child: Text(
+                          '+${count - 2}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openImageViewer(context, imageUrls, index),
+                child: CachedNetworkImage(
+                  cacheManager: PostImageCache.manager,
+                  imageUrl: imageUrls[index],
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(color: Colors.grey[300]),
+                  errorWidget: (context, url, error) {
+                    Future.microtask(
+                        () => PostImageCache.manager.removeFile(url));
+                    return Container(
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.broken_image),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -693,11 +723,14 @@ class _PostCardState extends State<PostCard>
     List<String> imageUrls,
     int initialIndex,
   ) {
+    if (imageUrls.isEmpty) return;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            ImageViewerScreen(imageUrls: imageUrls, initialIndex: initialIndex),
+        builder: (_) => ImageViewerScreen(
+          imageUrls: imageUrls,
+          initialIndex: initialIndex,
+        ),
       ),
     );
   }

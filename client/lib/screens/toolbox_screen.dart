@@ -24,6 +24,51 @@ class ToolboxScreen extends StatefulWidget {
 }
 
 class _ToolboxScreenState extends State<ToolboxScreen> {
+  static const List<_WebsiteDirectoryItem> _websiteDirectoryItems = [
+    _WebsiteDirectoryItem(
+      title: '省大创平台',
+      subtitle: '创新创业训练计划',
+      icon: Icons.lightbulb_outline,
+      color: Color(0xFF55B97A),
+      url: 'https://cxcy.upln.cn/',
+    ),
+    _WebsiteDirectoryItem(
+      title: '教务处',
+      subtitle: '教务通知与公告',
+      icon: Icons.school_outlined,
+      color: Color(0xFF826FE8),
+      url: 'https://jwc.sylu.edu.cn/',
+    ),
+    _WebsiteDirectoryItem(
+      title: '创院',
+      subtitle: '创新创业学院',
+      icon: Icons.emoji_events_outlined,
+      color: Color(0xFFE9A23B),
+      url: 'https://cxcyxy.sylu.edu.cn/',
+    ),
+    _WebsiteDirectoryItem(
+      title: '查二课',
+      subtitle: 'WebVPN 入口',
+      icon: Icons.vpn_key_outlined,
+      color: Color(0xFF35B7C4),
+      url: 'https://webvpn.sylu.edu.cn/',
+    ),
+    _WebsiteDirectoryItem(
+      title: '图书馆',
+      subtitle: '馆藏与资源服务',
+      icon: Icons.local_library_outlined,
+      color: Color(0xFF5B8DEF),
+      url: 'https://tsg.sylu.edu.cn/',
+    ),
+    _WebsiteDirectoryItem(
+      title: '沈理就业网',
+      subtitle: '招聘就业信息',
+      icon: Icons.work_outline,
+      color: Color(0xFFEE5C8A),
+      url: 'https://job.sylu.edu.cn/',
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -158,7 +203,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 ),
                                 useCustomBackground: useCustomBackground,
                               ),
-
                               _buildToolCard(
                                 context,
                                 icon: Icons.fitness_center,
@@ -180,6 +224,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                     builder: (_) => const ExamScheduleScreen(),
                                   ),
                                 ),
+                                useCustomBackground: useCustomBackground,
+                              ),
+                              _buildToolCard(
+                                context,
+                                icon: Icons.travel_explore_outlined,
+                                color: const Color(0xFF4F8DF7),
+                                title: '网站大全',
+                                subtitle: '用得到的网站',
+                                onTap: () => _showWebsiteDirectory(context),
                                 useCustomBackground: useCustomBackground,
                               ),
                             ],
@@ -400,6 +453,17 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     }
   }
 
+  void _showWebsiteDirectory(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const _WebsiteDirectoryScreen(
+          items: _websiteDirectoryItems,
+        ),
+      ),
+    );
+  }
+
   Widget _buildToolCard(
     BuildContext context, {
     required IconData icon,
@@ -496,6 +560,251 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       ),
     );
   }
+}
+
+class _WebsiteDirectoryScreen extends StatelessWidget {
+  const _WebsiteDirectoryScreen({required this.items});
+
+  final List<_WebsiteDirectoryItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
+    final useCustomBackground = themeProvider.shouldShowCustomBackground;
+    final cleanLightMode = !useCustomBackground && !isDark;
+    final foregroundColor =
+        cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
+    final secondaryColor =
+        cleanLightMode ? const Color(0xFF6B7280) : Colors.white70;
+
+    return GlobalBackgroundWrapper(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          centerTitle: false,
+          foregroundColor: foregroundColor,
+          systemOverlayStyle: (cleanLightMode
+                  ? SystemUiOverlayStyle.dark
+                  : SystemUiOverlayStyle.light)
+              .copyWith(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '网站大全',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: foregroundColor,
+                  shadows: [
+                    if (useCustomBackground)
+                      const Shadow(color: Colors.black45, blurRadius: 8),
+                  ],
+                ),
+              ),
+              Text(
+                '用得到的网站',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: secondaryColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+        body: Stack(
+          children: [
+            if (useCustomBackground)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 150,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black54, Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
+            SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                    children: [
+                      Text(
+                        '常用网站',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: useCustomBackground || isDark
+                              ? Colors.white
+                              : const Color(0xFF1F2937),
+                          shadows: [
+                            if (useCustomBackground)
+                              Shadow(
+                                color: Colors.black.withValues(alpha: 0.35),
+                                blurRadius: 6,
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ...items.map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _WebsiteDirectoryCard(item: item),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WebsiteDirectoryCard extends StatelessWidget {
+  const _WebsiteDirectoryCard({required this.item});
+
+  final _WebsiteDirectoryItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
+    final useCustomBackground = themeProvider.shouldShowCustomBackground;
+    final backgroundColor = isDark
+        ? Colors.black.withValues(alpha: 0.65)
+        : useCustomBackground
+            ? Colors.white.withValues(alpha: 0.78)
+            : Colors.white;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : useCustomBackground
+            ? Colors.white.withValues(alpha: 0.65)
+            : const Color(0xFFEEF0F5);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _openWebsiteDirectoryItem(context, item),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: borderColor),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: item.color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(item.icon, color: item.color, size: 23),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF20232A),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            isDark ? Colors.white60 : const Color(0xFF7D8492),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.open_in_new,
+                size: 18,
+                color: isDark ? Colors.white38 : const Color(0xFF94A3B8),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openWebsiteDirectoryItem(
+    BuildContext context,
+    _WebsiteDirectoryItem item,
+  ) async {
+    final uri = Uri.parse(item.url);
+    final canOpen = await canLaunchUrl(uri);
+    if (canOpen) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('无法打开链接')),
+    );
+  }
+}
+
+class _WebsiteDirectoryItem {
+  const _WebsiteDirectoryItem({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.url,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final String url;
 }
 
 /// 体测密码输入门控 — 独立的 StatefulWidget，避免 controller 生命周期问题

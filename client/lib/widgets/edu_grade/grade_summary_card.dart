@@ -23,7 +23,8 @@ class GradeSummaryCard extends StatelessWidget {
 
     final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
     final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF7A8087);
-    final accentColor = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
+    final accentColor =
+        isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),

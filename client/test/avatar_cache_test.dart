@@ -9,7 +9,8 @@ void main() {
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
 
   setUpAll(() async {
-    final tempRoot = await Directory.systemTemp.createTemp('avatar_cache_test_');
+    final tempRoot =
+        await Directory.systemTemp.createTemp('avatar_cache_test_');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(pathProviderChannel, (call) async {
       switch (call.method) {

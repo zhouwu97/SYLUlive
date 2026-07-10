@@ -20,28 +20,6 @@ import 'login_screen.dart';
 import 'chat_list_screen.dart';
 import '../widgets/water_section/section_floating_dock.dart';
 
-@visibleForTesting
-double waterSectionInitialSheetChildSize({
-  required double screenHeight,
-  required double topInset,
-}) {
-  const topActionsVisualHeight = 44.0;
-  const heroActionsGap = 18.0;
-  // 默认只露出版块信息和关注行，盖住“今日成长”等展开卡片。
-  const visibleHeroContentHeight = 186.0;
-  const sheetGapBelowFollowRow = 8.0;
-
-  final requiredVisibleHeight = topInset +
-      topActionsVisualHeight +
-      heroActionsGap +
-      visibleHeroContentHeight +
-      sheetGapBelowFollowRow;
-
-  return (1 - requiredVisibleHeight / screenHeight)
-      .clamp(0.64, 0.68)
-      .toDouble();
-}
-
 class WaterCategoryFeedScreen extends StatefulWidget {
   final WaterPostCategory category;
   final WaterSection? section;
@@ -60,6 +38,7 @@ class WaterCategoryFeedScreen extends StatefulWidget {
 }
 
 class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
+  late final DraggableScrollableController _sheetController;
   ScrollController? _sheetScrollController;
   String _selectedFilterKey = 'mode:recommend';
   WaterSection? _resolvedSection;
@@ -74,6 +53,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   @override
   void initState() {
     super.initState();
+    _sheetController = DraggableScrollableController();
+
     if (widget.initialFilterKey != null) {
       _selectedFilterKey = widget.initialFilterKey!;
     } else {
@@ -93,7 +74,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
 
   @override
   void dispose() {
-    // _sheetScrollController 由 DraggableScrollableSheet 管理，不需要手动 dispose
+    _sheetController.dispose();
     super.dispose();
   }
 
@@ -460,12 +441,45 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     }
   }
 
-  double _initialSheetChildSize(BuildContext context) {
+  double _collapsedSheetSize(BuildContext context) {
     final media = MediaQuery.of(context);
-    return waterSectionInitialSheetChildSize(
-      screenHeight: media.size.height,
-      topInset: media.padding.top,
-    );
+    const pinnedHeaderHeight = 70.0;
+    const extraGap = 12.0;
+
+    return ((pinnedHeaderHeight + media.padding.bottom + extraGap) /
+            media.size.height)
+        .clamp(0.12, 0.22)
+        .toDouble();
+  }
+
+  double _initialSheetSize(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final topInset = media.padding.top;
+
+    const topActionsVisualHeight = 44.0;
+    const heroActionsGap = 18.0;
+
+    // 默认状态只露出：图标、标题、副标题、等级条、关注行
+    // 不要露到“今日成长”和“版块说明”
+    const summaryHeight = 196.0;
+    const sheetGap = 10.0;
+
+    final requiredVisibleHeight = topInset +
+        topActionsVisualHeight +
+        heroActionsGap +
+        summaryHeight +
+        sheetGap;
+
+    return (1 - requiredVisibleHeight / media.size.height)
+        .clamp(0.54, 0.74)
+        .toDouble();
+  }
+
+  double _expandedSheetSize(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return (1 - (media.padding.top + 8) / media.size.height)
+        .clamp(0.90, 0.96)
+        .toDouble();
   }
 
   @override
@@ -497,6 +511,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 isLoggedIn: context.read<AuthProvider>().isLoggedIn,
                 myLevel: _myLevel,
                 topContentInset: heroTopContentInset,
+                bottomContentInset: _collapsedSheetSize(context) *
+                        MediaQuery.sizeOf(context).height +
+                    20,
                 onToggleFollow: _toggleFollowSection,
               ),
 
@@ -553,15 +570,26 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       WaterSection section, Color categoryColor, bool isDark) {
     // sheet 用略亮的暗色当作 elevated surface，与 background 0xFF0D1117 区分
     final sheetColor = isDark ? const Color(0xFF171B24) : Colors.white;
-    final initialSheetSize = _initialSheetChildSize(context);
+    final minSheetSize = _collapsedSheetSize(context);
+    final rawInitialSize = _initialSheetSize(context);
+    final maxSheetSize = _expandedSheetSize(context);
+
+    final initialSheetSize = rawInitialSize
+        .clamp(minSheetSize + 0.08, maxSheetSize - 0.08)
+        .toDouble();
 
     return DraggableScrollableSheet(
       key: const ValueKey('water-section-content-sheet'),
+      controller: _sheetController,
       initialChildSize: initialSheetSize,
-      minChildSize: 0.30,
-      maxChildSize: 0.94,
+      minChildSize: minSheetSize,
+      maxChildSize: maxSheetSize,
       snap: true,
-      snapSizes: [0.30, initialSheetSize, 0.94],
+      snapSizes: [
+        minSheetSize,
+        initialSheetSize,
+        maxSheetSize,
+      ],
       builder: (context, scrollController) {
         // 存储 scrollController 供 _changeSort 滚动到顶部使用
         _sheetScrollController = scrollController;
@@ -651,6 +679,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     Color categoryColor,
     WaterSection section,
   ) {
+    final bottomSafe = MediaQuery.paddingOf(context).bottom;
+    final listBottomPadding = 120 + bottomSafe;
+
     final pinnedPosts = posts.where((post) {
       return post.waterSectionPinned || post.isActivePinned;
     }).toList();
@@ -735,7 +766,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 ),
               ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 148),
+              padding: EdgeInsets.fromLTRB(12, 10, 12, listBottomPadding),
               sliver: SliverList.separated(
                 itemCount: normalPosts.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 0),
@@ -751,16 +782,16 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               ),
             ),
             if (isLoading)
-              const SliverToBoxAdapter(
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(bottom: 148),
-                  child: Center(child: CircularProgressIndicator()),
+                  padding: EdgeInsets.only(bottom: listBottomPadding),
+                  child: const Center(child: CircularProgressIndicator()),
                 ),
               )
             else if (!hasMore)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 0, 0, 148),
+                  padding: EdgeInsets.fromLTRB(0, 0, 0, listBottomPadding),
                   child: Center(
                     child: Text(
                       '已经到底了',
@@ -795,8 +826,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           Center(
             child: GestureDetector(
               onTap: () {
-                _sheetScrollController?.animateTo(
-                  0.30,
+                _sheetController.animateTo(
+                  _collapsedSheetSize(context),
                   duration: const Duration(milliseconds: 260),
                   curve: Curves.easeOutCubic,
                 );
@@ -858,13 +889,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       onTap: () {
         final auth = context.read<AuthProvider>();
         if (!auth.isLoggedIn) {
-          Navigator.push(
-            context,
-            PageRouteBuilder(
-              opaque: false,
-              pageBuilder: (_, __, ___) => const LoginScreen(),
-            ),
-          );
+          Navigator.pushNamed(context, '/login');
           return;
         }
         Navigator.push(
@@ -938,7 +963,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         ? section.starterQuestions
         : widget.category.starterQuestions;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 96),
+      padding: EdgeInsets.fromLTRB(
+          16, 18, 16, 96 + MediaQuery.paddingOf(context).bottom),
       child: Align(
         alignment: Alignment.topCenter,
         child: Container(

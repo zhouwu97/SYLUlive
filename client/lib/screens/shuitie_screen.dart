@@ -128,7 +128,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _checkInLoading = false;
   Post? _selectedPost;
   int? _selectedUserId;
-  bool _messagesLoadRequested = false;
 
   static const _autoRefreshInterval = Duration(seconds: 60);
   static const _feedSwitchDuration = Duration(milliseconds: 480);
@@ -187,7 +186,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) {
           _loadAnnouncements();
-          _ensureMessagesLoaded();
         }
       });
     });
@@ -237,15 +235,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       ..removeListener(_handleFeedSettleTick)
       ..dispose();
     super.dispose();
-  }
-
-  /// 确保 MessageProvider 的会话列表已被加载（用于首页红点）
-  void _ensureMessagesLoaded() {
-    if (_messagesLoadRequested) return;
-    final auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) return;
-    _messagesLoadRequested = true;
-    context.read<MessageProvider>().loadConversations(silent: true);
   }
 
   Future<void> _loadAnnouncements() async {
@@ -460,13 +449,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _doCheckIn() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          opaque: false,
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-        ),
-      );
+      Navigator.pushNamed(context, '/login');
       return;
     }
     if (_checkInLoading || _checkedIn) return;
@@ -697,13 +680,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void _openMessages() {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          opaque: false,
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-        ),
-      );
+      Navigator.pushNamed(context, '/login');
       return;
     }
     Navigator.push(
@@ -724,6 +701,54 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => WaterCategoryFeedRoute.fromSection(section),
+      ),
+    );
+  }
+
+  /// 打开页面但不关闭校园服务侧边栏：直接在 rootNavigator 上 push，
+  /// 返回时露出下方仍在的侧边栏。与社区版块入口行为一致。
+  void _openPageKeepingPanel(Widget page) {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(builder: (_) => page),
+    );
+  }
+
+  /// 打开成绩页（保留侧边栏），保留原有的渐入+轻位移+缩放动画与登录判断。
+  void _openGradeKeepingPanel() {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) {
+      _openPageKeepingPanel(const LoginScreen());
+      return;
+    }
+
+    Navigator.of(context, rootNavigator: true).push(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 260),
+        reverseTransitionDuration: const Duration(milliseconds: 200),
+        pageBuilder: (_, __, ___) => const EduGradeScreen(),
+        transitionsBuilder: (_, animation, __, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: AppMotion.incoming,
+            reverseCurve: AppMotion.outgoing,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.035),
+                end: Offset.zero,
+              ).animate(curved),
+              child: ScaleTransition(
+                scale: Tween<double>(
+                  begin: 0.995,
+                  end: 1.0,
+                ).animate(curved),
+                child: child,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -764,91 +789,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   _closePanelThenOpen(dialogContext, _doCheckIn);
                 },
                 onOpenToolbox: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ToolboxScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const ToolboxScreen());
                 },
                 onOpenAnnouncements: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const AnnouncementScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const AnnouncementScreen());
                 },
                 onOpenCompetitions: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const CompetitionCenterScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const CompetitionCenterScreen());
                 },
                 onOpenGrades: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    final auth = context.read<AuthProvider>();
-                    if (!auth.isLoggedIn || auth.user == null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      );
-                      return;
-                    }
-                    Navigator.push(
-                      context,
-                      PageRouteBuilder(
-                        transitionDuration: const Duration(milliseconds: 260),
-                        reverseTransitionDuration:
-                            const Duration(milliseconds: 200),
-                        pageBuilder: (_, __, ___) => const EduGradeScreen(),
-                        transitionsBuilder: (_, animation, __, child) {
-                          final curved = CurvedAnimation(
-                            parent: animation,
-                            curve: AppMotion.incoming,
-                            reverseCurve: AppMotion.outgoing,
-                          );
-                          return FadeTransition(
-                            opacity: curved,
-                            child: SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0, 0.035),
-                                end: Offset.zero,
-                              ).animate(curved),
-                              child: ScaleTransition(
-                                scale: Tween<double>(
-                                  begin: 0.995,
-                                  end: 1.0,
-                                ).animate(curved),
-                                child: child,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  });
+                  _openGradeKeepingPanel();
                 },
                 onOpenExamSchedule: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const ExamScheduleScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const ExamScheduleScreen());
                 },
                 onOpenFeedback: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const FeedbackScreen()),
-                    );
-                  });
+                  _openPageKeepingPanel(const FeedbackScreen());
                 },
                 onOpenWaterSectionDirectory: () {
                   _openWaterSectionDirectoryKeepingPanel();
@@ -912,7 +868,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         _streakDays = 0;
       }
       _wasLoggedIn = authProvider.isLoggedIn;
-      _messagesLoadRequested = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         // 登录/退出时清除关注信息流，避免跨账号数据残留
@@ -921,7 +876,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             _canLoadFeedMode(_feedMode)) {
           _refresh();
         }
-        _ensureMessagesLoaded();
         _ensureCheckinStatusLoaded();
       });
     }
@@ -1501,13 +1455,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
-              onPressed: () => Navigator.push(
-                context,
-                PageRouteBuilder(
-                  opaque: false,
-                  pageBuilder: (_, __, ___) => const LoginScreen(),
-                ),
-              ),
+              onPressed: () => Navigator.pushNamed(context, '/login'),
               icon: const Icon(Icons.login, size: 18),
               label: const Text('去登录'),
               style: OutlinedButton.styleFrom(

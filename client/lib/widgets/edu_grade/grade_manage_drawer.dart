@@ -44,6 +44,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
   bool _isRefreshingGrades = false;
   bool _isRefreshingAcademic = false;
   bool _isReminderBusy = false;
+  bool _isCheckingNow = false;
   GradeReminderStatus _reminderStatus = const GradeReminderStatus.unsupported();
   String? _loadingSemesterKey;
 
@@ -654,6 +655,15 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
                         ),
                 ],
               ),
+              if (enabled) ...[
+                const SizedBox(height: 12),
+                _buildReminderStatusDetail(
+                  isDark: isDark,
+                  accent: accent,
+                  subColor: subColor,
+                  textColor: textColor,
+                ),
+              ],
               if (needsNotification || needsBackground) ...[
                 const SizedBox(height: 12),
                 _buildReminderPermissionHint(
@@ -736,6 +746,156 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
         ],
       ),
     );
+  }
+
+  Future<void> _handleCheckNow() async {
+    if (_isCheckingNow) return;
+    setState(() => _isCheckingNow = true);
+    await GradeReminderService.instance.runCheckNow();
+    // 给 OneTimeWorkRequest 一点时间起跑并写入 lastCheckAt，然后刷新状态。
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    await _loadReminderStatus();
+    if (mounted) setState(() => _isCheckingNow = false);
+  }
+
+  Widget _buildReminderStatusDetail({
+    required bool isDark,
+    required Color accent,
+    required Color subColor,
+    required Color textColor,
+  }) {
+    final status = _reminderStatus;
+    final now = DateTime.now();
+    final stale = status.lastCheckAt == null ||
+        now.difference(status.lastCheckAt!.toLocal()) >
+            const Duration(hours: 6);
+    final warningColor =
+        isDark ? const Color(0xFFF4B860) : const Color(0xFFC47C14);
+
+    String fmt(DateTime? t) {
+      if (t == null) return '未记录';
+      final l = t.toLocal();
+      return '${l.month.toString().padLeft(2, '0')}-${l.day.toString().padLeft(2, '0')} '
+          '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.04)
+                : const Color(0xFFF6F7F8),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _statusRow('上次检查', fmt(status.lastCheckAt), subColor, textColor),
+              const SizedBox(height: 4),
+              _statusRow(
+                  '上次成功', fmt(status.lastSuccessAt), subColor, textColor),
+              const SizedBox(height: 4),
+              _statusRow('连续失败', '${status.consecutiveFailures} 次', subColor,
+                  textColor),
+              if (status.needAction != null) ...[
+                const SizedBox(height: 4),
+                _statusRow('需要处理', _needActionText(status.needAction!),
+                    subColor, warningColor),
+              ],
+            ],
+          ),
+        ),
+        if (stale) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+            decoration: BoxDecoration(
+              color: warningColor.withValues(alpha: isDark ? 0.12 : 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: warningColor.withValues(alpha: isDark ? 0.24 : 0.18),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    size: 18, color: warningColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    status.lastCheckAt == null
+                        ? '后台尚未执行过检查，建议开启后台保活/电池无限制。'
+                        : '距上次后台检查已超过 6 小时，系统可能限制了后台运行。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.35,
+                      color: isDark
+                          ? Colors.grey.shade300
+                          : const Color(0xFF6B5B3E),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () =>
+                      GradeReminderService.instance.openKeepAliveSettings(),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(58, 34),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    foregroundColor: warningColor,
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  child: const Text('去设置'),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        _actionButton(
+          icon: Icons.bolt_outlined,
+          label: _isCheckingNow ? '检查中…' : '立即检查一次',
+          onTap: _isCheckingNow ? null : _handleCheckNow,
+          loading: _isCheckingNow,
+          fullWidth: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _statusRow(
+      String label, String value, Color subColor, Color valueColor) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(fontSize: 12, color: subColor)),
+        Text(
+          value,
+          style: TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w600, color: valueColor),
+        ),
+      ],
+    );
+  }
+
+  String _needActionText(String action) {
+    switch (action) {
+      case 'login':
+        return '重新登录';
+      case 'bind':
+        return '重新绑定教务';
+      case 'edu':
+        return '教务服务暂不可用';
+      default:
+        return action;
+    }
   }
 
   Widget _actionButton({

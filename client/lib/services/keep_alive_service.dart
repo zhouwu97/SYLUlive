@@ -21,13 +21,13 @@ class KeepAliveStatus {
   });
 
   const KeepAliveStatus.unsupported()
-    : supported = false,
-      enabled = false,
-      serviceRunning = false,
-      hideRecentsEnabled = false,
-      manufacturer = '',
-      sdkInt = 0,
-      isIgnoringBatteryOptimizations = true;
+      : supported = false,
+        enabled = false,
+        serviceRunning = false,
+        hideRecentsEnabled = false,
+        manufacturer = '',
+        sdkInt = 0,
+        isIgnoringBatteryOptimizations = true;
 
   factory KeepAliveStatus.fromMap(Map<dynamic, dynamic>? map) {
     if (map == null) return const KeepAliveStatus.unsupported();

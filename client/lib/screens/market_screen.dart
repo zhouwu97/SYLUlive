@@ -29,15 +29,12 @@ final class _MarketTokens {
   static Color accent(bool isDark) =>
       isDark ? const Color(0xFFFFA06D) : const Color(0xFFFF7A45);
 
-  static Color accentSoft(bool isDark) =>
-      isDark
-          ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
-          : const Color(0xFFFFF0E8);
+  static Color accentSoft(bool isDark) => isDark
+      ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
+      : const Color(0xFFFFF0E8);
 
   static Color borderColor(bool isDark) =>
-      isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : const Color(0xFFF1E5DC);
+      isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF1E5DC);
 
   static Color titleColor(bool isDark) =>
       isDark ? Colors.white : const Color(0xFF1F2328);
@@ -70,17 +67,51 @@ class _MarketScreenState extends State<MarketScreen> {
 
   static const _marketPostTypes = ['sell', 'buy', 'lost', 'found', 'proxy'];
 
-  static const _categoryOptions = <MapEntry<String, String>>[
-    MapEntry('all', '全部'),
-    MapEntry('sell', '二手'),
-    MapEntry('buy', '求购'),
-    MapEntry('proxy', '办事'),
-  ];
+  List<MapEntry<String, String>> get _visibleCategoryOptions => [
+        const MapEntry('all', '全部'),
+        for (final type in _allowedTypes) MapEntry(type, _typeLabel(type)),
+      ];
 
   List<String> get _allowedTypes =>
       widget.onlyPostTypes == null || widget.onlyPostTypes!.isEmpty
           ? _marketPostTypes
           : widget.onlyPostTypes!;
+
+  String get _defaultPublishTypeForCurrentView {
+    if (_typeFilter != 'all' && _allowedTypes.contains(_typeFilter)) {
+      return _typeFilter;
+    }
+    if (_allowedTypes.contains('sell')) return 'sell';
+    return _allowedTypes.first;
+  }
+
+  String _publishLabel(String type) {
+    switch (type) {
+      case 'buy':
+        return '发布求购';
+      case 'lost':
+        return '发布失物';
+      case 'found':
+        return '发布招领';
+      case 'proxy':
+        return '发布办事';
+      case 'sell':
+      default:
+        return '发布商品';
+    }
+  }
+
+  String _emptyTitle() {
+    if (_searchQuery.isNotEmpty) return '没有找到匹配内容';
+    if (_typeFilter != 'all') return '还没有${_typeLabel(_typeFilter)}';
+    return '还没有商品';
+  }
+
+  String _emptySubtitle() {
+    if (_searchQuery.isNotEmpty) return '换个关键词试试';
+    if (_typeFilter != 'all') return '发布第一条${_typeLabel(_typeFilter)}信息';
+    return '发布第一条闲置、求购或办事信息';
+  }
 
   @override
   void initState() {
@@ -121,6 +152,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
     final results = await context.read<PostProvider>().searchPosts(
           boardId: 2,
+          type: _typeFilter == 'all' ? null : _typeFilter,
           sort: _sortType,
           query: query,
           limit: 100,
@@ -191,13 +223,15 @@ class _MarketScreenState extends State<MarketScreen> {
     setState(() {
       _typeFilter = value;
     });
+    if (_searchQuery.isNotEmpty) {
+      _runSearch(_searchQuery);
+    }
   }
 
   List<Post> _applyLocalTypeFilter(List<Post> posts) {
     return posts.where((post) {
       final typeAllowed = _allowedTypes.contains(post.postType);
-      final typeMatched =
-          _typeFilter == 'all' || post.postType == _typeFilter;
+      final typeMatched = _typeFilter == 'all' || post.postType == _typeFilter;
       return typeAllowed && typeMatched;
     }).toList();
   }
@@ -293,15 +327,12 @@ class _MarketScreenState extends State<MarketScreen> {
               child: Text(
                 label,
                 style: TextStyle(
-                  color: isSelected
-                      ? accent
-                      : _MarketTokens.titleColor(isDark),
+                  color: isSelected ? accent : _MarketTokens.titleColor(isDark),
                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
             ),
-            if (isSelected)
-              Icon(Icons.check_rounded, color: accent, size: 20),
+            if (isSelected) Icon(Icons.check_rounded, color: accent, size: 20),
           ],
         ),
       ),
@@ -435,7 +466,8 @@ class _MarketScreenState extends State<MarketScreen> {
                                       setSheetState(() => draftType = 'all');
                                     },
                               style: TextButton.styleFrom(
-                                backgroundColor: _MarketTokens.accentSoft(isDark),
+                                backgroundColor:
+                                    _MarketTokens.accentSoft(isDark),
                                 foregroundColor: accent,
                                 disabledForegroundColor:
                                     accent.withValues(alpha: 0.35),
@@ -557,15 +589,7 @@ class _MarketScreenState extends State<MarketScreen> {
                       )
                     else if (marketPosts.isEmpty)
                       SliverToBoxAdapter(
-                        child: _buildEmptyState(
-                          isDark,
-                          _searchQuery.isNotEmpty
-                              ? '没有找到匹配内容'
-                              : '还没有商品',
-                          _searchQuery.isNotEmpty
-                              ? '换个关键词试试'
-                              : '发布第一条闲置、求购或办事信息',
-                        ),
+                        child: _buildEmptyState(isDark),
                       )
                     else if (themeProvider.marketIsListView)
                       SliverPadding(
@@ -654,14 +678,7 @@ class _MarketScreenState extends State<MarketScreen> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('请先登录')),
                             );
-                            Navigator.push(
-                              context,
-                              PageRouteBuilder(
-                                opaque: false,
-                                pageBuilder: (_, __, ___) =>
-                                    const LoginScreen(),
-                              ),
-                            );
+                            Navigator.pushNamed(context, '/login');
                             return;
                           }
                           await Navigator.push(
@@ -670,11 +687,7 @@ class _MarketScreenState extends State<MarketScreen> {
                               builder: (_) => CreatePostScreen(
                                 boardId: 2,
                                 defaultPostType:
-                                    widget.onlyPostTypes != null &&
-                                            widget.onlyPostTypes!
-                                                .contains('lost')
-                                        ? 'lost'
-                                        : 'sell',
+                                    _defaultPublishTypeForCurrentView,
                                 allowedPostTypes: widget.onlyPostTypes,
                               ),
                             ),
@@ -700,13 +713,7 @@ class _MarketScreenState extends State<MarketScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先登录')),
       );
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          opaque: false,
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-        ),
-      );
+      Navigator.pushNamed(context, '/login');
       return;
     }
     await Navigator.push(
@@ -765,8 +772,7 @@ class _MarketScreenState extends State<MarketScreen> {
           ),
           const SizedBox(width: 8),
           if (showBuy)
-            _buildGuidanceChip(
-                '发布求购', isDark, () => _openMarketPublish('buy')),
+            _buildGuidanceChip('发布求购', isDark, () => _openMarketPublish('buy')),
           if (showBuy && showProxy) const SizedBox(width: 8),
           if (showProxy)
             _buildGuidanceChip(
@@ -934,10 +940,10 @@ class _MarketScreenState extends State<MarketScreen> {
       height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: _categoryOptions.length,
+        itemCount: _visibleCategoryOptions.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
-          final entry = _categoryOptions[index];
+          final entry = _visibleCategoryOptions[index];
           final selected = _typeFilter == entry.key;
           return _buildChip(
             isDark: isDark,
@@ -1084,106 +1090,104 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-  Widget _buildEmptyState(bool isDark, String title, String subtitle) {
+  Widget _buildEmptyState(bool isDark) {
+    final title = _emptyTitle();
+    final subtitle = _emptySubtitle();
+    final defaultType = _defaultPublishTypeForCurrentView;
     final accent = _MarketTokens.accent(isDark);
     final isNoResults = title.contains('没有找到');
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 48, 16, 0),
       child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
-          decoration: BoxDecoration(
-            color: _MarketTokens.cardBg(isDark),
-            borderRadius: BorderRadius.circular(_MarketTokens.cardRadius),
-            border: Border.all(color: _MarketTokens.borderColor(isDark)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: _MarketTokens.accentSoft(isDark),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.inventory_2_outlined,
-                  size: 34,
-                  color: accent.withValues(alpha: 0.8),
-                ),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+        decoration: BoxDecoration(
+          color: _MarketTokens.cardBg(isDark),
+          borderRadius: BorderRadius.circular(_MarketTokens.cardRadius),
+          border: Border.all(color: _MarketTokens.borderColor(isDark)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: _MarketTokens.accentSoft(isDark),
+                shape: BoxShape.circle,
               ),
-              const SizedBox(height: 20),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _MarketTokens.titleColor(isDark),
-                ),
+              child: Icon(
+                Icons.inventory_2_outlined,
+                size: 34,
+                color: accent.withValues(alpha: 0.8),
               ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _MarketTokens.subColor(isDark),
-                  height: 1.4,
-                ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: _MarketTokens.titleColor(isDark),
               ),
-              if (!isNoResults) ...[
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: 200,
-                  height: 44,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final authProvider = context.read<AuthProvider>();
-                      if (!authProvider.isLoggedIn) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('请先登录')),
-                        );
-                        Navigator.push(
-                          context,
-                          PageRouteBuilder(
-                            opaque: false,
-                            pageBuilder: (_, __, ___) => const LoginScreen(),
-                          ),
-                        );
-                        return;
-                      }
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const CreatePostScreen(
-                            boardId: 2,
-                            defaultPostType: 'sell',
-                          ),
-                        ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: _MarketTokens.subColor(isDark),
+                height: 1.4,
+              ),
+            ),
+            if (!isNoResults) ...[
+              const SizedBox(height: 24),
+              SizedBox(
+                width: 200,
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final authProvider = context.read<AuthProvider>();
+                    if (!authProvider.isLoggedIn) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('请先登录')),
                       );
-                      if (mounted) {
-                        await _refreshCurrent();
-                      }
-                    },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text(
-                      '发布商品',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                      Navigator.pushNamed(context, '/login');
+                      return;
+                    }
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CreatePostScreen(
+                          boardId: 2,
+                          defaultPostType: defaultType,
+                          allowedPostTypes: widget.onlyPostTypes,
+                        ),
                       ),
+                    );
+                    if (mounted) {
+                      await _refreshCurrent();
+                    }
+                  },
+                  icon: const Icon(Icons.add, size: 18),
+                  label: Text(
+                    _publishLabel(defaultType),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                 ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
-      );
+      ),
+    );
   }
 }

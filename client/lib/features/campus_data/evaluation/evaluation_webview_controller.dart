@@ -187,13 +187,20 @@ class EvaluationWebViewController {
         '单选项: ${probe.radioCount} (${probe.radioGroups.length} 组)',
       );
       if (probe.scoreInputs.isNotEmpty) {
-        final reliableScores = probe.scoreInputs.where((i) => i.isReliableScore).toList();
-        buf.writeln('  [Score] Count: ${probe.scoreInputs.length}, Reliable: ${reliableScores.length}');
+        final reliableScores =
+            probe.scoreInputs.where((i) => i.isReliableScore).toList();
+        buf.writeln(
+            '  [Score] Count: ${probe.scoreInputs.length}, Reliable: ${reliableScores.length}');
         for (int i = 0; i < probe.scoreInputs.length; i++) {
           final inp = probe.scoreInputs[i];
-          final skipMsg = inp.skipReason != null ? ', skip=${inp.skipReason}' : '';
-          final rangeMsg = inp.minScore != null ? ', range=${inp.minScore}..${inp.maxScore}' : '';
-          final phMsg = (inp.placeholder?.isNotEmpty == true) ? ', ph="${inp.placeholder}"' : '';
+          final skipMsg =
+              inp.skipReason != null ? ', skip=${inp.skipReason}' : '';
+          final rangeMsg = inp.minScore != null
+              ? ', range=${inp.minScore}..${inp.maxScore}'
+              : '';
+          final phMsg = (inp.placeholder?.isNotEmpty == true)
+              ? ', ph="${inp.placeholder}"'
+              : '';
           buf.writeln('    #${i + 1}: type=${inp.type}$phMsg$rangeMsg$skipMsg');
         }
       }
@@ -251,19 +258,19 @@ class EvaluationWebViewController {
   // ── Private ──
 
   EvaluationProbeResult _emptyProbe(String error) => EvaluationProbeResult(
-    url: '',
-    title: '',
-    pageTextSample: '',
-    radioCount: 0,
-    radioOptions: [],
-    textareaCount: 0,
-    forms: [],
-    buttons: [],
-    possibleCourseRows: [],
-    hasLoginForm: false,
-    hasEvaluationForm: false,
-    error: error,
-  );
+        url: '',
+        title: '',
+        pageTextSample: '',
+        radioCount: 0,
+        radioOptions: [],
+        textareaCount: 0,
+        forms: [],
+        buttons: [],
+        possibleCourseRows: [],
+        hasLoginForm: false,
+        hasEvaluationForm: false,
+        error: error,
+      );
 
   EvaluationProbeResult _parseProbeResult(dynamic raw) {
     if (raw == null) return _emptyProbe('Probe returned null');

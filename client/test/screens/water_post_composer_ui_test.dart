@@ -6,6 +6,7 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/publish/water_post_composer.dart';
+import 'package:image_picker/image_picker.dart';
 
 class FakeAuthProvider extends Fake
     with ChangeNotifier
@@ -46,7 +47,7 @@ class FakePostProvider extends Fake
   }
 
   @override
-  Future<int?> uploadImage(String filePath) async => 1;
+  Future<int?> uploadImage(XFile file) async => 1;
 }
 
 Widget buildComposerTestApp(FakePostProvider postProvider) {

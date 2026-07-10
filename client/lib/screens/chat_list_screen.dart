@@ -36,6 +36,8 @@ class _ChatListScreenState extends State<ChatListScreen>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
       context.read<MessageProvider>().loadConversations();
       _startPolling();
     });
@@ -69,7 +71,13 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = context.watch<AuthProvider>().user?.id ?? 0;
+    final auth = context.watch<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      _refreshTimer?.cancel();
+      return _buildLoginRequiredScaffold();
+    }
+
+    final currentUserId = auth.user?.id ?? 0;
     final provider = context.watch<MessageProvider>();
     final isWide = MediaQuery.sizeOf(context).width >= 720;
 
@@ -81,7 +89,8 @@ class _ChatListScreenState extends State<ChatListScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      backgroundColor:
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
       appBar: AppBar(
         title: const Text('私信'),
         backgroundColor: Colors.transparent,
@@ -90,6 +99,56 @@ class _ChatListScreenState extends State<ChatListScreen>
       body: RefreshIndicator(
         onRefresh: () => provider.loadConversations(),
         child: _buildConversationList(provider, currentUserId),
+      ),
+    );
+  }
+
+  Widget _buildLoginRequiredScaffold() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor:
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      appBar: AppBar(
+        title: const Text('私信'),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.lock_outline,
+                size: 64,
+                color: isDark ? Colors.white30 : Colors.grey[400],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '登录后查看私信\n你收到的聊天、交易沟通和同学私信会显示在这里',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isDark ? Colors.white60 : Colors.grey[600],
+                  fontSize: 16,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  await Navigator.pushNamed(context, '/login');
+                  if (mounted && context.read<AuthProvider>().isLoggedIn) {
+                    context.read<MessageProvider>().loadConversations();
+                    _startPolling();
+                  }
+                },
+                icon: const Icon(Icons.login),
+                label: const Text('去登录'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

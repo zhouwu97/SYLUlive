@@ -34,9 +34,11 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       final dio = context.read<AuthProvider>().dio;
       final teachersRes = await _loadOptionalList(dio, '/teachers/pending');
       final majorsRes = await _loadOptionalList(dio, '/majors/pending');
-      final invitationsRes = await _loadOptionalList(dio, '/admin/invitations/pending');
-      final removalsRes = await _loadOptionalList(dio, '/admin/removals/pending');
-      
+      final invitationsRes =
+          await _loadOptionalList(dio, '/admin/invitations/pending');
+      final removalsRes =
+          await _loadOptionalList(dio, '/admin/removals/pending');
+
       if (!mounted) return;
       setState(() {
         _pendingTeachers = teachersRes;
@@ -88,7 +90,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       messenger.showSnackBar(
         SnackBar(content: Text(message), backgroundColor: Colors.green),
       );
-      setState(() => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
+      setState(
+          () => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -122,7 +125,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       messenger.showSnackBar(
         SnackBar(content: Text(message), backgroundColor: Colors.green),
       );
-      setState(() => _pendingRemovals.removeWhere((r) => r['id'] == removal['id']));
+      setState(
+          () => _pendingRemovals.removeWhere((r) => r['id'] == removal['id']));
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -280,7 +284,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         Card(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: ListTile(
@@ -319,7 +324,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         Card(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: ListTile(
@@ -339,7 +345,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                   ? const Chip(label: Text('已投票'))
                   : FilledButton(
                       onPressed: canVote ? () => _voteRemoval(removal) : null,
-                      style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                      style:
+                          FilledButton.styleFrom(backgroundColor: Colors.red),
                       child: const Text('同意罢免'),
                     ),
             ),
@@ -353,7 +360,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         Card(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: const Color(0xFF6366F1),
@@ -384,7 +392,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         Card(
           margin: const EdgeInsets.only(bottom: 10),
           color: isDark ? Colors.grey[850] : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: const Color(0xFFEC4899),

@@ -157,9 +157,7 @@ class SectionPostCard extends StatelessWidget {
             ),
             child: CachedAvatar(
               radius: 17,
-              imageUrl: avatar.isNotEmpty
-                  ? ApiConstants.fullUrl(avatar)
-                  : null,
+              imageUrl: avatar.isNotEmpty ? ApiConstants.fullUrl(avatar) : null,
               fallbackText: nickname,
             ),
           ),
@@ -209,7 +207,9 @@ class SectionPostCard extends StatelessWidget {
         // 精华/置顶 badge（右上角）
         if (post.isFeatured || post.waterSectionFeatured)
           _buildFeaturedBadge(isDark),
-        if (post.isActivePinned && !post.isFeatured && !post.waterSectionFeatured)
+        if (post.isActivePinned &&
+            !post.isFeatured &&
+            !post.waterSectionFeatured)
           _buildPinnedBadge(isDark),
       ],
     );
@@ -315,8 +315,7 @@ class SectionPostCard extends StatelessWidget {
 
   Widget _buildImageGrid(BuildContext context, List<PostImage> images) {
     final count = images.length;
-    final urls =
-        images.map((img) => ApiConstants.fullUrl(img.url)).toList();
+    final urls = images.map((img) => ApiConstants.fullUrl(img.url)).toList();
 
     if (count == 1) {
       return ClipRRect(
@@ -367,8 +366,7 @@ class SectionPostCard extends StatelessWidget {
                     cacheManager: PostImageCache.manager,
                     imageUrl: urls[index],
                     fit: BoxFit.cover,
-                    placeholder: (_, __) =>
-                        Container(color: Colors.grey[300]),
+                    placeholder: (_, __) => Container(color: Colors.grey[300]),
                     errorWidget: (_, __, ___) =>
                         Container(color: Colors.grey[300]),
                   ),
@@ -395,8 +393,7 @@ class SectionPostCard extends StatelessWidget {
               imageUrl: urls[index],
               fit: BoxFit.cover,
               placeholder: (_, __) => Container(color: Colors.grey[300]),
-              errorWidget: (_, __, ___) =>
-                  Container(color: Colors.grey[300]),
+              errorWidget: (_, __, ___) => Container(color: Colors.grey[300]),
             ),
           );
         },
@@ -405,8 +402,7 @@ class SectionPostCard extends StatelessWidget {
   }
 
   Widget _buildBottomActions(BuildContext context, bool isDark) {
-    final mutedColor =
-        isDark ? Colors.white30 : const Color(0xFFA8B0BF);
+    final mutedColor = isDark ? Colors.white30 : const Color(0xFFA8B0BF);
     return Row(
       children: [
         // 分享

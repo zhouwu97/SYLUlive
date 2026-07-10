@@ -171,7 +171,7 @@ class BottomNavWrapper extends StatelessWidget {
   // 悬浮模式：连成一块的弧形 Dock
   Widget _buildFloatingNav(BuildContext context, bool isDark) {
     final primaryColor = Theme.of(context).primaryColor;
-    
+
     return SafeArea(
       top: false,
       child: Padding(
@@ -217,8 +217,9 @@ class BottomNavWrapper extends StatelessWidget {
                             width: 56,
                             height: 40,
                             decoration: BoxDecoration(
-                              color: isDark 
-                                  ? const Color(0xFF147C72).withValues(alpha: 0.2) 
+                              color: isDark
+                                  ? const Color(0xFF147C72)
+                                      .withValues(alpha: 0.2)
                                   : const Color(0xFFEAF6F3),
                               borderRadius: BorderRadius.circular(18),
                             ),

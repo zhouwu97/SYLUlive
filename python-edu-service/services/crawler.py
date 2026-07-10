@@ -3,6 +3,7 @@ import asyncio
 import base64
 import binascii
 import json
+import logging
 import random
 import re
 import time
@@ -19,6 +20,10 @@ from cryptography.hazmat.backends import default_backend
 from config import INDEX_URL, COURSE_URL, GRADE_URL
 
 ACADEMIC_SITUATION_URL = "https://jxw.sylu.edu.cn/xsxy/xsxyqk_cxXsxyqkIndex.html"
+STUDENT_INFO_URL = "https://jxw.sylu.edu.cn/xsxxxggl/xsgrxxwh_cxXsgrxx.html"
+INDEX_INIT_MENU_URL = f"{INDEX_URL}/index_initMenu.html"
+
+logger = logging.getLogger(__name__)
 
 
 # ============== 错误定义 ==============
@@ -141,6 +146,151 @@ class EduCrawler:
     def _page_title(self, html: str) -> str:
         soup = BeautifulSoup(html or "", "html.parser")
         return soup.title.get_text(strip=True) if soup.title else ""
+
+    def _cookie_string(self) -> str:
+        return "; ".join(f"{name}={value}" for name, value in self.client.cookies.items()) if self.client else ""
+
+    def _cookie_names(self, cookie: str) -> List[str]:
+        return re.findall(r"(?:^|;\s*)([^=;\s]+)=", cookie or "")
+
+    def _set_cookie_names(self, value: str) -> List[str]:
+        if not value:
+            return []
+        return re.findall(r"(?:^|,\s*)([^=;,\s]+)=", value)
+
+    def _response_body_preview(self, html: str, limit: int = 300) -> str:
+        text = BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
+        if not text:
+            text = html or ""
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:limit]
+
+    def _alert_message(self, html: str) -> Optional[str]:
+        match = re.search(r'alert\("([^"]+)"\)', html or "")
+        return match.group(1) if match else None
+
+    def _student_info_parse_result(self, html: str) -> Dict[str, bool]:
+        info = self._parse_student_info_body(html)
+        return {
+            "name": bool(info.name),
+            "grade": bool(info.grade),
+            "college": bool(info.college),
+            "major": bool(info.major),
+        }
+
+    def _log_unknown_login(self, resp: httpx.Response, probe: Dict[str, Any]) -> None:
+        logger.warning(
+            "[EDU-LOGIN-UNKNOWN] "
+            "login_post_status=%s login_post_location=%r login_post_set_cookie_names=%s "
+            "login_post_title=%r login_post_body_hint=%r "
+            "cookie_probe_status=%s cookie_probe_title=%r cookie_probe_body_hint=%r "
+            "cookie_names=%s student_info_parse_result=%s "
+            "menu_probe_status=%s menu_probe_title=%r menu_probe_body_hint=%r",
+            resp.status_code,
+            resp.headers.get("location", ""),
+            self._set_cookie_names(resp.headers.get("set-cookie", "")),
+            self._page_title(resp.text),
+            self._response_body_preview(resp.text),
+            probe.get("cookie_probe_status"),
+            probe.get("cookie_probe_title", ""),
+            probe.get("cookie_probe_body_hint", ""),
+            probe.get("cookie_names", []),
+            probe.get("student_info_parse_result", {}),
+            probe.get("menu_probe_status"),
+            probe.get("menu_probe_title", ""),
+            probe.get("menu_probe_body_hint", ""),
+        )
+
+    def _parse_student_info_body(self, body: str) -> StudentInfo:
+        # 学校页面字段稳定在 col_xxx 容器里，这里集中解析供登录探活和正式接口复用。
+        name = ""
+        grade = ""
+        college = ""
+        major = ""
+
+        xm_match = re.search(r'id="col_xm"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
+        if xm_match:
+            name = xm_match.group(1).strip()
+
+        nj_match = re.search(r'id="col_njdm_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
+        if nj_match:
+            grade = nj_match.group(1).strip()
+
+        jg_match = re.search(r'id="col_jg_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
+        if jg_match:
+            college = jg_match.group(1).strip()
+
+        zy_match = re.search(r'id="col_zyh_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
+        if zy_match:
+            major = zy_match.group(1).strip()
+
+        return StudentInfo(name=name, grade=grade, college=college, major=major)
+
+    def _has_student_info_fields(self, html: str) -> bool:
+        info = self._parse_student_info_body(html)
+        return any((info.name, info.grade, info.college, info.major))
+
+    def _has_homepage_fields(self, html: str) -> bool:
+        if _looks_like_login_page(html):
+            return False
+        text = BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
+        combined = f"{text} {html or ''}"
+        tokens = ("退出", "个人信息", "学生", "课表", "成绩", "学籍", "index_initMenu", "gnmkdm")
+        return sum(1 for token in tokens if token in combined) >= 2
+
+    async def _verify_login_cookie(self, cookie: str, student_id: str) -> Tuple[bool, Dict[str, Any]]:
+        probe: Dict[str, Any] = {
+            "cookie_names": self._cookie_names(cookie),
+            "student_info_parse_result": {},
+        }
+        if not self.client or not cookie:
+            return False, probe
+
+        headers = {
+            "Cookie": cookie,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+        try:
+            info_resp = await self.client.get(
+                STUDENT_INFO_URL,
+                params={"gnmkdm": "N100801", "layout": "default", "su": student_id},
+                headers={**headers, "Connection": "close"},
+            )
+            probe.update({
+                "cookie_probe_status": info_resp.status_code,
+                "cookie_probe_title": self._page_title(info_resp.text),
+                "cookie_probe_body_hint": self._response_body_preview(info_resp.text),
+                "student_info_parse_result": self._student_info_parse_result(info_resp.text),
+            })
+            if (
+                info_resp.status_code == 200
+                and not _looks_like_login_page(info_resp.text)
+                and self._has_student_info_fields(info_resp.text)
+            ):
+                return True, probe
+
+            menu_resp = await self.client.get(
+                INDEX_INIT_MENU_URL,
+                headers={**headers, "Referer": f"{INDEX_URL}/login_slogin.html"},
+            )
+            probe.update({
+                "menu_probe_status": menu_resp.status_code,
+                "menu_probe_title": self._page_title(menu_resp.text),
+                "menu_probe_body_hint": self._response_body_preview(menu_resp.text),
+            })
+            if menu_resp.status_code == 200 and self._has_homepage_fields(menu_resp.text):
+                return True, probe
+            if menu_resp.status_code == 302:
+                location = menu_resp.headers.get("location", "")
+                probe["menu_probe_location"] = location
+                success = "index_initMenu" in location or ("index" in location and "login_slogin" not in location)
+                return success, probe
+        except httpx.HTTPError as exc:
+            probe["cookie_probe_error"] = str(exc)
+            logger.warning("[EDU-LOGIN-PROBE] cookie validation failed: %s", exc)
+
+        return False, probe
 
     # ============== 认证相关 ==============
 
@@ -266,44 +416,34 @@ class EduCrawler:
             params={"time": timestamp}
         )
 
-        # 登录POST后,可能返回302重定吁
-        # 即使返回302到login_slogin.html,也可能是登录成功(服务器设置cookie后重定向!
-        # 需要跟随重定向,用更新后的cookie继续请求
+        alert_message = self._alert_message(resp.text)
+        if alert_message:
+            credential_message = self._credential_error_message(alert_message)
+            if credential_message:
+                raise LoginFailedError(credential_message, "INVALID_CREDENTIALS")
+            raise LoginFailedError(
+                "学校登录页面可能发生变化，请稍后重试或联系管理员",
+                "CAS_FLOW_CHANGED",
+            )
 
-        # 获取当前有效的JSESSIONID(登录后设置的)
-        jsessionid = None
-        for name, value in self.client.cookies.items():
-            if name == 'JSESSIONID':
-                jsessionid = value
-                break
+        credential_message = self._credential_error_message(resp.text)
+        if credential_message:
+            raise LoginFailedError(credential_message, "INVALID_CREDENTIALS")
 
-        if jsessionid:
-            # 用登录后的cookie尝试访问主页
-            redirect_resp = await self.client.get(f"{INDEX_URL}/login_slogin.html")
-            # 如果重定向到主页,说明登录成劁
-            if redirect_resp.status_code == 302:
-                location = redirect_resp.headers.get('location', '')
-                if 'index_initMenu' in location or 'index' in location:
-                    # 登录成功!构建cookie字符丁
-                    cookie_parts = []
-                    for name, value in self.client.cookies.items():
-                        cookie_parts.append(f"{name}={value}")
-                    return "; ".join(cookie_parts)
+        cookie = self._cookie_string()
+
+        if resp.status_code == 302:
+            location = resp.headers.get("location", "")
+            if ("index_initMenu" in location or "index" in location) and "login_slogin" not in location and cookie:
+                return cookie
+
+        # 登录后优先用当前 cookie 访问学生信息页/主页，避免只靠登录页二次 302 误判。
+        cookie_ok, cookie_probe = await self._verify_login_cookie(cookie, student_id)
+        if cookie_ok:
+            return cookie
 
         # 如果上面的方法失败,检查原始响庁
         if resp.status_code == 302:
-            # 检查是否有alert
-            if 'alert' in resp.text:
-                error_match = re.search(r'alert\("([^"]+)"\)', resp.text)
-                if error_match:
-                    message = error_match.group(1)
-                    credential_message = self._credential_error_message(message)
-                    if credential_message:
-                        raise LoginFailedError(credential_message, "INVALID_CREDENTIALS")
-                    raise LoginFailedError(
-                        "学校登录页面可能发生变化，请稍后重试或联系管理员",
-                        "CAS_FLOW_CHANGED",
-                    )
             # 尝试获取JSESSIONID
             set_cookie = resp.headers.get("set-cookie", "")
             if 'JSESSIONID' in set_cookie:
@@ -311,22 +451,14 @@ class EduCrawler:
                     if 'JSESSIONID' in part:
                         match = re.search(r'JSESSIONID=([^;]+)', part)
                         if match:
-                            return f"JSESSIONID={match.group(1)}"
+                            cookie = f"JSESSIONID={match.group(1)}"
+                            cookie_ok, cookie_probe = await self._verify_login_cookie(cookie, student_id)
+                            if cookie_ok:
+                                return cookie
+            self._log_unknown_login(resp, cookie_probe)
             raise LoginFailedError("教务登录会话建立失败，请稍后重试", "SESSION_COOKIE_MISSING")
         elif resp.status_code == 200:
-            error_match = re.search(r'alert\("([^"]+)"\)', resp.text)
-            if error_match:
-                message = error_match.group(1)
-                credential_message = self._credential_error_message(message)
-                if credential_message:
-                    raise LoginFailedError(credential_message, "INVALID_CREDENTIALS")
-                raise LoginFailedError(
-                    "学校登录页面可能发生变化，请稍后重试或联系管理员",
-                    "CAS_FLOW_CHANGED",
-                )
-            credential_message = self._credential_error_message(resp.text)
-            if credential_message:
-                raise LoginFailedError(credential_message, "INVALID_CREDENTIALS")
+            self._log_unknown_login(resp, cookie_probe)
             raise LoginFailedError(
                 "学校登录状态未知，请稍后重试或联系管理员",
                 "UNKNOWN_LOGIN_STATE",
@@ -345,7 +477,7 @@ class EduCrawler:
             "Connection": "close"
         }
         resp = await self.client.get(
-            f"https://jxw.sylu.edu.cn/xsxxxggl/xsgrxxwh_cxXsgrxx.html",
+            STUDENT_INFO_URL,
             params={"gnmkdm": "N100801", "layout": "default", "su": student_id},
             headers=headers
         )
@@ -353,35 +485,7 @@ class EduCrawler:
         if resp.status_code != 200:
             raise CookieLapseError("获取学生信息失败,Cookie可能已失敁")
 
-        body = resp.text
-
-        # 解析学生信息(HTML结构:id="col_xxx"下有<p>标签!
-        name = ""
-        grade = ""
-        college = ""
-        major = ""
-
-        # 提取姓名 id=col_xm
-        xm_match = re.search(r'id="col_xm"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
-        if xm_match:
-            name = xm_match.group(1).strip()
-
-        # 提取年级 id=col_njdm_id
-        nj_match = re.search(r'id="col_njdm_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
-        if nj_match:
-            grade = nj_match.group(1).strip()
-
-        # 提取学院 id=col_jg_id
-        jg_match = re.search(r'id="col_jg_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
-        if jg_match:
-            college = jg_match.group(1).strip()
-
-        # 提取专业 id=col_zyh_id
-        zy_match = re.search(r'id="col_zyh_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
-        if zy_match:
-            major = zy_match.group(1).strip()
-
-        return StudentInfo(name=name, grade=grade, college=college, major=major)
+        return self._parse_student_info_body(resp.text)
 
     # ============== 课表相关 ==============
 

@@ -10,9 +10,9 @@ class CampusHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     // Calculate week number roughly or just hardcode as in example for visual
-    // Note: We'll put a placeholder "第18周" or dynamic if available. 
+    // Note: We'll put a placeholder "第18周" or dynamic if available.
     // Here we can use date logic or just '第18周' for now.
     final now = DateTime.now();
     final dateStr = DateFormat('MM-dd').format(now);
@@ -52,15 +52,19 @@ class CampusHeader extends StatelessWidget {
             color: isDark ? CampusTheme.darkCard : Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.border,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : CampusTheme.border,
             ),
-            boxShadow: isDark ? null : [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.025),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            boxShadow: isDark
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.025),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
           ),
           child: Column(
             children: [

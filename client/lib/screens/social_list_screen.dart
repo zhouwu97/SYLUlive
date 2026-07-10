@@ -211,9 +211,8 @@ class _UserListState extends State<_UserList> {
                   ? ApiConstants.fullUrl(user.avatar)
                   : null,
               radius: 20,
-              fallbackText: user.nickname.isNotEmpty
-                  ? user.nickname
-                  : '用户${user.id}',
+              fallbackText:
+                  user.nickname.isNotEmpty ? user.nickname : '用户${user.id}',
             ),
             title: Text(
               user.nickname.isNotEmpty ? user.nickname : '用户${user.id}',

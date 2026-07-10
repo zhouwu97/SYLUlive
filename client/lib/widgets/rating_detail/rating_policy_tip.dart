@@ -17,7 +17,8 @@ class RatingPolicyTip extends StatelessWidget {
 
     final isWarning = type == RatingPolicyType.warning;
     final Color bgColor = isWarning
-        ? RankingTokens.warningColor(isDark).withValues(alpha: isDark ? 0.12 : 0.08)
+        ? RankingTokens.warningColor(isDark)
+            .withValues(alpha: isDark ? 0.12 : 0.08)
         : (isDark
             ? Colors.white.withValues(alpha: 0.04)
             : const Color(0xFFF7F8FC));
@@ -35,7 +36,8 @@ class RatingPolicyTip extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: isWarning
             ? Border.all(
-                color: RankingTokens.warningColor(isDark).withValues(alpha: 0.18),
+                color:
+                    RankingTokens.warningColor(isDark).withValues(alpha: 0.18),
               )
             : null,
       ),

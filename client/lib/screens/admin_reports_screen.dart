@@ -213,7 +213,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   Widget _buildReportsContent(bool isDark) {
     if (_reportsForbidden) {
       return Center(
-        child: Text('当前账号暂无举报处理权限', style: TextStyle(color: isDark ? Colors.white : Colors.black)),
+        child: Text('当前账号暂无举报处理权限',
+            style: TextStyle(color: isDark ? Colors.white : Colors.black)),
       );
     }
     final pending = _reports.where((r) => r['status'] == 'pending').toList();
@@ -222,18 +223,23 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     return RefreshIndicator(
       onRefresh: _loadData,
       child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics()),
         padding: const EdgeInsets.all(12),
         children: [
           if (pending.isNotEmpty) ...[
-            _buildSectionHeader('待处理 (${pending.length})', Icons.warning_amber, Colors.orange, isDark),
+            _buildSectionHeader('待处理 (${pending.length})', Icons.warning_amber,
+                Colors.orange, isDark),
             ...pending.map((r) => _buildReportCard(r, isDark)),
           ],
           if (pending.isEmpty)
-            const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('暂无待处理举报'))),
+            const Center(
+                child: Padding(
+                    padding: EdgeInsets.all(32), child: Text('暂无待处理举报'))),
           if (handled.isNotEmpty) ...[
             const SizedBox(height: 16),
-            _buildSectionHeader('已处理 (${handled.length})', Icons.history, Colors.grey, isDark),
+            _buildSectionHeader(
+                '已处理 (${handled.length})', Icons.history, Colors.grey, isDark),
             ...handled.map((r) => _buildHandledReportCard(r, isDark)),
           ],
         ],
@@ -241,7 +247,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 
-  Widget _buildSectionHeader(String title, IconData icon, Color color, bool isDark) {
+  Widget _buildSectionHeader(
+      String title, IconData icon, Color color, bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
       child: Row(
@@ -286,13 +293,18 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: isReply ? Colors.purple.withOpacity(0.15) : Colors.blue.withOpacity(0.15),
+                    color: isReply
+                        ? Colors.purple.withOpacity(0.15)
+                        : Colors.blue.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    isReply ? '评论 #${report['target_id']}' : '帖子 #${report['target_id']}',
+                    isReply
+                        ? '评论 #${report['target_id']}'
+                        : '帖子 #${report['target_id']}',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -333,24 +345,32 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       );
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已忽略'), backgroundColor: Colors.grey),
+                          const SnackBar(
+                              content: Text('已忽略'),
+                              backgroundColor: Colors.grey),
                         );
-                        setState(() => _reports.removeWhere((r) => r['id'] == report['id']));
+                        setState(() => _reports
+                            .removeWhere((r) => r['id'] == report['id']));
                       }
                     } catch (_) {}
                   },
                   icon: const Icon(Icons.close, size: 16, color: Colors.grey),
-                  label: const Text('忽略', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                  label: const Text('忽略',
+                      style: TextStyle(color: Colors.grey, fontSize: 13)),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton.icon(
                   onPressed: () => _handleReport(report),
-                  icon: const Icon(Icons.delete_outline, size: 16, color: Colors.white),
-                  label: const Text('处理', style: TextStyle(color: Colors.white, fontSize: 13)),
+                  icon: const Icon(Icons.delete_outline,
+                      size: 16, color: Colors.white),
+                  label: const Text('处理',
+                      style: TextStyle(color: Colors.white, fontSize: 13)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red[400],
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ],
@@ -408,7 +428,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 ),
               ],
             ),
-            if (report['delete_reason'] != null && report['delete_reason'].toString().isNotEmpty) ...[
+            if (report['delete_reason'] != null &&
+                report['delete_reason'].toString().isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
                 '理由: ${report['delete_reason']}',

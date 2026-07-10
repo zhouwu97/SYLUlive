@@ -35,7 +35,8 @@ class NotificationOpenTarget {
     Map<dynamic, dynamic> message, {
     DateTime? now,
   }) {
-    final stringMessage = message.map((key, value) => MapEntry(key.toString(), value));
+    final stringMessage =
+        message.map((key, value) => MapEntry(key.toString(), value));
     final extras = extractJPushExtras(stringMessage);
     final type = extras['type']?.toString().trim().toLowerCase();
 

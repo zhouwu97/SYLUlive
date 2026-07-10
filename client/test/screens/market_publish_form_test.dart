@@ -6,6 +6,7 @@ import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/screens/publish/market_publish_form.dart';
+import 'package:image_picker/image_picker.dart';
 
 class _FakeAuthProvider extends Fake
     with ChangeNotifier
@@ -47,7 +48,7 @@ class _FakePostProvider extends Fake
   }
 
   @override
-  Future<int?> uploadImage(String filePath) async => 1;
+  Future<int?> uploadImage(XFile file) async => 1;
 }
 
 Widget _buildMarketForm({
@@ -115,10 +116,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.widget<Text>(find.text('自提')).style?.color,
-        const Color(0xFF4F5AF7));
+        const Color(0xFFFF7A45));
     expect(tester.widget<Text>(find.text('可小刀')).style?.color,
-        const Color(0xFF4F5AF7));
+        const Color(0xFFFF7A45));
     expect(tester.widget<Text>(find.text('急出')).style?.color,
-        const Color(0xFF6F7585));
+        const Color(0xFF747B82));
   });
 }

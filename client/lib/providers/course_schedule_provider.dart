@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_constants.dart';
 import '../services/home_widget_service.dart';
-import '../services/course_reminder_service.dart';
 import '../models/course_term.dart';
 
 /// 单个课程块，用于课表网格展示
@@ -67,7 +66,8 @@ class CourseBlock {
       startSection: (json['start_section'] as num?)?.toInt() ?? 1,
       endSection: (json['end_section'] as num?)?.toInt() ?? 1,
       weeks: (json['weeks'] as List<dynamic>?)
-              ?.map((e) => (e as num).toInt())
+              ?.map((e) => int.tryParse(e.toString()) ?? 0)
+              .where((e) => e > 0)
               .toList() ??
           [],
       note: json['note']?.toString(),
@@ -116,7 +116,6 @@ class CourseScheduleProvider extends ChangeNotifier {
   String? _errorMessage;
 
   // 学期管理
-  List<CourseTerm> _terms = [];
   CourseTerm? _currentTerm;
 
   CourseTerm get currentTerm => _currentTerm ?? CourseTerm.inferCurrentTerm();
@@ -151,7 +150,8 @@ class CourseScheduleProvider extends ChangeNotifier {
       '$_activeArchiveIdKeyPrefix${_userId}_${selectedYear}_$selectedSemester';
 
   // 学期起始日期 key
-  String get _semesterStartKey => 'semester_start_v2_${_userId}_${selectedYear}_$selectedSemester';
+  String get _semesterStartKey =>
+      'semester_start_v2_${_userId}_${selectedYear}_$selectedSemester';
   static const String _legacySemesterStartKey = 'semester_start';
 
   bool get isLoading => _isLoading;
@@ -196,7 +196,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _userId = userId;
     // 重置为默认学期
     _currentTerm = CourseTerm.inferCurrentTerm();
-    
+
     _migrateLegacySemesterStart().then((_) {
       loadSemesterStart();
       loadArchiveList();
@@ -253,19 +253,51 @@ class CourseScheduleProvider extends ChangeNotifier {
     return true;
   }
 
-  Future<void> applyFetchedCourses(
-    List<Map<String, dynamic>> rawCourses,
-  ) async {
-    if (_userId == null) return;
+  Future<int> applyFetchedCourses(
+    List<Map<String, dynamic>> rawCourses, {
+    bool resetHidden = false,
+  }) async {
+    if (_userId == null) return 0;
 
-    final parsedCourses = <CourseBlock>[];
+    debugPrint(
+      'Schedule applyFetchedCourses: '
+      'term=${currentTerm.id}, raw=${rawCourses.length}, '
+      'hidden=${_hiddenCourseIds.length}',
+    );
+
+    if (rawCourses.isNotEmpty) {
+      debugPrint('Schedule first raw course: ${rawCourses.first}');
+    }
+
+    if (resetHidden) {
+      _hiddenCourseIds = {};
+      await _saveHiddenCourses();
+    } else {
+      await _loadHiddenCourses();
+    }
+
+    final customCourses = _courses.where((c) => c.id < 0).toList();
+    final parsedCourses = <CourseBlock>[...customCourses];
+    int importedCount = 0;
+
     for (final rawCourse in rawCourses) {
       try {
-        parsedCourses.add(_courseFromFetchedMap(rawCourse));
+        final parsed = _courseFromFetchedMap(rawCourse);
+        if (!_hiddenCourseIds.contains(parsed.id)) {
+          parsedCourses.add(parsed);
+          importedCount++;
+        }
       } catch (e, stackTrace) {
-        debugPrint('解析课程失败: $e\n$stackTrace\n$rawCourse');
+        debugPrint('解析课程失败: $e\n$stackTrace\nrawCourse=$rawCourse');
       }
     }
+
+    debugPrint(
+      'Schedule applyFetchedCourses done: '
+      'imported=$importedCount, total=${parsedCourses.length}, '
+      'cacheKey=$_currentCacheKey',
+    );
+
     _courses = parsedCourses;
     _buildGrid();
     _isLoading = false;
@@ -275,24 +307,70 @@ class CourseScheduleProvider extends ChangeNotifier {
       await _saveToCache(_currentCacheKey, _courses);
     }
 
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_activeArchiveKey);
+
     notifyListeners();
-    _syncWidget(); // 更新桌面小部件
+    _syncWidget();
+    return importedCount;
   }
 
   CourseBlock _courseFromFetchedMap(Map<String, dynamic> map) {
-    final name = _asString(map['name']);
-    final time = _asInt(map['time'], fallback: 1);
-    final endTime = _asInt(map['end_time'], fallback: time + 1);
-    final weekday = _asInt(map['week_day'], fallback: 1);
-    final teacher = _asString(map['teacher']);
-    final loc = _asString(map['location']);
-    final rawWeeks = map['weeks'];
-    final weeks = rawWeeks is List
-        ? rawWeeks
-            .map((value) => _asInt(value, fallback: 0))
-            .where((value) => value > 0)
-            .toList()
-        : <int>[];
+    final name = _firstString(map, [
+      'name',
+      'course_name',
+      'courseName',
+      'kcmc',
+      'title',
+    ]);
+
+    final time = _firstInt(
+        map,
+        [
+          'time',
+          'start_time',
+          'startSection',
+          'start_section',
+          'jc_start',
+        ],
+        fallback: 1);
+
+    final endTime = _firstInt(
+        map,
+        [
+          'end_time',
+          'endSection',
+          'end_section',
+          'jc_end',
+        ],
+        fallback: time);
+
+    final weekday = _firstInt(
+        map,
+        [
+          'week_day',
+          'weekday',
+          'dayOfWeek',
+          'day_of_week',
+          'xqj',
+        ],
+        fallback: 1);
+
+    final teacher = _firstString(map, [
+      'teacher',
+      'teacher_name',
+      'teacherName',
+      'jsxm',
+    ]);
+
+    final loc = _firstString(map, [
+      'location',
+      'classroom',
+      'room',
+      'jxdd',
+    ]);
+
+    final weeks = _parseWeeks(map['weeks'] ?? map['week_list'] ?? map['zcd']);
 
     // 生成稳定的正数 ID
     final idStr = '$name-$weekday-$time-$endTime-$teacher-$loc';
@@ -313,15 +391,83 @@ class CourseScheduleProvider extends ChangeNotifier {
     );
   }
 
+  String _firstString(Map<String, dynamic> map, List<String> keys) {
+    for (final key in keys) {
+      final value = map[key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString().trim();
+      }
+    }
+    return '';
+  }
+
+  int _firstInt(
+    Map<String, dynamic> map,
+    List<String> keys, {
+    required int fallback,
+  }) {
+    for (final key in keys) {
+      final value = map[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) {
+        final text = value.trim();
+        final direct = int.tryParse(text);
+        if (direct != null) return direct;
+
+        final match = RegExp(r'\d+').firstMatch(text);
+        if (match != null) {
+          final parsed = int.tryParse(match.group(0)!);
+          if (parsed != null) return parsed;
+        }
+      }
+    }
+    return fallback;
+  }
+
+  List<int> _parseWeeks(Object? raw) {
+    if (raw is List) {
+      return raw
+          .map((e) => _asInt(e, fallback: 0))
+          .where((e) => e > 0)
+          .toSet()
+          .toList()
+        ..sort();
+    }
+
+    if (raw is String) {
+      final result = <int>{};
+      final text = raw.replaceAll('周', '').replaceAll(' ', '');
+
+      for (final part in text.split(',')) {
+        if (part.contains('-')) {
+          final seg = part.split('-');
+          if (seg.length == 2) {
+            final start = int.tryParse(seg[0]);
+            final end = int.tryParse(seg[1]);
+            if (start != null && end != null) {
+              for (var i = start; i <= end; i++) {
+                result.add(i);
+              }
+            }
+          }
+        } else {
+          final v = int.tryParse(part);
+          if (v != null) result.add(v);
+        }
+      }
+
+      return result.toList()..sort();
+    }
+
+    return <int>[];
+  }
+
   int _asInt(Object? value, {required int fallback}) {
     if (value is int) return value;
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value.trim()) ?? fallback;
     return fallback;
-  }
-
-  String _asString(Object? value) {
-    return value?.toString() ?? '';
   }
 
   Future<void> _loadHiddenCourses() async {
@@ -526,6 +672,11 @@ class CourseScheduleProvider extends ChangeNotifier {
       }
     }
 
+    if (!networkSuccess && backupCourses.isNotEmpty) {
+      _courses = backupCourses;
+      _buildGrid();
+    }
+
     _isLoading = false;
     notifyListeners();
     _syncWidget(); // 更新桌面小部件
@@ -648,9 +799,9 @@ class CourseScheduleProvider extends ChangeNotifier {
       date.month,
       date.day,
     ).subtract(Duration(days: date.weekday - 1));
-    
+
     _currentTerm = currentTerm.copyWith(startDate: start);
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_semesterStartKey, start.toIso8601String());
     notifyListeners();
@@ -673,7 +824,8 @@ class CourseScheduleProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final newKey = _semesterStartKey;
-      if (!prefs.containsKey(newKey) && prefs.containsKey(_legacySemesterStartKey)) {
+      if (!prefs.containsKey(newKey) &&
+          prefs.containsKey(_legacySemesterStartKey)) {
         final legacyStr = prefs.getString(_legacySemesterStartKey);
         if (legacyStr != null) {
           await prefs.setString(newKey, legacyStr);
@@ -797,28 +949,88 @@ class CourseScheduleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> selectTerm(String year, int semester) async {
-    _currentTerm = CourseTerm(
-      id: '${year}_$semester',
+  CourseTerm buildTerm(String year, int semester) {
+    final inferred = CourseTerm.inferCurrentTerm();
+    final id = '${year}_$semester';
+    return CourseTerm(
+      id: id,
       year: year,
       semester: semester,
-      title: '$year 第${semester == 3 ? "一" : "二"}学期',
+      title: CourseTermCatalog.titleFor(year, semester),
+      isCurrent: id == inferred.id,
+      maxWeek: 20,
     );
-    
-    // 切换学期后重新加载日期并刷新课程
+  }
+
+  Future<bool> switchTerm(
+    CourseTerm term, {
+    bool loadCache = true,
+  }) async {
+    if (_userId == null) return false;
+
+    _currentTerm = term;
+    _courses = [];
+    _gridData = {};
+    _hiddenCourseIds = {};
+    _archives = [];
+    _errorMessage = null;
+    _isLoading = false;
+
     await loadSemesterStart();
-    await loadCachedCoursesIfAvailable();
-    
-    // 如果启用提醒，则重新应用当前学期提醒
-    if (await CourseReminderService.instance.isEnabled()) {
-      await CourseReminderService.instance.reschedule(
-        courses: courses,
-        semesterStart: semesterStart,
-      );
+    await loadArchiveList();
+
+    bool hasCache = false;
+    if (loadCache) {
+      hasCache = await loadCachedCoursesIfAvailable();
+    } else {
+      notifyListeners();
     }
-    
+
     _syncWidget();
-    notifyListeners();
+    return hasCache;
+  }
+
+  Future<bool> selectTerm(
+    String year,
+    int semester, {
+    bool clearCurrent = true,
+  }) async {
+    final term = buildTerm(year, semester);
+
+    if (!clearCurrent &&
+        currentTerm.year == year &&
+        currentTerm.semester == semester) {
+      await loadSemesterStart();
+      await loadArchiveList();
+      return courses.isNotEmpty || await loadCachedCoursesIfAvailable();
+    }
+
+    return switchTerm(term, loadCache: true);
+  }
+
+  Future<int> applyFetchedCoursesForTerm({
+    required CourseTerm term,
+    required List<Map<String, dynamic>> rawCourses,
+    bool resetHidden = true,
+  }) async {
+    if (_userId == null) return 0;
+
+    _currentTerm = term;
+
+    await loadSemesterStart();
+    await loadArchiveList();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_activeArchiveKey);
+
+    final targetCached = await _loadFromCache(_currentCacheKey);
+    _courses = targetCached ?? [];
+    _buildGrid();
+
+    return applyFetchedCourses(
+      rawCourses,
+      resetHidden: resetHidden,
+    );
   }
 
   // ====== 存档管理 ======

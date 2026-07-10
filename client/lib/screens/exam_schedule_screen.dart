@@ -40,12 +40,12 @@ class ExamModel {
   }
 
   Map<String, dynamic> toJson() => {
-    'name': name,
-    'startTime': startTime.toIso8601String(),
-    'endTime': endTime.toIso8601String(),
-    'location': location,
-    'semester': semester,
-  };
+        'name': name,
+        'startTime': startTime.toIso8601String(),
+        'endTime': endTime.toIso8601String(),
+        'location': location,
+        'semester': semester,
+      };
 }
 
 class ExamScheduleScreen extends StatefulWidget {
@@ -242,9 +242,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
 
         if (data.containsKey('exams') && data['exams'] is List) {
           final List<dynamic> examsJson = data['exams'];
-          final List<ExamModel> importedExams = examsJson
-              .map((e) => ExamModel.fromJson(e))
-              .toList();
+          final List<ExamModel> importedExams =
+              examsJson.map((e) => ExamModel.fromJson(e)).toList();
 
           if (mounted) {
             setState(() {
@@ -289,9 +288,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         final prefs = await SharedPreferences.getInstance();
 
         final now = DateTime.now();
-        final activeExams = _exams
-            .where((e) => e.endTime.isAfter(now))
-            .toList();
+        final activeExams =
+            _exams.where((e) => e.endTime.isAfter(now)).toList();
 
         final examsJson = activeExams.map((e) {
           final dateStr =
@@ -609,8 +607,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                   final endMins =
                                       endTime.hour * 60 + endTime.minute;
                                   if (endMins <= startMins) {
-                                    final newEndMins =
-                                        startMins +
+                                    final newEndMins = startMins +
                                         120; // 2 hours duration default
                                     endTime = TimeOfDay(
                                       hour: (newEndMins ~/ 60) % 24,
@@ -797,9 +794,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final displayExams = _exams
-        .where((e) => e.semester == _currentSemester)
-        .toList();
+    final displayExams =
+        _exams.where((e) => e.semester == _currentSemester).toList();
 
     final now = DateTime.now();
     displayExams.sort((a, b) {
@@ -812,9 +808,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     final availableSemesters = _availableSemesters;
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF131720)
-          : kCleanWarmBackgroundLight,
+      backgroundColor:
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
       appBar: AppBar(
         title: DropdownButtonHideUnderline(
           child: DropdownButton<String>(

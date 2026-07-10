@@ -5,6 +5,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -17,6 +21,36 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+func validateImageFile(src io.ReadSeeker) (string, error) {
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+
+	header := make([]byte, 512)
+	n, _ := src.Read(header)
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+
+	mimeType := http.DetectContentType(header[:n])
+	switch mimeType {
+	case "image/jpeg", "image/png", "image/gif":
+	default:
+		return "", fmt.Errorf("只支持 jpg/png/gif 图片")
+	}
+
+	if _, _, err := image.DecodeConfig(src); err != nil {
+		_, _ = src.Seek(0, io.SeekStart)
+		return "", fmt.Errorf("图片文件损坏或格式不支持")
+	}
+
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+
+	return mimeType, nil
+}
 
 // UploadHandler 上传处理器
 type UploadHandler struct {
@@ -62,6 +96,11 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 	defer src.Close()
+
+	if _, err := validateImageFile(src); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// 计算SHA256哈希
 	hash := sha256.New()
@@ -179,6 +218,13 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 			results = append(results, gin.H{"error": "读取文件失败: " + file.Filename})
 			continue
 		}
+
+		if _, err := validateImageFile(src); err != nil {
+			src.Close()
+			results = append(results, gin.H{"error": err.Error() + ": " + file.Filename})
+			continue
+		}
+
 		hash := sha256.New()
 		io.Copy(hash, src)
 		src.Close()

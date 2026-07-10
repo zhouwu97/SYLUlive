@@ -61,6 +61,9 @@ func performWaterSectionAuthGET(t *testing.T, handler gin.HandlerFunc, path stri
 		if slash := strings.Index(slug, "/"); slash >= 0 {
 			slug = slug[:slash]
 		}
+		if question := strings.Index(slug, "?"); question >= 0 {
+			slug = slug[:question]
+		}
 		ctx.Params = gin.Params{{Key: "slug", Value: slug}}
 	}
 	handler(ctx)
@@ -125,6 +128,9 @@ func performWaterSectionGET(t *testing.T, handler gin.HandlerFunc, path string) 
 		slug := path[slugStart+len("/sections/"):]
 		if slash := strings.Index(slug, "/"); slash >= 0 {
 			slug = slug[:slash]
+		}
+		if question := strings.Index(slug, "?"); question >= 0 {
+			slug = slug[:question]
 		}
 		ctx.Params = gin.Params{{Key: "slug", Value: slug}}
 	}
@@ -752,6 +758,71 @@ func TestDisabledWaterSectionTagCannotBeUsedForNewPostAndOldPostKeepsTag(t *test
 	}
 	if loaded.WaterTagID == nil || *loaded.WaterTagID != tag.ID {
 		t.Fatalf("old post water_tag_id should stay, got %+v", loaded.WaterTagID)
+	}
+}
+
+func TestGetWaterSectionManageTagsRequiresPermissionAndIncludesArchived(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	handler := NewWaterSectionHandler(db)
+	admin := newWaterSectionRoleUser(t, db, "tag_manage_admin", models.RoleAdmin)
+	plain := newWaterSectionRoleUser(t, db, "tag_manage_plain", models.RoleUser)
+	var section models.WaterSection
+	var tag models.WaterSectionTag
+	db.Where("slug = ?", "course_study").First(&section)
+	db.Where("section_id = ? AND slug = ?", section.ID, "exam").First(&tag)
+	if err := db.Model(&tag).Update("is_enabled", false).Error; err != nil {
+		t.Fatalf("archive tag: %v", err)
+	}
+
+	regular := performWaterSectionAuthGET(t, handler.Get, "/api/water/sections/course_study", admin.ID)
+	if regular.Code != http.StatusOK {
+		t.Fatalf("regular get expected 200, got %d body=%s", regular.Code, regular.Body.String())
+	}
+	var regularBody struct {
+		Section struct {
+			Tags []waterSectionTagResponse `json:"tags"`
+		} `json:"section"`
+	}
+	if err := json.Unmarshal(regular.Body.Bytes(), &regularBody); err != nil {
+		t.Fatalf("decode regular body: %v", err)
+	}
+	for _, got := range regularBody.Section.Tags {
+		if got.ID == tag.ID {
+			t.Fatalf("regular get should hide archived tag, got %+v", got)
+		}
+	}
+
+	forbidden := performWaterSectionAuthGET(t, handler.Get, "/api/water/sections/course_study?include_disabled_tags=true", plain.ID)
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("plain user expected 403, got %d body=%s", forbidden.Code, forbidden.Body.String())
+	}
+
+	managed := performWaterSectionAuthGET(t, handler.Get, "/api/water/sections/course_study?include_disabled_tags=true", admin.ID)
+	if managed.Code != http.StatusOK {
+		t.Fatalf("managed get expected 200, got %d body=%s", managed.Code, managed.Body.String())
+	}
+	var managedBody struct {
+		Section struct {
+			Tags []waterSectionTagResponse `json:"tags"`
+		} `json:"section"`
+	}
+	if err := json.Unmarshal(managed.Body.Bytes(), &managedBody); err != nil {
+		t.Fatalf("decode managed body: %v", err)
+	}
+	foundArchived := false
+	for _, got := range managedBody.Section.Tags {
+		if got.ID == tag.ID {
+			foundArchived = true
+			if got.IsEnabled {
+				t.Fatalf("managed get should preserve archived status, got %+v", got)
+			}
+		}
+	}
+	if !foundArchived {
+		t.Fatalf("managed get should include archived tag id=%d, tags=%+v", tag.ID, managedBody.Section.Tags)
 	}
 }
 

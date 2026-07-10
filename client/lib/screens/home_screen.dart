@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/api_constants.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
+import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_motion.dart';
@@ -90,22 +91,36 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _checkAdminTasks(AuthProvider auth) async {
     try {
       final futures = await Future.wait([
-        auth.dio.get('/teachers/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
-        auth.dio.get('/majors/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
-        auth.dio.get('/admin/invitations/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
-        auth.dio.get('/admin/removals/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/teachers/pending').catchError((_) =>
+            Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/majors/pending').catchError((_) =>
+            Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/admin/invitations/pending').catchError((_) =>
+            Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/admin/removals/pending').catchError((_) =>
+            Response(requestOptions: RequestOptions(path: ''), data: [])),
       ]);
       int count = 0;
       if (futures[0].data is List) count += (futures[0].data as List).length;
       if (futures[1].data is List) count += (futures[1].data as List).length;
-      if (futures[2].data is List) count += (futures[2].data as List).where((i) => i['my_vote'] != true).length;
-      if (futures[3].data is List) count += (futures[3].data as List).where((r) => r['can_vote'] == true).length;
-      
+      if (futures[2].data is List)
+        count +=
+            (futures[2].data as List).where((i) => i['my_vote'] != true).length;
+      if (futures[3].data is List)
+        count += (futures[3].data as List)
+            .where((r) => r['can_vote'] == true)
+            .length;
+
       if (auth.user?.isSuperAdmin == true) {
-        final superRes = await auth.dio.get('/super/invitations/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: []));
-        if (superRes.data is List) count += (superRes.data as List).where((i) => i['my_vote'] != true).length;
+        final superRes = await auth.dio
+            .get('/super/invitations/pending')
+            .catchError((_) =>
+                Response(requestOptions: RequestOptions(path: ''), data: []));
+        if (superRes.data is List)
+          count +=
+              (superRes.data as List).where((i) => i['my_vote'] != true).length;
       }
-      
+
       if (mounted && _hasAdminTasks != (count > 0)) {
         setState(() => _hasAdminTasks = count > 0);
       }
@@ -142,13 +157,38 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _syncAnnouncementPolling(context.read<AuthProvider>());
-        Future.delayed(const Duration(seconds: 1), () {
-          if (mounted) {
-            UpdateChecker.check(context);
-          }
-        });
+        _bootstrapHome();
       }
+    });
+  }
+
+  void _bootstrapHome() {
+    final auth = context.read<AuthProvider>();
+
+    // 1. Current tab data is already loading naturally because the widget is in the tree.
+
+    // 2. Delay lightweight badges (notices unread-count, messages unread-count)
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      _syncAnnouncementPolling(auth, skipAdminTasks: true);
+      // Ensure messages are loaded for unread badge
+      if (auth.isLoggedIn) {
+        context.read<MessageProvider>().loadConversations(silent: true);
+      }
+    });
+
+    // 3. Delay heavier admin pending checks and other background tasks
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      if (auth.isLoggedIn && auth.user?.isAdmin == true) {
+        _checkAdminTasks(auth);
+      }
+    });
+
+    // 4. Check for app updates even later
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      UpdateChecker.check(context);
     });
   }
 
@@ -195,7 +235,8 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  void _syncAnnouncementPolling(AuthProvider auth) {
+  void _syncAnnouncementPolling(AuthProvider auth,
+      {bool skipAdminTasks = false}) {
     final authKey = auth.isLoggedIn ? '${auth.user?.id}:${auth.token}' : null;
     if (_announcementAuthKey == authKey) return;
 
@@ -209,13 +250,14 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (authKey == null) return;
 
-    unawaited(_initializeAnnouncementPolling());
+    unawaited(_initializeAnnouncementPolling(skipAdminTasks: skipAdminTasks));
   }
 
-  Future<void> _initializeAnnouncementPolling() async {
+  Future<void> _initializeAnnouncementPolling(
+      {bool skipAdminTasks = false}) async {
     await _loadSeenAnnouncements();
     if (!mounted) return;
-    await _checkUnreadAnnouncements();
+    await _checkUnreadAnnouncements(skipAdminTasks: skipAdminTasks);
     if (!mounted) return;
     _announcementTimer = Timer.periodic(
       _announcementPollInterval,
@@ -298,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Future<void> _checkUnreadAnnouncements() async {
+  Future<void> _checkUnreadAnnouncements({bool skipAdminTasks = false}) async {
     if (!mounted || _isCheckingAnnouncements || _announcementDialogOpen) {
       return;
     }
@@ -312,10 +354,12 @@ class _HomeScreenState extends State<HomeScreen>
 
     _isCheckingAnnouncements = true;
     try {
-      if (auth.user?.isAdmin == true) {
-        _checkAdminTasks(auth);
-      } else if (_hasAdminTasks) {
-        setState(() => _hasAdminTasks = false);
+      if (!skipAdminTasks) {
+        if (auth.user?.isAdmin == true) {
+          _checkAdminTasks(auth);
+        } else if (_hasAdminTasks) {
+          setState(() => _hasAdminTasks = false);
+        }
       }
       // 1. Get lightweight unread count first
       final countResult = await _fetchUnreadCount(auth);
@@ -1549,13 +1593,7 @@ class _HomeScreenState extends State<HomeScreen>
     final auth = context.read<AuthProvider>();
     final postProvider = context.read<PostProvider>();
     if (!auth.isLoggedIn) {
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          opaque: false,
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-        ),
-      );
+      Navigator.pushNamed(context, '/login');
       return;
     }
     Navigator.push(

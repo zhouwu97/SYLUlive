@@ -14,9 +14,7 @@ final class RankingTokens {
       isDark ? const Color(0xFF1E2226) : Colors.white;
 
   static Color borderColor(bool isDark) =>
-      isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : const Color(0xFFE9E7E2);
+      isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE9E7E2);
 
   static Color titleColor(bool isDark) =>
       isDark ? Colors.white : const Color(0xFF1F2328);
@@ -32,36 +30,32 @@ final class RankingTokens {
   /// Canteen / dining — warm amber-orange
   static Color canteenAccent(bool isDark) =>
       isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
-  static Color canteenAccentSoft(bool isDark) =>
-      isDark
-          ? const Color(0xFFFBBF24).withValues(alpha: 0.12)
-          : const Color(0xFFFFF4DE);
+  static Color canteenAccentSoft(bool isDark) => isDark
+      ? const Color(0xFFFBBF24).withValues(alpha: 0.12)
+      : const Color(0xFFFFF4DE);
 
   /// Teacher / subject — blue-green (teal)
   static Color teacherAccent(bool isDark) =>
       isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
-  static Color teacherAccentSoft(bool isDark) =>
-      isDark
-          ? const Color(0xFF7ED6C5).withValues(alpha: 0.12)
-          : const Color(0xFFEAF6F3);
+  static Color teacherAccentSoft(bool isDark) => isDark
+      ? const Color(0xFF7ED6C5).withValues(alpha: 0.12)
+      : const Color(0xFFEAF6F3);
 
   /// Major — indigo / slate-blue
   static Color majorAccent(bool isDark) =>
       isDark ? const Color(0xFF93A9D1) : const Color(0xFF5D78A7);
-  static Color majorAccentSoft(bool isDark) =>
-      isDark
-          ? const Color(0xFF93A9D1).withValues(alpha: 0.12)
-          : const Color(0xFFEDF3FA);
+  static Color majorAccentSoft(bool isDark) => isDark
+      ? const Color(0xFF93A9D1).withValues(alpha: 0.12)
+      : const Color(0xFFEDF3FA);
 
   /// Price / hot colour — kept for prices on market cards etc.
   static Color priceColor(bool _) => const Color(0xFFE76F51);
 
   /// Success green
   static Color successColor(bool _) => const Color(0xFF16A34A);
-  static Color successSoft(bool isDark) =>
-      isDark
-          ? const Color(0xFF16A34A).withValues(alpha: 0.15)
-          : const Color(0xFFDCFCE7);
+  static Color successSoft(bool isDark) => isDark
+      ? const Color(0xFF16A34A).withValues(alpha: 0.15)
+      : const Color(0xFFDCFCE7);
 
   /// Warning
   static Color warningColor(bool _) => const Color(0xFFF59E0B);

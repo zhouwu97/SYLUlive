@@ -32,7 +32,7 @@ class ScoreInput {
   final bool readOnly;
   final bool isVisible;
   final String? framePath;
-  
+
   final double? minScore;
   final double? maxScore;
   final ScoreRangeSource? rangeSource;
@@ -62,10 +62,18 @@ class ScoreInput {
     ScoreRangeSource? src;
     if (json['rangeSource'] != null) {
       switch (json['rangeSource']) {
-        case 'minMax': src = ScoreRangeSource.minMax; break;
-        case 'dataAttr': src = ScoreRangeSource.dataAttr; break;
-        case 'placeholder': src = ScoreRangeSource.placeholder; break;
-        case 'text': src = ScoreRangeSource.text; break;
+        case 'minMax':
+          src = ScoreRangeSource.minMax;
+          break;
+        case 'dataAttr':
+          src = ScoreRangeSource.dataAttr;
+          break;
+        case 'placeholder':
+          src = ScoreRangeSource.placeholder;
+          break;
+        case 'text':
+          src = ScoreRangeSource.text;
+          break;
       }
     }
     return ScoreInput(
@@ -174,8 +182,8 @@ class RadioGroup {
 
   /// Whether any option has a recognizable score attribute (data-dyf/data-score/data-fz only).
   bool get hasScoreAttribute => options.any(
-    (o) => o.dataDyf != null || o.dataScore != null || o.dataFz != null,
-  );
+        (o) => o.dataDyf != null || o.dataScore != null || o.dataFz != null,
+      );
 
   /// Extract numeric score using ONLY explicit score attributes.
   /// Never uses radio.value as a score.
@@ -209,7 +217,8 @@ class EvaluationProbeResult {
   final int radioCount;
   final List<RadioOption> radioOptions;
   final List<ScoreInput> scoreInputs;
-  final int textareaCount; // Legacy textarea count, kept for backwards compatibility or general stats
+  final int
+      textareaCount; // Legacy textarea count, kept for backwards compatibility or general stats
   final int optionalCommentCount;
   final List<Map<String, dynamic>> forms;
   final List<Map<String, dynamic>> buttons;
@@ -256,13 +265,11 @@ class EvaluationProbeResult {
       title: (json['title'] as String?) ?? '',
       pageTextSample: (json['pageTextSample'] as String?) ?? '',
       radioCount: (json['radioCount'] as int?) ?? 0,
-      radioOptions:
-          radioRaw
+      radioOptions: radioRaw
               ?.map((e) => RadioOption.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      scoreInputs:
-          scoreRaw
+      scoreInputs: scoreRaw
               ?.map((e) => ScoreInput.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -289,8 +296,7 @@ class EvaluationProbeResult {
 
   List<RadioGroup> get radioGroups => RadioGroup.fromOptionsList(radioOptions);
 
-  String get debugSummary =>
-      'EvaluationProbeResult('
+  String get debugSummary => 'EvaluationProbeResult('
       'url=$url, title=$title, radioCount=$radioCount, '
       'textareaCount=$textareaCount, groups=${radioGroups.length}, '
       'hasLogin=$hasLoginForm, hasEval=$hasEvaluationForm, '
@@ -344,12 +350,14 @@ class EvaluationFillResult {
     );
   }
 
-  bool get hasUnresolved => unresolvedRadioGroups.isNotEmpty || unresolvedScoreInputs.isNotEmpty;
-  bool get hasRequiredTextareas => false; // Kept for backwards compat signature, but logic handled via warnings if needed
+  bool get hasUnresolved =>
+      unresolvedRadioGroups.isNotEmpty || unresolvedScoreInputs.isNotEmpty;
+  bool get hasRequiredTextareas =>
+      false; // Kept for backwards compat signature, but logic handled via warnings if needed
   bool get hasWarnings => warnings.isNotEmpty;
-  bool get allCompleted => 
-    (radioTotalGroups > 0 && radioCompletedGroups >= radioTotalGroups) ||
-    (scoreInputCount > 0 && scoreInputCompletedCount >= scoreInputCount);
+  bool get allCompleted =>
+      (radioTotalGroups > 0 && radioCompletedGroups >= radioTotalGroups) ||
+      (scoreInputCount > 0 && scoreInputCompletedCount >= scoreInputCount);
 
   static List<String> _stringList(dynamic src) {
     if (src is! List) return [];

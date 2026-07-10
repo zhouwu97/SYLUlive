@@ -6,7 +6,7 @@ void main() {
     test('应该能成功存入并取出目标', () {
       final pending = PendingNotificationOpen();
       final now = DateTime(2026, 1, 1, 12, 0, 0);
-      
+
       final target = NotificationOpenTarget(
         type: NotificationOpenType.reply,
         postId: 1,
@@ -25,7 +25,7 @@ void main() {
     test('超过 TTL 应该返回 null 并丢弃', () {
       final pending = PendingNotificationOpen(ttl: const Duration(seconds: 30));
       final now = DateTime(2026, 1, 1, 12, 0, 0);
-      
+
       final target = NotificationOpenTarget(
         type: NotificationOpenType.marketPost,
         postId: 1,

@@ -49,8 +49,7 @@ import 'social_list_screen.dart';
   final showPrivateBadge = unreadMessageCount > 0;
   final showNotificationBadge = unreadNotificationCount > 0;
   return (
-    privateSubtitle:
-        showPrivateBadge ? '$unreadMessageCount条新私信' : '查看私信',
+    privateSubtitle: showPrivateBadge ? '$unreadMessageCount条新私信' : '查看私信',
     showPrivateBadge: showPrivateBadge,
     notificationSubtitle:
         showNotificationBadge ? '$unreadNotificationCount条新通知' : null,
@@ -263,13 +262,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               if (authProvider.isLoggedIn) {
                 _showAvatarOptions(context, authProvider);
               } else {
-                Navigator.push(
-                  context,
-                  PageRouteBuilder(
-                    opaque: false,
-                    pageBuilder: (_, __, ___) => const LoginScreen(),
-                  ),
-                );
+                Navigator.pushNamed(context, '/login');
               }
             },
             child: Container(
@@ -319,13 +312,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     MaterialPageRoute(builder: (_) => const UserHomeScreen()),
                   );
                 } else {
-                  Navigator.push(
-                    context,
-                    PageRouteBuilder(
-                      opaque: false,
-                      pageBuilder: (_, __, ___) => const LoginScreen(),
-                    ),
-                  );
+                  Navigator.pushNamed(context, '/login');
                 }
               },
               child: Row(
@@ -678,7 +665,6 @@ class _ProfileScreenState extends State<ProfileScreen>
               );
             },
           ),
-
         ];
 
         return _buildSectionLayout(context, '管理员', items, isDark);
@@ -967,7 +953,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ),
       ),
-
     ];
     return _buildSectionLayout(context, '教务', items, isDark);
   }

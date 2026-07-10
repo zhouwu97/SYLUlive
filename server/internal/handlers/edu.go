@@ -317,6 +317,14 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 		if msg == "" {
 			msg = "获取课表失败"
 		}
+		if resp.StatusCode() == http.StatusUnauthorized {
+			c.JSON(http.StatusConflict, gin.H{
+				"code": "EDU_SESSION_EXPIRED",
+				"error": msg,
+			})
+			return
+		}
+
 		c.JSON(resp.StatusCode(), gin.H{"error": msg})
 		return
 	}
@@ -398,6 +406,14 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 		return
 	}
 
+	if resp.StatusCode() == http.StatusUnauthorized {
+		c.JSON(http.StatusConflict, gin.H{
+			"code":  "EDU_SESSION_EXPIRED",
+			"error": "教务登录状态已失效",
+		})
+		return
+	}
+
 	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
 }
 
@@ -446,6 +462,14 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 		)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": "教务服务返回异常，请稍后再试",
+		})
+		return
+	}
+
+	if resp.StatusCode() == http.StatusUnauthorized {
+		c.JSON(http.StatusConflict, gin.H{
+			"code":  "EDU_SESSION_EXPIRED",
+			"error": "教务登录状态已失效",
 		})
 		return
 	}
@@ -503,6 +527,14 @@ func (h *EduHandler) GetGradeDetail(c *gin.Context) {
 		)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": "教务服务返回异常，请稍后再试",
+		})
+		return
+	}
+
+	if resp.StatusCode() == http.StatusUnauthorized {
+		c.JSON(http.StatusConflict, gin.H{
+			"code":  "EDU_SESSION_EXPIRED",
+			"error": "教务登录状态已失效",
 		})
 		return
 	}

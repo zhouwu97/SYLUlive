@@ -204,6 +204,9 @@ func main() {
 	if err := models.EnsureConversationIndexes(db); err != nil {
 		log.Fatal("私信索引迁移失败:", err)
 	}
+	if err := models.VerifyCompetitionCalendarDedupMigration(db); err != nil {
+		log.Fatal("竞赛计划数据约束未就绪:", err)
+	}
 	if err := models.EnsureCompetitionCategories(db); err != nil {
 		log.Fatal("竞赛分类种子初始化失败:", err)
 	}
@@ -493,6 +496,8 @@ func main() {
 		user.POST("/competition-calendar/import-share/commit", competitionHandler.CommitShareImport)
 		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
 		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
+		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
+		user.GET("/competitions/fit", competitionHandler.ListFitEvents)
 		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
 		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)
 		user.GET("/collaboration-applications/received", postHandler.GetMyCollaborationApplicationsReceived)
@@ -617,6 +622,7 @@ func main() {
 	competitions := r.Group("/api/competitions")
 	{
 		competitions.GET("/categories", competitionHandler.GetCategories)
+		competitions.GET("/overview", competitionHandler.GetOverview)
 		competitions.GET("/events", competitionHandler.ListEvents)
 		competitions.GET("/events/:id", competitionHandler.GetEvent)
 	}
@@ -858,6 +864,7 @@ func main() {
 		admin.PUT("/competitions/categories/:id", competitionHandler.AdminUpdateCategory)
 		admin.DELETE("/competitions/categories/:id", competitionHandler.AdminDeleteCategory)
 		admin.GET("/competitions/events", competitionHandler.AdminListEvents)
+		admin.GET("/competitions/audience-options", competitionHandler.AdminCompetitionAudienceOptions)
 		admin.POST("/competitions/events", competitionHandler.AdminCreateEvent)
 		admin.PUT("/competitions/events/:id", competitionHandler.AdminUpdateEvent)
 		admin.DELETE("/competitions/events/:id", competitionHandler.AdminDeleteEvent)

@@ -43,13 +43,16 @@ type CompetitionEvent struct {
 	IsFeatured           bool   `gorm:"default:false;index" json:"is_featured"`
 	IsVerified           bool   `gorm:"default:false;index" json:"is_verified"`
 
-	Organizer         string `gorm:"size:255" json:"organizer"`
-	HostUnit          string `gorm:"size:255" json:"host_unit"`
-	UndertakeUnit     string `gorm:"size:255" json:"undertake_unit"`
-	TargetAudience    string `gorm:"size:500" json:"target_audience"`
-	ParticipationType string `gorm:"size:50" json:"participation_type"`
-	TeamSizeMin       int    `gorm:"default:0" json:"team_size_min"`
-	TeamSizeMax       int    `gorm:"default:0" json:"team_size_max"`
+	Organizer          string         `gorm:"size:255" json:"organizer"`
+	HostUnit           string         `gorm:"size:255" json:"host_unit"`
+	UndertakeUnit      string         `gorm:"size:255" json:"undertake_unit"`
+	TargetAudience     string         `gorm:"size:500" json:"target_audience"`
+	EligibleEntryYears datatypes.JSON `json:"eligible_entry_years"`
+	EligibleColleges   datatypes.JSON `json:"eligible_colleges"`
+	EligibleMajors     datatypes.JSON `json:"eligible_majors"`
+	ParticipationType  string         `gorm:"size:50" json:"participation_type"`
+	TeamSizeMin        int            `gorm:"default:0" json:"team_size_min"`
+	TeamSizeMax        int            `gorm:"default:0" json:"team_size_max"`
 
 	RegistrationStart *time.Time `gorm:"index" json:"registration_start"`
 	RegistrationEnd   *time.Time `gorm:"index" json:"registration_end"`
@@ -83,6 +86,9 @@ type CompetitionEvent struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	ArchivedAt *time.Time `json:"archived_at"`
+
+	FitLevel   string   `gorm:"-" json:"fit_level,omitempty"`
+	FitReasons []string `gorm:"-" json:"fit_reasons,omitempty"`
 }
 
 func (CompetitionEvent) TableName() string { return "competition_events" }

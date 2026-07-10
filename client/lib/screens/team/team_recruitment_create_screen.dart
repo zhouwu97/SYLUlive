@@ -111,7 +111,6 @@ class _TeamRecruitmentCreateScreenState
                     spacing: 8,
                     children: const [
                       ('竞赛', 'competition'),
-                      ('项目', 'project'),
                       ('学习', 'study'),
                       ('活动', 'activity'),
                       ('其他', 'other')

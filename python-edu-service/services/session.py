@@ -9,6 +9,8 @@ import asyncio
 import logging
 from typing import Callable, Awaitable, TypeVar
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from models.database import EduUser
 from services.crawler import EduCrawler, CookieLapseError, LoginFailedError, NetworkError
 
@@ -16,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-# 每个用户的会话锁,防止多个请求同时发现 Cookie 过期后并发重登
 _user_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -30,6 +31,7 @@ def _user_lock(user_id: str) -> asyncio.Lock:
 
 async def execute_with_session_refresh(
     *,
+    db: AsyncSession,
     edu_user: EduUser,
     operation: Callable[[EduCrawler, str], Awaitable[T]],
     timeout: float = 15.0,
@@ -40,11 +42,11 @@ async def execute_with_session_refresh(
 
     会话刷新策略:
     1. 首次尝试使用数据库中的 Cookie
-    2. CookieLapseError → 用存储的明文密码重登,成功后重试一次
+    2. CookieLapseError → 获取用户锁 → db.refresh 读取可能已被
+       其他请求刷新的 Cookie → 再试一次 → 仍失败则重登并 db.commit
     3. 重试仍失败 → 抛出 CookieLapseError (上游转为 HTTP 401)
 
-    每个用户有独立的 asyncio.Lock,避免成绩/课表/后台提醒
-    同时发现过期后并发重登。
+    锁内 commit 保证后续请求拿到的是最新 Cookie,避免并发重登风暴。
     """
 
     async def _attempt(crawler: EduCrawler, cookie: str) -> T:
@@ -67,12 +69,14 @@ async def execute_with_session_refresh(
         # 需要刷新 — 按用户串行化以避免并发重登
         lock = _user_lock(edu_user.user_id)
         async with lock:
-            # 拿到锁后重新读取最新 Cookie (可能被前一个持有者刷新过)
-            from sqlalchemy import select
-            from models.database import get_db
-
-            # 如果前一个锁持有者已经刷新了 Cookie,直接用它
-            # （这里无法直接重新查询 DB,所以用重登后的新 cookie）
+            # 重新读取最新 Cookie（可能被前一个锁持有者刷新过）
+            await db.refresh(edu_user)
+            refreshed_cookie = edu_user.cookie
+            if refreshed_cookie and refreshed_cookie != cookie:
+                try:
+                    return await _attempt(crawler, refreshed_cookie)
+                except CookieLapseError:
+                    pass
 
             if not edu_user.raw_password:
                 raise CookieLapseError("Cookie 已失效，请重新绑定教务账号")
@@ -87,7 +91,6 @@ async def execute_with_session_refresh(
                 new_cookie = await crawler.login(
                     edu_user.student_id, edu_user.raw_password,
                 )
-                edu_user.cookie = new_cookie
             except LoginFailedError as e:
                 logger.warning(
                     "[EDU-SESSION] re-login failed user_id=%s code=%s",
@@ -98,9 +101,15 @@ async def execute_with_session_refresh(
                     f"账号密码可能已变更: {e}"
                 ) from e
 
+            # 锁内持久化，保证后续请求能看到最新 Cookie
+            edu_user.cookie = new_cookie
+            await db.commit()
+            await db.refresh(edu_user)
+            cookie = edu_user.cookie
+
         # 重试（锁已释放，不阻塞其他用户）
         try:
-            return await _attempt(crawler, edu_user.cookie)
+            return await _attempt(crawler, cookie)
         except CookieLapseError:
             raise CookieLapseError(
                 "Cookie 已失效且自动登录失败，请重新绑定教务账号"

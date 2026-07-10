@@ -1,5 +1,6 @@
 """课程路由 - 课表提取、同步、管理"""
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
@@ -47,13 +48,20 @@ async def fetch_courses(
 
     try:
         raw_courses = await execute_with_session_refresh(
+            db=db,
             edu_user=edu_user,
             operation=lambda crawler, cookie: crawler.fetch_courses(
                 cookie, input.year, input.semester
             ),
         )
     except CookieLapseError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        return JSONResponse(
+            status_code=401,
+            content={
+                "code": getattr(e, "code", "SESSION_EXPIRED"),
+                "error": str(e),
+            },
+        )
     except CourseNotOpenError as e:
         return CourseFetchResponse(
             success=False, year=input.year, semester=input.semester,
@@ -63,8 +71,6 @@ async def fetch_courses(
         raise HTTPException(status_code=503, detail=str(e))
     except LoginFailedError as e:
         raise HTTPException(status_code=401, detail=str(e))
-
-    await db.commit()  # 持久化可能刷新的 Cookie
 
     # 格式化返回
     print(f"  [RAW] 教务返回 {len(raw_courses)} 门课:")

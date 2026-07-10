@@ -133,18 +133,6 @@
             </intent-filter>
         </receiver>
         <receiver
-            android:name=".TodayCourseWidgetProvider"
-            android:exported="true"
-            android:label="@string/widget_course_2x2_label_old">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/course_widget_2x2_info" />
-        </receiver>
-
-        <receiver
             android:name=".TodayCourseWidget2x2Provider"
             android:exported="true"
             android:label="@string/widget_course_2x2_label">
@@ -173,18 +161,6 @@
             android:name=".CourseWidgetService"
             android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false" />
-
-        <receiver
-            android:name=".ExamWidgetProvider"
-            android:exported="true"
-            android:label="@string/widget_exam_2x2_label_old">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/exam_widget_2x2_info" />
-        </receiver>
 
         <receiver
             android:name=".ExamWidget2x2Provider"

@@ -2,15 +2,15 @@
 <resources>
     <!-- 新版小部件名称 -->
     <string name="widget_course_2x2_label">今日课表 (2x2)</string>
-    <string name="widget_course_2x4_label">今日课表 (2x4)</string>
+    <string name="widget_course_4x2_label">今日课表 (4x2)</string>
     <string name="widget_exam_2x2_label">考试安排 (2x2)</string>
-    <string name="widget_exam_2x4_label">考试安排 (2x4)</string>
+    <string name="widget_exam_4x2_label">考试安排 (4x2)</string>
     
     <!-- 旧版兼容小部件名称，可提示用户更换 -->
     <string name="widget_course_2x2_label_old">今日课表 (旧版，请更换)</string>
     <string name="widget_exam_2x2_label_old">考试安排 (旧版，请更换)</string>
     <string name="widget_course_2x2_description">紧凑显示日期和最多 2 门课程</string>
-    <string name="widget_course_2x4_description">显示更多课程、教师与地点</string>
+    <string name="widget_course_4x2_description">显示更多课程、教师与地点</string>
     <string name="widget_exam_2x2_description">紧凑显示最近考试和倒计时</string>
-    <string name="widget_exam_2x4_description">显示更多考试的日期、时间与地点</string>
+    <string name="widget_exam_4x2_description">显示更多考试的日期、时间与地点</string>
 </resources>

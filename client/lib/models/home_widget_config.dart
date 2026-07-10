@@ -46,16 +46,16 @@ enum HomeWidgetTheme {
 
 enum HomeWidgetSize {
   size2x2,
-  size2x4;
+  size4x2;
 
   String get channelName => switch (this) {
         HomeWidgetSize.size2x2 => '2x2',
-        HomeWidgetSize.size2x4 => '2x4',
+        HomeWidgetSize.size4x2 => '4x2',
       };
 
   String get label => switch (this) {
         HomeWidgetSize.size2x2 => '2×2 紧凑版',
-        HomeWidgetSize.size2x4 => '2×4 列表版',
+        HomeWidgetSize.size4x2 => '4×2 列表版',
       };
 }
 

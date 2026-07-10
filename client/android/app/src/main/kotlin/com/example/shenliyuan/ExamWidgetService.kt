@@ -53,7 +53,7 @@ class ExamRemoteViewsFactory(
         )
         views.setViewVisibility(
             R.id.tv_exam_location,
-            if (variant.size == NativeHomeWidgetSize.SIZE_2X4 && exam.location.isNotBlank()) {
+            if (variant.size == NativeHomeWidgetSize.SIZE_4X2 && exam.location.isNotBlank()) {
                 View.VISIBLE
             } else {
                 View.GONE

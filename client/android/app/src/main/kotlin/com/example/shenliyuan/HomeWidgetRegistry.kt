@@ -7,7 +7,7 @@ import android.content.Context
 
 enum class NativeHomeWidgetSize(val storageName: String) {
     SIZE_2X2("2x2"),
-    SIZE_2X4("2x4"),
+    SIZE_4X2("4x2"),
 }
 
 enum class NativeWidgetVariant(
@@ -28,11 +28,11 @@ enum class NativeWidgetVariant(
         R.id.course_list_view,
         2,
     ),
-    COURSE_2X4(
+    COURSE_4X2(
         NativeHomeWidgetKind.COURSE,
-        NativeHomeWidgetSize.SIZE_2X4,
-        TodayCourseWidget2x4Provider::class.java,
-        R.layout.widget_course_2x4,
+        NativeHomeWidgetSize.SIZE_4X2,
+        TodayCourseWidget4x2Provider::class.java,
+        R.layout.widget_course_4x2,
         R.layout.widget_course_item_detailed,
         R.id.course_list_view,
         6,
@@ -46,11 +46,11 @@ enum class NativeWidgetVariant(
         R.id.exam_list_view,
         2,
     ),
-    EXAM_2X4(
+    EXAM_4X2(
         NativeHomeWidgetKind.EXAM,
-        NativeHomeWidgetSize.SIZE_2X4,
-        ExamWidget2x4Provider::class.java,
-        R.layout.widget_exam_2x4,
+        NativeHomeWidgetSize.SIZE_4X2,
+        ExamWidget4x2Provider::class.java,
+        R.layout.widget_exam_4x2,
         R.layout.widget_exam_item_detailed,
         R.id.exam_list_view,
         6,
@@ -97,9 +97,9 @@ object HomeWidgetRegistry {
             manager.getAppWidgetIds(ComponentName(context, variant.providerClass)).size
         return mapOf(
             "course2x2" to count(NativeWidgetVariant.COURSE_2X2),
-            "course2x4" to count(NativeWidgetVariant.COURSE_2X4),
+            "course4x2" to count(NativeWidgetVariant.COURSE_4X2),
             "exam2x2" to count(NativeWidgetVariant.EXAM_2X2),
-            "exam2x4" to count(NativeWidgetVariant.EXAM_2X4),
+            "exam4x2" to count(NativeWidgetVariant.EXAM_4X2),
         )
     }
 }

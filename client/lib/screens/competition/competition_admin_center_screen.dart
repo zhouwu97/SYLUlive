@@ -1069,6 +1069,8 @@ class _AdminFilterSheetState extends State<_AdminFilterSheet> {
                         'B': 'B可参加',
                         'B-': 'B-补充项',
                         'C': 'C兴趣',
+                        'D': 'D低优先级',
+                        'E': 'E资料项',
                       }.entries.map((entry) {
                         return _choiceChip(
                           entry.value,

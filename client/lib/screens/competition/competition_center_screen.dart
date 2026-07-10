@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -38,10 +39,28 @@ class CompetitionCenterScreen extends StatefulWidget {
 
 class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
   late Dio _dio;
   List<CompetitionCategory> _categories = [];
   List<CompetitionEvent> _events = [];
-  bool _loading = true;
+  final Set<int> _joinedEventIds = {};
+  final Set<int> _addingEventIds = {};
+  Timer? _searchDebounce;
+  bool _categoriesLoading = true;
+  bool _overviewLoading = true;
+  bool _eventsLoading = true;
+  bool _stateLoading = false;
+  bool _loadingMore = false;
+  String? _categoriesError;
+  String? _overviewError;
+  String? _eventsError;
+  String? _stateError;
+  int _deadlineSoonCount = 0;
+  int _eventTotal = 0;
+  int _currentPage = 1;
+  int _requestSerial = 0;
+  bool _hasMore = false;
+  bool _profileReady = false;
   String? _categorySlug;
   final Set<String> _recommendations = {};
   final Set<String> _recognitions = {};
@@ -54,67 +73,210 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   void initState() {
     super.initState();
     _dio = context.read<AuthProvider>().dio;
-    _load();
+    _searchController.addListener(_onSearchChanged);
+    _scrollController.addListener(_onScroll);
+    _loadAll();
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    if (!mounted) return;
-    setState(() => _loading = true);
-    final user = context.read<AuthProvider>().user;
+  Future<void> _loadAll() async {
+    await Future.wait([
+      _loadCategories(),
+      _loadOverview(),
+      _loadEvents(reset: true),
+      _loadUserState(),
+    ]);
+  }
 
-    try {
-      final futures = <Future>[
-        _dio.get('/competitions/categories'),
-        _dio.get('/competitions/events', queryParameters: _queryParams()),
-      ];
+  void _onSearchChanged() {
+    if (mounted) setState(() {});
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      _loadEvents(reset: true);
+    });
+  }
 
-      final results = await Future.wait(futures);
+  void _submitSearch() {
+    _searchDebounce?.cancel();
+    _loadEvents(reset: true);
+  }
 
-      int? calendarCount = _calendarCount;
-      if (user != null) {
-        try {
-          final calendarResp = await _dio.get('/user/competition-calendar');
-          calendarCount = ((calendarResp.data['items'] as List?) ?? []).length;
-        } catch (_) {
-          calendarCount = null;
-        }
-      }
+  void _onScroll() {
+    if (_scrollController.position.extentAfter < 320 &&
+        _hasMore &&
+        !_eventsLoading &&
+        !_loadingMore) {
+      _loadEvents(reset: false);
+    }
+  }
 
-      if (!mounted) return;
-
+  Future<void> _loadCategories() async {
+    if (mounted) {
       setState(() {
-        _categories = ((results[0].data as List?) ?? [])
+        _categoriesLoading = true;
+        _categoriesError = null;
+      });
+    }
+    try {
+      final response = await _dio.get('/competitions/categories');
+      if (!mounted) return;
+      setState(() {
+        _categories = ((response.data as List?) ?? [])
             .map((e) => CompetitionCategory.fromJson(e))
             .toList();
-
-        final listData = results[1].data as Map<String, dynamic>;
-        _events = ((listData['items'] as List?) ?? [])
-            .map((e) => CompetitionEvent.fromJson(e))
-            .toList();
-
-        _calendarCount = calendarCount;
-        _loading = false;
+        _categoriesLoading = false;
       });
-    } on DioException catch (e) {
+    } catch (error) {
       if (!mounted) return;
-      setState(() => _loading = false);
-      AppFeedback.showSnackBar(
-        context,
-        AppFeedback.dioErrorMessage(e, fallback: '加载竞赛中心失败'),
-        isError: true,
+      setState(() {
+        _categoriesLoading = false;
+        _categoriesError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '分类加载失败')
+            : '分类数据解析失败';
+      });
+    }
+  }
+
+  Future<void> _loadOverview() async {
+    if (mounted) {
+      setState(() {
+        _overviewLoading = true;
+        _overviewError = null;
+      });
+    }
+    try {
+      final response = await _dio.get('/competitions/overview');
+      final data = Map<String, dynamic>.from(response.data as Map);
+      if (!mounted) return;
+      setState(() {
+        _deadlineSoonCount =
+            (data['deadline_soon_count'] as num?)?.toInt() ?? 0;
+        _overviewLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _overviewLoading = false;
+        _overviewError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '统计加载失败')
+            : '统计数据解析失败';
+      });
+    }
+  }
+
+  Future<void> _loadUserState() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      if (mounted) {
+        setState(() {
+          _calendarCount = null;
+          _profileReady = false;
+          _stateError = null;
+          _joinedEventIds.clear();
+        });
+      }
+      return;
+    }
+    if (mounted) setState(() => _stateLoading = true);
+    try {
+      final response = await _dio.get('/user/competitions/state');
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final joined = ((data['joined_event_ids'] as List?) ?? [])
+          .map((value) => (value as num).toInt());
+      if (!mounted) return;
+      setState(() {
+        _calendarCount = (data['calendar_count'] as num?)?.toInt() ?? 0;
+        _profileReady = data['profile_ready'] == true;
+        _joinedEventIds
+          ..clear()
+          ..addAll(joined);
+        _stateLoading = false;
+        _stateError = null;
+        if (!_profileReady && _studentFocusFilter == 'fit') {
+          _studentFocusFilter = 'recommended';
+        }
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _stateLoading = false;
+          _stateError = error is DioException
+              ? AppFeedback.dioErrorMessage(error, fallback: '计划状态加载失败')
+              : '计划状态解析失败';
+        });
+      }
+    }
+  }
+
+  Future<void> _loadEvents({required bool reset}) async {
+    final request = ++_requestSerial;
+    final nextPage = reset ? 1 : _currentPage + 1;
+    if (mounted) {
+      setState(() {
+        if (reset) {
+          _eventsLoading = true;
+          _eventsError = null;
+        } else {
+          _loadingMore = true;
+        }
+      });
+    }
+    try {
+      final isFit = _studentFocusFilter == 'fit';
+      final response = await _dio.get(
+        isFit ? '/user/competitions/fit' : '/competitions/events',
+        queryParameters: {
+          ..._queryParams(),
+          'page': nextPage,
+          'page_size': 20,
+        },
       );
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final items = ((data['items'] as List?) ?? [])
+          .map((item) =>
+              CompetitionEvent.fromJson(Map<String, dynamic>.from(item as Map)))
+          .toList();
+      final total = (data['total'] as num?)?.toInt() ?? items.length;
+      if (!mounted || request != _requestSerial) return;
+      setState(() {
+        if (reset) {
+          _events = items;
+        } else {
+          final byId = {for (final event in _events) event.id: event};
+          for (final event in items) {
+            byId[event.id] = event;
+          }
+          _events = byId.values.toList();
+        }
+        _eventTotal = total;
+        _currentPage = nextPage;
+        _hasMore = _events.length < total;
+        _eventsLoading = false;
+        _loadingMore = false;
+        _eventsError = null;
+      });
+    } catch (error) {
+      if (!mounted || request != _requestSerial) return;
+      setState(() {
+        _eventsLoading = false;
+        _loadingMore = false;
+        _eventsError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '比赛加载失败')
+            : '比赛数据解析失败';
+      });
     }
   }
 
   Map<String, dynamic> _queryParams() {
     final params = <String, dynamic>{
-      'page_size': 50,
       if (_searchController.text.trim().isNotEmpty)
         'keyword': _searchController.text.trim(),
       if (_categorySlug != null) 'category_slug': _categorySlug,
@@ -127,22 +289,39 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
     switch (_studentFocusFilter) {
       case 'recommended':
-        params['recommendation_level'] = 'S,A,B+';
+        if (_recommendations.isEmpty) {
+          params['recommendation_level'] = 'S,A,B+';
+        }
         break;
       case 'deadline':
         params['date_status'] = 'deadline_soon';
         break;
       case 'recognized':
-        params['school_recognition_status'] = 'recognized';
+        if (_recognitions.isEmpty) {
+          params['school_recognition_status'] = 'recognized';
+        }
         break;
       case 'fit':
-        params['recommendation_level'] = 'S,A,B+,B';
         break;
       case 'pending':
         params['date_status'] = 'time_pending';
         break;
     }
     return params;
+  }
+
+  void _resetFilters() {
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    _searchDebounce?.cancel();
+    setState(() {
+      _categorySlug = null;
+      _recommendations.clear();
+      _recognitions.clear();
+      _sources.clear();
+      _studentFocusFilter = 'recommended';
+    });
+    _loadEvents(reset: true);
   }
 
   String get _filterSummary {
@@ -193,8 +372,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: _loadAll,
         child: ListView(
+          controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: 32),
           children: _buildStudentHome(isDark),
@@ -205,67 +385,18 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
   List<Widget> _buildStudentHome(bool isDark) {
     return [
-      _buildHomeTitle(
-        title: '竞赛中心',
-        actionLabel: '我的计划',
-        onActionTap: _openCalendar,
-        isDark: isDark,
-      ),
       _buildSearchAndFilters(isDark),
       _buildStudentOverview(isDark),
       _buildStudentFocusTabs(isDark),
       _buildSectionTitle(
         title: _studentFocusTitle,
-        subtitle: '官方比赛库由管理员维护，加入后会复制到我的计划',
+        subtitle: _eventsLoading
+            ? '正在加载比赛'
+            : '共 $_eventTotal 个结果 · ${_filterSummary == '全部比赛' ? '全部分类' : _filterSummary}',
         isDark: isDark,
       ),
       _buildEventList(isAdmin: false, isDark: isDark),
     ];
-  }
-
-  Widget _buildHomeTitle({
-    required String title,
-    required String actionLabel,
-    required VoidCallback onActionTap,
-    required bool isDark,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        CompetitionUiTokens.pagePadding,
-        12,
-        CompetitionUiTokens.pagePadding,
-        10,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                color: CompetitionUiTokens.titleColor(isDark),
-              ),
-            ),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: onActionTap,
-            icon: Icon(
-              actionLabel == 'AI导入'
-                  ? Icons.auto_awesome_rounded
-                  : Icons.event_note_rounded,
-              size: 18,
-            ),
-            label: Text(actionLabel),
-            style: FilledButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              foregroundColor: CompetitionUiTokens.accent(isDark),
-              backgroundColor: CompetitionUiTokens.accentSoft(isDark),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildSearchAndFilters(bool isDark) {
@@ -297,7 +428,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                   child: TextField(
                     controller: _searchController,
                     textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => _load(),
+                    onSubmitted: (_) => _submitSearch(),
                     decoration: InputDecoration(
                       hintText: '搜索比赛 / 专业方向 / 标签',
                       hintStyle: TextStyle(
@@ -318,8 +449,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                     visualDensity: VisualDensity.compact,
                     onPressed: () {
                       _searchController.clear();
-                      setState(() {});
-                      _load();
+                      _submitSearch();
                     },
                     icon: Icon(
                       Icons.close_rounded,
@@ -335,7 +465,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             children: [
               _buildSoftButton(
                 icon: Icons.tune_rounded,
-                label: '分类',
+                label: _categoriesLoading ? '分类…' : '分类',
                 isDark: isDark,
                 highlight: _filterSummary != '全部比赛',
                 onTap: _openFilters,
@@ -355,31 +485,68 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                   ),
                 ),
               ),
+              if (_filterSummary != '全部比赛' ||
+                  _searchController.text.trim().isNotEmpty)
+                TextButton(
+                  onPressed: _resetFilters,
+                  child: const Text('重置'),
+                ),
             ],
           ),
+          if (_categoriesError != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _loadCategories,
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: Text(_categoriesError!),
+              ),
+            ),
         ],
       ),
     );
   }
 
   Widget _buildStudentOverview(bool isDark) {
-    final pending =
-        _events.where((event) => event.registrationEnd == null).length;
-    final thisMonth = _events.where((event) {
-      final now = DateTime.now();
-      final end = event.registrationEnd;
-      return end != null && end.year == now.year && end.month == now.month;
-    }).length;
-    final recognized = _events
-        .where((event) => event.schoolRecognitionStatus == 'recognized')
-        .length;
+    final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
+    final planValue = !isLoggedIn
+        ? '登录后使用'
+        : _stateError != null
+            ? '重试'
+            : (_stateLoading && _calendarCount == null)
+                ? '—'
+                : '${_calendarCount ?? 0}';
+    final deadlineValue = _overviewLoading
+        ? '—'
+        : _overviewError != null
+            ? '重试'
+            : '$_deadlineSoonCount';
     return _buildStatBand(
       isDark,
       [
-        ('我的计划', '${_calendarCount ?? 0}', _openCalendar),
-        ('待通知', '$pending', null),
-        ('本月可关注', '$thisMonth', null),
-        ('学校认定', '$recognized', null),
+        (
+          '我的计划',
+          planValue,
+          () {
+            if (_stateError != null) {
+              _loadUserState();
+              return;
+            }
+            _openCalendar();
+          }
+        ),
+        (
+          '14天内截止',
+          deadlineValue,
+          () {
+            if (_overviewError != null) {
+              _loadOverview();
+              return;
+            }
+            setState(() => _studentFocusFilter = 'deadline');
+            _loadEvents(reset: true);
+          }
+        ),
       ],
     );
   }
@@ -409,8 +576,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                     children: [
                       Text(
                         items[i].$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: items[i].$2.length > 4 ? 14 : 18,
                           fontWeight: FontWeight.w900,
                           color: CompetitionUiTokens.titleColor(isDark),
                         ),
@@ -448,8 +617,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       ('recommended', '推荐'),
       ('deadline', '临近截止'),
       ('recognized', '学校认定'),
-      ('fit', '适合我'),
-      ('pending', '待通知'),
+      if (_profileReady) ('fit', '适合我'),
+      ('pending', '时间待公布'),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -458,33 +627,29 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         CompetitionUiTokens.pagePadding,
         14,
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (final tab in tabs) ...[
-              ChoiceChip(
-                label: Text(tab.$2),
-                selected: _studentFocusFilter == tab.$1,
-                onSelected: (_) {
-                  setState(() => _studentFocusFilter = tab.$1);
-                  _load();
-                },
-                selectedColor: CompetitionUiTokens.accent(isDark),
-                backgroundColor: CompetitionUiTokens.cardBg(isDark),
-                side:
-                    BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-                labelStyle: TextStyle(
-                  color: _studentFocusFilter == tab.$1
-                      ? Colors.white
-                      : CompetitionUiTokens.titleColor(isDark),
-                  fontWeight: FontWeight.w700,
-                ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final tab in tabs)
+            ChoiceChip(
+              label: Text(tab.$2),
+              selected: _studentFocusFilter == tab.$1,
+              onSelected: (_) {
+                setState(() => _studentFocusFilter = tab.$1);
+                _loadEvents(reset: true);
+              },
+              selectedColor: CompetitionUiTokens.accent(isDark),
+              backgroundColor: CompetitionUiTokens.cardBg(isDark),
+              side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+              labelStyle: TextStyle(
+                color: _studentFocusFilter == tab.$1
+                    ? Colors.white
+                    : CompetitionUiTokens.titleColor(isDark),
+                fontWeight: FontWeight.w700,
               ),
-              const SizedBox(width: 8),
-            ],
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -526,7 +691,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   }
 
   Widget _buildEventList({required bool isAdmin, required bool isDark}) {
-    if (_loading) {
+    if (_eventsLoading && _events.isEmpty) {
       return const Padding(
         padding: EdgeInsets.only(top: 40),
         child: Center(
@@ -535,13 +700,23 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       );
     }
     if (_events.isEmpty) {
+      if (_eventsError != null) {
+        return CompetitionEmptyState(
+          title: '比赛加载失败',
+          message: _eventsError!,
+          primaryText: '重试',
+          onPrimaryTap: () => _loadEvents(reset: true),
+          secondaryText: '刷新全部',
+          onSecondaryTap: _loadAll,
+        );
+      }
       return CompetitionEmptyState(
         title: isAdmin ? '列表还没有内容' : '暂时没有符合条件的比赛',
         message: isAdmin ? '可以 AI 导入或手动新建官方草稿。' : '换一个筛选条件看看，或先导入同学整理的计划。',
         primaryText: '导入计划',
         onPrimaryTap: _openShareImport,
         secondaryText: '刷新',
-        onSecondaryTap: _load,
+        onSecondaryTap: () => _loadEvents(reset: true),
       );
     }
     return Padding(
@@ -549,7 +724,20 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         horizontal: CompetitionUiTokens.pagePadding,
       ),
       child: Column(
-        children: _events.map((e) => _buildEventCard(e, isAdmin)).toList(),
+        children: [
+          ..._events.map((e) => _buildEventCard(e, isAdmin)),
+          if (_loadingMore)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: CircularProgressIndicator(color: _competitionPrimary),
+            ),
+          if (_eventsError != null && _events.isNotEmpty)
+            TextButton.icon(
+              onPressed: () => _loadEvents(reset: false),
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text('下一页加载失败，点击重试：$_eventsError'),
+            ),
+        ],
       ),
     );
   }
@@ -563,7 +751,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       case 'fit':
         return '适合我';
       case 'pending':
-        return '待通知';
+        return '时间待公布';
       default:
         return '推荐关注';
     }
@@ -577,7 +765,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       onTap: () {
         _openDetail(event);
       },
+      joined: _joinedEventIds.contains(event.id),
+      isAdding: _addingEventIds.contains(event.id),
       onAddPlan: () => _copyToCalendar(event.id),
+      onJoinedTap: _openCalendar,
     );
   }
 
@@ -633,11 +824,32 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   }
 
   Future<void> _copyToCalendar(int eventId) async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted || !context.read<AuthProvider>().isLoggedIn) return;
+      await _loadUserState();
+    }
+    if (_joinedEventIds.contains(eventId) ||
+        _addingEventIds.contains(eventId)) {
+      await _openCalendar();
+      return;
+    }
+    setState(() => _addingEventIds.add(eventId));
     try {
-      await _dio
+      final response = await _dio
           .post('/user/competition-calendar/items/copy-from-official/$eventId');
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '已加入我的竞赛计划');
+      final alreadyExists = response.data is Map &&
+          (response.data as Map)['already_exists'] == true;
+      setState(() {
+        _joinedEventIds.add(eventId);
+        if (!alreadyExists) {
+          _calendarCount = (_calendarCount ?? 0) + 1;
+        }
+      });
+      AppFeedback.showSnackBar(
+          context, alreadyExists ? '比赛已在我的计划中' : '已加入我的竞赛计划');
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
@@ -645,16 +857,21 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         AppFeedback.dioErrorMessage(e, fallback: '加入失败，请先登录'),
         isError: true,
       );
+    } finally {
+      if (mounted) setState(() => _addingEventIds.remove(eventId));
     }
   }
 
-  void _openDetail(CompetitionEvent event) {
-    Navigator.push(
+  Future<void> _openDetail(CompetitionEvent event) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => CompetitionDetailScreen(eventId: event.id),
       ),
     );
+    if (mounted && context.read<AuthProvider>().isLoggedIn) {
+      await _loadUserState();
+    }
   }
 
   Future<void> _openFilters() async {
@@ -683,14 +900,21 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         ..clear()
         ..addAll(result.sources);
     });
-    await _load();
+    await _loadEvents(reset: true);
   }
 
-  void _openCalendar() {
-    Navigator.push(
+  Future<void> _openCalendar() async {
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted || !context.read<AuthProvider>().isLoggedIn) return;
+      await _loadUserState();
+    }
+    if (!mounted) return;
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const CompetitionCalendarScreen()),
     );
+    if (mounted) await _loadUserState();
   }
 
   void _openShareImport() {
@@ -813,7 +1037,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                       children: [
                         _detailInfo(
                           _competitionTimeLine(event)?.label ?? '报名安排',
-                          _competitionTimeLine(event)?.value ?? '时间待通知',
+                          _competitionTimeLine(event)?.value ?? '时间待公布',
                         ),
                         _detailInfo('比赛时间', event.eventTimeText),
                         _detailInfo('时间状态', _competitionTimeState(event).label),
@@ -2339,7 +2563,7 @@ _CompetitionTimeState _competitionTimeState(CompetitionEvent event) {
         );
       default:
         return const _CompetitionTimeState(
-          label: '待通知',
+          label: '时间待公布',
           color: _competitionMuted,
         );
     }
@@ -2360,7 +2584,7 @@ _CompetitionTimeState _competitionTimeState(CompetitionEvent event) {
     );
   }
   return const _CompetitionTimeState(
-    label: '待通知',
+    label: '时间待公布',
     color: _competitionMuted,
   );
 }
@@ -2432,9 +2656,9 @@ String _timeStatusLabel(String value) {
     case 'historical':
       return '往年参考';
     case 'pending':
-      return '待通知';
+      return '时间待公布';
     default:
-      return value.isEmpty ? '待通知' : value;
+      return value.isEmpty ? '时间待公布' : value;
   }
 }
 

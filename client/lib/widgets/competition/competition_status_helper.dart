@@ -45,7 +45,7 @@ CompetitionStatusView resolveCompetitionStatus(
   // 3. Fallbacks
   if (event.timeStatus == 'pending' || event.timeStatus == 'unknown') {
     return CompetitionStatusView(
-        '待通知', CompetitionUiTokens.pendingColor(isDark));
+        '时间待公布', CompetitionUiTokens.pendingColor(isDark));
   }
 
   return CompetitionStatusView(

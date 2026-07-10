@@ -45,7 +45,7 @@ class MyCompetitionPlanCard extends StatelessWidget {
       statusColor = CompetitionUiTokens.warningColor(isDark);
     } else if (['即将截止'].contains(mainStatus)) {
       statusColor = CompetitionUiTokens.upcomingColor(isDark);
-    } else if (['待通知', '时间待确认'].contains(mainStatus)) {
+    } else if (['待通知', '时间待公布', '时间待确认'].contains(mainStatus)) {
       statusColor = CompetitionUiTokens.accent(isDark);
     } else {
       statusColor = CompetitionUiTokens.accent(isDark);
@@ -93,7 +93,7 @@ class MyCompetitionPlanCard extends StatelessWidget {
           const SizedBox(height: 12),
           _buildInfoRow(
             Icons.access_time_rounded,
-            '报名安排：${deadlineText.isEmpty ? '时间待通知' : deadlineText}',
+            '报名安排：${deadlineText.isEmpty ? '时间待公布' : deadlineText}',
             isDark,
             iconColor: CompetitionUiTokens.warningColor(isDark),
           ),

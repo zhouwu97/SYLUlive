@@ -488,6 +488,7 @@ func main() {
 		user.POST("/competition-calendar/items/copy-from-official/:event_id", competitionHandler.CopyOfficialToCalendar)
 		user.PUT("/competition-calendar/items/:id", competitionHandler.UpdateCalendarItem)
 		user.DELETE("/competition-calendar/items/:id", competitionHandler.DeleteCalendarItem)
+		user.POST("/competition-calendar/items/batch-action", competitionHandler.BatchCalendarItemAction)
 		user.POST("/competition-calendar/items/:id/pin", competitionHandler.PinCalendarItem)
 		user.POST("/competition-calendar/items/reorder", competitionHandler.ReorderCalendarItems)
 		user.POST("/competition-calendar/share", competitionHandler.ShareCalendar)

@@ -215,7 +215,7 @@ class _CompetitionCalendarItemDetailScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 70,
+            width: 88,
             child: Text(
               label,
               style: TextStyle(
@@ -246,7 +246,7 @@ class _CompetitionCalendarItemDetailScreenState
 
     final title = '${_item['title'] ?? '未命名比赛'}';
     final summary = '${_item['summary'] ?? ''}';
-    final description = '${_item['description'] ?? ''}';
+    final description = cleanCompetitionDescription('${_item['description'] ?? ''}');
 
     final regEnd = '${_item['registration_end'] ?? ''}';
     final regText = '${_item['registration_time_text'] ?? ''}';
@@ -263,9 +263,17 @@ class _CompetitionCalendarItemDetailScreenState
     final source = competitionSourceLabel('${_item['source_type'] ?? ''}');
     final planStatus = _planStatusLabel(_calendarPlanStatus());
     final timeStatus = _timeStatusLabel(_calendarTimeStatus());
-    final recommendation = '${_item['recommendation_level'] ?? '未知'}';
-    final recognition = competitionRecognitionLabel(
-        '${_item['school_recognition_status'] ?? ''}');
+    
+    final recommendation = '${_item['recommendation_level'] ?? ''}'.trim();
+    final manualShort = competitionManualRatingShort(recommendation);
+    
+    final recognitionStatus = competitionRecognitionLabel('${_item['school_recognition_status'] ?? ''}');
+    final recognitionGrade = '${_item['school_recognition_grade'] ?? ''}'.trim();
+    final schoolRecognitionShort = competitionSchoolRecognitionShort(
+      status: '${_item['school_recognition_status'] ?? ''}',
+      grade: recognitionGrade,
+    );
+    
     final level = '${_item['competition_level'] ?? _item['level'] ?? '未知'}';
 
     final location = '${_item['location'] ?? ''}';
@@ -342,10 +350,10 @@ class _CompetitionCalendarItemDetailScreenState
                     _buildPill(
                         planStatus, CompetitionUiTokens.warningColor(isDark)),
                     _buildPill(timeStatus, CompetitionUiTokens.accent(isDark)),
-                    _buildPill(source, CompetitionUiTokens.subColor(isDark)),
-                    if (recommendation.isNotEmpty && recommendation != '未知')
-                      _buildPill('$recommendation推荐',
-                          CompetitionUiTokens.upcomingColor(isDark)),
+                    if (manualShort.isNotEmpty)
+                      _buildPill(manualShort, CompetitionUiTokens.upcomingColor(isDark)),
+                    if (schoolRecognitionShort.isNotEmpty)
+                      _buildPill(schoolRecognitionShort, CompetitionUiTokens.accent(isDark)),
                   ],
                 ),
               ],
@@ -393,10 +401,11 @@ class _CompetitionCalendarItemDetailScreenState
 
           // Recognition
           _buildSection(
-              '推荐与认定',
+              '评级与认定',
               [
-                _buildRow('推荐程度', recommendation, isDark),
-                _buildRow('学校认定', recognition, isDark),
+                _buildRow('人工评级', recommendation.isEmpty ? '暂未评级' : recommendation, isDark),
+                _buildRow('认定状态', recognitionStatus, isDark),
+                _buildRow('认定等级', recognitionGrade.isEmpty ? '暂无等级' : recognitionGrade, isDark),
                 _buildRow('竞赛级别', level, isDark),
               ],
               isDark),
@@ -448,3 +457,13 @@ class _CompetitionCalendarItemDetailScreenState
     );
   }
 }
+
+String cleanCompetitionDescription(String raw) {
+  return raw.replaceFirst(
+    RegExp(
+      r'^\s*学校目录类别[：:]\s*[^；;，,\n]+[；;，,]\s*人工评级[：:]\s*[^；;，,\n]+[；;，,]?\s*',
+    ),
+    '',
+  ).trim();
+}
+

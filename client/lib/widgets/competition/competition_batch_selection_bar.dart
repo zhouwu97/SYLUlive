@@ -22,7 +22,7 @@ class CompetitionBatchSelectionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = CompetitionUiTokens.primary(isDark);
+    final primary = CompetitionUiTokens.accent(isDark);
     final bg = CompetitionUiTokens.cardBg(isDark);
     final border = CompetitionUiTokens.borderColor(isDark);
     final titleColor = CompetitionUiTokens.titleColor(isDark);

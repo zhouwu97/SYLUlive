@@ -28,6 +28,11 @@ class CompetitionStudentEventCard extends StatelessWidget {
     final status = resolveCompetitionStatus(event, isDark);
     final audience = _studentAudience(event);
     final reason = _studentReason(event);
+    final manualLabel = competitionManualRatingShort(event.recommendationLevel);
+    final schoolLabel = competitionSchoolRecognitionShort(
+      status: event.schoolRecognitionStatus,
+      grade: event.schoolRecognitionGrade,
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -56,12 +61,14 @@ class CompetitionStudentEventCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  _solidPill(
-                    '人工 ${event.recommendationLevel.trim().isEmpty ? 'B' : event.recommendationLevel.trim()}',
-                    CompetitionUiTokens.accent(isDark),
-                    isDark,
-                  ),
+                  if (manualLabel.isNotEmpty) ...[
+                    const SizedBox(width: 10),
+                    _solidPill(
+                      manualLabel,
+                      CompetitionUiTokens.accent(isDark),
+                      isDark,
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 10),
@@ -69,20 +76,9 @@ class CompetitionStudentEventCard extends StatelessWidget {
                 spacing: 6,
                 runSpacing: 6,
                 children: [
+                  if (schoolLabel.isNotEmpty) _softPill(schoolLabel, isDark),
                   if (event.competitionLevel.isNotEmpty)
                     _softPill(event.competitionLevel, isDark),
-                  if (event.schoolRecognitionStatus == 'recognized')
-                    _softPill(
-                        event.schoolRecognitionGrade.trim().isEmpty
-                            ? '校认'
-                            : '校认 ${event.schoolRecognitionGrade.trim()}',
-                        isDark)
-                  else if (event.schoolRecognitionStatus == 'pending')
-                    _softPill('校认待定', isDark)
-                  else if (event.schoolRecognitionStatus == 'not_recognized')
-                    _softPill('校不认', isDark)
-                  else
-                    _softPill('校认未知', isDark),
                   if (event.primaryCategory != null)
                     _softPill(event.primaryCategory!.name, isDark),
                 ],

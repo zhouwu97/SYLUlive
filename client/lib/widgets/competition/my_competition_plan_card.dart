@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'competition_ui_tokens.dart';
 import '../app_action_popup_menu.dart';
+import 'competition_status_helper.dart';
 
 class MyCompetitionPlanCard extends StatelessWidget {
   final Map<String, dynamic> item;
@@ -56,6 +57,12 @@ class MyCompetitionPlanCard extends StatelessWidget {
     } else {
       statusColor = CompetitionUiTokens.accent(isDark);
     }
+    
+    final manualLabel = competitionManualRatingShort('${item['recommendation_level'] ?? ''}');
+    final schoolLabel = competitionSchoolRecognitionShort(
+      status: '${item['school_recognition_status'] ?? ''}',
+      grade: '${item['school_recognition_grade'] ?? ''}',
+    );
 
     final card = Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -105,10 +112,46 @@ class MyCompetitionPlanCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               _buildStatusPill(mainStatus, statusColor),
-              const SizedBox(width: 8),
-              _buildMoreMenu(isDark, context),
+              if (!selectionMode) ...[
+                const SizedBox(width: 8),
+                _buildMoreMenu(isDark, context),
+              ],
             ],
           ),
+          if (manualLabel.isNotEmpty || schoolLabel.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (manualLabel.isNotEmpty)
+                  Text(
+                    manualLabel,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: CompetitionUiTokens.accent(isDark),
+                    ),
+                  ),
+                if (manualLabel.isNotEmpty && schoolLabel.isNotEmpty)
+                  Text(
+                    ' · ',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: CompetitionUiTokens.subColor(isDark),
+                    ),
+                  ),
+                if (schoolLabel.isNotEmpty)
+                  Text(
+                    schoolLabel,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: CompetitionUiTokens.accent(isDark),
+                    ),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           _buildInfoRow(
             Icons.access_time_rounded,

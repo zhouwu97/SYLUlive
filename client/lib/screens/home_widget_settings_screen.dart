@@ -199,16 +199,24 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
     final preview = _previews[kind] ?? const HomeWidgetPreviewData();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return DecoratedBox(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B202A) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: isDark ? const Color(0xFF1E2430) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
         border: Border.all(
-          color: isDark ? Colors.white10 : const Color(0xFFE5E7EB),
+          color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -232,24 +240,33 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
             const SizedBox(height: 14),
             Row(
               children: [
-                const Expanded(
-                  child: Text('真实布局预览',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-                for (final size in HomeWidgetSize.values)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: ChoiceChip(
-                      label:
-                          Text(size == HomeWidgetSize.size2x2 ? '2×2' : '4×2'),
-                      selected: size == previewSize,
-                      onSelected: (_) =>
-                          setState(() => _previewSizes[kind] = size),
+                Expanded(
+                  child: Text(
+                    '布局预览',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white70 : Colors.black87,
                     ),
                   ),
+                ),
+                SegmentedButton<HomeWidgetSize>(
+                  segments: const [
+                    ButtonSegment(value: HomeWidgetSize.size2x2, label: Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Text('2×2', style: TextStyle(fontWeight: FontWeight.w600)))),
+                    ButtonSegment(value: HomeWidgetSize.size4x2, label: Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Text('4×2', style: TextStyle(fontWeight: FontWeight.w600)))),
+                  ],
+                  selected: {previewSize},
+                  onSelectionChanged: (set) => setState(() => _previewSizes[kind] = set.first),
+                  style: SegmentedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    backgroundColor: isDark ? Colors.white10 : Colors.grey[100],
+                    selectedBackgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  ),
+                  showSelectedIcon: false,
+                ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
             _HomeWidgetPreview(
               kind: kind,
               size: previewSize,
@@ -332,42 +349,65 @@ class _HomeWidgetPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final palette = HomeWidgetThemePalette.resolve(
       appearance.theme,
       systemBrightness: Theme.of(context).brightness,
     );
-    final isTall = size == HomeWidgetSize.size4x2;
-    final maxItems = isTall ? 5 : 2;
+    final isWide = size == HomeWidgetSize.size4x2;
+    final maxItems = 2; // 无论是 2x2 还是 4x2，因为高度都是 2，最多只显示 2 条内容
     final items = data.items.take(maxItems).toList();
 
-    return Center(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: 230,
-        height: isTall ? 330 : 170,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: palette.background,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: palette.border),
+    return Container(
+      width: double.infinity,
+      height: 240,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        // 用渐变色模拟壁纸，让预览更逼真
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [const Color(0xFF2C3E50), const Color(0xFF000000)]
+              : [const Color(0xFFE0EAFC), const Color(0xFFCFDEF3)],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    appearance.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.primaryText,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
+      ),
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          width: isWide ? 310 : 170, // 增加基础宽度，避免内容被截断
+          height: 155, // 微调高度使其更协调
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: palette.background,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+              ),
+            ],
+            border: Border.all(color: palette.border, width: 0.5),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      appearance.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.primaryText,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
                 if (kind == HomeWidgetKind.course)
                   Text(
                     data.subtitle,
@@ -394,7 +434,7 @@ class _HomeWidgetPreview extends StatelessWidget {
                         return _PreviewItem(
                           item: item,
                           kind: kind,
-                          detailed: isTall,
+                          detailed: isWide,
                           palette: palette,
                         );
                       },
@@ -403,6 +443,7 @@ class _HomeWidgetPreview extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }

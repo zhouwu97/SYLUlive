@@ -1,0 +1,183 @@
+import 'package:flutter/material.dart';
+
+import '../../models/team_recruitment.dart';
+
+class TeamRecruitmentCard extends StatelessWidget {
+  final TeamRecruitment recruitment;
+  final VoidCallback onTap;
+
+  const TeamRecruitmentCard(
+      {super.key, required this.recruitment, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _categoryColor(recruitment.category);
+    final isInactive = recruitment.isClosed || recruitment.isExpired;
+    final status = recruitment.isRecruiting &&
+            recruitment.deadline != null &&
+            recruitment.deadline!
+                .isBefore(DateTime.now().add(const Duration(days: 3)))
+        ? 'deadline_soon'
+        : recruitment.effectiveStatus;
+    final visibleRoles = recruitment.roles.take(3).toList(growable: false);
+    final extraRoleCount = recruitment.roles.length - visibleRoles.length;
+    return Opacity(
+      opacity: isInactive ? 0.62 : 1,
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: Colors.grey.withValues(alpha: 0.16)),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.all(15),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                _Pill(
+                    label: _categoryLabel(recruitment.category), color: color),
+                const Spacer(),
+                TeamStatusBadge(status: status),
+              ]),
+              const SizedBox(height: 10),
+              Text(recruitment.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              Text(recruitment.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 13, height: 1.4, color: Colors.grey.shade700)),
+              if (recruitment.roles.isNotEmpty) ...[
+                const SizedBox(height: 11),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  ...visibleRoles.map(
+                      (role) => _Pill(label: role, color: color, subtle: true)),
+                  if (extraRoleCount > 0)
+                    _Pill(
+                        label: '+$extraRoleCount', color: color, subtle: true),
+                ]),
+              ],
+              const SizedBox(height: 12),
+              Row(children: [
+                Icon(Icons.group_outlined, size: 16, color: color),
+                const SizedBox(width: 4),
+                Text(
+                    '已加入 ${recruitment.acceptedCount} 人 · 还缺 ${recruitment.remainingCount} 人',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: color)),
+                if (recruitment.deadline != null) ...[
+                  const Spacer(),
+                  Icon(Icons.schedule_rounded,
+                      size: 15, color: Colors.grey.shade600),
+                  const SizedBox(width: 3),
+                  Text(
+                      '截止 ${recruitment.deadline!.month.toString().padLeft(2, '0')}-${recruitment.deadline!.day.toString().padLeft(2, '0')}',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                ],
+              ]),
+              const SizedBox(height: 12),
+              Row(children: [
+                CircleAvatar(
+                  radius: 12,
+                  backgroundImage: recruitment.author.avatar.isEmpty
+                      ? null
+                      : NetworkImage(recruitment.author.avatar),
+                  child: recruitment.author.avatar.isEmpty
+                      ? Text(recruitment.author.name.isEmpty
+                          ? '?'
+                          : recruitment.author.name.substring(0, 1))
+                      : null,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                    child: Text(
+                        '${recruitment.author.name}${recruitment.author.major.isEmpty ? '' : ' · ${recruitment.author.major}'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade600))),
+                Text(_relativeTime(recruitment.createdAt),
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              ]),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class TeamStatusBadge extends StatelessWidget {
+  final String status;
+  const TeamStatusBadge({super.key, required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final data = switch (status) {
+      'deadline_soon' => ('即将截止', const Color(0xFFC56D31)),
+      'full' => ('已满员', const Color(0xFF9B6A24)),
+      'closed' => ('已关闭', const Color(0xFF687385)),
+      'expired' => ('已截止', const Color(0xFFC45E58)),
+      _ => ('招募中', const Color(0xFF3B8D70)),
+    };
+    return _Pill(label: data.$1, color: data.$2);
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String label;
+  final Color color;
+  final bool subtle;
+  const _Pill({required this.label, required this.color, this.subtle = false});
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: subtle ? 0.08 : 0.13),
+            borderRadius: BorderRadius.circular(99)),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+      );
+}
+
+String teamCategoryLabel(String category) => _categoryLabel(category);
+Color teamCategoryColor(String category) => _categoryColor(category);
+String _categoryLabel(String value) =>
+    const {
+      'competition': '竞赛',
+      'project': '项目',
+      'study': '学习',
+      'activity': '活动',
+      'other': '其他'
+    }[value] ??
+    '其他';
+Color _categoryColor(String value) =>
+    const {
+      'competition': Color(0xFF6A64D8),
+      'project': Color(0xFF1686A7),
+      'study': Color(0xFF3B8D70),
+      'activity': Color(0xFFC56D31),
+      'other': Color(0xFF687385)
+    }[value] ??
+    const Color(0xFF687385);
+String _relativeTime(DateTime time) {
+  final diff = DateTime.now().difference(time);
+  if (diff.inMinutes < 1) return '刚刚';
+  if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
+  if (diff.inDays < 1) return '${diff.inHours}小时前';
+  return '${diff.inDays}天前';
+}

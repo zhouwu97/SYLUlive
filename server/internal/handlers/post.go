@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"unicode/utf8"
 	"errors"
 	"fmt"
 	"log"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -220,7 +220,10 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	}
 
 	// 走正常的查询（或 refresh 阶段）
-	query := h.db.Model(&models.Post{}).Where("posts.status != ?", models.PostStatusDeleted).Preload("Author").Preload("Images").Preload("Images.File")
+	query := h.db.Model(&models.Post{}).
+		Where("posts.status != ?", models.PostStatusDeleted).
+		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
+		Preload("Author").Preload("Images").Preload("Images.File")
 
 	if boardIDStr != "" {
 		boardID, err := strconv.Atoi(boardIDStr)
@@ -354,7 +357,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		if sort == "all" {
 			query = applyWaterSectionPinOrder(query, waterSectionFeedID, now)
 			query = applyPinnedOrder(query, now)
-			
+
 			var isTeamTag bool
 			if tagIDProvided {
 				var tag models.WaterSectionTag
@@ -366,7 +369,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 				query = query.Joins("LEFT JOIN water_team_recruitments wtr ON wtr.post_id = posts.id")
 				query = query.Order(clause.Expr{SQL: `CASE WHEN wtr.status = ? AND (wtr.deadline IS NULL OR wtr.deadline > ?) THEN 0 WHEN wtr.status = ? THEN 1 ELSE 2 END ASC`, Vars: []interface{}{models.RecruitmentStatusRecruiting, now, models.RecruitmentStatusFull}})
 			}
-			
+
 			query = query.Order(clause.Expr{SQL: "(10.0 + posts.like_count*5 + posts.reply_count*10 + posts.view_count*0.2) / POWER((EXTRACT(EPOCH FROM (? - posts.created_at))/3600.0 + 2), 2) DESC", Vars: []interface{}{now}})
 		} else if sort == "hot" {
 			query = applyWaterSectionPinOrder(query, waterSectionFeedID, now)
@@ -393,7 +396,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			if searchQuery == "" {
 				query = applyWaterSectionPinOrder(query, waterSectionFeedID, now)
 				query = applyPinnedOrder(query, now)
-				
+
 				var isTeamTag bool
 				if tagIDProvided {
 					var tag models.WaterSectionTag
@@ -415,7 +418,9 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if isSnapshotting {
 		var allIDs []uint
 		// 这里必须清除Preload等，单纯Pluck
-		snapshotQuery := h.db.Model(&models.Post{}).Where("posts.status != ?", models.PostStatusDeleted)
+		snapshotQuery := h.db.Model(&models.Post{}).
+			Where("posts.status != ?", models.PostStatusDeleted).
+			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
 		if boardIDStr != "" {
 			boardID, err := strconv.Atoi(boardIDStr)
 			if err == nil {
@@ -429,7 +434,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		if sort == "all" {
 			snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
 			snapshotQuery = applyPinnedOrder(snapshotQuery, now)
-			
+
 			var isTeamTag bool
 			if tagIDProvided {
 				var tag models.WaterSectionTag
@@ -441,7 +446,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 				snapshotQuery = snapshotQuery.Joins("LEFT JOIN water_team_recruitments wtr ON wtr.post_id = posts.id")
 				snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: `CASE WHEN wtr.status = ? AND (wtr.deadline IS NULL OR wtr.deadline > ?) THEN 0 WHEN wtr.status = ? THEN 1 ELSE 2 END ASC`, Vars: []interface{}{models.RecruitmentStatusRecruiting, now, models.RecruitmentStatusFull}})
 			}
-			
+
 			snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: "(10.0 + posts.like_count*5 + posts.reply_count*10 + posts.view_count*0.2) / POWER((EXTRACT(EPOCH FROM (? - posts.created_at))/3600.0 + 2), 2) DESC", Vars: []interface{}{now}})
 		} else if sort == "hot" {
 			snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
@@ -819,13 +824,13 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 
 // CreatePostInput 创建帖子输入
 type CreatePostInput struct {
-	Title      string  `form:"title"`
-	Content    string  `form:"content" binding:"required"`
-	BoardID    int     `form:"board_id" binding:"required"`
-	PostType   string  `form:"post_type"`
-	Price      float64 `form:"price"`
-	Contact    string  `form:"contact"`
-	MarketTags string  `form:"market_tags"`
+	Title           string  `form:"title"`
+	Content         string  `form:"content" binding:"required"`
+	BoardID         int     `form:"board_id" binding:"required"`
+	PostType        string  `form:"post_type"`
+	Price           float64 `form:"price"`
+	Contact         string  `form:"contact"`
+	MarketTags      string  `form:"market_tags"`
 	WaterTagID      *uint   `form:"water_tag_id"`
 	TeamNeededCount int     `form:"team_needed_count"`
 	TeamRolesJSON   string  `form:"team_roles_json"`
@@ -1048,8 +1053,6 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 	h.db.Model(&post).UpdateColumn("view_count", gorm.Expr("view_count + 1"))
 	post.ViewCount++
 
-
-
 	responsePosts := []models.Post{post}
 	h.hydratePosts(c, responsePosts, time.Now())
 	post = responsePosts[0]
@@ -1058,12 +1061,12 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 
 // UpdatePostInput 更新帖子输入
 type UpdatePostInput struct {
-	Title      string  `form:"title"`
-	Content    string  `form:"content"`
-	PostType   string  `form:"post_type"`
-	Price      float64 `form:"price"`
-	Contact    string  `form:"contact"`
-	MarketTags string  `form:"market_tags"`
+	Title           string  `form:"title"`
+	Content         string  `form:"content"`
+	PostType        string  `form:"post_type"`
+	Price           float64 `form:"price"`
+	Contact         string  `form:"contact"`
+	MarketTags      string  `form:"market_tags"`
 	WaterTagID      *uint   `form:"water_tag_id"`
 	TeamNeededCount int     `form:"team_needed_count"`
 	TeamRolesJSON   string  `form:"team_roles_json"`
@@ -1182,7 +1185,7 @@ func (h *PostHandler) Update(c *gin.Context) {
 					Count(&acceptedCount).Error; err != nil {
 					return err
 				}
-				
+
 				if input.TeamNeededCount < int(acceptedCount) {
 					return fmt.Errorf("招募人数不能低于已同意人数（%d）", acceptedCount)
 				}
@@ -1403,9 +1406,6 @@ func (h *PostHandler) Delete(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
-
-
-
 
 // hydratePosts 统一对返回的 Post 进行关联数据和状态填充
 func (h *PostHandler) hydratePosts(c *gin.Context, posts []models.Post, now time.Time) {

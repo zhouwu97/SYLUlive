@@ -21,11 +21,11 @@ import '../utils/post_image_cache.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
-import '../widgets/water_team/team_recruitment_panel.dart';
 import '../models/unread_reply_notification.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
 import 'water_category_feed_route.dart';
+import 'team/team_recruitment_detail_screen.dart';
 
 import '../utils/app_navigation.dart';
 
@@ -217,25 +217,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     super.dispose();
   }
 
-  Future<void> _refreshTeamPost({Post? updatedPost}) async {
-    if (updatedPost != null) {
-      if (!mounted) return;
-      setState(() => _post = updatedPost);
-      context.read<PostProvider>().updatePostInCache(updatedPost);
-      return;
-    }
-    if (_post == null) return;
-    try {
-      final response = await _dio.get('/posts/${_post!.id}');
-      final updated = Post.fromJson(response.data as Map<String, dynamic>);
-      if (!mounted) return;
-      setState(() => _post = updated);
-      context.read<PostProvider>().updatePostInCache(updated);
-    } catch (error) {
-      debugPrint('刷新组队详情失败: $error');
-    }
-  }
-
   Future<void> _loadPost() async {
     if (mounted)
       setState(() {
@@ -244,6 +225,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       });
     try {
       final response = await _dio.get('/posts/${widget.postId}');
+      final fetchedPost = Post.fromJson(response.data);
+      final recruitmentId = fetchedPost.teamRecruitment?.recruitmentId;
+      if (recruitmentId != null && recruitmentId > 0 && mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => TeamRecruitmentDetailScreen(
+              recruitmentId: recruitmentId,
+            ),
+          ),
+        );
+        return;
+      }
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
 
       try {
@@ -258,7 +251,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         // ignore status check failure
       }
 
-      final fetchedPost = Post.fromJson(response.data);
       final fallbackPost = widget.initialPost;
       final mergedPost = fallbackPost != null &&
               fallbackPost.images.length > fetchedPost.images.length
@@ -2242,11 +2234,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   const SizedBox(height: 8),
                   _buildAdaptiveWaterImages(p, isDark),
                 ],
-                if (p.teamRecruitment != null)
-                  TeamRecruitmentPanel(
-                      post: p,
-                      onChanged: (updated) =>
-                          _refreshTeamPost(updatedPost: updated)),
                 const SizedBox(height: 6),
                 _buildWaterActionBar(isDark),
               ],

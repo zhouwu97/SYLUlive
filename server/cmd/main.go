@@ -11,7 +11,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/gin-gonic/gin"
-"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/bcrypt"
 
 	"gorm.io/driver/postgres"
 
@@ -282,6 +282,14 @@ func main() {
 	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
 	waterModerationHandler := handlers.NewWaterModerationHandler(db)
 	waterTeamHandler := handlers.NewWaterTeamHandler(db)
+	waterTeamHandler.NotifyDeadlineSoon()
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			waterTeamHandler.NotifyDeadlineSoon()
+		}
+	}()
 
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
@@ -627,6 +635,32 @@ func main() {
 		waterTeam.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
 		waterTeam.GET("/my_applications", waterTeamHandler.GetMyApplications)
 		waterTeam.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)
+	}
+
+	// 独立组队 API — /api/team/...
+	teamAuth := r.Group("/api/team")
+	teamAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		teamAuth.POST("/recruitments", waterTeamHandler.CreateTeamRecruitment)
+		teamAuth.PATCH("/recruitments/:id", waterTeamHandler.UpdateTeamRecruitment)
+		teamAuth.GET("/recruitments/mine", waterTeamHandler.GetMyTeamRecruitments)
+
+		// 申请相关（复用旧 Handler 方法）
+		teamAuth.POST("/recruitments/:id/apply", waterTeamHandler.Apply)
+		teamAuth.GET("/recruitments/:id/applications", waterTeamHandler.GetRecruitmentApplications)
+		teamAuth.POST("/applications/:id/accept", waterTeamHandler.Accept)
+		teamAuth.POST("/applications/:id/reject", waterTeamHandler.Reject)
+		teamAuth.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+
+		teamAuth.GET("/my_applications", waterTeamHandler.GetMyApplications)
+		teamAuth.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)
+	}
+	teamPublic := r.Group("/api/team")
+	{
+		// 静态 mine 路由须先注册，避免与 :id 参数路由冲突。
+		// 公开读取使用可选鉴权，以便返回登录用户专属状态。
+		teamPublic.GET("/recruitments", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), waterTeamHandler.ListTeamRecruitments)
+		teamPublic.GET("/recruitments/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), waterTeamHandler.GetTeamRecruitment)
 	}
 
 	competitions := r.Group("/api/competitions")

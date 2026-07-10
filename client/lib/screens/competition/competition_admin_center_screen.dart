@@ -11,6 +11,12 @@ import '../../widgets/competition/competition_ui_tokens.dart';
 import 'competition_admin_import_screen.dart';
 import 'competition_official_event_editor_screen.dart';
 
+import '../../widgets/competition/competition_batch_action_sheet.dart';
+import '../../widgets/competition/competition_batch_confirm_dialog.dart';
+import '../../widgets/competition/competition_batch_selection_bar.dart';
+
+enum _AdminSelectionScope { none, page, allMatching }
+
 class CompetitionAdminCenterScreen extends StatefulWidget {
   const CompetitionAdminCenterScreen({super.key});
 
@@ -33,12 +39,15 @@ class _CompetitionAdminCenterScreenState
   String? _categorySlug;
   final Set<String> _recommendations = {};
   final Set<int> _selectedEventIds = {};
-  bool _selectionMode = false;
+  final Set<int> _excludedEventIds = {};
+  _AdminSelectionScope _selectionScope = _AdminSelectionScope.none;
+  bool get _selectionMode => _selectionScope != _AdminSelectionScope.none;
 
   int _currentPage = 1;
   int _totalPages = 1;
   static const int _pageSize = 50;
 
+  int _filteredTotal = 0;
   int _adminTotalCount = 0;
   int _adminDraftCount = 0;
   int _adminPublishedCount = 0;
@@ -103,6 +112,7 @@ class _CompetitionAdminCenterScreenState
       if (!mounted) return;
       final data = res.data as Map<String, dynamic>;
       setState(() {
+        _filteredTotal = (data['total'] as num?)?.toInt() ?? 0;
         _events = ((data['items'] as List?) ?? [])
             .map((item) => CompetitionEvent.fromJson(item))
             .toList();
@@ -148,6 +158,17 @@ class _CompetitionAdminCenterScreenState
     return count;
   }
 
+  int get _selectedCount {
+    switch (_selectionScope) {
+      case _AdminSelectionScope.allMatching:
+        return (_filteredTotal - _excludedEventIds.length).clamp(0, _filteredTotal);
+      case _AdminSelectionScope.page:
+        return _selectedEventIds.length;
+      case _AdminSelectionScope.none:
+        return 0;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -164,16 +185,6 @@ class _CompetitionAdminCenterScreenState
           '竞赛库管理',
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
-        actions: [
-          TextButton.icon(
-            onPressed: _openAdminImport,
-            icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-            label: const Text('AI导入'),
-            style: TextButton.styleFrom(
-              foregroundColor: CompetitionUiTokens.accent(isDark),
-            ),
-          ),
-        ],
       ),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -309,6 +320,10 @@ class _CompetitionAdminCenterScreenState
                 onPressed: () {
                   _searchController.clear();
                   _currentPage = 1;
+                  _selectionMode = false;
+                  _selectionScope = _AdminSelectionScope.none;
+                  _selectedEventIds.clear();
+                  _excludedEventIds.clear();
                   setState(() {});
                   _loadEvents();
                 },
@@ -363,8 +378,17 @@ class _CompetitionAdminCenterScreenState
             child: OutlinedButton.icon(
               onPressed: () {
                 setState(() {
-                  _selectionMode = !_selectionMode;
-                  if (!_selectionMode) _selectedEventIds.clear();
+                  if (_selectionMode) {
+                    _selectionMode = false;
+                    _selectionScope = _AdminSelectionScope.none;
+                    _selectedEventIds.clear();
+                    _excludedEventIds.clear();
+                  } else {
+                    _selectionMode = true;
+                    _selectionScope = _AdminSelectionScope.page;
+                    _selectedEventIds.clear();
+                    _selectedEventIds.addAll(_events.map((e) => e.id));
+                  }
                 });
               },
               icon: Icon(
@@ -429,91 +453,42 @@ class _CompetitionAdminCenterScreenState
   }
 
   Widget _buildSelectionBar(bool isDark) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-        CompetitionUiTokens.pagePadding,
-        0,
-        CompetitionUiTokens.pagePadding,
-        16,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: CompetitionUiTokens.cardBg(isDark),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: CompetitionUiTokens.borderColor(isDark)),
-      ),
-      child: Row(
-        children: [
-          Text(
-            '已选 ${_selectedEventIds.length} 项',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: CompetitionUiTokens.titleColor(isDark),
-            ),
+    return CompetitionBatchSelectionBar(
+      selectedCount: _selectedCount,
+      allItemsSelected: _selectionScope == _AdminSelectionScope.allMatching && _excludedEventIds.isEmpty,
+      allItemsLabel: _selectionScope == _AdminSelectionScope.allMatching 
+          ? '全选 $_filteredTotal 项 (已选符合筛选的所有项目)' 
+          : '选择符合当前筛选的全部 $_filteredTotal 项',
+      onToggleSelectAll: () {
+        setState(() {
+          if (_selectionScope == _AdminSelectionScope.allMatching) {
+            _selectionScope = _AdminSelectionScope.page;
+            _excludedEventIds.clear();
+          } else {
+            _selectionScope = _AdminSelectionScope.allMatching;
+            _selectedEventIds.clear();
+            _excludedEventIds.clear();
+          }
+        });
+      },
+      onActionClick: () {
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (_) => CompetitionBatchActionSheet(
+            selectedCount: _selectedCount,
+            actions: _adminBatchActions(),
+            onActionSelected: _batchAction,
           ),
-          const SizedBox(width: 16),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                if (_selectedEventIds.length == _events.length) {
-                  _selectedEventIds.clear();
-                } else {
-                  _selectedEventIds.addAll(_events.map((event) => event.id));
-                }
-              });
-            },
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              foregroundColor: CompetitionUiTokens.accent(isDark),
-            ),
-            child: Text(
-              _selectedEventIds.length == _events.length ? '取消全选' : '全选当前页',
-            ),
-          ),
-          const Spacer(),
-          if (_selectedEventIds.isNotEmpty)
-            PopupMenuButton<String>(
-              child: FilledButton.tonal(
-                onPressed: null,
-                style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  disabledForegroundColor: CompetitionUiTokens.titleColor(isDark),
-                  disabledBackgroundColor: CompetitionUiTokens.cardBg(isDark),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text('操作'),
-                    SizedBox(width: 4),
-                    Icon(Icons.arrow_drop_down, size: 18),
-                  ],
-                ),
-              ),
-              onSelected: (action) {
-                if (action == 'publish') {
-                  _batchAction('发布', (ids) => _dio.post('/admin/competitions/events/batch-action', data: {'ids': ids, 'action': 'publish'}));
-                } else if (action == 'archive') {
-                  _batchAction('归档', (ids) => _dio.post('/admin/competitions/events/batch-action', data: {'ids': ids, 'action': 'archive'}));
-                } else if (action == 'restore') {
-                  _batchAction('恢复为草稿', (ids) => _dio.post('/admin/competitions/events/batch-action', data: {'ids': ids, 'action': 'restore_to_draft'}));
-                } else if (action == 'delete') {
-                  _batchAction('删除', (ids) => _dio.post('/admin/competitions/events/batch-action', data: {'ids': ids, 'action': 'delete'}));
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'publish', child: Text('发布')),
-                const PopupMenuItem(value: 'archive', child: Text('归档')),
-                const PopupMenuItem(value: 'restore', child: Text('恢复为草稿')),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('删除', style: TextStyle(color: Colors.red)),
-                ),
-              ],
-            ),
-        ],
-      ),
+        );
+      },
+      onCancel: () {
+        setState(() {
+          _selectionScope = _AdminSelectionScope.none;
+          _selectedEventIds.clear();
+          _excludedEventIds.clear();
+        });
+      },
     );
   }
 
@@ -538,7 +513,7 @@ class _CompetitionAdminCenterScreenState
           ),
           const SizedBox(height: 4),
           Text(
-            '当前显示 ${(_currentPage - 1) * _pageSize + 1}–${(_currentPage - 1) * _pageSize + _events.length}，共 $_adminTotalCount 条',
+            '当前显示 ${(_currentPage - 1) * _pageSize + 1}–${(_currentPage - 1) * _pageSize + _events.length}，共 $_filteredTotal 条',
             style: TextStyle(
               fontSize: 13,
               color: CompetitionUiTokens.subColor(isDark),
@@ -626,14 +601,24 @@ class _CompetitionAdminCenterScreenState
     return CompetitionAdminEventCard(
       event: event,
       selectionMode: _selectionMode,
-      isSelected: _selectedEventIds.contains(event.id),
+      isSelected: _selectionScope == _AdminSelectionScope.allMatching
+          ? !_excludedEventIds.contains(event.id)
+          : _selectedEventIds.contains(event.id),
       onTap: () {
         if (_selectionMode) {
           setState(() {
-            if (_selectedEventIds.contains(event.id)) {
-              _selectedEventIds.remove(event.id);
+            if (_selectionScope == _AdminSelectionScope.allMatching) {
+              if (_excludedEventIds.contains(event.id)) {
+                _excludedEventIds.remove(event.id);
+              } else {
+                _excludedEventIds.add(event.id);
+              }
             } else {
-              _selectedEventIds.add(event.id);
+              if (_selectedEventIds.contains(event.id)) {
+                _selectedEventIds.remove(event.id);
+              } else {
+                _selectedEventIds.add(event.id);
+              }
             }
           });
         } else {
@@ -659,7 +644,7 @@ class _CompetitionAdminCenterScreenState
       onDelete: () => _singleAction(
         event.id,
         '删除',
-        (id) => _dio.post('/admin/competitions/events/$id/delete'),
+        (id) => _dio.delete('/admin/competitions/events/$id'),
       ),
     );
   }
@@ -752,7 +737,9 @@ class _CompetitionAdminCenterScreenState
     if (_adminStatusFilter == status) return;
     setState(() {
       _adminStatusFilter = status;
+      _selectionScope = _AdminSelectionScope.none;
       _selectedEventIds.clear();
+      _excludedEventIds.clear();
       _currentPage = 1;
     });
     _loadEvents();
@@ -762,6 +749,9 @@ class _CompetitionAdminCenterScreenState
     setState(() {
       _maintenanceFilter = value;
       if (value == 'ai_draft') _adminStatusFilter = 'draft';
+      _selectionScope = _AdminSelectionScope.none;
+      _selectedEventIds.clear();
+      _excludedEventIds.clear();
       _currentPage = 1;
     });
     _loadEvents();
@@ -802,47 +792,92 @@ class _CompetitionAdminCenterScreenState
     }
   }
 
-  Future<void> _batchAction(
-    String actionName,
-    Future<dynamic> Function(List<int> ids) actionFn,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('确认批量$actionName'),
-        content: Text('即将对选中的 ${_selectedEventIds.length} 项比赛执行$actionName。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
+  List<CompetitionBatchAction> _adminBatchActions() {
+    return [
+      const CompetitionBatchAction(value: 'publish', label: '发布', icon: Icons.public),
+      const CompetitionBatchAction(value: 'archive', label: '归档', icon: Icons.inventory_2_outlined),
+      if (_adminStatusFilter == 'archived' || _adminStatusFilter == 'all')
+        const CompetitionBatchAction(value: 'restore_to_draft', label: '恢复为草稿', icon: Icons.restore_page_outlined),
+      const CompetitionBatchAction(value: 'delete', label: '删除', icon: Icons.delete_outline_rounded, danger: true),
+    ];
+  }
 
+  Future<void> _batchAction(String backendAction) async {
+    final isAll = _selectionScope == _AdminSelectionScope.allMatching;
+    
+    String actionName = '操作';
+    if (backendAction == 'publish') actionName = '发布';
+    if (backendAction == 'archive') actionName = '归档';
+    if (backendAction == 'restore_to_draft') actionName = '恢复为草稿';
+    if (backendAction == 'delete') actionName = '删除';
+
+    final payload = <String, dynamic>{
+      'action': backendAction,
+    };
+
+    if (isAll) {
+      payload['selection'] = {
+        'mode': 'query',
+        'filters': {
+          if (_searchController.text.trim().isNotEmpty) 'keyword': _searchController.text.trim(),
+          if (_adminStatusFilter != 'all') 'status': _adminStatusFilter,
+          if (_maintenanceFilter != null) 'maintenance_status': _maintenanceFilter,
+          if (_categorySlug != null) 'category_slug': _categorySlug,
+          if (_recommendations.isNotEmpty) 'recommendation_levels': _recommendations.toList(),
+        },
+        'excluded_ids': _excludedEventIds.toList(),
+      };
+    } else {
+      payload['selection'] = {
+        'mode': 'ids',
+        'ids': _selectedEventIds.toList(),
+      };
+    }
+
+    // Dry run
+    payload['dry_run'] = true;
     try {
-      final res = await actionFn(_selectedEventIds.toList());
+      final dryRes = await _dio.post('/admin/competitions/events/batch-action', data: payload);
+      if (!mounted) return;
+      final data = dryRes.data as Map<String, dynamic>?;
+      final requested = (data?['requested_count'] as num?)?.toInt() ?? 0;
+      final success = (data?['success_count'] as num?)?.toInt() ?? 0;
+      final skipped = (data?['skipped_count'] as num?)?.toInt() ?? 0;
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => CompetitionBatchConfirmDialog(
+          title: '确认批量$actionName',
+          content: '当前请求：$requested 项\n预计成功：$success 项\n预计跳过：$skipped 项',
+          confirmLabel: '确认',
+          isDanger: backendAction == 'delete',
+        ),
+      );
+      if (confirmed != true) return;
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '获取批量操作预估失败', isError: true);
+      return;
+    }
+
+    // Execute
+    payload['dry_run'] = false;
+    try {
+      final res = await _dio.post('/admin/competitions/events/batch-action', data: payload);
       if (!mounted) return;
       final data = res.data as Map<String, dynamic>?;
       final success = data?['success_count'] ?? 0;
       final skipped = data?['skipped_count'] ?? 0;
-      AppFeedback.showSnackBar(
-        context,
-        '$actionName完成：成功 $success，跳过 $skipped',
-      );
+      AppFeedback.showSnackBar(context, '$actionName完成：成功 $success，跳过 $skipped');
     } catch (_) {
       if (!mounted) return;
       AppFeedback.showSnackBar(context, '批量操作失败', isError: true);
     }
 
     setState(() {
-      _selectionMode = false;
+      _selectionScope = _AdminSelectionScope.none;
       _selectedEventIds.clear();
+      _excludedEventIds.clear();
     });
     _load();
   }
@@ -856,8 +891,9 @@ class _CompetitionAdminCenterScreenState
       setState(() {
         _adminStatusFilter = 'draft';
         _maintenanceFilter = 'ai_draft';
-        _selectionMode = false;
+        _selectionScope = _AdminSelectionScope.none;
         _selectedEventIds.clear();
+        _excludedEventIds.clear();
       });
       _load();
     }

@@ -105,3 +105,54 @@ String competitionRecognitionLabel(String value) {
       return value.isEmpty ? '未知' : value;
   }
 }
+
+String competitionManualRatingShort(String level) {
+  final value = level.trim();
+  return value.isEmpty ? '' : '人工 $value';
+}
+
+String competitionManualRatingLabel(String level) {
+  final value = level.trim();
+  return value.isEmpty ? '未评级' : value;
+}
+
+String competitionSchoolRecognitionShort({
+  required String status,
+  required String grade,
+}) {
+  final normalizedStatus = status.trim();
+  final normalizedGrade = grade.trim();
+
+  switch (normalizedStatus) {
+    case 'recognized':
+      return normalizedGrade.isEmpty ? '校已认' : '校认 $normalizedGrade';
+    case 'pending':
+      return '校认待定';
+    case 'not_recognized':
+      return '校不认';
+    case 'unknown':
+      return '';
+    default:
+      return '';
+  }
+}
+
+String competitionSchoolRecognitionLabel({
+  required String status,
+  required String grade,
+}) {
+  switch (status.trim()) {
+    case 'recognized':
+      return grade.trim().isEmpty
+          ? '学校已认定'
+          : '学校认定等级 ${grade.trim()}';
+    case 'pending':
+      return '学校认定待确认';
+    case 'not_recognized':
+      return '学校未认定';
+    case 'unknown':
+      return '';
+    default:
+      return '';
+  }
+}

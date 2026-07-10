@@ -217,7 +217,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     super.dispose();
   }
 
-  Future<void> _refreshTeamPost() async {
+  Future<void> _refreshTeamPost({Post? updatedPost}) async {
+    if (updatedPost != null) {
+      if (!mounted) return;
+      setState(() => _post = updatedPost);
+      context.read<PostProvider>().updatePostInCache(updatedPost);
+      return;
+    }
     if (_post == null) return;
     try {
       final response = await _dio.get('/posts/${_post!.id}');

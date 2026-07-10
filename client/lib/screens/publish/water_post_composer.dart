@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
 import '../../widgets/water_section/section_avatar.dart';
+import '../../widgets/water_team/team_deadline_picker.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/water_post_bottom_bar.dart';
@@ -528,19 +529,17 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     );
 
     if (selected != null && mounted) {
-      final nextSection = provider.getBySlug(selected);
-      final nextHasTeam =
-          nextSection?.enabledTags.any((t) => t.isTeamRecruitment) == true;
-      if (_isTeamMode != nextHasTeam && (_isEditing || _editingTeamMode)) {
+      // 编辑组队帖：禁止切换版块，否则标签与组队字段会和新版块无法对齐。
+      if (_editingTeamMode) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('发布后不能在普通帖子与组队招募之间切换')),
+          const SnackBar(content: Text('组队招募发布后不能切换到其他版块')),
         );
         return;
       }
       setState(() {
         _selectedPostType = selected;
         _selectedTagId = null;
-        if (!nextHasTeam) _resetTeamFields();
+        _resetTeamFields();
       });
     }
   }
@@ -611,17 +610,26 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     final selected = _selectedTagId == tag.id;
                     return GestureDetector(
                       onTap: () {
-                        final nextTeam = tag.isTeamRecruitment;
-                        if (_isEditing && nextTeam != _editingTeamMode) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('发布后不能在普通帖子与组队招募之间切换')),
-                          );
-                          return;
+                        // 编辑普通帖时禁止选择组队标签；编辑组队帖时只能选择当前标签。
+                        if (_isEditing) {
+                          if (_editingTeamMode && tag.id != _selectedTagId) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('发布后不能在普通帖子与组队招募之间切换')),
+                            );
+                            return;
+                          }
+                          if (!_editingTeamMode && tag.isTeamRecruitment) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('发布后不能在普通帖子与组队招募之间切换')),
+                            );
+                            return;
+                          }
                         }
                         setState(() {
                           _selectedTagId = selected ? null : tag.id;
-                          if (!nextTeam) _resetTeamFields();
+                          if (!tag.isTeamRecruitment) _resetTeamFields();
                         });
                       },
                       child: Container(
@@ -740,11 +748,12 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   Future<void> _pickTeamDeadline() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await TeamDeadlinePicker.show(
+      context,
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: DateTime(now.year + 2),
       initialDate: _teamDeadline ?? now.add(const Duration(days: 7)),
+      accentColor: _teal,
     );
     if (picked != null && mounted) {
       setState(() => _teamDeadline =

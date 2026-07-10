@@ -65,7 +65,7 @@ class _TeamRecruitmentApplicationsScreenState
         ),
         _buildFilterBar(apps),
         Expanded(
-          child: provider.isLoading && apps.isEmpty
+          child: provider.isRecruitmentLoading(_meta?.recruitmentId ?? 0) && apps.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : filtered.isEmpty
                   ? Center(
@@ -117,6 +117,8 @@ class _TeamRecruitmentApplicationsScreenState
       status;
 
   Future<void> _review(WaterTeamApplication application, bool accept) async {
+    final provider = context.read<WaterTeamProvider>();
+    if (provider.isApplicationProcessing(application.id)) return;
     if (accept) {
       final confirmed = await showDialog<bool>(
           context: context,
@@ -141,7 +143,6 @@ class _TeamRecruitmentApplicationsScreenState
       reply = value;
     }
     if (!mounted) return;
-    final provider = context.read<WaterTeamProvider>();
     final success = await provider.review(
       applicationId: application.id,
       accept: accept,
@@ -153,7 +154,7 @@ class _TeamRecruitmentApplicationsScreenState
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(success
             ? (accept ? '已通过申请' : '已拒绝申请')
-            : (provider.error ?? '操作失败'))));
+            : (provider.errorFor(application.recruitmentId) ?? '操作失败'))));
     if (success) setState(() {});
   }
 
@@ -239,15 +240,22 @@ class _ApplicationCard extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
           if (isPending) ...[
             const SizedBox(height: 12),
-            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-              OutlinedButton(
-                  onPressed: () => onReview(application, false),
-                  child: const Text('拒绝')),
-              const SizedBox(width: 8),
-              FilledButton(
-                  onPressed: () => onReview(application, true),
-                  child: const Text('通过'))
-            ])
+            Builder(builder: (context) {
+              final processing = context
+                  .watch<WaterTeamProvider>()
+                  .isApplicationProcessing(application.id);
+              return Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                OutlinedButton(
+                    onPressed:
+                        processing ? null : () => onReview(application, false),
+                    child: const Text('拒绝')),
+                const SizedBox(width: 8),
+                FilledButton(
+                    onPressed:
+                        processing ? null : () => onReview(application, true),
+                    child: const Text('通过'))
+              ]);
+            }),
           ],
           if (!isPending && application.ownerReply.trim().isNotEmpty) ...[
             const SizedBox(height: 8),

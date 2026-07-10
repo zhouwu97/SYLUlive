@@ -40,8 +40,16 @@ class TeamRecruitmentPanel extends StatelessWidget {
     final result = await TeamApplicationSheet.show(
       context,
       recruitmentId: meta.recruitmentId,
+      postId: post.id,
     );
-    if (result != null) onChanged?.call(result);
+    // result.post could be null if the sync refresh failed but business succeeded.
+    // In that case, still notify parent so it can do a delayed refresh.
+    if (result != null && result.post != null) {
+      onChanged?.call(result.post!);
+    } else if (result != null && result.isSuccess) {
+      // Business succeeded but post sync failed — still refresh.
+      onChanged?.call(post);
+    }
   }
 
   Future<void> _cancel(BuildContext context, TeamRecruitmentMeta meta) async {
@@ -73,16 +81,21 @@ class TeamRecruitmentPanel extends StatelessWidget {
       return;
     }
     if (provider.isApplicationProcessing(application.id)) return;
-    final success = await provider.cancel(
+    final result = await provider.cancel(
       applicationId: application.id,
       recruitmentId: meta.recruitmentId,
+      postId: post.id,
     );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success
+        content: Text(result.isSuccess
             ? '申请已取消'
-            : (provider.errorFor(meta.recruitmentId) ?? '取消申请失败'))));
-    if (success) onChanged?.call(post);
+            : (result.error ?? '取消申请失败'))));
+    if (result.hasPost) {
+      onChanged?.call(result.post!);
+    } else if (result.isSuccess) {
+      onChanged?.call(post);
+    }
   }
 
   @override
@@ -142,12 +155,15 @@ class TeamRecruitmentPanel extends StatelessWidget {
           Row(children: [
             OutlinedButton.icon(
               onPressed: () async {
-                await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) =>
-                            TeamRecruitmentApplicationsScreen(post: post)));
-                onChanged?.call(post);
+                final updated = await Navigator.push<Post?>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        TeamRecruitmentApplicationsScreen(post: post)),
+                );
+                if (updated != null && context.mounted) {
+                  onChanged?.call(updated);
+                }
               },
               icon: const Icon(Icons.fact_check_outlined, size: 17),
               label: const Text('管理申请'),
@@ -168,13 +184,9 @@ class TeamRecruitmentPanel extends StatelessWidget {
           _statusRow('申请状态：等待处理', isDark),
           Align(
               alignment: Alignment.centerRight,
-              child: Builder(builder: (context) {
-                // 取消按钮需要找到申请 ID 才能判断处理状态。
-                // 加载我的申请以获取本地状态；实际 ID 来自首次 cancel 调用。
-                return TextButton(
-                    onPressed: () => _cancel(context, meta),
-                    child: const Text('取消申请'));
-              })),
+              child: TextButton(
+                  onPressed: () => _cancel(context, meta),
+                  child: const Text('取消申请'))),
         ] else if (meta.isAccepted) ...[
           _statusRow('申请状态：已加入', isDark),
         ] else if (meta.canApply) ...[
@@ -233,15 +245,17 @@ class TeamRecruitmentPanel extends StatelessWidget {
             ));
     if (ok != true || !context.mounted) return;
     final provider = context.read<WaterTeamProvider>();
-    final updated = await provider.updateRecruitmentStatus(
+    final result = await provider.updateRecruitmentStatus(
         recruitmentId: meta.recruitmentId,
         status: close ? 'closed' : 'recruiting');
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(updated != null
+        content: Text(result.isSuccess
             ? '$action成功'
-            : (provider.errorFor(meta.recruitmentId) ?? '$action失败'))));
-    if (updated != null) onChanged?.call(updated);
+            : (result.error ?? '$action失败'))));
+    if (result.hasPost) {
+      onChanged?.call(result.post!);
+    }
   }
 
   Widget _statusRow(String text, bool isDark) => Padding(

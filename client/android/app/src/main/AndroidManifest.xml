@@ -132,17 +132,28 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
-        <!-- 课表桌面小部件 (AppWidgetProvider + RemoteViews + ListView) -->
         <receiver
-            android:name=".TodayCourseWidgetProvider"
-            android:label="@string/widget_course_label"
-            android:exported="true">
+            android:name=".TodayCourseWidget2x2Provider"
+            android:exported="true"
+            android:label="@string/widget_course_2x2_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/today_course_widget_info" />
+                android:resource="@xml/course_widget_2x2_info" />
+        </receiver>
+
+        <receiver
+            android:name=".TodayCourseWidget4x2Provider"
+            android:exported="true"
+            android:label="@string/widget_course_4x2_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/course_widget_4x2_info" />
         </receiver>
 
         <!-- RemoteViewsService: ListView 跨进程数据网关 -->
@@ -151,17 +162,28 @@
             android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false" />
 
-        <!-- 考试桌面小部件 (AppWidgetProvider + RemoteViews + ListView) -->
         <receiver
-            android:name=".ExamWidgetProvider"
-            android:label="@string/widget_exam_label"
-            android:exported="true">
+            android:name=".ExamWidget2x2Provider"
+            android:exported="true"
+            android:label="@string/widget_exam_2x2_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/exam_widget_info" />
+                android:resource="@xml/exam_widget_2x2_info" />
+        </receiver>
+
+        <receiver
+            android:name=".ExamWidget4x2Provider"
+            android:exported="true"
+            android:label="@string/widget_exam_4x2_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/exam_widget_4x2_info" />
         </receiver>
 
         <!-- RemoteViewsService: 考试 ListView 跨进程数据网关 -->

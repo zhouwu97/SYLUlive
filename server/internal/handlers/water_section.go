@@ -9,11 +9,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"errors"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
+	"shenliyuan/internal/utils"
 )
 
 // WaterSectionHandler 水帖版块处理器
@@ -30,12 +33,12 @@ func NewWaterSectionHandler(db *gorm.DB) *WaterSectionHandler {
 	}
 }
 
-// waterSectionTagResponse 版块内标签响应体
 type waterSectionTagResponse struct {
 	ID          uint   `json:"id"`
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	ContentMode string `json:"content_mode"`
 	SortOrder   int    `json:"sort_order"`
 	IsDefault   bool   `json:"is_default"`
 	IsEnabled   bool   `json:"is_enabled"`
@@ -43,33 +46,33 @@ type waterSectionTagResponse struct {
 
 // waterSectionResponse 版块响应体
 type waterSectionResponse struct {
-	ID                uint                       `json:"id"`
-	Slug              string                     `json:"slug"`
-	Title             string                     `json:"title"`
-	Subtitle          string                     `json:"subtitle"`
-	Description       string                     `json:"description"`
-	IconKey           string                     `json:"icon_key"`
-	AvatarURL         string                     `json:"avatar_url"`
-	ColorHex          string                     `json:"color_hex"`
-	CoverURL          string                     `json:"cover_url"` // 版块背景图（兼容）
-	CoverPortraitURL  string                     `json:"cover_portrait_url"` // 手机版块背景 3:4
-	CoverLandscapeURL string                     `json:"cover_landscape_url"`// 横向封面 16:9
-	CoverSquareURL    string                     `json:"cover_square_url"`   // 方形入口 1:1
-	CoverBlurColor    string                     `json:"cover_blur_color"`   // 加载前底色
-	PublishActionText string                     `json:"publish_action_text"`
-	EmptyTitle        string                     `json:"empty_title"`
-	EmptyDescription  string                     `json:"empty_description"`
-	StarterQuestions  []string                   `json:"starter_questions"`
-	NoticeText        string                     `json:"notice_text"`
-	SensitiveLevel    string                     `json:"sensitive_level"`
-	DefaultSort       string                     `json:"default_sort"`
-	SortOrder         int                        `json:"sort_order"`
-	Status            string                     `json:"status"`
-	IsFollowed        bool                       `json:"is_followed"`
-	PostCount         int64                      `json:"post_count"`
-	FollowerCount     int64                      `json:"follower_count"`
-	MyLevel           *waterSectionMyLevelBrief  `json:"my_level,omitempty"`
-	Tags              []waterSectionTagResponse  `json:"tags"`
+	ID                uint                      `json:"id"`
+	Slug              string                    `json:"slug"`
+	Title             string                    `json:"title"`
+	Subtitle          string                    `json:"subtitle"`
+	Description       string                    `json:"description"`
+	IconKey           string                    `json:"icon_key"`
+	AvatarURL         string                    `json:"avatar_url"`
+	ColorHex          string                    `json:"color_hex"`
+	CoverURL          string                    `json:"cover_url"`           // 版块背景图（兼容）
+	CoverPortraitURL  string                    `json:"cover_portrait_url"`  // 手机版块背景 3:4
+	CoverLandscapeURL string                    `json:"cover_landscape_url"` // 横向封面 16:9
+	CoverSquareURL    string                    `json:"cover_square_url"`    // 方形入口 1:1
+	CoverBlurColor    string                    `json:"cover_blur_color"`    // 加载前底色
+	PublishActionText string                    `json:"publish_action_text"`
+	EmptyTitle        string                    `json:"empty_title"`
+	EmptyDescription  string                    `json:"empty_description"`
+	StarterQuestions  []string                  `json:"starter_questions"`
+	NoticeText        string                    `json:"notice_text"`
+	SensitiveLevel    string                    `json:"sensitive_level"`
+	DefaultSort       string                    `json:"default_sort"`
+	SortOrder         int                       `json:"sort_order"`
+	Status            string                    `json:"status"`
+	IsFollowed        bool                      `json:"is_followed"`
+	PostCount         int64                     `json:"post_count"`
+	FollowerCount     int64                     `json:"follower_count"`
+	MyLevel           *waterSectionMyLevelBrief `json:"my_level,omitempty"`
+	Tags              []waterSectionTagResponse `json:"tags"`
 }
 
 // waterSectionMyLevelBrief 版块列表中返回的当前用户本版等级简要信息
@@ -108,6 +111,7 @@ type createWaterSectionTagRequest struct {
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	ContentMode string `json:"content_mode"`
 	SortOrder   int    `json:"sort_order"`
 	IsDefault   bool   `json:"is_default"`
 	Reason      string `json:"reason"`
@@ -152,6 +156,7 @@ type waterSectionTagSnapshot struct {
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	ContentMode string `json:"content_mode"`
 	SortOrder   int    `json:"sort_order"`
 	IsDefault   bool   `json:"is_default"`
 	IsEnabled   bool   `json:"is_enabled"`
@@ -160,13 +165,13 @@ type waterSectionTagSnapshot struct {
 var waterSectionColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 var waterSectionTagSlugPattern = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
 
-// toTagResponse 把 WaterSectionTag 转成响应体
 func toTagResponse(tag models.WaterSectionTag) waterSectionTagResponse {
 	return waterSectionTagResponse{
 		ID:          tag.ID,
 		Slug:        tag.Slug,
 		Name:        tag.Name,
 		Description: tag.Description,
+		ContentMode: tag.ContentMode,
 		SortOrder:   tag.SortOrder,
 		IsDefault:   tag.IsDefault,
 		IsEnabled:   tag.IsEnabled,
@@ -245,6 +250,7 @@ func waterSectionTagSnapshotFrom(tag models.WaterSectionTag) waterSectionTagSnap
 		Slug:        tag.Slug,
 		Name:        tag.Name,
 		Description: tag.Description,
+		ContentMode: tag.ContentMode,
 		SortOrder:   tag.SortOrder,
 		IsDefault:   tag.IsDefault,
 		IsEnabled:   tag.IsEnabled,
@@ -911,13 +917,39 @@ func (h *WaterSectionHandler) CreateTag(c *gin.Context) {
 		return
 	}
 
-	slug := strings.TrimSpace(req.Slug)
-	name := strings.TrimSpace(req.Name)
-	description := strings.TrimSpace(req.Description)
-	if msg := validateTagSlug(slug); msg != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+	contentMode := strings.TrimSpace(req.ContentMode)
+	if contentMode == "" {
+		contentMode = models.WaterTagModeStandard
+	}
+	if contentMode != models.WaterTagModeStandard && contentMode != models.WaterTagModeTeamRecruitment {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的栏目类型"})
 		return
 	}
+
+	slug := strings.TrimSpace(req.Slug)
+	if contentMode == models.WaterTagModeTeamRecruitment {
+		// 组队栏目后端自动分配固定标识
+		slug = "team_recruitment"
+
+		// 检查该版块是否已存在组队栏目
+		var existingCount int64
+		h.db.Model(&models.WaterSectionTag{}).
+			Where("section_id = ? AND content_mode = ?", section.ID, models.WaterTagModeTeamRecruitment).
+			Count(&existingCount)
+		if existingCount > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "该版块已存在组队栏目，每个版块最多允许一个组队栏目"})
+			return
+		}
+	} else {
+		if msg := validateTagSlug(slug); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+	}
+
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+
 	if msg := validateTagName(name); msg != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
@@ -927,13 +959,20 @@ func (h *WaterSectionHandler) CreateTag(c *gin.Context) {
 		return
 	}
 
+	// 只在非组队时检查 slug 冲突，如果是组队，可能由于覆盖会跟其它逻辑冲突，
+	// 但如果 slug = "team_recruitment" 已经被用作普通标签，会在这里被发现
 	if exists, err := h.tagValueExists(section.ID, "slug", slug, 0); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查标签标识失败"})
 		return
 	} else if exists {
-		c.JSON(http.StatusConflict, gin.H{"error": "标签标识已存在"})
+		if contentMode == models.WaterTagModeTeamRecruitment {
+			c.JSON(http.StatusConflict, gin.H{"error": "默认标识 team_recruitment 已被占用"})
+		} else {
+			c.JSON(http.StatusConflict, gin.H{"error": "标签标识已存在"})
+		}
 		return
 	}
+
 	if exists, err := h.tagValueExists(section.ID, "name", name, 0); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查标签名称失败"})
 		return
@@ -947,12 +986,28 @@ func (h *WaterSectionHandler) CreateTag(c *gin.Context) {
 		Slug:        slug,
 		Name:        name,
 		Description: description,
+		ContentMode: contentMode,
 		SortOrder:   req.SortOrder,
 		IsDefault:   req.IsDefault,
 		IsEnabled:   true,
 	}
 	if err := h.db.Create(&tag).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建标签失败"})
+		var pgErr *pgconn.PgError
+		if utils.IsPostgresUniqueViolation(err) {
+			errors.As(err, &pgErr)
+			if strings.Contains(pgErr.Message, "idx_water_section_single_team_tag") {
+				c.JSON(http.StatusConflict, gin.H{"error": "该版块已存在组队栏目，每个版块最多允许一个组队栏目"})
+			} else {
+				c.JSON(http.StatusConflict, gin.H{"error": "该标识已被使用，请换一个英文缩写"})
+			}
+			return
+		}
+
+		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "Duplicate") {
+			c.JSON(http.StatusConflict, gin.H{"error": "该标识已被使用，请换一个英文缩写"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建标签失败"})
+		}
 		return
 	}
 
@@ -1511,18 +1566,18 @@ type waterSectionIconReviewResponse struct {
 
 func formatIconReviewResponse(r models.WaterSectionIconReview) waterSectionIconReviewResponse {
 	resp := waterSectionIconReviewResponse{
-		ID:            r.ID,
-		SectionID:     r.SectionID,
-		SectionTitle:  r.Section.Title,
-		RequestedBy:   r.RequestedBy,
-		OldAvatarURL:  r.OldAvatarURL,
-		NewAvatarURL:  r.NewAvatarURL,
-		Reason:        r.Reason,
-		Status:        r.Status,
-		ReviewedBy:    r.ReviewedBy,
-		ReviewedAt:    r.ReviewedAt,
-		ReviewReason:  r.ReviewReason,
-		CreatedAt:     r.CreatedAt,
+		ID:           r.ID,
+		SectionID:    r.SectionID,
+		SectionTitle: r.Section.Title,
+		RequestedBy:  r.RequestedBy,
+		OldAvatarURL: r.OldAvatarURL,
+		NewAvatarURL: r.NewAvatarURL,
+		Reason:       r.Reason,
+		Status:       r.Status,
+		ReviewedBy:   r.ReviewedBy,
+		ReviewedAt:   r.ReviewedAt,
+		ReviewReason: r.ReviewReason,
+		CreatedAt:    r.CreatedAt,
 	}
 	if r.Requester.ID != 0 {
 		resp.RequesterName = r.Requester.Nickname

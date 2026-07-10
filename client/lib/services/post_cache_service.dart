@@ -148,6 +148,7 @@ class PostCacheService {
               'title': post.waterSectionAuthorMeta!.title,
             }
           : null,
+      'team_recruitment_meta': post.teamRecruitment?.toJson(),
       'images': post.images
           .map(
             (img) => {

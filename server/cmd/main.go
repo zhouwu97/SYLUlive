@@ -11,9 +11,6 @@ import (
 	_ "time/tzdata"
 
 	"github.com/gin-gonic/gin"
-
-	"gorm.io/driver/sqlite"
-
 	"golang.org/x/crypto/bcrypt"
 
 	"gorm.io/driver/postgres"
@@ -49,25 +46,15 @@ func main() {
 
 	var err error
 
-	isPostgres := strings.Contains(cfg.DSN, "host=") || strings.Contains(cfg.DSN, "port=")
-
-	if isPostgres {
-
-		db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
-
-		log.Println("使用 PostgreSQL 数据库")
-
-	} else {
-
-		db, err = gorm.Open(sqlite.Open(cfg.DSN), &gorm.Config{})
-
-		log.Println("使用 SQLite 数据库")
-
+	if strings.TrimSpace(cfg.DSN) == "" {
+		log.Fatal("DATABASE_DSN 不能为空，后端仅支持 PostgreSQL")
 	}
 
+	db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
 	if err != nil {
 		log.Fatal("数据库连接失败:", err)
 	}
+	log.Println("使用 PostgreSQL 数据库")
 
 	// 注册全局 GORM 错误日志钩子 (安全网)
 	logDBError := func(db *gorm.DB) {
@@ -117,6 +104,8 @@ func main() {
 		&models.WaterModerationLog{},
 
 		&models.PostImage{},
+		&models.WaterTeamRecruitment{},
+		&models.WaterTeamApplication{},
 		&models.FeaturedApplication{},
 		&models.CollaborationApplication{},
 		&models.PostRevisionProposal{},
@@ -217,18 +206,25 @@ func main() {
 		log.Fatal("竞赛分类种子初始化失败:", err)
 	}
 	if err := models.EnsureWaterSections(db); err != nil {
-		log.Fatal("水帖版块种子初始化失败:", err)
+		log.Fatal("初始化默认版块失败:", err)
+	}
+	if err := models.MigrateLegacyTeamRecruitmentTag(db); err != nil {
+		log.Fatal("迁移历史组队标签失败:", err)
+	}
+	if err := models.ValidateNoDuplicateTeamTags(db); err != nil {
+		log.Fatal("校验重复组队标签失败:", err)
+	}
+	if err := models.EnsureWaterTeamSchema(db); err != nil {
+		log.Fatal("确保组队模块数据库约束失败:", err)
 	}
 	if err := ensureFeatureCollaborationIndexes(db); err != nil {
 		log.Fatal("精华共同创作索引迁移失败:", err)
 	}
-	if isPostgres {
-		if err := ensurePostMarketTagsColumn(db); err != nil {
-			log.Fatal("商品交易选项字段迁移失败:", err)
-		}
-		if err := ensurePostPinColumns(db); err != nil {
-			log.Fatal("帖子置顶字段迁移失败:", err)
-		}
+	if err := ensurePostMarketTagsColumn(db); err != nil {
+		log.Fatal("商品交易选项字段迁移失败:", err)
+	}
+	if err := ensurePostPinColumns(db); err != nil {
+		log.Fatal("帖子置顶字段迁移失败:", err)
 	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
@@ -291,6 +287,15 @@ func main() {
 	waterSectionHandler := handlers.NewWaterSectionHandler(db)
 	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
 	waterModerationHandler := handlers.NewWaterModerationHandler(db)
+	waterTeamHandler := handlers.NewWaterTeamHandler(db)
+	waterTeamHandler.NotifyDeadlineSoon()
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			waterTeamHandler.NotifyDeadlineSoon()
+		}
+	}()
 
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
@@ -634,6 +639,44 @@ func main() {
 	r.POST("/api/collaboration-applications/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectCollaborationApplication)
 	r.POST("/api/revision-proposals/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveRevisionProposal)
 	r.POST("/api/revision-proposals/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectRevisionProposal)
+
+	waterTeam := r.Group("/api/water/team")
+	waterTeam.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		waterTeam.POST("/recruitments/:id/apply", waterTeamHandler.Apply)
+		waterTeam.GET("/recruitments/:id/applications", waterTeamHandler.GetRecruitmentApplications)
+		waterTeam.POST("/applications/:id/accept", waterTeamHandler.Accept)
+		waterTeam.POST("/applications/:id/reject", waterTeamHandler.Reject)
+		waterTeam.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+		waterTeam.GET("/my_applications", waterTeamHandler.GetMyApplications)
+		waterTeam.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)
+	}
+
+	// 独立组队 API — /api/team/...
+	teamAuth := r.Group("/api/team")
+	teamAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		teamAuth.POST("/recruitments", waterTeamHandler.CreateTeamRecruitment)
+		teamAuth.PATCH("/recruitments/:id", waterTeamHandler.UpdateTeamRecruitment)
+		teamAuth.GET("/recruitments/mine", waterTeamHandler.GetMyTeamRecruitments)
+
+		// 申请相关（复用旧 Handler 方法）
+		teamAuth.POST("/recruitments/:id/apply", waterTeamHandler.Apply)
+		teamAuth.GET("/recruitments/:id/applications", waterTeamHandler.GetRecruitmentApplications)
+		teamAuth.POST("/applications/:id/accept", waterTeamHandler.Accept)
+		teamAuth.POST("/applications/:id/reject", waterTeamHandler.Reject)
+		teamAuth.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+
+		teamAuth.GET("/my_applications", waterTeamHandler.GetMyApplications)
+		teamAuth.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)
+	}
+	teamPublic := r.Group("/api/team")
+	{
+		// 静态 mine 路由须先注册，避免与 :id 参数路由冲突。
+		// 公开读取使用可选鉴权，以便返回登录用户专属状态。
+		teamPublic.GET("/recruitments", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), waterTeamHandler.ListTeamRecruitments)
+		teamPublic.GET("/recruitments/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), waterTeamHandler.GetTeamRecruitment)
+	}
 
 	competitions := r.Group("/api/competitions")
 	{

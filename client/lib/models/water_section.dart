@@ -48,6 +48,9 @@ class WaterSectionTag {
   final int sortOrder;
   final bool isDefault;
   final bool isEnabled;
+  final String contentMode;
+
+  bool get isTeamRecruitment => contentMode == 'team_recruitment';
 
   const WaterSectionTag({
     required this.id,
@@ -58,6 +61,7 @@ class WaterSectionTag {
     this.sortOrder = 0,
     this.isDefault = false,
     this.isEnabled = true,
+    this.contentMode = 'normal',
   });
 
   factory WaterSectionTag.fromJson(Map<String, dynamic> json) {
@@ -70,6 +74,7 @@ class WaterSectionTag {
       sortOrder: json['sort_order'] ?? 0,
       isDefault: json['is_default'] == true,
       isEnabled: json['is_enabled'] != false,
+      contentMode: json['content_mode'] ?? 'normal',
     );
   }
 
@@ -83,6 +88,7 @@ class WaterSectionTag {
       'description': description,
       'sort_order': sortOrder,
       'is_default': isDefault,
+      'content_mode': contentMode,
       if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
     };
   }

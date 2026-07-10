@@ -7,6 +7,29 @@ import '../models/water_team.dart';
 import '../services/water_team_service.dart';
 import 'post_provider.dart';
 
+/// 组队变更操作的结果。
+///
+/// - [success]=false：业务接口失败，[error] 非空。
+/// - [success]=true, [post]!=null：业务成功且帖子已刷新。
+/// - [success]=true, [post]=null：业务成功但帖子同步刷新失败，UI 应做延迟更新。
+class TeamMutationResult {
+  final bool success;
+  final Post? post;
+  final String? error;
+
+  const TeamMutationResult({
+    required this.success,
+    this.post,
+    this.error,
+  });
+
+  /// 业务成功（无论帖子是否刷新成功）。
+  bool get isSuccess => success;
+
+  /// 业务成功且帖子可用。
+  bool get hasPost => success && post != null;
+}
+
 /// 组队申请状态，按招募 ID 隔离，避免不同帖子之间互相覆盖。
 class WaterTeamProvider extends ChangeNotifier {
   final Dio _dio;
@@ -41,32 +64,30 @@ class WaterTeamProvider extends ChangeNotifier {
       List.unmodifiable(_myApplications ?? const []);
 
   // ---- 申请加入 ----
-  /// 返回 [WaterTeamApplication] 表示成功；`null` 表示失败（错误见 [errorFor]）。
-  Future<WaterTeamApplication?> apply({
+  Future<TeamMutationResult> apply({
     required int recruitmentId,
+    required int postId,
     required String message,
     String availability = '',
   }) async {
     _processingRecruitmentIds.add(recruitmentId);
     notifyListeners();
     try {
-      final application = await _service.apply(
+      await _service.apply(
         recruitmentId: recruitmentId,
         message: message,
         availability: availability,
       );
-      return application;
+      // 业务已成功，接下来同步帖子。帖子刷新失败不覆盖业务成功。
+      final post = await _refreshPostAndFeeds(postId);
+      return TeamMutationResult(success: true, post: post);
     } on DioException catch (error) {
-      _errorsByRecruitment[recruitmentId] =
-          error.response?.data is Map
-              ? (error.response!.data['error'] ?? error.message).toString()
-              : error.message ?? '网络请求失败';
-      notifyListeners();
-      return null;
+      return TeamMutationResult(
+        success: false,
+        error: _extractError(error),
+      );
     } catch (error) {
-      _errorsByRecruitment[recruitmentId] = error.toString();
-      notifyListeners();
-      return null;
+      return TeamMutationResult(success: false, error: error.toString());
     } finally {
       _processingRecruitmentIds.remove(recruitmentId);
       notifyListeners();
@@ -74,26 +95,24 @@ class WaterTeamProvider extends ChangeNotifier {
   }
 
   // ---- 取消申请 ----
-  Future<bool> cancel({
+  Future<TeamMutationResult> cancel({
     required int applicationId,
     required int recruitmentId,
+    required int postId,
   }) async {
     _processingApplicationIds.add(applicationId);
     notifyListeners();
     try {
       await _service.cancel(applicationId: applicationId);
-      return true;
+      final post = await _refreshPostAndFeeds(postId);
+      return TeamMutationResult(success: true, post: post);
     } on DioException catch (error) {
-      _errorsByRecruitment[recruitmentId] =
-          error.response?.data is Map
-              ? (error.response!.data['error'] ?? error.message).toString()
-              : error.message ?? '网络请求失败';
-      notifyListeners();
-      return false;
+      return TeamMutationResult(
+        success: false,
+        error: _extractError(error),
+      );
     } catch (error) {
-      _errorsByRecruitment[recruitmentId] = error.toString();
-      notifyListeners();
-      return false;
+      return TeamMutationResult(success: false, error: error.toString());
     } finally {
       _processingApplicationIds.remove(applicationId);
       notifyListeners();
@@ -117,10 +136,7 @@ class WaterTeamProvider extends ChangeNotifier {
       _myApplications = value;
       return value;
     } on DioException catch (error) {
-      _myApplicationsError =
-          error.response?.data is Map
-              ? (error.response!.data['error'] ?? error.message).toString()
-              : error.message ?? '网络请求失败';
+      _myApplicationsError = _extractError(error);
       return const [];
     } catch (error) {
       _myApplicationsError = error.toString();
@@ -149,10 +165,7 @@ class WaterTeamProvider extends ChangeNotifier {
       _applicationsByRecruitment[recruitmentId] = value;
       return value;
     } on DioException catch (error) {
-      _errorsByRecruitment[recruitmentId] =
-          error.response?.data is Map
-              ? (error.response!.data['error'] ?? error.message).toString()
-              : error.message ?? '网络请求失败';
+      _errorsByRecruitment[recruitmentId] = _extractError(error);
       return const [];
     } catch (error) {
       _errorsByRecruitment[recruitmentId] = error.toString();
@@ -164,8 +177,7 @@ class WaterTeamProvider extends ChangeNotifier {
   }
 
   // ---- 审批（通过 / 拒绝） ----
-  /// 返回最新的 [Post]；失败时返回 `null`。
-  Future<Post?> review({
+  Future<TeamMutationResult> review({
     required int applicationId,
     required bool accept,
     String reply = '',
@@ -183,21 +195,18 @@ class WaterTeamProvider extends ChangeNotifier {
       if (recruitmentId != null) {
         await loadRecruitmentApplications(recruitmentId, force: true);
       }
-      if (postId != null) return await _refreshPostAndFeeds(postId);
-      return null;
+      Post? post;
+      if (postId != null) {
+        post = await _refreshPostAndFeeds(postId);
+      }
+      return TeamMutationResult(success: true, post: post);
     } on DioException catch (error) {
-      final id = recruitmentId ?? 0;
-      _errorsByRecruitment[id] =
-          error.response?.data is Map
-              ? (error.response!.data['error'] ?? error.message).toString()
-              : error.message ?? '网络请求失败';
-      notifyListeners();
-      return null;
+      return TeamMutationResult(
+        success: false,
+        error: _extractError(error),
+      );
     } catch (error) {
-      final id = recruitmentId ?? 0;
-      _errorsByRecruitment[id] = error.toString();
-      notifyListeners();
-      return null;
+      return TeamMutationResult(success: false, error: error.toString());
     } finally {
       _processingApplicationIds.remove(applicationId);
       notifyListeners();
@@ -205,8 +214,7 @@ class WaterTeamProvider extends ChangeNotifier {
   }
 
   // ---- 招募状态（关闭 / 重新开启） ----
-  /// 返回更新后的 [Post]；失败时返回 `null`。
-  Future<Post?> updateRecruitmentStatus({
+  Future<TeamMutationResult> updateRecruitmentStatus({
     required int recruitmentId,
     required String status,
   }) async {
@@ -224,25 +232,21 @@ class WaterTeamProvider extends ChangeNotifier {
           postType: updated.postType,
         );
       }
-      return updated;
+      return TeamMutationResult(success: true, post: updated);
     } on DioException catch (error) {
-      _errorsByRecruitment[recruitmentId] =
-          error.response?.data is Map
-              ? (error.response!.data['error'] ?? error.message).toString()
-              : error.message ?? '网络请求失败';
-      notifyListeners();
-      return null;
+      return TeamMutationResult(
+        success: false,
+        error: _extractError(error),
+      );
     } catch (error) {
-      _errorsByRecruitment[recruitmentId] = error.toString();
-      notifyListeners();
-      return null;
+      return TeamMutationResult(success: false, error: error.toString());
     } finally {
       _processingRecruitmentIds.remove(recruitmentId);
       notifyListeners();
     }
   }
 
-  /// 刷新帖子详情并重排组队信息流，返回最新 [Post]。
+  /// 刷新帖子详情并重排组队信息流，返回最新 [Post]（失败返回 null）。
   Future<Post?> _refreshPostAndFeeds(int postId) async {
     try {
       final response = await _dio.get('/posts/$postId');
@@ -259,5 +263,11 @@ class WaterTeamProvider extends ChangeNotifier {
       debugPrint('刷新组队帖子失败: ${error.message}');
       return null;
     }
+  }
+
+  static String? _extractError(DioException error) {
+    return error.response?.data is Map
+        ? (error.response!.data['error'] ?? error.message).toString()
+        : error.message ?? '网络请求失败';
   }
 }

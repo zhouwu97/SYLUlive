@@ -155,25 +155,38 @@ class _MyApplicationCard extends StatelessWidget {
                       if (application.status == 'pending')
                         Align(
                             alignment: Alignment.centerRight,
-                            child: TextButton(
-                                onPressed: () => _cancel(context),
-                                child: const Text('取消申请'))),
+                            child: Builder(builder: (context) {
+                              final processing = context
+                                  .watch<WaterTeamProvider>()
+                                  .isApplicationProcessing(application.id);
+                              return TextButton(
+                                  onPressed:
+                                      processing ? null : () => _cancel(context),
+                                  child: processing
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2))
+                                      : const Text('取消申请'));
+                            })),
                     ]))));
   }
 
   Future<void> _cancel(BuildContext context) async {
     final provider = context.read<WaterTeamProvider>();
     if (provider.isApplicationProcessing(application.id)) return;
-    final success = await provider.cancel(
+    final result = await provider.cancel(
       applicationId: application.id,
       recruitmentId: application.recruitmentId,
+      postId: application.postId,
     );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success
+        content: Text(result.isSuccess
             ? '申请已取消'
-            : (provider.errorFor(application.recruitmentId) ?? '取消申请失败'))));
-    if (success) await provider.loadMyApplications(force: true);
+            : (result.error ?? '取消申请失败'))));
+    if (result.isSuccess) await provider.loadMyApplications(force: true);
   }
 }
 

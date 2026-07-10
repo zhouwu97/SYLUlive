@@ -11,6 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"github.com/jackc/pgx/v5/pgconn"
+	"errors"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -989,7 +991,21 @@ func (h *WaterSectionHandler) CreateTag(c *gin.Context) {
 		IsEnabled:   true,
 	}
 	if err := h.db.Create(&tag).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建标签失败"})
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			if strings.Contains(pgErr.Message, "idx_water_section_single_team_tag") {
+				c.JSON(http.StatusConflict, gin.H{"error": "该版块已存在组队栏目，每个版块最多允许一个组队栏目"})
+			} else {
+				c.JSON(http.StatusConflict, gin.H{"error": "该标识已被使用，请换一个英文缩写"})
+			}
+			return
+		}
+		
+		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "Duplicate") {
+			c.JSON(http.StatusConflict, gin.H{"error": "该标识已被使用，请换一个英文缩写"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建标签失败"})
+		}
 		return
 	}
 

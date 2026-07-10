@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -37,6 +38,10 @@ func (h *WaterTeamHandler) currentUserOr401(c *gin.Context) (uint, bool) {
 	return userID, true
 }
 
+
+type UpdateTeamRecruitmentStatusRequest struct {
+	Status string `json:"status" binding:"required"`
+}
 type ApplyTeamRecruitmentRequest struct {
 	Message      string `json:"message"`
 	Availability string `json:"availability"`
@@ -69,62 +74,126 @@ func (h *WaterTeamHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	var recruitment models.WaterTeamRecruitment
-	if err := h.db.Preload("Post").First(&recruitment, recruitmentID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "招募信息不存在"})
-		return
-	}
+	var responseApp models.WaterTeamApplication
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var recruitment models.WaterTeamRecruitment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Post").First(&recruitment, recruitmentID).Error; err != nil {
+			return fmt.Errorf("recruitment_not_found")
+		}
 
-	if recruitment.Post.AuthorID == userID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不能申请自己的招募"})
-		return
-	}
+		if recruitment.Post.AuthorID == userID {
+			return fmt.Errorf("cannot_apply_own")
+		}
 
-	now := time.Now()
-	effectiveStatus := models.EffectiveRecruitmentStatus(recruitment, now)
-	if effectiveStatus != models.RecruitmentStatusRecruiting {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该招募目前不接受申请"})
-		return
-	}
+		if recruitment.Post.Status == models.PostStatusDeleted {
+			return fmt.Errorf("post_deleted")
+		}
 
-	// 检查是否已有申请
-	var existing models.WaterTeamApplication
-	err = h.db.Where("recruitment_id = ? AND applicant_id = ?", recruitmentID, userID).First(&existing).Error
-	if err == nil {
-		if existing.Status == models.ApplicationStatusPending || existing.Status == models.ApplicationStatusAccepted {
+		if recruitment.Post.WaterTagID == nil {
+			return fmt.Errorf("invalid_tag")
+		}
+
+		var tag models.WaterSectionTag
+		if err := tx.First(&tag, *recruitment.Post.WaterTagID).Error; err != nil {
+			return fmt.Errorf("invalid_tag")
+		}
+
+		if !tag.IsEnabled || tag.ContentMode != models.WaterTagModeTeamRecruitment {
+			return fmt.Errorf("tag_disabled")
+		}
+
+		var section models.WaterSection
+		if err := tx.First(&section, tag.SectionID).Error; err != nil {
+			return fmt.Errorf("invalid_section")
+		}
+
+		if section.Status != "active" {
+			return fmt.Errorf("section_inactive")
+		}
+
+		// Check if user is muted
+		permSvc := services.NewWaterPermissionService(tx)
+		if permSvc.IsMuted(section.ID, userID) {
+			return fmt.Errorf("user_muted")
+		}
+
+		now := time.Now()
+		effectiveStatus := models.EffectiveRecruitmentStatus(recruitment, now)
+		if effectiveStatus != models.RecruitmentStatusRecruiting {
+			return fmt.Errorf("recruitment_not_available")
+		}
+
+		var existing models.WaterTeamApplication
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("recruitment_id = ? AND applicant_id = ?", recruitment.ID, userID).First(&existing).Error
+		if err == nil {
+			if existing.Status == models.ApplicationStatusPending {
+				return fmt.Errorf("already_applied")
+			}
+			if existing.Status == models.ApplicationStatusAccepted {
+				return fmt.Errorf("already_joined")
+			}
+			// Re-apply if rejected/cancelled
+			if err := tx.Model(&existing).Updates(map[string]interface{}{
+				"status":       models.ApplicationStatusPending,
+				"message":      req.Message,
+				"availability": req.Availability,
+				"reviewed_at":  nil,
+				"owner_reply":  "",
+			}).Error; err != nil {
+				return err
+			}
+			responseApp = existing
+			return nil
+		}
+
+		app := models.WaterTeamApplication{
+			RecruitmentID: recruitment.ID,
+			PostID:        recruitment.PostID,
+			ApplicantID:   userID,
+			OwnerID:       recruitment.Post.AuthorID,
+			Message:       req.Message,
+			Availability:  req.Availability,
+			Status:        models.ApplicationStatusPending,
+		}
+
+		if err := tx.Create(&app).Error; err != nil {
+			return err
+		}
+		responseApp = app
+		return nil
+	})
+
+	if err != nil {
+		switch err.Error() {
+		case "recruitment_not_found":
+			c.JSON(http.StatusNotFound, gin.H{"error": "招募信息不存在"})
+		case "cannot_apply_own":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "不能申请自己的招募"})
+		case "post_deleted":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该帖子已被删除或屏蔽"})
+		case "invalid_tag", "tag_disabled":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该标签不支持组队招募或已停用"})
+		case "invalid_section", "section_inactive":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该版块已归档或不存在"})
+		case "user_muted":
+			c.JSON(http.StatusForbidden, gin.H{"error": "你已被该版块禁言，无法申请"})
+		case "recruitment_not_available":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该招募目前不接受申请"})
+		case "already_applied":
 			c.JSON(http.StatusConflict, gin.H{"error": "您已经申请过该招募"})
-			return
+		case "already_joined":
+			c.JSON(http.StatusConflict, gin.H{"error": "您已加入该招募"})
+		default:
+			if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "unique constraint") {
+				c.JSON(http.StatusConflict, gin.H{"error": "您已经申请过该招募"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "提交申请失败"})
 		}
-		// 如果被拒绝或已取消，可以重新申请
-		existing.Status = models.ApplicationStatusPending
-		existing.Message = req.Message
-		existing.Availability = req.Availability
-		existing.ReviewedAt = nil
-		existing.OwnerReply = ""
-		if err := h.db.Save(&existing).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "重新提交申请失败"})
-			return
-		}
-		c.JSON(http.StatusOK, existing)
 		return
 	}
 
-	app := models.WaterTeamApplication{
-		RecruitmentID: recruitment.ID,
-		PostID:        recruitment.PostID,
-		ApplicantID:   userID,
-		OwnerID:       recruitment.Post.AuthorID,
-		Message:       req.Message,
-		Availability:  req.Availability,
-		Status:        models.ApplicationStatusPending,
-	}
-
-	if err := h.db.Create(&app).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交申请失败"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, app)
+	c.JSON(http.StatusCreated, responseApp)
 }
 
 type ReviewTeamApplicationRequest struct {
@@ -163,7 +232,7 @@ func (h *WaterTeamHandler) reviewApplication(c *gin.Context, newStatus string) {
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var app models.WaterTeamApplication
-		if err := tx.First(&app, appID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&app, appID).Error; err != nil {
 			return fmt.Errorf("app_not_found")
 		}
 
@@ -176,7 +245,6 @@ func (h *WaterTeamHandler) reviewApplication(c *gin.Context, newStatus string) {
 		}
 
 		var recruitment models.WaterTeamRecruitment
-		// 加锁，防止超募
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recruitment, app.RecruitmentID).Error; err != nil {
 			return err
 		}
@@ -187,22 +255,38 @@ func (h *WaterTeamHandler) reviewApplication(c *gin.Context, newStatus string) {
 			if effectiveStatus != models.RecruitmentStatusRecruiting {
 				return fmt.Errorf("recruitment_not_available")
 			}
-
-			recruitment.AcceptedCount++
-			if recruitment.AcceptedCount >= recruitment.NeededCount && recruitment.Status == models.RecruitmentStatusRecruiting {
-				recruitment.Status = models.RecruitmentStatusFull
-			}
-			if err := tx.Save(&recruitment).Error; err != nil {
-				return err
-			}
 		}
 
 		now := time.Now()
-		app.Status = newStatus
-		app.ReviewedAt = &now
-		app.OwnerReply = req.Reply
-		if err := tx.Save(&app).Error; err != nil {
+		if err := tx.Model(&app).Updates(map[string]interface{}{
+			"status":      newStatus,
+			"reviewed_at": now,
+			"owner_reply": req.Reply,
+		}).Error; err != nil {
 			return err
+		}
+
+		if newStatus == models.ApplicationStatusAccepted {
+			var acceptedCount int64
+			if err := tx.Model(&models.WaterTeamApplication{}).
+				Where("recruitment_id = ? AND status = ?", recruitment.ID, models.ApplicationStatusAccepted).
+				Count(&acceptedCount).Error; err != nil {
+				return err
+			}
+
+			if acceptedCount > int64(recruitment.NeededCount) {
+				return fmt.Errorf("recruitment_not_available")
+			}
+
+			status := models.RecruitmentStatusRecruiting
+			if acceptedCount >= int64(recruitment.NeededCount) {
+				status = models.RecruitmentStatusFull
+			}
+
+			return tx.Model(&recruitment).Updates(map[string]interface{}{
+				"accepted_count": acceptedCount,
+				"status":         status,
+			}).Error
 		}
 
 		return nil
@@ -251,25 +335,8 @@ func (h *WaterTeamHandler) Cancel(c *gin.Context) {
 			return fmt.Errorf("unauthorized")
 		}
 
-		if app.Status != models.ApplicationStatusPending && app.Status != models.ApplicationStatusAccepted {
+		if app.Status != models.ApplicationStatusPending {
 			return fmt.Errorf("invalid_status")
-		}
-
-		if app.Status == models.ApplicationStatusAccepted {
-			var recruitment models.WaterTeamRecruitment
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recruitment, app.RecruitmentID).Error; err != nil {
-				return err
-			}
-			recruitment.AcceptedCount--
-			if recruitment.AcceptedCount < 0 {
-				recruitment.AcceptedCount = 0
-			}
-			if recruitment.AcceptedCount < recruitment.NeededCount && recruitment.Status == models.RecruitmentStatusFull {
-				recruitment.Status = models.RecruitmentStatusRecruiting
-			}
-			if err := tx.Save(&recruitment).Error; err != nil {
-				return err
-			}
 		}
 
 		app.Status = models.ApplicationStatusCancelled
@@ -345,4 +412,144 @@ func (h *WaterTeamHandler) GetRecruitmentApplications(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, apps)
+}
+
+// UpdateRecruitmentStatus PATCH /api/water/team/recruitments/:id/status
+func (h *WaterTeamHandler) UpdateRecruitmentStatus(c *gin.Context) {
+	userID, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+
+	idStr := c.Param("id")
+	recruitmentID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的招募ID"})
+		return
+	}
+
+	var req UpdateTeamRecruitmentStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+
+	if req.Status != string(models.RecruitmentStatusClosed) && req.Status != string(models.RecruitmentStatusRecruiting) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的招募状态"})
+		return
+	}
+
+	var responsePost models.Post
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var recruitment models.WaterTeamRecruitment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recruitment, recruitmentID).Error; err != nil {
+			return fmt.Errorf("recruitment_not_found")
+		}
+
+		var post models.Post
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&post, recruitment.PostID).Error; err != nil {
+			return fmt.Errorf("post_not_found")
+		}
+
+		if post.AuthorID != userID {
+			return fmt.Errorf("unauthorized")
+		}
+
+		if post.Status == models.PostStatusDeleted {
+			return fmt.Errorf("post_deleted")
+		}
+
+		if req.Status == string(models.RecruitmentStatusClosed) {
+			if recruitment.Status != models.RecruitmentStatusRecruiting && recruitment.Status != models.RecruitmentStatusFull {
+				return fmt.Errorf("cannot_close")
+			}
+			recruitment.Status = models.RecruitmentStatusClosed
+		} else if req.Status == string(models.RecruitmentStatusRecruiting) {
+			if recruitment.Status != models.RecruitmentStatusClosed {
+				return fmt.Errorf("cannot_reopen")
+			}
+
+			if post.WaterTagID == nil {
+				return fmt.Errorf("invalid_tag")
+			}
+
+			var tag models.WaterSectionTag
+			if err := tx.First(&tag, *post.WaterTagID).Error; err != nil {
+				return fmt.Errorf("invalid_tag")
+			}
+
+			if !tag.IsEnabled || tag.ContentMode != models.WaterTagModeTeamRecruitment {
+				return fmt.Errorf("tag_disabled")
+			}
+
+			var section models.WaterSection
+			if err := tx.First(&section, tag.SectionID).Error; err != nil {
+				return fmt.Errorf("invalid_section")
+			}
+
+			if section.Status != "active" {
+				return fmt.Errorf("section_inactive")
+			}
+
+			if recruitment.Deadline != nil && recruitment.Deadline.Before(time.Now()) {
+				return fmt.Errorf("deadline_passed")
+			}
+
+			var acceptedCount int64
+			if err := tx.Model(&models.WaterTeamApplication{}).Where("recruitment_id = ? AND status = ?", recruitment.ID, models.ApplicationStatusAccepted).Count(&acceptedCount).Error; err != nil {
+				return err
+			}
+
+			recruitment.AcceptedCount = int(acceptedCount)
+			if recruitment.AcceptedCount >= recruitment.NeededCount {
+				return fmt.Errorf("already_full")
+			}
+
+			recruitment.Status = models.RecruitmentStatusRecruiting
+		}
+
+		if err := tx.Save(&recruitment).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Preload("Author").Preload("Images").Preload("Images.File").First(&responsePost, post.ID).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		switch err.Error() {
+		case "recruitment_not_found":
+			c.JSON(http.StatusNotFound, gin.H{"error": "招募信息不存在"})
+		case "post_not_found":
+			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		case "unauthorized":
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权限"})
+		case "post_deleted":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该帖子已被删除或屏蔽"})
+		case "cannot_close":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前状态无法关闭"})
+		case "cannot_reopen":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前状态无法重新开启"})
+		case "invalid_tag", "tag_disabled":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该标签不支持组队招募或已停用"})
+		case "invalid_section", "section_inactive":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该版块已归档或不存在"})
+		case "deadline_passed":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "截止时间已过，请先修改截止时间"})
+		case "already_full":
+			c.JSON(http.StatusBadRequest, gin.H{"error": "名额已满，无法重新开启"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "处理失败"})
+		}
+		return
+	}
+
+	postHandler := &PostHandler{db: h.db}
+	responsePosts := []models.Post{responsePost}
+	postHandler.hydratePosts(c, responsePosts, time.Now())
+
+	c.JSON(http.StatusOK, gin.H{"post": responsePosts[0]})
 }

@@ -26,10 +26,9 @@ class CampusFeatureNoticeCard extends StatelessWidget {
       displayTitle = displayTitle.replaceFirst(regex, '');
     }
 
-    final department = article.authorDepartment.isNotEmpty 
-        ? article.authorDepartment 
-        : '';
-        
+    final department =
+        article.authorDepartment.isNotEmpty ? article.authorDepartment : '';
+
     final departmentInfo = [
       if (department.isNotEmpty) department,
       if (article.hasAttachment) '含附件',
@@ -53,8 +52,9 @@ class CampusFeatureNoticeCard extends StatelessWidget {
                 Row(
                   children: [
                     CampusNoticeTag(
-                      category: article.category.isNotEmpty ? article.category : '教务公告'
-                    ),
+                        category: article.category.isNotEmpty
+                            ? article.category
+                            : '教务公告'),
                     const Spacer(),
                     Text(
                       article.publishDate.isNotEmpty ? article.shortDate : '',

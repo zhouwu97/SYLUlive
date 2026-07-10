@@ -1,9 +1,11 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
+import '../utils/app_feedback.dart';
 import 'post_detail_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -25,6 +27,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _loadReplies() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _notifications = [];
+          _errorMessage = null;
+        });
+      }
+      return;
+    }
+
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -43,10 +57,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             _isLoading = false;
           });
         }
-        // 不阻塞 UI，后台标记为已读
-        try {
-          await auth.dio.post('/notifications/read');
-        } catch (_) {}
       } else {
         if (mounted) {
           setState(() {
@@ -54,6 +64,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             _isLoading = false;
           });
         }
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '通知加载失败');
+          _isLoading = false;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -75,12 +92,49 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _markAllRead() async {
+    final auth = context.read<AuthProvider>();
+    try {
+      await auth.dio.post('/notifications/read');
+      if (mounted) {
+        setState(() {
+          for (var item in _notifications) {
+            item['is_read'] = true;
+          }
+        });
+        AppFeedback.showSnackBar(context, '已全部标记为已读');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '操作失败', isError: true);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final auth = context.watch<AuthProvider>();
+
+    if (!auth.isLoggedIn) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('通知'), elevation: 0),
+        body: _buildLoginRequiredView(isDark),
+      );
+    }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('通知'), elevation: 0),
+      appBar: AppBar(
+        title: const Text('通知'),
+        elevation: 0,
+        actions: [
+          if (_notifications.any((n) => n['is_read'] != true))
+            TextButton(
+              onPressed: _markAllRead,
+              child: const Text('全部已读'),
+            ),
+        ],
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
@@ -107,6 +161,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Widget _buildNotificationCard(
       Map<String, dynamic> notification, bool isDark) {
+    final id = notification['id'] as int?;
     final type = notification['type'] as String?;
     final postId = notification['post_id'] as int?;
     final relatedId = notification['related_id'] as int?;
@@ -114,6 +169,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final createdAt =
         DateTime.tryParse(notification['created_at'] ?? '') ?? DateTime.now();
     final fromUser = notification['from_user'] as Map<String, dynamic>?;
+    final isRead = notification['is_read'] == true;
 
     String actionText = '';
     String titleText = '系统通知';
@@ -129,7 +185,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     return InkWell(
-      onTap: () {
+      onTap: () async {
+        if (!isRead && id != null) {
+          setState(() {
+            notification['is_read'] = true;
+          });
+          final auth = context.read<AuthProvider>();
+          try {
+            await auth.dio.post('/notifications/read-selected', data: {
+              'ids': [id]
+            });
+          } catch (_) {}
+        }
+
         if (postId != null) {
           Navigator.push(
             context,
@@ -188,12 +256,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           color: isDark ? Colors.white : Colors.black87,
                         ),
                       ),
-                      Text(
-                        _formatTime(createdAt),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white30 : Colors.black54,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!isRead)
+                            Container(
+                              margin: const EdgeInsets.only(right: 6),
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Colors.redAccent,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          Text(
+                            _formatTime(createdAt),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white30 : Colors.black54,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -275,6 +358,45 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               onPressed: _loadReplies,
               icon: const Icon(Icons.refresh),
               label: const Text('重试'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoginRequiredView(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.lock_outline,
+              size: 64,
+              color: isDark ? Colors.white30 : Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '登录后查看通知\n评论回复、系统提醒、管理通知会显示在这里',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: isDark ? Colors.white60 : Colors.grey[600],
+                fontSize: 16,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () async {
+                await Navigator.pushNamed(context, '/login');
+                if (mounted && context.read<AuthProvider>().isLoggedIn) {
+                  _loadReplies();
+                }
+              },
+              icon: const Icon(Icons.login),
+              label: const Text('去登录'),
             ),
           ],
         ),

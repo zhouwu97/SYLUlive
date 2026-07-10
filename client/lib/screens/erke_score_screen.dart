@@ -234,8 +234,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Color _accent(bool isDark) =>
       isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
 
-  Color _accentSoft(bool isDark) =>
-      isDark ? const Color(0xFF7ED6C5).withValues(alpha: 0.12) : const Color(0xFFEAF6F3);
+  Color _accentSoft(bool isDark) => isDark
+      ? const Color(0xFF7ED6C5).withValues(alpha: 0.12)
+      : const Color(0xFFEAF6F3);
 
   Color _success(bool isDark) =>
       isDark ? const Color(0xFF86EFAC) : const Color(0xFF16A34A);
@@ -246,8 +247,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Color _danger(bool isDark) =>
       isDark ? const Color(0xFFFF8A80) : const Color(0xFFE54848);
 
-  Color _text(bool isDark) =>
-      isDark ? Colors.white : const Color(0xFF1F2328);
+  Color _text(bool isDark) => isDark ? Colors.white : const Color(0xFF1F2328);
 
   Color _subText(bool isDark) =>
       isDark ? Colors.grey.shade400 : const Color(0xFF747B82);
@@ -287,7 +287,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       backgroundColor:
           isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
       appBar: AppBar(
-        title: const Text('二课成绩查询', style: TextStyle(fontWeight: FontWeight.bold)),
+        title:
+            const Text('二课成绩查询', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor:
             isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
@@ -354,7 +355,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.info_outline, color: Color(0xFF147C72), size: 20),
+                const Icon(Icons.info_outline,
+                    color: Color(0xFF147C72), size: 20),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -799,9 +801,15 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildConclusionCard(String conclusion, bool isDark) {
     Color color = _success(isDark);
-    if (conclusion.contains('严重') || conclusion.contains('不可') || conclusion.contains('未满足')) {
+    if (conclusion.contains('严重') ||
+        conclusion.contains('不可') ||
+        conclusion.contains('未满足')) {
       color = _danger(isDark);
-    } else if (conclusion.contains('不足') || conclusion.contains('未达标') || conclusion.contains('未完成') || conclusion.contains('还需') || conclusion.contains('缺少')) {
+    } else if (conclusion.contains('不足') ||
+        conclusion.contains('未达标') ||
+        conclusion.contains('未完成') ||
+        conclusion.contains('还需') ||
+        conclusion.contains('缺少')) {
       color = _warning(isDark);
     }
 
@@ -818,7 +826,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text('官方结论：$conclusion',
-                style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w600)),
+                style: TextStyle(
+                    fontSize: 13, color: color, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -958,7 +967,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           ),
           const SizedBox(height: 12),
           if (yr.minimumGap > 0)
-            _infoTag('按分类最低还需 ${_formatScore(yr.minimumGap)} 分', _warning(isDark))
+            _infoTag(
+                '按分类最低还需 ${_formatScore(yr.minimumGap)} 分', _warning(isDark))
           else
             _infoTag('已达标 ✓', _success(isDark)),
           const SizedBox(height: 8),
@@ -1158,7 +1168,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               ListTile(
                   title: const Text('全部'),
                   trailing: _filterCategory == null
-                      ? Icon(Icons.check, color: _accent(Theme.of(context).brightness == Brightness.dark))
+                      ? Icon(Icons.check,
+                          color: _accent(
+                              Theme.of(context).brightness == Brightness.dark))
                       : null,
                   onTap: () {
                     setState(() => _filterCategory = null);
@@ -1167,7 +1179,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               ...categories.map((c) => ListTile(
                   title: Text(c),
                   trailing: _filterCategory == c
-                      ? Icon(Icons.check, color: _accent(Theme.of(context).brightness == Brightness.dark))
+                      ? Icon(Icons.check,
+                          color: _accent(
+                              Theme.of(context).brightness == Brightness.dark))
                       : null,
                   onTap: () {
                     setState(() => _filterCategory = c);

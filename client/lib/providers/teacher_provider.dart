@@ -7,6 +7,7 @@ class TeacherProvider extends ChangeNotifier {
   final Dio _dio;
 
   List<Teacher> _teachers = [];
+  List<Teacher> _allTeachers = [];
   Teacher? _selectedTeacher;
   List<TeacherRating> _ratings = [];
   TeacherRating? _myRating;
@@ -16,6 +17,10 @@ class TeacherProvider extends ChangeNotifier {
   String? _errorMessage;
 
   List<Teacher> get teachers => _teachers;
+
+  /// 完整教师列表缓存，供添加授课教师抽屉生成课程候选/重复校验用。
+  /// 不受首页搜索框 loadTeachers(query) 过滤影响。
+  List<Teacher> get allTeachers => _allTeachers;
   Teacher? get selectedTeacher => _selectedTeacher;
   List<TeacherRating> get ratings => _ratings;
   TeacherRating? get myRating => _myRating;
@@ -59,6 +64,23 @@ class TeacherProvider extends ChangeNotifier {
     }
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// 加载完整教师列表到 allTeachers 缓存（不带搜索词）。
+  /// 仅用于添加授课教师抽屉的课程候选/重复校验，不影响 teachers 展示列表，不触发 UI 重建。
+  Future<void> loadAllTeachersForSuggestions() async {
+    try {
+      final resp = await _dio.get('/teachers');
+      if (resp.statusCode == 200) {
+        final seen = <int>{};
+        _allTeachers = (resp.data as List)
+            .map((j) => Teacher.fromJson(j))
+            .where((t) => seen.add(t.id))
+            .toList();
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+    }
   }
 
   /// 获取教师详情（含评价列表）

@@ -17,7 +17,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
   bool _hasSearched = false;
   String? _errorMessage;
   final _searchController = TextEditingController();
-  
+
   int? _totalUsers;
   int? _eduUsers;
   int? _otherUsers;
@@ -27,6 +27,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchStats();
+      _loadCandidates();
     });
   }
 
@@ -52,22 +53,22 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     super.dispose();
   }
 
-  Future<void> _searchCandidates() async {
-    final keyword = _searchController.text.trim();
-    if (keyword.isEmpty) return;
-    
+  Future<void> _loadCandidates({String? keyword}) async {
+    final q = keyword ?? _searchController.text.trim();
+
     setState(() {
       _isLoading = true;
-      _hasSearched = true;
+      _hasSearched = q.isNotEmpty;
       _errorMessage = null;
     });
-    
+
     try {
       final dio = context.read<AuthProvider>().dio;
       final res = await dio.get(
         '/admin/candidates',
-        queryParameters: {'q': keyword},
+        queryParameters: q.isEmpty ? null : {'q': q},
       );
+
       if (mounted) {
         setState(() {
           _candidates = (res.data as List?) ?? [];
@@ -82,6 +83,10 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         });
       }
     }
+  }
+
+  Future<void> _searchCandidates() async {
+    await _loadCandidates(keyword: _searchController.text.trim());
   }
 
   Future<void> _inviteAdmin(dynamic candidate) async {
@@ -108,7 +113,8 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
           backgroundColor: Colors.green,
         ),
       );
-      setState(() => _candidates.removeWhere((c) => c['id'] == candidate['id']));
+      setState(
+          () => _candidates.removeWhere((c) => c['id'] == candidate['id']));
     } on DioException catch (e) {
       if (!mounted) return;
       String msg = '邀请失败';
@@ -218,16 +224,27 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
               opacity: isDark ? 0.1 : 0.4,
               child: TextField(
                 controller: _searchController,
+                onChanged: (_) => setState(() {}),
                 onSubmitted: (_) => _searchCandidates(),
                 decoration: InputDecoration(
                   icon: const Icon(Icons.search, color: Colors.grey),
                   hintText: '输入学号或昵称搜索可邀请为管理员的普通用户',
                   hintStyle: const TextStyle(fontSize: 13),
                   border: InputBorder.none,
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.arrow_forward, color: Colors.blue),
-                    onPressed: _searchCandidates,
-                  ),
+                  suffixIcon: _searchController.text.trim().isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded,
+                              color: Colors.grey),
+                          onPressed: () {
+                            _searchController.clear();
+                            _loadCandidates();
+                          },
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.arrow_forward,
+                              color: Colors.blue),
+                          onPressed: _searchCandidates,
+                        ),
                 ),
               ),
             ),
@@ -242,10 +259,11 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                             child: Padding(
                               padding: const EdgeInsets.all(32),
                               child: Text(
-                                _hasSearched
-                                    ? '未找到候选人'
-                                    : '请输入关键词搜索',
-                                style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
+                                _hasSearched ? '未找到候选人' : '暂无符合条件的候选人',
+                                style: TextStyle(
+                                    color: isDark
+                                        ? Colors.white54
+                                        : Colors.black54),
                               ),
                             ),
                           )
@@ -257,10 +275,12 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 10),
                                 color: isDark ? Colors.grey[850] : Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                                 child: ListTile(
                                   leading: CircleAvatar(
-                                    backgroundImage: candidate['avatar_url'] != null
+                                    backgroundImage: candidate['avatar_url'] !=
+                                            null
                                         ? NetworkImage(candidate['avatar_url'])
                                         : null,
                                     child: candidate['avatar_url'] == null
@@ -268,7 +288,8 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                                         : null,
                                   ),
                                   title: Text(candidate['nickname'] ?? '未知用户'),
-                                  subtitle: Text('学号: ${candidate['student_id'] ?? '未知'}'),
+                                  subtitle: Text(
+                                      '学号: ${candidate['student_id'] ?? '未知'}'),
                                   trailing: FilledButton.tonal(
                                     onPressed: () => _inviteAdmin(candidate),
                                     child: const Text('邀请'),

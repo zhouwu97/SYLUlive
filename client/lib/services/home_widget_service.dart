@@ -34,7 +34,8 @@ class HomeWidgetService {
           return false;
         }
         return true;
-      }).toList()..sort((a, b) => a.startSection.compareTo(b.startSection));
+      }).toList()
+        ..sort((a, b) => a.startSection.compareTo(b.startSection));
 
       // 上课时间表
       const starts = [

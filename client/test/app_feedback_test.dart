@@ -18,4 +18,21 @@ void main() {
     expect(message, contains('Edu API'));
     expect(message, isNot('fallback'));
   });
+
+  test('handles Dio transform timeout as a service processing timeout', () {
+    final error = DioException(
+      requestOptions: RequestOptions(path: '/test'),
+      type: DioExceptionType.transformTimeout,
+    );
+
+    final message = AppFeedback.dioErrorMessage(
+      error,
+      serviceName: 'Edu API',
+      fallback: 'fallback',
+    );
+
+    expect(message, contains('Edu API'));
+    expect(message, contains('响应处理超时'));
+    expect(message, isNot('fallback'));
+  });
 }

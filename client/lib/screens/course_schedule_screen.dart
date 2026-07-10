@@ -22,6 +22,12 @@ import 'edu_screen.dart';
 import 'login_screen.dart';
 import '../services/home_widget_service.dart';
 import '../models/course_term.dart';
+import '../widgets/course/course_empty_state_card.dart';
+import '../widgets/course/course_action_menu.dart';
+import '../widgets/course/course_import_sheet.dart';
+import '../widgets/course/course_term_switch_sheet.dart';
+import '../widgets/course/course_preview_sheet.dart';
+import '../widgets/campus/campus_theme.dart';
 
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
@@ -116,6 +122,8 @@ class CourseScheduleScreen extends StatefulWidget {
 
 class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   late DateTime _weekStart;
+  late DateTime _weekBaseStart;
+  late final PageController _weekPageController;
   bool _didLoad = false;
   bool _initializing = true;
   bool _hasCache = false;
@@ -129,16 +137,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _courseReminderBusy = false;
   int _scheduledReminderCount = 0;
   bool _isFetchingCourses = false;
+  bool _isImportingCourses = false;
   CourseBackgroundKeepAliveStatus _backgroundKeepAliveStatus =
       const CourseBackgroundKeepAliveStatus.unsupported();
   bool _backgroundKeepAliveBusy = false;
   static const Duration _courseFetchTimeout = Duration(seconds: 25);
 
-  // 左右滑动切周
-  late PageController _weekPageController;
-  Offset? _weekSwipeStart;
-  DateTime? _weekSwipeStartTime;
-  int? _weekSwipePointer;
+  // 课程卡片层局部跟手切周
+  static const int _weekCenterPage = 10000;
+  int? _weekDragPointer;
+  Offset? _weekDragStartGlobal;
+  DateTime? _weekDragStartTime;
+  double? _weekDragStartPixels;
+  double? _weekDragStartPage;
+  bool _weekDragAccepted = false;
+  int _weekSettleToken = 0;
 
   static DateTime _mondayOf(DateTime d) {
     return DateTime(
@@ -156,7 +169,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final now = DateTime.now();
       final end = start.add(Duration(days: sc.currentTerm.maxWeek * 7));
       if (now.isBefore(start)) return start;
-      if (now.isAfter(end)) return start.add(Duration(days: (sc.currentTerm.maxWeek - 1) * 7));
+      if (now.isAfter(end))
+        return start.add(Duration(days: (sc.currentTerm.maxWeek - 1) * 7));
       return _mondayOf(now);
     }
     return _mondayOf(DateTime.now());
@@ -166,7 +180,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   void initState() {
     super.initState();
     _weekStart = _mondayOf(DateTime.now());
-    _weekPageController = PageController(initialPage: 500);
+    _weekBaseStart = _weekStart;
+    _weekPageController = PageController(initialPage: _weekCenterPage);
     _loadSettings();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -191,6 +206,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
+    if (_isFetchingCourses || _isImportingCourses) return;
     if (_didLoad) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
@@ -227,9 +243,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     try {
       // 未登录不请求
       if (!context.read<AuthProvider>().isLoggedIn) return;
-      await sc.loadCourses(forceRefresh: true);
       await _syncCourseReminders(sc);
-      // 新数据自动覆盖旧缓存
     } catch (_) {}
   }
 
@@ -264,59 +278,148 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     });
   }
 
-  // PageView 滑动切换周
-  void _onWeekPageChanged(int index) {
-    final sc = context.read<CourseScheduleProvider>();
-    final anchor = _pageAnchorDate(sc);
-    final targetMonday = anchor.add(Duration(days: (index - 500) * 7));
-    if (mounted) setState(() => _weekStart = targetMonday);
+  DateTime _weekStartForPage(int page) {
+    return _weekBaseStart.add(
+      Duration(days: (page - _weekCenterPage) * 7),
+    );
+  }
+
+  bool _isCourseWeekSwipeArea(Offset globalPosition) {
+    final height = MediaQuery.sizeOf(context).height;
+    if (height <= 0) return false;
+    return isUpperContentSwipeStart(globalPosition.dy, height);
+  }
+
+  bool _canDragWeek() {
+    return !_isFetchingCourses && !_isImportingCourses && !_initializing;
+  }
+
+  void _resetWeekPager(DateTime anchor) {
+    _weekBaseStart = anchor;
+    _weekStart = anchor;
+    _weekDragPointer = null;
+    _weekDragStartGlobal = null;
+    _weekDragStartTime = null;
+    _weekDragStartPixels = null;
+    _weekDragStartPage = null;
+    _weekDragAccepted = false;
+    _weekSettleToken++;
+    if (_weekPageController.hasClients) {
+      _weekPageController.jumpToPage(_weekCenterPage);
+    }
   }
 
   void _handleWeekPointerDown(PointerDownEvent event) {
-    if (_weekSwipePointer != null ||
-        !isUpperContentSwipeStart(
-          event.position.dy,
-          MediaQuery.sizeOf(context).height,
-        )) {
+    if (_weekDragPointer != null ||
+        !_canDragWeek() ||
+        !_isCourseWeekSwipeArea(event.position) ||
+        !_weekPageController.hasClients) {
       return;
     }
-    _weekSwipePointer = event.pointer;
-    _weekSwipeStart = event.position;
-    _weekSwipeStartTime = DateTime.now();
+    _weekDragPointer = event.pointer;
+    _weekDragStartGlobal = event.position;
+    _weekDragStartTime = DateTime.now();
+    _weekDragStartPixels = _weekPageController.position.pixels;
+    _weekDragStartPage = _weekPageController.page ?? _weekCenterPage.toDouble();
+    _weekDragAccepted = false;
+  }
+
+  void _handleWeekPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _weekDragPointer ||
+        _weekDragStartGlobal == null ||
+        _weekDragStartPixels == null ||
+        !_weekPageController.hasClients) {
+      return;
+    }
+
+    final totalDelta = event.position - _weekDragStartGlobal!;
+    if (!_weekDragAccepted) {
+      final absDx = totalDelta.dx.abs();
+      final absDy = totalDelta.dy.abs();
+      if (absDx < 8 && absDy < 8) return;
+      if (absDx <= absDy * 1.2) {
+        _resetWeekDragState();
+        return;
+      }
+      _weekDragAccepted = true;
+    }
+
+    final position = _weekPageController.position;
+    final nextPixels = (position.pixels - event.delta.dx)
+        .clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        )
+        .toDouble();
+    position.jumpTo(nextPixels);
   }
 
   void _handleWeekPointerUp(PointerUpEvent event) {
-    if (event.pointer != _weekSwipePointer ||
-        _weekSwipeStart == null ||
-        _weekSwipeStartTime == null) {
+    if (event.pointer != _weekDragPointer) return;
+    if (!_weekDragAccepted ||
+        _weekDragStartGlobal == null ||
+        _weekDragStartTime == null ||
+        !_weekPageController.hasClients) {
+      _resetWeekDragState();
       return;
     }
-    final direction = horizontalSwipeDirection(
-      start: _weekSwipeStart!,
-      end: event.position,
-      elapsed: DateTime.now().difference(_weekSwipeStartTime!),
-    );
-    _resetWeekSwipe();
-    if (direction == 0 || !_weekPageController.hasClients) return;
 
-    final currentPage = _weekPageController.page?.round() ?? 500;
-    _weekPageController.animateToPage(
-      currentPage + direction,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
+    final page = _weekPageController.page ?? _weekCenterPage.toDouble();
+    final startPage = (_weekDragStartPage ?? page).round();
+    final elapsed = DateTime.now().difference(_weekDragStartTime!);
+    final seconds =
+        elapsed.inMilliseconds <= 0 ? 0.001 : elapsed.inMilliseconds / 1000.0;
+    final totalDx = event.position.dx - _weekDragStartGlobal!.dx;
+    final velocity = totalDx / seconds;
+    final pageDelta = page - startPage;
+    var targetPage = startPage;
+    if (velocity < -360) {
+      targetPage = page.floor() + 1;
+    } else if (velocity > 360) {
+      targetPage = page.ceil() - 1;
+    } else if (pageDelta.abs() >= 0.18) {
+      targetPage = startPage + pageDelta.sign.toInt();
+    } else if (pageDelta.abs() >= 0.5) {
+      targetPage = page.round();
+    }
+
+    _settleWeekPage(targetPage);
   }
 
   void _handleWeekPointerCancel(PointerCancelEvent event) {
-    if (event.pointer == _weekSwipePointer) {
-      _resetWeekSwipe();
+    if (event.pointer != _weekDragPointer) return;
+    if (!_weekPageController.hasClients || !_weekDragAccepted) {
+      _resetWeekDragState();
+      return;
     }
+    final page = _weekPageController.page ?? _weekCenterPage.toDouble();
+    _settleWeekPage(page.round());
   }
 
-  void _resetWeekSwipe() {
-    _weekSwipePointer = null;
-    _weekSwipeStart = null;
-    _weekSwipeStartTime = null;
+  void _settleWeekPage(int targetPage) {
+    final settleToken = ++_weekSettleToken;
+    _weekPageController
+        .animateToPage(
+      targetPage,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    )
+        .then((_) {
+      if (!mounted || settleToken != _weekSettleToken) return;
+      setState(() {
+        _weekStart = _weekStartForPage(targetPage);
+      });
+    });
+    _resetWeekDragState();
+  }
+
+  void _resetWeekDragState() {
+    _weekDragPointer = null;
+    _weekDragStartGlobal = null;
+    _weekDragStartTime = null;
+    _weekDragStartPixels = null;
+    _weekDragStartPage = null;
+    _weekDragAccepted = false;
   }
 
   @override
@@ -342,7 +445,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
         body: SafeArea(
           bottom: false,
           child: Consumer<AuthProvider>(
@@ -355,15 +458,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   _autoLoad(edu, sc);
 
                   // 当学期切换时重置视图
-                  if (sc.currentTerm.id != _lastTermId && sc.currentTerm.startDate != null) {
+                  if (sc.currentTerm.id != _lastTermId) {
                     _lastTermId = sc.currentTerm.id;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_weekPageController.hasClients) {
-                        _weekPageController.jumpToPage(500);
-                      }
                       if (mounted) {
                         setState(() {
-                          _weekStart = _pageAnchorDate(sc);
+                          _resetWeekPager(_pageAnchorDate(sc));
                         });
                       }
                     });
@@ -379,45 +479,32 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     return _buildBindView(context, edu, sc, isDark);
                   }
 
-                  // 无缓存时显示引导
-                  if (!_hasCache && sc.courses.isEmpty) {
-                    return _buildNoCacheView(context, isDark);
+                  final hasAnyCourses = sc.courses.isNotEmpty;
+                  final hasSemesterStart = sc.semesterStart != null;
+
+                  if (!hasAnyCourses) {
+                    return Column(
+                      children: [
+                        _buildDateHeader(sc),
+                        Expanded(
+                          child: _buildNoScheduleState(context, isDark),
+                        ),
+                      ],
+                    );
                   }
 
                   final mainContent = Column(
                     children: [
                       _buildDateHeader(sc),
+                      if (!hasSemesterStart)
+                        _buildSemesterStartHint(context, sc, isDark),
                       Expanded(
-                        child: sc.courses.isEmpty
-                            ? _buildEmptyView(context, isDark)
-                            : Listener(
-                                onPointerDown: _handleWeekPointerDown,
-                                onPointerUp: _handleWeekPointerUp,
-                                onPointerCancel: _handleWeekPointerCancel,
-                                child: PageView.builder(
-                                  controller: _weekPageController,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  onPageChanged: _onWeekPageChanged,
-                                  itemBuilder: (_, index) {
-                                    final anchor = _pageAnchorDate(sc);
-                                    final targetMonday = anchor.add(
-                                      Duration(days: (index - 500) * 7),
-                                    );
-                                    return SingleChildScrollView(
-                                      padding: EdgeInsets.only(
-                                        bottom: MediaQuery.of(
-                                              context,
-                                            ).padding.bottom +
-                                            100,
-                                      ),
-                                      child: _buildCourseGridForWeek(
-                                        sc,
-                                        targetMonday,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
+                        child: SingleChildScrollView(
+                          padding: EdgeInsets.only(
+                            bottom: MediaQuery.of(context).padding.bottom + 100,
+                          ),
+                          child: _buildCourseGrid(sc),
+                        ),
                       ),
                     ],
                   );
@@ -671,133 +758,27 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  void _showTermPicker(BuildContext context, CourseScheduleProvider sc) {
-    final now = DateTime.now();
-    int currentYear = now.year;
-    
-    // 生成从当前年份往前推 4 年，往后推 1 年的学期列表
-    final terms = <CourseTerm>[];
-    for (int y = currentYear - 4; y <= currentYear + 1; y++) {
-      terms.add(CourseTerm(
-        id: '${y}_3',
-        year: '$y',
-        semester: 3,
-        title: '$y-${y+1} 第一学期',
-      ));
-      terms.add(CourseTerm(
-        id: '${y}_12',
-        year: '$y',
-        semester: 12,
-        title: '$y-${y+1} 第二学期',
-      ));
-    }
-    
-    // 逆序排列，让最新的在上面
-    terms.sort((a, b) {
-      if (a.year != b.year) return b.year.compareTo(a.year);
-      return b.semester.compareTo(a.semester);
-    });
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: Row(
-                  children: [
-                    Text(
-                      '选择学期',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: terms.length,
-                  itemBuilder: (context, index) {
-                    final term = terms[index];
-                    final isSelected = sc.currentTerm.id == term.id;
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                      title: Text(
-                        term.title,
-                        style: TextStyle(
-                          color: isSelected 
-                              ? Theme.of(context).primaryColor
-                              : (isDark ? Colors.white70 : Colors.black87),
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                      trailing: isSelected 
-                          ? Icon(Icons.check, color: Theme.of(context).primaryColor)
-                          : null,
-                      onTap: () {
-                        Navigator.pop(context);
-                        if (!isSelected) {
-                          sc.selectTerm(term.year, term.semester);
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   // ====== 顶部表头 ======
   Widget _buildDateHeader(CourseScheduleProvider sc) {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
     final academicWeek = sc.getAcademicWeek(_weekStart);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cleanLightMode =
-        context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
-    final primaryColor = Theme.of(context).primaryColor;
-    final titleColor = cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
-    final secondaryColor =
-        cleanLightMode ? const Color(0xFF8A8F99) : Colors.white70;
-    final disabledIconColor =
-        cleanLightMode ? const Color(0xFF9CA3AF) : Colors.white54;
+    final primaryColor = CampusTheme.primary;
+    final titleColor = isDark ? Colors.white : CampusTheme.text;
+    final secondaryColor = CampusTheme.subText;
 
     return Container(
       color: Colors.transparent,
+      padding: EdgeInsets.only(top: 8),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 标题栏：大字号周次 + 日期 + 右侧图标
+          // 标题栏无背景卡片，紧凑布局
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 16, 4),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
@@ -806,93 +787,68 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       GestureDetector(
                         onTap: () => _pickSemesterStart(context),
                         child: Text(
-                          academicWeek != null ? '第 $academicWeek 周' : '设置周数',
+                          academicWeek != null ? '第 $academicWeek 周' : '未设置开学周',
                           style: TextStyle(
                             color: titleColor,
-                            fontSize: 26,
+                            fontSize: 28,
                             fontWeight: FontWeight.w900,
-                            height: 1.1,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 6),
                       GestureDetector(
-                        onTap: () => _showTermPicker(context, sc),
+                        onTap: () => _openTermSwitchSheet(context),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              sc.currentTerm.title,
+                              '${sc.currentTerm.title}  ${_weekStart.month}/${_weekStart.day} - ${_weekStart.add(const Duration(days: 6)).month}/${_weekStart.add(const Duration(days: 6)).day}',
                               style: TextStyle(
                                 color: secondaryColor,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
                               ),
-                            ),
-                            Icon(
-                              Icons.arrow_drop_down,
-                              size: 16,
-                              color: secondaryColor,
                             ),
                             const SizedBox(width: 4),
-                            Text(
-                              '${_weekStart.month}/${_weekStart.day}',
-                              style: TextStyle(
-                                color: secondaryColor.withOpacity(0.7),
-                                fontSize: 13,
-                              ),
-                            ),
+                            Icon(Icons.arrow_drop_down,
+                                size: 16, color: secondaryColor),
                           ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: _isFetchingCourses
-                          ? SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: titleColor,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.collections_bookmark_outlined,
-                              size: 22,
-                            ),
-                      color: titleColor,
-                      disabledColor: disabledIconColor,
-                      onPressed: _isFetchingCourses
-                          ? null
-                          : () => _showArchiveSheet(context, sc),
-                      tooltip: '课表存档',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.share_outlined, size: 22),
-                      color: titleColor,
-                      onPressed: () => _shareSchedule(sc),
-                      tooltip: '分享',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.settings_outlined, size: 22),
-                      color: titleColor,
-                      onPressed: () => _openCourseSettings(context, sc),
-                      tooltip: '设置',
-                    ),
-                  ],
+                CourseActionMenu(
+                  isDark: isDark,
+                  onSelected: (action) {
+                    switch (action) {
+                      case CourseMenuAction.syncFromEdu:
+                        _openCoursePullSheet(context);
+                        break;
+                      case CourseMenuAction.switchTerm:
+                        _openTermSwitchSheet(context);
+                        break;
+
+                      case CourseMenuAction.archives:
+                        _showArchiveSheet(context, sc);
+                        break;
+                      case CourseMenuAction.share:
+                        _shareSchedule(sc);
+                        break;
+                      case CourseMenuAction.settings:
+                        _openCourseSettings(context, sc);
+                        break;
+                    }
+                  },
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           // 星期表头
           Row(
             children: [
-              SizedBox(width: timeColumnWidth),
+              const SizedBox(width: timeColumnWidth),
               ...List.generate(7, (i) {
                 final d = _weekStart.add(Duration(days: i));
                 final isToday = d == todayDate;
@@ -902,23 +858,19 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       Text(
                         _wd[i],
                         style: TextStyle(
-                          color: isToday && cleanLightMode
-                              ? primaryColor
-                              : titleColor,
+                          color: isToday ? primaryColor : titleColor,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 1),
+                      const SizedBox(height: 4),
                       Text(
-                        _md(d),
+                        '${d.month}/${d.day}',
                         style: TextStyle(
-                          color: isToday && cleanLightMode
-                              ? primaryColor
-                              : secondaryColor,
+                          color: isToday ? primaryColor : secondaryColor,
                           fontSize: 12,
                           fontWeight:
-                              isToday ? FontWeight.w600 : FontWeight.w400,
+                              isToday ? FontWeight.w600 : FontWeight.w500,
                         ),
                       ),
                     ],
@@ -927,6 +879,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               }),
             ],
           ),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -934,116 +887,24 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 未登录引导 ======
   Widget _buildLoginPrompt(BuildContext context, bool isDark) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: GlassContainer(
-          padding: const EdgeInsets.all(32),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.account_circle,
-                size: 72,
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.7),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                '请先登录',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '登录后可绑定教务系统，导入课表',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    PageRouteBuilder(
-                      opaque: false,
-                      pageBuilder: (_, __, ___) => LoginScreen(),
-                    ),
-                  ),
-                  icon: const Icon(Icons.login),
-                  label: const Text('去登录', style: TextStyle(fontSize: 16)),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return CourseEmptyStateCard(
+      type: CourseEmptyStateType.unlogged,
+      isDark: isDark,
+      onMainAction: () => Navigator.pushNamed(context, '/login'),
     );
   }
 
-  // ====== 绑定视图 ======
   Widget _buildBindView(
     BuildContext context,
     EduProvider edu,
     CourseScheduleProvider sc,
     bool isDark,
   ) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: GlassContainer(
-          padding: const EdgeInsets.all(32),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.school,
-                size: 72,
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.7),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                '绑定教务账号',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '绑定后可查看课表、成绩等信息',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _showBindDialog(context, edu, sc),
-                  icon: const Icon(Icons.link),
-                  label: const Text('立即绑定', style: TextStyle(fontSize: 16)),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return CourseEmptyStateCard(
+      type: CourseEmptyStateType.unbound,
+      isDark: isDark,
+      onMainAction: () => _showBindDialog(context, edu, sc),
+      onSecondaryAction: () => _openEduManage(context),
     );
   }
 
@@ -1145,51 +1006,74 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   // ====== 空状态视图 ======
-  Widget _buildEmptyView(BuildContext context, bool isDark) {
-    debugPrint(
-      'Schedule UI: Building _buildEmptyView (暂无课表数据) at ${DateTime.now()}',
-    );
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: GlassContainer(
-          padding: const EdgeInsets.all(32),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.event_busy,
-                size: 64,
-                color: isDark ? Colors.grey[600] : Colors.grey[400],
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '暂无课表数据',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '请先到教务管理获取课表',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () => _openEduManage(context),
-                icon: const Icon(Icons.download),
-                label: const Text('获取课表'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-            ],
+  Widget _buildNoScheduleState(BuildContext context, bool isDark) {
+    final sc = context.watch<CourseScheduleProvider>();
+    final isCurrentTerm = sc.currentTerm.isCurrent;
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        22,
+        20,
+        24 + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(
+        children: [
+          CourseEmptyStateCard(
+            type: isCurrentTerm
+                ? CourseEmptyStateType.noCache
+                : CourseEmptyStateType.currentTermNoCache,
+            isDark: isDark,
+            recommendedTerm:
+                isCurrentTerm ? sc.currentTerm : CourseTerm.inferCurrentTerm(),
+            onMainAction: () => _openCoursePullSheet(context),
+            onSecondaryAction: () => _openTermSwitchSheet(context),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSemesterStartHint(
+    BuildContext context,
+    CourseScheduleProvider sc,
+    bool isDark,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: CampusTheme.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: CampusTheme.primary.withValues(alpha: 0.14),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              size: 18,
+              color: CampusTheme.primary,
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                '已导入课表，请设置开学第一周后按教学周准确显示',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.35,
+                  color: CampusTheme.subText,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => _pickSemesterStart(context),
+              child: const Text('设置'),
+            ),
+          ],
         ),
       ),
     );
@@ -1216,78 +1100,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
-  /// 无缓存时显示引导（用户刚注册或首次使用）
-  Widget _buildNoCacheView(BuildContext context, bool isDark) {
-    debugPrint(
-      'Schedule UI: Building _buildNoCacheView (首次使用) at ${DateTime.now()}',
-    );
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: GlassContainer(
-          padding: const EdgeInsets.all(32),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.school_outlined,
-                size: 64,
-                color: isDark ? Colors.grey[600] : Colors.grey[400],
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '首次使用',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '检测到您还没有课表，请前往教务导入课表',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  await Navigator.of(
-                    context,
-                  ).push(MaterialPageRoute(builder: (_) => const EduScreen()));
-                  // 返回后强制刷新课表
-                  if (mounted) {
-                    final sc = context.read<CourseScheduleProvider>();
-                    if (mounted)
-                      setState(() {
-                        _didLoad = true;
-                        _initializing = sc.courses.isEmpty;
-                      });
-                    await sc.loadCachedCoursesIfAvailable();
-                    await _syncCourseReminders(sc);
-                    if (mounted)
-                      setState(() {
-                        _hasCache = sc.courses.isNotEmpty;
-                        _initializing = false;
-                      });
-                  }
-                },
-                icon: const Icon(Icons.school),
-                label: const Text('去教务导入课表'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   /// 从教务系统重新获取课表。
   Future<void> _fetchCourses(BuildContext context) async {
     if (_isFetchingCourses) return;
@@ -1299,6 +1111,29 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       messenger.showSnackBar(const SnackBar(content: Text('请先绑定教务账号')));
       return;
     }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('从教务刷新'),
+        content: const Text('将从教务系统重新拉取当前学期课表，并覆盖当前教务课表数据。自定义课程会保留。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child:
+                const Text('取消', style: TextStyle(color: CampusTheme.subText)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: CampusTheme.primary,
+                foregroundColor: Colors.white),
+            child: const Text('刷新'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
 
     if (mounted)
       setState(() {
@@ -1560,6 +1395,154 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
+  Future<void> _openCoursePullSheet(BuildContext context) async {
+    if (_isFetchingCourses || _isImportingCourses) return;
+
+    final edu = context.read<EduProvider>();
+    final sc = context.read<CourseScheduleProvider>();
+
+    if (!edu.isBound) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先绑定教务账号')),
+      );
+      return;
+    }
+
+    final result = await CourseImportSheet.show(
+      context,
+      eduProvider: edu,
+      initialYear: sc.currentTerm.year,
+      initialSemester: sc.currentTerm.semester,
+    );
+
+    if (result == null || !mounted) return;
+
+    final confirm = await CoursePreviewSheet.show(
+      context,
+      courses: result.courses,
+      year: result.year,
+      semester: result.semester,
+      eduProvider: edu,
+    );
+
+    if (confirm != true || !mounted) return;
+
+    final oldTerm = sc.currentTerm;
+    final sameTerm =
+        oldTerm.year == result.year && oldTerm.semester == result.semester;
+
+    final targetTerm =
+        sameTerm ? oldTerm : sc.buildTerm(result.year, result.semester);
+
+    setState(() {
+      _isFetchingCourses = true;
+      _isImportingCourses = true;
+      _didLoad = true;
+      _initializing = false;
+    });
+
+    try {
+      final importedCount = await sc.applyFetchedCoursesForTerm(
+        term: targetTerm,
+        rawCourses: result.courses,
+        resetHidden: true,
+      );
+
+      if (!mounted) return;
+
+      if (importedCount == 0) {
+        final rawCount = result.courses.length;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              rawCount == 0 ? '该学期没有可导入的课程，请确认学期是否正确' : '课表已获取但解析失败，请检查课程字段格式',
+            ),
+          ),
+        );
+        return;
+      }
+
+      unawaited(
+        edu
+            .syncCourses(result.year, result.semester, result.courses)
+            .catchError(
+          (Object error, StackTrace stackTrace) {
+            debugPrint('课表后台同步异常: $error\n$stackTrace');
+            return false;
+          },
+        ),
+      );
+
+      await _syncCourseReminders(sc);
+
+      if (!mounted) return;
+
+      setState(() {
+        _resetWeekPager(_pageAnchorDate(sc));
+        _initializing = false;
+        _didLoad = true;
+        _hasCache = sc.courses.isNotEmpty;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            sameTerm ? '当前学期课表已刷新' : '已拉取并切换到 ${sc.currentTerm.title}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('课表拉取失败：$e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetchingCourses = false;
+          _isImportingCourses = false;
+          _initializing = false;
+          _hasCache = sc.courses.isNotEmpty;
+        });
+      }
+    }
+  }
+
+  Future<void> _openTermSwitchSheet(BuildContext context) async {
+    if (_isFetchingCourses || _isImportingCourses) return;
+
+    final edu = context.read<EduProvider>();
+    final sc = context.read<CourseScheduleProvider>();
+
+    final term = await CourseTermSwitchSheet.show(
+      context,
+      currentTerm: sc.currentTerm,
+      enrollmentYear: edu.enrollmentYear,
+    );
+
+    if (term == null || !mounted) return;
+
+    setState(() {
+      _didLoad = true;
+      _initializing = false;
+    });
+
+    await sc.switchTerm(term, loadCache: true);
+
+    if (!mounted) return;
+
+    setState(() {
+      _resetWeekPager(_pageAnchorDate(sc));
+      _hasCache = sc.courses.isNotEmpty;
+      _initializing = false;
+      _didLoad = true;
+    });
+  }
+
+  Future<void> _openCourseImportSheet(BuildContext context) {
+    return _openCoursePullSheet(context);
+  }
+
   Future<void> _shareSchedule(CourseScheduleProvider sc) async {
     final text = _buildScheduleShareText(sc);
     if (text == null) {
@@ -1742,7 +1725,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           initialSnapshot: initialSnapshot,
           callbacks: CourseScheduleSettingsCallbacks(
             reloadSnapshot: () => _reloadCourseSettingsSnapshot(sc),
-            refreshCourses: () => _fetchCourses(context),
+            refreshCourses: () => _openCoursePullSheet(context),
             openArchive: () async {
               _showArchiveSheet(context, sc);
             },
@@ -4082,128 +4065,228 @@ $classFilterRule
     }
   }
 
-  // ====== 课程网格（指定某一周） ======
-  Widget _buildCourseGridForWeek(
-    CourseScheduleProvider sc,
-    DateTime weekStart,
-  ) {
+  Widget _buildWeekEmptyPlaceholder(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
+      child: Column(
+        children: [
+          Icon(
+            Icons.free_breakfast_rounded,
+            size: 42,
+            color: isDark ? Colors.white24 : const Color(0xFFCBD5D1),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '本周暂无课程',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white70 : CampusTheme.text,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '可以切换周次，或检查开学周设置是否正确',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: isDark ? Colors.white38 : CampusTheme.subText,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ====== 课程网格 ======
+  Widget _buildCourseGrid(CourseScheduleProvider sc) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wn = sc.getAcademicWeek(weekStart);
         final totalH = 12 * _slotHeight;
-        final isDark = Theme.of(context).brightness == Brightness.dark;
-        final cleanLightMode =
-            context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
-        final timeTextColor =
-            cleanLightMode ? const Color(0xFF6B7280) : const Color(0xFF888888);
-        final verticalLineColor = cleanLightMode
-            ? Colors.black.withValues(alpha: 0.06)
-            : Colors.white.withValues(alpha: 0.16);
-        final horizontalLineColor = cleanLightMode
-            ? Colors.black.withValues(alpha: 0.05)
-            : Colors.white.withValues(alpha: 0.2);
         // 在平板模式下，主课表区域不是全屏宽度，必须使用 LayoutBuilder 获取实际可用宽度
         final screenW = constraints.maxWidth;
         final exactW = (screenW - timeColumnWidth) / 7;
 
-        final allActive = <CourseBlock>[];
-        final allInactive = <CourseBlock>[];
-        // 先用活跃课程占据时间槽，非活跃课程只在槽位为空时才显示
-        final activeSlots = <String>{};
-        final inactiveSeen = <String>{};
+        return SizedBox(
+          height: totalH,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              RepaintBoundary(
+                child: _buildCourseGridChrome(exactW),
+              ),
+              Positioned(
+                left: timeColumnWidth,
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: RepaintBoundary(
+                  child: _buildScheduleWeekPager(sc, exactW, totalH),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
-        for (final c in sc.courses) {
-          final key = '${c.weekday}_${c.startSection}';
-          if (wn == null || c.weeks.isEmpty || c.weeks.contains(wn)) {
-            // 当前周课程：直接加入，优先级最高
-            if (!activeSlots.contains(key)) {
-              allActive.add(c);
-              activeSlots.add(key);
-            }
-          }
-        }
+  Widget _buildCourseGridChrome(double exactW) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cleanLightMode =
+        context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
+    final timeTextColor =
+        cleanLightMode ? const Color(0xFF6B7280) : const Color(0xFF888888);
+    final verticalLineColor = cleanLightMode
+        ? Colors.black.withValues(alpha: 0.06)
+        : Colors.white.withValues(alpha: 0.16);
+    final horizontalLineColor = cleanLightMode
+        ? Colors.black.withValues(alpha: 0.05)
+        : Colors.white.withValues(alpha: 0.2);
 
-        // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显示
-        // 已完全结课的课程（所有周数 < 当前周）不显示
-        for (final c in sc.courses) {
-          final key = '${c.weekday}_${c.startSection}';
-          if (wn != null && c.weeks.isNotEmpty && !c.weeks.contains(wn)) {
-            // 跳过已完全结课的课程
-            if (c.weeks.every((w) => w < wn)) continue;
-            if (!activeSlots.contains(key) && !inactiveSeen.contains(key)) {
-              allInactive.add(c);
-              inactiveSeen.add(key);
-            }
-          }
-        }
-
-        return SingleChildScrollView(
-          child: SizedBox(
-            height: totalH,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // 左侧时间轴
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: timeColumnWidth,
-                  child: Column(
-                    children: List.generate(
-                      12,
-                      (i) => Container(
-                        height: _slotHeight,
-                        alignment: Alignment.center,
-                        child: Text(
-                          '${i + 1}\n${_starts[i]}\n${_ends[i]}',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: timeTextColor,
-                            height: 1.3,
-                          ),
-                        ),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // 左侧时间轴
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: timeColumnWidth,
+          child: Column(
+            children: List.generate(
+              12,
+              (i) => Container(
+                height: _slotHeight,
+                alignment: Alignment.center,
+                child: Text(
+                  '${i + 1}\n${_starts[i]}\n${_ends[i]}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: timeTextColor,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // 网格线（7 天 × 12 节）
+        for (int d = 0; d < 7; d++)
+          Positioned(
+            left: timeColumnWidth + d * exactW,
+            top: 0,
+            bottom: 0,
+            width: exactW,
+            child: Column(
+              children: List.generate(
+                12,
+                (i) => Container(
+                  height: _slotHeight,
+                  decoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(
+                        color: verticalLineColor,
+                        width: 0.5,
+                      ),
+                      bottom: BorderSide(
+                        color: horizontalLineColor,
+                        width: 0.5,
                       ),
                     ),
                   ),
                 ),
-                // 网格线（7 天 × 12 节）
-                for (int d = 0; d < 7; d++)
-                  Positioned(
-                    left: timeColumnWidth + d * exactW,
-                    top: 0,
-                    bottom: 0,
-                    width: exactW,
-                    child: Column(
-                      children: List.generate(
-                        12,
-                        (i) => Container(
-                          height: _slotHeight,
-                          decoration: BoxDecoration(
-                            border: Border(
-                              left: BorderSide(
-                                color: verticalLineColor,
-                                width: 0.5,
-                              ),
-                              bottom: BorderSide(
-                                color: horizontalLineColor,
-                                width: 0.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                // 课程卡片（非本周在前，当前周在上层）
-                for (final c in allInactive) _buildCard(c, false, exactW, wn),
-                for (final c in allActive) _buildCard(c, true, exactW, wn),
-              ],
+              ),
             ),
           ),
-        );
-      },
+      ],
+    );
+  }
+
+  Widget _buildScheduleWeekPager(
+    CourseScheduleProvider sc,
+    double exactW,
+    double totalH,
+  ) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _handleWeekPointerDown,
+      onPointerMove: _handleWeekPointerMove,
+      onPointerUp: _handleWeekPointerUp,
+      onPointerCancel: _handleWeekPointerCancel,
+      child: PageView.builder(
+        controller: _weekPageController,
+        physics: const NeverScrollableScrollPhysics(),
+        itemBuilder: (context, page) {
+          final weekStart = _weekStartForPage(page);
+          return _buildCourseCardsOnly(sc, weekStart, exactW, totalH);
+        },
+      ),
+    );
+  }
+
+  Widget _buildCourseCardsOnly(
+    CourseScheduleProvider sc,
+    DateTime weekStart,
+    double exactW,
+    double totalH,
+  ) {
+    final wn = sc.getAcademicWeek(weekStart);
+    final allActive = <CourseBlock>[];
+    final allInactive = <CourseBlock>[];
+    // 先用活跃课程占据时间槽，非活跃课程只在槽位为空时才显示
+    final activeSlots = <String>{};
+    final inactiveSeen = <String>{};
+
+    for (final c in sc.courses) {
+      if (c.weekday < 1 || c.weekday > 7) continue;
+      final key = '${c.weekday}_${c.startSection}';
+      if (wn == null || c.weeks.isEmpty || c.weeks.contains(wn)) {
+        // 当前周课程或未设置开学周：直接加入，优先级最高
+        if (!activeSlots.contains(key)) {
+          allActive.add(c);
+          activeSlots.add(key);
+        }
+      }
+    }
+
+    // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显示
+    // 已完全结课的课程（所有周数 < 当前周）不显示
+    for (final c in sc.courses) {
+      if (c.weekday < 1 || c.weekday > 7) continue;
+      final key = '${c.weekday}_${c.startSection}';
+      if (wn != null && c.weeks.isNotEmpty && !c.weeks.contains(wn)) {
+        // 跳过已完全结课的课程
+        if (c.weeks.every((w) => w < wn)) continue;
+        if (!activeSlots.contains(key) && !inactiveSeen.contains(key)) {
+          allInactive.add(c);
+          inactiveSeen.add(key);
+        }
+      }
+    }
+
+    if (allActive.isEmpty && allInactive.isEmpty && sc.courses.isNotEmpty) {
+      return SizedBox(
+        height: totalH,
+        child: Center(
+          child: _buildWeekEmptyPlaceholder(context),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: totalH,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 课程卡片（非本周在前，当前周在上层）
+          for (final c in allInactive) _buildCard(c, false, exactW, wn),
+          for (final c in allActive) _buildCard(c, true, exactW, wn),
+        ],
+      ),
     );
   }
 
@@ -4231,7 +4314,7 @@ $classFilterRule
 
     return Positioned(
       key: ValueKey('${c.id}_${c.weekday}_${c.startSection}'),
-      left: timeColumnWidth + (c.weekday - 1) * exactW + 1.5,
+      left: (c.weekday - 1) * exactW + 1.5,
       width: exactW - 3,
       top: top,
       height: h,

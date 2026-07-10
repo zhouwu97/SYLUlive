@@ -26,6 +26,7 @@ class CompetitionEvent {
   final String title;
   final String summary;
   final CompetitionCategory? primaryCategory;
+  final List<String> tags;
   final String competitionLevel;
   final String schoolRecognitionStatus;
   final String schoolRecognitionGrade;
@@ -33,10 +34,22 @@ class CompetitionEvent {
   final int importanceScore;
   final String recommendationReason;
   final String organizer;
+  final String hostUnit;
+  final String targetAudience;
+  final List<String> eligibleEntryYears;
+  final List<String> eligibleColleges;
+  final List<String> eligibleMajors;
+  final String fitLevel;
+  final List<String> fitReasons;
+  final String participationType;
+  final int? teamSizeMin;
+  final int? teamSizeMax;
   final String registrationTimeText;
   final String eventTimeText;
+  final DateTime? registrationStart;
   final DateTime? registrationEnd;
   final DateTime? eventStart;
+  final DateTime? eventEnd;
   final String timePrecision;
   final String timeStatus;
   final String timeNote;
@@ -47,14 +60,18 @@ class CompetitionEvent {
   final bool isOnline;
   final String officialUrl;
   final String noticeUrl;
+  final List<String> attachmentUrls;
+  final String sourceNote;
   final String description;
   final String status;
+  final DateTime? updatedAt;
 
   CompetitionEvent({
     required this.id,
     required this.title,
     this.summary = '',
     this.primaryCategory,
+    this.tags = const [],
     this.competitionLevel = '',
     this.schoolRecognitionStatus = '',
     this.schoolRecognitionGrade = '',
@@ -62,10 +79,22 @@ class CompetitionEvent {
     this.importanceScore = 0,
     this.recommendationReason = '',
     this.organizer = '',
+    this.hostUnit = '',
+    this.targetAudience = '',
+    this.eligibleEntryYears = const [],
+    this.eligibleColleges = const [],
+    this.eligibleMajors = const [],
+    this.fitLevel = '',
+    this.fitReasons = const [],
+    this.participationType = '',
+    this.teamSizeMin,
+    this.teamSizeMax,
     this.registrationTimeText = '',
     this.eventTimeText = '',
+    this.registrationStart,
     this.registrationEnd,
     this.eventStart,
+    this.eventEnd,
     this.timePrecision = 'unknown',
     this.timeStatus = 'pending',
     this.timeNote = '',
@@ -76,8 +105,11 @@ class CompetitionEvent {
     this.isOnline = false,
     this.officialUrl = '',
     this.noticeUrl = '',
+    this.attachmentUrls = const [],
+    this.sourceNote = '',
     this.description = '',
     this.status = 'published',
+    this.updatedAt,
   });
 
   factory CompetitionEvent.fromJson(Map<String, dynamic> json) {
@@ -89,6 +121,7 @@ class CompetitionEvent {
       primaryCategory: json['primary_category'] != null
           ? CompetitionCategory.fromJson(json['primary_category'])
           : null,
+      tags: _stringList(json['tags']),
       competitionLevel: json['competition_level'] ?? '',
       schoolRecognitionStatus: json['school_recognition_status'] ?? '',
       schoolRecognitionGrade: json['school_recognition_grade'] ?? '',
@@ -96,10 +129,22 @@ class CompetitionEvent {
       importanceScore: json['importance_score'] ?? 0,
       recommendationReason: json['recommendation_reason'] ?? '',
       organizer: json['organizer'] ?? '',
+      hostUnit: json['host_unit'] ?? '',
+      targetAudience: json['target_audience'] ?? '',
+      eligibleEntryYears: _stringList(json['eligible_entry_years']),
+      eligibleColleges: _stringList(json['eligible_colleges']),
+      eligibleMajors: _stringList(json['eligible_majors']),
+      fitLevel: json['fit_level'] ?? '',
+      fitReasons: _stringList(json['fit_reasons']),
+      participationType: json['participation_type'] ?? '',
+      teamSizeMin: (json['team_size_min'] as num?)?.toInt(),
+      teamSizeMax: (json['team_size_max'] as num?)?.toInt(),
       registrationTimeText: json['registration_time_text'] ?? '',
       eventTimeText: json['event_time_text'] ?? '',
+      registrationStart: DateTime.tryParse(json['registration_start'] ?? ''),
       registrationEnd: DateTime.tryParse(json['registration_end'] ?? ''),
       eventStart: DateTime.tryParse(json['event_start'] ?? ''),
+      eventEnd: DateTime.tryParse(json['event_end'] ?? ''),
       timePrecision: json['time_precision'] ?? 'unknown',
       timeStatus: rawTimeStatus ?? 'pending',
       timeNote: json['time_note'] ?? '',
@@ -111,8 +156,11 @@ class CompetitionEvent {
       isOnline: json['is_online'] == true,
       officialUrl: json['official_url'] ?? '',
       noticeUrl: json['notice_url'] ?? '',
+      attachmentUrls: _stringList(json['attachment_urls']),
+      sourceNote: json['source_note'] ?? '',
       description: json['description'] ?? '',
       status: json['status'] ?? 'published',
+      updatedAt: DateTime.tryParse(json['updated_at'] ?? ''),
     );
   }
 
@@ -129,7 +177,7 @@ class CompetitionEvent {
       case 'historical':
         return '往年参考';
       default:
-        return '待通知';
+        return '时间待公布';
     }
   }
 
@@ -166,7 +214,7 @@ class CompetitionEvent {
     if (sortMonth >= 1 && sortMonth <= 12) {
       return '$sortMonth 月左右';
     }
-    return '时间待通知';
+    return '时间待公布';
   }
 
   Map<String, dynamic> toJson() {
@@ -181,6 +229,10 @@ class CompetitionEvent {
           'slug': primaryCategory!.slug,
           'icon': primaryCategory!.icon,
         },
+      if (primaryCategory != null) 'primary_category_id': primaryCategory!.id,
+      if (primaryCategory != null)
+        'primary_category_slug': primaryCategory!.slug,
+      'tags': tags,
       'competition_level': competitionLevel,
       'school_recognition_status': schoolRecognitionStatus,
       'school_recognition_grade': schoolRecognitionGrade,
@@ -188,10 +240,22 @@ class CompetitionEvent {
       'importance_score': importanceScore,
       'recommendation_reason': recommendationReason,
       'organizer': organizer,
+      'host_unit': hostUnit,
+      'target_audience': targetAudience,
+      'eligible_entry_years': eligibleEntryYears,
+      'eligible_colleges': eligibleColleges,
+      'eligible_majors': eligibleMajors,
+      'participation_type': participationType,
+      'team_size_min': teamSizeMin,
+      'team_size_max': teamSizeMax,
       'registration_time_text': registrationTimeText,
       'event_time_text': eventTimeText,
-      if (registrationEnd != null) 'registration_end': registrationEnd!.toIso8601String(),
+      if (registrationStart != null)
+        'registration_start': registrationStart!.toIso8601String(),
+      if (registrationEnd != null)
+        'registration_end': registrationEnd!.toIso8601String(),
       if (eventStart != null) 'event_start': eventStart!.toIso8601String(),
+      if (eventEnd != null) 'event_end': eventEnd!.toIso8601String(),
       'time_precision': timePrecision,
       'time_status': timeStatus,
       'time_note': timeNote,
@@ -201,8 +265,28 @@ class CompetitionEvent {
       'is_online': isOnline,
       'official_url': officialUrl,
       'notice_url': noticeUrl,
+      'attachment_urls': attachmentUrls,
       'description': description,
+      'source_note': sourceNote,
       'status': status,
+      if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
     };
   }
+}
+
+List<String> _stringList(dynamic raw) {
+  if (raw is List) {
+    return raw
+        .map((item) => '$item'.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+  if (raw is String && raw.trim().isNotEmpty) {
+    return raw
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+  return const [];
 }

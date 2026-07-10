@@ -54,7 +54,9 @@ class CampusNewsSectionHeader extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(
-                  color: isDark ? CampusTheme.primary.withValues(alpha: 0.2) : Colors.transparent,
+                  color: isDark
+                      ? CampusTheme.primary.withValues(alpha: 0.2)
+                      : Colors.transparent,
                 ),
               ),
               child: Row(
@@ -65,14 +67,17 @@ class CampusNewsSectionHeader extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: isDark ? CampusTheme.primaryLight : CampusTheme.primary,
+                      color: isDark
+                          ? CampusTheme.primaryLight
+                          : CampusTheme.primary,
                     ),
                   ),
                   const SizedBox(width: 4),
                   Icon(
                     Icons.chevron_right_rounded,
                     size: 16,
-                    color: isDark ? CampusTheme.primaryLight : CampusTheme.primary,
+                    color:
+                        isDark ? CampusTheme.primaryLight : CampusTheme.primary,
                   ),
                 ],
               ),

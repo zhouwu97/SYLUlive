@@ -40,11 +40,11 @@ class CourseBackgroundKeepAliveStatus {
   });
 
   const CourseBackgroundKeepAliveStatus.unsupported()
-    : supported = false,
-      isIgnoringBatteryOptimizations = true,
-      canScheduleExactAlarms = true,
-      manufacturer = '',
-      sdkInt = 0;
+      : supported = false,
+        isIgnoringBatteryOptimizations = true,
+        canScheduleExactAlarms = true,
+        manufacturer = '',
+        sdkInt = 0;
 
   bool get isReady =>
       !supported || (isIgnoringBatteryOptimizations && canScheduleExactAlarms);
@@ -120,8 +120,7 @@ class CourseReminderService {
     await _plugin.initialize(settings);
     await _plugin
         .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
+            AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(
           const AndroidNotificationChannel(
             _channelId,
@@ -241,9 +240,8 @@ class CourseReminderService {
       now,
       advanceMinutes,
     );
-    final pendingReminders = reminders
-        .take(_maxPendingNotifications)
-        .toList(growable: false);
+    final pendingReminders =
+        reminders.take(_maxPendingNotifications).toList(growable: false);
     final ids = <String>[];
 
     for (final reminder in pendingReminders) {
@@ -273,30 +271,26 @@ class CourseReminderService {
 
   Future<bool> requestPermissions() async {
     if (Platform.isAndroid) {
-      final androidPlugin = _plugin
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >();
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
 
       if (androidPlugin == null) return false;
 
       // 1. 请求普通通知权限
-      final bool? notiGranted = await androidPlugin
-          .requestNotificationsPermission();
+      final bool? notiGranted =
+          await androidPlugin.requestNotificationsPermission();
 
       // 2. 请求精确闹钟权限 (关键：必须捕获返回值)
-      final bool? alarmGranted = await androidPlugin
-          .requestExactAlarmsPermission();
+      final bool? alarmGranted =
+          await androidPlugin.requestExactAlarmsPermission();
 
       debugPrint('通知权限: $notiGranted, 精确闹钟权限: $alarmGranted');
 
       // 两者都为 true (或 null 代表该版本不需要) 才算成功
       return (notiGranted ?? false) && (alarmGranted ?? false);
     } else if (Platform.isIOS) {
-      final iosPlugin = _plugin
-          .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin
-          >();
+      final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
 
       final bool? iosGranted = await iosPlugin?.requestPermissions(
         alert: true,
@@ -328,7 +322,7 @@ class CourseReminderService {
   }
 
   Future<CourseBackgroundKeepAliveStatus>
-  requestBackgroundKeepAlivePermissions() async {
+      requestBackgroundKeepAlivePermissions() async {
     if (!_usesAndroidLiveReminders) {
       return const CourseBackgroundKeepAliveStatus.unsupported();
     }

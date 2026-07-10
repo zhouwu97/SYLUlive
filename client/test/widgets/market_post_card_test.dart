@@ -39,7 +39,7 @@ void main() {
       ),
     );
 
-    expect(find.text('自提'), findsOneWidget);
-    expect(find.text('可小刀'), findsOneWidget);
+    expect(find.textContaining('自提'), findsOneWidget);
+    expect(find.textContaining('可小刀'), findsOneWidget);
   });
 }

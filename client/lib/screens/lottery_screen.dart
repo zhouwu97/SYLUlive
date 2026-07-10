@@ -201,7 +201,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
     }
   }
 
-  BoxDecoration _softCardDecoration(bool isDark, {Color? border, bool warm = false}) {
+  BoxDecoration _softCardDecoration(bool isDark,
+      {Color? border, bool warm = false}) {
     return BoxDecoration(
       color: isDark ? const Color(0xFF1E2226) : Colors.white,
       borderRadius: BorderRadius.circular(20),
@@ -239,7 +240,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
         backgroundColor:
             isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
         appBar: AppBar(
-          title: const Text('官方抽奖', style: TextStyle(fontWeight: FontWeight.bold)),
+          title:
+              const Text('官方抽奖', style: TextStyle(fontWeight: FontWeight.bold)),
           elevation: 0,
           backgroundColor: Colors.transparent,
         ),
@@ -249,7 +251,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+                  color: isDark
+                      ? const Color(0xFF111315)
+                      : const Color(0xFFFFFAF4),
                 ),
               ),
             ),
@@ -385,7 +389,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
     );
   }
 
-  Widget _buildWinnerCard(LotteryEvent ev, Color primary, bool isDark, Color titleColor) {
+  Widget _buildWinnerCard(
+      LotteryEvent ev, Color primary, bool isDark, Color titleColor) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -408,16 +413,25 @@ class _LotteryScreenState extends State<LotteryScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Column(
                   children: [
-                    const Icon(Icons.hourglass_empty, color: Color(0xFFF59E0B), size: 32),
+                    const Icon(Icons.hourglass_empty,
+                        color: Color(0xFFF59E0B), size: 32),
                     const SizedBox(height: 12),
                     Text(
                       '暂未开奖',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1F2328)),
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              isDark ? Colors.white : const Color(0xFF1F2328)),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '开奖后会在这里公布中奖名单',
-                      style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : const Color(0xFF747B82)),
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: isDark
+                              ? Colors.white54
+                              : const Color(0xFF747B82)),
                     ),
                   ],
                 ),
@@ -431,7 +445,10 @@ class _LotteryScreenState extends State<LotteryScreen> {
                     Text('🎉 ', style: TextStyle(fontSize: 18)),
                     Text(
                       '恭喜中奖',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFF97316)),
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFF97316)),
                     ),
                   ],
                 ),
@@ -452,7 +469,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : const Color(0xFF1F2328),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF1F2328),
                         ),
                       ),
                     ),
@@ -461,8 +479,19 @@ class _LotteryScreenState extends State<LotteryScreen> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Text('中奖奖品：', style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : const Color(0xFF747B82))),
-                    Text(ev.prizeName, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? Colors.white : const Color(0xFF1F2328))),
+                    Text('中奖奖品：',
+                        style: TextStyle(
+                            fontSize: 14,
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF747B82))),
+                    Text(ev.prizeName,
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isDark
+                                ? Colors.white
+                                : const Color(0xFF1F2328))),
                   ],
                 )
               ],
@@ -479,7 +508,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
     );
   }
 
-  Widget _buildEventHero(LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
+  Widget _buildEventHero(
+      LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
     final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
     return Container(
@@ -513,7 +543,10 @@ class _LotteryScreenState extends State<LotteryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('本期抽奖', style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : const Color(0xFF747B82))),
+          Text('本期抽奖',
+              style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? Colors.white70 : const Color(0xFF747B82))),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -523,7 +556,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
                   color: primary.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(Icons.card_giftcard_rounded, color: primary, size: 28),
+                child:
+                    Icon(Icons.card_giftcard_rounded, color: primary, size: 28),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -546,7 +580,11 @@ class _LotteryScreenState extends State<LotteryScreen> {
                       children: [
                         Text(
                           event.title,
-                          style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : const Color(0xFF747B82)),
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: isDark
+                                  ? Colors.white70
+                                  : const Color(0xFF747B82)),
                         ),
                         const SizedBox(width: 8),
                         const Text('·', style: TextStyle(color: Colors.grey)),
@@ -556,7 +594,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
-                            color: isOngoing ? primary : const Color(0xFF7D8A97),
+                            color:
+                                isOngoing ? primary : const Color(0xFF7D8A97),
                           ),
                         ),
                       ],
@@ -610,7 +649,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
                       '当前参与',
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark ? Colors.white54 : const Color(0xFF747B82),
+                        color:
+                            isDark ? Colors.white54 : const Color(0xFF747B82),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -633,7 +673,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
                       isOngoing ? '距离开奖' : '开奖状态',
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark ? Colors.white54 : const Color(0xFF747B82),
+                        color:
+                            isDark ? Colors.white54 : const Color(0xFF747B82),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -661,7 +702,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: _softCardDecoration(isDark, border: success.withValues(alpha: 0.2)),
+      decoration:
+          _softCardDecoration(isDark, border: success.withValues(alpha: 0.2)),
       child: Row(
         children: [
           Container(

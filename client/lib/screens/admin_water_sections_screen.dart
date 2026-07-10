@@ -9,7 +9,8 @@ class AdminWaterSectionsScreen extends StatefulWidget {
   const AdminWaterSectionsScreen({super.key});
 
   @override
-  State<AdminWaterSectionsScreen> createState() => _AdminWaterSectionsScreenState();
+  State<AdminWaterSectionsScreen> createState() =>
+      _AdminWaterSectionsScreenState();
 }
 
 class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
@@ -61,13 +62,17 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 4),
-                        Text(section.subtitle.isNotEmpty ? section.subtitle : '暂无描述'),
+                        Text(section.subtitle.isNotEmpty
+                            ? section.subtitle
+                            : '暂无描述'),
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            _buildBadge('标签: ${section.tags.length}', Colors.blue, isDark),
+                            _buildBadge('标签: ${section.tags.length}',
+                                Colors.blue, isDark),
                             const SizedBox(width: 8),
-                            _buildBadge('敏感度: ${section.sensitiveLevel}', Colors.orange, isDark),
+                            _buildBadge('敏感度: ${section.sensitiveLevel}',
+                                Colors.orange, isDark),
                           ],
                         ),
                       ],
@@ -77,7 +82,8 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => WaterSectionManageScreen(section: section),
+                            builder: (_) =>
+                                WaterSectionManageScreen(section: section),
                           ),
                         );
                       },

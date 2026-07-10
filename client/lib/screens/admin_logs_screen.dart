@@ -70,14 +70,16 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
     return RefreshIndicator(
       onRefresh: _loadData,
       child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics()),
         padding: const EdgeInsets.all(12),
         itemCount: _logs.length,
         itemBuilder: (_, i) {
           final log = _logs[i];
           return Card(
             color: isDark ? Colors.grey[850] : Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             child: ListTile(
               title: Text(
                 '${log['admin_name'] ?? '?'}: ${log['action'] ?? ''}',

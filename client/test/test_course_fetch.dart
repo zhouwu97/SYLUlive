@@ -8,7 +8,8 @@ void main() async {
   print('--- 1. Python 教务服务健康检查 ---');
   try {
     final client = HttpClient();
-    final req = await client.getUrl(Uri.parse('http://101.42.27.44:8000/health'));
+    final req =
+        await client.getUrl(Uri.parse('http://101.42.27.44:8000/health'));
     req.headers.set('User-Agent', 'Dart/Test');
     final resp = await req.close();
     final body = await resp.transform(utf8.decoder).join();
@@ -31,11 +32,15 @@ void main() async {
     final body = await resp.transform(utf8.decoder).join();
     print('  状态: ${resp.statusCode}');
     print('  内容长度: ${body.length}');
-    print('  前200字符: ${body.substring(0, body.length < 200 ? body.length : 200)}');
-    
+    print(
+        '  前200字符: ${body.substring(0, body.length < 200 ? body.length : 200)}');
+
     if (body.contains('[REDACTED_NAME]') || body.contains('课表') || body.contains('kbcx')) {
       print('  ✅ 页面正常，未被 ban');
-    } else if (body.contains('禁止') || body.contains('拦截') || body.contains('block') || resp.statusCode == 403) {
+    } else if (body.contains('禁止') ||
+        body.contains('拦截') ||
+        body.contains('block') ||
+        resp.statusCode == 403) {
       print('  ❌ 可能被 ban/403');
     } else {
       print('  ⚠ 页面内容异常，可能需登录');
@@ -49,7 +54,8 @@ void main() async {
   print('\n--- 3. 调用 Python 教务 fetch 接口 ---');
   try {
     final client = HttpClient();
-    final req = await client.postUrl(Uri.parse('http://101.42.27.44:8000/api/edu/courses/fetch'));
+    final req = await client
+        .postUrl(Uri.parse('http://101.42.27.44:8000/api/edu/courses/fetch'));
     req.headers.set('Content-Type', 'application/json');
     req.headers.set('User-Agent', 'Dart/Test');
     req.write(jsonEncode({
@@ -70,7 +76,8 @@ void main() async {
   print('\n--- 4. 尝试秋季学期 (semester=3) ---');
   try {
     final client = HttpClient();
-    final req = await client.postUrl(Uri.parse('http://101.42.27.44:8000/api/edu/courses/fetch'));
+    final req = await client
+        .postUrl(Uri.parse('http://101.42.27.44:8000/api/edu/courses/fetch'));
     req.headers.set('Content-Type', 'application/json');
     req.headers.set('User-Agent', 'Dart/Test');
     req.write(jsonEncode({

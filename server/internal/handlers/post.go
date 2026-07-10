@@ -1243,6 +1243,7 @@ func (h *PostHandler) Update(c *gin.Context) {
 					}
 					if err := tx.Create(&postImage).Error; err != nil {
 						log.Printf("更新 PostImage 失败: post_id=%d, file_id=%d, err=%v", post.ID, fileID, err)
+						return fmt.Errorf("update_images_failed")
 					}
 				}
 			}
@@ -1275,6 +1276,9 @@ func (h *PostHandler) Update(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新帖子失败"})
 		case "update_images_failed":
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新帖子图片失败"})
+		case "recruitment_missing":
+			log.Printf("[TEAM_RECRUITMENT] post_id=%d missing recruitment record", post.ID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "组队招募数据异常，请稍后重试"})
 		default:
 			// Let validation errors pass through
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

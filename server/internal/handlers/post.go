@@ -34,8 +34,10 @@ func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *PostHan
 
 // Snapshot 帖子快照
 type Snapshot struct {
-	PostIDs   []uint
-	ExpiredAt time.Time
+	PostIDs          []uint
+	ExpiredAt        time.Time
+	AlgorithmVersion string
+	Sort             string
 }
 
 var ActiveSnapshots sync.Map // key: session_id (string), value: Snapshot
@@ -142,6 +144,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "20")
 	sinceStr := c.Query("since")
+	feedVersion, _ := strconv.Atoi(c.Query("feed_version"))
 
 	scene := c.Query("scene") // refresh 或 loadmore
 	sessionID := c.Query("session_id")
@@ -285,6 +288,11 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		query = query.Where("water_tag_id = ?", tagID)
 	}
 
+	if requestedBoardID != nil && *requestedBoardID == models.BoardShuitie && postType == "" && !tagIDProvided && feedVersion >= 2 && (sort == "all" || sort == "time") && searchQuery == "" && sinceStr == "" {
+		h.getHomeFeedV2(c, sort, scene, sessionID, page, limit, offset, now)
+		return
+	}
+
 	if sinceStr != "" {
 		sinceTime, err := time.Parse(time.RFC3339, sinceStr)
 		if err == nil {
@@ -352,7 +360,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	// 动态算法拦截
 	isSnapshotting := false
-	if scene == "refresh" && (sort == "all" || sort == "hot") && searchQuery == "" && sinceStr == "" {
+	if scene != "loadmore" && (sort == "all" || sort == "hot") && searchQuery == "" && sinceStr == "" {
 		isSnapshotting = true
 		if sort == "all" {
 			query = applyWaterSectionPinOrder(query, waterSectionFeedID, now)
@@ -463,6 +471,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		ActiveSnapshots.Store(sessionID, Snapshot{
 			PostIDs:   allIDs,
 			ExpiredAt: time.Now().Add(10 * time.Minute),
+			Sort:      sort,
 		})
 
 		// 自动销毁
@@ -493,6 +502,10 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			}
 		}
 	} else {
+		if scene == "loadmore" && (sort == "all" || sort == "hot") {
+			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+			return
+		}
 		// 普通查询分页
 		if err := query.Offset(offset).Limit(limit).Find(&posts).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
@@ -822,6 +835,96 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 	}
 }
 
+// getHomeFeedV2 返回独立置顶和普通首页帖子；普通快照不会包含有效置顶。
+func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID string, page, limit, offset int, now time.Time) {
+	feed := services.NewHomeFeedService(h.db)
+	pinned, err := feed.PinnedPosts(now)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
+		return
+	}
+	var ids []uint
+	algorithm := "home_all_v2"
+	if sortName == "time" {
+		algorithm = "home_time_v2"
+	}
+	if sortName == "all" && scene == "loadmore" {
+		value, ok := ActiveSnapshots.Load(sessionID)
+		if !ok {
+			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+			return
+		}
+		snapshot := value.(Snapshot)
+		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm {
+			ActiveSnapshots.Delete(sessionID)
+			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+			return
+		}
+		ids = snapshot.PostIDs
+	} else if sortName == "all" {
+		ids, err = feed.BuildSnapshot(now)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
+			return
+		}
+		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
+		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all"})
+		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
+	} else {
+		var normal []models.Post
+		err = h.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
+			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
+			Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now).
+			Order("created_at DESC").Limit(500).Find(&normal).Error
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+			return
+		}
+		for _, post := range normal {
+			ids = append(ids, post.ID)
+		}
+	}
+	end := offset + limit
+	if end > len(ids) {
+		end = len(ids)
+	}
+	if offset > len(ids) {
+		offset = len(ids)
+	}
+	pageIDs := ids[offset:end]
+	posts := h.loadPostsInOrder(pageIDs)
+	h.hydratePosts(c, posts, now)
+	h.hydratePosts(c, pinned, now)
+	if posts == nil {
+		posts = []models.Post{}
+	}
+	if pinned == nil {
+		pinned = []models.Post{}
+	}
+	c.JSON(http.StatusOK, gin.H{"pinned_posts": pinned, "posts": posts, "total": len(ids), "page": page, "limit": limit, "session_id": sessionID, "algorithm_version": algorithm})
+}
+
+func (h *PostHandler) loadPostsInOrder(ids []uint) []models.Post {
+	if len(ids) == 0 {
+		return []models.Post{}
+	}
+	var raw []models.Post
+	if err := h.db.Where("id IN ?", ids).Preload("Author").Preload("Images").Preload("Images.File").Find(&raw).Error; err != nil {
+		return []models.Post{}
+	}
+	byID := make(map[uint]models.Post, len(raw))
+	for _, post := range raw {
+		byID[post.ID] = post
+	}
+	ordered := make([]models.Post, 0, len(ids))
+	for _, id := range ids {
+		if post, ok := byID[id]; ok {
+			ordered = append(ordered, post)
+		}
+	}
+	return ordered
+}
+
 // CreatePostInput 创建帖子输入
 type CreatePostInput struct {
 	Title           string  `form:"title"`
@@ -866,16 +969,16 @@ func (h *PostHandler) Create(c *gin.Context) {
 	// 先创建帖子
 	now := time.Now()
 	post := models.Post{
-		Title:      input.Title,
-		Content:    input.Content,
-		BoardID:    models.BoardID(input.BoardID),
-		AuthorID:   userID.(uint),
-		PostType:   normalizedType,
-		Price:      input.Price,
-		Contact:    input.Contact,
-		MarketTags: normalizeMarketTags(input.MarketTags),
-		Status:     models.PostStatusNormal,
-		CreatedAt:  now,
+		Title:          input.Title,
+		Content:        input.Content,
+		BoardID:        models.BoardID(input.BoardID),
+		AuthorID:       userID.(uint),
+		PostType:       normalizedType,
+		Price:          input.Price,
+		Contact:        input.Contact,
+		MarketTags:     normalizeMarketTags(input.MarketTags),
+		Status:         models.PostStatusNormal,
+		CreatedAt:      now,
 		LastActivityAt: now,
 	}
 

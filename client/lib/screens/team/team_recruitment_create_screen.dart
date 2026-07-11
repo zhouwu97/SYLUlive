@@ -4,10 +4,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/team_recruitment_provider.dart';
+import '../../models/team_recruitment.dart';
 import '../../widgets/water_team/team_deadline_picker.dart';
 
 class TeamRecruitmentCreateScreen extends StatefulWidget {
-  const TeamRecruitmentCreateScreen({super.key});
+  final TeamRecruitment? initialValue;
+  const TeamRecruitmentCreateScreen({super.key, this.initialValue});
+
   @override
   State<TeamRecruitmentCreateScreen> createState() =>
       _TeamRecruitmentCreateScreenState();
@@ -24,6 +27,20 @@ class _TeamRecruitmentCreateScreenState
   final List<XFile> _images = [];
   String _category = 'competition';
   DateTime? _deadline;
+
+  @override
+  void initState() {
+    super.initState();
+    final value = widget.initialValue;
+    if (value != null) {
+      _title.text = value.title;
+      _description.text = value.description;
+      _needed.text = value.neededCount.toString();
+      _roles.addAll(value.roles);
+      _category = value.category;
+      _deadline = value.deadline;
+    }
+  }
 
   @override
   void dispose() {
@@ -70,19 +87,32 @@ class _TeamRecruitmentCreateScreenState
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final created = await context.read<TeamRecruitmentProvider>().create(
-          category: _category,
-          title: _title.text.trim(),
-          description: _description.text.trim(),
-          neededCount: int.parse(_needed.text),
-          roles: _roles,
-          deadline: _deadline,
-          images: _images,
-        );
+    final provider = context.read<TeamRecruitmentProvider>();
+    final existing = widget.initialValue;
+    final created = existing == null
+        ? await provider.create(
+            category: _category,
+            title: _title.text.trim(),
+            description: _description.text.trim(),
+            neededCount: int.parse(_needed.text),
+            roles: _roles,
+            deadline: _deadline,
+            images: _images,
+          )
+        : (await provider.updateRecruitment(
+            recruitmentId: existing.id,
+            category: _category,
+            title: _title.text.trim(),
+            description: _description.text.trim(),
+            neededCount: int.parse(_needed.text),
+            roles: _roles,
+            deadline: _deadline,
+          ))
+            .data;
     if (!mounted) return;
     if (created == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('发布失败，请检查网络后重试')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(existing == null ? '发布失败，请检查网络后重试' : '保存失败，请检查输入后重试')));
       return;
     }
     Navigator.pop(context, true);
@@ -92,13 +122,18 @@ class _TeamRecruitmentCreateScreenState
   Widget build(BuildContext context) {
     final creating = context.watch<TeamRecruitmentProvider>().isCreating;
     return Scaffold(
-      appBar: AppBar(title: const Text('发起组队')),
+      appBar:
+          AppBar(title: Text(widget.initialValue == null ? '发起组队' : '编辑招募')),
       bottomNavigationBar: SafeArea(
           child: Padding(
               padding: const EdgeInsets.all(16),
               child: FilledButton(
                   onPressed: creating ? null : _submit,
-                  child: Text(creating ? '发布中…' : '发布组队')))),
+                  child: Text(creating
+                      ? '提交中…'
+                      : widget.initialValue == null
+                          ? '发布组队'
+                          : '保存修改')))),
       body: Form(
           key: _formKey,
           child: ListView(
@@ -111,6 +146,7 @@ class _TeamRecruitmentCreateScreenState
                     spacing: 8,
                     children: const [
                       ('竞赛', 'competition'),
+                      ('项目', 'project'),
                       ('学习', 'study'),
                       ('活动', 'activity'),
                       ('其他', 'other')

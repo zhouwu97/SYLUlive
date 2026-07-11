@@ -15,6 +15,7 @@ import 'lottery_screen.dart';
 import 'dart:ui';
 
 import 'exam_schedule_screen.dart';
+import 'exam_papers/exam_paper_library_screen.dart';
 
 class ToolboxScreen extends StatefulWidget {
   const ToolboxScreen({super.key});
@@ -222,6 +223,22 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => const ExamScheduleScreen(),
+                                  ),
+                                ),
+                                useCustomBackground: useCustomBackground,
+                              ),
+                              _buildToolCard(
+                                context,
+                                icon: Icons.library_books_outlined,
+                                color: const Color(0xFFEC6F5B),
+                                title: '\u8bd5\u5377\u5e93',
+                                subtitle:
+                                    '\u5386\u5e74\u8bd5\u5377 / \u6295\u7a3f\u5ba1\u6838',
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const ExamPaperLibraryScreen(),
                                   ),
                                 ),
                                 useCustomBackground: useCustomBackground,

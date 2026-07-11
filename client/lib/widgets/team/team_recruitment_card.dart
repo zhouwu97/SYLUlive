@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/team_recruitment.dart';
+import '../../providers/theme_provider.dart';
 
 class TeamRecruitmentCard extends StatelessWidget {
   final TeamRecruitment recruitment;
@@ -21,6 +22,7 @@ class TeamRecruitmentCard extends StatelessWidget {
         : recruitment.effectiveStatus;
     final visibleRoles = recruitment.roles.take(3).toList(growable: false);
     final extraRoleCount = recruitment.roles.length - visibleRoles.length;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Opacity(
       opacity: isInactive ? 0.62 : 1,
       child: Card(
@@ -29,7 +31,10 @@ class TeamRecruitmentCard extends StatelessWidget {
         color: Theme.of(context).colorScheme.surfaceContainerLowest,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: Colors.grey.withValues(alpha: 0.16)),
+          side: BorderSide(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : kCleanWarmCardBorderLight),
         ),
         child: InkWell(
           onTap: onTap,
@@ -71,7 +76,7 @@ class TeamRecruitmentCard extends StatelessWidget {
                 Icon(Icons.group_outlined, size: 16, color: color),
                 const SizedBox(width: 4),
                 Text(
-                    '已加入 ${recruitment.acceptedCount} 人 · 还缺 ${recruitment.remainingCount} 人',
+                    '已加入 ${recruitment.acceptedCount} / ${recruitment.neededCount} · 还缺 ${recruitment.remainingCount} 人',
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -87,6 +92,20 @@ class TeamRecruitmentCard extends StatelessWidget {
                           TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                 ],
               ]),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  minHeight: 4,
+                  value: recruitment.neededCount == 0
+                      ? 0
+                      : (recruitment.acceptedCount / recruitment.neededCount)
+                          .clamp(0, 1)
+                          .toDouble(),
+                  color: color,
+                  backgroundColor: color.withValues(alpha: 0.12),
+                ),
+              ),
               const SizedBox(height: 12),
               Row(children: [
                 CircleAvatar(

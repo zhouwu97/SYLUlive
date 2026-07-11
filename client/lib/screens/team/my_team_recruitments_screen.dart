@@ -35,9 +35,10 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
     return Scaffold(
       appBar: AppBar(
           title: const Text('我的组队'),
-          bottom: TabBar(
-              controller: _tabs,
-              tabs: const [Tab(text: '我发起的'), Tab(text: '我申请的')])),
+          bottom: TabBar(controller: _tabs, tabs: [
+            Tab(text: '我发起的 ${provider.myCreated.length}'),
+            Tab(text: '我申请的 ${provider.myApplications.length}'),
+          ])),
       body: provider.isLoadingMine && provider.myCreated.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(controller: _tabs, children: [
@@ -129,6 +130,27 @@ class _ApplicationItem extends StatelessWidget {
             if (application.status == 'pending')
               TextButton(
                   onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('撤回申请'),
+                            content: const Text('撤回后可在需要时重新申请，确定继续吗？'),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('暂不撤回'),
+                              ),
+                              FilledButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('确认撤回'),
+                              ),
+                            ],
+                          ),
+                        ) ??
+                        false;
+                    if (!confirmed || !context.mounted) return;
                     final error = await context
                         .read<TeamRecruitmentProvider>()
                         .cancel(application.id);

@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../widgets/team/team_recruitment_card.dart';
 import 'team_application_manage_screen.dart';
+import 'team_recruitment_create_screen.dart';
 
 class TeamRecruitmentDetailScreen extends StatefulWidget {
   final int recruitmentId;
@@ -49,11 +50,13 @@ class _TeamRecruitmentDetailScreenState
       Navigator.pushNamed(context, '/login');
       return;
     }
-    final message = await _applicationSheet();
-    if (message == null || !mounted) return;
-    final error = await context
-        .read<TeamRecruitmentProvider>()
-        .apply(recruitmentId: item.id, message: message);
+    final application = await _applicationSheet();
+    if (application == null || !mounted) return;
+    final error = await context.read<TeamRecruitmentProvider>().apply(
+          recruitmentId: item.id,
+          message: application.message,
+          availability: application.availability,
+        );
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(error ?? '申请已提交')));
@@ -62,40 +65,60 @@ class _TeamRecruitmentDetailScreenState
     }
   }
 
-  Future<String?> _applicationSheet() async {
-    final controller = TextEditingController();
-    final result = await showModalBottomSheet<String>(
-        context: context,
-        isScrollControlled: true,
-        builder: (sheetContext) => Padding(
-              padding: EdgeInsets.fromLTRB(20, 20, 20,
-                  MediaQuery.viewInsetsOf(sheetContext).bottom + 20),
-              child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('申请加入',
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 12),
-                    TextField(
-                        controller: controller,
-                        maxLines: 4,
-                        maxLength: 500,
-                        decoration: const InputDecoration(
-                            hintText: '简单介绍一下自己和可参与时间',
-                            border: OutlineInputBorder())),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                            onPressed: () => Navigator.pop(
-                                sheetContext, controller.text.trim()),
-                            child: const Text('提交申请'))),
-                  ]),
-            ));
-    controller.dispose();
-    return result == null || result.isEmpty ? null : result;
+  Future<({String message, String availability})?> _applicationSheet() async {
+    final messageController = TextEditingController();
+    final availabilityController = TextEditingController();
+    final result =
+        await showModalBottomSheet<({String message, String availability})>(
+            context: context,
+            isScrollControlled: true,
+            builder: (sheetContext) => Padding(
+                  padding: EdgeInsets.fromLTRB(20, 20, 20,
+                      MediaQuery.viewInsetsOf(sheetContext).bottom + 20),
+                  child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('申请加入',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 12),
+                        TextField(
+                            controller: messageController,
+                            maxLines: 4,
+                            maxLength: 500,
+                            decoration: const InputDecoration(
+                                labelText: '申请说明 *',
+                                hintText: '介绍你的经验、能力和加入原因',
+                                border: OutlineInputBorder())),
+                        const SizedBox(height: 10),
+                        TextField(
+                            controller: availabilityController,
+                            maxLines: 2,
+                            maxLength: 200,
+                            decoration: const InputDecoration(
+                                labelText: '可参与时间（选填）',
+                                hintText: '例如：工作日晚 7 点后，周末全天',
+                                border: OutlineInputBorder())),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                                onPressed: () {
+                                  final message = messageController.text.trim();
+                                  if (message.length < 5) return;
+                                  Navigator.pop(sheetContext, (
+                                    message: message,
+                                    availability:
+                                        availabilityController.text.trim(),
+                                  ));
+                                },
+                                child: const Text('提交申请'))),
+                      ]),
+                ));
+    messageController.dispose();
+    availabilityController.dispose();
+    return result;
   }
 
   Future<void> _changeStatus(TeamRecruitment item, String status) async {
@@ -121,7 +144,33 @@ class _TeamRecruitmentDetailScreenState
     }
     final item = _item!;
     return Scaffold(
-      appBar: AppBar(title: const Text('组队详情')),
+      appBar: AppBar(
+        title: const Text('组队详情'),
+        actions: [
+          if (item.isOwner)
+            IconButton(
+              tooltip: '编辑招募',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () async {
+                final changed = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        TeamRecruitmentCreateScreen(initialValue: item),
+                  ),
+                );
+                if (changed == true && mounted) _load();
+              },
+            ),
+          IconButton(
+            tooltip: '分享',
+            icon: const Icon(Icons.ios_share_outlined),
+            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('分享链接功能即将支持')),
+            ),
+          ),
+        ],
+      ),
       bottomNavigationBar: SafeArea(
           child: Padding(
               padding: const EdgeInsets.all(16), child: _bottomAction(item))),

@@ -59,7 +59,9 @@ func TestRankHomeFeedByFreshOrder(t *testing.T) {
 	if len(ids) != 5 {
 		t.Fatalf("Expected 5 items returned, got %d", len(ids))
 	}
-	// The newest post should be included early.
+	if ids[0] != 1 || ids[1] != 2 || ids[2] != 3 {
+		t.Fatalf("Expected newest posts first, got %v", ids)
+	}
 }
 
 func TestRankHomeFeedRelaxationStages(t *testing.T) {
@@ -84,5 +86,27 @@ func TestRankHomeFeedRelaxationStages(t *testing.T) {
 	
 	if len(ids) != 40 {
 		t.Fatalf("Expected 40 items returned, got %d", len(ids))
+	}
+
+	authorCountsFirst10 := make(map[uint]int)
+	authorCountsTotal := make(map[uint]int)
+	for idx, id := range ids {
+		authorID := uint(((id - 1) % 10) + 1)
+		if idx < 10 {
+			authorCountsFirst10[authorID]++
+		}
+		if idx < 20 {
+			authorCountsTotal[authorID]++
+		}
+	}
+	for author, count := range authorCountsFirst10 {
+		if count > 2 {
+			t.Fatalf("Author %d appeared %d times in first 10, should be <= 2", author, count)
+		}
+	}
+	for author, count := range authorCountsTotal {
+		if count > 4 {
+			t.Fatalf("Author %d appeared %d times in first 20, should be <= 4", author, count)
+		}
 	}
 }

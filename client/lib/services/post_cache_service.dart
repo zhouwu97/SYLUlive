@@ -26,6 +26,8 @@ class CachedPostFeed {
 class PostCacheService {
   static const int cacheSchemaVersion = 2;
   static const String homeAllAlgorithmVersion = 'home_all_v2';
+  static const String homeTimeAlgorithmVersion = 'home_time_v2';
+  static const String fallbackAlgorithmVersion = 'feed_v1';
   static const _boxName = 'post_cache';
   static const _boardPrefix = 'board_';
 
@@ -41,6 +43,22 @@ class PostCacheService {
   }) {
     final normalizedType = (type ?? '').trim();
     return '$_boardPrefix${boardId}_${sort}_${normalizedType}_${tagId ?? ''}';
+  }
+
+  static String expectedAlgorithmVersion({
+    required int boardId,
+    required String sort,
+    String? type,
+    int? tagId,
+  }) {
+    final usesHomeFeedV2 = boardId == 1 &&
+        (type == null || type.trim().isEmpty) &&
+        tagId == null &&
+        (sort == 'all' || sort == 'time');
+    if (usesHomeFeedV2) {
+      return sort == 'all' ? homeAllAlgorithmVersion : homeTimeAlgorithmVersion;
+    }
+    return fallbackAlgorithmVersion;
   }
 
   /// 保存指定帖子流到本地缓存，按 board/sort/section/tag 隔离。
@@ -94,9 +112,10 @@ class PostCacheService {
       }
 
       final cachedAlgorithm = decoded['algorithm_version']?.toString() ?? '';
-      if (sort == 'all' && cachedAlgorithm != homeAllAlgorithmVersion) {
+      final expectedAlgo = expectedAlgorithmVersion(boardId: boardId, sort: sort, type: type, tagId: tagId);
+      if (cachedAlgorithm != expectedAlgo) {
         await box.delete(key);
-        return null; // Algorithm mismatch (e.g. v1 vs v2)
+        return null;
       }
 
       final list = (decoded['posts'] as List?) ?? const <dynamic>[];
@@ -109,7 +128,7 @@ class PostCacheService {
         posts: posts,
         pinnedPosts: pinnedPosts,
         algorithmVersion: cachedAlgorithm,
-        freshness: age > const Duration(hours: 3) ? PostFeedCacheFreshness.stale : PostFeedCacheFreshness.fresh,
+        freshness: age > const Duration(minutes: 10) ? PostFeedCacheFreshness.stale : PostFeedCacheFreshness.fresh,
       );
     } catch (_) {
       return null;

@@ -41,6 +41,34 @@ void main() {
     expect(paper.rewardRevocable, isFalse);
   });
 
+  test('直接构造试卷时默认不可撤销经验', () {
+    final paper = ExamPaper(
+      id: 1,
+      status: 'pending',
+      source: 'user',
+      courseName: '高等数学',
+      academicYear: '2025-2026',
+      semester: 'first',
+      examType: 'final',
+      title: '高等数学期末试卷',
+      fileSize: 1024,
+      downloadCount: 0,
+      approvalReason: '',
+      unpublishReason: '',
+      publishedAt: null,
+      unpublishedAt: null,
+      createdAt: DateTime(2026, 7, 11),
+      contributor: const ExamPaperContributor(
+        id: 1,
+        avatar: '',
+        nickname: '投稿人',
+        level: 1,
+      ),
+    );
+
+    expect(paper.rewardRevocable, isFalse);
+  });
+
   test('分页响应解析 items/page/page_size/total', () {
     final page = ExamPaperPage.fromJson({
       'items': [

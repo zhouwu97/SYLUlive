@@ -241,6 +241,71 @@ func TestAdminUnpublishExamPaperRevokesRewardOnce(t *testing.T) {
 	}
 }
 
+func TestRevokeExamPaperRewardUsesPersistedRevocationState(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "persisted-revoke-contributor", models.RoleUser, true, 80)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	rewardedAt := time.Now().Add(-2 * time.Hour)
+	revokedAt := time.Now().Add(-time.Hour)
+	if err := env.db.Model(&models.ExamPaper{}).Where("id = ?", paper.ID).Updates(map[string]any{
+		"rewarded_at": rewardedAt, "reward_revoked_at": revokedAt,
+	}).Error; err != nil {
+		t.Fatalf("设置已撤销奖励状态失败: %v", err)
+	}
+
+	// 模拟并发请求在奖励撤销前读取到的旧快照。
+	paper.RewardedAt = &rewardedAt
+	paper.RewardRevokedAt = nil
+	var revoked bool
+	if err := env.db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		revoked, err = revokeExamPaperReward(tx, &paper, time.Now())
+		return err
+	}); err != nil {
+		t.Fatalf("重复撤销奖励事务失败: %v", err)
+	}
+	if revoked {
+		t.Fatal("数据库已记录撤销时必须返回 false")
+	}
+	var refreshedUser models.User
+	if err := env.db.First(&refreshedUser, contributor.ID).Error; err != nil {
+		t.Fatalf("读取投稿人失败: %v", err)
+	}
+	if refreshedUser.Exp != 80 {
+		t.Fatalf("数据库已记录撤销时不得重复扣经验: %d", refreshedUser.Exp)
+	}
+}
+
+func TestRevokeExamPaperRewardFloorsExperienceAtZero(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "low-exp-revoke-contributor", models.RoleUser, true, 5)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	rewardedAt := time.Now().Add(-time.Hour)
+	if err := env.db.Model(&paper).Update("rewarded_at", rewardedAt).Error; err != nil {
+		t.Fatalf("设置试卷奖励时间失败: %v", err)
+	}
+	paper.RewardedAt = &rewardedAt
+
+	var revoked bool
+	if err := env.db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		revoked, err = revokeExamPaperReward(tx, &paper, time.Now())
+		return err
+	}); err != nil {
+		t.Fatalf("撤销低经验用户奖励失败: %v", err)
+	}
+	if !revoked {
+		t.Fatal("未撤销的奖励必须返回 true")
+	}
+	var refreshedUser models.User
+	if err := env.db.First(&refreshedUser, contributor.ID).Error; err != nil {
+		t.Fatalf("读取投稿人失败: %v", err)
+	}
+	if refreshedUser.Exp != 0 {
+		t.Fatalf("经验不足 10 时必须归零: %d", refreshedUser.Exp)
+	}
+}
+
 func TestAdminUnpublishExamPaperMarksUnavailableWhenStoredFileAlreadyMissing(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	contributor := createExamPaperTestUser(t, env.db, "unpublish-missing-contributor", models.RoleUser, true, 80)

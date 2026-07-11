@@ -29,7 +29,7 @@ class CampusCalendarProvider extends ChangeNotifier {
       try {
         final remote = await _service.fetchCurrent();
         if (remote != null &&
-            (cached == null || remote.version > _calendar!.version)) {
+            (cached == null || shouldReplaceCalendar(remote, _calendar!))) {
           _calendar = remote;
           await _service.saveCached(remote);
           notifyListeners();
@@ -44,4 +44,16 @@ class CampusCalendarProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+}
+
+/// 校历按学年、架构版本、内容修订号和版本号综合比较，避免跨学年数字回退。
+bool shouldReplaceCalendar(CampusCalendar remote, CampusCalendar local) {
+  if (remote.academicYear != local.academicYear ||
+      remote.schemaVersion != local.schemaVersion) {
+    return true;
+  }
+  if (remote.version != local.version) {
+    return remote.version > local.version;
+  }
+  return remote.revision.isNotEmpty && remote.revision != local.revision;
 }

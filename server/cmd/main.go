@@ -1252,7 +1252,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.6.2",
+			"version": "1.6.1",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -1264,7 +1264,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1. 新增试卷库浏览、筛选、预览与下载\n2. 支持用户投稿、管理员审核及已发布试卷管理\n3. 普通投稿首次审核通过奖励 10 经验",
+			"update_msg": "1. 优化水帖分类侧边栏入口\n2. 精修水帖分类专题页样式\n3. 优化水帖详情页分类入口、阅读数对齐与正文密度",
 		})
 
 	})

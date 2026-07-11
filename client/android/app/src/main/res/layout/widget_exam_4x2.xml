@@ -33,7 +33,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
-        android:text="近期暂无考试\n点按查看完整日程"
+        android:text="( ╯' - ')╯ \n近期暂无考试"
         android:textColor="#9CA3AF"
         android:textSize="12sp" />
 </LinearLayout>

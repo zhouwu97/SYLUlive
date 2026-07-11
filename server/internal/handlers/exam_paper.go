@@ -24,6 +24,7 @@ const (
 	maxExamPaperPageSize                  = 50
 	maxPendingExamPaperSubmissionsPerUser = 5
 	maxExamPaperUploadsPerWindow          = 3
+	examPaperRewardExp                    = 10
 	examPaperUploadRateWindow             = time.Minute
 )
 
@@ -90,6 +91,7 @@ type examPaperResponse struct {
 	UnpublishReason string                       `json:"unpublish_reason,omitempty"`
 	PublishedAt     *time.Time                   `json:"published_at,omitempty"`
 	UnpublishedAt   *time.Time                   `json:"unpublished_at,omitempty"`
+	RewardRevocable bool                         `json:"reward_revocable"`
 	CreatedAt       time.Time                    `json:"created_at"`
 	Contributor     examPaperContributorResponse `json:"contributor"`
 }
@@ -118,6 +120,7 @@ func examPaperToResponse(paper models.ExamPaper) examPaperResponse {
 		UnpublishReason: paper.UnpublishReason,
 		PublishedAt:     paper.PublishedAt,
 		UnpublishedAt:   paper.UnpublishedAt,
+		RewardRevocable: paper.RewardedAt != nil && paper.RewardRevokedAt == nil,
 		CreatedAt:       paper.CreatedAt,
 		Contributor: examPaperContributorResponse{
 			ID:       paper.Submitter.ID,
@@ -126,6 +129,30 @@ func examPaperToResponse(paper models.ExamPaper) examPaperResponse {
 			Level:    services.CalculateUserLevel(paper.Submitter.Exp),
 		},
 	}
+}
+
+// revokeExamPaperReward 在当前事务内撤销尚未撤销的试卷投稿奖励。
+func revokeExamPaperReward(tx *gorm.DB, paper *models.ExamPaper, now time.Time) (bool, error) {
+	if paper.RewardedAt == nil || paper.RewardRevokedAt != nil {
+		return false, nil
+	}
+
+	userResult := tx.Model(&models.User{}).Where("id = ?", paper.SubmitterID).UpdateColumn(
+		"exp",
+		gorm.Expr("CASE WHEN exp >= ? THEN exp - ? ELSE 0 END", examPaperRewardExp, examPaperRewardExp),
+	)
+	if userResult.Error != nil {
+		return false, userResult.Error
+	}
+	if userResult.RowsAffected != 1 {
+		return false, fmt.Errorf("撤销试卷奖励失败：投稿人不存在")
+	}
+
+	if err := tx.Model(paper).UpdateColumn("reward_revoked_at", now).Error; err != nil {
+		return false, err
+	}
+	paper.RewardRevokedAt = &now
+	return true, nil
 }
 
 func writeExamPaperError(c *gin.Context, status int, code, message string) {
@@ -850,14 +877,14 @@ func (h *ExamPaperHandler) AdminApprove(c *gin.Context) {
 		}
 		if awarded {
 			if err := tx.Model(&models.User{}).Where("id = ?", paper.SubmitterID).
-				UpdateColumn("exp", gorm.Expr("exp + ?", 10)).Error; err != nil {
+				UpdateColumn("exp", gorm.Expr("exp + ?", examPaperRewardExp)).Error; err != nil {
 				return err
 			}
 		}
 
 		message := fmt.Sprintf("你投稿的试卷《%s》已通过审核并发布。", metadata.Title)
 		if awarded {
-			message += "本次投稿已奖励 10 经验。"
+			message += fmt.Sprintf("本次投稿已奖励 %d 经验。", examPaperRewardExp)
 		}
 		if input.Reason != "" {
 			message += "\n审核说明：" + input.Reason
@@ -1067,6 +1094,10 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 		if locked.Status != models.ExamPaperStatusPublished || locked.FileKey != paper.FileKey {
 			return errExamPaperNotPublished
 		}
+		rewardRevoked, err := revokeExamPaperReward(tx, &locked, now)
+		if err != nil {
+			return err
+		}
 		if err := tx.Model(&locked).Updates(map[string]any{
 			"status": models.ExamPaperStatusUnpublished, "file_key": "",
 			"unpublisher_id": admin.ID, "unpublish_reason": input.Reason, "unpublished_at": now,
@@ -1074,12 +1105,15 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 			return err
 		}
 		message := fmt.Sprintf("你投稿的试卷《%s》已下架。\n下架理由：%s", locked.Title, input.Reason)
+		if rewardRevoked {
+			message += fmt.Sprintf("\n该投稿获得的 %d 经验已扣回。", examPaperRewardExp)
+		}
 		if _, _, err := services.CreateSystemMessage(tx, locked.SubmitterID, message); err != nil {
 			return err
 		}
 		return tx.Create(&models.AdminLog{
 			AdminID: admin.ID, AdminName: admin.Nickname, Action: "下架试卷",
-			Target: locked.Title, Detail: fmt.Sprintf("试卷ID=%d，理由=%s", id, input.Reason),
+			Target: locked.Title, Detail: fmt.Sprintf("试卷ID=%d，撤销经验=%t，理由=%s", id, rewardRevoked, input.Reason),
 		}).Error
 	})
 	if err != nil {

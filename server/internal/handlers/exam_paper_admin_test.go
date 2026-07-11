@@ -183,6 +183,64 @@ func TestAdminUpdateAndUnpublishExamPaper(t *testing.T) {
 	}
 }
 
+func TestAdminUnpublishExamPaperRevokesRewardOnce(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "unpublish-reward-contributor", models.RoleUser, true, 80)
+	admin := createExamPaperTestUser(t, env.db, "unpublish-reward-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	rewardedAt := time.Now().Add(-time.Hour)
+	if err := env.db.Model(&paper).Update("rewarded_at", rewardedAt).Error; err != nil {
+		t.Fatalf("设置试卷奖励时间失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	payload := map[string]any{"reason": "内容需要重新核验"}
+
+	first := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, payload)
+	if first.Code != http.StatusOK {
+		t.Fatalf("首次下架失败: status=%d body=%s", first.Code, first.Body.String())
+	}
+
+	var refreshedPaper models.ExamPaper
+	if err := env.db.First(&refreshedPaper, paper.ID).Error; err != nil {
+		t.Fatalf("读取下架试卷失败: %v", err)
+	}
+	if refreshedPaper.RewardRevokedAt == nil {
+		t.Fatal("下架已奖励试卷必须记录奖励撤销时间")
+	}
+	var refreshedUser models.User
+	if err := env.db.First(&refreshedUser, contributor.ID).Error; err != nil {
+		t.Fatalf("读取投稿人失败: %v", err)
+	}
+	if refreshedUser.Exp != 70 {
+		t.Fatalf("首次下架必须扣回 10 经验: %d", refreshedUser.Exp)
+	}
+	var message models.Message
+	if err := env.db.Order("id DESC").First(&message).Error; err != nil {
+		t.Fatalf("读取下架系统消息失败: %v", err)
+	}
+	if !strings.Contains(message.Content, "该投稿获得的 10 经验已扣回") {
+		t.Fatalf("下架系统消息必须说明扣回经验: %q", message.Content)
+	}
+	var log models.AdminLog
+	if err := env.db.Where("action = ?", "下架试卷").Order("id DESC").First(&log).Error; err != nil {
+		t.Fatalf("读取下架管理员日志失败: %v", err)
+	}
+	if !strings.Contains(log.Detail, "撤销经验=true") {
+		t.Fatalf("下架管理员日志必须记录奖励撤销结果: %q", log.Detail)
+	}
+
+	second := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, payload)
+	if second.Code != http.StatusConflict || decodeErrorCode(t, second) != "exam_paper_not_published" {
+		t.Fatalf("重复下架必须冲突: status=%d body=%s", second.Code, second.Body.String())
+	}
+	if err := env.db.First(&refreshedUser, contributor.ID).Error; err != nil {
+		t.Fatalf("重复下架后读取投稿人失败: %v", err)
+	}
+	if refreshedUser.Exp != 70 {
+		t.Fatalf("重复下架不得再次扣经验: %d", refreshedUser.Exp)
+	}
+}
+
 func TestAdminUnpublishExamPaperMarksUnavailableWhenStoredFileAlreadyMissing(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	contributor := createExamPaperTestUser(t, env.db, "unpublish-missing-contributor", models.RoleUser, true, 80)

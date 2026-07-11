@@ -9,10 +9,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-	"github.com/jackc/pgx/v5/pgconn"
 	"errors"
+	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
+	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -46,33 +46,33 @@ type waterSectionTagResponse struct {
 
 // waterSectionResponse 版块响应体
 type waterSectionResponse struct {
-	ID                uint                       `json:"id"`
-	Slug              string                     `json:"slug"`
-	Title             string                     `json:"title"`
-	Subtitle          string                     `json:"subtitle"`
-	Description       string                     `json:"description"`
-	IconKey           string                     `json:"icon_key"`
-	AvatarURL         string                     `json:"avatar_url"`
-	ColorHex          string                     `json:"color_hex"`
-	CoverURL          string                     `json:"cover_url"` // 版块背景图（兼容）
-	CoverPortraitURL  string                     `json:"cover_portrait_url"` // 手机版块背景 3:4
-	CoverLandscapeURL string                     `json:"cover_landscape_url"`// 横向封面 16:9
-	CoverSquareURL    string                     `json:"cover_square_url"`   // 方形入口 1:1
-	CoverBlurColor    string                     `json:"cover_blur_color"`   // 加载前底色
-	PublishActionText string                     `json:"publish_action_text"`
-	EmptyTitle        string                     `json:"empty_title"`
-	EmptyDescription  string                     `json:"empty_description"`
-	StarterQuestions  []string                   `json:"starter_questions"`
-	NoticeText        string                     `json:"notice_text"`
-	SensitiveLevel    string                     `json:"sensitive_level"`
-	DefaultSort       string                     `json:"default_sort"`
-	SortOrder         int                        `json:"sort_order"`
-	Status            string                     `json:"status"`
-	IsFollowed        bool                       `json:"is_followed"`
-	PostCount         int64                      `json:"post_count"`
-	FollowerCount     int64                      `json:"follower_count"`
-	MyLevel           *waterSectionMyLevelBrief  `json:"my_level,omitempty"`
-	Tags              []waterSectionTagResponse  `json:"tags"`
+	ID                uint                      `json:"id"`
+	Slug              string                    `json:"slug"`
+	Title             string                    `json:"title"`
+	Subtitle          string                    `json:"subtitle"`
+	Description       string                    `json:"description"`
+	IconKey           string                    `json:"icon_key"`
+	AvatarURL         string                    `json:"avatar_url"`
+	ColorHex          string                    `json:"color_hex"`
+	CoverURL          string                    `json:"cover_url"`           // 版块背景图（兼容）
+	CoverPortraitURL  string                    `json:"cover_portrait_url"`  // 手机版块背景 3:4
+	CoverLandscapeURL string                    `json:"cover_landscape_url"` // 横向封面 16:9
+	CoverSquareURL    string                    `json:"cover_square_url"`    // 方形入口 1:1
+	CoverBlurColor    string                    `json:"cover_blur_color"`    // 加载前底色
+	PublishActionText string                    `json:"publish_action_text"`
+	EmptyTitle        string                    `json:"empty_title"`
+	EmptyDescription  string                    `json:"empty_description"`
+	StarterQuestions  []string                  `json:"starter_questions"`
+	NoticeText        string                    `json:"notice_text"`
+	SensitiveLevel    string                    `json:"sensitive_level"`
+	DefaultSort       string                    `json:"default_sort"`
+	SortOrder         int                       `json:"sort_order"`
+	Status            string                    `json:"status"`
+	IsFollowed        bool                      `json:"is_followed"`
+	PostCount         int64                     `json:"post_count"`
+	FollowerCount     int64                     `json:"follower_count"`
+	MyLevel           *waterSectionMyLevelBrief `json:"my_level,omitempty"`
+	Tags              []waterSectionTagResponse `json:"tags"`
 }
 
 // waterSectionMyLevelBrief 版块列表中返回的当前用户本版等级简要信息
@@ -930,7 +930,7 @@ func (h *WaterSectionHandler) CreateTag(c *gin.Context) {
 	if contentMode == models.WaterTagModeTeamRecruitment {
 		// 组队栏目后端自动分配固定标识
 		slug = "team_recruitment"
-		
+
 		// 检查该版块是否已存在组队栏目
 		var existingCount int64
 		h.db.Model(&models.WaterSectionTag{}).
@@ -1002,7 +1002,7 @@ func (h *WaterSectionHandler) CreateTag(c *gin.Context) {
 			}
 			return
 		}
-		
+
 		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "Duplicate") {
 			c.JSON(http.StatusConflict, gin.H{"error": "该标识已被使用，请换一个英文缩写"})
 		} else {
@@ -1566,18 +1566,18 @@ type waterSectionIconReviewResponse struct {
 
 func formatIconReviewResponse(r models.WaterSectionIconReview) waterSectionIconReviewResponse {
 	resp := waterSectionIconReviewResponse{
-		ID:            r.ID,
-		SectionID:     r.SectionID,
-		SectionTitle:  r.Section.Title,
-		RequestedBy:   r.RequestedBy,
-		OldAvatarURL:  r.OldAvatarURL,
-		NewAvatarURL:  r.NewAvatarURL,
-		Reason:        r.Reason,
-		Status:        r.Status,
-		ReviewedBy:    r.ReviewedBy,
-		ReviewedAt:    r.ReviewedAt,
-		ReviewReason:  r.ReviewReason,
-		CreatedAt:     r.CreatedAt,
+		ID:           r.ID,
+		SectionID:    r.SectionID,
+		SectionTitle: r.Section.Title,
+		RequestedBy:  r.RequestedBy,
+		OldAvatarURL: r.OldAvatarURL,
+		NewAvatarURL: r.NewAvatarURL,
+		Reason:       r.Reason,
+		Status:       r.Status,
+		ReviewedBy:   r.ReviewedBy,
+		ReviewedAt:   r.ReviewedAt,
+		ReviewReason: r.ReviewReason,
+		CreatedAt:    r.CreatedAt,
 	}
 	if r.Requester.ID != 0 {
 		resp.RequesterName = r.Requester.Nickname

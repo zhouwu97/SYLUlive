@@ -43,47 +43,6 @@ func checkAndDrawLotteries(db *gorm.DB) {
 	}
 }
 
-func ensureLotterySystemUser(tx *gorm.DB) (models.User, error) {
-	systemUser := models.User{
-		Nickname:     "系统自动发出",
-		StudentID:    "system_auto",
-		PasswordHash: "system_auto_no_login",
-		Role:         models.RoleAdmin,
-	}
-
-	var existing models.User
-	err := tx.Where("student_id = ?", systemUser.StudentID).First(&existing).Error
-	if err == nil {
-		updates := map[string]interface{}{}
-		if existing.Nickname == "" {
-			updates["nickname"] = systemUser.Nickname
-		}
-		if existing.PasswordHash == "" {
-			updates["password_hash"] = systemUser.PasswordHash
-		}
-		if existing.Role == "" {
-			updates["role"] = systemUser.Role
-		}
-		if len(updates) > 0 {
-			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
-				return existing, err
-			}
-			if err := tx.First(&existing, existing.ID).Error; err != nil {
-				return existing, err
-			}
-		}
-		return existing, nil
-	}
-	if err != gorm.ErrRecordNotFound {
-		return models.User{}, err
-	}
-
-	if err := tx.Create(&systemUser).Error; err != nil {
-		return models.User{}, err
-	}
-	return systemUser, nil
-}
-
 // ExecuteDraw 独立出来的开奖逻辑，用于定时任务或管理员手动触发
 func ExecuteDraw(db *gorm.DB, eventID uint) error {
 	var event models.LotteryEvent
@@ -156,7 +115,7 @@ func ExecuteDraw(db *gorm.DB, eventID uint) error {
 		}
 
 		// 2. 寻找或创建“系统自动发出”虚拟账号
-		sysUser, err := ensureLotterySystemUser(tx)
+		sysUser, err := services.EnsureSystemUser(tx)
 		if err != nil {
 			return err
 		}

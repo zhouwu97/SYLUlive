@@ -26,7 +26,7 @@ BACKUP_DIR="/var/backups/${APP_NAME}"
 DB_NAME="shenliyuan"
 DB_USER="shenliyuan"
 DB_PASS=""
-GO_VER="go1.23.4"
+GO_VER="go1.25.0"
 
 CURRENT_BINARY="${APP_DIR}/${APP_NAME}"
 OLD_BINARY="${APP_DIR}/.${APP_NAME}.previous"
@@ -135,14 +135,14 @@ setup_go() {
   if command -v go >/dev/null 2>&1; then
     local v
     v=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+')
-    if [ "$(printf '%s\n' "1.23" "$v" | sort -V | head -1)" = "1.23" ]; then
+    if [ "$(printf '%s\n' "1.25" "$v" | sort -V | head -1)" = "1.25" ]; then
       log_info "Go 已安装: $(go version)"
       return
     fi
-    log_warn "Go $v < 1.23，将升级"
+    log_warn "Go $v < 1.25，将升级"
   fi
 
-  log_step "安装 Go 1.23..."
+  log_step "安装 Go 1.25..."
   local arch go_arch
   arch=$(uname -m)
   if [ "$arch" = "x86_64" ]; then
@@ -395,6 +395,7 @@ sync_code() {
 
   for protected in \
     uploads \
+    private \
     shenliyuan.db \
     backups \
     .env \
@@ -413,6 +414,7 @@ sync_code() {
 
   git -C "${APP_DIR}" clean -fd \
     -e uploads/ \
+    -e private/ \
     -e shenliyuan.db \
     -e backups/ \
     -e 'shenliyuan.bak.*' \
@@ -439,6 +441,7 @@ setup_env() {
 
   local env_file="${APP_DIR}/.env"
   local jwt_secret=""
+  local admin_id=""
   local admin_pass=""
 
   # 从现有 .env 精确提取
@@ -448,22 +451,38 @@ setup_env() {
         tail -n 1
     )"
 
-    admin_pass="$(
-      sed -n 's/^SUPER_ADMIN_DEFAULT_PASSWORD=//p' "$env_file" |
+    admin_id="$(
+      sed -n 's/^SUPER_ADMIN_ID=//p' "$env_file" |
         tail -n 1
     )"
+
+    admin_pass="$(
+      sed -n 's/^SUPER_ADMIN_PASSWORD=//p' "$env_file" |
+        tail -n 1
+    )"
+    if [ -z "${admin_pass:-}" ]; then
+      admin_pass="$(
+        sed -n 's/^SUPER_ADMIN_DEFAULT_PASSWORD=//p' "$env_file" |
+          tail -n 1
+      )"
+    fi
   fi
 
   # 仅在值为空或默认占位符时生成新值
   if [ -z "${jwt_secret:-}" ] ||
      [ "$jwt_secret" = "dev-secret-change-me" ] ||
-     [ "$jwt_secret" = "change_me_to_random_string_at_least_32_chars" ]; then
+     [ "$jwt_secret" = "change_me_to_random_string_at_least_32_chars" ] ||
+     [ "$jwt_secret" = "dev-only-secret-do-not-use-in-production" ] ||
+     [ "$jwt_secret" = "your-super-secret-jwt-key-change-this" ] ||
+     [ "$jwt_secret" = "change_me_in_env" ]; then
     jwt_secret="$(openssl rand -base64 32)"
   fi
 
   if [ -z "${admin_pass:-}" ] ||
      [ "$admin_pass" = "dev-password-change-me" ] ||
-     [ "$admin_pass" = "change_me_strong_password" ]; then
+     [ "$admin_pass" = "change_me_strong_password" ] ||
+     [ "$admin_pass" = "super_admin_password_change_this" ] ||
+     [ "$admin_pass" = "admin123" ]; then
     admin_pass="$(
       openssl rand -base64 18 |
         tr -dc 'a-zA-Z0-9' |
@@ -479,12 +498,19 @@ setup_env() {
   else
     : >"$temp_env"
   fi
+  sed -i '/^SUPER_ADMIN_DEFAULT_PASSWORD=/d' "$temp_env"
+
+  if [ -z "${admin_id:-}" ]; then
+    admin_id="admin"
+  fi
 
   upsert_env_key "$temp_env" "JWT_SECRET" "$jwt_secret"
   upsert_env_key "$temp_env" "DSN" \
     "host=127.0.0.1 port=5432 user=${DB_USER} password=${DB_PASS} dbname=${DB_NAME} sslmode=disable"
   upsert_env_key "$temp_env" "UPLOAD_DIR" "./uploads"
-  upsert_env_key "$temp_env" "SUPER_ADMIN_DEFAULT_PASSWORD" "$admin_pass"
+  upsert_env_key "$temp_env" "EXAM_PAPER_DIR" "${APP_DIR}/private/exam-papers"
+  upsert_env_key "$temp_env" "SUPER_ADMIN_ID" "$admin_id"
+  upsert_env_key "$temp_env" "SUPER_ADMIN_PASSWORD" "$admin_pass"
   upsert_env_key "$temp_env" "GIN_MODE" "release"
 
   chmod 0600 "$temp_env"
@@ -663,7 +689,8 @@ if [ -f "$SCRIPT_PATH" ] && [ "$SCRIPT_PATH" != "${APP_DIR}/deploy.sh" ]; then
   chmod +x "${APP_DIR}/deploy.sh"
 fi
 
-mkdir -p "${APP_DIR}/uploads"
+mkdir -p "${APP_DIR}/uploads" "${APP_DIR}/private/exam-papers"
+chmod 0700 "${APP_DIR}/private" "${APP_DIR}/private/exam-papers"
 setup_env
 build_app
 setup_service

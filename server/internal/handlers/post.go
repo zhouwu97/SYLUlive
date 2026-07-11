@@ -38,6 +38,7 @@ type Snapshot struct {
 	ExpiredAt        time.Time
 	AlgorithmVersion string
 	Sort             string
+	FeedKind         string
 }
 
 var ActiveSnapshots sync.Map // key: session_id (string), value: Snapshot
@@ -171,11 +172,37 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	var requestedBoardID *models.BoardID
 	var waterSectionFeedID uint
 
+	isHomeFeedV2 := boardIDStr == "1" &&
+		strings.TrimSpace(postType) == "" &&
+		c.Query("tag_id") == "" &&
+		feedVersion >= 2 &&
+		(sort == "all" || sort == "time") &&
+		searchQuery == "" &&
+		sinceStr == ""
+
+	if isHomeFeedV2 {
+		h.getHomeFeedV2(c, sort, scene, sessionID, page, limit, offset, now)
+		return
+	}
+
+	isLegacyHomeFeed := boardIDStr == "1" &&
+		strings.TrimSpace(postType) == "" &&
+		c.Query("tag_id") == "" &&
+		feedVersion < 2 &&
+		sort == "all" &&
+		searchQuery == "" &&
+		sinceStr == ""
+
+	if isLegacyHomeFeed {
+		h.getLegacyHomeFeedCompat(c, scene, sessionID, page, limit, offset, now)
+		return
+	}
+
 	// 如果是加载更多，并且带有有效的 session_id，尝试走快照
 	if scene == "loadmore" && sessionID != "" {
 		if val, ok := ActiveSnapshots.Load(sessionID); ok {
 			snapshot := val.(Snapshot)
-			if time.Now().Before(snapshot.ExpiredAt) {
+			if time.Now().Before(snapshot.ExpiredAt) && snapshot.FeedKind == "generic" {
 				// 计算切片边界
 				end := offset + limit
 				if offset < len(snapshot.PostIDs) {
@@ -188,6 +215,8 @@ func (h *PostHandler) GetList(c *gin.Context) {
 						var rawPosts []models.Post
 						if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts).Error; err != nil {
 							log.Printf("[DB_ERROR] GetList hot-feed Find failed: %v", err)
+							c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+							return
 						}
 
 						// 重组排序
@@ -286,11 +315,6 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			}
 		}
 		query = query.Where("water_tag_id = ?", tagID)
-	}
-
-	if requestedBoardID != nil && *requestedBoardID == models.BoardShuitie && postType == "" && !tagIDProvided && feedVersion >= 2 && (sort == "all" || sort == "time") && searchQuery == "" && sinceStr == "" {
-		h.getHomeFeedV2(c, sort, scene, sessionID, page, limit, offset, now)
-		return
 	}
 
 	if sinceStr != "" {
@@ -465,6 +489,8 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 		if err := snapshotQuery.Pluck("posts.id", &allIDs).Error; err != nil {
 			log.Printf("[DB_ERROR] GetList snapshot Pluck failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+			return
 		}
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
@@ -472,6 +498,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			PostIDs:   allIDs,
 			ExpiredAt: time.Now().Add(10 * time.Minute),
 			Sort:      sort,
+			FeedKind:  "generic",
 		})
 
 		// 自动销毁
@@ -489,6 +516,8 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			var rawPosts []models.Post
 			if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts).Error; err != nil {
 				log.Printf("[DB_ERROR] GetList common feed Find failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+				return
 			}
 
 			postMap := make(map[uint]models.Post)
@@ -855,7 +884,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			return
 		}
 		snapshot := value.(Snapshot)
-		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm {
+		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm || snapshot.FeedKind != "home_v2" {
 			ActiveSnapshots.Delete(sessionID)
 			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
 			return
@@ -868,7 +897,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			return
 		}
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all"})
+		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all", FeedKind: "home_v2"})
 		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
 	} else {
 		var normal []models.Post
@@ -892,7 +921,11 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		offset = len(ids)
 	}
 	pageIDs := ids[offset:end]
-	posts := h.loadPostsInOrder(pageIDs)
+	posts, err := h.loadPostsInOrder(pageIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+		return
+	}
 	h.hydratePosts(c, posts, now)
 	h.hydratePosts(c, pinned, now)
 	if posts == nil {
@@ -904,13 +937,13 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 	c.JSON(http.StatusOK, gin.H{"pinned_posts": pinned, "posts": posts, "total": len(ids), "page": page, "limit": limit, "session_id": sessionID, "algorithm_version": algorithm})
 }
 
-func (h *PostHandler) loadPostsInOrder(ids []uint) []models.Post {
+func (h *PostHandler) loadPostsInOrder(ids []uint) ([]models.Post, error) {
 	if len(ids) == 0 {
-		return []models.Post{}
+		return []models.Post{}, nil
 	}
 	var raw []models.Post
 	if err := h.db.Where("id IN ?", ids).Preload("Author").Preload("Images").Preload("Images.File").Find(&raw).Error; err != nil {
-		return []models.Post{}
+		return nil, err
 	}
 	byID := make(map[uint]models.Post, len(raw))
 	for _, post := range raw {
@@ -922,7 +955,87 @@ func (h *PostHandler) loadPostsInOrder(ids []uint) []models.Post {
 			ordered = append(ordered, post)
 		}
 	}
-	return ordered
+	return ordered, nil
+}
+
+// getLegacyHomeFeedCompat 兼容旧版本首页请求
+func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID string, page, limit, offset int, now time.Time) {
+	feed := services.NewHomeFeedService(h.db)
+	pinned, err := feed.PinnedPosts(now)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
+		return
+	}
+	
+	var ids []uint
+	if scene == "loadmore" {
+		value, ok := ActiveSnapshots.Load(sessionID)
+		if !ok {
+			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+			return
+		}
+		snapshot := value.(Snapshot)
+		if time.Now().After(snapshot.ExpiredAt) || snapshot.FeedKind != "legacy_hot" {
+			ActiveSnapshots.Delete(sessionID)
+			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
+			return
+		}
+		ids = snapshot.PostIDs
+	} else {
+		ids, err = feed.BuildSnapshot(now)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
+			return
+		}
+		
+		// 把置顶帖的ID放在前面
+		var finalIDs []uint
+		seen := map[uint]bool{}
+		for _, p := range pinned {
+			finalIDs = append(finalIDs, p.ID)
+			seen[p.ID] = true
+		}
+		for _, id := range ids {
+			if !seen[id] {
+				finalIDs = append(finalIDs, id)
+				seen[id] = true
+			}
+		}
+		ids = finalIDs
+
+		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
+		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), Sort: "all", FeedKind: "legacy_hot"})
+		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
+	}
+	
+	end := offset + limit
+	if end > len(ids) {
+		end = len(ids)
+	}
+	if offset > len(ids) {
+		offset = len(ids)
+	}
+	pageIDs := ids[offset:end]
+	posts, err := h.loadPostsInOrder(pageIDs)
+	if err != nil {
+		log.Printf("[DB_ERROR] legacy home feed load posts: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "获取首页帖子失败",
+			"code":  "home_feed_query_failed",
+		})
+		return
+	}
+	h.hydratePosts(c, posts, now)
+	if posts == nil {
+		posts = []models.Post{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"posts":      posts,
+		"total":      len(ids),
+		"page":       page,
+		"limit":      limit,
+		"session_id": sessionID,
+	})
 }
 
 // CreatePostInput 创建帖子输入

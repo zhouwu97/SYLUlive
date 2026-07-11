@@ -222,6 +222,12 @@ class EduProvider extends ChangeNotifier {
     return false;
   }
 
+  Future<void> ensureStatusLoaded() async {
+    while (!_statusLoaded) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+  }
+
   // 获取绑定状态
   Future<void> loadStatus({
     required String expectedUserId,
@@ -535,23 +541,31 @@ class EduProvider extends ChangeNotifier {
         final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
-          if (rebindSuccess) {
-            try {
-              final retryResp = await _authDio.post(
-                '/edu/courses',
-                data: {'year': year, 'semester': semester},
+          await Future.delayed(const Duration(milliseconds: 350));
+          try {
+            final retryResp = await _authDio.post(
+              '/edu/courses',
+              data: {'year': year, 'semester': semester},
+            );
+            if (retryResp.statusCode == 200 &&
+                retryResp.data['courses'] != null &&
+                (retryResp.data['courses'] as List).isNotEmpty) {
+              return OperationResult.ok(
+                List<Map<String, dynamic>>.from(retryResp.data['courses']),
               );
-              if (retryResp.statusCode == 200 &&
-                  retryResp.data['courses'] != null &&
-                  (retryResp.data['courses'] as List).isNotEmpty) {
-                return OperationResult.ok(
-                  List<Map<String, dynamic>>.from(retryResp.data['courses']),
-                );
-              }
-            } catch (_) {}
-          } else {
-            return OperationResult.fail('教务登录状态已失效，请重新绑定');
+            }
+          } on DioException catch (retryError) {
+            final retryMessage = _parseDioError(retryError);
+            if (_isEduSessionExpired(retryError)) {
+              return OperationResult.fail(
+                rebindSuccess
+                    ? '教务会话恢复后仍无法读取课表，请稍后重试'
+                    : '教务登录状态已失效，请重新绑定',
+              );
+            }
+            return OperationResult.fail(retryMessage);
           }
+          return OperationResult.fail('获取课表失败');
         }
         debugPrint('获取课表失败: $errorMsg');
         return OperationResult.fail(errorMsg);
@@ -650,25 +664,33 @@ class EduProvider extends ChangeNotifier {
         final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
-          if (rebindSuccess) {
-            try {
-              final retryResp = await request();
-              if (_userId != requestUserId) {
-                return OperationResult.fail('用户已切换');
+          await Future.delayed(const Duration(milliseconds: 350));
+          try {
+            final retryResp = await request();
+            if (_userId != requestUserId) {
+              return OperationResult.fail('用户已切换');
+            }
+            if (retryResp.statusCode == 200) {
+              final detail = EduGradeDetail.fromJson(
+                Map<String, dynamic>.from(retryResp.data),
+              );
+              if (detail.success && detail.components.isNotEmpty) {
+                _gradeDetailCache[cacheKey] = detail;
               }
-              if (retryResp.statusCode == 200) {
-                final detail = EduGradeDetail.fromJson(
-                  Map<String, dynamic>.from(retryResp.data),
-                );
-                if (detail.success && detail.components.isNotEmpty) {
-                  _gradeDetailCache[cacheKey] = detail;
-                }
-                return OperationResult.ok(detail);
-              }
-            } catch (_) {}
-          } else {
-            return OperationResult.fail('教务登录状态已失效，请重新绑定');
+              return OperationResult.ok(detail);
+            }
+          } on DioException catch (retryError) {
+            final retryMessage = _parseDioError(retryError);
+            if (_isEduSessionExpired(retryError)) {
+              return OperationResult.fail(
+                rebindSuccess
+                    ? '教务会话恢复后仍无法读取成绩构成，请稍后重试'
+                    : '教务登录状态已失效，请重新绑定',
+              );
+            }
+            return OperationResult.fail(retryMessage);
           }
+          return OperationResult.fail('获取成绩构成失败');
         }
         debugPrint('获取成绩构成失败: $errorMsg');
         return OperationResult.fail(errorMsg);
@@ -716,31 +738,39 @@ class EduProvider extends ChangeNotifier {
         final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
-          if (rebindSuccess) {
-            try {
-              final retryResp = await request();
-              if (_userId != requestUserId) {
-                return OperationResult.fail('用户已切换');
+          await Future.delayed(const Duration(milliseconds: 350));
+          try {
+            final retryResp = await request();
+            if (_userId != requestUserId) {
+              return OperationResult.fail('用户已切换');
+            }
+            if (retryResp.statusCode == 200) {
+              final situation = EduAcademicSituation.fromJson(
+                Map<String, dynamic>.from(retryResp.data),
+              );
+              _academicSituationCache[
+                      _academicSituationCacheKey(requestUserId)] =
+                  AcademicSituationCacheEntry(
+                data: situation,
+                updatedAt: DateTime.now(),
+              );
+              if (!situation.success) {
+                return OperationResult.fail(situation.message ?? '获取学业情况失败');
               }
-              if (retryResp.statusCode == 200) {
-                final situation = EduAcademicSituation.fromJson(
-                  Map<String, dynamic>.from(retryResp.data),
-                );
-                _academicSituationCache[
-                        _academicSituationCacheKey(requestUserId)] =
-                    AcademicSituationCacheEntry(
-                  data: situation,
-                  updatedAt: DateTime.now(),
-                );
-                if (!situation.success) {
-                  return OperationResult.fail(situation.message ?? '获取学业情况失败');
-                }
-                return OperationResult.ok(situation);
-              }
-            } catch (_) {}
-          } else {
-            return OperationResult.fail('教务登录状态已失效，请重新绑定');
+              return OperationResult.ok(situation);
+            }
+          } on DioException catch (retryError) {
+            final retryMessage = _parseDioError(retryError);
+            if (_isEduSessionExpired(retryError)) {
+              return OperationResult.fail(
+                rebindSuccess
+                    ? '教务会话恢复后仍无法读取学业情况，请稍后重试'
+                    : '教务登录状态已失效，请重新绑定',
+              );
+            }
+            return OperationResult.fail(retryMessage);
           }
+          return OperationResult.fail('获取学业情况失败');
         }
         debugPrint('获取学业情况失败: $errorMsg');
         return OperationResult.fail(errorMsg);
@@ -781,22 +811,30 @@ class EduProvider extends ChangeNotifier {
         final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
           final rebindSuccess = await _trySilentRelogin();
-          if (rebindSuccess) {
-            try {
-              final retryResp = await _authDio.post(
-                '/edu/grades',
-                data: {'year': year, 'semester': semester},
+          await Future.delayed(const Duration(milliseconds: 350));
+          try {
+            final retryResp = await _authDio.post(
+              '/edu/grades',
+              data: {'year': year, 'semester': semester},
+            );
+            if (retryResp.statusCode == 200 &&
+                retryResp.data['grades'] != null) {
+              return OperationResult.ok(
+                List<Map<String, dynamic>>.from(retryResp.data['grades']),
               );
-              if (retryResp.statusCode == 200 &&
-                  retryResp.data['grades'] != null) {
-                return OperationResult.ok(
-                  List<Map<String, dynamic>>.from(retryResp.data['grades']),
-                );
-              }
-            } catch (_) {}
-          } else {
-            return OperationResult.fail('教务登录状态已失效，请重新绑定');
+            }
+          } on DioException catch (retryError) {
+            final retryMessage = _parseDioError(retryError);
+            if (_isEduSessionExpired(retryError)) {
+              return OperationResult.fail(
+                rebindSuccess
+                    ? '教务会话恢复后仍无法读取成绩，请稍后重试'
+                    : '教务登录状态已失效，请重新绑定',
+              );
+            }
+            return OperationResult.fail(retryMessage);
           }
+          return OperationResult.fail('获取成绩失败');
         }
         debugPrint('获取成绩失败: $errorMsg');
         return OperationResult.fail(errorMsg);

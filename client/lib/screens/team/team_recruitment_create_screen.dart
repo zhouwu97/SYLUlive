@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -226,17 +228,33 @@ class _TeamRecruitmentCreateScreenState
                 if (_images.isNotEmpty)
                   Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _images
-                              .asMap()
-                              .entries
-                              .map((entry) => Chip(
-                                  label: Text('图片 ${entry.key + 1}'),
-                                  onDeleted: () => setState(
-                                      () => _images.removeAt(entry.key))))
-                              .toList())),
+                      child: GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                        itemCount: _images.length,
+                        itemBuilder: (_, index) => ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Stack(fit: StackFit.expand, children: [
+                            Image.file(File(_images[index].path),
+                                fit: BoxFit.cover),
+                            Align(
+                              alignment: Alignment.topRight,
+                              child: IconButton.filledTonal(
+                                tooltip: '删除图片',
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                                onPressed: () =>
+                                    setState(() => _images.removeAt(index)),
+                              ),
+                            ),
+                          ]),
+                        ),
+                      )),
               ])),
     );
   }

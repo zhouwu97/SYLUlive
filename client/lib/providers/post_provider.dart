@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
@@ -622,6 +624,9 @@ class PostProvider extends ChangeNotifier {
     String? contact,
     List<int>? fileIds,
     List<String>? marketTags,
+    int? teamNeededCount,
+    List<String>? teamRoles,
+    DateTime? teamDeadline,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -636,6 +641,10 @@ class PostProvider extends ChangeNotifier {
           'file_ids': fileIds.join(','),
         if (marketTags != null && marketTags.isNotEmpty)
           'market_tags': marketTags.join(','),
+        if (teamNeededCount != null) 'team_needed_count': teamNeededCount,
+        if (teamRoles != null) 'team_roles_json': jsonEncode(teamRoles),
+        if (teamDeadline != null)
+          'team_deadline': teamDeadline.toUtc().toIso8601String(),
       });
 
       final response = await _dio.post('/posts', data: formData);
@@ -671,6 +680,11 @@ class PostProvider extends ChangeNotifier {
     String? contact,
     List<int>? fileIds,
     List<String>? marketTags,
+    int? teamNeededCount,
+    List<String>? teamRoles,
+    DateTime? teamDeadline,
+    bool sendTeamFields = false,
+    bool sendWaterTagField = false,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -680,9 +694,16 @@ class PostProvider extends ChangeNotifier {
         'post_type': postType ?? '',
         'price': price ?? 0,
         'contact': contact ?? '',
-        if (waterTagId != null && waterTagId > 0) 'water_tag_id': waterTagId,
+        if (sendWaterTagField) 'water_tag_id': waterTagId ?? 0,
+        if (!sendWaterTagField && waterTagId != null && waterTagId > 0)
+          'water_tag_id': waterTagId,
         'file_ids': fileIds?.join(',') ?? '',
         'market_tags': marketTags?.join(',') ?? '',
+        if (sendTeamFields) 'team_needed_count': teamNeededCount ?? 0,
+        if (sendTeamFields)
+          'team_roles_json': jsonEncode(teamRoles ?? const <String>[]),
+        if (sendTeamFields)
+          'team_deadline': teamDeadline?.toUtc().toIso8601String() ?? '',
       });
 
       final response = await _dio.put('/posts/$postId', data: formData);
@@ -901,6 +922,19 @@ class PostProvider extends ChangeNotifier {
       refresh(boardId: 1, type: sectionSlug, sort: 'time'),
       refresh(boardId: 1, type: sectionSlug, sort: 'featured'),
     ]);
+  }
+
+  /// 刷新指定标签的组队信息流，用于状态变化后重新排序。
+  Future<void> refreshTeamTagFeeds({
+    required int tagId,
+    required String postType,
+  }) async {
+    await refresh(
+      boardId: 1,
+      type: postType,
+      tagId: tagId,
+      sort: 'all',
+    );
   }
 
   Future<bool> likePost(int postId) async {

@@ -47,6 +47,7 @@ type WaterSectionTag struct {
 	Slug        string    `gorm:"size:64;not null;index;uniqueIndex:idx_section_tag_slug" json:"slug"`
 	Name        string    `gorm:"size:40;not null" json:"name"`
 	Description string    `gorm:"size:200" json:"description"`
+	ContentMode string    `gorm:"size:32;not null;default:'standard';index" json:"content_mode"`
 	SortOrder   int       `gorm:"default:0;index" json:"sort_order"`
 	IsDefault   bool      `gorm:"default:false" json:"is_default"`
 	IsEnabled   bool      `gorm:"default:true;index" json:"is_enabled"`
@@ -55,6 +56,11 @@ type WaterSectionTag struct {
 }
 
 func (WaterSectionTag) TableName() string { return "water_section_tags" }
+
+const (
+	WaterTagModeStandard        = "standard"
+	WaterTagModeTeamRecruitment = "team_recruitment"
+)
 
 // WaterSectionModeratorRole 版块管理角色
 const (
@@ -241,6 +247,7 @@ type waterSectionTagSeed struct {
 	Slug        string
 	Name        string
 	Description string
+	ContentMode string
 	SortOrder   int
 	IsDefault   bool
 }
@@ -292,7 +299,7 @@ func defaultWaterSections() []waterSectionSeedEntry {
 			SensitiveLevel:   "normal", DefaultSort: "recommend", SortOrder: 30,
 			Tags: []waterSectionTagSeed{
 				{Slug: "notice", Name: "通知", SortOrder: 10},
-				{Slug: "team", Name: "组队", SortOrder: 20},
+				{Slug: "team", Name: "组队", ContentMode: WaterTagModeTeamRecruitment, SortOrder: 20},
 				{Slug: "experience", Name: "经验", SortOrder: 30},
 			},
 		},
@@ -409,11 +416,16 @@ func EnsureWaterSections(db *gorm.DB) error {
 			var tag WaterSectionTag
 			tagErr := db.Where("section_id = ? AND slug = ?", section.ID, tagSeed.Slug).First(&tag).Error
 			if tagErr == gorm.ErrRecordNotFound {
+				mode := tagSeed.ContentMode
+				if mode == "" {
+					mode = WaterTagModeStandard
+				}
 				tag = WaterSectionTag{
 					SectionID:   section.ID,
 					Slug:        tagSeed.Slug,
 					Name:        tagSeed.Name,
 					Description: tagSeed.Description,
+					ContentMode: mode,
 					SortOrder:   tagSeed.SortOrder,
 					IsDefault:   tagSeed.IsDefault,
 					IsEnabled:   true,

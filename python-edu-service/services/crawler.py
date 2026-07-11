@@ -147,6 +147,20 @@ class EduCrawler:
         soup = BeautifulSoup(html or "", "html.parser")
         return soup.title.get_text(strip=True) if soup.title else ""
 
+    def _seed_cookie_jar(self, cookie: str) -> None:
+        """将 Cookie 字符串注入 client jar，后续请求由 jar 自动发送。
+
+        httpx 行为：未显式设置 Cookie header 的请求会使用 jar 中的 cookies；
+        预热响应中的 Set-Cookie 也会被 jar 自动合并，不会因固定 header 而丢失。
+        """
+        if not self.client or not cookie:
+            return
+        for part in cookie.split(";"):
+            part = part.strip()
+            if "=" in part:
+                name, _, value = part.partition("=")
+                self.client.cookies.set(name.strip(), value.strip(), domain="jxw.sylu.edu.cn")
+
     def _cookie_string(self) -> str:
         return "; ".join(f"{name}={value}" for name, value in self.client.cookies.items()) if self.client else ""
 
@@ -578,12 +592,60 @@ class EduCrawler:
 
     # ============== 成绩相关 ==============
 
+    async def _prepare_grade_page(self) -> None:
+        """查询成绩前预热成绩模块页面，完成教务会话初始化"""
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": "https://jxw.sylu.edu.cn/xtgl/index_initMenu.html",
+            "User-Agent": self.client.headers.get("User-Agent", ""),
+        }
+
+        resp = await self.client.get(
+            f"{GRADE_URL}/cjcx_cxDgXscj.html",
+            params={
+                "gnmkdm": "N305005",
+                "layout": "default",
+            },
+            headers=headers,
+        )
+
+        if resp.status_code in (302, 901) or _looks_like_login_page(resp.text):
+            raise CookieLapseError("教务登录会话已失效")
+
+        if resp.status_code != 200:
+            raise NetworkError(f"成绩页面初始化失败，状态码 {resp.status_code}")
+
     async def fetch_grades(self, cookie: str, year: str, semester: int) -> List[dict]:
-        """获取成绩原始数据"""
+        """获取成绩原始数据 — 先预热成绩模块页面再请求 JSON 接口"""
         if not self.client:
             raise NetworkError("Client not initialized")
 
-        headers = {"Cookie": cookie}
+        # 将 Cookie 注入 client jar，后续请求由 jar 自动管理
+        # 这样预热响应的 Set-Cookie 会自然流入 AJAX 请求
+        self._seed_cookie_jar(cookie)
+
+        # 预热成绩模块，完成教务会话初始化
+        try:
+            await self._prepare_grade_page()
+        except CookieLapseError:
+            raise
+        except NetworkError:
+            raise
+        except Exception as e:
+            logger.warning(
+                "[EDU-GRADES] grade page warmup failed: %s, proceeding anyway", e
+            )
+
+        ajax_headers = {
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+            "Referer": (
+                f"{GRADE_URL}/cjcx_cxDgXscj.html"
+                "?gnmkdm=N305005&layout=default"
+            ),
+            "Origin": "https://jxw.sylu.edu.cn",
+        }
         query_data = {"doType": "query", "gnmkdm": "N305005"}
         page_size = 500
         page = 1
@@ -601,20 +663,58 @@ class EduCrawler:
                 f"{GRADE_URL}/cjcx_cxXsgrcj.html",
                 params=query_data,
                 data=form_data,
-                headers=headers
+                headers=ajax_headers,
             )
 
-            if resp.status_code != 200:
-                raise CookieLapseError("获取成绩失败,Cookie可能已失敁")
+            # 明确跳转登录页 / 状态码 901 → Cookie 过期
+            if resp.status_code in (302, 901):
+                raise CookieLapseError(
+                    f"成绩接口返回状态码 {resp.status_code}，Cookie 已失效"
+                )
 
-            content_type = resp.headers.get("Content-Type", "")
-            if "text/html" in content_type:
-                raise CookieLapseError("Cookie已失敁")
+            # 页面内容包含登录表单 → Cookie 过期
+            if _looks_like_login_page(resp.text):
+                raise CookieLapseError("成绩接口返回登录页面，Cookie 已失效")
+
+            # 其余非 200 → 网络/上游异常，不判 Cookie 过期
+            if resp.status_code != 200:
+                logger.warning(
+                    "[EDU-GRADES] unexpected status "
+                    "status=%s content_type=%r title=%r body_preview=%r",
+                    resp.status_code,
+                    resp.headers.get("Content-Type", ""),
+                    self._page_title(resp.text),
+                    self._response_body_preview(resp.text),
+                )
+                raise NetworkError(f"成绩接口返回状态码 {resp.status_code}")
+
+            content_type = resp.headers.get("Content-Type", "").lower()
+
+            # 非 JSON → 诊断日志，不一律判 Cookie 过期
+            if "application/json" not in content_type:
+                logger.warning(
+                    "[EDU-GRADES] non-JSON response "
+                    "status=%s content_type=%r location=%r title=%r body_preview=%r",
+                    resp.status_code,
+                    content_type,
+                    resp.headers.get("location", ""),
+                    self._page_title(resp.text),
+                    self._response_body_preview(resp.text),
+                )
+                raise NetworkError("成绩接口返回了非 JSON 数据，教务系统可能正在维护")
 
             try:
                 data = json.loads(resp.text)
             except json.JSONDecodeError:
-                raise GradesNotOpenError("成绩数据解析失败")
+                logger.warning(
+                    "[EDU-GRADES] malformed JSON response "
+                    "status=%s content_type=%r title=%r body_preview=%r",
+                    resp.status_code,
+                    content_type,
+                    self._page_title(resp.text),
+                    self._response_body_preview(resp.text),
+                )
+                raise NetworkError("成绩接口返回了无法解析的数据，教务系统可能正在维护")
 
             items = data.get("items", [])
             all_items.extend(items)

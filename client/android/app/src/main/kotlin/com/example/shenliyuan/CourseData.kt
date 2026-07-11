@@ -21,7 +21,6 @@ import org.json.JSONObject
 data class WidgetCourseData(
     val title: String = "沈理院课表",
     val date: String = "",
-    val textColor: String = "#333333",
     val courses: List<Course> = emptyList(),
 ) {
     data class Course(
@@ -65,7 +64,6 @@ object CourseDataReader {
         val obj = JSONObject(raw)
         val title = obj.optString("title", "沈理院课表")
         val date = obj.optString("date", "")
-        val textColor = obj.optString("textColor", "#333333")
         val arr = obj.optJSONArray("courses") ?: JSONArray()
 
         val calendar = java.util.Calendar.getInstance()
@@ -110,6 +108,6 @@ object CourseDataReader {
                 ))
             }
         }
-        return WidgetCourseData(title = title, date = date, textColor = textColor, courses = courses)
+        return WidgetCourseData(title = title, date = date, courses = courses)
     }
 }

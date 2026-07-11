@@ -6,6 +6,7 @@ class CampusServiceGrid extends StatelessWidget {
   final bool isDark;
   final VoidCallback onEduTap;
   final VoidCallback onRateTap;
+  final VoidCallback onTeamTap;
   final VoidCallback onMapTap;
   final VoidCallback onCalendarTap;
 
@@ -14,6 +15,7 @@ class CampusServiceGrid extends StatelessWidget {
     required this.isDark,
     required this.onEduTap,
     required this.onRateTap,
+    required this.onTeamTap,
     required this.onMapTap,
     required this.onCalendarTap,
   });
@@ -32,6 +34,12 @@ class CampusServiceGrid extends StatelessWidget {
         icon: Icons.leaderboard_rounded,
         color: CampusTheme.orange,
         onTap: onRateTap,
+      ),
+      CampusServiceItem(
+        title: '组队',
+        icon: Icons.groups_2_rounded,
+        color: const Color(0xFF7C6FF0),
+        onTap: onTeamTap,
       ),
       CampusServiceItem(
         title: '校园地图',

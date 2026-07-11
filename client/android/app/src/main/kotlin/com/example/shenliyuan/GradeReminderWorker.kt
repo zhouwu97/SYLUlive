@@ -77,6 +77,10 @@ class GradeReminderWorker(
             markNeedAction(userId, "bind", "教务账号未绑定或绑定失效")
             return Result.success()
         }
+        if (response.statusCode == 409 && response.body.contains("EDU_SESSION_EXPIRED")) {
+            markNeedAction(userId, "bind", "教务登录状态已失效")
+            return Result.success()
+        }
         if (response.statusCode >= 500) {
             recordFailure(userId, "服务端异常", "status=${response.statusCode}")
             return Result.retry()

@@ -168,6 +168,10 @@ func TestExamPaperResponseReportsWhetherRewardIsRevocable(t *testing.T) {
 	rewardedAt := time.Now().Add(-time.Hour)
 	revokedAt := time.Now()
 
+	unrewarded := examPaperToResponse(models.ExamPaper{})
+	if unrewarded.RewardRevocable {
+		t.Fatal("从未奖励的试卷不得标记为可撤销奖励")
+	}
 	revocable := examPaperToResponse(models.ExamPaper{RewardedAt: &rewardedAt})
 	if !revocable.RewardRevocable {
 		t.Fatal("已奖励且未撤销的试卷必须标记为可撤销奖励")

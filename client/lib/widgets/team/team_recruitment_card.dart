@@ -32,8 +32,7 @@ class TeamRecruitmentCard extends StatelessWidget {
         color: TeamUiTokens.cardBg(isDark),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: BorderSide(
-              color: TeamUiTokens.border(isDark)),
+          side: BorderSide(color: TeamUiTokens.border(isDark)),
         ),
         child: InkWell(
           onTap: onTap,
@@ -59,7 +58,9 @@ class TeamRecruitmentCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 13, height: 1.4, color: TeamUiTokens.subtitle(isDark))),
+                      fontSize: 13,
+                      height: 1.4,
+                      color: TeamUiTokens.subtitle(isDark))),
               if (recruitment.roles.isNotEmpty) ...[
                 const SizedBox(height: 11),
                 Wrap(spacing: 6, runSpacing: 6, children: [
@@ -91,8 +92,8 @@ class TeamRecruitmentCard extends StatelessWidget {
                   const SizedBox(width: 3),
                   Text(
                       '截止 ${recruitment.deadline!.month.toString().padLeft(2, '0')}-${recruitment.deadline!.day.toString().padLeft(2, '0')}',
-                      style:
-                          TextStyle(fontSize: 12, color: TeamUiTokens.subtitle(isDark))),
+                      style: TextStyle(
+                          fontSize: 12, color: TeamUiTokens.subtitle(isDark))),
                 ],
               ]),
               const SizedBox(height: 8),
@@ -129,10 +130,11 @@ class TeamRecruitmentCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            fontSize: 12, color: TeamUiTokens.subtitle(isDark)))),
+                            fontSize: 12,
+                            color: TeamUiTokens.subtitle(isDark)))),
                 Text(_relativeTime(recruitment.createdAt),
-                    style:
-                        TextStyle(fontSize: 12, color: TeamUiTokens.subtitle(isDark))),
+                    style: TextStyle(
+                        fontSize: 12, color: TeamUiTokens.subtitle(isDark))),
               ]),
             ]),
           ),

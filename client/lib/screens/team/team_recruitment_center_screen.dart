@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import '../../providers/team_recruitment_provider.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/theme_provider.dart';
 import '../../widgets/team/team_recruitment_card.dart';
 import '../../widgets/team/team_ui_tokens.dart';
 import 'my_team_recruitments_screen.dart';
@@ -112,8 +111,10 @@ class _TeamRecruitmentCenterScreenState
                 ),
               );
             },
-            icon: Icon(Icons.person_outline_rounded, size: 18, color: TeamUiTokens.accent(isDark)),
-            label: Text('我的', style: TextStyle(color: TeamUiTokens.accent(isDark))),
+            icon: Icon(Icons.person_outline_rounded,
+                size: 18, color: TeamUiTokens.accent(isDark)),
+            label: Text('我的',
+                style: TextStyle(color: TeamUiTokens.accent(isDark))),
           ),
         ],
       ),
@@ -163,19 +164,42 @@ class _TeamRecruitmentCenterScreenState
                             },
                           ),
                         ),
+                        const SizedBox(width: 6),
                         IconButton(
                           tooltip: '更多筛选',
                           onPressed: _showMoreStatus,
-                          icon: const Icon(Icons.tune_rounded, size: 20),
+                          icon: Icon(Icons.tune_rounded,
+                              size: 20, color: TeamUiTokens.subtitle(isDark)),
                         ),
-                        _ResultSummary(
-                          count: provider.publicTotal,
-                          viewState: provider.viewState,
-                          sort: provider.currentSort,
-                          onSort: _showSort,
+                        InkWell(
+                          borderRadius: BorderRadius.circular(6),
+                          onTap: _showSort,
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.sort_rounded,
+                                size: 15, color: TeamUiTokens.subtitle(isDark)),
+                            const SizedBox(width: 3),
+                            Text(
+                                const {
+                                      'recommended': '推荐',
+                                      'latest': '最新',
+                                      'deadline': '截止'
+                                    }[provider.currentSort] ??
+                                    '推荐',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: TeamUiTokens.subtitle(isDark))),
+                          ]),
                         ),
                       ],
                     ),
+                    if (provider.viewState == TeamFeedViewState.content)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text('共 ${provider.publicTotal} 个招募',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: TeamUiTokens.subtitle(isDark))),
+                      ),
                     if (provider.refreshWarning != null) ...[
                       const SizedBox(height: 10),
                       _RefreshWarning(
@@ -257,12 +281,17 @@ class _TeamRecruitmentCenterScreenState
                 (provider.isLoadingMore || provider.publicHasMore ? 1 : 0),
             itemBuilder: (_, index) {
               if (index >= provider.publicItems.length) {
+                final loadMoreDark =
+                    Theme.of(context).brightness == Brightness.dark;
                 return Center(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: provider.isLoadingMore
                         ? const CircularProgressIndicator()
                         : TextButton(
+                            style: TextButton.styleFrom(
+                                foregroundColor:
+                                    TeamUiTokens.accent(loadMoreDark)),
                             onPressed: provider.loadMorePublic,
                             child: const Text('加载更多'),
                           ),
@@ -311,6 +340,7 @@ class _TeamRecruitmentCenterScreenState
   }
 
   void _showSort() {
+    final sortDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -325,7 +355,8 @@ class _TeamRecruitmentCenterScreenState
               title: Text(option.$1),
               trailing: context.read<TeamRecruitmentProvider>().currentSort ==
                       option.$2
-                  ? const Icon(Icons.check_rounded)
+                  ? Icon(Icons.check_rounded,
+                      color: TeamUiTokens.accent(sortDark))
                   : null,
               onTap: () {
                 Navigator.pop(sheetContext);
@@ -359,7 +390,6 @@ class _CategoryTabs extends StatelessWidget {
     const values = [
       ('全部', null),
       ('竞赛', 'competition'),
-      ('项目', 'project'),
       ('学习', 'study'),
       ('活动', 'activity'),
       ('其他', 'other'),
@@ -379,8 +409,9 @@ class _CategoryTabs extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
                 decoration: BoxDecoration(
-                  color:
-                      selected ? TeamUiTokens.accentSoft(isDark) : Colors.transparent,
+                  color: selected
+                      ? TeamUiTokens.accentSoft(isDark)
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(99),
                 ),
                 child: Text(value.$1,
@@ -422,7 +453,9 @@ class _StatusSegment extends StatelessWidget {
           height: 40,
           padding: const EdgeInsets.all(3),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF0EEF4),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : const Color(0xFFF2F6F4),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -461,75 +494,38 @@ class _StatusSegment extends StatelessWidget {
   }
 }
 
-class _ResultSummary extends StatelessWidget {
-  final int count;
-  final TeamFeedViewState viewState;
-  final String sort;
-  final VoidCallback onSort;
-  const _ResultSummary(
-      {required this.count,
-      required this.viewState,
-      required this.sort,
-      required this.onSort});
-  @override
-  Widget build(BuildContext context) => Row(children: [
-        Text(viewState == TeamFeedViewState.content ? '共 $count 个招募' : '组队招募',
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700)),
-        const Spacer(),
-        Icon(Icons.sort_rounded, size: 15, color: Colors.grey.shade500),
-        const SizedBox(width: 3),
-        InkWell(
-            onTap: onSort,
-            child: Text(
-                const {
-                      'recommended': '推荐排序',
-                      'latest': '最新发布',
-                      'deadline': '临近截止'
-                    }[sort] ??
-                    '推荐排序',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade500))),
-      ]);
-}
-
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
-  const _SearchBar(
-      {required this.controller,
-      required this.onChanged});
+  const _SearchBar({required this.controller, required this.onChanged});
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
-        height: 44,
-        child: TextField(
-          controller: controller,
-          onChanged: onChanged,
-          textInputAction: TextInputAction.search,
-          decoration: InputDecoration(
-            hintText: '搜索竞赛、项目、技能或关键词',
-            prefixIcon: const Icon(Icons.search_rounded),
-            filled: true,
-            fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    BorderSide(color: TeamUiTokens.border(isDark))),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    BorderSide(color: TeamUiTokens.border(isDark))),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    BorderSide(color: TeamUiTokens.accent(isDark), width: 1.5)),
-            contentPadding: EdgeInsets.zero,
-          ),
+      height: 44,
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: '搜索竞赛、项目、技能或关键词',
+          prefixIcon: const Icon(Icons.search_rounded),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: TeamUiTokens.border(isDark))),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: TeamUiTokens.border(isDark))),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide:
+                  BorderSide(color: TeamUiTokens.accent(isDark), width: 1.5)),
+          contentPadding: EdgeInsets.zero,
         ),
-      );
+      ),
+    );
   }
 }
 
@@ -538,16 +534,23 @@ class _RefreshWarning extends StatelessWidget {
   final VoidCallback onRetry;
   const _RefreshWarning({required this.message, required this.onRetry});
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-            color: const Color(0xFFFFF4DE),
-            borderRadius: BorderRadius.circular(10)),
-        child: Row(children: [
-          Expanded(child: Text(message, style: const TextStyle(fontSize: 12))),
-          TextButton(onPressed: onRetry, child: const Text('重试'))
-        ]),
-      );
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+          color: const Color(0xFFFFF4DE),
+          borderRadius: BorderRadius.circular(10)),
+      child: Row(children: [
+        Expanded(child: Text(message, style: const TextStyle(fontSize: 12))),
+        TextButton(
+            style: TextButton.styleFrom(
+                foregroundColor: TeamUiTokens.accent(isDark)),
+            onPressed: onRetry,
+            child: const Text('重试'))
+      ]),
+    );
+  }
 }
 
 class _TeamFeedStateView extends StatelessWidget {
@@ -569,7 +572,8 @@ class _TeamFeedStateView extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height * 0.5),
+      constraints:
+          BoxConstraints(minHeight: MediaQuery.of(context).size.height * 0.5),
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -584,12 +588,17 @@ class _TeamFeedStateView extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(title,
-            style:
-                TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: TeamUiTokens.title(isDark))),
+            style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: TeamUiTokens.title(isDark))),
         const SizedBox(height: 8),
         Text(description,
             textAlign: TextAlign.center,
-            style: TextStyle(height: 1.5, fontSize: 13, color: TeamUiTokens.subtitle(isDark))),
+            style: TextStyle(
+                height: 1.5,
+                fontSize: 13,
+                color: TeamUiTokens.subtitle(isDark))),
         const SizedBox(height: 20),
         FilledButton.icon(
             style: TeamUiTokens.primaryButtonStyle(isDark),

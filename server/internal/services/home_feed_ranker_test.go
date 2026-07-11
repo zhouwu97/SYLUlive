@@ -225,7 +225,7 @@ func TestRankHomeFeedDormantOldPostNeverEntersFirstTen(t *testing.T) {
 	}
 }
 
-func TestRankHomeFeedFinalFillPreservesConstraints(t *testing.T) {
+func TestRankHomeFeedFinalFillPreservesDeepFeedOrder(t *testing.T) {
 	now := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
 	candidates := make([]HomeFeedCandidate, 0)
 	
@@ -249,7 +249,12 @@ func TestRankHomeFeedFinalFillPreservesConstraints(t *testing.T) {
 		t.Fatalf("Expected 30 items returned total, got %d", len(ids))
 	}
 	
-	if ids[0] != 1 {
-		t.Fatalf("Expected hottest post first")
+	firstPage := ids[:20]
+	if len(firstPage) != 20 {
+		t.Fatalf("Expected 20 items in first page, got %d", len(firstPage))
+	}
+	
+	if ids[20] != 21 {
+		t.Fatalf("deep feed order changed, expected 21 at index 20, got %d", ids[20])
 	}
 }

@@ -40,7 +40,7 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		tokenString := tokenFromRequest(c)
 
 		if tokenString == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+			writeAPIError(c, http.StatusUnauthorized, "authentication_required", "未登录")
 			c.Abort()
 			return
 		}
@@ -51,7 +51,7 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的令牌"})
+			writeAPIError(c, http.StatusUnauthorized, "invalid_token", "无效的令牌")
 			c.Abort()
 			return
 		}
@@ -59,12 +59,12 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		// 检查数据库中用户的 TokenVersion 是否一致
 		tokenVersion, err := getCachedTokenVersion(db, claims.UserID)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+			writeAPIError(c, http.StatusUnauthorized, "authentication_required", "用户不存在")
 			c.Abort()
 			return
 		}
 		if tokenVersion != claims.TokenVersion {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "账号状态已更新，请重新登录"})
+			writeAPIError(c, http.StatusUnauthorized, "token_version_expired", "账号状态已更新，请重新登录")
 			c.Abort()
 			return
 		}
@@ -157,7 +157,7 @@ func AdminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, _ := c.Get("role")
 		if role != "admin" && role != "super_admin" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "需要管理员权限"})
+			writeAPIError(c, http.StatusForbidden, "admin_required", "需要管理员权限")
 			c.Abort()
 			return
 		}
@@ -170,12 +170,16 @@ func SuperAdminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, _ := c.Get("role")
 		if role != "super_admin" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "需要超级管理员权限"})
+			writeAPIError(c, http.StatusForbidden, "super_admin_required", "需要超级管理员权限")
 			c.Abort()
 			return
 		}
 		c.Next()
 	}
+}
+
+func writeAPIError(c *gin.Context, status int, code, message string) {
+	c.JSON(status, gin.H{"error": message, "code": code})
 }
 
 // GenerateToken 生成JWT令牌

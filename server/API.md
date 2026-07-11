@@ -188,3 +188,27 @@
 | `POST` | `/api/v1/question/solve` | 触发大模型 AI 解答题目接口 |
 
 > **注**: 以上仅为摘要级接口列表。请求载荷 (Body) 和返回体结构请参考对应处理器 (Handlers) 的 Go 源码定义。
+
+## 试卷库
+
+普通接口均需 JWT；普通用户还需完成教务认证，管理员可绕过教务认证。
+
+- `GET /api/exam-papers`：已发布列表，支持 `keyword`、`academic_year`、`semester`、`exam_type`、`sort`、`page`、`page_size`。
+- `GET /api/exam-papers/:id`：已发布详情。
+- `POST /api/exam-papers`：`multipart/form-data` 投稿，字段为 `file`、`course_name`、`academic_year`、`semester`、`exam_type`、`privacy_confirmed=true`。
+- `GET /api/exam-papers/my-submissions`：我的待审核和已发布投稿。
+- `DELETE /api/exam-papers/my-submissions/:id`：撤回本人待审核投稿。
+- `GET /api/exam-papers/:id/preview`：内联预览，不增加下载量。
+- `GET /api/exam-papers/:id/download`：附件下载并原子增加下载量。
+
+管理员接口：
+
+- `GET /api/admin/exam-papers?status=pending|published`
+- `GET /api/admin/exam-papers/pending-count`
+- `GET /api/admin/exam-papers/:id`
+- `POST /api/admin/exam-papers/:id/approve`
+- `POST /api/admin/exam-papers/:id/reject`
+- `PATCH /api/admin/exam-papers/:id`
+- `POST /api/admin/exam-papers/:id/unpublish`
+
+功能错误统一为 `{"error":"中文说明","code":"机器错误码"}`。

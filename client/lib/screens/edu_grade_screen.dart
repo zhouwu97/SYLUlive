@@ -121,7 +121,12 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         unawaited(
           GradeReminderService.instance.ensureScheduledIfEnabled(),
         );
-        _initSemesterAndLoad(capturedUserId);
+        Future<void> initFlow() async {
+          await eduProvider.ensureStatusLoaded();
+          if (!mounted || _lastUserId != capturedUserId) return;
+          await _initSemesterAndLoad(capturedUserId);
+        }
+        initFlow();
       } else {
         unawaited(
             GradeReminderService.instance.syncRuntimeConfig(userId: null));

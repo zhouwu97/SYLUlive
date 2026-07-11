@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../widgets/team/team_recruitment_card.dart';
 import '../chat_detail_screen.dart';
+import '../../widgets/team/team_ui_tokens.dart';
 import 'team_application_manage_screen.dart';
 import 'team_recruitment_create_screen.dart';
 
@@ -145,8 +146,13 @@ class _TeamRecruitmentDetailScreenState
           appBar: AppBar(), body: Center(child: Text(_error ?? '招募不存在')));
     }
     final item = _item!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageColor = TeamUiTokens.pageBg(isDark);
     return Scaffold(
+      backgroundColor: pageColor,
       appBar: AppBar(
+        backgroundColor: pageColor,
+        surfaceTintColor: Colors.transparent,
         title: const Text('组队详情'),
         actions: [
           if (item.isOwner)
@@ -173,10 +179,23 @@ class _TeamRecruitmentDetailScreenState
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: pageColor,
+          border: Border(top: BorderSide(color: TeamUiTokens.border(isDark))),
+        ),
+        child: SafeArea(
           child: Padding(
-              padding: const EdgeInsets.all(16), child: _bottomAction(item))),
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              height: 48,
+              child: _bottomAction(item, isDark),
+            ),
+          ),
+        ),
+      ),
       body: RefreshIndicator(
+          color: TeamUiTokens.accent(isDark),
           onRefresh: _load,
           child: ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 110),
@@ -218,38 +237,38 @@ class _TeamRecruitmentDetailScreenState
                       ])
                 ]),
                 const SizedBox(height: 24),
-                const Text('组队说明',
-                    style:
-                        TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 8),
-                Text(item.description, style: const TextStyle(height: 1.65)),
+                _section('组队说明', [
+                  Text(item.description, style: const TextStyle(height: 1.65)),
+                ], isDark),
                 const SizedBox(height: 24),
-                const Text('招募信息',
-                    style:
-                        TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 10),
-                _infoRow(Icons.group_outlined,
-                    '已加入 ${item.acceptedCount} / 计划招募 ${item.neededCount}，还缺 ${item.remainingCount} 人'),
-                _infoRow(
-                    Icons.event_outlined,
-                    item.deadline == null
-                        ? '未设置截止日期'
-                        : '截止 ${item.deadline!.year}-${item.deadline!.month.toString().padLeft(2, '0')}-${item.deadline!.day.toString().padLeft(2, '0')}'),
-                if (item.roles.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                      spacing: 7,
-                      runSpacing: 7,
-                      children: item.roles
-                          .map((role) => Chip(label: Text(role)))
-                          .toList())
-                ],
+                _section('招募信息', [
+                  _infoRow(Icons.group_outlined,
+                      '已加入 ${item.acceptedCount} / 计划招募 ${item.neededCount}，还缺 ${item.remainingCount} 人', isDark),
+                  _infoRow(
+                      Icons.event_outlined,
+                      item.deadline == null
+                          ? '未设置截止日期'
+                          : '截止 ${item.deadline!.year}-${item.deadline!.month.toString().padLeft(2, '0')}-${item.deadline!.day.toString().padLeft(2, '0')}', isDark),
+                  if (item.roles.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                        spacing: 7,
+                        runSpacing: 7,
+                        children: item.roles
+                            .map((role) => Chip(
+                                  label: Text(role),
+                                  backgroundColor: TeamUiTokens.pageBg(isDark),
+                                  side: BorderSide(color: TeamUiTokens.border(isDark)),
+                                ))
+                            .toList())
+                  ],
+                ], isDark),
                 if (item.images.isNotEmpty) ...[
                   const SizedBox(height: 24),
-                  const Text('图片',
-                      style:
-                          TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 10),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4, bottom: 8),
+                    child: Text('图片', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                  ),
                   SizedBox(
                       height: 130,
                       child: ListView.separated(
@@ -268,19 +287,52 @@ class _TeamRecruitmentDetailScreenState
     );
   }
 
-  Widget _infoRow(IconData icon, String text) => Padding(
+  Widget _section(String title, List<Widget> children, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: TeamUiTokens.title(isDark),
+            ),
+          ),
+        ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: TeamUiTokens.cardBg(isDark),
+            borderRadius: BorderRadius.circular(TeamUiTokens.cardRadius),
+            border: Border.all(color: TeamUiTokens.border(isDark)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoRow(IconData icon, String text, bool isDark) => Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(children: [
-        Icon(icon, size: 18, color: Colors.grey.shade600),
+        Icon(icon, size: 18, color: TeamUiTokens.subtitle(isDark)),
         const SizedBox(width: 8),
         Expanded(child: Text(text))
       ]));
 
-  Widget _bottomAction(TeamRecruitment item) {
+  Widget _bottomAction(TeamRecruitment item, bool isDark) {
     if (item.isOwner) {
       return Row(children: [
         Expanded(
             child: OutlinedButton(
+                style: TeamUiTokens.secondaryButtonStyle(isDark),
                 onPressed: () async {
                   await Navigator.push(
                       context,
@@ -294,6 +346,10 @@ class _TeamRecruitmentDetailScreenState
         const SizedBox(width: 10),
         Expanded(
             child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: item.isClosed ? TeamUiTokens.accent(isDark) : const Color(0xFFE54848),
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: item.isClosed
                     ? () => _changeStatus(item, 'recruiting')
                     : () => _changeStatus(item, 'closed'),
@@ -301,10 +357,14 @@ class _TeamRecruitmentDetailScreenState
       ]);
     }
     if (item.myApplicationStatus == 'pending') {
-      return const FilledButton(onPressed: null, child: Text('等待审核'));
+      return FilledButton(
+          style: TeamUiTokens.primaryButtonStyle(isDark),
+          onPressed: null,
+          child: const Text('等待审核'));
     }
     if (item.myApplicationStatus == 'accepted') {
       return FilledButton.icon(
+        style: TeamUiTokens.primaryButtonStyle(isDark),
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(
@@ -317,6 +377,7 @@ class _TeamRecruitmentDetailScreenState
     }
     if (!item.canApply) {
       return FilledButton(
+          style: TeamUiTokens.primaryButtonStyle(isDark),
           onPressed: null,
           child: Text(item.isFull
               ? '已满员'
@@ -327,6 +388,7 @@ class _TeamRecruitmentDetailScreenState
     final applying =
         context.watch<TeamRecruitmentProvider>().applyingIds.contains(item.id);
     return FilledButton(
+        style: TeamUiTokens.primaryButtonStyle(isDark),
         onPressed: applying ? null : () => _apply(item),
         child: Text(applying ? '提交中…' : '申请加入'));
   }

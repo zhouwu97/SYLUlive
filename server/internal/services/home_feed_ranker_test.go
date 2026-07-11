@@ -39,3 +39,50 @@ func TestRankHomeFeedKeepsFreshPostsAndCapsAuthor(t *testing.T) {
 		t.Fatal("fresh zero-interaction posts should receive a first-page slot")
 	}
 }
+
+func TestRankHomeFeedByFreshOrder(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
+	candidates := make([]HomeFeedCandidate, 0, 5)
+	
+	for i := 0; i < 5; i++ {
+		candidates = append(candidates, HomeFeedCandidate{
+			Post: models.Post{
+				ID: uint(i + 1),
+				AuthorID: uint(i + 10),
+				PostType: "campus_life",
+				CreatedAt: now.Add(-time.Duration(i) * time.Hour), // i=0 is newest, i=4 is oldest
+			},
+		})
+	}
+	
+	ids := RankHomeFeed(candidates, now)
+	if len(ids) != 5 {
+		t.Fatalf("Expected 5 items returned, got %d", len(ids))
+	}
+	// The newest post should be included early.
+}
+
+func TestRankHomeFeedRelaxationStages(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
+	candidates := make([]HomeFeedCandidate, 0, 40)
+	
+	// Create 40 posts from 10 different authors.
+	for i := 0; i < 40; i++ {
+		candidates = append(candidates, HomeFeedCandidate{
+			Post: models.Post{
+				ID: uint(i + 1),
+				AuthorID: uint((i % 10) + 1), // Authors 1 to 10
+				PostType: "campus_life",
+				CreatedAt: now.Add(-time.Duration(i) * time.Hour),
+				LastActivityAt: now,
+			},
+			HotScore: float64(100 - i),
+		})
+	}
+	
+	ids := RankHomeFeed(candidates, now)
+	
+	if len(ids) != 40 {
+		t.Fatalf("Expected 40 items returned, got %d", len(ids))
+	}
+}

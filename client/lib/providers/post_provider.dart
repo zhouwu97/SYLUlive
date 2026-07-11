@@ -24,6 +24,7 @@ class _BoardState {
   int requestVersion = 0;
   int revision = 0;
   DateTime? lastSuccessfulRefreshAt;
+  bool isRecoveringExpiredSession = false;
 }
 
 /// 创建帖子的返回结果
@@ -201,9 +202,16 @@ class PostProvider extends ChangeNotifier {
   }) async {
     if (!_enableCache || sort == 'following') return;
     try {
+      final board = _boards[_stateKey(boardId, sort, type, tagId: tagId)];
+      final algorithmVersion = board?.algorithmVersion ?? (sort == 'all' ? PostCacheService.homeAllAlgorithmVersion : 'feed_v1');
+      final feed = CachedPostFeed(
+        posts: posts,
+        pinnedPosts: board?.pinnedPosts ?? [],
+        algorithmVersion: algorithmVersion,
+      );
       await PostCacheService.savePosts(
         boardId,
-        posts,
+        feed,
         sort: sort,
         type: type,
         tagId: tagId,
@@ -270,15 +278,19 @@ class PostProvider extends ChangeNotifier {
     // 第一步：极速上屏 — 读本地缓存（关注信息流不使用缓存）
     if (_enableCache && sort != 'following') {
       try {
-        final cached = await PostCacheService.loadPosts(
+        final feed = await PostCacheService.loadPosts(
           boardId,
           sort: sort,
           type: type,
           tagId: tagId,
         );
         if (requestVersion != board.requestVersion) return;
-        if (cached.isNotEmpty) {
-          board.posts = cached;
+        if (feed != null && feed.posts.isNotEmpty) {
+          board.posts = feed.posts;
+          if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+            board.pinnedPosts = feed.pinnedPosts;
+            board.algorithmVersion = feed.algorithmVersion;
+          }
           board.revision++;
           notifyListeners();
         }
@@ -325,13 +337,23 @@ class PostProvider extends ChangeNotifier {
         final pinned = ((data['pinned_posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
-        if (usesHomeFeedV2(
-            boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+        final isHomeV2 = usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId);
+        if (isHomeV2) {
           board.pinnedPosts = pinned;
           board.algorithmVersion = data['algorithm_version']?.toString() ?? '';
         }
 
-        if (sort != 'time') {
+        if (isHomeV2) {
+          board.posts = newPosts;
+          board.pinnedPosts = pinned;
+          await _savePostsToCache(
+            boardId,
+            sort,
+            board.posts,
+            type: type,
+            tagId: tagId,
+          );
+        } else if (sort != 'time') {
           board.posts = newPosts;
           await _savePostsToCache(
             boardId,
@@ -496,6 +518,27 @@ class PostProvider extends ChangeNotifier {
         }
       }
     } on DioException catch (e) {
+      final data = e.response?.data;
+      final isFeedSessionExpired = e.response?.statusCode == 409 &&
+          data is Map &&
+          data['code']?.toString() == 'feed_session_expired';
+
+      if (isFeedSessionExpired && usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+        if (!board.isRecoveringExpiredSession) {
+          board.isRecoveringExpiredSession = true;
+          board.sessionId = null;
+          board.error = null;
+          board.isLoading = false;
+          await _refreshInternal(
+            boardId: boardId,
+            type: type,
+            tagId: tagId,
+            sort: sort,
+          );
+          board.isRecoveringExpiredSession = false;
+          return;
+        }
+      }
       board.error = AppFeedback.dioErrorMessage(e);
     } catch (e) {
       board.error = e.toString();
@@ -539,6 +582,7 @@ class PostProvider extends ChangeNotifier {
     board.currentSort = sort;
     board.currentPage = 1;
     board.hasMore = true;
+    board.hasCacheLoaded = true;
 
     if (board.posts.isEmpty) {
       board.isLoading = true;
@@ -550,6 +594,7 @@ class PostProvider extends ChangeNotifier {
 
     try {
       board.sessionId = null; // 清除老的会话快照
+      final useHomeFeedV2 = usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId);
       final params = <String, dynamic>{
         'board': boardId,
         'type': type,
@@ -558,6 +603,9 @@ class PostProvider extends ChangeNotifier {
         'limit': 20,
         'scene': 'refresh',
       };
+      if (useHomeFeedV2) {
+        params['feed_version'] = 2;
+      }
       if (tagId != null) {
         params['tag_id'] = tagId;
       }
@@ -572,6 +620,14 @@ class PostProvider extends ChangeNotifier {
         final newPosts = ((response.data['posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
+
+        if (useHomeFeedV2) {
+          final pinned = ((response.data['pinned_posts'] as List?) ?? [])
+              .map((e) => Post.fromJson(e))
+              .toList();
+          board.pinnedPosts = pinned;
+          board.algorithmVersion = response.data['algorithm_version']?.toString() ?? '';
+        }
 
         // 当用户主动刷新或切换排序时，由于后端返回的是全新的一页完整数据，
         // 我们必须完全覆写当前列表，绝不能执行在原地更新旧帖的合并逻辑，

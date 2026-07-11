@@ -155,6 +155,179 @@ void main() {
     expect(requestedPages, [1, 2]);
     expect(result.map((paper) => paper.title), ['试卷1', '试卷2']);
   });
+
+  test('我的投稿传递状态并解析全量状态计数', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    RequestOptions? captured;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          captured = options;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'items': <dynamic>[],
+                'page': 1,
+                'page_size': 20,
+                'total': 1,
+                'status_counts': {
+                  'all': 3,
+                  'pending': 1,
+                  'published': 1,
+                  'unpublished': 1,
+                },
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final result = await ExamPaperService(dio).mySubmissions(
+      status: 'unpublished',
+    );
+
+    expect(captured?.queryParameters['status'], 'unpublished');
+    expect(result.statusCounts['all'], 3);
+    expect(result.statusCounts['unpublished'], 1);
+
+    await ExamPaperService(dio).mySubmissions(status: 'all');
+    expect(captured?.queryParameters['status'], 'all');
+  });
+
+  test('管理员列表传递关键词、投稿人与排序参数', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    RequestOptions? captured;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          captured = options;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'items': <dynamic>[],
+                'page': 1,
+                'page_size': 20,
+                'total': 0,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    await ExamPaperService(dio).adminList(
+      status: 'pending',
+      keyword: '高等数学',
+      contributor: '张同学',
+      sort: 'latest',
+    );
+
+    expect(captured?.queryParameters['keyword'], '高等数学');
+    expect(captured?.queryParameters['contributor'], '张同学');
+    expect(captured?.queryParameters['sort'], 'latest');
+  });
+
+  test('删除投稿发送 DELETE 并解析经验撤销结果', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    RequestOptions? captured;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          captured = options;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'message': '投稿已永久删除',
+                'exp_revoked': true,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final result = await ExamPaperService(dio).deleteSubmission(12);
+
+    expect(captured?.method, 'DELETE');
+    expect(captured?.path, '/exam-papers/my-submissions/12');
+    expect(result.message, '投稿已永久删除');
+    expect(result.expRevoked, isTrue);
+  });
+
+  test('删除投稿的 Dio 错误转换为接口异常', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              response: Response(
+                requestOptions: options,
+                statusCode: 403,
+                data: {
+                  'error': '无权删除该投稿',
+                  'code': 'exam_paper_delete_forbidden',
+                },
+              ),
+              type: DioExceptionType.badResponse,
+            ),
+          );
+        },
+      ),
+    );
+
+    expect(
+      ExamPaperService(dio).deleteSubmission(12),
+      throwsA(
+        isA<ExamPaperApiException>()
+            .having(
+              (error) => error.code,
+              'code',
+              'exam_paper_delete_forbidden',
+            )
+            .having((error) => error.message, 'message', '无权删除该投稿'),
+      ),
+    );
+  });
+
+  test('删除结果缺失字段时使用默认值', () {
+    final result = ExamPaperDeleteResult.fromJson(const <String, dynamic>{});
+
+    expect(result.message, '操作成功');
+    expect(result.expRevoked, isFalse);
+  });
+
+  test('withdraw 保持兼容并发送同一 DELETE', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    RequestOptions? captured;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          captured = options;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: const <String, dynamic>{},
+            ),
+          );
+        },
+      ),
+    );
+
+    await ExamPaperService(dio).withdraw(27);
+
+    expect(captured?.method, 'DELETE');
+    expect(captured?.path, '/exam-papers/my-submissions/27');
+  });
 }
 
 ExamPaper _paper(int id, String title) {

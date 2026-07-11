@@ -791,7 +791,7 @@ void main() {
 
     final provider = PostProvider(dio, enableCache: false);
     await provider.refresh(boardId: 1, sort: 'all');
-    
+
     expect(requests.length, 1);
     expect(requests.first.queryParameters['feed_version'], 2);
     expect(provider.pinnedPostsFor(1, sort: 'all').length, 1);
@@ -832,9 +832,9 @@ void main() {
     final provider = PostProvider(dio, enableCache: false);
     await provider.refresh(boardId: 1, sort: 'all');
     expect(requests.length, 1);
-    
+
     await provider.loadPosts(boardId: 1, sort: 'all');
-    
+
     // Request 1: refresh
     // Request 2: loadmore -> 409
     // Request 3: refresh (recovery)

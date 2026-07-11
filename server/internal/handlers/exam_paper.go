@@ -653,7 +653,7 @@ func (h *ExamPaperHandler) serveExamPaperFile(c *gin.Context, paper models.ExamP
 	http.ServeContent(c.Writer, c.Request, paper.Title+".pdf", info.ModTime(), file)
 }
 
-// Withdraw 允许投稿人撤回自己的待审核记录，并在事务提交后尽力删除私有文件。
+// Withdraw 允许投稿人撤回待审核投稿，或永久删除已发布、已下架的本人投稿。
 func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 	user, ok := h.currentExamPaperUser(c)
 	if !ok {
@@ -663,17 +663,10 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var paper models.ExamPaper
-	if err := h.db.Where("id = ? AND submitter_id = ?", id, user.ID).First(&paper).Error; err != nil {
-		writeExamPaperError(c, http.StatusNotFound, "exam_paper_not_found", "投稿不存在")
-		return
-	}
-	if paper.Status != models.ExamPaperStatusPending {
-		writeExamPaperError(c, http.StatusConflict, "exam_paper_not_pending", "只有待审核投稿可以撤回")
-		return
-	}
-	fileKey := paper.FileKey
 
+	var fileKey string
+	var status models.ExamPaperStatus
+	rewardRevoked := false
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ? AND submitter_id = ?", id, user.ID)
@@ -683,21 +676,41 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 		if err := query.First(&locked).Error; err != nil {
 			return err
 		}
-		if locked.Status != models.ExamPaperStatusPending || locked.FileKey != paper.FileKey {
-			return errExamPaperNotPending
+		status = locked.Status
+		fileKey = locked.FileKey
+		switch locked.Status {
+		case models.ExamPaperStatusPending:
+		case models.ExamPaperStatusPublished, models.ExamPaperStatusUnpublished:
+			if locked.Source == models.ExamPaperSourceUser {
+				var err error
+				rewardRevoked, err = revokeExamPaperReward(tx, &locked, time.Now())
+				if err != nil {
+					return err
+				}
+			}
+		default:
+			return errExamPaperNotDeletable
 		}
 		return tx.Delete(&locked).Error
 	})
 	if err != nil {
-		if errors.Is(err, errExamPaperNotPending) {
-			writeExamPaperError(c, http.StatusConflict, "exam_paper_not_pending", "投稿已不处于待审核状态")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeExamPaperError(c, http.StatusNotFound, "exam_paper_not_found", "投稿不存在")
 			return
 		}
-		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "撤回投稿失败")
+		if errors.Is(err, errExamPaperNotDeletable) {
+			writeExamPaperError(c, http.StatusConflict, "exam_paper_not_deletable", "当前投稿状态不允许删除")
+			return
+		}
+		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "删除投稿失败")
 		return
 	}
 	h.removeExamPaperFileAfterCommit(fileKey)
-	c.JSON(http.StatusOK, gin.H{"message": "投稿已撤回"})
+	message := "投稿已永久删除"
+	if status == models.ExamPaperStatusPending {
+		message = "投稿已撤回"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": message, "exp_revoked": rewardRevoked})
 }
 
 func (h *ExamPaperHandler) removeExamPaperFileAfterCommit(fileKey string) {
@@ -708,7 +721,10 @@ func (h *ExamPaperHandler) removeExamPaperFileAfterCommit(fileKey string) {
 	_ = h.files.Remove(fileKey)
 }
 
-var errExamPaperNotPending = errors.New("exam paper not pending")
+var (
+	errExamPaperNotPending   = errors.New("exam paper not pending")
+	errExamPaperNotDeletable = errors.New("exam paper not deletable")
+)
 
 type examPaperReviewInput struct {
 	CourseName   string                   `json:"course_name"`

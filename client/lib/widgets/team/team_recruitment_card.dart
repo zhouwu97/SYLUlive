@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../models/team_recruitment.dart';
-import '../../providers/theme_provider.dart';
+import '../../widgets/campus/campus_theme.dart';
+import '../../widgets/team/team_ui_tokens.dart';
 
 class TeamRecruitmentCard extends StatelessWidget {
   final TeamRecruitment recruitment;
@@ -28,13 +29,11 @@ class TeamRecruitmentCard extends StatelessWidget {
       child: Card(
         margin: EdgeInsets.zero,
         elevation: 0,
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        color: TeamUiTokens.cardBg(isDark),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
           side: BorderSide(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : kCleanWarmCardBorderLight),
+              color: TeamUiTokens.border(isDark)),
         ),
         child: InkWell(
           onTap: onTap,
@@ -60,7 +59,7 @@ class TeamRecruitmentCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 13, height: 1.4, color: Colors.grey.shade700)),
+                      fontSize: 13, height: 1.4, color: TeamUiTokens.subtitle(isDark))),
               if (recruitment.roles.isNotEmpty) ...[
                 const SizedBox(height: 11),
                 Wrap(spacing: 6, runSpacing: 6, children: [
@@ -75,21 +74,25 @@ class TeamRecruitmentCard extends StatelessWidget {
               Row(children: [
                 Icon(Icons.group_outlined, size: 16, color: color),
                 const SizedBox(width: 4),
-                Text(
-                    '已加入 ${recruitment.acceptedCount} / ${recruitment.neededCount} · 还缺 ${recruitment.remainingCount} 人',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: color)),
+                Expanded(
+                  child: Text(
+                      '已加入 ${recruitment.acceptedCount} 人 · 还缺 ${recruitment.remainingCount} 人',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: color)),
+                ),
                 if (recruitment.deadline != null) ...[
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   Icon(Icons.schedule_rounded,
-                      size: 15, color: Colors.grey.shade600),
+                      size: 15, color: TeamUiTokens.subtitle(isDark)),
                   const SizedBox(width: 3),
                   Text(
                       '截止 ${recruitment.deadline!.month.toString().padLeft(2, '0')}-${recruitment.deadline!.day.toString().padLeft(2, '0')}',
                       style:
-                          TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                          TextStyle(fontSize: 12, color: TeamUiTokens.subtitle(isDark))),
                 ],
               ]),
               const SizedBox(height: 8),
@@ -126,10 +129,10 @@ class TeamRecruitmentCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade600))),
+                            fontSize: 12, color: TeamUiTokens.subtitle(isDark)))),
                 Text(_relativeTime(recruitment.createdAt),
                     style:
-                        TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                        TextStyle(fontSize: 12, color: TeamUiTokens.subtitle(isDark))),
               ]),
             ]),
           ),
@@ -186,10 +189,10 @@ String _categoryLabel(String value) =>
     '其他';
 Color _categoryColor(String value) =>
     const {
-      'competition': Color(0xFF6A64D8),
-      'project': Color(0xFF1686A7),
-      'study': Color(0xFF3B8D70),
-      'activity': Color(0xFFC56D31),
+      'competition': CampusTheme.blue,
+      'project': CampusTheme.cyan,
+      'study': CampusTheme.green,
+      'activity': CampusTheme.orange,
       'other': Color(0xFF687385)
     }[value] ??
     const Color(0xFF687385);

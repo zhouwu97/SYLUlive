@@ -864,6 +864,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 	}
 
 	// 先创建帖子
+	now := time.Now()
 	post := models.Post{
 		Title:      input.Title,
 		Content:    input.Content,
@@ -874,6 +875,8 @@ func (h *PostHandler) Create(c *gin.Context) {
 		Contact:    input.Contact,
 		MarketTags: normalizeMarketTags(input.MarketTags),
 		Status:     models.PostStatusNormal,
+		CreatedAt:  now,
+		LastActivityAt: now,
 	}
 
 	// 水帖版块额外校验版块活跃状态与标签归属

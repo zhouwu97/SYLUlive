@@ -72,6 +72,8 @@ type Post struct {
 	Author                 User                    `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt              time.Time               `json:"created_at"`
 	UpdatedAt              time.Time               `json:"updated_at"`
+	// LastActivityAt 是最后一条有效回复的时间；无回复时等于发帖时间，不能用正文编辑时间替代。
+	LastActivityAt         time.Time               `gorm:"index" json:"last_activity_at"`
 }
 
 // TeamRecruitmentMeta 组队招募前端所需数据

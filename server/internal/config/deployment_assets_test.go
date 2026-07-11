@@ -81,7 +81,7 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取 Docker Compose 配置失败: %v", err)
 	}
-	composeText := string(compose)
+	composeText := strings.ReplaceAll(string(compose), "\r\n", "\n")
 	if !strings.Contains(composeText, "services:\n") ||
 		!strings.Contains(composeText, "\n  nginx:\n") ||
 		strings.Contains(composeText, "networks:\n  shenliyuan_network:\n    driver: bridge\n\n  nginx:") {

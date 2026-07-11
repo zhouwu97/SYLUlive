@@ -36,7 +36,7 @@ readlink -f /proc/$(pgrep -o shenliyuan)/exe
 `
 - Ubuntu 20.04+
 - PostgreSQL
-- Go 1.23+（`deploy.sh` 会自动处理）
+- Go 1.25+（`deploy.sh` 会自动处理）
 `
 ### 部署步骤
 `
@@ -310,6 +310,9 @@ systemctl restart shenliyuan
 JWT_SECRET=your_random_secret
 DSN=host=127.0.0.1 port=5432 user=shenliyuan password=your_password dbname=shenliyuan sslmode=disable
 UPLOAD_DIR=./uploads
+EXAM_PAPER_DIR=/opt/shenliyuan/private/exam-papers
+SUPER_ADMIN_ID=admin
+SUPER_ADMIN_PASSWORD=your_random_admin_password
 GIN_MODE=release
 ```
 `
@@ -321,16 +324,16 @@ GIN_MODE=release
 `
 ## 超级管理员账号
 `
-当前系统超级管理员账号可在启动时通过环境变量配置，否则将使用默认账号。
+当前系统超级管理员账号必须在启动时通过环境变量配置，生产环境不再接受默认占位密码。
 `
-环境变量配置（推荐）：
-- `SUPER_ADMIN_ID` (默认: `admin`)
-- `SUPER_ADMIN_PASSWORD` (默认: `admin123`)
+环境变量配置：
+- `SUPER_ADMIN_ID`
+- `SUPER_ADMIN_PASSWORD`
 `
 
 注意：
 `
-- 当前超管账号不是以 `.env` 为准
+- 超级管理员账号与密码以 `/opt/shenliyuan/.env` 为准
 - 如果服务端角色发生变化，必须重新登录一次，确保 JWT token 内的 `role` 同步更新
 `
 ## 核心验收清单
@@ -569,4 +572,13 @@ echo "=== 用户数 ===" && sqlite3 /opt/shenliyuan/shenliyuan.db "SELECT COUNT(
 echo "=== 帖子数 ===" && sqlite3 /opt/shenliyuan/shenliyuan.db "SELECT COUNT(*) FROM posts;" 2>/dev/null
 echo "=== 服务状态 ===" && systemctl is-active shenliyuan
 echo "=== 最近错误 ===" && journalctl -u shenliyuan -n 10 --no-pager -p err
+```
+
+## 试卷私有文件目录
+
+试卷 PDF 必须保存在 `/opt/shenliyuan/private/exam-papers`，目录权限为 `0700`、文件权限为 `0600`。该目录不得配置到 Nginx 静态路由或 `/uploads`。部署前执行：
+
+```bash
+mkdir -p /opt/shenliyuan/private/exam-papers
+chmod 0700 /opt/shenliyuan/private /opt/shenliyuan/private/exam-papers
 ```

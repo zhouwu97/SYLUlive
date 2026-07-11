@@ -22,6 +22,8 @@ server/uploads/*
 /shenliyuan
 /shenliyuan.exe
 /shenliyuan.exe~
+/artifacts/*.tar.gz
+/artifacts/shenliyuan-*
 server/*.exe
 server/*.exe~
 *.apk

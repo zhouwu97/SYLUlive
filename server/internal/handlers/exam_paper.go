@@ -857,6 +857,7 @@ func (h *ExamPaperHandler) AdminApprove(c *gin.Context) {
 	}
 
 	now := time.Now()
+	var responsePaper models.ExamPaper
 	err = h.runApprovalTransaction(func(tx *gorm.DB) error {
 		var paper models.ExamPaper
 		query := tx.Where("id = ?", id)
@@ -914,24 +915,22 @@ func (h *ExamPaperHandler) AdminApprove(c *gin.Context) {
 		if _, _, err := services.CreateSystemMessage(tx, paper.SubmitterID, message); err != nil {
 			return err
 		}
-		return tx.Create(&models.AdminLog{
+		if err := tx.Create(&models.AdminLog{
 			AdminID:   admin.ID,
 			AdminName: admin.Nickname,
 			Action:    "审核通过试卷",
 			Target:    metadata.Title,
 			Detail:    fmt.Sprintf("试卷ID=%d，奖励经验=%t，理由=%s", id, awarded, input.Reason),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Preload("Submitter").First(&responsePaper, id).Error
 	})
 	if err != nil {
 		h.writeAdminTransactionError(c, err)
 		return
 	}
-	var paper models.ExamPaper
-	if err := h.db.Preload("Submitter").First(&paper, id).Error; err != nil {
-		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "读取已发布试卷失败")
-		return
-	}
-	c.JSON(http.StatusOK, examPaperToResponse(paper))
+	c.JSON(http.StatusOK, examPaperToResponse(responsePaper))
 }
 
 // AdminReject 拒绝待审核投稿，并在事务提交后尽力删除私有文件。
@@ -1028,6 +1027,7 @@ func (h *ExamPaperHandler) AdminUpdate(c *gin.Context) {
 		writeExamPaperError(c, http.StatusBadRequest, "invalid_exam_paper_metadata", err.Error())
 		return
 	}
+	var responsePaper models.ExamPaper
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var paper models.ExamPaper
 		query := tx.Where("id = ?", id)
@@ -1049,21 +1049,19 @@ func (h *ExamPaperHandler) AdminUpdate(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&models.AdminLog{
+		if err := tx.Create(&models.AdminLog{
 			AdminID: admin.ID, AdminName: admin.Nickname, Action: "编辑已发布试卷",
 			Target: metadata.Title, Detail: fmt.Sprintf("试卷ID=%d", id),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Preload("Submitter").First(&responsePaper, id).Error
 	})
 	if err != nil {
 		h.writeAdminTransactionError(c, err)
 		return
 	}
-	var paper models.ExamPaper
-	if err := h.db.Preload("Submitter").First(&paper, id).Error; err != nil {
-		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "读取试卷失败")
-		return
-	}
-	c.JSON(http.StatusOK, examPaperToResponse(paper))
+	c.JSON(http.StatusOK, examPaperToResponse(responsePaper))
 }
 
 // AdminUnpublish 下架已发布试卷，保留元数据和哈希，但删除可访问文件。
@@ -1101,6 +1099,7 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 	}
 	fileKey := paper.FileKey
 	now := time.Now()
+	var responsePaper models.ExamPaper
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ?", id)
@@ -1133,22 +1132,20 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 		if _, _, err := services.CreateSystemMessage(tx, locked.SubmitterID, message); err != nil {
 			return err
 		}
-		return tx.Create(&models.AdminLog{
+		if err := tx.Create(&models.AdminLog{
 			AdminID: admin.ID, AdminName: admin.Nickname, Action: "下架试卷",
 			Target: locked.Title, Detail: fmt.Sprintf("试卷ID=%d，撤销经验=%t，理由=%s", id, rewardRevoked, input.Reason),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Preload("Submitter").First(&responsePaper, id).Error
 	})
 	if err != nil {
 		h.writeAdminTransactionError(c, err)
 		return
 	}
 	h.removeExamPaperFileAfterCommit(fileKey)
-	var refreshed models.ExamPaper
-	if err := h.db.Preload("Submitter").First(&refreshed, id).Error; err != nil {
-		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "读取已下架试卷失败")
-		return
-	}
-	c.JSON(http.StatusOK, examPaperToResponse(refreshed))
+	c.JSON(http.StatusOK, examPaperToResponse(responsePaper))
 }
 
 func (h *ExamPaperHandler) writeAdminTransactionError(c *gin.Context, err error) {

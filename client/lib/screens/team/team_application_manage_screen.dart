@@ -26,9 +26,37 @@ class _TeamApplicationManageScreenState
       .read<TeamRecruitmentProvider>()
       .loadApplications(widget.recruitment.id);
   Future<void> _review(WaterTeamApplication app, bool accepted) async {
+    final replyController = TextEditingController();
+    final reply = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(accepted ? '通过申请' : '拒绝申请'),
+        content: TextField(
+          controller: replyController,
+          maxLength: 300,
+          maxLines: 3,
+          decoration: InputDecoration(
+            labelText: accepted ? '给申请人的回复（选填）' : '简要说明原因（选填）',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, replyController.text.trim()),
+            child: Text(accepted ? '通过' : '拒绝'),
+          ),
+        ],
+      ),
+    );
+    replyController.dispose();
+    if (reply == null || !mounted) return;
     final error = await context
         .read<TeamRecruitmentProvider>()
-        .review(app.id, accepted: accepted);
+        .review(app.id, accepted: accepted, reply: reply);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error ?? (accepted ? '已通过申请' : '已拒绝申请'))));

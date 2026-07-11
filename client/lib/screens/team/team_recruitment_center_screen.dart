@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/team_recruitment_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../widgets/team/team_recruitment_card.dart';
 import 'my_team_recruitments_screen.dart';
 import 'team_recruitment_create_screen.dart';
@@ -19,19 +23,50 @@ class TeamRecruitmentCenterScreen extends StatefulWidget {
 class _TeamRecruitmentCenterScreenState
     extends State<TeamRecruitmentCenterScreen> {
   String? _category;
-  String? _status;
+  String? _status = 'recruiting';
+  final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  Future<void> _load() => context
-      .read<TeamRecruitmentProvider>()
-      .loadPublic(category: _category, status: _status);
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() => context.read<TeamRecruitmentProvider>().loadPublic(
+        category: _category,
+        status: _status,
+        keyword: _searchController.text,
+      );
+
+  void _onScroll() {
+    if (_scrollController.position.extentAfter < 320) {
+      context.read<TeamRecruitmentProvider>().loadMorePublic();
+    }
+  }
+
+  void _onSearchChanged(String _) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), _load);
+  }
 
   Future<void> _openCreate(TeamRecruitmentProvider provider) async {
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      Navigator.pushNamed(context, '/login');
+      return;
+    }
     if (provider.viewState == TeamFeedViewState.unavailable) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('组队服务尚未部署，请更新服务器后重试')),
@@ -50,19 +85,29 @@ class _TeamRecruitmentCenterScreenState
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
+    final themeProvider = context.watch<ThemeProvider>();
     return Scaffold(
+      backgroundColor: themeProvider.shouldShowCustomBackground
+          ? Colors.transparent
+          : themeProvider.cleanModePageBackground(Theme.of(context).brightness),
       appBar: AppBar(
         centerTitle: true,
-        title:
-            const Text('组队大厅', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: const Text('组队大厅',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 17)),
         actions: [
           TextButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const MyTeamRecruitmentsScreen(),
-              ),
-            ),
+            onPressed: () {
+              if (!context.read<AuthProvider>().isLoggedIn) {
+                Navigator.pushNamed(context, '/login');
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const MyTeamRecruitmentsScreen(),
+                ),
+              );
+            },
             icon: const Icon(Icons.person_outline_rounded, size: 18),
             label: const Text('我的'),
           ),
@@ -76,6 +121,7 @@ class _TeamRecruitmentCenterScreenState
       body: RefreshIndicator(
         onRefresh: _load,
         child: CustomScrollView(
+          controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverPadding(
@@ -84,14 +130,12 @@ class _TeamRecruitmentCenterScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('寻找适合你的校园队友',
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 4),
-                    Text('竞赛、项目、学习与校园活动都可以在这里发起',
-                        style: TextStyle(
-                            fontSize: 13, color: Colors.grey.shade600)),
-                    const SizedBox(height: 18),
+                    _SearchBar(
+                      controller: _searchController,
+                      onChanged: _onSearchChanged,
+                      onFilter: _showMoreStatus,
+                    ),
+                    const SizedBox(height: 12),
                     _CategoryTabs(
                       current: _category,
                       onChanged: (value) {
@@ -108,11 +152,20 @@ class _TeamRecruitmentCenterScreenState
                       },
                       onMore: _showMoreStatus,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     _ResultSummary(
-                      count: provider.publicItems.length,
+                      count: provider.publicTotal,
                       viewState: provider.viewState,
+                      sort: provider.currentSort,
+                      onSort: _showSort,
                     ),
+                    if (provider.refreshWarning != null) ...[
+                      const SizedBox(height: 10),
+                      _RefreshWarning(
+                        message: provider.refreshWarning!,
+                        onRetry: _load,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -179,8 +232,22 @@ class _TeamRecruitmentCenterScreenState
         return SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           sliver: SliverList.separated(
-            itemCount: provider.publicItems.length,
+            itemCount: provider.publicItems.length +
+                (provider.isLoadingMore || provider.publicHasMore ? 1 : 0),
             itemBuilder: (_, index) {
+              if (index >= provider.publicItems.length) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: provider.isLoadingMore
+                        ? const CircularProgressIndicator()
+                        : TextButton(
+                            onPressed: provider.loadMorePublic,
+                            child: const Text('加载更多'),
+                          ),
+                  ),
+                );
+              }
               final item = provider.publicItems[index];
               return TeamRecruitmentCard(
                 recruitment: item,
@@ -222,6 +289,38 @@ class _TeamRecruitmentCenterScreenState
     );
   }
 
+  void _showSort() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          for (final option in const [
+            ('推荐排序', 'recommended'),
+            ('最新发布', 'latest'),
+            ('临近截止', 'deadline')
+          ])
+            ListTile(
+              title: Text(option.$1),
+              trailing: context.read<TeamRecruitmentProvider>().currentSort ==
+                      option.$2
+                  ? const Icon(Icons.check_rounded)
+                  : null,
+              onTap: () {
+                Navigator.pop(sheetContext);
+                context.read<TeamRecruitmentProvider>().loadPublic(
+                      category: _category,
+                      status: _status,
+                      keyword: _searchController.text,
+                      sort: option.$2,
+                    );
+              },
+            ),
+        ]),
+      ),
+    );
+  }
+
   void _selectMoreStatus(BuildContext sheetContext, String? status) {
     Navigator.pop(sheetContext);
     setState(() => _status = status);
@@ -239,6 +338,7 @@ class _CategoryTabs extends StatelessWidget {
     const values = [
       ('全部', null),
       ('竞赛', 'competition'),
+      ('项目', 'project'),
       ('学习', 'study'),
       ('活动', 'activity'),
       ('其他', 'other'),
@@ -348,7 +448,13 @@ class _StatusSegment extends StatelessWidget {
 class _ResultSummary extends StatelessWidget {
   final int count;
   final TeamFeedViewState viewState;
-  const _ResultSummary({required this.count, required this.viewState});
+  final String sort;
+  final VoidCallback onSort;
+  const _ResultSummary(
+      {required this.count,
+      required this.viewState,
+      required this.sort,
+      required this.onSort});
   @override
   Widget build(BuildContext context) => Row(children: [
         Text(viewState == TeamFeedViewState.content ? '共 $count 个招募' : '组队招募',
@@ -357,10 +463,72 @@ class _ResultSummary extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 color: Colors.grey.shade700)),
         const Spacer(),
-        Icon(Icons.tune_rounded, size: 15, color: Colors.grey.shade500),
+        Icon(Icons.sort_rounded, size: 15, color: Colors.grey.shade500),
         const SizedBox(width: 3),
-        Text('筛选', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+        InkWell(
+            onTap: onSort,
+            child: Text(
+                const {
+                      'recommended': '推荐排序',
+                      'latest': '最新发布',
+                      'deadline': '临近截止'
+                    }[sort] ??
+                    '推荐排序',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500))),
       ]);
+}
+
+class _SearchBar extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onFilter;
+  const _SearchBar(
+      {required this.controller,
+      required this.onChanged,
+      required this.onFilter});
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 44,
+        child: TextField(
+          controller: controller,
+          onChanged: onChanged,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: '搜索竞赛、项目、技能或关键词',
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: IconButton(
+                onPressed: onFilter, icon: const Icon(Icons.tune_rounded)),
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                    BorderSide(color: Colors.grey.withValues(alpha: 0.18))),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                    BorderSide(color: Colors.grey.withValues(alpha: 0.18))),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      );
+}
+
+class _RefreshWarning extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _RefreshWarning({required this.message, required this.onRetry});
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+            color: const Color(0xFFFFF4DE),
+            borderRadius: BorderRadius.circular(10)),
+        child: Row(children: [
+          Expanded(child: Text(message, style: const TextStyle(fontSize: 12))),
+          TextButton(onPressed: onRetry, child: const Text('重试'))
+        ]),
+      );
 }
 
 class _TeamFeedStateView extends StatelessWidget {

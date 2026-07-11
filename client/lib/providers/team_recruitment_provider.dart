@@ -17,6 +17,28 @@ enum TeamFeedViewState {
   serverError,
 }
 
+/// 组队操作的统一返回值，避免用 null 混淆网络、权限与校验失败。
+class TeamOperationResult<T> {
+  final T? data;
+  final String? errorMessage;
+  final TeamErrorType errorType;
+  const TeamOperationResult.success(this.data)
+      : errorMessage = null,
+        errorType = TeamErrorType.none;
+  const TeamOperationResult.failure(this.errorMessage, this.errorType)
+      : data = null;
+  bool get success => errorType == TeamErrorType.none;
+}
+
+enum TeamErrorType {
+  none,
+  unauthorized,
+  validation,
+  unavailable,
+  network,
+  server
+}
+
 /// 组队大厅独立状态；不会刷新或修改普通水帖的信息流缓存。
 class TeamRecruitmentProvider extends ChangeNotifier {
   final Dio _dio;
@@ -30,39 +52,136 @@ class TeamRecruitmentProvider extends ChangeNotifier {
   final Map<int, List<WaterTeamApplication>> _applications = {};
   TeamFeedViewState viewState = TeamFeedViewState.initial;
   bool isLoadingPublic = false;
+  bool isLoadingMore = false;
+  bool isRefreshing = false;
   bool isLoadingMine = false;
   bool isCreating = false;
   String? publicError;
+  String? refreshWarning;
   int? publicStatusCode;
   String? mineError;
   final Set<int> applyingIds = {};
   final Set<int> closingIds = {};
   final Set<int> reviewingApplicationIds = {};
 
+  int publicPage = 1;
+  int publicTotal = 0;
+  bool publicHasMore = true;
+  String currentKeyword = '';
+  String currentSort = 'recommended';
+  String? currentCategory;
+  String? currentStatus = 'recruiting';
+  bool currentAvailableOnly = false;
+  int _publicRequestVersion = 0;
+  CancelToken? _publicCancelToken;
+
   Future<void> loadPublic(
-      {String? category, String? status, bool force = false}) async {
+      {String? category,
+      String? status,
+      String? keyword,
+      String? sort,
+      bool? availableOnly,
+      bool force = false}) async {
+    currentCategory = category;
+    currentStatus = status;
+    currentKeyword = keyword?.trim() ?? '';
+    currentSort = sort ?? currentSort;
+    currentAvailableOnly = availableOnly ?? currentAvailableOnly;
+    await refreshPublic(force: force);
+  }
+
+  Future<void> refreshPublic({bool force = false}) async {
+    final requestVersion = ++_publicRequestVersion;
+    _publicCancelToken?.cancel('已由最新筛选替代');
+    final cancelToken = _publicCancelToken = CancelToken();
+    final hasContent = publicItems.isNotEmpty;
     isLoadingPublic = true;
-    if (publicItems.isEmpty) {
+    isRefreshing = hasContent;
+    if (!hasContent) {
       viewState = TeamFeedViewState.loading;
     }
     publicError = null;
-    publicStatusCode = null;
+    refreshWarning = null;
     notifyListeners();
     try {
-      final items = await _service.list(category: category, status: status);
-      publicItems = items;
-      viewState =
-          items.isEmpty ? TeamFeedViewState.empty : TeamFeedViewState.content;
+      final result = await _service.list(
+        category: currentCategory,
+        status: currentStatus,
+        keyword: currentKeyword,
+        sort: currentSort,
+        availableOnly: currentAvailableOnly,
+        page: 1,
+        cancelToken: cancelToken,
+      );
+      if (requestVersion != _publicRequestVersion) return;
+      publicItems = result.items;
+      publicPage = result.page;
+      publicTotal = result.total;
+      publicHasMore = result.hasMore;
+      viewState = result.items.isEmpty
+          ? TeamFeedViewState.empty
+          : TeamFeedViewState.content;
     } on DioException catch (error) {
+      if (CancelToken.isCancel(error) ||
+          requestVersion != _publicRequestVersion) {
+        return;
+      }
       publicStatusCode = error.response?.statusCode;
-      viewState = _mapTeamError(error);
-      publicError = _feedErrorMessage(viewState);
+      final state = _mapTeamError(error);
+      final message = _feedErrorMessage(state);
+      if (hasContent) {
+        viewState = TeamFeedViewState.content;
+        refreshWarning = message;
+      } else {
+        viewState = state;
+        publicError = message;
+      }
     } catch (_) {
-      viewState = TeamFeedViewState.serverError;
-      publicError = _feedErrorMessage(viewState);
+      if (requestVersion != _publicRequestVersion) return;
+      if (hasContent) {
+        viewState = TeamFeedViewState.content;
+        refreshWarning = '刷新失败，当前显示上次结果';
+      } else {
+        viewState = TeamFeedViewState.serverError;
+        publicError = _feedErrorMessage(viewState);
+      }
     } finally {
-      isLoadingPublic = false;
-      notifyListeners();
+      if (requestVersion == _publicRequestVersion) {
+        isLoadingPublic = false;
+        isRefreshing = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> loadMorePublic() async {
+    if (isLoadingPublic || isLoadingMore || !publicHasMore) return;
+    final requestVersion = _publicRequestVersion;
+    isLoadingMore = true;
+    notifyListeners();
+    try {
+      final result = await _service.list(
+        category: currentCategory,
+        status: currentStatus,
+        keyword: currentKeyword,
+        sort: currentSort,
+        availableOnly: currentAvailableOnly,
+        page: publicPage + 1,
+      );
+      if (requestVersion != _publicRequestVersion) return;
+      publicItems = [...publicItems, ...result.items];
+      publicPage = result.page;
+      publicTotal = result.total;
+      publicHasMore = result.hasMore;
+    } catch (_) {
+      if (requestVersion == _publicRequestVersion) {
+        refreshWarning = '加载更多失败，点击重试';
+      }
+    } finally {
+      if (requestVersion == _publicRequestVersion) {
+        isLoadingMore = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -114,6 +233,40 @@ class TeamRecruitmentProvider extends ChangeNotifier {
     } finally {
       isCreating = false;
       notifyListeners();
+    }
+  }
+
+  Future<TeamOperationResult<TeamRecruitment>> updateRecruitment({
+    required int recruitmentId,
+    required String category,
+    required String title,
+    required String description,
+    required int neededCount,
+    required List<String> roles,
+    DateTime? deadline,
+    List<int> imageFileIds = const [],
+  }) async {
+    try {
+      final updated = await _service.update(
+        recruitmentId: recruitmentId,
+        category: category,
+        title: title,
+        description: description,
+        neededCount: neededCount,
+        roles: roles,
+        deadline: deadline,
+        imageFileIds: imageFileIds,
+      );
+      publicItems = publicItems
+          .map((item) => item.id == updated.id ? updated : item)
+          .toList(growable: false);
+      myCreated = myCreated
+          .map((item) => item.id == updated.id ? updated : item)
+          .toList(growable: false);
+      notifyListeners();
+      return TeamOperationResult.success(updated);
+    } catch (error) {
+      return TeamOperationResult.failure(_error(error), _errorType(error));
     }
   }
 
@@ -212,6 +365,22 @@ class TeamRecruitmentProvider extends ChangeNotifier {
       return error.response!.data['error']?.toString() ?? '请求失败';
     }
     return '请求失败，请稍后重试';
+  }
+
+  TeamErrorType _errorType(Object error) {
+    if (error is DioException) {
+      final code = error.response?.statusCode;
+      if (code == 401) return TeamErrorType.unauthorized;
+      if (code == 400 || code == 422) return TeamErrorType.validation;
+      if (code == 404 || code == 405) return TeamErrorType.unavailable;
+      if (error.type == DioExceptionType.connectionError ||
+          error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.sendTimeout) {
+        return TeamErrorType.network;
+      }
+    }
+    return TeamErrorType.server;
   }
 
   TeamFeedViewState _mapTeamError(DioException error) {

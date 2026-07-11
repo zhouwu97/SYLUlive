@@ -388,7 +388,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 
 	var message models.Message
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		conv, err := h.getOrCreateConversation(tx, user1ID, user2ID, time.Now())
+		conv, err := services.GetOrCreateConversation(tx, user1ID, user2ID, time.Now())
 		if err != nil {
 			return err
 		}
@@ -416,46 +416,26 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	c.JSON(http.StatusCreated, message)
 }
 
-func (h *MessageHandler) getOrCreateConversation(tx *gorm.DB, user1ID, user2ID uint, now time.Time) (models.Conversation, error) {
-	var conv models.Conversation
-	err := tx.Where("user1_id = ? AND user2_id = ?", user1ID, user2ID).First(&conv).Error
-	if err == nil {
-		return conv, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return conv, err
-	}
-
-	conv = models.Conversation{User1ID: user1ID, User2ID: user2ID, LastMessageAt: now}
-	createErr := tx.Create(&conv).Error
-	if createErr == nil {
-		return conv, nil
-	}
-	if readErr := tx.Where("user1_id = ? AND user2_id = ?", user1ID, user2ID).First(&conv).Error; readErr == nil {
-		return conv, nil
-	}
-	return conv, createErr
-}
-
 // canSendMessage 陌生人私信限制
 //
 // 允许发送，如果满足任意一个：
-//   1. target 已关注 current（UserFollow: follower=target, following=current）
-//   2. target 曾经给 current 发过消息
-//   3. current 还没有给 target 发过任何消息（首次接触）
+//  1. target 已关注 current（UserFollow: follower=target, following=current）
+//  2. target 曾经给 current 发过消息
+//  3. current 还没有给 target 发过任何消息（首次接触）
 //
 // 否则拒绝：current 已经发过且 target 没关注也没回复，进入等待状态。
 //
 // 返回：
-//   allow (bool)：是否允许
-//   reason (string)：拒绝时的原因码，"waiting_for_reply_or_follow"
-//   各种判定中间值用于 send-state 接口
+//
+//	allow (bool)：是否允许
+//	reason (string)：拒绝时的原因码，"waiting_for_reply_or_follow"
+//	各种判定中间值用于 send-state 接口
 func (h *MessageHandler) canSendMessage(currentUserID, targetID uint) (allow bool, reason string, state messageSendState, err error) {
 	state = messageSendState{
-		CanSend:         true,
+		CanSend:          true,
 		FirstContactUsed: false,
-		TargetFollowsMe: false,
-		TargetReplied:   false,
+		TargetFollowsMe:  false,
+		TargetReplied:    false,
 	}
 
 	// 1. target 关注 current？
@@ -516,11 +496,11 @@ func (h *MessageHandler) canSendMessage(currentUserID, targetID uint) (allow boo
 
 // messageSendState 陌生人私信发送状态，用于 send-state 接口
 type messageSendState struct {
-	CanSend         bool   `json:"can_send"`
-	Reason          string `json:"reason,omitempty"`
-	FirstContactUsed bool  `json:"first_contact_used"`
-	TargetFollowsMe bool  `json:"target_follows_me"`
-	TargetReplied   bool   `json:"target_replied"`
+	CanSend          bool   `json:"can_send"`
+	Reason           string `json:"reason,omitempty"`
+	FirstContactUsed bool   `json:"first_contact_used"`
+	TargetFollowsMe  bool   `json:"target_follows_me"`
+	TargetReplied    bool   `json:"target_replied"`
 }
 
 // GetSendState GET /api/messages/:user_id/send-state

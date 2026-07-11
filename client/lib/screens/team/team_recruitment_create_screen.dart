@@ -1,13 +1,19 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/team_recruitment_provider.dart';
+import '../../models/team_recruitment.dart';
 import '../../widgets/water_team/team_deadline_picker.dart';
+import '../../widgets/team/team_form_section.dart';
+import '../../widgets/team/team_ui_tokens.dart';
 
 class TeamRecruitmentCreateScreen extends StatefulWidget {
-  const TeamRecruitmentCreateScreen({super.key});
+  final TeamRecruitment? initialValue;
+  const TeamRecruitmentCreateScreen({super.key, this.initialValue});
+
   @override
   State<TeamRecruitmentCreateScreen> createState() =>
       _TeamRecruitmentCreateScreenState();
@@ -24,6 +30,20 @@ class _TeamRecruitmentCreateScreenState
   final List<XFile> _images = [];
   String _category = 'competition';
   DateTime? _deadline;
+
+  @override
+  void initState() {
+    super.initState();
+    final value = widget.initialValue;
+    if (value != null) {
+      _title.text = value.title;
+      _description.text = value.description;
+      _needed.text = value.neededCount.toString();
+      _roles.addAll(value.roles);
+      _category = value.category;
+      _deadline = value.deadline;
+    }
+  }
 
   @override
   void dispose() {
@@ -56,12 +76,13 @@ class _TeamRecruitmentCreateScreenState
   }
 
   Future<void> _pickDeadline() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final now = DateTime.now();
     final picked = await TeamDeadlinePicker.show(context,
         firstDate: DateTime(now.year, now.month, now.day),
         lastDate: DateTime(now.year + 2),
         initialDate: _deadline ?? now.add(const Duration(days: 7)),
-        accentColor: const Color(0xFF6A64D8));
+        accentColor: TeamUiTokens.accent(isDark));
     if (picked != null && mounted) {
       setState(() =>
           _deadline = DateTime(picked.year, picked.month, picked.day, 23, 59));
@@ -70,19 +91,32 @@ class _TeamRecruitmentCreateScreenState
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final created = await context.read<TeamRecruitmentProvider>().create(
-          category: _category,
-          title: _title.text.trim(),
-          description: _description.text.trim(),
-          neededCount: int.parse(_needed.text),
-          roles: _roles,
-          deadline: _deadline,
-          images: _images,
-        );
+    final provider = context.read<TeamRecruitmentProvider>();
+    final existing = widget.initialValue;
+    final created = existing == null
+        ? await provider.create(
+            category: _category,
+            title: _title.text.trim(),
+            description: _description.text.trim(),
+            neededCount: int.parse(_needed.text),
+            roles: _roles,
+            deadline: _deadline,
+            images: _images,
+          )
+        : (await provider.updateRecruitment(
+            recruitmentId: existing.id,
+            category: _category,
+            title: _title.text.trim(),
+            description: _description.text.trim(),
+            neededCount: int.parse(_needed.text),
+            roles: _roles,
+            deadline: _deadline,
+          ))
+            .data;
     if (!mounted) return;
     if (created == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('发布失败，请检查网络后重试')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(existing == null ? '发布失败，请检查网络后重试' : '保存失败，请检查输入后重试')));
       return;
     }
     Navigator.pop(context, true);
@@ -91,117 +125,289 @@ class _TeamRecruitmentCreateScreenState
   @override
   Widget build(BuildContext context) {
     final creating = context.watch<TeamRecruitmentProvider>().isCreating;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageColor = TeamUiTokens.pageBg(isDark);
+    final borderColor = TeamUiTokens.border(isDark);
+
+    final inputDecoration = InputDecoration(
+      filled: true,
+      fillColor: Colors.transparent,
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(TeamUiTokens.fieldRadius),
+          borderSide: BorderSide(color: borderColor)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(TeamUiTokens.fieldRadius),
+          borderSide: BorderSide(color: borderColor)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(TeamUiTokens.fieldRadius),
+          borderSide:
+              BorderSide(color: TeamUiTokens.accent(isDark), width: 1.5)),
+    );
+
     return Scaffold(
-      appBar: AppBar(title: const Text('发起组队')),
-      bottomNavigationBar: SafeArea(
+      backgroundColor: pageColor,
+      appBar: AppBar(
+        backgroundColor: pageColor,
+        surfaceTintColor: Colors.transparent,
+        title: Text(widget.initialValue == null ? '发起组队' : '编辑招募'),
+      ),
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: pageColor,
+          border: Border(top: BorderSide(color: borderColor)),
+        ),
+        child: SafeArea(
           child: Padding(
-              padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+            child: SizedBox(
+              height: 48,
               child: FilledButton(
-                  onPressed: creating ? null : _submit,
-                  child: Text(creating ? '发布中…' : '发布组队')))),
+                style: TeamUiTokens.primaryButtonStyle(isDark),
+                onPressed: creating ? null : _submit,
+                child: Text(creating
+                    ? '提交中…'
+                    : (widget.initialValue == null ? '发布组队' : '保存修改')),
+              ),
+            ),
+          ),
+        ),
+      ),
       body: Form(
-          key: _formKey,
-          child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            const Text(
+              '告诉大家你想组建什么队伍\n信息写得越清楚，越容易找到合适的队友',
+              style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.4),
+            ),
+            const SizedBox(height: TeamUiTokens.sectionGap),
+            TeamFormSection(
+              title: '基础信息',
               children: [
                 const Text('组队类型',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 Wrap(
-                    spacing: 8,
-                    children: const [
-                      ('竞赛', 'competition'),
-                      ('学习', 'study'),
-                      ('活动', 'activity'),
-                      ('其他', 'other')
-                    ]
-                        .map((item) => item)
-                        .map((item) => ChoiceChip(
-                            label: Text(item.$1),
-                            selected: _category == item.$2,
-                            onSelected: (_) =>
-                                setState(() => _category = item.$2)))
-                        .toList()),
-                const SizedBox(height: 18),
-                TextFormField(
-                    controller: _title,
-                    maxLength: 100,
-                    decoration: const InputDecoration(
-                        labelText: '组队标题',
-                        hintText: '例如：数学建模国赛寻找队友',
-                        border: OutlineInputBorder()),
-                    validator: (v) =>
-                        (v ?? '').trim().length < 2 ? '标题至少 2 个字' : null),
+                  spacing: 8,
+                  children: const [
+                    ('竞赛', 'competition'),
+                    ('学习', 'study'),
+                    ('活动', 'activity'),
+                    ('其他', 'other')
+                  ].map((item) {
+                    final selected = _category == item.$2;
+                    return ChoiceChip(
+                      label: Text(item.$1),
+                      selected: selected,
+                      selectedColor: TeamUiTokens.accentSoft(isDark),
+                      labelStyle: TextStyle(
+                        color: selected
+                            ? TeamUiTokens.accent(isDark)
+                            : TeamUiTokens.subtitle(isDark),
+                        fontWeight:
+                            selected ? FontWeight.w700 : FontWeight.w400,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                            color: selected ? Colors.transparent : borderColor),
+                      ),
+                      onSelected: (_) => setState(() => _category = item.$2),
+                    );
+                  }).toList(),
+                ),
                 const SizedBox(height: 14),
+                const Text('组队标题',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
                 TextFormField(
-                    controller: _description,
-                    maxLines: 6,
-                    maxLength: 5000,
-                    decoration: const InputDecoration(
-                        labelText: '组队说明',
-                        hintText: '介绍目标、已有成员、计划和要求',
-                        border: OutlineInputBorder()),
-                    validator: (v) =>
-                        (v ?? '').trim().length < 10 ? '说明至少 10 个字' : null),
+                  controller: _title,
+                  maxLength: 100,
+                  cursorColor: TeamUiTokens.accent(isDark),
+                  decoration:
+                      inputDecoration.copyWith(hintText: '例如：数学建模国赛寻找队友'),
+                  validator: (v) =>
+                      (v ?? '').trim().length < 2 ? '标题至少 2 个字' : null,
+                ),
                 const SizedBox(height: 14),
+                const Text('组队说明',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
                 TextFormField(
-                    controller: _needed,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                        labelText: '还需人数', border: OutlineInputBorder()),
-                    validator: (v) {
-                      final n = int.tryParse(v ?? '');
-                      return n == null || n < 1 || n > 20 ? '请输入 1～20 人' : null;
-                    }),
-                const SizedBox(height: 14),
-                const Text('所需方向（可选）',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
+                  controller: _description,
+                  maxLines: 6,
+                  maxLength: 5000,
+                  cursorColor: TeamUiTokens.accent(isDark),
+                  decoration:
+                      inputDecoration.copyWith(hintText: '介绍参赛目标、已有成员和计划……'),
+                  validator: (v) =>
+                      (v ?? '').trim().length < 10 ? '说明至少 10 个字' : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: TeamUiTokens.sectionGap),
+            TeamFormSection(
+              title: '招募要求',
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                        child: Text('还需人数', style: TextStyle(fontSize: 15))),
+                    IconButton(
+                      onPressed: int.parse(_needed.text) > 1
+                          ? () => setState(() => _needed.text =
+                              (int.parse(_needed.text) - 1).toString())
+                          : null,
+                      icon: Icon(Icons.remove,
+                          color: TeamUiTokens.accent(isDark)),
+                    ),
+                    Text(_needed.text, style: const TextStyle(fontSize: 16)),
+                    IconButton(
+                      onPressed: int.parse(_needed.text) < 20
+                          ? () => setState(() => _needed.text =
+                              (int.parse(_needed.text) + 1).toString())
+                          : null,
+                      icon: Icon(Icons.add, color: TeamUiTokens.accent(isDark)),
+                    ),
+                  ],
+                ),
+                Divider(color: borderColor),
+                const SizedBox(height: 8),
+                const Row(
+                  children: [
+                    Expanded(
+                        child: Text('所需方向', style: TextStyle(fontSize: 15))),
+                    Icon(Icons.chevron_right, size: 20, color: Colors.grey),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Wrap(spacing: 6, runSpacing: 6, children: [
                   ..._roles.map((role) => InputChip(
                       label: Text(role),
                       onDeleted: () => setState(() => _roles.remove(role)))),
                   SizedBox(
-                      width: 190,
+                      width: 150,
+                      height: 36,
                       child: TextField(
                           controller: _role,
                           onSubmitted: (_) => _addRole(),
+                          cursorColor: TeamUiTokens.accent(isDark),
                           decoration: InputDecoration(
-                              hintText: '输入方向',
-                              suffixIcon: IconButton(
-                                  onPressed: _addRole,
-                                  icon: const Icon(Icons.add))))),
+                            hintText: '+ 添加方向',
+                            hintStyle: TextStyle(
+                                color: TeamUiTokens.accent(isDark),
+                                fontSize: 13),
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 10),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(color: borderColor)),
+                            enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(color: borderColor)),
+                            focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                    color: TeamUiTokens.accent(isDark))),
+                          ))),
                 ]),
-                const SizedBox(height: 14),
+              ],
+            ),
+            const SizedBox(height: TeamUiTokens.sectionGap),
+            TeamFormSection(
+              title: '补充信息',
+              children: [
                 ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.event_outlined),
-                    title: Text(_deadline == null
-                        ? '不设置截止日期'
-                        : '截止 ${_deadline!.year}-${_deadline!.month.toString().padLeft(2, '0')}-${_deadline!.day.toString().padLeft(2, '0')}'),
-                    trailing: TextButton(
-                        onPressed: _pickDeadline, child: const Text('选择日期'))),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('截止时间', style: TextStyle(fontSize: 15)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _deadline == null
+                            ? '不设置'
+                            : '${_deadline!.year}-${_deadline!.month.toString().padLeft(2, '0')}-${_deadline!.day.toString().padLeft(2, '0')}',
+                        style: TextStyle(color: TeamUiTokens.subtitle(isDark)),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right,
+                          size: 20, color: Colors.grey),
+                    ],
+                  ),
+                  onTap: _pickDeadline,
+                ),
+                Divider(color: borderColor),
                 const SizedBox(height: 8),
-                OutlinedButton.icon(
-                    onPressed: _images.length >= 9 ? null : _pickImages,
-                    icon: const Icon(Icons.photo_library_outlined),
-                    label: Text('添加图片（${_images.length}/9）')),
-                if (_images.isNotEmpty)
-                  Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _images
-                              .asMap()
-                              .entries
-                              .map((entry) => Chip(
-                                  label: Text('图片 ${entry.key + 1}'),
-                                  onDeleted: () => setState(
-                                      () => _images.removeAt(entry.key))))
-                              .toList())),
-              ])),
+                const Text('相关图片', style: TextStyle(fontSize: 15)),
+                const SizedBox(height: 12),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
+                  itemCount: _images.length < 9 ? _images.length + 1 : 9,
+                  itemBuilder: (_, index) {
+                    if (index == 0 && _images.length < 9) {
+                      return InkWell(
+                        onTap: _pickImages,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: borderColor),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_rounded,
+                                  color: TeamUiTokens.accent(isDark)),
+                              const SizedBox(height: 4),
+                              Text('添加',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: TeamUiTokens.subtitle(isDark))),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    final imageIndex = _images.length < 9 ? index - 1 : index;
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Stack(fit: StackFit.expand, children: [
+                        Image.file(File(_images[imageIndex].path),
+                            fit: BoxFit.cover),
+                        Align(
+                          alignment: Alignment.topRight,
+                          child: IconButton.filledTonal(
+                            tooltip: '删除图片',
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            onPressed: () =>
+                                setState(() => _images.removeAt(imageIndex)),
+                          ),
+                        ),
+                      ]),
+                    );
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '提示：联系方式无需直接写在正文中，\n申请通过后可通过站内私信联系。',
+              style:
+                  TextStyle(fontSize: 12, color: TeamUiTokens.subtitle(isDark)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -14,6 +14,7 @@ import 'admin_logs_screen.dart';
 import 'admin_announcements_screen.dart';
 import 'admin_water_sections_screen.dart';
 import 'admin_water_icon_review_screen.dart';
+import 'exam_papers/admin_exam_papers_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -30,6 +31,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   int? _featuredCount;
   int? _reviewTasksCount; // Teachers + Majors
   int? _adminTasksCount; // Invitations + Removals
+  int? _examPapersCount; // Exam paper submissions
 
   @override
   void initState() {
@@ -52,6 +54,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         dio.get('/majors/pending'),
         dio.get('/admin/invitations/pending'),
         dio.get('/admin/removals/pending'),
+        dio.get('/admin/exam-papers/pending-count'),
       ].map((f) => f.catchError((_) =>
           Response(requestOptions: RequestOptions(path: ''), data: []))));
 
@@ -67,6 +70,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         _featuredCount = getCount(futures[1]);
         _reviewTasksCount = getCount(futures[2]) + getCount(futures[3]);
         _adminTasksCount = getCount(futures[4]) + getCount(futures[5]);
+        _examPapersCount = futures[6].data is Map
+            ? ((futures[6].data as Map)['count'] as num?)?.toInt() ?? 0
+            : 0;
         _isLoading = false;
       });
     } catch (e) {
@@ -201,6 +207,20 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                               .then((_) => _loadCounts()),
                         ),
                         _AdminActionPill(
+                          icon: Icons.library_books_outlined,
+                          iconColor: Colors.deepOrange,
+                          title: '\u8bd5\u5377\u5ba1\u6838',
+                          subtitle:
+                              '\u5f85\u5ba1\u6838\u4e0e\u5df2\u53d1\u5e03\u8bd5\u5377\u7ba1\u7406',
+                          isDark: isDark,
+                          onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AdminExamPapersScreen()))
+                              .then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
                           icon: Icons.school_outlined,
                           iconColor: Colors.pink,
                           title: '专业审核',
@@ -325,6 +345,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       context,
                       MaterialPageRoute(
                           builder: (_) => const AdminReviewTasksScreen()))
+                  .then((_) => _loadCounts()),
+            ),
+            _AdminMetricPill(
+              title: '\u8bd5\u5377',
+              count: _examPapersCount,
+              isLoading: _isLoading,
+              isDark: isDark,
+              onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AdminExamPapersScreen()))
                   .then((_) => _loadCounts()),
             ),
             _AdminMetricPill(

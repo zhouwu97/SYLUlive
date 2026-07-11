@@ -106,8 +106,8 @@ func EffectiveRecruitmentStatus(recruitment WaterTeamRecruitment, now time.Time)
 // EnsureWaterTeamSchema 确保组队相关数据约束和唯一索引
 func EnsureWaterTeamSchema(db *gorm.DB) error {
 	err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_water_section_single_team_tag 
-		ON water_section_tags(section_id) 
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_water_section_single_team_tag
+		ON water_section_tags(section_id)
 		WHERE content_mode = 'team_recruitment';
 	`).Error
 	if err != nil {

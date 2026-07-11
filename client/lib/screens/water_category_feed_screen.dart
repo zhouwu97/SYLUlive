@@ -16,7 +16,6 @@ import '../widgets/water_section/section_post_card.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import 'water_section_manage_screen.dart';
-import 'login_screen.dart';
 import 'chat_list_screen.dart';
 import '../widgets/water_section/section_floating_dock.dart';
 
@@ -55,6 +54,13 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     super.initState();
     _sheetController = DraggableScrollableController();
 
+    // 常规入口已经携带完整的版块快照，首帧即可用于帖子查询。
+    // 权限、等级和远端版块配置属于辅助信息，不应阻塞帖子空态上屏。
+    if (widget.section != null) {
+      _resolvedSection = widget.section;
+      _sectionReady = true;
+    }
+
     if (widget.initialFilterKey != null) {
       _selectedFilterKey = widget.initialFilterKey!;
     } else {
@@ -82,11 +88,22 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       WaterSection.fromLegacyCategory(widget.category);
 
   Future<void> _bootstrap() async {
+    if (_sectionReady) {
+      await Future.wait<void>([
+        _load(),
+        _loadMyLevel(),
+        _resolveSection(),
+      ]);
+      return;
+    }
+
+    // 兼容直接传入旧分类、没有版块快照的调用方式。
     await _resolveSection(updateSortFromFreshSection: true);
     if (!mounted) return;
-    await _loadMyLevel();
-    if (!mounted) return;
-    await _load();
+    await Future.wait<void>([
+      _load(),
+      _loadMyLevel(),
+    ]);
   }
 
   Future<void> _resolveSection(

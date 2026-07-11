@@ -29,7 +29,7 @@ func newCompetitionTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(
+	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{}, 
 		&models.User{}, &models.CompetitionCategory{}, &models.CompetitionEvent{},
 		&models.UserCompetitionCalendar{}, &models.UserCompetitionCalendarItem{},
 		&models.CompetitionImportBatch{},

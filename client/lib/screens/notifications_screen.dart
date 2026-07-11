@@ -182,6 +182,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       actionText = '集市上新';
     } else if (type == 'water_moderation') {
       actionText = '水帖管理通知';
+    } else if (type == 'team_application') {
+      actionText = '有人申请加入你的组队';
+    } else if (type == 'team_application_result') {
+      actionText = '组队申请结果';
+    } else if (type == 'team_deadline_soon') {
+      actionText = '组队即将截止';
     }
 
     return InkWell(

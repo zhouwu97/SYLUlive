@@ -3,14 +3,14 @@
     android:id="@android:id/background"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@drawable/widget_bg_light"
     android:orientation="vertical"
-    android:background="@drawable/widget_bg_rounded"
-    android:padding="10dp">
+    android:padding="12dp">
 
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="6dp">
+        android:layout_marginBottom="8dp">
 
         <TextView
             android:id="@+id/tv_widget_title"
@@ -18,12 +18,12 @@
             android:layout_height="wrap_content"
             android:layout_alignParentStart="true"
             android:layout_centerVertical="true"
-            android:text="小课表"
-            android:textColor="#333333"
-            android:textSize="13sp"
-            android:textStyle="bold"
+            android:ellipsize="end"
             android:maxLines="1"
-            android:ellipsize="end" />
+            android:text="沈理院课表"
+            android:textColor="#111827"
+            android:textSize="14sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tv_widget_date"
@@ -33,29 +33,28 @@
             android:layout_centerVertical="true"
             android:layout_marginStart="4dp"
             android:layout_toEndOf="@id/tv_widget_title"
+            android:ellipsize="end"
             android:gravity="end"
-            android:text="5.22 周五"
-            android:textColor="#666666"
-            android:textSize="10sp"
             android:maxLines="1"
-            android:ellipsize="end" />
+            android:textColor="#4B5563"
+            android:textSize="10sp" />
     </RelativeLayout>
 
     <ListView
         android:id="@+id/course_list_view"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:fadingEdgeLength="8dp"
-        android:overScrollMode="never"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:divider="@null"
-        android:dividerHeight="0dp" />
+        android:dividerHeight="0dp"
+        android:overScrollMode="never" />
 
     <TextView
         android:id="@+id/empty_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
-        android:text="今天没有课\n点按查看课表"
+        android:text="今天没有课\n点按查看完整课表"
         android:textColor="#9CA3AF"
-        android:textSize="11sp" />
+        android:textSize="12sp" />
 </LinearLayout>

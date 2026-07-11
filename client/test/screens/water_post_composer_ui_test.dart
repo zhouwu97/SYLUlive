@@ -39,6 +39,9 @@ class FakePostProvider extends Fake
     String? contact,
     List<int>? fileIds,
     List<String>? marketTags,
+    int? teamNeededCount,
+    List<String>? teamRoles,
+    DateTime? teamDeadline,
   }) async {
     createPostCalls++;
     lastContent = content;

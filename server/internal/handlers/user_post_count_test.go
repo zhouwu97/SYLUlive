@@ -17,7 +17,7 @@ func TestGetUserPostCountOnlyCountsVisiblePosts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Post{}); err != nil {
+	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{}, &models.Post{}); err != nil {
 		t.Fatalf("migrate posts: %v", err)
 	}
 

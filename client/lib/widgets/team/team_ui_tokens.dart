@@ -20,12 +20,10 @@ class TeamUiTokens {
       ? const Color(0xFF7ED6C5).withValues(alpha: 0.12)
       : CampusTheme.primaryLight;
 
-  static Color border(bool isDark) => isDark
-      ? Colors.white.withValues(alpha: 0.08)
-      : CampusTheme.border;
+  static Color border(bool isDark) =>
+      isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.border;
 
-  static Color title(bool isDark) =>
-      isDark ? Colors.white : CampusTheme.text;
+  static Color title(bool isDark) => isDark ? Colors.white : CampusTheme.text;
 
   static Color subtitle(bool isDark) =>
       isDark ? Colors.white60 : CampusTheme.subText;

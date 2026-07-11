@@ -71,6 +71,22 @@ class _TeamRecruitmentDetailScreenState
   Future<({String message, String availability})?> _applicationSheet() async {
     final messageController = TextEditingController();
     final availabilityController = TextEditingController();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final borderColor = TeamUiTokens.border(isDark);
+    final inputDeco = InputDecoration(
+      filled: true,
+      fillColor: Colors.transparent,
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: borderColor)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: borderColor)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide:
+              BorderSide(color: TeamUiTokens.accent(isDark), width: 1.5)),
+    );
     final result =
         await showModalBottomSheet<({String message, String availability})>(
             context: context,
@@ -82,31 +98,35 @@ class _TeamRecruitmentDetailScreenState
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('申请加入',
+                        Text('申请加入',
                             style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.w800)),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: TeamUiTokens.title(isDark))),
                         const SizedBox(height: 12),
                         TextField(
                             controller: messageController,
                             maxLines: 4,
                             maxLength: 500,
-                            decoration: const InputDecoration(
+                            cursorColor: TeamUiTokens.accent(isDark),
+                            decoration: inputDeco.copyWith(
                                 labelText: '申请说明 *',
-                                hintText: '介绍你的经验、能力和加入原因',
-                                border: OutlineInputBorder())),
+                                hintText: '介绍你的经验、能力和加入原因')),
                         const SizedBox(height: 10),
                         TextField(
                             controller: availabilityController,
                             maxLines: 2,
                             maxLength: 200,
-                            decoration: const InputDecoration(
+                            cursorColor: TeamUiTokens.accent(isDark),
+                            decoration: inputDeco.copyWith(
                                 labelText: '可参与时间（选填）',
-                                hintText: '例如：工作日晚 7 点后，周末全天',
-                                border: OutlineInputBorder())),
+                                hintText: '例如：工作日晚 7 点后，周末全天')),
                         const SizedBox(height: 10),
                         SizedBox(
                             width: double.infinity,
+                            height: 48,
                             child: FilledButton(
+                                style: TeamUiTokens.primaryButtonStyle(isDark),
                                 onPressed: () {
                                   final message = messageController.text.trim();
                                   if (message.length < 5) return;
@@ -233,41 +253,56 @@ class _TeamRecruitmentDetailScreenState
                         if (item.author.major.isNotEmpty)
                           Text(item.author.major,
                               style: TextStyle(
-                                  fontSize: 12, color: Colors.grey.shade600))
+                                  fontSize: 12,
+                                  color: TeamUiTokens.subtitle(isDark)))
                       ])
                 ]),
                 const SizedBox(height: 24),
-                _section('组队说明', [
-                  Text(item.description, style: const TextStyle(height: 1.65)),
-                ], isDark),
+                _section(
+                    '组队说明',
+                    [
+                      Text(item.description,
+                          style: const TextStyle(height: 1.65)),
+                    ],
+                    isDark),
                 const SizedBox(height: 24),
-                _section('招募信息', [
-                  _infoRow(Icons.group_outlined,
-                      '已加入 ${item.acceptedCount} / 计划招募 ${item.neededCount}，还缺 ${item.remainingCount} 人', isDark),
-                  _infoRow(
-                      Icons.event_outlined,
-                      item.deadline == null
-                          ? '未设置截止日期'
-                          : '截止 ${item.deadline!.year}-${item.deadline!.month.toString().padLeft(2, '0')}-${item.deadline!.day.toString().padLeft(2, '0')}', isDark),
-                  if (item.roles.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Wrap(
-                        spacing: 7,
-                        runSpacing: 7,
-                        children: item.roles
-                            .map((role) => Chip(
-                                  label: Text(role),
-                                  backgroundColor: TeamUiTokens.pageBg(isDark),
-                                  side: BorderSide(color: TeamUiTokens.border(isDark)),
-                                ))
-                            .toList())
-                  ],
-                ], isDark),
+                _section(
+                    '招募信息',
+                    [
+                      _infoRow(
+                          Icons.group_outlined,
+                          '已加入 ${item.acceptedCount} / 计划招募 ${item.neededCount}，还缺 ${item.remainingCount} 人',
+                          isDark),
+                      _infoRow(
+                          Icons.event_outlined,
+                          item.deadline == null
+                              ? '未设置截止日期'
+                              : '截止 ${item.deadline!.year}-${item.deadline!.month.toString().padLeft(2, '0')}-${item.deadline!.day.toString().padLeft(2, '0')}',
+                          isDark),
+                      if (item.roles.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Wrap(
+                            spacing: 7,
+                            runSpacing: 7,
+                            children: item.roles
+                                .map((role) => Chip(
+                                      label: Text(role),
+                                      backgroundColor:
+                                          TeamUiTokens.pageBg(isDark),
+                                      side: BorderSide(
+                                          color: TeamUiTokens.border(isDark)),
+                                    ))
+                                .toList())
+                      ],
+                    ],
+                    isDark),
                 if (item.images.isNotEmpty) ...[
                   const SizedBox(height: 24),
                   const Padding(
                     padding: EdgeInsets.only(left: 4, bottom: 8),
-                    child: Text('图片', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                    child: Text('图片',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w800)),
                   ),
                   SizedBox(
                       height: 130,
@@ -347,7 +382,9 @@ class _TeamRecruitmentDetailScreenState
         Expanded(
             child: FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: item.isClosed ? TeamUiTokens.accent(isDark) : const Color(0xFFE54848),
+                  backgroundColor: item.isClosed
+                      ? TeamUiTokens.accent(isDark)
+                      : const Color(0xFFE54848),
                   foregroundColor: Colors.white,
                 ),
                 onPressed: item.isClosed

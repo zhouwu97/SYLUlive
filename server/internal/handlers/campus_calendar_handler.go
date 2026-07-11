@@ -45,9 +45,10 @@ type campusCalendarDocument struct {
 		FileName string `json:"file_name"`
 		Verified bool   `json:"verified"`
 	} `json:"source"`
-	Semesters []campusSemesterDocument `json:"semesters"`
-	Events    []campusEventDocument    `json:"events"`
-	Overrides []campusOverrideDocument `json:"day_overrides"`
+	Semesters       []campusSemesterDocument `json:"semesters"`
+	Events          []campusEventDocument    `json:"events"`
+	Overrides       []campusOverrideDocument `json:"day_overrides"`
+	UnresolvedItems []json.RawMessage        `json:"unresolved_items"`
 }
 
 type campusSemesterDocument struct {
@@ -73,8 +74,9 @@ type campusEventDocument struct {
 }
 
 type campusOverrideDocument struct {
-	Date    string `json:"date"`
-	DayMode string `json:"day_mode"`
+	Date              string `json:"date"`
+	DayMode           string `json:"day_mode"`
+	ScheduleAsWeekday *int   `json:"schedule_as_weekday"`
 }
 
 type calendarValidationIssue struct {
@@ -124,9 +126,7 @@ func (h *CampusCalendarHandler) GetByAcademicYear(c *gin.Context) {
 
 // Preview 校验管理员待导入的 JSON，但不保存草稿。
 func (h *CampusCalendarHandler) Preview(c *gin.Context) {
-	raw, document, result, ok := readAndValidateCalendar(c)
-	_ = raw
-	_ = document
+	_, _, result, ok := readAndValidateCalendar(c)
 	if !ok {
 		return
 	}
@@ -191,6 +191,13 @@ func (h *CampusCalendarHandler) Publish(c *gin.Context) {
 		if target.Status == "archived" {
 			return errArchivedCalendar
 		}
+		validation, document := validateCampusCalendar(target.Data)
+		if !validation.Valid {
+			return errInvalidCalendarData
+		}
+		if len(document.UnresolvedItems) > 0 {
+			return errUnresolvedCalendarData
+		}
 		if err := tx.Model(&models.CampusCalendar{}).
 			Where("academic_year = ? AND status = ? AND id <> ?", target.AcademicYear, "published", target.ID).
 			Update("status", "archived").Error; err != nil {
@@ -211,6 +218,14 @@ func (h *CampusCalendarHandler) Publish(c *gin.Context) {
 		}
 		if err == errArchivedCalendar {
 			c.JSON(http.StatusConflict, gin.H{"error": "已归档校历不能直接发布"})
+			return
+		}
+		if err == errInvalidCalendarData {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "校历数据未通过发布校验"})
+			return
+		}
+		if err == errUnresolvedCalendarData {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "存在待确认项目，不能发布"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "发布校历失败"})
@@ -240,11 +255,12 @@ func (h *CampusCalendarHandler) Archive(c *gin.Context) {
 }
 
 func (h *CampusCalendarHandler) writeCalendar(c *gin.Context, calendar models.CampusCalendar) {
-	var data interface{}
+	var data map[string]interface{}
 	if err := json.Unmarshal(calendar.Data, &data); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "已发布校历数据损坏"})
 		return
 	}
+	data["revision"] = calendar.SourceHash
 	c.JSON(http.StatusOK, gin.H{
 		"calendar":   data,
 		"version":    calendar.Version,
@@ -295,10 +311,15 @@ func validateCampusCalendar(raw []byte) (calendarValidationResult, campusCalenda
 		result.Errors = append(result.Errors, calendarValidationIssue{Path: "semesters", Message: "至少需要一个学期"})
 	}
 
+	semesterIDs := make(map[string]struct{})
 	for semesterIndex, semester := range document.Semesters {
 		path := "semesters[" + strconv.Itoa(semesterIndex) + "]"
 		if strings.TrimSpace(semester.ID) == "" || strings.TrimSpace(semester.Name) == "" {
 			result.Errors = append(result.Errors, calendarValidationIssue{Path: path, Message: "学期标识和名称不能为空"})
+		} else if _, exists := semesterIDs[semester.ID]; exists {
+			result.Errors = append(result.Errors, calendarValidationIssue{Path: path + ".id", Message: "学期标识不能重复"})
+		} else {
+			semesterIDs[semester.ID] = struct{}{}
 		}
 		start, startOK := validateCalendarDate(&result, path+".start_date", semester.StartDate)
 		end, endOK := validateCalendarDate(&result, path+".end_date", semester.EndDate)
@@ -309,12 +330,17 @@ func validateCampusCalendar(raw []byte) (calendarValidationResult, campusCalenda
 			result.Warnings = append(result.Warnings, calendarValidationIssue{Path: path + ".teaching_weeks", Message: "该学期没有教学周"})
 		}
 		previousEnd := time.Time{}
+		weekNumbers := make(map[int]struct{})
 		for weekIndex, week := range semester.TeachingWeeks {
 			weekPath := path + ".teaching_weeks[" + strconv.Itoa(weekIndex) + "]"
 			weekStart, weekStartOK := validateCalendarDate(&result, weekPath+".start_date", week.StartDate)
 			weekEnd, weekEndOK := validateCalendarDate(&result, weekPath+".end_date", week.EndDate)
 			if week.Week < 1 {
 				result.Errors = append(result.Errors, calendarValidationIssue{Path: weekPath + ".week", Message: "教学周序号必须大于 0"})
+			} else if _, exists := weekNumbers[week.Week]; exists {
+				result.Errors = append(result.Errors, calendarValidationIssue{Path: weekPath + ".week", Message: "同一学期教学周序号不能重复"})
+			} else {
+				weekNumbers[week.Week] = struct{}{}
 			}
 			if weekStartOK && weekEndOK {
 				if weekEnd.Before(weekStart) {
@@ -331,18 +357,33 @@ func validateCampusCalendar(raw []byte) (calendarValidationResult, campusCalenda
 		}
 	}
 
+	eventIDs := make(map[string]struct{})
 	for index, event := range document.Events {
 		path := "events[" + strconv.Itoa(index) + "]"
 		if strings.TrimSpace(event.ID) == "" || strings.TrimSpace(event.Title) == "" || strings.TrimSpace(event.Type) == "" {
 			result.Errors = append(result.Errors, calendarValidationIssue{Path: path, Message: "事件标识、标题和类型不能为空"})
+		} else if _, exists := eventIDs[event.ID]; exists {
+			result.Errors = append(result.Errors, calendarValidationIssue{Path: path + ".id", Message: "事件标识不能重复"})
+		} else {
+			eventIDs[event.ID] = struct{}{}
+		}
+		if !allowedCampusCalendarEventTypes[event.Type] {
+			result.Errors = append(result.Errors, calendarValidationIssue{Path: path + ".type", Message: "未知事件类型"})
 		}
 		validateDateRange(&result, path, event.StartDate, event.EndDate)
 	}
 	seenOverrides := make(map[string]struct{})
 	for index, override := range document.Overrides {
 		path := "day_overrides[" + strconv.Itoa(index) + "].date"
-		if strings.TrimSpace(override.DayMode) == "" {
-			result.Errors = append(result.Errors, calendarValidationIssue{Path: "day_overrides[" + strconv.Itoa(index) + "].day_mode", Message: "覆盖规则缺少 day_mode"})
+		modePath := "day_overrides[" + strconv.Itoa(index) + "].day_mode"
+		if !allowedCampusCalendarDayModes[override.DayMode] {
+			result.Errors = append(result.Errors, calendarValidationIssue{Path: modePath, Message: "未知覆盖规则类型"})
+		}
+		if override.ScheduleAsWeekday != nil && (*override.ScheduleAsWeekday < 1 || *override.ScheduleAsWeekday > 7) {
+			result.Errors = append(result.Errors, calendarValidationIssue{Path: "day_overrides[" + strconv.Itoa(index) + "].schedule_as_weekday", Message: "课程星期必须在 1 到 7 之间"})
+		}
+		if override.DayMode == "makeup_teaching" && override.ScheduleAsWeekday == nil {
+			result.Errors = append(result.Errors, calendarValidationIssue{Path: "day_overrides[" + strconv.Itoa(index) + "].schedule_as_weekday", Message: "补课规则必须指定课程星期"})
 		}
 		_, valid := validateCalendarDate(&result, path, override.Date)
 		if valid {
@@ -375,7 +416,22 @@ func validateCalendarDate(result *calendarValidationResult, path, value string) 
 	return date, true
 }
 
-var errArchivedCalendar = errors.New("archived campus calendar")
+var (
+	errArchivedCalendar       = errors.New("archived campus calendar")
+	errInvalidCalendarData    = errors.New("invalid campus calendar data")
+	errUnresolvedCalendarData = errors.New("unresolved campus calendar data")
+)
+
+var allowedCampusCalendarEventTypes = map[string]bool{
+	"holiday": true, "winter_vacation": true, "summer_vacation": true,
+	"registration": true, "semester_start": true, "semester_end": true,
+	"exam": true,
+}
+
+var allowedCampusCalendarDayModes = map[string]bool{
+	"makeup_teaching": true,
+	"no_teaching":     true,
+}
 
 func parseCalendarID(c *gin.Context) (uint, bool) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)

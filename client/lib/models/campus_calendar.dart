@@ -8,6 +8,7 @@ class CampusCalendar {
   final String academicYear;
   final String timezone;
   final int version;
+  final String revision;
   final String status;
   final CampusCalendarSource source;
   final List<CampusSemester> semesters;
@@ -22,6 +23,7 @@ class CampusCalendar {
     required this.academicYear,
     required this.timezone,
     required this.version,
+    required this.revision,
     required this.status,
     required this.source,
     required this.semesters,
@@ -38,6 +40,7 @@ class CampusCalendar {
       academicYear: _asString(json['academic_year']),
       timezone: _asString(json['timezone'], fallback: 'Asia/Shanghai'),
       version: _asInt(json['version']),
+      revision: _asString(json['revision']),
       status: _asString(json['status']),
       source: CampusCalendarSource.fromJson(_asMap(json['source'])),
       semesters: _asList(json['semesters'])
@@ -62,6 +65,7 @@ class CampusCalendar {
         'academic_year': academicYear,
         'timezone': timezone,
         'version': version,
+        if (revision.isNotEmpty) 'revision': revision,
         'status': status,
         'source': source.toJson(),
         'semesters': semesters.map((item) => item.toJson()).toList(),

@@ -1,8 +1,11 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/campus_calendar.dart';
+import 'package:shenliyuan/providers/campus_calendar_provider.dart';
+import 'package:shenliyuan/services/campus_calendar_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -90,5 +93,61 @@ void main() {
     expect(fallback.semesters, hasLength(2));
     expect(fallback.dayInfo(DateTime(2027, 1, 11)).markers.single.badge, '假');
     expect(fallback.dayInfo(DateTime(2027, 8, 23)).markers.single.badge, '始');
+    expect(fallback.dayInfo(DateTime(2026, 9, 25)).events.single.title, '中秋节');
+    expect(fallback.dayInfo(DateTime(2027, 6, 9)).events.single.title, '端午节');
   });
+
+  test('新学年即使版本号更小也应替换旧校历', () {
+    final remoteJson = calendar.toJson()
+      ..['academic_year'] = '2027-2028'
+      ..['version'] = 1
+      ..['revision'] = 'new-year';
+    final remote = CampusCalendar.fromJson(remoteJson);
+
+    expect(shouldReplaceCalendar(remote, calendar), isTrue);
+  });
+
+  test('同学年同版本以修订号识别已发布内容更新', () {
+    final localJson = calendar.toJson()..['revision'] = 'old-hash';
+    final remoteJson = calendar.toJson()..['revision'] = 'new-hash';
+
+    expect(
+      shouldReplaceCalendar(
+        CampusCalendar.fromJson(remoteJson),
+        CampusCalendar.fromJson(localJson),
+      ),
+      isTrue,
+    );
+  });
+
+  test('缓存不可用且远端失败时继续展示内置校历', () async {
+    final provider = CampusCalendarProvider(
+      _FallbackOnlyCalendarService(calendar),
+    );
+
+    await provider.load();
+
+    expect(provider.calendar?.calendarId, calendar.calendarId);
+    expect(provider.error, isNull);
+  });
+}
+
+class _FallbackOnlyCalendarService extends CampusCalendarService {
+  _FallbackOnlyCalendarService(this.fallback) : super(Dio());
+
+  final CampusCalendar fallback;
+
+  @override
+  Future<CampusCalendar?> loadCached() async => null;
+
+  @override
+  Future<CampusCalendar> loadFallback() async => fallback;
+
+  @override
+  Future<CampusCalendar?> fetchCurrent() async {
+    throw DioException(requestOptions: RequestOptions(path: '/current'));
+  }
+
+  @override
+  Future<void> saveCached(CampusCalendar calendar) async {}
 }

@@ -5,7 +5,7 @@
     <string name="widget_course_4x2_label">今日课表 (4x2)</string>
     <string name="widget_exam_2x2_label">考试安排 (2x2)</string>
     <string name="widget_exam_4x2_label">考试安排 (4x2)</string>
-    
+
 
     <string name="widget_course_2x2_description">紧凑显示日期和最多 2 门课程</string>
     <string name="widget_course_4x2_description">显示更多课程、教师与地点</string>

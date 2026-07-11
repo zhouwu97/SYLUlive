@@ -1,6 +1,6 @@
 <div align="center">
   <img src="https://img.shields.io/badge/Flutter-3.x-blue?logo=flutter" alt="Flutter">
-  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go" alt="Go">
   <img src="https://img.shields.io/badge/PostgreSQL-14+-336791?logo=postgresql" alt="Postgres">
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </div>

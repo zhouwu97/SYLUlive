@@ -1,0 +1,608 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
+)
+
+func performExamPaperJSONRequest(handler gin.HandlerFunc, method, path string, params gin.Params, userID uint, payload map[string]any) *httptest.ResponseRecorder {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		panic(err)
+	}
+	return performExamPaperRequest(handler, method, path, params, userID, body, "application/json")
+}
+
+func rejectExamPaperQueriesAfterTransaction(t *testing.T, db *gorm.DB) *atomic.Bool {
+	t.Helper()
+	var observedTransactionQuery atomic.Bool
+	callbackName := fmt.Sprintf("test:reject_post_transaction_exam_paper_query_%p", &observedTransactionQuery)
+	if err := db.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Schema == nil || tx.Statement.Schema.Table != "exam_papers" {
+			return
+		}
+		if _, ok := tx.Statement.ConnPool.(*sql.Tx); ok {
+			observedTransactionQuery.Store(true)
+			return
+		}
+		if observedTransactionQuery.Load() {
+			tx.AddError(errors.New("禁止事务提交后再次查询试卷"))
+		}
+	}); err != nil {
+		t.Fatalf("注册事务后查询失败回调失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Callback().Query().Remove(callbackName); err != nil {
+			t.Errorf("移除事务后查询失败回调失败: %v", err)
+		}
+	})
+	return &observedTransactionQuery
+}
+
+func TestAdminApproveReturnsTransactionSnapshot(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "approve-snapshot-contributor", models.RoleUser, true, 40)
+	admin := createExamPaperTestUser(t, env.db, "approve-snapshot-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPending)
+	observedTransactionQuery := rejectExamPaperQueriesAfterTransaction(t, env.db)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	payload := map[string]any{
+		"course_name": "线性代数", "academic_year": "2024-2025",
+		"semester": "second", "exam_type": "midterm", "reason": "内容清晰",
+	}
+
+	response := performExamPaperJSONRequest(env.handler.AdminApprove, http.MethodPost, "/api/admin/exam-papers/1/approve", params, admin.ID, payload)
+	if response.Code != http.StatusOK {
+		t.Fatalf("审核通过应使用事务快照返回成功: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !observedTransactionQuery.Load() {
+		t.Fatal("审核通过必须在事务内查询响应快照")
+	}
+	var snapshot examPaperResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("解析审核通过响应失败: %v", err)
+	}
+	if snapshot.Status != models.ExamPaperStatusPublished || snapshot.CourseName != "线性代数" || snapshot.Contributor.ID != contributor.ID || !snapshot.RewardRevocable {
+		t.Fatalf("审核通过事务快照字段错误: %#v", snapshot)
+	}
+}
+
+func TestAdminUpdateReturnsTransactionSnapshot(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "update-snapshot-contributor", models.RoleUser, true, 40)
+	admin := createExamPaperTestUser(t, env.db, "update-snapshot-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	observedTransactionQuery := rejectExamPaperQueriesAfterTransaction(t, env.db)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	payload := map[string]any{
+		"course_name": "大学物理", "academic_year": "2025-2026",
+		"semester": "first", "exam_type": "final",
+	}
+
+	response := performExamPaperJSONRequest(env.handler.AdminUpdate, http.MethodPatch, "/api/admin/exam-papers/1", params, admin.ID, payload)
+	if response.Code != http.StatusOK {
+		t.Fatalf("编辑试卷应使用事务快照返回成功: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !observedTransactionQuery.Load() {
+		t.Fatal("编辑试卷必须在事务内查询响应快照")
+	}
+	var snapshot examPaperResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("解析编辑试卷响应失败: %v", err)
+	}
+	if snapshot.Status != models.ExamPaperStatusPublished || snapshot.CourseName != "大学物理" || snapshot.Title != "大学物理 · 2025-2026 · 第一学期 · 期末" || snapshot.Contributor.ID != contributor.ID {
+		t.Fatalf("编辑试卷事务快照字段错误: %#v", snapshot)
+	}
+}
+
+func TestAdminUnpublishReturnsTransactionSnapshot(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "unpublish-snapshot-contributor", models.RoleUser, true, 40)
+	admin := createExamPaperTestUser(t, env.db, "unpublish-snapshot-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	observedTransactionQuery := rejectExamPaperQueriesAfterTransaction(t, env.db)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, map[string]any{"reason": "内容需要重新核验"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("下架试卷应使用事务快照返回成功: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !observedTransactionQuery.Load() {
+		t.Fatal("下架试卷必须在事务内查询响应快照")
+	}
+	var snapshot examPaperResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("解析下架试卷响应失败: %v", err)
+	}
+	if snapshot.Status != models.ExamPaperStatusUnpublished || snapshot.UnpublishReason != "内容需要重新核验" || snapshot.Contributor.ID != contributor.ID || snapshot.RewardRevocable {
+		t.Fatalf("下架试卷事务快照字段错误: %#v", snapshot)
+	}
+	if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); !os.IsNotExist(err) {
+		t.Fatalf("事务提交后仍应删除已下架文件: %v", err)
+	}
+}
+
+func TestAdminApproveExamPaperRewardsOnceAndCreatesOneMessageAndLog(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "approve-contributor", models.RoleUser, true, 40)
+	admin := createExamPaperTestUser(t, env.db, "approve-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPending)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	payload := map[string]any{
+		"course_name":   "\u7ebf\u6027\u4ee3\u6570",
+		"academic_year": "2024-2025",
+		"semester":      "second",
+		"exam_type":     "midterm",
+		"reason":        "\u5185\u5bb9\u6e05\u6670\uff0c\u53ef\u4ee5\u53d1\u5e03",
+	}
+
+	first := performExamPaperJSONRequest(env.handler.AdminApprove, http.MethodPost, "/api/admin/exam-papers/1/approve", params, admin.ID, payload)
+	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), `"status":"published"`) {
+		t.Fatalf("approve failed: status=%d body=%s", first.Code, first.Body.String())
+	}
+	second := performExamPaperJSONRequest(env.handler.AdminApprove, http.MethodPost, "/api/admin/exam-papers/1/approve", params, admin.ID, payload)
+	if second.Code != http.StatusConflict || decodeErrorCode(t, second) != "exam_paper_not_pending" {
+		t.Fatalf("repeated approve must conflict: status=%d body=%s", second.Code, second.Body.String())
+	}
+
+	var refreshedPaper models.ExamPaper
+	if err := env.db.First(&refreshedPaper, paper.ID).Error; err != nil {
+		t.Fatalf("load approved paper: %v", err)
+	}
+	if refreshedPaper.Status != models.ExamPaperStatusPublished || refreshedPaper.Title != "\u7ebf\u6027\u4ee3\u6570 \u00b7 2024-2025 \u00b7 \u7b2c\u4e8c\u5b66\u671f \u00b7 \u671f\u4e2d" {
+		t.Fatalf("approved metadata mismatch: %#v", refreshedPaper)
+	}
+	if refreshedPaper.RewardedAt == nil || refreshedPaper.PublishedAt == nil || refreshedPaper.ReviewerID == nil || *refreshedPaper.ReviewerID != admin.ID {
+		t.Fatalf("approval audit fields missing: %#v", refreshedPaper)
+	}
+	var refreshedUser models.User
+	env.db.First(&refreshedUser, contributor.ID)
+	if refreshedUser.Exp != 50 {
+		t.Fatalf("approval reward must be exactly 10 exp: %d", refreshedUser.Exp)
+	}
+	var messageCount int64
+	env.db.Model(&models.Message{}).Count(&messageCount)
+	if messageCount != 1 {
+		t.Fatalf("approval must create exactly one system message: %d", messageCount)
+	}
+	var logCount int64
+	env.db.Model(&models.AdminLog{}).Where("action = ?", "\u5ba1\u6838\u901a\u8fc7\u8bd5\u5377").Count(&logCount)
+	if logCount != 1 {
+		t.Fatalf("approval must create exactly one admin log: %d", logCount)
+	}
+}
+
+func TestAdminRejectExamPaperRequiresReasonAndDeletesRecordAndFile(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "reject-contributor", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "reject-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPending)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	empty := performExamPaperJSONRequest(env.handler.AdminReject, http.MethodPost, "/api/admin/exam-papers/1/reject", params, admin.ID, map[string]any{"reason": "  "})
+	if empty.Code != http.StatusBadRequest || decodeErrorCode(t, empty) != "review_reason_required" {
+		t.Fatalf("empty reject reason must fail: status=%d body=%s", empty.Code, empty.Body.String())
+	}
+	response := performExamPaperJSONRequest(env.handler.AdminReject, http.MethodPost, "/api/admin/exam-papers/1/reject", params, admin.ID, map[string]any{"reason": "\u5305\u542b\u5b66\u53f7\u4fe1\u606f"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("reject failed: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var paperCount int64
+	env.db.Model(&models.ExamPaper{}).Where("id = ?", paper.ID).Count(&paperCount)
+	if paperCount != 0 {
+		t.Fatalf("rejected paper record must be hard deleted: %d", paperCount)
+	}
+	if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); !os.IsNotExist(err) {
+		t.Fatalf("rejected PDF must be physically deleted: %v", err)
+	}
+	var messageCount int64
+	env.db.Model(&models.Message{}).Count(&messageCount)
+	if messageCount != 1 {
+		t.Fatalf("reject must create one system message: %d", messageCount)
+	}
+	var logCount int64
+	env.db.Model(&models.AdminLog{}).Where("action = ?", "\u62d2\u7edd\u8bd5\u5377\u6295\u7a3f").Count(&logCount)
+	if logCount != 1 {
+		t.Fatalf("reject must create one admin log: %d", logCount)
+	}
+}
+
+func TestAdminRejectExamPaperDeletesRecordWhenStoredFileAlreadyMissing(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "reject-missing-contributor", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "reject-missing-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPending)
+	if err := os.Remove(filepath.Join(env.root, paper.FileKey)); err != nil {
+		t.Fatalf("删除测试 PDF 失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminReject, http.MethodPost, "/api/admin/exam-papers/1/reject", params, admin.ID, map[string]any{"reason": "文件已不可用"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("文件已丢失时拒绝应清理记录: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var count int64
+	env.db.Model(&models.ExamPaper{}).Where("id = ?", paper.ID).Count(&count)
+	if count != 0 {
+		t.Fatalf("拒绝后记录应删除: %d", count)
+	}
+}
+
+func TestAdminUpdateAndUnpublishExamPaper(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "unpublish-contributor", models.RoleUser, true, 80)
+	admin := createExamPaperTestUser(t, env.db, "unpublish-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	update := performExamPaperJSONRequest(env.handler.AdminUpdate, http.MethodPatch, "/api/admin/exam-papers/1", params, admin.ID, map[string]any{
+		"course_name": "\u5927\u5b66\u7269\u7406", "academic_year": "2025-2026", "semester": "first", "exam_type": "final",
+	})
+	if update.Code != http.StatusOK || !strings.Contains(update.Body.String(), "\u5927\u5b66\u7269\u7406") {
+		t.Fatalf("update published paper failed: status=%d body=%s", update.Code, update.Body.String())
+	}
+
+	empty := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, map[string]any{"reason": ""})
+	if empty.Code != http.StatusBadRequest || decodeErrorCode(t, empty) != "unpublish_reason_required" {
+		t.Fatalf("empty unpublish reason must fail: status=%d body=%s", empty.Code, empty.Body.String())
+	}
+	response := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, map[string]any{"reason": "\u7248\u6743\u65b9\u8981\u6c42\u4e0b\u67b6"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("unpublish failed: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "\u7248\u6743\u65b9\u8981\u6c42\u4e0b\u67b6") {
+		t.Fatalf("unpublish response must include reason: %s", response.Body.String())
+	}
+	var refreshed models.ExamPaper
+	env.db.First(&refreshed, paper.ID)
+	if refreshed.Status != models.ExamPaperStatusUnpublished || refreshed.FileKey != "" || refreshed.UnpublishedAt == nil || refreshed.UnpublisherID == nil {
+		t.Fatalf("unpublish fields mismatch: %#v", refreshed)
+	}
+	if refreshed.SHA256 == "" || refreshed.RewardedAt != nil {
+		t.Fatalf("unpublish must retain hash and must not create reward: %#v", refreshed)
+	}
+	if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); !os.IsNotExist(err) {
+		t.Fatalf("unpublished PDF must be removed: %v", err)
+	}
+	var refreshedUser models.User
+	env.db.First(&refreshedUser, contributor.ID)
+	if refreshedUser.Exp != 80 {
+		t.Fatalf("unpublish must not reclaim exp: %d", refreshedUser.Exp)
+	}
+	var messages int64
+	env.db.Model(&models.Message{}).Count(&messages)
+	if messages != 1 {
+		t.Fatalf("unpublish must create one system message: %d", messages)
+	}
+}
+
+func TestAdminUnpublishExamPaperRevokesRewardOnce(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "unpublish-reward-contributor", models.RoleUser, true, 80)
+	admin := createExamPaperTestUser(t, env.db, "unpublish-reward-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	rewardedAt := time.Now().Add(-time.Hour)
+	if err := env.db.Model(&paper).Update("rewarded_at", rewardedAt).Error; err != nil {
+		t.Fatalf("设置试卷奖励时间失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	payload := map[string]any{"reason": "内容需要重新核验"}
+
+	first := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, payload)
+	if first.Code != http.StatusOK {
+		t.Fatalf("首次下架失败: status=%d body=%s", first.Code, first.Body.String())
+	}
+
+	var refreshedPaper models.ExamPaper
+	if err := env.db.First(&refreshedPaper, paper.ID).Error; err != nil {
+		t.Fatalf("读取下架试卷失败: %v", err)
+	}
+	if refreshedPaper.RewardRevokedAt == nil {
+		t.Fatal("下架已奖励试卷必须记录奖励撤销时间")
+	}
+	var refreshedUser models.User
+	if err := env.db.First(&refreshedUser, contributor.ID).Error; err != nil {
+		t.Fatalf("读取投稿人失败: %v", err)
+	}
+	if refreshedUser.Exp != 70 {
+		t.Fatalf("首次下架必须扣回 10 经验: %d", refreshedUser.Exp)
+	}
+	var message models.Message
+	if err := env.db.Order("id DESC").First(&message).Error; err != nil {
+		t.Fatalf("读取下架系统消息失败: %v", err)
+	}
+	if !strings.Contains(message.Content, "该投稿获得的 10 经验已扣回") {
+		t.Fatalf("下架系统消息必须说明扣回经验: %q", message.Content)
+	}
+	var log models.AdminLog
+	if err := env.db.Where("action = ?", "下架试卷").Order("id DESC").First(&log).Error; err != nil {
+		t.Fatalf("读取下架管理员日志失败: %v", err)
+	}
+	if !strings.Contains(log.Detail, "撤销经验=true") {
+		t.Fatalf("下架管理员日志必须记录奖励撤销结果: %q", log.Detail)
+	}
+
+	second := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, payload)
+	if second.Code != http.StatusConflict || decodeErrorCode(t, second) != "exam_paper_not_published" {
+		t.Fatalf("重复下架必须冲突: status=%d body=%s", second.Code, second.Body.String())
+	}
+	if err := env.db.First(&refreshedUser, contributor.ID).Error; err != nil {
+		t.Fatalf("重复下架后读取投稿人失败: %v", err)
+	}
+	if refreshedUser.Exp != 70 {
+		t.Fatalf("重复下架不得再次扣经验: %d", refreshedUser.Exp)
+	}
+}
+
+func TestRevokeExamPaperRewardUsesPersistedRevocationState(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "persisted-revoke-contributor", models.RoleUser, true, 80)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	rewardedAt := time.Now().Add(-2 * time.Hour)
+	revokedAt := time.Now().Add(-time.Hour)
+	if err := env.db.Model(&models.ExamPaper{}).Where("id = ?", paper.ID).Updates(map[string]any{
+		"rewarded_at": rewardedAt, "reward_revoked_at": revokedAt,
+	}).Error; err != nil {
+		t.Fatalf("设置已撤销奖励状态失败: %v", err)
+	}
+
+	// 模拟并发请求在奖励撤销前读取到的旧快照。
+	paper.RewardedAt = &rewardedAt
+	paper.RewardRevokedAt = nil
+	var revoked bool
+	if err := env.db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		revoked, err = revokeExamPaperReward(tx, &paper, time.Now())
+		return err
+	}); err != nil {
+		t.Fatalf("重复撤销奖励事务失败: %v", err)
+	}
+	if revoked {
+		t.Fatal("数据库已记录撤销时必须返回 false")
+	}
+	var refreshedUser models.User
+	if err := env.db.First(&refreshedUser, contributor.ID).Error; err != nil {
+		t.Fatalf("读取投稿人失败: %v", err)
+	}
+	if refreshedUser.Exp != 80 {
+		t.Fatalf("数据库已记录撤销时不得重复扣经验: %d", refreshedUser.Exp)
+	}
+}
+
+func TestRevokeExamPaperRewardFloorsExperienceAtZero(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "low-exp-revoke-contributor", models.RoleUser, true, 5)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	rewardedAt := time.Now().Add(-time.Hour)
+	if err := env.db.Model(&paper).Update("rewarded_at", rewardedAt).Error; err != nil {
+		t.Fatalf("设置试卷奖励时间失败: %v", err)
+	}
+	paper.RewardedAt = &rewardedAt
+
+	var revoked bool
+	if err := env.db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		revoked, err = revokeExamPaperReward(tx, &paper, time.Now())
+		return err
+	}); err != nil {
+		t.Fatalf("撤销低经验用户奖励失败: %v", err)
+	}
+	if !revoked {
+		t.Fatal("未撤销的奖励必须返回 true")
+	}
+	var refreshedUser models.User
+	if err := env.db.First(&refreshedUser, contributor.ID).Error; err != nil {
+		t.Fatalf("读取投稿人失败: %v", err)
+	}
+	if refreshedUser.Exp != 0 {
+		t.Fatalf("经验不足 10 时必须归零: %d", refreshedUser.Exp)
+	}
+}
+
+func TestAdminUnpublishExamPaperMarksUnavailableWhenStoredFileAlreadyMissing(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "unpublish-missing-contributor", models.RoleUser, true, 80)
+	admin := createExamPaperTestUser(t, env.db, "unpublish-missing-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	if err := os.Remove(filepath.Join(env.root, paper.FileKey)); err != nil {
+		t.Fatalf("删除测试 PDF 失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, map[string]any{"reason": "文件已不可用"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("文件已丢失时下架应更新状态: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var refreshed models.ExamPaper
+	if err := env.db.First(&refreshed, paper.ID).Error; err != nil {
+		t.Fatalf("读取下架记录失败: %v", err)
+	}
+	if refreshed.Status != models.ExamPaperStatusUnpublished || refreshed.FileKey != "" {
+		t.Fatalf("下架状态错误: %#v", refreshed)
+	}
+}
+
+func TestAdminExamPaperListCountAndDetail(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "admin-list-contributor", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "admin-list-admin", models.RoleAdmin, false, 0)
+	for index, status := range []models.ExamPaperStatus{models.ExamPaperStatusPending, models.ExamPaperStatusPublished, models.ExamPaperStatusUnpublished} {
+		paper := models.ExamPaper{
+			Status: status, Source: models.ExamPaperSourceUser, SubmitterID: contributor.ID,
+			CourseName: fmt.Sprintf("course-%d", index), AcademicYear: "2025-2026",
+			Semester: models.ExamPaperSemesterFirst, ExamType: models.ExamPaperTypeFinal,
+			Title: fmt.Sprintf("course-%d", index), FileKey: fmt.Sprintf("admin-list-%d.pdf", index),
+			FileSize: 1, SHA256: fmt.Sprintf("admin-list-hash-%d", index),
+		}
+		if status == models.ExamPaperStatusUnpublished {
+			paper.FileKey = ""
+		}
+		if err := env.db.Create(&paper).Error; err != nil {
+			t.Fatalf("create admin list fixture: %v", err)
+		}
+	}
+
+	count := performExamPaperRequest(env.handler.AdminPendingCount, http.MethodGet, "/api/admin/exam-papers/pending-count", nil, admin.ID, nil, "")
+	if count.Code != http.StatusOK || !strings.Contains(count.Body.String(), `"count":1`) {
+		t.Fatalf("pending count mismatch: status=%d body=%s", count.Code, count.Body.String())
+	}
+	list := performExamPaperRequest(env.handler.AdminList, http.MethodGet, "/api/admin/exam-papers?status=pending", nil, admin.ID, nil, "")
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"total":1`) {
+		t.Fatalf("admin pending list mismatch: status=%d body=%s", list.Code, list.Body.String())
+	}
+	detail := performExamPaperRequest(env.handler.AdminGet, http.MethodGet, "/api/admin/exam-papers/1", gin.Params{{Key: "id", Value: "1"}}, admin.ID, nil, "")
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"status":"pending"`) {
+		t.Fatalf("admin detail mismatch: status=%d body=%s", detail.Code, detail.Body.String())
+	}
+}
+
+func TestAdminExamPaperListFiltersKeywordContributorAndSort(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	firstContributor := createExamPaperTestUser(t, env.db, "filter-first", models.RoleUser, true, 0)
+	firstContributor.Nickname = "张同学"
+	if err := env.db.Save(&firstContributor).Error; err != nil {
+		t.Fatalf("更新投稿人失败: %v", err)
+	}
+	secondContributor := createExamPaperTestUser(t, env.db, "filter-second", models.RoleUser, true, 0)
+	secondContributor.Nickname = "李同学"
+	if err := env.db.Save(&secondContributor).Error; err != nil {
+		t.Fatalf("更新投稿人失败: %v", err)
+	}
+
+	createdAt := time.Now().Add(-time.Hour)
+	papers := []models.ExamPaper{
+		{
+			Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: firstContributor.ID,
+			CourseName: "高等数学", AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: "高等数学期末", FileKey: "admin-filter-first.pdf",
+			FileSize: 1, SHA256: "admin-filter-first", CreatedAt: createdAt,
+		},
+		{
+			Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: secondContributor.ID,
+			CourseName: "大学物理", AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: "大学物理期末", FileKey: "admin-filter-second.pdf",
+			FileSize: 1, SHA256: "admin-filter-second", CreatedAt: createdAt.Add(time.Minute),
+		},
+	}
+	for index := range papers {
+		if err := env.db.Create(&papers[index]).Error; err != nil {
+			t.Fatalf("创建管理筛选试卷失败: %v", err)
+		}
+	}
+	admin := createExamPaperTestUser(t, env.db, "filter-admin", models.RoleAdmin, false, 0)
+
+	filtered := performExamPaperRequest(
+		env.handler.AdminList,
+		http.MethodGet,
+		"/api/admin/exam-papers?status=pending&keyword="+url.QueryEscape("高等")+"&contributor="+url.QueryEscape("张同学")+"&sort=latest",
+		nil,
+		admin.ID,
+		nil,
+		"",
+	)
+	if filtered.Code != http.StatusOK || !strings.Contains(filtered.Body.String(), `"total":1`) || !strings.Contains(filtered.Body.String(), "高等数学") {
+		t.Fatalf("管理筛选结果错误: status=%d body=%s", filtered.Code, filtered.Body.String())
+	}
+
+	latest := performExamPaperRequest(env.handler.AdminList, http.MethodGet, "/api/admin/exam-papers?status=pending&sort=latest", nil, admin.ID, nil, "")
+	var payload struct {
+		Items []struct {
+			CourseName string `json:"course_name"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(latest.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析管理排序响应失败: %v", err)
+	}
+	if len(payload.Items) != 2 || payload.Items[0].CourseName != "大学物理" {
+		t.Fatalf("最新排序错误: %s", latest.Body.String())
+	}
+}
+
+func TestAdminApproveExamPaperConcurrentRequestsRemainIdempotent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dbPath := filepath.Join(t.TempDir(), "exam-approve.db")
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open sql database: %v", err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(&models.User{}, &models.ExamPaper{}, &models.Conversation{}, &models.Message{}, &models.AdminLog{}); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+	if err := models.EnsureExamPaperIndexes(db); err != nil {
+		t.Fatalf("create exam paper indexes: %v", err)
+	}
+	if err := models.EnsureConversationIndexes(db); err != nil {
+		t.Fatalf("create conversation indexes: %v", err)
+	}
+	fileRoot := t.TempDir()
+	files, err := services.NewExamPaperFileService(fileRoot)
+	if err != nil {
+		t.Fatalf("create file service: %v", err)
+	}
+	env := examPaperTestEnv{db: db, files: files, handler: NewExamPaperHandler(db, files), root: fileRoot}
+	contributor := createExamPaperTestUser(t, db, "concurrent-contributor", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, db, "concurrent-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPending)
+	payload := map[string]any{
+		"course_name": "Advanced Math", "academic_year": "2025-2026", "semester": "first", "exam_type": "final", "reason": "ok",
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	start := make(chan struct{})
+	responses := make(chan *httptest.ResponseRecorder, 2)
+	var wait sync.WaitGroup
+	for index := 0; index < 2; index++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			responses <- performExamPaperJSONRequest(env.handler.AdminApprove, http.MethodPost, "/api/admin/exam-papers/1/approve", params, admin.ID, payload)
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(responses)
+
+	statusCounts := map[int]int{}
+	for response := range responses {
+		statusCounts[response.Code]++
+	}
+	if statusCounts[http.StatusOK] != 1 || statusCounts[http.StatusConflict] != 1 {
+		t.Fatalf("concurrent approval responses must be one success and one conflict: %#v", statusCounts)
+	}
+	var refreshed models.User
+	db.First(&refreshed, contributor.ID)
+	if refreshed.Exp != 10 {
+		t.Fatalf("concurrent approval duplicated reward: %d", refreshed.Exp)
+	}
+	var messageCount, logCount int64
+	db.Model(&models.Message{}).Count(&messageCount)
+	db.Model(&models.AdminLog{}).Where("action = ?", "\u5ba1\u6838\u901a\u8fc7\u8bd5\u5377").Count(&logCount)
+	if messageCount != 1 || logCount != 1 {
+		t.Fatalf("concurrent approval duplicated side effects: messages=%d logs=%d", messageCount, logCount)
+	}
+}

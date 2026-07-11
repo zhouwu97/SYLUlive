@@ -119,6 +119,8 @@ func main() {
 
 		&models.File{},
 
+		&models.ExamPaper{},
+
 		&models.Conversation{},
 
 		&models.Message{},
@@ -184,10 +186,18 @@ func main() {
 		&models.CalendarShareSnapshot{},
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
+		&models.CampusCalendar{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
 
+	}
+
+	if err := models.EnsureExamPaperIndexes(db); err != nil {
+		log.Fatal("试卷索引迁移失败:", err)
+	}
+	if err := models.EnsureCampusCalendarIndexes(db); err != nil {
+		log.Fatal("校历索引迁移失败:", err)
 	}
 
 	if err := models.EnsureConversationIndexes(db); err != nil {
@@ -219,6 +229,9 @@ func main() {
 	}
 	if err := ensurePostPinColumns(db); err != nil {
 		log.Fatal("帖子置顶字段迁移失败:", err)
+	}
+	if err := ensurePostActivitySchema(db); err != nil {
+		log.Fatal("帖子活跃时间迁移失败:", err)
 	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
@@ -252,7 +265,7 @@ func main() {
 			c.Header("Access-Control-Allow-Origin", "*")
 		}
 
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
@@ -306,6 +319,15 @@ func main() {
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
+
+	examPaperFiles, examPaperFileErr := services.NewExamPaperFileService(cfg.ExamPaperDir)
+	if examPaperFileErr != nil {
+		log.Fatal("初始化试卷私有文件目录失败:", examPaperFileErr)
+	}
+	if examPaperFileErr = examPaperFiles.RecoverTrash(db); examPaperFileErr != nil {
+		log.Fatal("恢复试卷私有文件失败:", examPaperFileErr)
+	}
+	examPaperHandler := handlers.NewExamPaperHandler(db, examPaperFiles)
 
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
 
@@ -389,6 +411,7 @@ func main() {
 	}
 
 	campusArticleHandler := handlers.NewCampusArticleHandler(db, campusSyncServices...)
+	campusCalendarHandler := handlers.NewCampusCalendarHandler(db)
 
 	// 启动后台定时任务
 
@@ -876,6 +899,18 @@ func main() {
 
 	}
 
+	// 试卷库路由：统一登录校验，普通用户由处理器继续校验教务认证。
+	examPapers := r.Group("/api/exam-papers")
+	examPapers.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		examPapers.GET("", examPaperHandler.List)
+		examPapers.GET("/my-submissions", examPaperHandler.MySubmissions)
+		examPapers.DELETE("/my-submissions/:id", examPaperHandler.Withdraw)
+		examPapers.GET("/:id", examPaperHandler.Get)
+		examPapers.POST("", examPaperHandler.Upload)
+		examPapers.GET("/:id/preview", examPaperHandler.Preview)
+		examPapers.GET("/:id/download", examPaperHandler.Download)
+	}
 	// 管理员邀请路由
 
 	admin := r.Group("/api/admin")
@@ -884,6 +919,13 @@ func main() {
 
 	{
 
+		admin.GET("/exam-papers", examPaperHandler.AdminList)
+		admin.GET("/exam-papers/pending-count", examPaperHandler.AdminPendingCount)
+		admin.GET("/exam-papers/:id", examPaperHandler.AdminGet)
+		admin.POST("/exam-papers/:id/approve", examPaperHandler.AdminApprove)
+		admin.POST("/exam-papers/:id/reject", examPaperHandler.AdminReject)
+		admin.PATCH("/exam-papers/:id", examPaperHandler.AdminUpdate)
+		admin.POST("/exam-papers/:id/unpublish", examPaperHandler.AdminUnpublish)
 		admin.GET("/candidates", invitationHandler.GetCandidates)
 		admin.GET("/candidates/stats", invitationHandler.GetCandidatesStats)
 
@@ -1208,6 +1250,20 @@ func main() {
 		campus.GET("/articles", campusArticleHandler.List)
 		campus.GET("/articles/:id", campusArticleHandler.GetDetail)
 	}
+	campusCalendars := r.Group("/api/campus-calendars")
+	{
+		campusCalendars.GET("/current", campusCalendarHandler.GetCurrent)
+		campusCalendars.GET("/:academic_year", campusCalendarHandler.GetByAcademicYear)
+	}
+
+	calendarAdmin := r.Group("/api/admin/campus-calendars")
+	calendarAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		calendarAdmin.POST("/preview", campusCalendarHandler.Preview)
+		calendarAdmin.POST("", campusCalendarHandler.CreateDraft)
+		calendarAdmin.POST("/:id/publish", campusCalendarHandler.Publish)
+		calendarAdmin.POST("/:id/archive", campusCalendarHandler.Archive)
+	}
 
 	// 版本信息
 
@@ -1215,7 +1271,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.5.29",
+			"version": "1.6.2",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -1227,7 +1283,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1. 优化水帖分类侧边栏入口\n2. 精修水帖分类专题页样式\n3. 优化水帖详情页分类入口、阅读数对齐与正文密度",
+			"update_msg": "1. 优化校园地图首次加载、复位与横屏查看\n2. 校历升级为可点击的结构化月历，支持教学周、假期和日期详情\n3. 校历支持离线回退、后台更新与官方原图核验",
 		})
 
 	})
@@ -1339,4 +1395,26 @@ func ensurePostPinColumns(db *gorm.DB) error {
 
 func ensurePostMarketTagsColumn(db *gorm.DB) error {
 	return db.Exec(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS market_tags VARCHAR(200) NOT NULL DEFAULT ''`).Error
+}
+
+// ensurePostActivitySchema 回填历史讨论时间并建立首页候选查询索引。
+// Post 字段由 AutoMigrate 创建；这里的 SQL 同时兼容 PostgreSQL 与 SQLite。
+func ensurePostActivitySchema(db *gorm.DB) error {
+	statements := []string{
+		`UPDATE posts
+SET last_activity_at = COALESCE(
+    (SELECT MAX(replies.created_at) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal'),
+    posts.created_at
+)
+WHERE last_activity_at IS NULL OR last_activity_at < posts.created_at`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_home_created ON posts(board_id, status, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_home_activity ON posts(board_id, status, last_activity_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_home_featured ON posts(board_id, is_featured, created_at DESC)`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

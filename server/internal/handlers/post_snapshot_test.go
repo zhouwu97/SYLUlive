@@ -54,6 +54,7 @@ func TestPostSnapshotLoadMorePreservesOrderAndIncludesOlderPosts(t *testing.T) {
 	ActiveSnapshots.Store(sessionID, Snapshot{
 		PostIDs:   []uint{posts[4].ID, posts[2].ID, posts[0].ID, posts[3].ID, posts[1].ID},
 		ExpiredAt: time.Now().Add(time.Minute),
+		FeedKind:  "generic",
 	})
 	defer ActiveSnapshots.Delete(sessionID)
 

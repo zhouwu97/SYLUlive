@@ -213,6 +213,8 @@ func TestEnsureWaterSectionsIdempotent(t *testing.T) {
 	if err := db.Model(&models.WaterSection{}).Where("slug = ?", "course_study").Update("title", "选课与课程经验").Error; err != nil {
 		t.Fatalf("modify title: %v", err)
 	}
+	var tagCountBeforeEnsure int64
+	db.Model(&models.WaterSectionTag{}).Count(&tagCountBeforeEnsure)
 	if err := models.EnsureWaterSections(db); err != nil {
 		t.Fatalf("second ensure: %v", err)
 	}
@@ -223,9 +225,8 @@ func TestEnsureWaterSectionsIdempotent(t *testing.T) {
 	}
 	var tagCount int64
 	db.Model(&models.WaterSectionTag{}).Count(&tagCount)
-	// 7 sections × 5 tags each = 35
-	if tagCount != 35 {
-		t.Fatalf("expected 35 tags, got %d", tagCount)
+	if tagCount != tagCountBeforeEnsure {
+		t.Fatalf("ensure should not duplicate tags: before=%d after=%d", tagCountBeforeEnsure, tagCount)
 	}
 	var cs models.WaterSection
 	db.Where("slug = ?", "course_study").First(&cs)
@@ -329,7 +330,6 @@ func TestUpdateWaterSectionByAdmin(t *testing.T) {
 		"title":"选课与课程经验",
 		"subtitle":"选课、考试、老师、学习资料",
 		"description":"这里用于交流课程学习相关内容",
-		"icon_key":"menu_book",
 		"color_hex":"#2DBE72",
 		"publish_action_text":"提一个问题",
 		"empty_title":"还没有课程学习内容",

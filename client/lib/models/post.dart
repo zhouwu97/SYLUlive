@@ -260,6 +260,7 @@ class Post {
   final User? author;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime lastActivityAt;
 
   Post({
     required this.id,
@@ -300,7 +301,9 @@ class Post {
     this.author,
     required this.createdAt,
     DateTime? updatedAt,
-  }) : updatedAt = updatedAt ?? createdAt;
+    DateTime? lastActivityAt,
+  })  : updatedAt = updatedAt ?? createdAt,
+        lastActivityAt = lastActivityAt ?? createdAt;
 
   factory Post.fromJson(Map<String, dynamic> json) {
     return Post(
@@ -360,6 +363,9 @@ class Post {
       author: json['author'] != null ? User.fromJson(json['author']) : null,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       updatedAt: DateTime.tryParse(json['updated_at'] ?? ''),
+      lastActivityAt: DateTime.tryParse(json['last_activity_at'] ?? '') ??
+          DateTime.tryParse(json['created_at'] ?? '') ??
+          DateTime.now(),
     );
   }
 
@@ -441,6 +447,7 @@ class Post {
     User? author,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? lastActivityAt,
   }) {
     return Post(
       id: id ?? this.id,
@@ -485,6 +492,7 @@ class Post {
       author: author ?? this.author,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      lastActivityAt: lastActivityAt ?? this.lastActivityAt,
     );
   }
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/models"
 )
@@ -25,27 +25,17 @@ type pinPostInput struct {
 	Reason       string `json:"reason" form:"reason"`
 }
 
-func activePinOrder(now time.Time) clause.Expr {
-	return clause.Expr{
-		SQL: `CASE
-			WHEN posts.is_pinned = ? AND (posts.pinned_until IS NULL OR posts.pinned_until > ?)
-			THEN 0 ELSE 1
-		END ASC`,
-		Vars: []interface{}{true, now},
-	}
-}
-
 func applyPinnedOrder(query *gorm.DB, now time.Time) *gorm.DB {
+	// GORM 的 Order 不会处理 clause.Expr；将可信的服务端时间按当前方言转为字面量，确保后续排序可继续追加。
+	nowSQL := query.Dialector.Explain("?", now)
+	activeCondition := fmt.Sprintf(
+		"(posts.is_pinned = true AND (posts.pinned_until IS NULL OR posts.pinned_until > %s))",
+		nowSQL,
+	)
 	return query.
-		Order(activePinOrder(now)).
-		Order(clause.Expr{
-			SQL: `CASE WHEN posts.is_pinned = ? AND (posts.pinned_until IS NULL OR posts.pinned_until > ?) THEN posts.pinned_weight ELSE 0 END DESC`,
-			Vars: []interface{}{true, now},
-		}).
-		Order(clause.Expr{
-			SQL: `CASE WHEN posts.is_pinned = ? AND (posts.pinned_until IS NULL OR posts.pinned_until > ?) THEN posts.pinned_at ELSE NULL END DESC NULLS LAST`,
-			Vars: []interface{}{true, now},
-		})
+		Order(fmt.Sprintf("CASE WHEN %s THEN 0 ELSE 1 END ASC", activeCondition)).
+		Order(fmt.Sprintf("CASE WHEN %s THEN posts.pinned_weight ELSE 0 END DESC", activeCondition)).
+		Order(fmt.Sprintf("CASE WHEN %s THEN posts.pinned_at ELSE NULL END DESC NULLS LAST", activeCondition))
 }
 
 func (h *PostHandler) AdminPinPost(c *gin.Context) {

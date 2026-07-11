@@ -164,6 +164,20 @@ func decodeErrorCode(t *testing.T, recorder *httptest.ResponseRecorder) string {
 	return code
 }
 
+func TestExamPaperResponseReportsWhetherRewardIsRevocable(t *testing.T) {
+	rewardedAt := time.Now().Add(-time.Hour)
+	revokedAt := time.Now()
+
+	revocable := examPaperToResponse(models.ExamPaper{RewardedAt: &rewardedAt})
+	if !revocable.RewardRevocable {
+		t.Fatal("已奖励且未撤销的试卷必须标记为可撤销奖励")
+	}
+	revoked := examPaperToResponse(models.ExamPaper{RewardedAt: &rewardedAt, RewardRevokedAt: &revokedAt})
+	if revoked.RewardRevocable {
+		t.Fatal("奖励已撤销的试卷不得标记为可撤销奖励")
+	}
+}
+
 func createStoredExamPaper(t *testing.T, env examPaperTestEnv, submitter models.User, status models.ExamPaperStatus) models.ExamPaper {
 	t.Helper()
 	headerBody, contentType := buildExamPaperUploadBody(t, true, buildHandlerTestPDF())

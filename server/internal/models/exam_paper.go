@@ -67,6 +67,7 @@ type ExamPaper struct {
 	DownloadCount   int64             `gorm:"not null;default:0;index" json:"download_count"`
 	ApprovalReason  string            `gorm:"size:500" json:"approval_reason,omitempty"`
 	RewardedAt      *time.Time        `json:"rewarded_at,omitempty"`
+	RewardRevokedAt *time.Time        `json:"reward_revoked_at,omitempty"`
 	PublishedAt     *time.Time        `gorm:"index" json:"published_at,omitempty"`
 	UnpublishReason string            `gorm:"size:500" json:"unpublish_reason,omitempty"`
 	UnpublishedAt   *time.Time        `json:"unpublished_at,omitempty"`

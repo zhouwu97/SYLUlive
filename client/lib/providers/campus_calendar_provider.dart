@@ -28,8 +28,7 @@ class CampusCalendarProvider extends ChangeNotifier {
 
       try {
         final remote = await _service.fetchCurrent();
-        if (remote != null &&
-            (cached == null || shouldReplaceCalendar(remote, _calendar!))) {
+        if (remote != null && shouldReplaceCalendar(remote, _calendar!)) {
           _calendar = remote;
           await _service.saveCached(remote);
           notifyListeners();
@@ -48,12 +47,23 @@ class CampusCalendarProvider extends ChangeNotifier {
 
 /// 校历按学年、架构版本、内容修订号和版本号综合比较，避免跨学年数字回退。
 bool shouldReplaceCalendar(CampusCalendar remote, CampusCalendar local) {
-  if (remote.academicYear != local.academicYear ||
-      remote.schemaVersion != local.schemaVersion) {
-    return true;
+  if (remote.academicYear != local.academicYear) {
+    final remoteStartYear = _academicYearStart(remote.academicYear);
+    final localStartYear = _academicYearStart(local.academicYear);
+    if (remoteStartYear == null || localStartYear == null) return false;
+    return remoteStartYear > localStartYear;
+  }
+  if (remote.schemaVersion != local.schemaVersion) {
+    return remote.schemaVersion > local.schemaVersion;
   }
   if (remote.version != local.version) {
     return remote.version > local.version;
   }
   return remote.revision.isNotEmpty && remote.revision != local.revision;
+}
+
+int? _academicYearStart(String academicYear) {
+  final separator = academicYear.indexOf('-');
+  if (separator <= 0) return null;
+  return int.tryParse(academicYear.substring(0, separator));
 }

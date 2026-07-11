@@ -66,14 +66,6 @@ var (
 		MaxOldPosts:       2,
 		MaxAge:            0,
 	}
-	RelaxedPolicy3 = PlacementPolicy{
-		MaxAuthorFirst10:  2,
-		MaxAuthorPage:     4,
-		MaxSectionFirst10: 6,
-		MaxSectionPage:    10,
-		MaxOldPosts:       2,
-		MaxAge:            30 * 24 * time.Hour,
-	}
 )
 
 // RankHomeFeed 生成第一页混合槽位，其余候选按稳定热度顺序追加。
@@ -147,7 +139,7 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 	}
 	
 	// 如候选充足但硬约束阻塞，则逐级放宽。
-	relaxPolicies := []PlacementPolicy{RelaxedPolicy1, RelaxedPolicy2, RelaxedPolicy3}
+	relaxPolicies := []PlacementPolicy{RelaxedPolicy1, RelaxedPolicy2}
 	for _, policy := range relaxPolicies {
 		if len(selected) >= 20 {
 			break
@@ -157,6 +149,19 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 				break
 			}
 			if !seen[item.Post.ID] && canPlace(item, selected, now, policy) {
+				selected = append(selected, item)
+				seen[item.Post.ID] = true
+			}
+		}
+	}
+
+	// 第三级放宽：从最近 30 天尚未选中的普通帖子中补位，使用第二级放宽政策
+	if len(selected) < 20 {
+		for _, item := range byFresh {
+			if len(selected) >= 20 {
+				break
+			}
+			if !seen[item.Post.ID] && !item.Post.CreatedAt.Before(now.Add(-30*24*time.Hour)) && canPlace(item, selected, now, RelaxedPolicy2) {
 				selected = append(selected, item)
 				seen[item.Post.ID] = true
 			}

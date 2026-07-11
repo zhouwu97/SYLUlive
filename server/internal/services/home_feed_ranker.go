@@ -66,6 +66,14 @@ var (
 		MaxOldPosts:       2,
 		MaxAge:            0,
 	}
+	FinalFillPolicy = PlacementPolicy{
+		MaxAuthorFirst10:  10,
+		MaxAuthorPage:     20,
+		MaxSectionFirst10: 10,
+		MaxSectionPage:    20,
+		MaxOldPosts:       2,
+		MaxAge:            0,
+	}
 )
 
 // RankHomeFeed 生成第一页混合槽位，其余候选按稳定热度顺序追加。
@@ -146,8 +154,6 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 		isPrimary := false
 		if !c.Post.CreatedAt.Before(now.Add(-7 * 24 * time.Hour)) {
 			isPrimary = true
-		} else if !c.Post.CreatedAt.Before(now.Add(-48 * time.Hour)) {
-			isPrimary = true
 		} else if c.Post.ReplyCount > 0 && !c.Post.LastActivityAt.Before(now.Add(-72*time.Hour)) {
 			isPrimary = true
 		} else if c.Post.IsFeatured && !c.Post.CreatedAt.Before(now.Add(-180*24*time.Hour)) {
@@ -193,6 +199,20 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 				selected = append(selected, item)
 				seen[item.Post.ID] = true
 			}
+		}
+	}
+
+	// 最终补位：完全放宽作者和版块，但继续限制老帖
+	if len(selected) < 20 {
+		for _, item := range byHot {
+			if len(selected) >= 20 {
+				break
+			}
+			if seen[item.Post.ID] || !canPlace(item, selected, now, FinalFillPolicy) {
+				continue
+			}
+			selected = append(selected, item)
+			seen[item.Post.ID] = true
 		}
 	}
 

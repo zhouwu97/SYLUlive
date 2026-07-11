@@ -11,6 +11,8 @@ import '../utils/app_feedback.dart';
 /// 每个板块的帖子状态
 class _BoardState {
   List<Post> posts = [];
+  List<Post> pinnedPosts = [];
+  String algorithmVersion = '';
   bool isLoading = false;
   String? error;
   int currentPage = 1;
@@ -72,6 +74,8 @@ Map<String, dynamic> buildPostListParams({
     'sort': sort,
     'limit': limit,
   };
+  if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId))
+    params['feed_version'] = 2;
   if (tagId != null) {
     params['tag_id'] = tagId;
   }
@@ -87,6 +91,17 @@ Map<String, dynamic> buildPostListParams({
   }
   return params;
 }
+
+@visibleForTesting
+bool usesHomeFeedV2(
+        {required int boardId,
+        required String sort,
+        String? type,
+        int? tagId}) =>
+    boardId == 1 &&
+    (type == null || type.trim().isEmpty) &&
+    tagId == null &&
+    (sort == 'all' || sort == 'time');
 
 class PostProvider extends ChangeNotifier {
   final Dio _dio;
@@ -130,6 +145,9 @@ class PostProvider extends ChangeNotifier {
   List<Post> postsFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
       _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).posts;
+  List<Post> pinnedPostsFor(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).pinnedPosts;
   bool isLoadingFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
       _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).isLoading;
@@ -281,6 +299,11 @@ class PostProvider extends ChangeNotifier {
         'limit': 20,
         'scene': 'refresh',
       };
+      if (usesHomeFeedV2(
+          boardId: boardId,
+          sort: sort,
+          type: type,
+          tagId: tagId)) params['feed_version'] = 2;
       if (tagId != null) {
         params['tag_id'] = tagId;
       }
@@ -299,6 +322,14 @@ class PostProvider extends ChangeNotifier {
         final newPosts = ((data['posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
+        final pinned = ((data['pinned_posts'] as List?) ?? [])
+            .map((e) => Post.fromJson(e))
+            .toList();
+        if (usesHomeFeedV2(
+            boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+          board.pinnedPosts = pinned;
+          board.algorithmVersion = data['algorithm_version']?.toString() ?? '';
+        }
 
         if (sort != 'time') {
           board.posts = newPosts;

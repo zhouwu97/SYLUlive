@@ -4,6 +4,8 @@ import '../models/post.dart';
 
 /// 帖子本地缓存服务（基于 Hive，JSON 序列化，无需 code-gen）
 class PostCacheService {
+  static const int cacheSchemaVersion = 2;
+  static const String homeAllAlgorithmVersion = 'home_all_v2';
   static const _boxName = 'post_cache';
   static const _boardPrefix = 'board_';
 
@@ -31,7 +33,13 @@ class PostCacheService {
   }) async {
     final box = await _openBox();
     final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
-    final json = jsonEncode(posts.map((p) => _postToJson(p)).toList());
+    final json = jsonEncode({
+      'schema_version': cacheSchemaVersion,
+      'algorithm_version': sort == 'all' ? homeAllAlgorithmVersion : 'feed_v1',
+      'saved_at': DateTime.now().toUtc().toIso8601String(),
+      'pinned_posts': <Object>[],
+      'posts': posts.map((p) => _postToJson(p)).toList()
+    });
     await box.put(key, json);
   }
 
@@ -47,7 +55,19 @@ class PostCacheService {
     final json = box.get(key);
     if (json == null || json.isEmpty) return [];
     try {
-      final list = jsonDecode(json) as List<dynamic>;
+      final decoded = jsonDecode(json);
+      if (decoded is! Map<String, dynamic> ||
+          decoded['schema_version'] != cacheSchemaVersion) {
+        await box.delete(key);
+        return [];
+      }
+      final savedAt = DateTime.tryParse(decoded['saved_at']?.toString() ?? '');
+      if (savedAt == null ||
+          DateTime.now().difference(savedAt) > const Duration(hours: 24)) {
+        await box.delete(key);
+        return [];
+      }
+      final list = (decoded['posts'] as List?) ?? const <dynamic>[];
       return list.map((e) => Post.fromJson(e as Map<String, dynamic>)).toList();
     } catch (_) {
       return [];
@@ -185,6 +205,7 @@ class PostCacheService {
           : null,
       'created_at': post.createdAt.toUtc().toIso8601String(),
       'updated_at': post.updatedAt.toUtc().toIso8601String(),
+      'last_activity_at': post.lastActivityAt.toUtc().toIso8601String(),
     };
   }
 }

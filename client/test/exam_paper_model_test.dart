@@ -14,6 +14,7 @@ void main() {
       'title': '高等数学 · 2025-2026 · 第一学期 · 期末',
       'file_size': 2048,
       'download_count': 7,
+      'reward_revocable': true,
       'published_at': '2026-07-10T10:00:00Z',
       'created_at': '2026-07-09T10:00:00Z',
       'contributor': {
@@ -31,6 +32,13 @@ void main() {
     expect(paper.contributor.nickname, '贡献者');
     expect(paper.contributor.level, 4);
     expect(paper.fileSizeLabel, '2.0 KB');
+    expect(paper.rewardRevocable, isTrue);
+  });
+
+  test('试卷模型在 reward_revocable 缺失时默认不可撤销经验', () {
+    final paper = ExamPaper.fromJson(const <String, dynamic>{});
+
+    expect(paper.rewardRevocable, isFalse);
   });
 
   test('分页响应解析 items/page/page_size/total', () {

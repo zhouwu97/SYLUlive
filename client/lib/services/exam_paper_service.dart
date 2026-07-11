@@ -54,6 +54,23 @@ class ExamPaperApiException implements Exception {
   String toString() => message;
 }
 
+class ExamPaperDeleteResult {
+  final String message;
+  final bool expRevoked;
+
+  const ExamPaperDeleteResult({
+    required this.message,
+    required this.expRevoked,
+  });
+
+  factory ExamPaperDeleteResult.fromJson(Map<String, dynamic> json) {
+    return ExamPaperDeleteResult(
+      message: json['message']?.toString() ?? '操作成功',
+      expRevoked: json['exp_revoked'] == true,
+    );
+  }
+}
+
 class ExamPaperService {
   static const int maxFileSize = 20 * 1024 * 1024;
 
@@ -161,12 +178,19 @@ class ExamPaperService {
     }
   }
 
-  Future<void> withdraw(int id) async {
+  Future<ExamPaperDeleteResult> deleteSubmission(int id) async {
     try {
-      await _dio.delete<void>('/exam-papers/my-submissions/$id');
+      final response = await _dio.delete<Map<String, dynamic>>(
+        '/exam-papers/my-submissions/$id',
+      );
+      return ExamPaperDeleteResult.fromJson(_responseMap(response.data));
     } on DioException catch (error) {
       throw ExamPaperApiException.fromDio(error);
     }
+  }
+
+  Future<void> withdraw(int id) async {
+    await deleteSubmission(id);
   }
 
   Future<File> downloadPreview(ExamPaper paper) {

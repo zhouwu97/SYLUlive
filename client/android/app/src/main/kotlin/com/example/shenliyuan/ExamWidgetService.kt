@@ -2,69 +2,77 @@ package com.example.shenliyuan
 
 import android.content.Context
 import android.content.Intent
+import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 
 class ExamWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
-        return ExamRemoteViewsFactory(this.applicationContext)
+        return ExamRemoteViewsFactory(
+            applicationContext,
+            NativeWidgetVariant.fromName(
+                intent.getStringExtra(HomeWidgetRegistry.EXTRA_VARIANT),
+                NativeWidgetVariant.EXAM_2X2,
+            ),
+        )
     }
 }
 
-class ExamRemoteViewsFactory(private val context: Context) : RemoteViewsService.RemoteViewsFactory {
+class ExamRemoteViewsFactory(
+    private val context: Context,
+    private val variant: NativeWidgetVariant,
+) : RemoteViewsService.RemoteViewsFactory {
+    private val exams = mutableListOf<WidgetExamData.Exam>()
+    private lateinit var theme: HomeWidgetThemeConfig
 
-    private var examData: WidgetExamData? = null
-
-    override fun onCreate() {
-        // Initialization if needed
-    }
+    override fun onCreate() = Unit
 
     override fun onDataSetChanged() {
-        examData = ExamDataReader.read(context)
+        exams.clear()
+        exams.addAll(ExamDataReader.read(context).exams.take(variant.maxItems))
+        val appearance = HomeWidgetAppearanceStore.read(context, NativeHomeWidgetKind.EXAM)
+        theme = HomeWidgetThemeConfig.resolve(context, appearance.theme)
     }
 
-    override fun onDestroy() {
-        examData = null
-    }
+    override fun onDestroy() = exams.clear()
 
-    override fun getCount(): Int {
-        return examData?.exams?.size ?: 0
-    }
+    override fun getCount(): Int = exams.size
 
     override fun getViewAt(position: Int): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.widget_exam_item)
-        val data = examData ?: return views
-
-        if (position >= data.exams.size) return views
-        val exam = data.exams[position]
-
+        val views = RemoteViews(context.packageName, variant.itemLayoutResource)
+        if (position !in exams.indices) return views
+        val exam = exams[position]
         views.setTextViewText(R.id.tv_exam_name, exam.name)
         views.setTextViewText(R.id.tv_exam_date, exam.date)
         views.setTextViewText(R.id.tv_exam_time, exam.time)
         views.setTextViewText(R.id.tv_exam_location, exam.location)
+        views.setTextViewText(R.id.tv_exam_countdown, exam.countdown)
+        views.setViewVisibility(
+            R.id.tv_exam_countdown,
+            if (exam.countdown.isBlank()) View.GONE else View.VISIBLE,
+        )
+        views.setViewVisibility(
+            R.id.tv_exam_location,
+            if (variant.size == NativeHomeWidgetSize.SIZE_4X2 && exam.location.isNotBlank()) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            },
+        )
+        views.setTextColor(R.id.tv_exam_name, theme.primaryTextColor)
+        views.setTextColor(R.id.tv_exam_date, theme.secondaryTextColor)
+        views.setTextColor(R.id.tv_exam_time, theme.secondaryTextColor)
+        views.setTextColor(R.id.tv_exam_location, theme.mutedTextColor)
+        views.setTextColor(R.id.tv_exam_countdown, theme.accentColor)
+        views.setInt(R.id.iv_exam_color, "setColorFilter", theme.accentColor)
 
-        if (exam.countdown.isNotEmpty()) {
-            views.setViewVisibility(R.id.tv_exam_countdown, android.view.View.VISIBLE)
-            views.setTextViewText(R.id.tv_exam_countdown, exam.countdown)
-        } else {
-            views.setViewVisibility(R.id.tv_exam_countdown, android.view.View.GONE)
-        }
-
-        try {
-            val parsedTextColor = android.graphics.Color.parseColor(data.textColor)
-            views.setTextColor(R.id.tv_exam_name, parsedTextColor)
-            views.setTextColor(R.id.tv_exam_date, parsedTextColor)
-            views.setTextColor(R.id.tv_exam_time, parsedTextColor)
-            views.setTextColor(R.id.tv_exam_location, parsedTextColor)
-        } catch (e: Exception) {
-            // ignore
-        }
-
-        val fillInIntent = Intent()
-        fillInIntent.putExtra("exam_name", exam.name)
-        fillInIntent.putExtra("exam_date", exam.date)
-        views.setOnClickFillInIntent(R.id.item_root_layout, fillInIntent)
-
+        views.setOnClickFillInIntent(
+            R.id.item_root_layout,
+            Intent().apply {
+                putExtra("exam_name", exam.name)
+                putExtra("exam_date", exam.date)
+            },
+        )
         return views
     }
 

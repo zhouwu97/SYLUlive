@@ -138,6 +138,89 @@ class FileItem {
 }
 
 // 帖子模型
+
+class TeamRecruitmentMeta {
+  final int recruitmentId;
+  final int neededCount;
+  final int acceptedCount;
+  final int remainingCount;
+  final List<String> roles;
+  final DateTime? deadline;
+  final String status;
+  final String effectiveStatus;
+  final int applicationCount;
+  final String? myApplicationStatus;
+  final bool isOwner;
+  final bool canApply;
+  final bool canManage;
+
+  TeamRecruitmentMeta({
+    required this.recruitmentId,
+    required this.neededCount,
+    required this.acceptedCount,
+    required this.remainingCount,
+    required this.roles,
+    this.deadline,
+    required this.status,
+    required this.effectiveStatus,
+    required this.applicationCount,
+    this.myApplicationStatus,
+    required this.isOwner,
+    required this.canApply,
+    required this.canManage,
+  });
+
+  /// 服务端返回的 effective_status 是按钮矩阵的唯一状态依据。
+  bool get isRecruiting => effectiveStatus == 'recruiting';
+  bool get isFull => effectiveStatus == 'full';
+  bool get isClosed => effectiveStatus == 'closed';
+  bool get isExpired => effectiveStatus == 'expired';
+  bool get isPending => myApplicationStatus == 'pending';
+  bool get isAccepted => myApplicationStatus == 'accepted';
+  bool get isRejected => myApplicationStatus == 'rejected';
+  bool get isCancelled => myApplicationStatus == 'cancelled';
+
+  factory TeamRecruitmentMeta.fromJson(Map<String, dynamic> json) {
+    return TeamRecruitmentMeta(
+      recruitmentId: json['recruitment_id'] ?? 0,
+      neededCount: json['needed_count'] ?? 0,
+      acceptedCount: json['accepted_count'] ?? 0,
+      remainingCount: json['remaining_count'] ?? 0,
+      roles: (json['roles'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      deadline: DateTime.tryParse(json['deadline'] ?? ''),
+      status: json['status'] ?? '',
+      effectiveStatus: json['effective_status'] ?? '',
+      applicationCount: json['application_count'] ?? 0,
+      myApplicationStatus: json['my_application_status'],
+      isOwner: json['is_owner'] == true,
+      canApply: json['can_apply'] == true,
+      canManage: json['can_manage'] == true,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'recruitment_id': recruitmentId,
+      'needed_count': neededCount,
+      'accepted_count': acceptedCount,
+      'remaining_count': remainingCount,
+      'roles': roles,
+      if (deadline != null) 'deadline': deadline!.toIso8601String(),
+      'status': status,
+      'effective_status': effectiveStatus,
+      'application_count': applicationCount,
+      if (myApplicationStatus != null)
+        'my_application_status': myApplicationStatus,
+      'is_owner': isOwner,
+      'can_apply': canApply,
+      'can_manage': canManage,
+    };
+  }
+}
+
 class Post {
   final int id;
   final String title;
@@ -170,6 +253,7 @@ class Post {
   final int? waterSectionFeaturedId;
   final bool homeFeaturedPending;
   final WaterSectionAuthorMeta? waterSectionAuthorMeta;
+  final TeamRecruitmentMeta? teamRecruitment;
   final int? expEarned; // 发帖/评论成功时服务端返回的本次经验值，null=无奖励
   final List<ExpAward> expAwards;
   final List<PostImage> images;
@@ -209,6 +293,7 @@ class Post {
     this.waterSectionFeaturedId,
     this.homeFeaturedPending = false,
     this.waterSectionAuthorMeta,
+    this.teamRecruitment,
     this.expEarned,
     this.expAwards = const [],
     this.images = const [],
@@ -257,6 +342,9 @@ class Post {
       homeFeaturedPending: json['home_featured_pending'] == true,
       waterSectionAuthorMeta: json['water_section_author_meta'] != null
           ? WaterSectionAuthorMeta.fromJson(json['water_section_author_meta'])
+          : null,
+      teamRecruitment: json['team_recruitment_meta'] != null
+          ? TeamRecruitmentMeta.fromJson(json['team_recruitment_meta'])
           : null,
       expEarned: json['exp_earned'] != null
           ? (json['exp_earned'] as num).toInt()
@@ -344,6 +432,9 @@ class Post {
     int? waterSectionFeaturedId,
     bool? homeFeaturedPending,
     WaterSectionAuthorMeta? waterSectionAuthorMeta,
+    TeamRecruitmentMeta? teamRecruitment,
+    bool clearTeamRecruitment = false,
+    bool clearTeamRecruitmentMeta = false,
     int? expEarned,
     List<ExpAward>? expAwards,
     List<PostImage>? images,
@@ -385,6 +476,9 @@ class Post {
       homeFeaturedPending: homeFeaturedPending ?? this.homeFeaturedPending,
       waterSectionAuthorMeta:
           waterSectionAuthorMeta ?? this.waterSectionAuthorMeta,
+      teamRecruitment: (clearTeamRecruitment || clearTeamRecruitmentMeta)
+          ? null
+          : (teamRecruitment ?? this.teamRecruitment),
       expEarned: expEarned ?? this.expEarned,
       expAwards: expAwards ?? this.expAwards,
       images: images ?? this.images,

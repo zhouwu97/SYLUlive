@@ -5,13 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import '../widgets/glass_container.dart';
+import '../services/home_widget_service.dart';
+import 'home_widget_settings_screen.dart';
 
 // 定义考试模型
 class ExamModel {
@@ -284,57 +286,16 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   void _syncWidget() {
     _syncTimer?.cancel();
     _syncTimer = Timer(const Duration(milliseconds: 500), () async {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-
-        final now = DateTime.now();
-        final activeExams =
-            _exams.where((e) => e.endTime.isAfter(now)).toList();
-
-        final examsJson = activeExams.map((e) {
-          final dateStr =
-              '${e.startTime.year}-${e.startTime.month.toString().padLeft(2, '0')}-${e.startTime.day.toString().padLeft(2, '0')}';
-          final startTimeStr =
-              '${e.startTime.hour.toString().padLeft(2, '0')}:${e.startTime.minute.toString().padLeft(2, '0')}';
-          final endTimeStr =
-              '${e.endTime.hour.toString().padLeft(2, '0')}:${e.endTime.minute.toString().padLeft(2, '0')}';
-
-          final startDate = DateTime(
-            e.startTime.year,
-            e.startTime.month,
-            e.startTime.day,
-          );
-          final today = DateTime(now.year, now.month, now.day);
-          final diffDays = startDate.difference(today).inDays;
-
-          String countdown;
-          if (diffDays == 0) {
-            countdown = '今天';
-          } else if (diffDays == 1) {
-            countdown = '明天';
-          } else if (diffDays == 2) {
-            countdown = '后天';
-          } else {
-            countdown = '$diffDays天后';
-          }
-
-          return {
-            'name': e.name,
-            'date': dateStr,
-            'time': '$startTimeStr-$endTimeStr',
-            'location': e.location.isNotEmpty ? e.location : '未指定',
-            'countdown': countdown,
-          };
-        }).toList();
-
-        final jsonStr = jsonEncode(examsJson);
-        await prefs.setString('widget_exam_data', jsonStr);
-
-        const channel = MethodChannel('shenliyuan/widget');
-        await channel.invokeMethod('updateWidget');
-      } catch (e) {
-        debugPrint('同步考试小组件失败: $e');
-      }
+      await HomeWidgetService.syncExamData(
+        _exams.map(
+          (exam) => HomeWidgetExamEntry(
+            name: exam.name,
+            startTime: exam.startTime,
+            endTime: exam.endTime,
+            location: exam.location,
+          ),
+        ),
+      );
     });
   }
 
@@ -862,6 +823,29 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.widgets_outlined),
+            tooltip: '桌面小组件',
+            onPressed: () async {
+              _syncTimer?.cancel();
+              await HomeWidgetService.syncExamData(
+                _exams.map(
+                  (exam) => HomeWidgetExamEntry(
+                    name: exam.name,
+                    startTime: exam.startTime,
+                    endTime: exam.endTime,
+                    location: exam.location,
+                  ),
+                ),
+              );
+              if (!context.mounted) return;
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const HomeWidgetSettingsScreen(),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.file_upload_outlined),
             tooltip: '导入存档',

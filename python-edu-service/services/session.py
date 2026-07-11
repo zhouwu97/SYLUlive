@@ -49,68 +49,69 @@ async def execute_with_session_refresh(
     锁内 commit 保证后续请求拿到的是最新 Cookie,避免并发重登风暴。
     """
 
-    async def _attempt(crawler: EduCrawler, cookie: str) -> T:
-        try:
-            return await operation(crawler, cookie)
-        except CookieLapseError:
-            raise
-        except (LoginFailedError, NetworkError):
-            raise
-
-    async with EduCrawler(timeout=timeout) as crawler:
-        cookie = edu_user.cookie
-
-        # 首次尝试
-        try:
-            return await _attempt(crawler, cookie)
-        except CookieLapseError:
-            pass
-
-        # 需要刷新 — 按用户串行化以避免并发重登
-        lock = _user_lock(edu_user.user_id)
-        async with lock:
-            # 重新读取最新 Cookie（可能被前一个锁持有者刷新过）
-            await db.refresh(edu_user)
-            refreshed_cookie = edu_user.cookie
-            if refreshed_cookie and refreshed_cookie != cookie:
-                try:
-                    return await _attempt(crawler, refreshed_cookie)
-                except CookieLapseError:
-                    pass
-
-            if not edu_user.raw_password:
-                raise CookieLapseError("Cookie 已失效，请重新绑定教务账号")
-
-            logger.info(
-                "[EDU-SESSION] refreshing session user_id=%s student_id=%s",
-                edu_user.user_id,
-                getattr(edu_user, "student_id", ""),
-            )
-
+    async def _attempt_fresh(cookie: str) -> T:
+        async with EduCrawler(timeout=timeout) as crawler:
             try:
-                new_cookie = await crawler.login(
+                return await operation(crawler, cookie)
+            except CookieLapseError:
+                raise
+            except (LoginFailedError, NetworkError):
+                raise
+
+    original_cookie = edu_user.cookie
+
+    # 首次尝试
+    try:
+        return await _attempt_fresh(original_cookie)
+    except CookieLapseError:
+        pass
+
+    # 需要刷新 — 按用户串行化以避免并发重登
+    lock = _user_lock(edu_user.user_id)
+    async with lock:
+        # 重新读取最新 Cookie（可能被前一个锁持有者刷新过）
+        await db.refresh(edu_user)
+        refreshed_cookie = edu_user.cookie
+        if refreshed_cookie and refreshed_cookie != original_cookie:
+            try:
+                return await _attempt_fresh(refreshed_cookie)
+            except CookieLapseError:
+                pass
+
+        if not edu_user.raw_password:
+            raise CookieLapseError("Cookie 已失效，请重新绑定教务账号")
+
+        logger.info(
+            "[EDU-SESSION] refreshing session user_id=%s student_id=%s",
+            edu_user.user_id,
+            getattr(edu_user, "student_id", ""),
+        )
+
+        try:
+            async with EduCrawler(timeout=timeout) as login_crawler:
+                new_cookie = await login_crawler.login(
                     edu_user.student_id, edu_user.raw_password,
                 )
-            except LoginFailedError as e:
-                logger.warning(
-                    "[EDU-SESSION] re-login failed user_id=%s code=%s",
-                    edu_user.user_id,
-                    e.code,
-                )
-                raise CookieLapseError(
-                    f"账号密码可能已变更: {e}"
-                ) from e
-
-            # 锁内持久化，保证后续请求能看到最新 Cookie
-            edu_user.cookie = new_cookie
-            await db.commit()
-            await db.refresh(edu_user)
-            cookie = edu_user.cookie
-
-        # 重试（锁已释放，不阻塞其他用户）
-        try:
-            return await _attempt(crawler, cookie)
-        except CookieLapseError:
-            raise CookieLapseError(
-                "Cookie 已失效且自动登录失败，请重新绑定教务账号"
+        except LoginFailedError as e:
+            logger.warning(
+                "[EDU-SESSION] re-login failed user_id=%s code=%s",
+                edu_user.user_id,
+                e.code,
             )
+            raise CookieLapseError(
+                f"账号密码可能已变更: {e}"
+            ) from e
+
+        # 锁内持久化，保证后续请求能看到最新 Cookie
+        edu_user.cookie = new_cookie
+        await db.commit()
+        await db.refresh(edu_user)
+        refreshed_cookie = edu_user.cookie
+
+    # 重试（锁已释放，不阻塞其他用户）
+    try:
+        return await _attempt_fresh(refreshed_cookie)
+    except CookieLapseError as e:
+        raise CookieLapseError(
+            "Cookie 已失效且自动登录失败，请重新绑定教务账号"
+        ) from e

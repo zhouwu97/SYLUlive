@@ -9,20 +9,30 @@ class TeamRecruitmentService {
 
   TeamRecruitmentService(this._dio);
 
-  Future<List<TeamRecruitment>> list({
+  Future<TeamRecruitmentPage> list({
     String? category,
     String? status,
     String? keyword,
     String? role,
+    String sort = 'recommended',
+    bool availableOnly = false,
+    int page = 1,
+    int limit = 20,
+    CancelToken? cancelToken,
   }) async {
-    final response = await _dio.get('/team/recruitments', queryParameters: {
-      if (category != null && category.isNotEmpty) 'category': category,
-      if (status != null && status.isNotEmpty) 'status': status,
-      if (keyword != null && keyword.isNotEmpty) 'keyword': keyword,
-      if (role != null && role.isNotEmpty) 'role': role,
-      'limit': 50,
-    });
-    return _items(response.data);
+    final response = await _dio.get('/team/recruitments',
+        queryParameters: {
+          if (category != null && category.isNotEmpty) 'category': category,
+          if (status != null && status.isNotEmpty) 'status': status,
+          if (keyword != null && keyword.isNotEmpty) 'keyword': keyword,
+          if (role != null && role.isNotEmpty) 'role': role,
+          'sort': sort,
+          if (availableOnly) 'available_only': true,
+          'page': page,
+          'limit': limit,
+        },
+        cancelToken: cancelToken);
+    return TeamRecruitmentPage.fromJson(_map(response.data));
   }
 
   Future<TeamRecruitment> detail(int recruitmentId) async {
@@ -46,6 +56,33 @@ class TeamRecruitmentService {
       'needed_count': neededCount,
       'roles': roles,
       if (deadline != null) 'deadline': deadline.toUtc().toIso8601String(),
+      'image_file_ids': imageFileIds,
+    });
+    final data = _map(response.data);
+    final recruitment = data['recruitment'];
+    return TeamRecruitment.fromJson(
+      recruitment is Map ? recruitment.cast<String, dynamic>() : data,
+    );
+  }
+
+  Future<TeamRecruitment> update({
+    required int recruitmentId,
+    required String category,
+    required String title,
+    required String description,
+    required int neededCount,
+    required List<String> roles,
+    DateTime? deadline,
+    List<int> imageFileIds = const [],
+  }) async {
+    final response =
+        await _dio.patch('/team/recruitments/$recruitmentId', data: {
+      'category': category,
+      'title': title,
+      'description': description,
+      'needed_count': neededCount,
+      'roles': roles,
+      'deadline': deadline?.toUtc().toIso8601String() ?? '',
       'image_file_ids': imageFileIds,
     });
     final data = _map(response.data);
@@ -115,5 +152,38 @@ class TeamRecruitmentService {
         .map((item) =>
             WaterTeamApplication.fromJson(item.cast<String, dynamic>()))
         .toList(growable: false);
+  }
+}
+
+/// 服务端分页响应，排序和页码均以服务端为准。
+class TeamRecruitmentPage {
+  final List<TeamRecruitment> items;
+  final int total;
+  final int page;
+  final int limit;
+  final bool hasMore;
+
+  const TeamRecruitmentPage({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.limit,
+    required this.hasMore,
+  });
+
+  factory TeamRecruitmentPage.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] is List ? json['items'] as List : const [];
+    return TeamRecruitmentPage(
+      items: rawItems
+          .whereType<Map>()
+          .map((item) => TeamRecruitment.fromJson(item.cast<String, dynamic>()))
+          .toList(growable: false),
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      limit: (json['limit'] as num?)?.toInt() ??
+          (json['page_size'] as num?)?.toInt() ??
+          20,
+      hasMore: json['has_more'] == true,
+    );
   }
 }

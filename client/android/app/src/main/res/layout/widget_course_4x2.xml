@@ -54,7 +54,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
-        android:text="今天没有课\n点按查看完整课表"
+        android:text="( ╯' - ')╯ \n今天没有课啦"
         android:textColor="#9CA3AF"
         android:textSize="12sp" />
 </LinearLayout>

@@ -271,24 +271,26 @@ type UpdateTeamRecruitmentRequest struct {
 
 // TeamRecruitmentListItem 列表项（轻量，不含完整 post 内容）
 type TeamRecruitmentListItem struct {
-	ID              uint       `json:"id"`
-	PostID          uint       `json:"post_id"`
-	Category        string     `json:"category"`
-	Title           string     `json:"title"`
-	Description     string     `json:"description"`
-	AuthorID        uint       `json:"author_id"`
-	AuthorName      string     `json:"author_name"`
-	AuthorAvatar    string     `json:"author_avatar"`
-	AuthorMajor     string     `json:"author_major"`
-	NeededCount     int        `json:"needed_count"`
-	AcceptedCount   int        `json:"accepted_count"`
-	RemainingCount  int        `json:"remaining_count"`
-	Roles           []string   `json:"roles"`
-	Deadline        *time.Time `json:"deadline"`
-	Status          string     `json:"status"`
-	EffectiveStatus string     `json:"effective_status"`
-	FirstImageURL   string     `json:"first_image_url"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID               uint       `json:"id"`
+	PostID           uint       `json:"post_id"`
+	Category         string     `json:"category"`
+	Title            string     `json:"title"`
+	Description      string     `json:"description"`
+	AuthorID         uint       `json:"author_id"`
+	AuthorName       string     `json:"author_name"`
+	AuthorAvatar     string     `json:"author_avatar"`
+	AuthorMajor      string     `json:"author_major"`
+	NeededCount      int        `json:"needed_count"`
+	AcceptedCount    int        `json:"accepted_count"`
+	RemainingCount   int        `json:"remaining_count"`
+	Roles            []string   `json:"roles"`
+	Deadline         *time.Time `json:"deadline"`
+	Status           string     `json:"status"`
+	EffectiveStatus  string     `json:"effective_status"`
+	FirstImageURL    string     `json:"first_image_url"`
+	ApplicationCount int64      `json:"application_count"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 
 	// 登录用户专属
 	MyApplicationStatus *string `json:"my_application_status,omitempty"`
@@ -405,6 +407,8 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 	statusFilter := c.Query("status")
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	role := c.Query("role")
+	sort := c.DefaultQuery("sort", "recommended")
+	availableOnly := c.Query("available_only") == "true"
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "20")
 
@@ -430,7 +434,7 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 	}
 	if keyword != "" {
 		like := "%" + keyword + "%"
-		query = query.Where("(posts.title ILIKE ? OR posts.content ILIKE ?)", like, like)
+		query = query.Where("(posts.title ILIKE ? OR posts.content ILIKE ? OR water_team_recruitments.roles_json ILIKE ?)", like, like, like)
 	}
 	if role != "" {
 		query = query.Where("water_team_recruitments.roles_json ILIKE ?", "%\""+role+"\"%")
@@ -451,25 +455,30 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 	} else if statusFilter != "" {
 		query = query.Where("water_team_recruitments.status = ?", statusFilter)
 	}
+	if availableOnly {
+		query = query.Where("water_team_recruitments.status = ?", models.RecruitmentStatusRecruiting).
+			Where("(water_team_recruitments.deadline IS NULL OR water_team_recruitments.deadline > ?)", now).
+			Where("water_team_recruitments.accepted_count < water_team_recruitments.needed_count")
+	}
 
-	// 排序
-	query = query.Order(clause.Expr{
-		SQL: `CASE
-			WHEN water_team_recruitments.status = ? AND (water_team_recruitments.deadline IS NULL OR water_team_recruitments.deadline > ?)
-			THEN 0
-			WHEN water_team_recruitments.status = ? THEN 1
-			WHEN water_team_recruitments.status = ? THEN 2
-			ELSE 3
-		END ASC,
-		water_team_recruitments.deadline ASC NULLS LAST,
-		water_team_recruitments.created_at DESC`,
-		Vars: []interface{}{
-			models.RecruitmentStatusRecruiting, now,
-			models.RecruitmentStatusFull,
-			models.RecruitmentStatusClosed,
-		},
-		WithoutParentheses: true,
-	})
+	// 排序必须在数据库端完成，否则分页后在客户端排序会产生错位。
+	deadlineSoonOrder := "CASE WHEN water_team_recruitments.deadline IS NOT NULL AND water_team_recruitments.deadline > CURRENT_TIMESTAMP AND water_team_recruitments.deadline <= CURRENT_TIMESTAMP + INTERVAL '3 days' THEN 0 ELSE 1 END ASC"
+	if h.db.Dialector.Name() == "sqlite" {
+		deadlineSoonOrder = "CASE WHEN water_team_recruitments.deadline IS NOT NULL AND water_team_recruitments.deadline > CURRENT_TIMESTAMP AND water_team_recruitments.deadline <= datetime(CURRENT_TIMESTAMP, '+3 days') THEN 0 ELSE 1 END ASC"
+	}
+	switch sort {
+	case "latest":
+		query = query.Order("water_team_recruitments.created_at DESC")
+	case "deadline":
+		query = query.Order("CASE WHEN water_team_recruitments.deadline IS NULL THEN 1 ELSE 0 END ASC").
+			Order("water_team_recruitments.deadline ASC").
+			Order("water_team_recruitments.created_at DESC")
+	default:
+		// PostgreSQL 与 SQLite 都能执行的固定排序表达式；避免 GORM 对带变量 Order 的错误括号处理。
+		query = query.Order("CASE WHEN water_team_recruitments.status = 'recruiting' AND water_team_recruitments.accepted_count < water_team_recruitments.needed_count AND (water_team_recruitments.deadline IS NULL OR water_team_recruitments.deadline > CURRENT_TIMESTAMP) THEN 0 WHEN water_team_recruitments.status = 'full' THEN 2 WHEN water_team_recruitments.status = 'closed' THEN 3 ELSE 1 END ASC").
+			Order(deadlineSoonOrder).
+			Order("water_team_recruitments.created_at DESC")
+	}
 
 	var total int64
 	query.Session(&gorm.Session{}).Count(&total)
@@ -493,6 +502,57 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 		return
 	}
 
+	// 一次查询首图、文件、申请数和当前用户申请状态，避免列表中的 N+1 查询。
+	postIDs := make([]uint, 0, len(recruitments))
+	recruitmentIDs := make([]uint, 0, len(recruitments))
+	for _, r := range recruitments {
+		postIDs = append(postIDs, r.PostID)
+		recruitmentIDs = append(recruitmentIDs, r.ID)
+	}
+	firstImageByPost := make(map[uint]string)
+	if len(postIDs) > 0 {
+		var images []models.PostImage
+		h.db.Where("post_id IN ?", postIDs).Order("post_id ASC, sort_order ASC").Find(&images)
+		fileIDs := make([]uint, 0, len(images))
+		for _, image := range images {
+			if _, exists := firstImageByPost[image.PostID]; !exists {
+				fileIDs = append(fileIDs, image.FileID)
+			}
+		}
+		var files []models.File
+		filePathByID := make(map[uint]string)
+		if len(fileIDs) > 0 {
+			h.db.Where("id IN ?", fileIDs).Find(&files)
+			for _, file := range files {
+				filePathByID[file.ID] = file.Path
+			}
+		}
+		for _, image := range images {
+			if _, exists := firstImageByPost[image.PostID]; !exists {
+				firstImageByPost[image.PostID] = filePathByID[image.FileID]
+			}
+		}
+	}
+	applicationCountByRecruitment := make(map[uint]int64)
+	if len(recruitmentIDs) > 0 {
+		var rows []struct {
+			RecruitmentID uint
+			Count         int64
+		}
+		h.db.Model(&models.WaterTeamApplication{}).Select("recruitment_id, COUNT(*) AS count").Where("recruitment_id IN ?", recruitmentIDs).Group("recruitment_id").Scan(&rows)
+		for _, row := range rows {
+			applicationCountByRecruitment[row.RecruitmentID] = row.Count
+		}
+	}
+	myApplicationByRecruitment := make(map[uint]string)
+	if userID, ok := c.Get("user_id"); ok && len(recruitmentIDs) > 0 {
+		var apps []models.WaterTeamApplication
+		h.db.Where("applicant_id = ? AND recruitment_id IN ?", userID.(uint), recruitmentIDs).Find(&apps)
+		for _, app := range apps {
+			myApplicationByRecruitment[app.RecruitmentID] = app.Status
+		}
+	}
+
 	// 填充列表项
 	items := make([]TeamRecruitmentListItem, 0, len(recruitments))
 	for i := range recruitments {
@@ -513,34 +573,27 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 			remaining = 0
 		}
 
-		firstImageURL := ""
-		var img models.PostImage
-		if err := h.db.Where("post_id = ?", r.PostID).Order("sort_order ASC").First(&img).Error; err == nil {
-			var file models.File
-			if err := h.db.First(&file, img.FileID).Error; err == nil {
-				firstImageURL = file.Path
-			}
-		}
-
 		item := TeamRecruitmentListItem{
-			ID:              r.ID,
-			PostID:          r.PostID,
-			Category:        r.Category,
-			Title:           r.PostTitle,
-			Description:     truncateContent(r.PostContent, 120),
-			AuthorID:        r.AuthorID,
-			AuthorName:      r.AuthorName,
-			AuthorAvatar:    r.AuthorAvatar,
-			AuthorMajor:     r.AuthorMajor,
-			NeededCount:     r.NeededCount,
-			AcceptedCount:   r.AcceptedCount,
-			RemainingCount:  remaining,
-			Roles:           roles,
-			Deadline:        r.Deadline,
-			Status:          r.Status,
-			EffectiveStatus: effectiveStatus,
-			FirstImageURL:   firstImageURL,
-			CreatedAt:       r.CreatedAt,
+			ID:               r.ID,
+			PostID:           r.PostID,
+			Category:         r.Category,
+			Title:            r.PostTitle,
+			Description:      truncateContent(r.PostContent, 120),
+			AuthorID:         r.AuthorID,
+			AuthorName:       r.AuthorName,
+			AuthorAvatar:     r.AuthorAvatar,
+			AuthorMajor:      r.AuthorMajor,
+			NeededCount:      r.NeededCount,
+			AcceptedCount:    r.AcceptedCount,
+			RemainingCount:   remaining,
+			Roles:            roles,
+			Deadline:         r.Deadline,
+			Status:           r.Status,
+			EffectiveStatus:  effectiveStatus,
+			FirstImageURL:    firstImageByPost[r.PostID],
+			ApplicationCount: applicationCountByRecruitment[r.ID],
+			CreatedAt:        r.CreatedAt,
+			UpdatedAt:        r.UpdatedAt,
 		}
 
 		// 登录用户专属字段
@@ -551,10 +604,9 @@ func (h *WaterTeamHandler) ListTeamRecruitments(c *gin.Context) {
 			item.CanApply = !item.IsOwner && effectiveStatus == models.RecruitmentStatusRecruiting
 
 			if !item.IsOwner {
-				var app models.WaterTeamApplication
-				if err := h.db.Where("recruitment_id = ? AND applicant_id = ?", r.ID, uid).First(&app).Error; err == nil {
-					item.MyApplicationStatus = &app.Status
-					item.CanApply = app.Status == models.ApplicationStatusRejected || app.Status == models.ApplicationStatusCancelled
+				if appStatus, exists := myApplicationByRecruitment[r.ID]; exists {
+					item.MyApplicationStatus = &appStatus
+					item.CanApply = appStatus == models.ApplicationStatusRejected || appStatus == models.ApplicationStatusCancelled
 				}
 			}
 		}

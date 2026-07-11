@@ -2,8 +2,32 @@ import 'dart:convert';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/post.dart';
 
+enum PostFeedCacheFreshness {
+  fresh,
+  stale,
+  expired,
+}
+
+class CachedPostFeed {
+  final List<Post> posts;
+  final List<Post> pinnedPosts;
+  final String algorithmVersion;
+  final PostFeedCacheFreshness freshness;
+
+  const CachedPostFeed({
+    required this.posts,
+    this.pinnedPosts = const [],
+    this.algorithmVersion = '',
+    this.freshness = PostFeedCacheFreshness.fresh,
+  });
+}
+
 /// 帖子本地缓存服务（基于 Hive，JSON 序列化，无需 code-gen）
 class PostCacheService {
+  static const int cacheSchemaVersion = 2;
+  static const String homeAllAlgorithmVersion = 'home_all_v2';
+  static const String homeTimeAlgorithmVersion = 'home_time_v2';
+  static const String fallbackAlgorithmVersion = 'feed_v1';
   static const _boxName = 'post_cache';
   static const _boardPrefix = 'board_';
 
@@ -21,22 +45,55 @@ class PostCacheService {
     return '$_boardPrefix${boardId}_${sort}_${normalizedType}_${tagId ?? ''}';
   }
 
+  static String expectedAlgorithmVersion({
+    required int boardId,
+    required String sort,
+    String? type,
+    int? tagId,
+  }) {
+    final usesHomeFeedV2 = boardId == 1 &&
+        (type == null || type.trim().isEmpty) &&
+        tagId == null &&
+        (sort == 'all' || sort == 'time');
+    if (usesHomeFeedV2) {
+      return sort == 'all' ? homeAllAlgorithmVersion : homeTimeAlgorithmVersion;
+    }
+    return fallbackAlgorithmVersion;
+  }
+
   /// 保存指定帖子流到本地缓存，按 board/sort/section/tag 隔离。
   static Future<void> savePosts(
     int boardId,
-    List<Post> posts, {
+    CachedPostFeed feed, {
     String sort = 'time',
     String? type,
     int? tagId,
   }) async {
     final box = await _openBox();
     final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
-    final json = jsonEncode(posts.map((p) => _postToJson(p)).toList());
+
+    final expectedVersion = expectedAlgorithmVersion(
+      boardId: boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+    );
+    final storedVersion = feed.algorithmVersion.isNotEmpty
+        ? feed.algorithmVersion
+        : expectedVersion;
+
+    final json = jsonEncode({
+      'schema_version': cacheSchemaVersion,
+      'algorithm_version': storedVersion,
+      'saved_at': DateTime.now().toUtc().toIso8601String(),
+      'pinned_posts': feed.pinnedPosts.map((p) => _postToJson(p)).toList(),
+      'posts': feed.posts.map((p) => _postToJson(p)).toList()
+    });
     await box.put(key, json);
   }
 
   /// 从本地缓存读取指定帖子流。
-  static Future<List<Post>> loadPosts(
+  static Future<CachedPostFeed?> loadPosts(
     int boardId, {
     String sort = 'time',
     String? type,
@@ -45,12 +102,47 @@ class PostCacheService {
     final box = await _openBox();
     final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
     final json = box.get(key);
-    if (json == null || json.isEmpty) return [];
+    if (json == null || json.isEmpty) return null;
     try {
-      final list = jsonDecode(json) as List<dynamic>;
-      return list.map((e) => Post.fromJson(e as Map<String, dynamic>)).toList();
+      final decoded = jsonDecode(json);
+      if (decoded is! Map<String, dynamic> ||
+          decoded['schema_version'] != cacheSchemaVersion) {
+        await box.delete(key);
+        return null;
+      }
+      final savedAt = DateTime.tryParse(decoded['saved_at']?.toString() ?? '');
+      if (savedAt == null) {
+        await box.delete(key);
+        return null;
+      }
+
+      final age = DateTime.now().difference(savedAt);
+      if (age > const Duration(hours: 24)) {
+        await box.delete(key);
+        return null;
+      }
+
+      final cachedAlgorithm = decoded['algorithm_version']?.toString() ?? '';
+      final expectedAlgo = expectedAlgorithmVersion(boardId: boardId, sort: sort, type: type, tagId: tagId);
+      if (cachedAlgorithm != expectedAlgo) {
+        await box.delete(key);
+        return null;
+      }
+
+      final list = (decoded['posts'] as List?) ?? const <dynamic>[];
+      final pinnedList = (decoded['pinned_posts'] as List?) ?? const <dynamic>[];
+
+      final posts = list.map((e) => Post.fromJson(e as Map<String, dynamic>)).toList();
+      final pinnedPosts = pinnedList.map((e) => Post.fromJson(e as Map<String, dynamic>)).toList();
+
+      return CachedPostFeed(
+        posts: posts,
+        pinnedPosts: pinnedPosts,
+        algorithmVersion: cachedAlgorithm,
+        freshness: age > const Duration(minutes: 10) ? PostFeedCacheFreshness.stale : PostFeedCacheFreshness.fresh,
+      );
     } catch (_) {
-      return [];
+      return null;
     }
   }
 
@@ -61,13 +153,14 @@ class PostCacheService {
     String? type,
     int? tagId,
   }) async {
-    final posts = await loadPosts(
+    final feed = await loadPosts(
       boardId,
       sort: sort,
       type: type,
       tagId: tagId,
     );
-    if (posts.isEmpty) return null;
+    if (feed == null || feed.posts.isEmpty) return null;
+    final posts = feed.posts;
     posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return posts.first.createdAt.toUtc().toIso8601String();
   }
@@ -81,12 +174,13 @@ class PostCacheService {
     int? tagId,
   }) async {
     if (newPosts.isEmpty) return;
-    final existing = await loadPosts(
+    final feed = await loadPosts(
       boardId,
       sort: sort,
       type: type,
       tagId: tagId,
     );
+    final existing = feed?.posts ?? [];
     final existingIds = existing.map((p) => p.id).toSet();
     final uniqueNew =
         newPosts.where((p) => !existingIds.contains(p.id)).toList();
@@ -95,7 +189,21 @@ class PostCacheService {
     if (merged.length > 200) {
       merged.removeRange(200, merged.length);
     }
-    await savePosts(boardId, merged, sort: sort, type: type, tagId: tagId);
+
+    final algorithmVersion = feed?.algorithmVersion ??
+        expectedAlgorithmVersion(
+          boardId: boardId,
+          sort: sort,
+          type: type,
+          tagId: tagId,
+        );
+    final pinnedPosts = feed?.pinnedPosts ?? [];
+
+    await savePosts(boardId, CachedPostFeed(
+      posts: merged,
+      pinnedPosts: pinnedPosts,
+      algorithmVersion: algorithmVersion,
+    ), sort: sort, type: type, tagId: tagId);
   }
 
   /// 清除指定板块缓存
@@ -185,6 +293,7 @@ class PostCacheService {
           : null,
       'created_at': post.createdAt.toUtc().toIso8601String(),
       'updated_at': post.updatedAt.toUtc().toIso8601String(),
+      'last_activity_at': post.lastActivityAt.toUtc().toIso8601String(),
     };
   }
 }

@@ -38,7 +38,7 @@ class CampusServiceGrid extends StatelessWidget {
       CampusServiceItem(
         title: '组队',
         icon: Icons.groups_2_rounded,
-        color: const Color(0xFF7C6FF0),
+        color: CampusTheme.primary,
         onTap: onTeamTap,
       ),
       CampusServiceItem(

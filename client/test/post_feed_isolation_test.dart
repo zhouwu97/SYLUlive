@@ -228,7 +228,7 @@ void main() {
     );
     await PostCacheService.savePosts(
       99,
-      [
+      CachedPostFeed(posts: [
         Post(
           id: 1,
           content: 'cached',
@@ -237,7 +237,7 @@ void main() {
           author: oldAuthor,
           createdAt: DateTime.utc(2026, 6, 14, 8),
         ),
-      ],
+      ]),
       sort: 'time',
     );
 
@@ -414,105 +414,159 @@ void main() {
     final pinnedUntil = DateTime.utc(2026, 6, 17);
     await PostCacheService.savePosts(
       88,
-      [
+      CachedPostFeed(posts: [
         Post(
           id: 8,
           content: 'cached',
           boardId: 88,
           authorId: 1,
+          createdAt: DateTime.utc(2026, 6, 14, 8),
           replyCount: 3,
           likeCount: 4,
           isPinned: true,
-          pinnedAt: DateTime.utc(2026, 6, 14),
           pinnedUntil: pinnedUntil,
-          pinnedBy: 99,
           pinnedWeight: 70,
-          pinnedReason: '缓存测试',
           isFeatured: true,
-          featuredAt: DateTime.utc(2026, 6, 15),
           featuredBy: 2,
-          featuredReason: '精华测试',
-          createdAt: DateTime.utc(2026, 6, 14, 8),
-          updatedAt: DateTime.utc(2026, 6, 16, 8),
         ),
-      ],
+      ], algorithmVersion: PostCacheService.expectedAlgorithmVersion(boardId: 88, sort: 'all')),
       sort: 'all',
     );
 
     final loaded = await PostCacheService.loadPosts(88, sort: 'all');
-    expect(loaded.single.replyCount, 3);
-    expect(loaded.single.likeCount, 4);
-    expect(loaded.single.isPinned, isTrue);
-    expect(loaded.single.pinnedUntil, pinnedUntil);
-    expect(loaded.single.pinnedWeight, 70);
-    expect(loaded.single.isFeatured, isTrue);
-    expect(loaded.single.featuredBy, 2);
+    expect(loaded?.posts.single.replyCount, 3);
+    expect(loaded?.posts.single.likeCount, 4);
+    expect(loaded?.posts.single.isPinned, isTrue);
+    expect(loaded?.posts.single.pinnedUntil, pinnedUntil);
+    expect(loaded?.posts.single.pinnedWeight, 70);
+    expect(loaded?.posts.single.isFeatured, isTrue);
+    expect(loaded?.posts.single.featuredBy, 2);
   });
 
   test('post cache isolates water section and tag feeds', () async {
     await PostCacheService.savePosts(
-      77,
-      [
+      1,
+      CachedPostFeed(posts: [
         Post(
           id: 1,
+          title: 'course_title',
           content: 'course',
-          boardId: 77,
+          boardId: 1,
           authorId: 1,
           postType: 'course_study',
           createdAt: DateTime.utc(2026, 6, 14, 8),
         ),
-      ],
-      sort: 'all',
+      ]),
       type: 'course_study',
     );
+
     await PostCacheService.savePosts(
-      77,
-      [
+      1,
+      CachedPostFeed(posts: [
         Post(
           id: 2,
+          title: 'campus_title',
           content: 'campus',
-          boardId: 77,
+          boardId: 1,
           authorId: 1,
           postType: 'campus_life',
-          waterTagId: 3,
-          createdAt: DateTime.utc(2026, 6, 14, 9),
+          createdAt: DateTime.utc(2026, 6, 14, 8),
         ),
-      ],
+      ], algorithmVersion: PostCacheService.expectedAlgorithmVersion(boardId: 1, sort: 'all', type: 'campus_life', tagId: 3)),
       sort: 'all',
       type: 'campus_life',
       tagId: 3,
     );
 
     final course = await PostCacheService.loadPosts(
-      77,
-      sort: 'all',
+      1,
+      sort: 'time',
       type: 'course_study',
     );
     final campus = await PostCacheService.loadPosts(
-      77,
+      1,
       sort: 'all',
       type: 'campus_life',
       tagId: 3,
     );
     final unrelated = await PostCacheService.loadPosts(
-      77,
+      1,
       sort: 'all',
       type: 'campus_life',
     );
 
-    expect(course.single.id, 1);
-    expect(campus.single.id, 2);
-    expect(unrelated, isEmpty);
+    expect(course?.posts.single.content, 'course');
+    expect(campus?.posts.single.content, 'campus');
+    expect(unrelated, isNull);
+  });
+
+  test('post cache automatically populates missing algorithm version and applies strict version isolation', () async {
+    // 1. 空 algorithmVersion 保存时自动补全 (首页 all -> home_all_v2)
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [
+        Post(id: 1, content: 't1', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: ''), // deliberately empty
+      sort: 'all',
+    );
+    final homeAll = await PostCacheService.loadPosts(1, sort: 'all');
+    expect(homeAll?.algorithmVersion, PostCacheService.homeAllAlgorithmVersion);
+
+    // 2. 首页 time -> home_time_v2
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [
+        Post(id: 2, content: 't2', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: ''), // deliberately empty
+      sort: 'time',
+    );
+    final homeTime = await PostCacheService.loadPosts(1, sort: 'time');
+    expect(homeTime?.algorithmVersion, PostCacheService.homeTimeAlgorithmVersion);
+
+    // 3. 专题 all -> feed_v1
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [
+        Post(id: 3, content: 't3', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: ''), // deliberately empty
+      sort: 'all',
+      type: 'campus_life',
+    );
+    final sectionAll = await PostCacheService.loadPosts(1, sort: 'all', type: 'campus_life');
+    expect(sectionAll?.algorithmVersion, PostCacheService.fallbackAlgorithmVersion);
+
+    // 4. 集市 all -> feed_v1
+    await PostCacheService.savePosts(
+      2, // boardId 2 is market
+      CachedPostFeed(posts: [
+        Post(id: 4, content: 't4', boardId: 2, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: ''), // deliberately empty
+      sort: 'all',
+    );
+    final marketAll = await PostCacheService.loadPosts(2, sort: 'all');
+    expect(marketAll?.algorithmVersion, PostCacheService.fallbackAlgorithmVersion);
+
+    // 5. 算法版本不匹配时删除缓存
+    // First, save a valid cache
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [
+        Post(id: 5, content: 't5', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: 'some_malicious_version_or_v1_instead_of_v2'),
+      sort: 'all',
+    );
+    final mismatch = await PostCacheService.loadPosts(1, sort: 'all');
+    expect(mismatch, isNull);
   });
 
   test('post cache preserves water section metadata', () async {
     await PostCacheService.savePosts(
-      78,
-      [
+      1,
+      CachedPostFeed(posts: [
         Post(
-          id: 9,
-          content: 'water metadata',
-          boardId: 78,
+          id: 1,
+          content: 'course',
+          boardId: 1,
           authorId: 1,
           postType: 'course_study',
           waterSectionPinned: true,
@@ -520,26 +574,25 @@ void main() {
           waterSectionFeatured: true,
           waterSectionFeaturedId: 200,
           waterSectionAuthorMeta: WaterSectionAuthorMeta(
-            sectionId: 5,
+            sectionId: 1,
             sectionSlug: 'course_study',
             sectionTitle: '课程学习',
             level: 3,
-            exp: 66,
+            exp: 150,
             title: '常驻同学',
           ),
           createdAt: DateTime.utc(2026, 6, 14, 8),
         ),
-      ],
-      sort: 'all',
+      ]),
       type: 'course_study',
     );
 
     final loaded = await PostCacheService.loadPosts(
-      78,
-      sort: 'all',
+      1,
+      sort: 'time',
       type: 'course_study',
     );
-    final post = loaded.single;
+    final post = loaded!.posts.single;
 
     expect(post.waterSectionPinned, isTrue);
     expect(post.waterSectionPinId, 100);
@@ -713,5 +766,82 @@ void main() {
     expect(post.expAwards.last.scope, 'water_section');
     expect(post.expAwards.last.levelUp, isTrue);
     expect(post.expAwards.last.titleAfter, '常驻同学');
+  });
+
+  test('feed_version=2 is sent and pinnedPosts are updated during V2 refresh', () async {
+    final dio = Dio();
+    final requests = <RequestOptions>[];
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add(options);
+          handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {
+              'posts': [_postJson(1)],
+              'pinned_posts': [_postJson(2)],
+              'algorithm_version': 'home_all_v2',
+              'total': 1,
+            },
+          ));
+        },
+      ),
+    );
+
+    final provider = PostProvider(dio, enableCache: false);
+    await provider.refresh(boardId: 1, sort: 'all');
+
+    expect(requests.length, 1);
+    expect(requests.first.queryParameters['feed_version'], 2);
+    expect(provider.pinnedPostsFor(1, sort: 'all').length, 1);
+    expect(provider.pinnedPostsFor(1, sort: 'all').first.id, 2);
+  });
+
+  test('409 session expired triggers automatic recovery', () async {
+    final dio = Dio();
+    final requests = <RequestOptions>[];
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add(options);
+          if (options.queryParameters['scene'] == 'loadmore') {
+            handler.reject(DioException(
+              requestOptions: options,
+              response: Response(
+                requestOptions: options,
+                statusCode: 409,
+                data: {'code': 'feed_session_expired'},
+              ),
+            ));
+            return;
+          }
+          handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {
+              'posts': [_postJson(requests.length)],
+              'total': 50,
+              'session_id': 'sess-1',
+            },
+          ));
+        },
+      ),
+    );
+
+    final provider = PostProvider(dio, enableCache: false);
+    await provider.refresh(boardId: 1, sort: 'all');
+    expect(requests.length, 1);
+
+    await provider.loadPosts(boardId: 1, sort: 'all');
+
+    // Request 1: refresh
+    // Request 2: loadmore -> 409
+    // Request 3: refresh (recovery)
+    expect(requests.length, 3);
+    expect(requests[1].queryParameters['scene'], 'loadmore');
+    expect(requests[2].queryParameters['scene'], 'refresh');
+    expect(provider.error, isNull);
+    expect(provider.postsFor(1, sort: 'all').first.id, 3);
   });
 }

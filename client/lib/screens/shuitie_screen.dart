@@ -1586,11 +1586,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         final feedHasMore = data.hasMore;
         final visiblePosts = _resolveVisiblePosts(posts, mode);
 
-        final pinnedPosts =
+        final explicitPinnedPosts =
+            context.read<PostProvider>().pinnedPostsFor(1, sort: sort);
+        final legacyPinnedPosts =
             visiblePosts.where((post) => post.isActivePinned).toList();
-
-        final normalPosts =
-            visiblePosts.where((post) => !post.isActivePinned).toList();
+        final pinnedPosts = explicitPinnedPosts.isNotEmpty
+            ? explicitPinnedPosts
+            : legacyPinnedPosts;
+        final pinnedIds = pinnedPosts.map((post) => post.id).toSet();
+        final normalPosts = visiblePosts
+            .where((post) => !pinnedIds.contains(post.id))
+            .where((post) => !post.isActivePinned)
+            .toList();
 
         return NotificationListener<ScrollNotification>(
           onNotification: (notification) {

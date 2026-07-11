@@ -186,6 +186,7 @@ func main() {
 		&models.CalendarShareSnapshot{},
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
+		&models.CampusCalendar{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -194,6 +195,9 @@ func main() {
 
 	if err := models.EnsureExamPaperIndexes(db); err != nil {
 		log.Fatal("试卷索引迁移失败:", err)
+	}
+	if err := models.EnsureCampusCalendarIndexes(db); err != nil {
+		log.Fatal("校历索引迁移失败:", err)
 	}
 
 	if err := models.EnsureConversationIndexes(db); err != nil {
@@ -407,6 +411,7 @@ func main() {
 	}
 
 	campusArticleHandler := handlers.NewCampusArticleHandler(db, campusSyncServices...)
+	campusCalendarHandler := handlers.NewCampusCalendarHandler(db)
 
 	// 启动后台定时任务
 
@@ -1244,6 +1249,20 @@ func main() {
 		campus.GET("/articles/latest", campusArticleHandler.GetLatest)
 		campus.GET("/articles", campusArticleHandler.List)
 		campus.GET("/articles/:id", campusArticleHandler.GetDetail)
+	}
+	campusCalendars := r.Group("/api/campus-calendars")
+	{
+		campusCalendars.GET("/current", campusCalendarHandler.GetCurrent)
+		campusCalendars.GET("/:academic_year", campusCalendarHandler.GetByAcademicYear)
+	}
+
+	calendarAdmin := r.Group("/api/admin/campus-calendars")
+	calendarAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		calendarAdmin.POST("/preview", campusCalendarHandler.Preview)
+		calendarAdmin.POST("", campusCalendarHandler.CreateDraft)
+		calendarAdmin.POST("/:id/publish", campusCalendarHandler.Publish)
+		calendarAdmin.POST("/:id/archive", campusCalendarHandler.Archive)
 	}
 
 	// 版本信息

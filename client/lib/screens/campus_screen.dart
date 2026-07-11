@@ -5,6 +5,7 @@ import '../main.dart';
 import '../models/campus_article.dart';
 import '../services/campus_article_service.dart';
 import '../widgets/home_tab_reveal.dart';
+import '../utils/campus_asset_preloader.dart';
 
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/campus/campus_header.dart';
@@ -45,12 +46,24 @@ class _CampusScreenState extends State<CampusScreen>
   List<CampusArticleSummary> _recentArticles = [];
   String? _recentError;
   bool _recentLoaded = false;
+  bool _assetsPreloaded = false;
 
   @override
   void initState() {
     super.initState();
     _articleService = CampusArticleService(getSharedDio());
     _loadAll();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_assetsPreloaded) return;
+    _assetsPreloaded = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) CampusAssetPreloader.warmMap(context);
+    });
   }
 
   /// 并行加载最新文章和最近列表。

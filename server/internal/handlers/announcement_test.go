@@ -437,6 +437,76 @@ func TestGetUnreadCount_HasUrgent(t *testing.T) {
 	}
 }
 
+func TestGetUnreadCount_ReturnsServerErrorWhenCountQueryFails(t *testing.T) {
+	db := newAnnouncementTestDB(t)
+	handler := NewAnnouncementHandler(db)
+	user := createTestUser(t, db, 12, time.Now().Add(-30*24*time.Hour))
+
+	db.Callback().Query().Before("gorm:query").Register(
+		"test:fail_announcement_count",
+		func(tx *gorm.DB) {
+			if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "announcements" {
+				tx.AddError(fmt.Errorf("forced announcement count failure"))
+			}
+		},
+	)
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/unread-count", nil)
+	setGinContextUserID(c, user.ID)
+
+	handler.GetUnreadCount(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when count query fails, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var result map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result["error"] != "获取未读公告数量失败" {
+		t.Errorf("unexpected error response: %#v", result)
+	}
+}
+
+func TestGetUnreadCount_ReturnsServerErrorWhenUrgentCountQueryFails(t *testing.T) {
+	db := newAnnouncementTestDB(t)
+	handler := NewAnnouncementHandler(db)
+	user := createTestUser(t, db, 13, time.Now().Add(-30*24*time.Hour))
+
+	announcementQueryCount := 0
+	db.Callback().Query().Before("gorm:query").Register(
+		"test:fail_urgent_announcement_count",
+		func(tx *gorm.DB) {
+			if tx.Statement.Schema == nil || tx.Statement.Schema.Table != "announcements" {
+				return
+			}
+			announcementQueryCount++
+			if announcementQueryCount == 2 {
+				tx.AddError(fmt.Errorf("forced urgent announcement count failure"))
+			}
+		},
+	)
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/unread-count", nil)
+	setGinContextUserID(c, user.ID)
+
+	handler.GetUnreadCount(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when urgent count query fails, got %d: %s", w.Code, w.Body.String())
+	}
+	if announcementQueryCount != 2 {
+		t.Fatalf("expected two announcement count queries, got %d", announcementQueryCount)
+	}
+}
+
 // ─── MarkAllRead Tests ──────────────────────────────────────────
 
 func TestMarkAllRead_Idempotent(t *testing.T) {

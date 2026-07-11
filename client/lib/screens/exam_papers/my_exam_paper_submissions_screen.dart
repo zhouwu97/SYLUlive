@@ -37,6 +37,7 @@ class _MyExamPaperSubmissionsScreenState
   String _status = 'all';
   Map<String, int> _statusCounts = const {};
   int _requestGeneration = 0;
+  final Set<int> _deleting = {};
 
   @override
   void initState() {
@@ -152,6 +153,62 @@ class _MyExamPaperSubmissionsScreenState
       await _load(refresh: true);
     } on ExamPaperApiException catch (error) {
       if (mounted) _showMessage(error.message);
+    }
+  }
+
+  Future<void> _delete(ExamPaper paper) async {
+    if (_deleting.contains(paper.id)) return;
+    setState(() => _deleting.add(paper.id));
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('永久删除投稿'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('确认永久删除《${paper.title}》吗？此操作不可恢复。'),
+              if (paper.rewardRevocable) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '删除后将扣回本次投稿奖励的 10 经验。',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+              child: const Text('永久删除'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
+      final result = await widget.service.deleteSubmission(paper.id);
+      if (!mounted) return;
+      _showMessage(
+        result.expRevoked ? '投稿已永久删除，已扣回 10 经验' : '投稿已永久删除',
+      );
+      await _load(refresh: true);
+    } on ExamPaperApiException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } finally {
+      if (mounted) {
+        setState(() => _deleting.remove(paper.id));
+      } else {
+        _deleting.remove(paper.id);
+      }
     }
   }
 
@@ -343,7 +400,15 @@ class _MyExamPaperSubmissionsScreenState
           Icon(Icons.check_circle_outline,
               size: 16, color: Colors.green.shade700),
           const SizedBox(width: 6),
-          const Text('已收录至试卷库'),
+          const Expanded(child: Text('已收录至试卷库')),
+          TextButton.icon(
+            onPressed:
+                _deleting.contains(paper.id) ? null : () => _delete(paper),
+            style:
+                TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('删除'),
+          ),
         ],
       );
     }
@@ -361,10 +426,24 @@ class _MyExamPaperSubmissionsScreenState
         ),
         Align(
           alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: () => _openUpload(paper),
-            icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('重新投稿'),
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            children: [
+              TextButton.icon(
+                onPressed: () => _openUpload(paper),
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('重新投稿'),
+              ),
+              TextButton.icon(
+                onPressed:
+                    _deleting.contains(paper.id) ? null : () => _delete(paper),
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                ),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('删除'),
+              ),
+            ],
           ),
         ),
       ],

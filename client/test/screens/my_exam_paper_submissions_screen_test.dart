@@ -34,9 +34,16 @@ class _LoadMoreFailingExamPaperService extends ExamPaperService {
 }
 
 class _StatusExamPaperService extends ExamPaperService {
-  _StatusExamPaperService() : super(Dio());
+  _StatusExamPaperService({
+    this.deleteError,
+    this.expRevoked = false,
+  }) : super(Dio());
 
   final requestedStatuses = <String>[];
+  final deletedIds = <int>[];
+  final removedIds = <int>{};
+  final ExamPaperApiException? deleteError;
+  final bool expRevoked;
 
   @override
   Future<ExamPaperPage> mySubmissions({
@@ -45,37 +52,45 @@ class _StatusExamPaperService extends ExamPaperService {
     int pageSize = 20,
   }) async {
     requestedStatuses.add(status);
+    final allItems = [
+      _paper(1, status: 'pending'),
+      _paper(2, status: 'published', rewardRevocable: true),
+      _paper(
+        3,
+        status: 'unpublished',
+        unpublishReason: '文件清晰度不足',
+      ),
+    ].where((paper) => !removedIds.contains(paper.id)).toList();
     final items = switch (status) {
-      'pending' => [_paper(1, status: 'pending')],
-      'published' => [_paper(2, status: 'published')],
+      'pending' => allItems.where((paper) => paper.isPending).toList(),
+      'published' => allItems.where((paper) => paper.isPublished).toList(),
       'unpublished' => [
-          _paper(
-            3,
-            status: 'unpublished',
-            unpublishReason: '文件清晰度不足',
-          ),
+          ...allItems.where((paper) => paper.isUnpublished),
         ],
-      _ => [
-          _paper(1, status: 'pending'),
-          _paper(2, status: 'published'),
-          _paper(
-            3,
-            status: 'unpublished',
-            unpublishReason: '文件清晰度不足',
-          ),
-        ],
+      _ => allItems,
     };
     return ExamPaperPage(
       items: items,
       page: 1,
       pageSize: 20,
       total: items.length,
-      statusCounts: const {
-        'all': 3,
-        'pending': 1,
-        'published': 1,
-        'unpublished': 1,
+      statusCounts: {
+        'all': allItems.length,
+        'pending': allItems.where((paper) => paper.isPending).length,
+        'published': allItems.where((paper) => paper.isPublished).length,
+        'unpublished': allItems.where((paper) => paper.isUnpublished).length,
       },
+    );
+  }
+
+  @override
+  Future<ExamPaperDeleteResult> deleteSubmission(int id) async {
+    deletedIds.add(id);
+    if (deleteError case final error?) throw error;
+    removedIds.add(id);
+    return ExamPaperDeleteResult(
+      message: '投稿已删除',
+      expRevoked: expRevoked,
     );
   }
 }
@@ -155,6 +170,134 @@ void main() {
     expect(find.text('重新投稿'), findsOneWidget);
   });
 
+  testWidgets('已发布和已下架投稿显示删除，待审核投稿仅显示撤回', (tester) async {
+    tester.view.physicalSize = const Size(320, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final service = _StatusExamPaperService();
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(loadOnStart: false),
+        child: MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
+          home: MyExamPaperSubmissionsScreen(service: service),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('已通过 1'));
+    await tester.tap(find.text('已通过 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('删除'), findsOneWidget);
+    expect(find.text('撤回'), findsNothing);
+
+    await tester.ensureVisible(find.text('已下架 1'));
+    await tester.tap(find.text('已下架 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('重新投稿'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    expect(find.text('撤回'), findsNothing);
+
+    await tester.ensureVisible(find.text('待审核 1'));
+    await tester.tap(find.text('待审核 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('撤回'), findsOneWidget);
+    expect(find.text('删除'), findsNothing);
+  });
+
+  testWidgets('永久删除确认按奖励状态提示扣回经验且取消不发起请求', (tester) async {
+    final service = _StatusExamPaperService();
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(loadOnStart: false),
+        child: MaterialApp(
+          home: MyExamPaperSubmissionsScreen(service: service),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('已通过 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(find.text('永久删除投稿'), findsOneWidget);
+    expect(find.textContaining('此操作不可恢复'), findsOneWidget);
+    expect(find.textContaining('扣回'), findsOneWidget);
+    expect(find.textContaining('10 经验'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(service.deletedIds, isEmpty);
+
+    await tester.tap(find.text('已下架 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(find.text('永久删除投稿'), findsOneWidget);
+    expect(find.textContaining('此操作不可恢复'), findsOneWidget);
+    expect(find.textContaining('扣回'), findsNothing);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(service.deletedIds, isEmpty);
+  });
+
+  testWidgets('确认删除已下架投稿后刷新当前状态列表和计数', (tester) async {
+    final service = _StatusExamPaperService(expRevoked: true);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(loadOnStart: false),
+        child: MaterialApp(
+          home: MyExamPaperSubmissionsScreen(service: service),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已下架 1'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('永久删除'));
+    await tester.pumpAndSettle();
+
+    expect(service.deletedIds, [3]);
+    expect(service.requestedStatuses.last, 'unpublished');
+    expect(find.text('已下架 0'), findsOneWidget);
+    expect(find.text('测试课程3'), findsNothing);
+    expect(find.textContaining('已扣回 10 经验'), findsOneWidget);
+  });
+
+  testWidgets('永久删除失败时保留投稿卡片并展示服务端错误', (tester) async {
+    final service = _StatusExamPaperService(
+      deleteError: const ExamPaperApiException(
+        message: '该投稿当前无法删除',
+        code: 'delete_not_allowed',
+      ),
+    );
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(loadOnStart: false),
+        child: MaterialApp(
+          home: MyExamPaperSubmissionsScreen(service: service),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已下架 1'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('永久删除'));
+    await tester.pumpAndSettle();
+
+    expect(service.deletedIds, [3]);
+    expect(find.text('测试课程3'), findsOneWidget);
+    expect(find.text('该投稿当前无法删除'), findsOneWidget);
+  });
+
   testWidgets('快速切换投稿状态时旧响应不会覆盖新列表', (tester) async {
     final service = _OutOfOrderSubmissionService();
     await tester.pumpWidget(
@@ -203,6 +346,7 @@ ExamPaper _paper(
   int id, {
   String status = 'pending',
   String unpublishReason = '',
+  bool rewardRevocable = false,
 }) {
   return ExamPaper.fromJson({
     'id': id,
@@ -215,6 +359,7 @@ ExamPaper _paper(
     'title': '测试课程$id · 2025-2026 · 第一学期 · 期末',
     'file_size': 1024,
     'download_count': 0,
+    'reward_revocable': rewardRevocable,
     'unpublish_reason': unpublishReason,
     'created_at': '2026-07-10T10:00:00Z',
     'contributor': {

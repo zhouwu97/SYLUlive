@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +30,115 @@ func performExamPaperJSONRequest(handler gin.HandlerFunc, method, path string, p
 		panic(err)
 	}
 	return performExamPaperRequest(handler, method, path, params, userID, body, "application/json")
+}
+
+func rejectExamPaperQueriesAfterTransaction(t *testing.T, db *gorm.DB) *atomic.Bool {
+	t.Helper()
+	var observedTransactionQuery atomic.Bool
+	callbackName := fmt.Sprintf("test:reject_post_transaction_exam_paper_query_%p", &observedTransactionQuery)
+	if err := db.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Schema == nil || tx.Statement.Schema.Table != "exam_papers" {
+			return
+		}
+		if _, ok := tx.Statement.ConnPool.(*sql.Tx); ok {
+			observedTransactionQuery.Store(true)
+			return
+		}
+		if observedTransactionQuery.Load() {
+			tx.AddError(errors.New("禁止事务提交后再次查询试卷"))
+		}
+	}); err != nil {
+		t.Fatalf("注册事务后查询失败回调失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Callback().Query().Remove(callbackName); err != nil {
+			t.Errorf("移除事务后查询失败回调失败: %v", err)
+		}
+	})
+	return &observedTransactionQuery
+}
+
+func TestAdminApproveReturnsTransactionSnapshot(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "approve-snapshot-contributor", models.RoleUser, true, 40)
+	admin := createExamPaperTestUser(t, env.db, "approve-snapshot-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPending)
+	observedTransactionQuery := rejectExamPaperQueriesAfterTransaction(t, env.db)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	payload := map[string]any{
+		"course_name": "线性代数", "academic_year": "2024-2025",
+		"semester": "second", "exam_type": "midterm", "reason": "内容清晰",
+	}
+
+	response := performExamPaperJSONRequest(env.handler.AdminApprove, http.MethodPost, "/api/admin/exam-papers/1/approve", params, admin.ID, payload)
+	if response.Code != http.StatusOK {
+		t.Fatalf("审核通过应使用事务快照返回成功: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !observedTransactionQuery.Load() {
+		t.Fatal("审核通过必须在事务内查询响应快照")
+	}
+	var snapshot examPaperResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("解析审核通过响应失败: %v", err)
+	}
+	if snapshot.Status != models.ExamPaperStatusPublished || snapshot.CourseName != "线性代数" || snapshot.Contributor.ID != contributor.ID || !snapshot.RewardRevocable {
+		t.Fatalf("审核通过事务快照字段错误: %#v", snapshot)
+	}
+}
+
+func TestAdminUpdateReturnsTransactionSnapshot(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "update-snapshot-contributor", models.RoleUser, true, 40)
+	admin := createExamPaperTestUser(t, env.db, "update-snapshot-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	observedTransactionQuery := rejectExamPaperQueriesAfterTransaction(t, env.db)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	payload := map[string]any{
+		"course_name": "大学物理", "academic_year": "2025-2026",
+		"semester": "first", "exam_type": "final",
+	}
+
+	response := performExamPaperJSONRequest(env.handler.AdminUpdate, http.MethodPatch, "/api/admin/exam-papers/1", params, admin.ID, payload)
+	if response.Code != http.StatusOK {
+		t.Fatalf("编辑试卷应使用事务快照返回成功: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !observedTransactionQuery.Load() {
+		t.Fatal("编辑试卷必须在事务内查询响应快照")
+	}
+	var snapshot examPaperResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("解析编辑试卷响应失败: %v", err)
+	}
+	if snapshot.Status != models.ExamPaperStatusPublished || snapshot.CourseName != "大学物理" || snapshot.Title != "大学物理 · 2025-2026 · 第一学期 · 期末" || snapshot.Contributor.ID != contributor.ID {
+		t.Fatalf("编辑试卷事务快照字段错误: %#v", snapshot)
+	}
+}
+
+func TestAdminUnpublishReturnsTransactionSnapshot(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "unpublish-snapshot-contributor", models.RoleUser, true, 40)
+	admin := createExamPaperTestUser(t, env.db, "unpublish-snapshot-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	observedTransactionQuery := rejectExamPaperQueriesAfterTransaction(t, env.db)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, map[string]any{"reason": "内容需要重新核验"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("下架试卷应使用事务快照返回成功: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !observedTransactionQuery.Load() {
+		t.Fatal("下架试卷必须在事务内查询响应快照")
+	}
+	var snapshot examPaperResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &snapshot); err != nil {
+		t.Fatalf("解析下架试卷响应失败: %v", err)
+	}
+	if snapshot.Status != models.ExamPaperStatusUnpublished || snapshot.UnpublishReason != "内容需要重新核验" || snapshot.Contributor.ID != contributor.ID || snapshot.RewardRevocable {
+		t.Fatalf("下架试卷事务快照字段错误: %#v", snapshot)
+	}
+	if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); !os.IsNotExist(err) {
+		t.Fatalf("事务提交后仍应删除已下架文件: %v", err)
+	}
 }
 
 func TestAdminApproveExamPaperRewardsOnceAndCreatesOneMessageAndLog(t *testing.T) {

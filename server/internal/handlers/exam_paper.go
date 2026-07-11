@@ -133,8 +133,17 @@ func examPaperToResponse(paper models.ExamPaper) examPaperResponse {
 
 // revokeExamPaperReward 在当前事务内撤销尚未撤销的试卷投稿奖励。
 func revokeExamPaperReward(tx *gorm.DB, paper *models.ExamPaper, now time.Time) (bool, error) {
-	if paper.RewardedAt == nil || paper.RewardRevokedAt != nil {
+	paperResult := tx.Model(&models.ExamPaper{}).
+		Where("id = ? AND rewarded_at IS NOT NULL AND reward_revoked_at IS NULL", paper.ID).
+		UpdateColumn("reward_revoked_at", now)
+	if paperResult.Error != nil {
+		return false, paperResult.Error
+	}
+	if paperResult.RowsAffected == 0 {
 		return false, nil
+	}
+	if paperResult.RowsAffected != 1 {
+		return false, fmt.Errorf("撤销试卷奖励失败：更新了 %d 条试卷记录", paperResult.RowsAffected)
 	}
 
 	userResult := tx.Model(&models.User{}).Where("id = ?", paper.SubmitterID).UpdateColumn(
@@ -148,9 +157,6 @@ func revokeExamPaperReward(tx *gorm.DB, paper *models.ExamPaper, now time.Time) 
 		return false, fmt.Errorf("撤销试卷奖励失败：投稿人不存在")
 	}
 
-	if err := tx.Model(paper).UpdateColumn("reward_revoked_at", now).Error; err != nil {
-		return false, err
-	}
 	paper.RewardRevokedAt = &now
 	return true, nil
 }

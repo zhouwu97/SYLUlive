@@ -74,7 +74,14 @@
     {"id": "winter-vacation", "title": "学生放寒假", "type": "winter_vacation", "start_date": "2027-01-11", "end_date": "2027-02-21", "badge": "假", "description": "学生放寒假：2027年1月11日至2月21日。", "status": "confirmed"},
     {"id": "spring-semester-start", "title": "学生开学", "type": "semester_start", "start_date": "2027-02-22", "end_date": "2027-02-22", "badge": "始", "description": "2027年2月22日学生开学。", "status": "confirmed"},
     {"id": "summer-vacation", "title": "学生放暑假", "type": "summer_vacation", "start_date": "2027-07-12", "end_date": "2027-08-22", "badge": "假", "description": "学生放暑假：2027年7月12日至8月22日。", "status": "confirmed"},
-    {"id": "fall-semester-start", "title": "学生开学", "type": "semester_start", "start_date": "2027-08-23", "end_date": "2027-08-23", "badge": "始", "description": "2027年8月23日学生开学。", "status": "confirmed"}
+    {"id": "fall-semester-start", "title": "学生开学", "type": "semester_start", "start_date": "2027-08-23", "end_date": "2027-08-23", "badge": "始", "description": "2027年8月23日学生开学。", "status": "confirmed"},
+    {"id": "mid-autumn-2026", "title": "中秋节", "type": "holiday", "start_date": "2026-09-25", "end_date": "2026-09-25", "badge": "休", "description": "官方校历标注中秋节。", "status": "confirmed"},
+    {"id": "national-day-2026", "title": "国庆节", "type": "holiday", "start_date": "2026-10-01", "end_date": "2026-10-01", "badge": "休", "description": "官方校历标注国庆节。", "status": "confirmed"},
+    {"id": "new-year-2027", "title": "元旦", "type": "holiday", "start_date": "2027-01-01", "end_date": "2027-01-01", "badge": "休", "description": "官方校历标注元旦。", "status": "confirmed"},
+    {"id": "spring-festival-2027", "title": "春节", "type": "holiday", "start_date": "2027-02-06", "end_date": "2027-02-06", "badge": "休", "description": "官方校历标注春节。", "status": "confirmed"},
+    {"id": "qingming-2027", "title": "清明节", "type": "holiday", "start_date": "2027-04-05", "end_date": "2027-04-05", "badge": "休", "description": "官方校历标注清明节。", "status": "confirmed"},
+    {"id": "labor-day-2027", "title": "劳动节", "type": "holiday", "start_date": "2027-05-01", "end_date": "2027-05-01", "badge": "休", "description": "官方校历标注劳动节。", "status": "confirmed"},
+    {"id": "dragon-boat-2027", "title": "端午节", "type": "holiday", "start_date": "2027-06-09", "end_date": "2027-06-09", "badge": "休", "description": "官方校历标注端午节。", "status": "confirmed"}
   ],
   "day_overrides": [],
   "unresolved_items": []

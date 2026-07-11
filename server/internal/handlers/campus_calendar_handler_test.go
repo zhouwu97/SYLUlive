@@ -18,7 +18,7 @@ func TestValidateCampusCalendarAcceptsStructuredCalendar(t *testing.T) {
             ]
         }],
         "events": [{"id":"holiday","title":"校庆假期","type":"holiday","start_date":"2026-09-10","end_date":"2026-09-11"}],
-        "day_overrides": [{"date":"2026-09-12","day_mode":"makeup_teaching"}]
+        "day_overrides": [{"date":"2026-09-12","day_mode":"makeup_teaching","schedule_as_weekday":3}]
     }`)
 
 	result, document := validateCampusCalendar(raw)
@@ -63,8 +63,8 @@ func TestValidateCampusCalendarRejectsDuplicateOverrides(t *testing.T) {
         "source": {"type":"official_calendar_image","title":"官方校历","file_name":"calendar.jpg","verified":true},
         "semesters": [{"id":"fall","name":"第一学期","start_date":"2026-09-01","end_date":"2026-09-30","teaching_weeks":[]}],
         "day_overrides": [
-            {"date":"2026-09-12","day_mode":"makeup_teaching"},
-            {"date":"2026-09-12","day_mode":"makeup_teaching"}
+            {"date":"2026-09-12","day_mode":"makeup_teaching","schedule_as_weekday":3},
+            {"date":"2026-09-12","day_mode":"makeup_teaching","schedule_as_weekday":3}
         ]
     }`)
 

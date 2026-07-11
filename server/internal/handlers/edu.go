@@ -652,6 +652,7 @@ func classifyEduLoginFailure(statusCode int, body string) error {
 		strings.Contains(body, "账户或密码错误") ||
 		strings.Contains(body, "账号密码错误") ||
 		strings.Contains(body, "密码错误") ||
+		strings.Contains(body, "密码不正确") ||
 		strings.Contains(body, "用户不存在") {
 		return &eduLoginError{Code: "INVALID_CREDENTIALS", Message: "教务账号或密码错误"}
 	}

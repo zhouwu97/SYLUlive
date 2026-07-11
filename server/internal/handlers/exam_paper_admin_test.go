@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -235,6 +237,68 @@ func TestAdminExamPaperListCountAndDetail(t *testing.T) {
 	detail := performExamPaperRequest(env.handler.AdminGet, http.MethodGet, "/api/admin/exam-papers/1", gin.Params{{Key: "id", Value: "1"}}, admin.ID, nil, "")
 	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"status":"pending"`) {
 		t.Fatalf("admin detail mismatch: status=%d body=%s", detail.Code, detail.Body.String())
+	}
+}
+
+func TestAdminExamPaperListFiltersKeywordContributorAndSort(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	firstContributor := createExamPaperTestUser(t, env.db, "filter-first", models.RoleUser, true, 0)
+	firstContributor.Nickname = "张同学"
+	if err := env.db.Save(&firstContributor).Error; err != nil {
+		t.Fatalf("更新投稿人失败: %v", err)
+	}
+	secondContributor := createExamPaperTestUser(t, env.db, "filter-second", models.RoleUser, true, 0)
+	secondContributor.Nickname = "李同学"
+	if err := env.db.Save(&secondContributor).Error; err != nil {
+		t.Fatalf("更新投稿人失败: %v", err)
+	}
+
+	createdAt := time.Now().Add(-time.Hour)
+	papers := []models.ExamPaper{
+		{
+			Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: firstContributor.ID,
+			CourseName: "高等数学", AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: "高等数学期末", FileKey: "admin-filter-first.pdf",
+			FileSize: 1, SHA256: "admin-filter-first", CreatedAt: createdAt,
+		},
+		{
+			Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: secondContributor.ID,
+			CourseName: "大学物理", AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: "大学物理期末", FileKey: "admin-filter-second.pdf",
+			FileSize: 1, SHA256: "admin-filter-second", CreatedAt: createdAt.Add(time.Minute),
+		},
+	}
+	for index := range papers {
+		if err := env.db.Create(&papers[index]).Error; err != nil {
+			t.Fatalf("创建管理筛选试卷失败: %v", err)
+		}
+	}
+	admin := createExamPaperTestUser(t, env.db, "filter-admin", models.RoleAdmin, false, 0)
+
+	filtered := performExamPaperRequest(
+		env.handler.AdminList,
+		http.MethodGet,
+		"/api/admin/exam-papers?status=pending&keyword="+url.QueryEscape("高等")+"&contributor="+url.QueryEscape("张同学")+"&sort=latest",
+		nil,
+		admin.ID,
+		nil,
+		"",
+	)
+	if filtered.Code != http.StatusOK || !strings.Contains(filtered.Body.String(), `"total":1`) || !strings.Contains(filtered.Body.String(), "高等数学") {
+		t.Fatalf("管理筛选结果错误: status=%d body=%s", filtered.Code, filtered.Body.String())
+	}
+
+	latest := performExamPaperRequest(env.handler.AdminList, http.MethodGet, "/api/admin/exam-papers?status=pending&sort=latest", nil, admin.ID, nil, "")
+	var payload struct {
+		Items []struct {
+			CourseName string `json:"course_name"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(latest.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析管理排序响应失败: %v", err)
+	}
+	if len(payload.Items) != 2 || payload.Items[0].CourseName != "大学物理" {
+		t.Fatalf("最新排序错误: %s", latest.Body.String())
 	}
 }
 

@@ -37,6 +37,7 @@ class _StatusExamPaperService extends ExamPaperService {
   _StatusExamPaperService({
     this.deleteError,
     this.expRevoked = false,
+    this.deleteCompleter,
   }) : super(Dio());
 
   final requestedStatuses = <String>[];
@@ -44,6 +45,7 @@ class _StatusExamPaperService extends ExamPaperService {
   final removedIds = <int>{};
   final ExamPaperApiException? deleteError;
   final bool expRevoked;
+  final Completer<ExamPaperDeleteResult>? deleteCompleter;
 
   @override
   Future<ExamPaperPage> mySubmissions({
@@ -87,11 +89,14 @@ class _StatusExamPaperService extends ExamPaperService {
   Future<ExamPaperDeleteResult> deleteSubmission(int id) async {
     deletedIds.add(id);
     if (deleteError case final error?) throw error;
+    final result = deleteCompleter == null
+        ? ExamPaperDeleteResult(
+            message: '投稿已删除',
+            expRevoked: expRevoked,
+          )
+        : await deleteCompleter!.future;
     removedIds.add(id);
-    return ExamPaperDeleteResult(
-      message: '投稿已删除',
-      expRevoked: expRevoked,
-    );
+    return result;
   }
 }
 
@@ -207,6 +212,27 @@ void main() {
     expect(find.text('删除'), findsNothing);
   });
 
+  testWidgets('已发布和已下架投稿的删除按钮使用危险色', (tester) async {
+    final service = _StatusExamPaperService();
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(loadOnStart: false),
+        child: MaterialApp(
+          home: MyExamPaperSubmissionsScreen(service: service),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('已通过 1'));
+    await tester.pumpAndSettle();
+    _expectDeleteButtonUsesErrorColor(tester);
+
+    await tester.tap(find.text('已下架 1'));
+    await tester.pumpAndSettle();
+    _expectDeleteButtonUsesErrorColor(tester);
+  });
+
   testWidgets('永久删除确认按奖励状态提示扣回经验且取消不发起请求', (tester) async {
     final service = _StatusExamPaperService();
     await tester.pumpWidget(
@@ -267,6 +293,67 @@ void main() {
     expect(find.text('已下架 0'), findsOneWidget);
     expect(find.text('测试课程3'), findsNothing);
     expect(find.textContaining('已扣回 10 经验'), findsOneWidget);
+  });
+
+  testWidgets('删除请求进行中时重复点击不会重复调用服务', (tester) async {
+    final deleteCompleter = Completer<ExamPaperDeleteResult>();
+    final service = _StatusExamPaperService(
+      deleteCompleter: deleteCompleter,
+    );
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(loadOnStart: false),
+        child: MaterialApp(
+          home: MyExamPaperSubmissionsScreen(service: service),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已下架 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('永久删除'));
+    await tester.pumpAndSettle();
+    expect(service.deletedIds, [3]);
+    final deleteButton = tester.widget<TextButton>(
+      find.widgetWithText(TextButton, '删除'),
+    );
+    expect(deleteButton.onPressed, isNull);
+
+    await tester.tap(find.widgetWithText(TextButton, '删除'));
+    await tester.pump();
+    expect(service.deletedIds, [3]);
+    expect(find.text('永久删除投稿'), findsNothing);
+
+    deleteCompleter.complete(
+      const ExamPaperDeleteResult(message: '投稿已删除', expRevoked: false),
+    );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('删除未扣回奖励时成功消息不展示扣回经验', (tester) async {
+    final service = _StatusExamPaperService();
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(loadOnStart: false),
+        child: MaterialApp(
+          home: MyExamPaperSubmissionsScreen(service: service),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已下架 1'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('永久删除'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('投稿已永久删除'), findsOneWidget);
+    expect(find.textContaining('已扣回 10 经验'), findsNothing);
   });
 
   testWidgets('永久删除失败时保留投稿卡片并展示服务端错误', (tester) async {
@@ -340,6 +427,16 @@ void main() {
     expect(find.text('原因：新结果'), findsOneWidget);
     expect(find.text('测试课程3'), findsNothing);
   });
+}
+
+void _expectDeleteButtonUsesErrorColor(WidgetTester tester) {
+  final finder = find.widgetWithText(TextButton, '删除');
+  final button = tester.widget<TextButton>(finder);
+  final context = tester.element(finder);
+  expect(
+    button.style?.foregroundColor?.resolve({}),
+    Theme.of(context).colorScheme.error,
+  );
 }
 
 ExamPaper _paper(

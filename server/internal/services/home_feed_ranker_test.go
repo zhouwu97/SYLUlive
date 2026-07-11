@@ -110,3 +110,117 @@ func TestRankHomeFeedRelaxationStages(t *testing.T) {
 		}
 	}
 }
+
+func TestRankHomeFeedRecentThirtyDayFallbackAddsPosts(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
+	candidates := make([]HomeFeedCandidate, 0)
+	// We add 20 very hot posts from the SAME author, so only 4 will be selected by stage 1&2
+	for i := 0; i < 20; i++ {
+		candidates = append(candidates, HomeFeedCandidate{
+			Post: models.Post{
+				ID: uint(i + 1), AuthorID: 1, PostType: "campus_life",
+				CreatedAt: now.Add(-time.Hour),
+				LastActivityAt: now,
+			},
+			HotScore: 100,
+		})
+	}
+	// And we add 20 posts from different authors that are older than 7 days but within 30 days
+	// so they are NOT in primary pool, they are in recent30NormalPool.
+	for i := 0; i < 20; i++ {
+		candidates = append(candidates, HomeFeedCandidate{
+			Post: models.Post{
+				ID: uint(100 + i), AuthorID: uint(100 + i), PostType: "campus_life",
+				CreatedAt: now.Add(-10 * 24 * time.Hour), // 10 days old, normal post
+				LastActivityAt: now.Add(-10 * 24 * time.Hour),
+			},
+			HotScore: 10,
+		})
+	}
+	ids := RankHomeFeed(candidates, now)
+	// If fallback works, we should get 4 from author 1, and 16 from recent30NormalPool => 20 posts
+	if len(ids) < 20 {
+		t.Fatalf("Expected fallback to fill 20 spots, got %d", len(ids))
+	}
+	hasRecent30 := false
+	for _, id := range ids[:20] {
+		if id >= 100 {
+			hasRecent30 = true
+			break
+		}
+	}
+	if !hasRecent30 {
+		t.Fatalf("Expected recent 30-day posts in the first 20")
+	}
+}
+
+func TestRankHomeFeedOldPostLimitRemainsTwo(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
+	candidates := make([]HomeFeedCandidate, 0)
+	// Add 5 old posts > 14 days
+	for i := 0; i < 5; i++ {
+		candidates = append(candidates, HomeFeedCandidate{
+			Post: models.Post{
+				ID: uint(i + 1), AuthorID: uint(i + 10), PostType: "campus_life",
+				CreatedAt: now.Add(-20 * 24 * time.Hour), // 20 days old
+				LastActivityAt: now.Add(-20 * 24 * time.Hour),
+			},
+			HotScore: 100, // Make them hot so they would be picked
+		})
+	}
+	// Add some fresh posts so we have enough
+	for i := 0; i < 20; i++ {
+		candidates = append(candidates, HomeFeedCandidate{
+			Post: models.Post{
+				ID: uint(100 + i), AuthorID: uint(100 + i), PostType: "campus_life",
+				CreatedAt: now.Add(-time.Hour),
+				LastActivityAt: now,
+			},
+			HotScore: 10,
+		})
+	}
+	ids := RankHomeFeed(candidates, now)
+	oldPostCount := 0
+	for _, id := range ids[:20] {
+		if id <= 5 {
+			oldPostCount++
+		}
+	}
+	if oldPostCount > 2 {
+		t.Fatalf("Expected max 2 old posts in first page, got %d", oldPostCount)
+	}
+}
+
+func TestRankHomeFeedDormantOldPostNeverEntersFirstTen(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
+	candidates := make([]HomeFeedCandidate, 0)
+	// 5 very hot old posts > 14 days
+	for i := 0; i < 5; i++ {
+		candidates = append(candidates, HomeFeedCandidate{
+			Post: models.Post{
+				ID: uint(i + 1), AuthorID: uint(i + 10), PostType: "campus_life",
+				CreatedAt: now.Add(-20 * 24 * time.Hour),
+				LastActivityAt: now.Add(-20 * 24 * time.Hour),
+			},
+			HotScore: 1000,
+		})
+	}
+	// 10 new posts with lower score
+	for i := 0; i < 10; i++ {
+		candidates = append(candidates, HomeFeedCandidate{
+			Post: models.Post{
+				ID: uint(100 + i), AuthorID: uint(100 + i), PostType: "campus_life",
+				CreatedAt: now.Add(-time.Hour),
+				LastActivityAt: now,
+			},
+			HotScore: 10,
+		})
+	}
+	ids := RankHomeFeed(candidates, now)
+	// Check first 10
+	for i, id := range ids {
+		if i < 10 && id <= 5 {
+			t.Fatalf("Old dormant post %d entered first 10 at index %d", id, i)
+		}
+	}
+}

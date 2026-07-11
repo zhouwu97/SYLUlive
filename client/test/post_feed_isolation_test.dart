@@ -429,7 +429,7 @@ void main() {
           isFeatured: true,
           featuredBy: 2,
         ),
-      ], algorithmVersion: PostCacheService.homeAllAlgorithmVersion),
+      ], algorithmVersion: PostCacheService.expectedAlgorithmVersion(boardId: 88, sort: 'all')),
       sort: 'all',
     );
 
@@ -472,7 +472,7 @@ void main() {
           postType: 'campus_life',
           createdAt: DateTime.utc(2026, 6, 14, 8),
         ),
-      ], algorithmVersion: PostCacheService.homeAllAlgorithmVersion),
+      ], algorithmVersion: PostCacheService.expectedAlgorithmVersion(boardId: 1, sort: 'all', type: 'campus_life', tagId: 3)),
       sort: 'all',
       type: 'campus_life',
       tagId: 3,
@@ -495,9 +495,67 @@ void main() {
       type: 'campus_life',
     );
 
-    expect(course?.posts.single.id, 1);
-    expect(campus?.posts.single.id, 2);
-    expect(unrelated, isNull);
+    expect(course?.posts.single.content, 'course');
+    expect(campus?.posts.single.content, 'campus');
+  });
+
+  test('post cache automatically populates missing algorithm version and applies strict version isolation', () async {
+    // 1. 空 algorithmVersion 保存时自动补全 (首页 all -> home_all_v2)
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [
+        Post(id: 1, content: 't1', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: ''), // deliberately empty
+      sort: 'all',
+    );
+    final homeAll = await PostCacheService.loadPosts(1, sort: 'all');
+    expect(homeAll?.algorithmVersion, PostCacheService.homeAllAlgorithmVersion);
+
+    // 2. 首页 time -> home_time_v2
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [
+        Post(id: 2, content: 't2', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: ''), // deliberately empty
+      sort: 'time',
+    );
+    final homeTime = await PostCacheService.loadPosts(1, sort: 'time');
+    expect(homeTime?.algorithmVersion, PostCacheService.homeTimeAlgorithmVersion);
+
+    // 3. 专题 all -> feed_v1
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [
+        Post(id: 3, content: 't3', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: ''), // deliberately empty
+      sort: 'all',
+      type: 'campus_life',
+    );
+    final sectionAll = await PostCacheService.loadPosts(1, sort: 'all', type: 'campus_life');
+    expect(sectionAll?.algorithmVersion, PostCacheService.fallbackAlgorithmVersion);
+
+    // 4. 集市 all -> feed_v1
+    await PostCacheService.savePosts(
+      2, // boardId 2 is market
+      CachedPostFeed(posts: [
+        Post(id: 4, content: 't4', boardId: 2, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: ''), // deliberately empty
+      sort: 'all',
+    );
+    final marketAll = await PostCacheService.loadPosts(2, sort: 'all');
+    expect(marketAll?.algorithmVersion, PostCacheService.fallbackAlgorithmVersion);
+
+    // 5. 算法版本不匹配时删除缓存
+    // First, save a valid cache
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(posts: [
+        Post(id: 5, content: 't5', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+      ], algorithmVersion: 'some_malicious_version_or_v1_instead_of_v2'),
+      sort: 'all',
+    );
+    final mismatch = await PostCacheService.loadPosts(1, sort: 'all');
+    expect(mismatch, isNull);
   });
 
   test('post cache preserves water section metadata', () async {

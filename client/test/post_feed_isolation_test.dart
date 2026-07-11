@@ -497,6 +497,7 @@ void main() {
 
     expect(course?.posts.single.content, 'course');
     expect(campus?.posts.single.content, 'campus');
+    expect(unrelated, isNull);
   });
 
   test('post cache automatically populates missing algorithm version and applies strict version isolation', () async {

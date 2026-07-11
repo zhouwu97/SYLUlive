@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -118,14 +119,32 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		AuthorID:      userID.(uint),
 		Content:       input.Content,
 		Status:        models.ReplyStatusNormal,
+		CreatedAt:     time.Now(),
 	}
 
-	if err := h.db.Create(&reply).Error; err != nil {
+	// 回复、回复图片和帖子活跃统计必须原子提交，避免列表出现已显示回复却没有刷新活跃时间的状态。
+	fileIDs := c.PostForm("file_ids")
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&reply).Error; err != nil {
+			return err
+		}
+		if fileIDs != "" {
+			for i, idStr := range strings.Split(fileIDs, ",") {
+				fileID, parseErr := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
+				if parseErr != nil || fileID == 0 {
+					continue
+				}
+				if err := tx.Create(&models.ReplyImage{ReplyID: reply.ID, FileID: uint(fileID), SortOrder: i}).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return tx.Model(&models.Post{}).Where("id = ?", postID).Updates(map[string]interface{}{
+			"reply_count":      gorm.Expr("reply_count + 1"),
+			"last_activity_at": reply.CreatedAt,
+		}).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建回复失败"})
-		return
-	}
-	if err := h.db.Model(&models.Post{}).Where("id = ?", postID).Update("reply_count", gorm.Expr("reply_count + 1")).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
 
@@ -156,24 +175,6 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		for _, award := range awards {
 			if award.Scope == "global" {
 				reply.ExpEarned = award.Exp
-			}
-		}
-	}
-
-	// 处理图片
-	fileIDs := c.PostForm("file_ids")
-	if fileIDs != "" {
-		ids := strings.Split(fileIDs, ",")
-		for i, idStr := range ids {
-			fileID, _ := strconv.ParseUint(idStr, 10, 64)
-			replyImage := models.ReplyImage{
-				ReplyID:   reply.ID,
-				FileID:    uint(fileID),
-				SortOrder: i,
-			}
-			if err := h.db.Create(&replyImage).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-				return
 			}
 		}
 	}
@@ -234,11 +235,12 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&reply).Update("status", models.ReplyStatusDeleted).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-		return
-	}
-	if err := h.db.Model(&models.Post{}).Where("id = ?", reply.PostID).Update("reply_count", gorm.Expr("GREATEST(reply_count - 1, 0)")).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&reply).Update("status", models.ReplyStatusDeleted).Error; err != nil {
+			return err
+		}
+		return recalculatePostReplyStats(tx, reply.PostID)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
@@ -261,6 +263,29 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+// recalculatePostReplyStats 从有效回复重建帖子回复数及最后活跃时间；调用方必须提供事务。
+func recalculatePostReplyStats(tx *gorm.DB, postID uint) error {
+	var post models.Post
+	if err := tx.Select("id", "created_at").First(&post, postID).Error; err != nil {
+		return err
+	}
+	var count int64
+	if err := tx.Model(&models.Reply{}).Where("post_id = ? AND status = ?", postID, models.ReplyStatusNormal).Count(&count).Error; err != nil {
+		return err
+	}
+	lastActivityAt := post.CreatedAt
+	var latest models.Reply
+	if err := tx.Where("post_id = ? AND status = ?", postID, models.ReplyStatusNormal).Order("created_at DESC, id DESC").First(&latest).Error; err == nil {
+		lastActivityAt = latest.CreatedAt
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return tx.Model(&models.Post{}).Where("id = ?", postID).Updates(map[string]interface{}{
+		"reply_count":      int(count),
+		"last_activity_at": lastActivityAt,
+	}).Error
 }
 
 // GetMeList 获取当前用户的所有评论（用于"我的评论"页面）

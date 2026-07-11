@@ -54,6 +54,23 @@ class ExamPaperApiException implements Exception {
   String toString() => message;
 }
 
+class ExamPaperDeleteResult {
+  final String message;
+  final bool expRevoked;
+
+  const ExamPaperDeleteResult({
+    required this.message,
+    required this.expRevoked,
+  });
+
+  factory ExamPaperDeleteResult.fromJson(Map<String, dynamic> json) {
+    return ExamPaperDeleteResult(
+      message: json['message']?.toString() ?? '操作成功',
+      expRevoked: json['exp_revoked'] == true,
+    );
+  }
+}
+
 class ExamPaperService {
   static const int maxFileSize = 20 * 1024 * 1024;
 
@@ -99,13 +116,18 @@ class ExamPaperService {
   }
 
   Future<ExamPaperPage> mySubmissions({
+    String status = '',
     int page = 1,
     int pageSize = 20,
   }) async {
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '/exam-papers/my-submissions',
-        queryParameters: {'page': page, 'page_size': pageSize},
+        queryParameters: {
+          if (status.isNotEmpty) 'status': status,
+          'page': page,
+          'page_size': pageSize,
+        },
       );
       return ExamPaperPage.fromJson(_responseMap(response.data));
     } on DioException catch (error) {
@@ -156,12 +178,19 @@ class ExamPaperService {
     }
   }
 
-  Future<void> withdraw(int id) async {
+  Future<ExamPaperDeleteResult> deleteSubmission(int id) async {
     try {
-      await _dio.delete<void>('/exam-papers/my-submissions/$id');
+      final response = await _dio.delete<Map<String, dynamic>>(
+        '/exam-papers/my-submissions/$id',
+      );
+      return ExamPaperDeleteResult.fromJson(_responseMap(response.data));
     } on DioException catch (error) {
       throw ExamPaperApiException.fromDio(error);
     }
+  }
+
+  Future<void> withdraw(int id) async {
+    await deleteSubmission(id);
   }
 
   Future<File> downloadPreview(ExamPaper paper) {
@@ -182,6 +211,9 @@ class ExamPaperService {
 
   Future<ExamPaperPage> adminList({
     required String status,
+    String keyword = '',
+    String contributor = '',
+    String sort = 'oldest',
     int page = 1,
     int pageSize = 20,
   }) async {
@@ -190,6 +222,9 @@ class ExamPaperService {
         '/admin/exam-papers',
         queryParameters: {
           'status': status,
+          if (keyword.trim().isNotEmpty) 'keyword': keyword.trim(),
+          if (contributor.trim().isNotEmpty) 'contributor': contributor.trim(),
+          'sort': sort,
           'page': page,
           'page_size': pageSize,
         },
@@ -202,6 +237,9 @@ class ExamPaperService {
 
   Future<List<ExamPaper>> adminListAll({
     required String status,
+    String keyword = '',
+    String contributor = '',
+    String sort = 'oldest',
     int pageSize = 50,
   }) async {
     final items = <ExamPaper>[];
@@ -209,6 +247,9 @@ class ExamPaperService {
     while (true) {
       final result = await adminList(
         status: status,
+        keyword: keyword,
+        contributor: contributor,
+        sort: sort,
         page: page,
         pageSize: pageSize,
       );

@@ -196,10 +196,12 @@
 - `GET /api/exam-papers`：已发布列表，支持 `keyword`、`academic_year`、`semester`、`exam_type`、`sort`、`page`、`page_size`。
 - `GET /api/exam-papers/:id`：已发布详情。
 - `POST /api/exam-papers`：`multipart/form-data` 投稿，字段为 `file`、`course_name`、`academic_year`、`semester`、`exam_type`、`privacy_confirmed=true`。
-- `GET /api/exam-papers/my-submissions`：我的待审核和已发布投稿。
-- `DELETE /api/exam-papers/my-submissions/:id`：撤回本人待审核投稿。
+- `GET /api/exam-papers/my-submissions`：我的投稿列表，支持 `status=all|pending|published|unpublished`、`page`、`page_size`；响应中的 `status_counts` 返回本人全部投稿在 `all`、`pending`、`published`、`unpublished` 各状态下的数量。未传 `status` 时为兼容旧客户端，仅返回待审核和已发布投稿。
+- `DELETE /api/exam-papers/my-submissions/:id`：删除本人投稿。`pending` 状态执行撤回；`published`、`unpublished` 状态执行永久删除，并按实际奖励状态撤销经验。成功响应为 `{"message":"投稿已撤回|投稿已永久删除","exp_revoked":true|false}`。
 - `GET /api/exam-papers/:id/preview`：内联预览，不增加下载量。
 - `GET /api/exam-papers/:id/download`：附件下载并原子增加下载量。
+
+试卷列表和详情响应中的 `reward_revocable` 表示该投稿的经验奖励当前是否仍可撤销：仅当已发放奖励且尚未撤销时为 `true`。
 
 管理员接口：
 

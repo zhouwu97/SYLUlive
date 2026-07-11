@@ -43,18 +43,18 @@ func TestRankHomeFeedKeepsFreshPostsAndCapsAuthor(t *testing.T) {
 func TestRankHomeFeedByFreshOrder(t *testing.T) {
 	now := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
 	candidates := make([]HomeFeedCandidate, 0, 5)
-	
+
 	for i := 0; i < 5; i++ {
 		candidates = append(candidates, HomeFeedCandidate{
 			Post: models.Post{
-				ID: uint(i + 1),
-				AuthorID: uint(i + 10),
-				PostType: "campus_life",
+				ID:        uint(i + 1),
+				AuthorID:  uint(i + 10),
+				PostType:  "campus_life",
 				CreatedAt: now.Add(-time.Duration(i) * time.Hour), // i=0 is newest, i=4 is oldest
 			},
 		})
 	}
-	
+
 	ids := RankHomeFeed(candidates, now)
 	if len(ids) != 5 {
 		t.Fatalf("Expected 5 items returned, got %d", len(ids))
@@ -67,23 +67,23 @@ func TestRankHomeFeedByFreshOrder(t *testing.T) {
 func TestRankHomeFeedRelaxationStages(t *testing.T) {
 	now := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
 	candidates := make([]HomeFeedCandidate, 0, 40)
-	
+
 	// Create 40 posts from 10 different authors.
 	for i := 0; i < 40; i++ {
 		candidates = append(candidates, HomeFeedCandidate{
 			Post: models.Post{
-				ID: uint(i + 1),
-				AuthorID: uint((i % 10) + 1), // Authors 1 to 10
-				PostType: "campus_life",
-				CreatedAt: now.Add(-time.Duration(i) * time.Hour),
+				ID:             uint(i + 1),
+				AuthorID:       uint((i % 10) + 1), // Authors 1 to 10
+				PostType:       "campus_life",
+				CreatedAt:      now.Add(-time.Duration(i) * time.Hour),
 				LastActivityAt: now,
 			},
 			HotScore: float64(100 - i),
 		})
 	}
-	
+
 	ids := RankHomeFeed(candidates, now)
-	
+
 	if len(ids) != 40 {
 		t.Fatalf("Expected 40 items returned, got %d", len(ids))
 	}
@@ -119,9 +119,9 @@ func TestRankHomeFeedRecentThirtyDayFallbackAddsPosts(t *testing.T) {
 		candidates = append(candidates, HomeFeedCandidate{
 			Post: models.Post{
 				ID: uint(i + 1), AuthorID: 1, PostType: "campus_life",
-				CreatedAt: now.Add(-time.Hour),
+				CreatedAt:      now.Add(-time.Hour),
 				LastActivityAt: now,
-				LikeCount: 1000,
+				LikeCount:      1000,
 			},
 		})
 	}
@@ -131,9 +131,9 @@ func TestRankHomeFeedRecentThirtyDayFallbackAddsPosts(t *testing.T) {
 		candidates = append(candidates, HomeFeedCandidate{
 			Post: models.Post{
 				ID: uint(100 + i), AuthorID: uint(100 + i), PostType: "campus_life",
-				CreatedAt: now.Add(-10 * 24 * time.Hour), // 10 days old, normal post
+				CreatedAt:      now.Add(-10 * 24 * time.Hour), // 10 days old, normal post
 				LastActivityAt: now.Add(-10 * 24 * time.Hour),
-				LikeCount: 10,
+				LikeCount:      10,
 			},
 		})
 	}
@@ -162,9 +162,9 @@ func TestRankHomeFeedOldPostLimitRemainsTwo(t *testing.T) {
 		candidates = append(candidates, HomeFeedCandidate{
 			Post: models.Post{
 				ID: uint(i + 1), AuthorID: uint(i + 10), PostType: "campus_life",
-				CreatedAt: now.Add(-20 * 24 * time.Hour), // 20 days old
+				CreatedAt:      now.Add(-20 * 24 * time.Hour), // 20 days old
 				LastActivityAt: now.Add(-20 * 24 * time.Hour),
-				LikeCount: 1000, // Make them hot so they would be picked
+				LikeCount:      1000, // Make them hot so they would be picked
 			},
 		})
 	}
@@ -173,9 +173,9 @@ func TestRankHomeFeedOldPostLimitRemainsTwo(t *testing.T) {
 		candidates = append(candidates, HomeFeedCandidate{
 			Post: models.Post{
 				ID: uint(100 + i), AuthorID: uint(100 + i), PostType: "campus_life",
-				CreatedAt: now.Add(-time.Hour),
+				CreatedAt:      now.Add(-time.Hour),
 				LastActivityAt: now,
-				LikeCount: 10,
+				LikeCount:      10,
 			},
 		})
 	}
@@ -199,9 +199,9 @@ func TestRankHomeFeedDormantOldPostNeverEntersFirstTen(t *testing.T) {
 		candidates = append(candidates, HomeFeedCandidate{
 			Post: models.Post{
 				ID: uint(i + 1), AuthorID: uint(i + 10), PostType: "campus_life",
-				CreatedAt: now.Add(-20 * 24 * time.Hour),
+				CreatedAt:      now.Add(-20 * 24 * time.Hour),
 				LastActivityAt: now.Add(-20 * 24 * time.Hour),
-				LikeCount: 10000,
+				LikeCount:      10000,
 			},
 		})
 	}
@@ -210,9 +210,9 @@ func TestRankHomeFeedDormantOldPostNeverEntersFirstTen(t *testing.T) {
 		candidates = append(candidates, HomeFeedCandidate{
 			Post: models.Post{
 				ID: uint(100 + i), AuthorID: uint(100 + i), PostType: "campus_life",
-				CreatedAt: now.Add(-time.Hour),
+				CreatedAt:      now.Add(-time.Hour),
 				LastActivityAt: now,
-				LikeCount: 10,
+				LikeCount:      10,
 			},
 		})
 	}
@@ -228,32 +228,32 @@ func TestRankHomeFeedDormantOldPostNeverEntersFirstTen(t *testing.T) {
 func TestRankHomeFeedFinalFillPreservesDeepFeedOrder(t *testing.T) {
 	now := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
 	candidates := make([]HomeFeedCandidate, 0)
-	
+
 	// Create 30 posts from the EXACT same author and same section.
 	for i := 0; i < 30; i++ {
 		candidates = append(candidates, HomeFeedCandidate{
 			Post: models.Post{
-				ID: uint(i + 1),
-				AuthorID: 999, // Same author
-				PostType: "campus_life", // Same section
-				CreatedAt: now.Add(-time.Duration(i) * time.Minute),
+				ID:             uint(i + 1),
+				AuthorID:       999,           // Same author
+				PostType:       "campus_life", // Same section
+				CreatedAt:      now.Add(-time.Duration(i) * time.Minute),
 				LastActivityAt: now,
-				LikeCount: 1000 - i, // Very hot
+				LikeCount:      1000 - i, // Very hot
 			},
 		})
 	}
-	
+
 	ids := RankHomeFeed(candidates, now)
-	
+
 	if len(ids) != 30 {
 		t.Fatalf("Expected 30 items returned total, got %d", len(ids))
 	}
-	
+
 	firstPage := ids[:20]
 	if len(firstPage) != 20 {
 		t.Fatalf("Expected 20 items in first page, got %d", len(firstPage))
 	}
-	
+
 	if ids[20] != 21 {
 		t.Fatalf("deep feed order changed, expected 21 at index 20, got %d", ids[20])
 	}

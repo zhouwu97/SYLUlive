@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/team_recruitment.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../widgets/team/team_recruitment_card.dart';
+import '../chat_detail_screen.dart';
 import 'team_application_manage_screen.dart';
 import 'team_recruitment_create_screen.dart';
 
@@ -302,7 +304,16 @@ class _TeamRecruitmentDetailScreenState
       return const FilledButton(onPressed: null, child: Text('等待审核'));
     }
     if (item.myApplicationStatus == 'accepted') {
-      return const FilledButton(onPressed: null, child: Text('已加入'));
+      return FilledButton.icon(
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(targetUser: _authorAsUser(item)),
+          ),
+        ),
+        icon: const Icon(Icons.mail_outline_rounded),
+        label: const Text('私信发起人'),
+      );
     }
     if (!item.canApply) {
       return FilledButton(
@@ -319,4 +330,13 @@ class _TeamRecruitmentDetailScreenState
         onPressed: applying ? null : () => _apply(item),
         child: Text(applying ? '提交中…' : '申请加入'));
   }
+
+  User _authorAsUser(TeamRecruitment item) => User(
+        id: item.author.id,
+        studentId: '',
+        nickname: item.author.name,
+        avatar: item.author.avatar,
+        eduMajor: item.author.major,
+        createdAt: item.createdAt,
+      );
 }

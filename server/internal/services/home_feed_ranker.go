@@ -137,6 +137,34 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 			seen[item.Post.ID] = true
 		}
 	}
+	// 构造主候选池和 30 天普通补位池
+	primaryPool := make([]HomeFeedCandidate, 0)
+	recent30NormalPool := make([]HomeFeedCandidate, 0)
+	inPrimary := make(map[uint]bool)
+
+	for _, c := range byHot {
+		isPrimary := false
+		if !c.Post.CreatedAt.Before(now.Add(-7 * 24 * time.Hour)) {
+			isPrimary = true
+		} else if !c.Post.CreatedAt.Before(now.Add(-48 * time.Hour)) {
+			isPrimary = true
+		} else if c.Post.ReplyCount > 0 && !c.Post.LastActivityAt.Before(now.Add(-72*time.Hour)) {
+			isPrimary = true
+		} else if c.Post.IsFeatured && !c.Post.CreatedAt.Before(now.Add(-180*24*time.Hour)) {
+			isPrimary = true
+		}
+		
+		if isPrimary {
+			primaryPool = append(primaryPool, c)
+			inPrimary[c.Post.ID] = true
+		}
+	}
+
+	for _, c := range byFresh {
+		if !inPrimary[c.Post.ID] && !c.Post.IsFeatured && !c.Post.CreatedAt.Before(now.Add(-30*24*time.Hour)) {
+			recent30NormalPool = append(recent30NormalPool, c)
+		}
+	}
 	
 	// 如候选充足但硬约束阻塞，则逐级放宽。
 	relaxPolicies := []PlacementPolicy{RelaxedPolicy1, RelaxedPolicy2}
@@ -144,7 +172,7 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 		if len(selected) >= 20 {
 			break
 		}
-		for _, item := range byHot {
+		for _, item := range primaryPool {
 			if len(selected) >= 20 {
 				break
 			}
@@ -157,11 +185,11 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 
 	// 第三级放宽：从最近 30 天尚未选中的普通帖子中补位，使用第二级放宽政策
 	if len(selected) < 20 {
-		for _, item := range byFresh {
+		for _, item := range recent30NormalPool {
 			if len(selected) >= 20 {
 				break
 			}
-			if !seen[item.Post.ID] && !item.Post.CreatedAt.Before(now.Add(-30*24*time.Hour)) && canPlace(item, selected, now, RelaxedPolicy2) {
+			if !seen[item.Post.ID] && canPlace(item, selected, now, RelaxedPolicy2) {
 				selected = append(selected, item)
 				seen[item.Post.ID] = true
 			}

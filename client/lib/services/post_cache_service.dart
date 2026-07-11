@@ -71,9 +71,20 @@ class PostCacheService {
   }) async {
     final box = await _openBox();
     final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
+    
+    final expectedVersion = expectedAlgorithmVersion(
+      boardId: boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+    );
+    final storedVersion = feed.algorithmVersion.isNotEmpty
+        ? feed.algorithmVersion
+        : expectedVersion;
+
     final json = jsonEncode({
       'schema_version': cacheSchemaVersion,
-      'algorithm_version': feed.algorithmVersion,
+      'algorithm_version': storedVersion,
       'saved_at': DateTime.now().toUtc().toIso8601String(),
       'pinned_posts': feed.pinnedPosts.map((p) => _postToJson(p)).toList(),
       'posts': feed.posts.map((p) => _postToJson(p)).toList()
@@ -179,7 +190,13 @@ class PostCacheService {
       merged.removeRange(200, merged.length);
     }
     
-    final algorithmVersion = feed?.algorithmVersion ?? (sort == 'all' ? homeAllAlgorithmVersion : 'feed_v1');
+    final algorithmVersion = feed?.algorithmVersion ??
+        expectedAlgorithmVersion(
+          boardId: boardId,
+          sort: sort,
+          type: type,
+          tagId: tagId,
+        );
     final pinnedPosts = feed?.pinnedPosts ?? [];
     
     await savePosts(boardId, CachedPostFeed(

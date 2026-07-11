@@ -74,8 +74,9 @@ Map<String, dynamic> buildPostListParams({
     'sort': sort,
     'limit': limit,
   };
-  if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId))
+  if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
     params['feed_version'] = 2;
+  }
   if (tagId != null) {
     params['tag_id'] = tagId;
   }
@@ -300,10 +301,9 @@ class PostProvider extends ChangeNotifier {
         'scene': 'refresh',
       };
       if (usesHomeFeedV2(
-          boardId: boardId,
-          sort: sort,
-          type: type,
-          tagId: tagId)) params['feed_version'] = 2;
+          boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+        params['feed_version'] = 2;
+      }
       if (tagId != null) {
         params['tag_id'] = tagId;
       }

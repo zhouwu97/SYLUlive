@@ -261,6 +261,43 @@ void main() {
     expect(result.expRevoked, isTrue);
   });
 
+  test('删除投稿的 Dio 错误转换为接口异常', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              response: Response(
+                requestOptions: options,
+                statusCode: 403,
+                data: {
+                  'error': '无权删除该投稿',
+                  'code': 'exam_paper_delete_forbidden',
+                },
+              ),
+              type: DioExceptionType.badResponse,
+            ),
+          );
+        },
+      ),
+    );
+
+    expect(
+      ExamPaperService(dio).deleteSubmission(12),
+      throwsA(
+        isA<ExamPaperApiException>()
+            .having(
+              (error) => error.code,
+              'code',
+              'exam_paper_delete_forbidden',
+            )
+            .having((error) => error.message, 'message', '无权删除该投稿'),
+      ),
+    );
+  });
+
   test('删除结果缺失字段时使用默认值', () {
     final result = ExamPaperDeleteResult.fromJson(const <String, dynamic>{});
 

@@ -32,6 +32,50 @@ func ScoreHomeFeedCandidate(candidate *HomeFeedCandidate, now time.Time) {
 	candidate.ActivityScore = (4 + candidate.Quality) / math.Pow(activityAge+4, 0.8)
 }
 
+type PlacementPolicy struct {
+	MaxAuthorFirst10  int
+	MaxAuthorPage     int
+	MaxSectionFirst10 int
+	MaxSectionPage    int
+	MaxOldPosts       int
+	MaxAge            time.Duration
+}
+
+var (
+	StrictPolicy = PlacementPolicy{
+		MaxAuthorFirst10:  2,
+		MaxAuthorPage:     3,
+		MaxSectionFirst10: 4,
+		MaxSectionPage:    6,
+		MaxOldPosts:       2,
+		MaxAge:            0,
+	}
+	RelaxedPolicy1 = PlacementPolicy{
+		MaxAuthorFirst10:  2,
+		MaxAuthorPage:     3,
+		MaxSectionFirst10: 6,
+		MaxSectionPage:    10,
+		MaxOldPosts:       2,
+		MaxAge:            0,
+	}
+	RelaxedPolicy2 = PlacementPolicy{
+		MaxAuthorFirst10:  2,
+		MaxAuthorPage:     4,
+		MaxSectionFirst10: 6,
+		MaxSectionPage:    10,
+		MaxOldPosts:       2,
+		MaxAge:            0,
+	}
+	RelaxedPolicy3 = PlacementPolicy{
+		MaxAuthorFirst10:  2,
+		MaxAuthorPage:     4,
+		MaxSectionFirst10: 6,
+		MaxSectionPage:    10,
+		MaxOldPosts:       2,
+		MaxAge:            30 * 24 * time.Hour,
+	}
+)
+
 // RankHomeFeed 生成第一页混合槽位，其余候选按稳定热度顺序追加。
 func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 	for i := range candidates {
@@ -43,7 +87,12 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 	byFeatured := append([]HomeFeedCandidate(nil), candidates...)
 	sort.SliceStable(byHot, func(i, j int) bool { return candidateLess(byHot[i], byHot[j], byHot[i].HotScore, byHot[j].HotScore) })
 	sort.SliceStable(byFresh, func(i, j int) bool {
-		return candidateLess(byFresh[i], byFresh[j], -float64(byFresh[i].Post.CreatedAt.UnixNano()), -float64(byFresh[j].Post.CreatedAt.UnixNano()))
+		left := byFresh[i].Post.CreatedAt
+		right := byFresh[j].Post.CreatedAt
+		if !left.Equal(right) {
+			return left.After(right)
+		}
+		return byFresh[i].Post.ID > byFresh[j].Post.ID
 	})
 	sort.SliceStable(byActivity, func(i, j int) bool {
 		return candidateLess(byActivity[i], byActivity[j], byActivity[i].ActivityScore, byActivity[j].ActivityScore)
@@ -68,7 +117,7 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 			if len(selected) >= 20 || maximum == 0 {
 				return
 			}
-			if !seen[item.Post.ID] && predicate(item) && canPlace(item, selected, now) {
+			if !seen[item.Post.ID] && predicate(item) && canPlace(item, selected, now, StrictPolicy) {
 				selected = append(selected, item)
 				seen[item.Post.ID] = true
 				maximum--
@@ -89,26 +138,31 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 			if len(selected) >= 20 {
 				break
 			}
-			if seen[item.Post.ID] || !canPlace(item, selected, now) {
-				continue
-			}
-			if len(selected) < 10 && item.Post.CreatedAt.Before(now.Add(-14*24*time.Hour)) && !item.Post.IsFeatured && item.Post.LastActivityAt.Before(now.Add(-72*time.Hour)) {
+			if seen[item.Post.ID] || !canPlace(item, selected, now, StrictPolicy) {
 				continue
 			}
 			selected = append(selected, item)
 			seen[item.Post.ID] = true
 		}
 	}
-	// 如候选充足但硬约束阻塞，则逐级放宽，保证首页能返回完整页面。
-	for _, item := range byHot {
+	
+	// 如候选充足但硬约束阻塞，则逐级放宽。
+	relaxPolicies := []PlacementPolicy{RelaxedPolicy1, RelaxedPolicy2, RelaxedPolicy3}
+	for _, policy := range relaxPolicies {
 		if len(selected) >= 20 {
 			break
 		}
-		if !seen[item.Post.ID] {
-			selected = append(selected, item)
-			seen[item.Post.ID] = true
+		for _, item := range byHot {
+			if len(selected) >= 20 {
+				break
+			}
+			if !seen[item.Post.ID] && canPlace(item, selected, now, policy) {
+				selected = append(selected, item)
+				seen[item.Post.ID] = true
+			}
 		}
 	}
+
 	ids := make([]uint, 0, len(candidates))
 	for _, item := range selected {
 		ids = append(ids, item.Post.ID)
@@ -122,7 +176,7 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 	return ids
 }
 
-func canPlace(candidate HomeFeedCandidate, selected []HomeFeedCandidate, now time.Time) bool {
+func canPlace(candidate HomeFeedCandidate, selected []HomeFeedCandidate, now time.Time, policy PlacementPolicy) bool {
 	author, section, old := 0, 0, 0
 	for _, item := range selected {
 		if item.Post.AuthorID == candidate.Post.AuthorID {
@@ -135,19 +189,25 @@ func canPlace(candidate HomeFeedCandidate, selected []HomeFeedCandidate, now tim
 			old++
 		}
 	}
-	if len(selected) < 10 && author >= 2 {
+	if len(selected) < 10 && author >= policy.MaxAuthorFirst10 {
 		return false
 	}
-	if len(selected) >= 10 && author >= 3 {
+	if len(selected) >= 10 && author >= policy.MaxAuthorPage {
 		return false
 	}
-	if len(selected) < 10 && section >= 4 {
+	if len(selected) < 10 && section >= policy.MaxSectionFirst10 {
 		return false
 	}
-	if len(selected) >= 10 && section >= 6 {
+	if len(selected) >= 10 && section >= policy.MaxSectionPage {
 		return false
 	}
-	if candidate.Post.CreatedAt.Before(now.Add(-14*24*time.Hour)) && old >= 2 {
+	if candidate.Post.CreatedAt.Before(now.Add(-14*24*time.Hour)) && old >= policy.MaxOldPosts {
+		return false
+	}
+	if len(selected) < 10 && candidate.Post.CreatedAt.Before(now.Add(-14*24*time.Hour)) && !candidate.Post.IsFeatured && candidate.Post.LastActivityAt.Before(now.Add(-72*time.Hour)) {
+		return false
+	}
+	if policy.MaxAge > 0 && candidate.Post.CreatedAt.Before(now.Add(-policy.MaxAge)) {
 		return false
 	}
 	return true

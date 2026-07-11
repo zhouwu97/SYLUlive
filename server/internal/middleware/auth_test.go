@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -40,6 +41,56 @@ func TestTokenFromRequestFallsBackToCookie(t *testing.T) {
 
 	if got := tokenFromRequest(c); got != "cookie-token" {
 		t.Fatalf("tokenFromRequest() = %q, want cookie-token", got)
+	}
+}
+
+func TestAuthMiddlewareErrorIncludesMachineCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	router := gin.New()
+	router.GET("/private", AuthMiddleware(db, "secret"), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/private", nil))
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d, want %d", response.Code, http.StatusUnauthorized)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error"] == "" || body["code"] != "authentication_required" {
+		t.Fatalf("unexpected auth error body: %#v", body)
+	}
+}
+
+func TestAdminMiddlewareErrorIncludesMachineCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/admin", func(c *gin.Context) {
+		c.Set("role", string(models.RoleUser))
+	}, AdminMiddleware(), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/admin", nil))
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d, want %d", response.Code, http.StatusForbidden)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error"] == "" || body["code"] != "admin_required" {
+		t.Fatalf("unexpected admin error body: %#v", body)
 	}
 }
 

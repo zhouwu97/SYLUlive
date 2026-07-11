@@ -131,11 +131,15 @@ class ExamPaperPage {
   final int pageSize;
   final int total;
 
+  /// 各状态的全量计数；普通列表接口未返回时为空。
+  final Map<String, int> statusCounts;
+
   const ExamPaperPage({
     required this.items,
     required this.page,
     required this.pageSize,
     required this.total,
+    this.statusCounts = const {},
   });
 
   factory ExamPaperPage.fromJson(Map<String, dynamic> json) {
@@ -152,7 +156,16 @@ class ExamPaperPage {
       page: (json['page'] as num?)?.toInt() ?? 1,
       pageSize: (json['page_size'] as num?)?.toInt() ?? 20,
       total: (json['total'] as num?)?.toInt() ?? 0,
+      statusCounts: _parseStatusCounts(json['status_counts']),
     );
+  }
+
+  static Map<String, int> _parseStatusCounts(dynamic value) {
+    if (value is! Map) return const {};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): (entry.value as num?)?.toInt() ?? 0,
+    };
   }
 
   bool get hasMore => page * pageSize < total;

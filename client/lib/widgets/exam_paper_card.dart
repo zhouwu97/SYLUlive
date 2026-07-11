@@ -5,35 +5,34 @@ import '../config/api_constants.dart';
 import '../models/exam_paper.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
+import 'exam_papers/exam_paper_status_badge.dart';
 
 class ExamPaperCard extends StatelessWidget {
   final ExamPaper paper;
   final VoidCallback onTap;
   final Widget? trailing;
+  final Widget? footer;
+  final bool showStatus;
 
   const ExamPaperCard({
     super.key,
     required this.paper,
     required this.onTap,
     this.trailing,
+    this.footer,
+    this.showStatus = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = switch (paper.status) {
-      'pending' => Colors.orange,
-      'published' => Colors.green,
-      'unpublished' => Colors.grey,
-      _ => theme.colorScheme.primary,
-    };
     final publishedTime =
         paper.publishedAt?.toLocal() ?? paper.createdAt.toLocal();
 
     return GlassContainer(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      borderRadius: 20,
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -43,7 +42,7 @@ class ExamPaperCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  paper.title,
+                  paper.courseName,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -52,22 +51,10 @@ class ExamPaperCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  paper.statusLabel,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+              if (showStatus) ...[
+                const SizedBox(width: 10),
+                ExamPaperStatusBadge(status: paper.status),
+              ],
             ],
           ),
           const SizedBox(height: 10),
@@ -84,7 +71,7 @@ class ExamPaperCard extends StatelessWidget {
                   icon: Icons.assignment_outlined, text: paper.examTypeLabel),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Row(
             children: [
               CachedAvatar(
@@ -129,6 +116,12 @@ class ExamPaperCard extends StatelessWidget {
               ],
             ],
           ),
+          if (footer != null) ...[
+            const SizedBox(height: 10),
+            Divider(height: 1, color: theme.colorScheme.outlineVariant),
+            const SizedBox(height: 10),
+            footer!,
+          ],
         ],
       ),
     );

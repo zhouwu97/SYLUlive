@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "calendar_id": "sylu-2026-2027",
+  "school": "沈阳理工大学",
+  "academic_year": "2026-2027",
+  "timezone": "Asia/Shanghai",
+  "version": 1,
+  "status": "published",
+  "source": {
+    "type": "official_calendar_image",
+    "title": "沈阳理工大学2026—2027学年校历",
+    "file_name": "xiaoli.jpg",
+    "verified": true
+  },
+  "semesters": [
+    {
+      "id": "2026-fall",
+      "name": "第一学期",
+      "start_date": "2026-08-24",
+      "end_date": "2027-02-21",
+      "teaching_weeks": [
+        {"week": 1, "start_date": "2026-08-24", "end_date": "2026-08-30"},
+        {"week": 2, "start_date": "2026-08-31", "end_date": "2026-09-06"},
+        {"week": 3, "start_date": "2026-09-07", "end_date": "2026-09-13"},
+        {"week": 4, "start_date": "2026-09-14", "end_date": "2026-09-20"},
+        {"week": 5, "start_date": "2026-09-21", "end_date": "2026-09-27"},
+        {"week": 6, "start_date": "2026-09-28", "end_date": "2026-10-04"},
+        {"week": 7, "start_date": "2026-10-05", "end_date": "2026-10-11"},
+        {"week": 8, "start_date": "2026-10-12", "end_date": "2026-10-18"},
+        {"week": 9, "start_date": "2026-10-19", "end_date": "2026-10-25"},
+        {"week": 10, "start_date": "2026-10-26", "end_date": "2026-11-01"},
+        {"week": 11, "start_date": "2026-11-02", "end_date": "2026-11-08"},
+        {"week": 12, "start_date": "2026-11-09", "end_date": "2026-11-15"},
+        {"week": 13, "start_date": "2026-11-16", "end_date": "2026-11-22"},
+        {"week": 14, "start_date": "2026-11-23", "end_date": "2026-11-29"},
+        {"week": 15, "start_date": "2026-11-30", "end_date": "2026-12-06"},
+        {"week": 16, "start_date": "2026-12-07", "end_date": "2026-12-13"},
+        {"week": 17, "start_date": "2026-12-14", "end_date": "2026-12-20"},
+        {"week": 18, "start_date": "2026-12-21", "end_date": "2026-12-27"},
+        {"week": 19, "start_date": "2026-12-28", "end_date": "2027-01-03"},
+        {"week": 20, "start_date": "2027-01-04", "end_date": "2027-01-10"}
+      ]
+    },
+    {
+      "id": "2027-spring",
+      "name": "第二学期",
+      "start_date": "2027-02-22",
+      "end_date": "2027-08-22",
+      "teaching_weeks": [
+        {"week": 1, "start_date": "2027-02-22", "end_date": "2027-02-28"},
+        {"week": 2, "start_date": "2027-03-01", "end_date": "2027-03-07"},
+        {"week": 3, "start_date": "2027-03-08", "end_date": "2027-03-14"},
+        {"week": 4, "start_date": "2027-03-15", "end_date": "2027-03-21"},
+        {"week": 5, "start_date": "2027-03-22", "end_date": "2027-03-28"},
+        {"week": 6, "start_date": "2027-03-29", "end_date": "2027-04-04"},
+        {"week": 7, "start_date": "2027-04-05", "end_date": "2027-04-11"},
+        {"week": 8, "start_date": "2027-04-12", "end_date": "2027-04-18"},
+        {"week": 9, "start_date": "2027-04-19", "end_date": "2027-04-25"},
+        {"week": 10, "start_date": "2027-04-26", "end_date": "2027-05-02"},
+        {"week": 11, "start_date": "2027-05-03", "end_date": "2027-05-09"},
+        {"week": 12, "start_date": "2027-05-10", "end_date": "2027-05-16"},
+        {"week": 13, "start_date": "2027-05-17", "end_date": "2027-05-23"},
+        {"week": 14, "start_date": "2027-05-24", "end_date": "2027-05-30"},
+        {"week": 15, "start_date": "2027-05-31", "end_date": "2027-06-06"},
+        {"week": 16, "start_date": "2027-06-07", "end_date": "2027-06-13"},
+        {"week": 17, "start_date": "2027-06-14", "end_date": "2027-06-20"},
+        {"week": 18, "start_date": "2027-06-21", "end_date": "2027-06-27"},
+        {"week": 19, "start_date": "2027-06-28", "end_date": "2027-07-04"},
+        {"week": 20, "start_date": "2027-07-05", "end_date": "2027-07-11"}
+      ]
+    }
+  ],
+  "events": [
+    {"id": "winter-vacation", "title": "学生放寒假", "type": "winter_vacation", "start_date": "2027-01-11", "end_date": "2027-02-21", "badge": "假", "description": "学生放寒假：2027年1月11日至2月21日。", "status": "confirmed"},
+    {"id": "spring-semester-start", "title": "学生开学", "type": "semester_start", "start_date": "2027-02-22", "end_date": "2027-02-22", "badge": "始", "description": "2027年2月22日学生开学。", "status": "confirmed"},
+    {"id": "summer-vacation", "title": "学生放暑假", "type": "summer_vacation", "start_date": "2027-07-12", "end_date": "2027-08-22", "badge": "假", "description": "学生放暑假：2027年7月12日至8月22日。", "status": "confirmed"},
+    {"id": "fall-semester-start", "title": "学生开学", "type": "semester_start", "start_date": "2027-08-23", "end_date": "2027-08-23", "badge": "始", "description": "2027年8月23日学生开学。", "status": "confirmed"},
+    {"id": "mid-autumn-2026", "title": "中秋节", "type": "holiday", "start_date": "2026-09-25", "end_date": "2026-09-25", "badge": "休", "description": "官方校历标注中秋节。", "status": "confirmed"},
+    {"id": "national-day-2026", "title": "国庆节", "type": "holiday", "start_date": "2026-10-01", "end_date": "2026-10-01", "badge": "休", "description": "官方校历标注国庆节。", "status": "confirmed"},
+    {"id": "new-year-2027", "title": "元旦", "type": "holiday", "start_date": "2027-01-01", "end_date": "2027-01-01", "badge": "休", "description": "官方校历标注元旦。", "status": "confirmed"},
+    {"id": "spring-festival-2027", "title": "春节", "type": "holiday", "start_date": "2027-02-06", "end_date": "2027-02-06", "badge": "休", "description": "官方校历标注春节。", "status": "confirmed"},
+    {"id": "qingming-2027", "title": "清明节", "type": "holiday", "start_date": "2027-04-05", "end_date": "2027-04-05", "badge": "休", "description": "官方校历标注清明节。", "status": "confirmed"},
+    {"id": "labor-day-2027", "title": "劳动节", "type": "holiday", "start_date": "2027-05-01", "end_date": "2027-05-01", "badge": "休", "description": "官方校历标注劳动节。", "status": "confirmed"},
+    {"id": "dragon-boat-2027", "title": "端午节", "type": "holiday", "start_date": "2027-06-09", "end_date": "2027-06-09", "badge": "休", "description": "官方校历标注端午节。", "status": "confirmed"}
+  ],
+  "day_overrides": [],
+  "unresolved_items": []
+}

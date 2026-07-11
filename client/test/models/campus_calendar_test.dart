@@ -107,6 +107,16 @@ void main() {
     expect(shouldReplaceCalendar(remote, calendar), isTrue);
   });
 
+  test('旧学年远程校历不应覆盖新学年本地校历', () {
+    final remoteJson = calendar.toJson()
+      ..['academic_year'] = '2025-2026'
+      ..['version'] = 99
+      ..['revision'] = 'older-year';
+    final remote = CampusCalendar.fromJson(remoteJson);
+
+    expect(shouldReplaceCalendar(remote, calendar), isFalse);
+  });
+
   test('同学年同版本以修订号识别已发布内容更新', () {
     final localJson = calendar.toJson()..['revision'] = 'old-hash';
     final remoteJson = calendar.toJson()..['revision'] = 'new-hash';
@@ -130,6 +140,22 @@ void main() {
     expect(provider.calendar?.calendarId, calendar.calendarId);
     expect(provider.error, isNull);
   });
+
+  test('无缓存时较旧远程校历不覆盖内置新学年', () async {
+    final olderRemote = CampusCalendar.fromJson(
+      calendar.toJson()
+        ..['academic_year'] = '2025-2026'
+        ..['version'] = 99
+        ..['revision'] = 'older-remote',
+    );
+    final provider = CampusCalendarProvider(
+      _RemoteCalendarService(fallback: calendar, remote: olderRemote),
+    );
+
+    await provider.load();
+
+    expect(provider.calendar?.academicYear, '2026-2027');
+  });
 }
 
 class _FallbackOnlyCalendarService extends CampusCalendarService {
@@ -147,6 +173,26 @@ class _FallbackOnlyCalendarService extends CampusCalendarService {
   Future<CampusCalendar?> fetchCurrent() async {
     throw DioException(requestOptions: RequestOptions(path: '/current'));
   }
+
+  @override
+  Future<void> saveCached(CampusCalendar calendar) async {}
+}
+
+class _RemoteCalendarService extends CampusCalendarService {
+  _RemoteCalendarService({required this.fallback, required this.remote})
+      : super(Dio());
+
+  final CampusCalendar fallback;
+  final CampusCalendar remote;
+
+  @override
+  Future<CampusCalendar?> loadCached() async => null;
+
+  @override
+  Future<CampusCalendar> loadFallback() async => fallback;
+
+  @override
+  Future<CampusCalendar?> fetchCurrent() async => remote;
 
   @override
   Future<void> saveCached(CampusCalendar calendar) async {}

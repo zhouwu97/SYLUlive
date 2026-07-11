@@ -93,7 +93,9 @@ type calendarValidationResult struct {
 // GetCurrent 返回当前已发布校历。没有数据时返回 404，客户端可回退到本地内置版本。
 func (h *CampusCalendarHandler) GetCurrent(c *gin.Context) {
 	var calendar models.CampusCalendar
-	if err := h.db.Where("status = ?", "published").Order("published_at DESC, id DESC").First(&calendar).Error; err != nil {
+	if err := h.db.Where("status = ?", "published").
+		Order("academic_year DESC, version DESC, published_at DESC, id DESC").
+		First(&calendar).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "暂无已发布校历"})
 			return
@@ -260,6 +262,9 @@ func (h *CampusCalendarHandler) writeCalendar(c *gin.Context, calendar models.Ca
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "已发布校历数据损坏"})
 		return
 	}
+	data["academic_year"] = calendar.AcademicYear
+	data["version"] = calendar.Version
+	data["status"] = calendar.Status
 	data["revision"] = calendar.SourceHash
 	c.JSON(http.StatusOK, gin.H{
 		"calendar":   data,

@@ -3,26 +3,28 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
 // Config 应用配置
 type Config struct {
-	JWTSecret              string // JWT密钥
-	DSN                    string // 数据库连接字符串
-	UploadDir              string // 文件上传目录
-	MaxFileSize            int64  // 最大文件大小(字节)
-	EduServiceURL          string // Python教务服务地址
-	SMTPHost               string // SMTP 地址
-	SMTPPort               string // SMTP 端口
-	SMTPUser               string // SMTP 用户名
-	SMTPPass               string // SMTP 密码/授权码
-	SMTPFrom               string // 发件人邮箱
-	JPushAppKey            string // 极光推送 AppKey
-	JPushMasterSecret      string // 极光推送 MasterSecret
-	SuperAdminID           string // 超级管理员账号
-	SuperAdminPass         string // 超级管理员密码
+	JWTSecret         string // JWT密钥
+	DSN               string // 数据库连接字符串
+	UploadDir         string // 文件上传目录
+	ExamPaperDir      string // 试卷私有文件目录
+	MaxFileSize       int64  // 最大文件大小(字节)
+	EduServiceURL     string // Python教务服务地址
+	SMTPHost          string // SMTP 地址
+	SMTPPort          string // SMTP 端口
+	SMTPUser          string // SMTP 用户名
+	SMTPPass          string // SMTP 密码/授权码
+	SMTPFrom          string // 发件人邮箱
+	JPushAppKey       string // 极光推送 AppKey
+	JPushMasterSecret string // 极光推送 MasterSecret
+	SuperAdminID      string // 超级管理员账号
+	SuperAdminPass    string // 超级管理员密码
 
 	EduServiceToken        string // Python 教务服务共享密钥
 	JWCSyncEnabled         bool   // 校园资讯同步开关
@@ -68,12 +70,15 @@ func Load() *Config {
 		uploadDir = "./uploads"
 	}
 
-	// 生产环境检查
-	if os.Getenv("GIN_MODE") == "release" {
-		if jwtSecret == "dev-only-secret-do-not-use-in-production" {
-			panic(fmt.Errorf("生产环境必须设置 JWT_SECRET 环境变量"))
+	examPaperDir := os.Getenv("EXAM_PAPER_DIR")
+	if examPaperDir == "" {
+		examPaperDir = "./private/exam-papers"
+		if os.Getenv("GIN_MODE") == "release" {
+			examPaperDir = "/opt/shenliyuan/private/exam-papers"
 		}
 	}
+
+	releaseMode := os.Getenv("GIN_MODE") == "release"
 
 	eduServiceURL := os.Getenv("EDU_SERVICE_URL")
 	if eduServiceURL == "" {
@@ -105,6 +110,28 @@ func Load() *Config {
 		panic(fmt.Errorf("必须设置 SUPER_ADMIN_PASSWORD 环境变量"))
 	}
 
+	if releaseMode {
+		if isPlaceholderSecret(jwtSecret, []string{
+			"dev-only-secret-do-not-use-in-production",
+			"your-super-secret-jwt-key-change-this",
+			"change_me_in_env",
+		}) {
+			panic(fmt.Errorf("生产环境必须设置安全的 JWT_SECRET 环境变量"))
+		}
+		if isPlaceholderSecret(superAdminPass, []string{
+			"super_admin_password_change_this",
+			"change_me_in_env",
+			"admin123",
+			"admin",
+			"password",
+		}) {
+			panic(fmt.Errorf("生产环境必须设置安全的 SUPER_ADMIN_PASSWORD 环境变量"))
+		}
+		if err := ensurePrivateDirOutsidePublicUploads(uploadDir, examPaperDir); err != nil {
+			panic(err)
+		}
+	}
+
 	eduServiceToken := os.Getenv("EDU_SERVICE_TOKEN")
 
 	// 校园资讯同步开关
@@ -126,8 +153,6 @@ func Load() *Config {
 		}
 	}
 
-
-
 	// 生产环境 + 启用校园资讯同步时，必须配置服务间 Token
 	if os.Getenv("GIN_MODE") == "release" && jwcSyncEnabled {
 		if eduServiceToken == "" {
@@ -136,23 +161,53 @@ func Load() *Config {
 	}
 
 	return &Config{
-		JWTSecret:              jwtSecret,
-		DSN:                    dsn,
-		UploadDir:              uploadDir,
-		MaxFileSize:            10 * 1024 * 1024, // 10MB
-		EduServiceURL:          eduServiceURL,
-		SMTPHost:               smtpHost,
-		SMTPPort:               smtpPort,
-		SMTPUser:               smtpUser,
-		SMTPPass:               smtpPass,
-		SMTPFrom:               smtpFrom,
-		JPushAppKey:            jpushAppKey,
-		JPushMasterSecret:      jpushMasterSecret,
-		SuperAdminID:           superAdminID,
-		SuperAdminPass:         superAdminPass,
+		JWTSecret:         jwtSecret,
+		DSN:               dsn,
+		UploadDir:         uploadDir,
+		ExamPaperDir:      examPaperDir,
+		MaxFileSize:       10 * 1024 * 1024, // 10MB
+		EduServiceURL:     eduServiceURL,
+		SMTPHost:          smtpHost,
+		SMTPPort:          smtpPort,
+		SMTPUser:          smtpUser,
+		SMTPPass:          smtpPass,
+		SMTPFrom:          smtpFrom,
+		JPushAppKey:       jpushAppKey,
+		JPushMasterSecret: jpushMasterSecret,
+		SuperAdminID:      superAdminID,
+		SuperAdminPass:    superAdminPass,
 
 		EduServiceToken:        eduServiceToken,
 		JWCSyncEnabled:         jwcSyncEnabled,
 		JWCSyncIntervalMinutes: jwcSyncIntervalMinutes,
 	}
+}
+
+func isPlaceholderSecret(value string, placeholders []string) bool {
+	normalized := strings.TrimSpace(value)
+	for _, placeholder := range placeholders {
+		if normalized == placeholder {
+			return true
+		}
+	}
+	return false
+}
+
+func ensurePrivateDirOutsidePublicUploads(uploadDir, examPaperDir string) error {
+	uploadAbs, err := filepath.Abs(filepath.Clean(uploadDir))
+	if err != nil {
+		return fmt.Errorf("解析 UPLOAD_DIR 失败: %w", err)
+	}
+	examAbs, err := filepath.Abs(filepath.Clean(examPaperDir))
+	if err != nil {
+		return fmt.Errorf("解析 EXAM_PAPER_DIR 失败: %w", err)
+	}
+	relative, err := filepath.Rel(uploadAbs, examAbs)
+	if err != nil {
+		return fmt.Errorf("校验试卷私有目录失败: %w", err)
+	}
+	if relative == "." || (!strings.HasPrefix(relative, "..") && !filepath.IsAbs(relative)) {
+		return fmt.Errorf("EXAM_PAPER_DIR 不能等于或位于公开 UPLOAD_DIR 内")
+	}
+	return nil
 }

@@ -3,7 +3,7 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres_change_me}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
       - POSTGRES_DB=shenliyuan
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -38,11 +38,12 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this}
-      - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:-postgres_change_me} dbname=shenliyuan sslmode=disable}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
+      - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:?set DB_PASSWORD in .env} dbname=shenliyuan sslmode=disable}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
-      - SUPER_ADMIN_ID=${SUPER_ADMIN_ID:-1234567890}
-      - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-super_admin_password_change_this}
+      - EXAM_PAPER_DIR=${EXAM_PAPER_DIR:-/app/private/exam-papers}
+      - SUPER_ADMIN_ID=${SUPER_ADMIN_ID:?set SUPER_ADMIN_ID in .env}
+      - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:?set SUPER_ADMIN_PASSWORD in .env}
       - EDU_SERVICE_URL=${EDU_SERVICE_URL:-http://python-edu-service:8000}
       - EDU_SERVICE_TOKEN=${EDU_SERVICE_TOKEN:-}
       - JWC_SYNC_ENABLED=${JWC_SYNC_ENABLED:-false}
@@ -53,26 +54,29 @@ services:
         condition: service_healthy
     volumes:
       - server_data:/app/uploads
+      - exam_paper_data:/app/private/exam-papers
     restart: unless-stopped
     networks:
       - shenliyuan_network
 
-volumes:
-  server_data:
-  postgres_data:
-
-networks:
-  shenliyuan_network:
-    driver: bridge
 
   nginx:
     image: nginx:alpine
     ports:
       - "80:80"
     volumes:
-      - ./nginx/docker.conf:/etc/nginx/conf.d/default.conf
-      - ./client/build/web:/usr/share/nginx/html
+      - ./nginx/docker.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./client/build/web:/usr/share/nginx/html:ro
     depends_on:
       - server
     networks:
       - shenliyuan_network
+
+volumes:
+  server_data:
+  exam_paper_data:
+  postgres_data:
+
+networks:
+  shenliyuan_network:
+    driver: bridge

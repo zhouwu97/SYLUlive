@@ -119,6 +119,8 @@ func main() {
 
 		&models.File{},
 
+		&models.ExamPaper{},
+
 		&models.Conversation{},
 
 		&models.Message{},
@@ -190,6 +192,10 @@ func main() {
 
 	}
 
+	if err := models.EnsureExamPaperIndexes(db); err != nil {
+		log.Fatal("试卷索引迁移失败:", err)
+	}
+
 	if err := models.EnsureConversationIndexes(db); err != nil {
 		log.Fatal("私信索引迁移失败:", err)
 	}
@@ -255,7 +261,7 @@ func main() {
 			c.Header("Access-Control-Allow-Origin", "*")
 		}
 
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
@@ -309,6 +315,15 @@ func main() {
 	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
+
+	examPaperFiles, examPaperFileErr := services.NewExamPaperFileService(cfg.ExamPaperDir)
+	if examPaperFileErr != nil {
+		log.Fatal("初始化试卷私有文件目录失败:", examPaperFileErr)
+	}
+	if examPaperFileErr = examPaperFiles.RecoverTrash(db); examPaperFileErr != nil {
+		log.Fatal("恢复试卷私有文件失败:", examPaperFileErr)
+	}
+	examPaperHandler := handlers.NewExamPaperHandler(db, examPaperFiles)
 
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
 
@@ -879,6 +894,18 @@ func main() {
 
 	}
 
+	// 试卷库路由：统一登录校验，普通用户由处理器继续校验教务认证。
+	examPapers := r.Group("/api/exam-papers")
+	examPapers.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		examPapers.GET("", examPaperHandler.List)
+		examPapers.GET("/my-submissions", examPaperHandler.MySubmissions)
+		examPapers.DELETE("/my-submissions/:id", examPaperHandler.Withdraw)
+		examPapers.GET("/:id", examPaperHandler.Get)
+		examPapers.POST("", examPaperHandler.Upload)
+		examPapers.GET("/:id/preview", examPaperHandler.Preview)
+		examPapers.GET("/:id/download", examPaperHandler.Download)
+	}
 	// 管理员邀请路由
 
 	admin := r.Group("/api/admin")
@@ -887,6 +914,13 @@ func main() {
 
 	{
 
+		admin.GET("/exam-papers", examPaperHandler.AdminList)
+		admin.GET("/exam-papers/pending-count", examPaperHandler.AdminPendingCount)
+		admin.GET("/exam-papers/:id", examPaperHandler.AdminGet)
+		admin.POST("/exam-papers/:id/approve", examPaperHandler.AdminApprove)
+		admin.POST("/exam-papers/:id/reject", examPaperHandler.AdminReject)
+		admin.PATCH("/exam-papers/:id", examPaperHandler.AdminUpdate)
+		admin.POST("/exam-papers/:id/unpublish", examPaperHandler.AdminUnpublish)
 		admin.GET("/candidates", invitationHandler.GetCandidates)
 		admin.GET("/candidates/stats", invitationHandler.GetCandidatesStats)
 
@@ -1218,7 +1252,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.5.29",
+			"version": "1.6.1",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 

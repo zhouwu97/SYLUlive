@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -129,13 +128,20 @@ class _TeamRecruitmentCreateScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
     final borderColor = TeamUiTokens.border(isDark);
-    
+
     final inputDecoration = InputDecoration(
       filled: true,
       fillColor: Colors.transparent,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(TeamUiTokens.fieldRadius), borderSide: BorderSide(color: borderColor)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(TeamUiTokens.fieldRadius), borderSide: BorderSide(color: borderColor)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(TeamUiTokens.fieldRadius), borderSide: BorderSide(color: TeamUiTokens.accent(isDark), width: 1.5)),
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(TeamUiTokens.fieldRadius),
+          borderSide: BorderSide(color: borderColor)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(TeamUiTokens.fieldRadius),
+          borderSide: BorderSide(color: borderColor)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(TeamUiTokens.fieldRadius),
+          borderSide:
+              BorderSide(color: TeamUiTokens.accent(isDark), width: 1.5)),
     );
 
     return Scaffold(
@@ -158,7 +164,9 @@ class _TeamRecruitmentCreateScreenState
               child: FilledButton(
                 style: TeamUiTokens.primaryButtonStyle(isDark),
                 onPressed: creating ? null : _submit,
-                child: Text(creating ? '提交中…' : (widget.initialValue == null ? '发布组队' : '保存修改')),
+                child: Text(creating
+                    ? '提交中…'
+                    : (widget.initialValue == null ? '发布组队' : '保存修改')),
               ),
             ),
           ),
@@ -177,13 +185,14 @@ class _TeamRecruitmentCreateScreenState
             TeamFormSection(
               title: '基础信息',
               children: [
-                const Text('组队类型', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const Text('组队类型',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   children: const [
                     ('竞赛', 'competition'),
-                    ('项目', 'project'),
                     ('学习', 'study'),
                     ('活动', 'activity'),
                     ('其他', 'other')
@@ -194,37 +203,49 @@ class _TeamRecruitmentCreateScreenState
                       selected: selected,
                       selectedColor: TeamUiTokens.accentSoft(isDark),
                       labelStyle: TextStyle(
-                        color: selected ? TeamUiTokens.accent(isDark) : TeamUiTokens.subtitle(isDark),
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                        color: selected
+                            ? TeamUiTokens.accent(isDark)
+                            : TeamUiTokens.subtitle(isDark),
+                        fontWeight:
+                            selected ? FontWeight.w700 : FontWeight.w400,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: selected ? Colors.transparent : borderColor),
+                        side: BorderSide(
+                            color: selected ? Colors.transparent : borderColor),
                       ),
                       onSelected: (_) => setState(() => _category = item.$2),
                     );
                   }).toList(),
                 ),
                 const SizedBox(height: 14),
-                const Text('组队标题', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const Text('组队标题',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _title,
                   maxLength: 100,
                   cursorColor: TeamUiTokens.accent(isDark),
-                  decoration: inputDecoration.copyWith(hintText: '例如：数学建模国赛寻找队友'),
-                  validator: (v) => (v ?? '').trim().length < 2 ? '标题至少 2 个字' : null,
+                  decoration:
+                      inputDecoration.copyWith(hintText: '例如：数学建模国赛寻找队友'),
+                  validator: (v) =>
+                      (v ?? '').trim().length < 2 ? '标题至少 2 个字' : null,
                 ),
                 const SizedBox(height: 14),
-                const Text('组队说明', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const Text('组队说明',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _description,
                   maxLines: 6,
                   maxLength: 5000,
                   cursorColor: TeamUiTokens.accent(isDark),
-                  decoration: inputDecoration.copyWith(hintText: '介绍参赛目标、已有成员和计划……'),
-                  validator: (v) => (v ?? '').trim().length < 10 ? '说明至少 10 个字' : null,
+                  decoration:
+                      inputDecoration.copyWith(hintText: '介绍参赛目标、已有成员和计划……'),
+                  validator: (v) =>
+                      (v ?? '').trim().length < 10 ? '说明至少 10 个字' : null,
                 ),
               ],
             ),
@@ -234,17 +255,21 @@ class _TeamRecruitmentCreateScreenState
               children: [
                 Row(
                   children: [
-                    const Expanded(child: Text('还需人数', style: TextStyle(fontSize: 15))),
+                    const Expanded(
+                        child: Text('还需人数', style: TextStyle(fontSize: 15))),
                     IconButton(
                       onPressed: int.parse(_needed.text) > 1
-                          ? () => setState(() => _needed.text = (int.parse(_needed.text) - 1).toString())
+                          ? () => setState(() => _needed.text =
+                              (int.parse(_needed.text) - 1).toString())
                           : null,
-                      icon: Icon(Icons.remove, color: TeamUiTokens.accent(isDark)),
+                      icon: Icon(Icons.remove,
+                          color: TeamUiTokens.accent(isDark)),
                     ),
                     Text(_needed.text, style: const TextStyle(fontSize: 16)),
                     IconButton(
                       onPressed: int.parse(_needed.text) < 20
-                          ? () => setState(() => _needed.text = (int.parse(_needed.text) + 1).toString())
+                          ? () => setState(() => _needed.text =
+                              (int.parse(_needed.text) + 1).toString())
                           : null,
                       icon: Icon(Icons.add, color: TeamUiTokens.accent(isDark)),
                     ),
@@ -252,10 +277,11 @@ class _TeamRecruitmentCreateScreenState
                 ),
                 Divider(color: borderColor),
                 const SizedBox(height: 8),
-                Row(
+                const Row(
                   children: [
-                    const Expanded(child: Text('所需方向', style: TextStyle(fontSize: 15))),
-                    const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
+                    Expanded(
+                        child: Text('所需方向', style: TextStyle(fontSize: 15))),
+                    Icon(Icons.chevron_right, size: 20, color: Colors.grey),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -271,12 +297,22 @@ class _TeamRecruitmentCreateScreenState
                           onSubmitted: (_) => _addRole(),
                           cursorColor: TeamUiTokens.accent(isDark),
                           decoration: InputDecoration(
-                              hintText: '+ 添加方向',
-                              hintStyle: TextStyle(color: TeamUiTokens.accent(isDark), fontSize: 13),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: TeamUiTokens.accent(isDark))),
+                            hintText: '+ 添加方向',
+                            hintStyle: TextStyle(
+                                color: TeamUiTokens.accent(isDark),
+                                fontSize: 13),
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 10),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(color: borderColor)),
+                            enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(color: borderColor)),
+                            focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                    color: TeamUiTokens.accent(isDark))),
                           ))),
                 ]),
               ],
@@ -298,7 +334,8 @@ class _TeamRecruitmentCreateScreenState
                         style: TextStyle(color: TeamUiTokens.subtitle(isDark)),
                       ),
                       const SizedBox(width: 4),
-                      const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
+                      const Icon(Icons.chevron_right,
+                          size: 20, color: Colors.grey),
                     ],
                   ),
                   onTap: _pickDeadline,
@@ -329,9 +366,13 @@ class _TeamRecruitmentCreateScreenState
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.add_rounded, color: TeamUiTokens.accent(isDark)),
+                              Icon(Icons.add_rounded,
+                                  color: TeamUiTokens.accent(isDark)),
                               const SizedBox(height: 4),
-                              Text('添加', style: TextStyle(fontSize: 12, color: TeamUiTokens.subtitle(isDark))),
+                              Text('添加',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: TeamUiTokens.subtitle(isDark))),
                             ],
                           ),
                         ),
@@ -341,13 +382,15 @@ class _TeamRecruitmentCreateScreenState
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: Stack(fit: StackFit.expand, children: [
-                        Image.file(File(_images[imageIndex].path), fit: BoxFit.cover),
+                        Image.file(File(_images[imageIndex].path),
+                            fit: BoxFit.cover),
                         Align(
                           alignment: Alignment.topRight,
                           child: IconButton.filledTonal(
                             tooltip: '删除图片',
                             icon: const Icon(Icons.close_rounded, size: 18),
-                            onPressed: () => setState(() => _images.removeAt(imageIndex)),
+                            onPressed: () =>
+                                setState(() => _images.removeAt(imageIndex)),
                           ),
                         ),
                       ]),
@@ -359,7 +402,8 @@ class _TeamRecruitmentCreateScreenState
             const SizedBox(height: 12),
             Text(
               '提示：联系方式无需直接写在正文中，\n申请通过后可通过站内私信联系。',
-              style: TextStyle(fontSize: 12, color: TeamUiTokens.subtitle(isDark)),
+              style:
+                  TextStyle(fontSize: 12, color: TeamUiTokens.subtitle(isDark)),
             ),
           ],
         ),

@@ -99,13 +99,18 @@ class ExamPaperService {
   }
 
   Future<ExamPaperPage> mySubmissions({
+    String status = '',
     int page = 1,
     int pageSize = 20,
   }) async {
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '/exam-papers/my-submissions',
-        queryParameters: {'page': page, 'page_size': pageSize},
+        queryParameters: {
+          if (status.isNotEmpty) 'status': status,
+          'page': page,
+          'page_size': pageSize,
+        },
       );
       return ExamPaperPage.fromJson(_responseMap(response.data));
     } on DioException catch (error) {
@@ -182,6 +187,9 @@ class ExamPaperService {
 
   Future<ExamPaperPage> adminList({
     required String status,
+    String keyword = '',
+    String contributor = '',
+    String sort = 'oldest',
     int page = 1,
     int pageSize = 20,
   }) async {
@@ -190,6 +198,9 @@ class ExamPaperService {
         '/admin/exam-papers',
         queryParameters: {
           'status': status,
+          if (keyword.trim().isNotEmpty) 'keyword': keyword.trim(),
+          if (contributor.trim().isNotEmpty) 'contributor': contributor.trim(),
+          'sort': sort,
           'page': page,
           'page_size': pageSize,
         },
@@ -202,6 +213,9 @@ class ExamPaperService {
 
   Future<List<ExamPaper>> adminListAll({
     required String status,
+    String keyword = '',
+    String contributor = '',
+    String sort = 'oldest',
     int pageSize = 50,
   }) async {
     final items = <ExamPaper>[];
@@ -209,6 +223,9 @@ class ExamPaperService {
     while (true) {
       final result = await adminList(
         status: status,
+        keyword: keyword,
+        contributor: contributor,
+        sort: sort,
         page: page,
         pageSize: pageSize,
       );

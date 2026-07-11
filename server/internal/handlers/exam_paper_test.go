@@ -540,7 +540,7 @@ func TestExamPaperGetOnlyReturnsPublishedPaper(t *testing.T) {
 	}
 }
 
-func TestExamPaperMySubmissionsReturnsPendingAndPublishedOnly(t *testing.T) {
+func TestExamPaperMySubmissionsFiltersStatusAndReturnsCounts(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	user := createExamPaperTestUser(t, env.db, "submission-user", models.RoleUser, true, 0)
 	other := createExamPaperTestUser(t, env.db, "submission-other", models.RoleUser, true, 0)
@@ -574,7 +574,7 @@ func TestExamPaperMySubmissionsReturnsPendingAndPublishedOnly(t *testing.T) {
 		t.Fatalf("????????: %v", err)
 	}
 
-	response := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions", nil, user.ID, nil, "")
+	response := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions?status=unpublished", nil, user.ID, nil, "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("????????: status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -582,17 +582,69 @@ func TestExamPaperMySubmissionsReturnsPendingAndPublishedOnly(t *testing.T) {
 		Items []struct {
 			Status models.ExamPaperStatus `json:"status"`
 		} `json:"items"`
-		Total int64 `json:"total"`
+		Total        int64            `json:"total"`
+		StatusCounts map[string]int64 `json:"status_counts"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("????????: %v", err)
 	}
-	if payload.Total != 2 || len(payload.Items) != 2 {
-		t.Fatalf("????????: %s", response.Body.String())
+	if payload.Total != 1 || len(payload.Items) != 1 || payload.Items[0].Status != models.ExamPaperStatusUnpublished {
+		t.Fatalf("状态筛选结果错误: %s", response.Body.String())
 	}
-	for _, item := range payload.Items {
+	if payload.StatusCounts["all"] != 3 || payload.StatusCounts["pending"] != 1 || payload.StatusCounts["published"] != 1 || payload.StatusCounts["unpublished"] != 1 {
+		t.Fatalf("投稿状态计数错误: %s", response.Body.String())
+	}
+
+	legacy := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions", nil, user.ID, nil, "")
+	var legacyPayload struct {
+		Items []struct {
+			Status models.ExamPaperStatus `json:"status"`
+		} `json:"items"`
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(legacy.Body.Bytes(), &legacyPayload); err != nil {
+		t.Fatalf("解析兼容响应失败: %v", err)
+	}
+	if legacyPayload.Total != 2 || len(legacyPayload.Items) != 2 {
+		t.Fatalf("未传 status 时必须保持旧客户端行为: %s", legacy.Body.String())
+	}
+	for _, item := range legacyPayload.Items {
 		if item.Status == models.ExamPaperStatusUnpublished {
-			t.Fatalf("?????????????: %s", response.Body.String())
+			t.Fatalf("旧客户端默认响应不能包含已下架投稿: %s", legacy.Body.String())
+		}
+	}
+
+	all := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions?status=all", nil, user.ID, nil, "")
+	var allPayload struct {
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(all.Body.Bytes(), &allPayload); err != nil || allPayload.Total != 3 {
+		t.Fatalf("显式 all 必须返回全部状态: %s", all.Body.String())
+	}
+
+	invalid := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions?status=deleted", nil, user.ID, nil, "")
+	if invalid.Code != http.StatusBadRequest || decodeErrorCode(t, invalid) != "invalid_exam_paper_status" {
+		t.Fatalf("非法状态必须被拒绝: status=%d body=%s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestExamPaperMySubmissionsEmptyCountsIncludeAllStatuses(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "empty-submission-user", models.RoleUser, true, 0)
+	response := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions?status=all", nil, user.ID, nil, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("空投稿列表响应失败: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		StatusCounts map[string]int64 `json:"status_counts"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析空投稿计数失败: %v", err)
+	}
+	for _, status := range []string{"all", "pending", "published", "unpublished"} {
+		value, ok := payload.StatusCounts[status]
+		if !ok || value != 0 {
+			t.Fatalf("空投稿必须显式返回 %s=0: %s", status, response.Body.String())
 		}
 	}
 }

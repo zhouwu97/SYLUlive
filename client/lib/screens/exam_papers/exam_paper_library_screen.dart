@@ -9,7 +9,9 @@ import '../../providers/auth_provider.dart';
 import '../../services/exam_paper_service.dart';
 import '../../widgets/exam_paper_access_guide.dart';
 import '../../widgets/exam_paper_card.dart';
-import '../../widgets/glass_container.dart';
+import '../../widgets/exam_papers/exam_paper_empty_state.dart';
+import '../../widgets/exam_papers/exam_paper_list_skeleton.dart';
+import '../../widgets/exam_papers/exam_paper_toolbar.dart';
 import '../edu_screen.dart';
 import '../login_screen.dart';
 import 'exam_paper_detail_screen.dart';
@@ -34,9 +36,11 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   Timer? _searchDebounce;
   bool _loadScheduled = false;
   bool _loading = false;
+  bool _refreshing = false;
   bool _loadingMore = false;
   bool _hasMore = false;
   int _page = 1;
+  int _total = 0;
   int _requestGeneration = 0;
   String? _error;
   String _academicYear = '';
@@ -101,7 +105,8 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     final sort = _sort;
     if (refresh) {
       setState(() {
-        _loading = true;
+        _loading = _items.isEmpty;
+        _refreshing = true;
         _error = null;
         _page = 1;
       });
@@ -121,8 +126,10 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
           ..clear()
           ..addAll(result.items);
         _page = result.page;
+        _total = result.total;
         _hasMore = result.hasMore;
         _loading = false;
+        _refreshing = false;
         _loadScheduled = true;
       });
     } on ExamPaperApiException catch (error) {
@@ -130,13 +137,21 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
       setState(() {
         _error = error.message;
         _loading = false;
+        _refreshing = false;
       });
     }
   }
 
   Future<void> _loadMore() async {
     final service = _service;
-    if (service == null || _loading || _loadingMore || !_hasMore) return;
+    if (service == null ||
+        _loading ||
+        _refreshing ||
+        _loadingMore ||
+        _error != null ||
+        !_hasMore) {
+      return;
+    }
     final generation = _requestGeneration;
     final nextPage = _page + 1;
     final keyword = _searchController.text;
@@ -196,13 +211,16 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     if (service == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MyExamPaperSubmissionsScreen(service: service),
+        builder: (_) => MyExamPaperSubmissionsScreen(
+          service: service,
+          isAdmin: context.read<AuthProvider>().user?.isAdmin == true,
+        ),
       ),
     );
     if (mounted) await _load(refresh: true);
   }
 
-  Future<void> _openUpload() async {
+  Future<void> _openUpload({String initialCourseName = ''}) async {
     final service = _service;
     final user = context.read<AuthProvider>().user;
     if (service == null || user == null) return;
@@ -211,6 +229,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
         builder: (_) => ExamPaperUploadScreen(
           service: service,
           isAdmin: user.isAdmin,
+          initialCourseName: initialCourseName,
         ),
       ),
     );
@@ -219,6 +238,33 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
       result.isPublished ? '试卷已直接发布' : '投稿成功，等待管理员审核',
     );
     await _load(refresh: true);
+  }
+
+  int get _activeFilterCount => [
+        _academicYear,
+        _semester,
+        _examType,
+        if (_sort != 'latest') _sort,
+      ].where((value) => value.isNotEmpty).length;
+
+  bool get _hasQuery =>
+      _searchController.text.trim().isNotEmpty || _activeFilterCount > 0;
+
+  void _clearFilters() {
+    _searchController.clear();
+    setState(() {
+      _academicYear = '';
+      _semester = '';
+      _examType = '';
+      _sort = 'latest';
+    });
+    _load(refresh: true);
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {});
+    _load(refresh: true);
   }
 
   Future<void> _openDetail(ExamPaper paper) async {
@@ -287,89 +333,37 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   Widget _buildLibrary() {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-          child: GlassContainer(
-            padding: const EdgeInsets.all(12),
-            borderRadius: 20,
-            child: Column(
-              children: [
-                TextField(
-                  controller: _searchController,
-                  onChanged: _onSearchChanged,
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: '搜索课程名',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            onPressed: () {
-                              _searchController.clear();
-                              _load(refresh: true);
-                            },
-                            icon: const Icon(Icons.clear),
-                          ),
-                    border: InputBorder.none,
-                    filled: false,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _FilterDropdown(
-                        value: _academicYear,
-                        label: '学年',
-                        items: {
-                          '': '全部学年',
-                          for (final year in _academicYears) year: year,
-                        },
-                        onChanged: (value) {
-                          setState(() => _academicYear = value);
-                          _load(refresh: true);
-                        },
-                      ),
-                      _FilterDropdown(
-                        value: _semester,
-                        label: '学期',
-                        items: const {
-                          '': '全部学期',
-                          ...ExamPaperMetadata.semesterLabels,
-                        },
-                        onChanged: (value) {
-                          setState(() => _semester = value);
-                          _load(refresh: true);
-                        },
-                      ),
-                      _FilterDropdown(
-                        value: _examType,
-                        label: '类型',
-                        items: const {
-                          '': '全部类型',
-                          ...ExamPaperMetadata.examTypeLabels,
-                        },
-                        onChanged: (value) {
-                          setState(() => _examType = value);
-                          _load(refresh: true);
-                        },
-                      ),
-                      _FilterDropdown(
-                        value: _sort,
-                        label: '排序',
-                        items: const {'latest': '最新', 'downloads': '下载最多'},
-                        onChanged: (value) {
-                          setState(() => _sort = value);
-                          _load(refresh: true);
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+        ExamPaperToolbar(
+          searchController: _searchController,
+          onSearchChanged: (value) {
+            setState(() {});
+            _onSearchChanged(value);
+          },
+          academicYear: _academicYear,
+          semester: _semester,
+          examType: _examType,
+          sort: _sort,
+          academicYears: _academicYears,
+          total: _total,
+          activeFilterCount: _activeFilterCount,
+          onClearSearch: _clearSearch,
+          onClearFilters: _clearFilters,
+          onAcademicYearChanged: (value) {
+            setState(() => _academicYear = value);
+            _load(refresh: true);
+          },
+          onSemesterChanged: (value) {
+            setState(() => _semester = value);
+            _load(refresh: true);
+          },
+          onExamTypeChanged: (value) {
+            setState(() => _examType = value);
+            _load(refresh: true);
+          },
+          onSortChanged: (value) {
+            setState(() => _sort = value);
+            _load(refresh: true);
+          },
         ),
         Expanded(child: _buildResults()),
       ],
@@ -377,20 +371,14 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   }
 
   Widget _buildResults() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.cloud_off_outlined, size: 52),
-            const SizedBox(height: 12),
-            Text(_error!, textAlign: TextAlign.center),
-            const SizedBox(height: 14),
-            FilledButton(
-                onPressed: () => _load(refresh: true), child: const Text('重试')),
-          ],
-        ),
+    if (_loading) return const ExamPaperListSkeleton();
+    if (_error != null && _items.isEmpty) {
+      return ExamPaperEmptyState(
+        icon: Icons.cloud_off_outlined,
+        title: '试卷加载失败',
+        message: _error!,
+        primaryActionLabel: '重试',
+        onPrimaryAction: () => _load(refresh: true),
       );
     }
     if (_items.isEmpty) {
@@ -398,80 +386,65 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
         onRefresh: () => _load(refresh: true),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: const [
-            SizedBox(height: 130),
-            Icon(Icons.library_books_outlined, size: 58),
-            SizedBox(height: 14),
-            Center(child: Text('暂无符合条件的试卷')),
+          children: [
+            SizedBox(
+              height: 430,
+              child: ExamPaperEmptyState(
+                icon: Icons.library_books_outlined,
+                title: _hasQuery ? '没有找到匹配的试卷' : '还没有试卷',
+                message: _hasQuery ? '可以清除当前条件，或投稿这门课的试卷。' : '分享历年试卷，帮助更多同学复习。',
+                primaryActionLabel: _hasQuery ? '清除筛选' : '投稿第一份试卷',
+                onPrimaryAction: _hasQuery ? _clearFilters : _openUpload,
+                secondaryActionLabel: _hasQuery ? '投稿这门课试卷' : null,
+                onSecondaryAction: _hasQuery
+                    ? () => _openUpload(
+                          initialCourseName: _searchController.text.trim(),
+                        )
+                    : null,
+              ),
+            ),
           ],
         ),
       );
     }
-    return RefreshIndicator(
-      onRefresh: () => _load(refresh: true),
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(16, 2, 16, 100),
-        itemCount: _items.length + (_loadingMore ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (index >= _items.length) {
-            return const Padding(
-              padding: EdgeInsets.all(18),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          final paper = _items[index];
-          return ExamPaperCard(paper: paper, onTap: () => _openDetail(paper));
-        },
-      ),
-    );
-  }
-}
-
-class _FilterDropdown extends StatelessWidget {
-  final String value;
-  final String label;
-  final Map<String, String> items;
-  final ValueChanged<String> onChanged;
-
-  const _FilterDropdown({
-    required this.value,
-    required this.label,
-    required this.items,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: Theme.of(context)
-              .colorScheme
-              .surfaceContainerHighest
-              .withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: value,
-            borderRadius: BorderRadius.circular(14),
-            items: items.entries
-                .map(
-                  (entry) => DropdownMenuItem(
-                    value: entry.key,
-                    child: Text(entry.value),
-                  ),
-                )
-                .toList(),
-            onChanged: (next) {
-              if (next != null) onChanged(next);
-            },
+    return Column(
+      children: [
+        if (_error != null)
+          MaterialBanner(
+            content: Text(_error!),
+            leading: const Icon(Icons.cloud_off_outlined),
+            actions: [
+              TextButton(
+                onPressed: () => _load(refresh: true),
+                child: const Text('重试'),
+              ),
+            ],
+          ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () => _load(refresh: true),
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 100),
+              itemCount: _items.length + (_loadingMore ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index >= _items.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final paper = _items[index];
+                return ExamPaperCard(
+                  paper: paper,
+                  showStatus: false,
+                  onTap: () => _openDetail(paper),
+                );
+              },
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

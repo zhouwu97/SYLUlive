@@ -5,15 +5,26 @@ import '../../main.dart';
 import '../../models/exam_paper.dart';
 import '../../services/exam_paper_service.dart';
 import '../../widgets/glass_container.dart';
+import '../../widgets/exam_papers/exam_paper_upload_step_header.dart';
 
 class ExamPaperUploadScreen extends StatefulWidget {
   final ExamPaperService service;
   final bool isAdmin;
+  final Future<PlatformFile?> Function()? pickFile;
+  final String initialCourseName;
+  final String? initialAcademicYear;
+  final String? initialSemester;
+  final String? initialExamType;
 
   const ExamPaperUploadScreen({
     super.key,
     required this.service,
     required this.isAdmin,
+    this.pickFile,
+    this.initialCourseName = '',
+    this.initialAcademicYear,
+    this.initialSemester,
+    this.initialExamType,
   });
 
   @override
@@ -31,12 +42,22 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
   bool _privacyConfirmed = false;
   bool _uploading = false;
   double _progress = 0;
+  String? _submitError;
 
   @override
   void initState() {
     super.initState();
     _academicYears = ExamPaperMetadata.academicYears(DateTime.now());
-    _academicYear = _academicYears.first;
+    _courseController.text = widget.initialCourseName;
+    _academicYear = _academicYears.contains(widget.initialAcademicYear)
+        ? widget.initialAcademicYear!
+        : _academicYears.first;
+    if (ExamPaperMetadata.semesterLabels.containsKey(widget.initialSemester)) {
+      _semester = widget.initialSemester!;
+    }
+    if (ExamPaperMetadata.examTypeLabels.containsKey(widget.initialExamType)) {
+      _examType = widget.initialExamType!;
+    }
     _courseController.addListener(_refreshPreview);
   }
 
@@ -53,14 +74,17 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
   }
 
   Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['pdf'],
-      allowMultiple: false,
-      withData: false,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final file = result.files.single;
+    final file = widget.pickFile != null
+        ? await widget.pickFile!()
+        : (await FilePicker.platform.pickFiles(
+            type: FileType.custom,
+            allowedExtensions: const ['pdf'],
+            allowMultiple: false,
+            withData: false,
+          ))
+            ?.files
+            .singleOrNull;
+    if (file == null) return;
     if (file.extension?.toLowerCase() != 'pdf') {
       _showMessage('请选择 PDF 文件');
       return;
@@ -69,8 +93,17 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
       _showMessage('PDF 不能超过 20 MiB');
       return;
     }
-    setState(() => _file = file);
+    setState(() {
+      _file = file;
+      _submitError = null;
+    });
   }
+
+  bool get _canSubmit =>
+      !_uploading &&
+      _courseController.text.trim().isNotEmpty &&
+      _file != null &&
+      _privacyConfirmed;
 
   Future<void> _submit() async {
     if (_uploading || !_formKey.currentState!.validate()) return;
@@ -86,6 +119,7 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
     setState(() {
       _uploading = true;
       _progress = 0;
+      _submitError = null;
     });
     try {
       final paper = await widget.service.upload(
@@ -102,9 +136,9 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(paper);
     } on ExamPaperApiException catch (error) {
-      if (mounted) _showMessage(error.message);
+      if (mounted) setState(() => _submitError = error.message);
     } catch (_) {
-      if (mounted) _showMessage('上传失败，请稍后重试');
+      if (mounted) setState(() => _submitError = '上传失败，请稍后重试');
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -134,14 +168,38 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
+        bottomNavigationBar: SafeArea(
+          minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: SizedBox(
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: _canSubmit ? _submit : null,
+              icon: _uploading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cloud_upload_outlined),
+              label: Text(_uploading ? '上传中…' : '确认投稿'),
+            ),
+          ),
+        ),
         body: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
+              ExamPaperUploadStepHeader(
+                infoCompleted: _courseController.text.trim().isNotEmpty,
+                fileCompleted: _file != null,
+                privacyCompleted: _privacyConfirmed,
+                submitting: _uploading,
+              ),
+              const SizedBox(height: 14),
               GlassContainer(
-                padding: const EdgeInsets.all(18),
-                borderRadius: 22,
+                padding: const EdgeInsets.all(16),
+                borderRadius: 14,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -154,7 +212,7 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
                     TextFormField(
                       controller: _courseController,
                       maxLength: 100,
@@ -232,7 +290,7 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
                     Text('标题预览', style: Theme.of(context).textTheme.labelLarge),
                     const SizedBox(height: 6),
                     Text(
@@ -246,36 +304,54 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
               ),
               const SizedBox(height: 14),
               GlassContainer(
-                padding: const EdgeInsets.all(18),
-                borderRadius: 22,
+                padding: const EdgeInsets.all(16),
+                borderRadius: 14,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.picture_as_pdf_outlined),
-                      title: Text(_file?.name ?? '选择 PDF 文件'),
-                      subtitle: Text(
-                        _file == null
-                            ? '仅支持 PDF，最大 20 MiB'
-                            : '${(_file!.size / (1024 * 1024)).toStringAsFixed(2)} MiB',
-                      ),
-                      trailing: OutlinedButton(
-                        onPressed: _uploading ? null : _pickFile,
-                        child: Text(_file == null ? '选择' : '更换'),
+                    Material(
+                      color: Colors.transparent,
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.picture_as_pdf_outlined),
+                        title: Text(_file?.name ?? '选择 PDF 文件'),
+                        subtitle: _file == null
+                            ? const Text('仅支持 PDF，最大 20 MiB')
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${(_file!.size / (1024 * 1024)).toStringAsFixed(1)} MB',
+                                  ),
+                                  Text(
+                                    '校验通过',
+                                    style: TextStyle(
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                        trailing: OutlinedButton(
+                          onPressed: _uploading ? null : _pickFile,
+                          child: Text(_file == null ? '选择' : '更换'),
+                        ),
                       ),
                     ),
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _privacyConfirmed,
-                      onChanged: _uploading
-                          ? null
-                          : (value) => setState(
-                                () => _privacyConfirmed = value ?? false,
-                              ),
-                      title: const Text('我确认文件不含姓名、学号、联系方式等隐私信息'),
-                      subtitle: const Text('同时确认本人拥有分享权限，并接受管理员复核。'),
-                      controlAffinity: ListTileControlAffinity.leading,
+                    Material(
+                      color: Colors.transparent,
+                      child: CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: _privacyConfirmed,
+                        onChanged: _uploading
+                            ? null
+                            : (value) => setState(
+                                  () => _privacyConfirmed = value ?? false,
+                                ),
+                        title: const Text('我确认文件不含个人隐私信息，并拥有分享权限'),
+                        subtitle: const Text('投稿内容将由管理员复核。'),
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
                     ),
                     if (_uploading) ...[
                       const SizedBox(height: 8),
@@ -288,12 +364,29 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: _uploading ? null : _submit,
-                icon: const Icon(Icons.cloud_upload_outlined),
-                label: Text(_uploading ? '上传中…' : '确认投稿'),
-              ),
+              if (_submitError != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .errorContainer
+                        .withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(_submitError!)),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),

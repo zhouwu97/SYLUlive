@@ -95,10 +95,11 @@ type examPaperResponse struct {
 }
 
 type examPaperListResponse struct {
-	Items    []examPaperResponse `json:"items"`
-	Page     int                 `json:"page"`
-	PageSize int                 `json:"page_size"`
-	Total    int64               `json:"total"`
+	Items        []examPaperResponse `json:"items"`
+	Page         int                 `json:"page"`
+	PageSize     int                 `json:"page_size"`
+	Total        int64               `json:"total"`
+	StatusCounts map[string]int64    `json:"status_counts,omitempty"`
 }
 
 func examPaperToResponse(paper models.ExamPaper) examPaperResponse {
@@ -243,7 +244,7 @@ func (h *ExamPaperHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, examPaperToResponse(paper))
 }
 
-// MySubmissions 分页返回当前用户的待审核和已发布投稿。
+// MySubmissions 分页返回当前用户的全部投稿，并支持按状态筛选。
 func (h *ExamPaperHandler) MySubmissions(c *gin.Context) {
 	user, ok := h.currentExamPaperUser(c)
 	if !ok {
@@ -254,11 +255,50 @@ func (h *ExamPaperHandler) MySubmissions(c *gin.Context) {
 	if pageSize > maxExamPaperPageSize {
 		pageSize = maxExamPaperPageSize
 	}
-	query := h.db.Model(&models.ExamPaper{}).Where(
-		"submitter_id = ? AND status IN ?",
-		user.ID,
-		[]models.ExamPaperStatus{models.ExamPaperStatusPending, models.ExamPaperStatusPublished},
-	)
+	statuses := []models.ExamPaperStatus{
+		models.ExamPaperStatusPending,
+		models.ExamPaperStatusPublished,
+		models.ExamPaperStatusUnpublished,
+	}
+	status := strings.TrimSpace(c.Query("status"))
+	if status != "" && status != "all" && status != string(models.ExamPaperStatusPending) && status != string(models.ExamPaperStatusPublished) && status != string(models.ExamPaperStatusUnpublished) {
+		writeExamPaperError(c, http.StatusBadRequest, "invalid_exam_paper_status", "投稿状态无效")
+		return
+	}
+
+	counts := make(map[string]int64, 4)
+	counts["all"] = 0
+	countRows := make([]struct {
+		Status models.ExamPaperStatus
+		Count  int64
+	}, 0, len(statuses))
+	if err := h.db.Model(&models.ExamPaper{}).
+		Select("status, COUNT(*) AS count").
+		Where("submitter_id = ? AND status IN ?", user.ID, statuses).
+		Group("status").Scan(&countRows).Error; err != nil {
+		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "获取我的投稿失败")
+		return
+	}
+	for _, item := range statuses {
+		counts[string(item)] = 0
+	}
+	for _, row := range countRows {
+		counts[string(row.Status)] = row.Count
+		counts["all"] += row.Count
+	}
+
+	queryStatuses := statuses
+	if status == "" {
+		// 未升级客户端没有状态分段，继续只返回待审核和已发布，避免点击已下架条目后进入无权限详情。
+		queryStatuses = []models.ExamPaperStatus{
+			models.ExamPaperStatusPending,
+			models.ExamPaperStatusPublished,
+		}
+	}
+	query := h.db.Model(&models.ExamPaper{}).Where("submitter_id = ? AND status IN ?", user.ID, queryStatuses)
+	if status != "" && status != "all" {
+		query = query.Where("status = ?", status)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "\u83b7\u53d6\u6211\u7684\u6295\u7a3f\u5931\u8d25")
@@ -274,7 +314,7 @@ func (h *ExamPaperHandler) MySubmissions(c *gin.Context) {
 	for _, paper := range papers {
 		items = append(items, examPaperToResponse(paper))
 	}
-	c.JSON(http.StatusOK, examPaperListResponse{Items: items, Page: page, PageSize: pageSize, Total: total})
+	c.JSON(http.StatusOK, examPaperListResponse{Items: items, Page: page, PageSize: pageSize, Total: total, StatusCounts: counts})
 }
 
 // Upload 接收 PDF 投稿；管理员从同一入口上传时直接发布。
@@ -681,14 +721,25 @@ func (h *ExamPaperHandler) AdminList(c *gin.Context) {
 	if pageSize > maxExamPaperPageSize {
 		pageSize = maxExamPaperPageSize
 	}
-	query := h.db.Model(&models.ExamPaper{}).Where("status = ?", status)
+	query := h.db.Model(&models.ExamPaper{}).Where("exam_papers.status = ?", status)
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		query = query.Where("LOWER(exam_papers.course_name) LIKE ?", "%"+strings.ToLower(keyword)+"%")
+	}
+	if contributor := strings.TrimSpace(c.Query("contributor")); contributor != "" {
+		query = query.Joins("JOIN users ON users.id = exam_papers.submitter_id").
+			Where("LOWER(users.nickname) LIKE ?", "%"+strings.ToLower(contributor)+"%")
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "获取试卷管理列表失败")
 		return
 	}
 	var papers []models.ExamPaper
-	if err := query.Preload("Submitter").Order("created_at ASC, id ASC").
+	order := "exam_papers.created_at ASC, exam_papers.id ASC"
+	if c.Query("sort") == "latest" {
+		order = "exam_papers.created_at DESC, exam_papers.id DESC"
+	}
+	if err := query.Preload("Submitter").Order(order).
 		Limit(pageSize).Offset((page - 1) * pageSize).Find(&papers).Error; err != nil {
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "获取试卷管理列表失败")
 		return

@@ -155,6 +155,82 @@ void main() {
     expect(requestedPages, [1, 2]);
     expect(result.map((paper) => paper.title), ['试卷1', '试卷2']);
   });
+
+  test('我的投稿传递状态并解析全量状态计数', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    RequestOptions? captured;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          captured = options;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'items': <dynamic>[],
+                'page': 1,
+                'page_size': 20,
+                'total': 1,
+                'status_counts': {
+                  'all': 3,
+                  'pending': 1,
+                  'published': 1,
+                  'unpublished': 1,
+                },
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final result = await ExamPaperService(dio).mySubmissions(
+      status: 'unpublished',
+    );
+
+    expect(captured?.queryParameters['status'], 'unpublished');
+    expect(result.statusCounts['all'], 3);
+    expect(result.statusCounts['unpublished'], 1);
+
+    await ExamPaperService(dio).mySubmissions(status: 'all');
+    expect(captured?.queryParameters['status'], 'all');
+  });
+
+  test('管理员列表传递关键词、投稿人与排序参数', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    RequestOptions? captured;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          captured = options;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'items': <dynamic>[],
+                'page': 1,
+                'page_size': 20,
+                'total': 0,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    await ExamPaperService(dio).adminList(
+      status: 'pending',
+      keyword: '高等数学',
+      contributor: '张同学',
+      sort: 'latest',
+    );
+
+    expect(captured?.queryParameters['keyword'], '高等数学');
+    expect(captured?.queryParameters['contributor'], '张同学');
+    expect(captured?.queryParameters['sort'], 'latest');
+  });
 }
 
 ExamPaper _paper(int id, String title) {

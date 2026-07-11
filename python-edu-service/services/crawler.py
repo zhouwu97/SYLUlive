@@ -137,6 +137,7 @@ class EduCrawler:
             "账户或密码错误",
             "账号密码错误",
             "密码错误",
+            "密码不正确",
             "用户不存在",
         ]
         if any(pattern in combined for pattern in patterns):

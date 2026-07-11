@@ -5,6 +5,10 @@ def test_credential_error_message_requires_explicit_password_text():
     crawler = EduCrawler()
 
     assert crawler._credential_error_message("用户名或密码错误") == "教务账号或密码错误"
+    assert (
+        crawler._credential_error_message("用户名或密码不正确，请重新输入！")
+        == "教务账号或密码错误"
+    )
     assert crawler._credential_error_message("<html><title>统一认证</title></html>") is None
 
 

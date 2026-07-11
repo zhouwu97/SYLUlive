@@ -71,7 +71,7 @@ class PostCacheService {
   }) async {
     final box = await _openBox();
     final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
-    
+
     final expectedVersion = expectedAlgorithmVersion(
       boardId: boardId,
       sort: sort,
@@ -115,7 +115,7 @@ class PostCacheService {
         await box.delete(key);
         return null;
       }
-      
+
       final age = DateTime.now().difference(savedAt);
       if (age > const Duration(hours: 24)) {
         await box.delete(key);
@@ -131,7 +131,7 @@ class PostCacheService {
 
       final list = (decoded['posts'] as List?) ?? const <dynamic>[];
       final pinnedList = (decoded['pinned_posts'] as List?) ?? const <dynamic>[];
-      
+
       final posts = list.map((e) => Post.fromJson(e as Map<String, dynamic>)).toList();
       final pinnedPosts = pinnedList.map((e) => Post.fromJson(e as Map<String, dynamic>)).toList();
 
@@ -189,7 +189,7 @@ class PostCacheService {
     if (merged.length > 200) {
       merged.removeRange(200, merged.length);
     }
-    
+
     final algorithmVersion = feed?.algorithmVersion ??
         expectedAlgorithmVersion(
           boardId: boardId,
@@ -198,7 +198,7 @@ class PostCacheService {
           tagId: tagId,
         );
     final pinnedPosts = feed?.pinnedPosts ?? [];
-    
+
     await savePosts(boardId, CachedPostFeed(
       posts: merged,
       pinnedPosts: pinnedPosts,

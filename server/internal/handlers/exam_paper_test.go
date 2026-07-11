@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -162,6 +163,24 @@ func decodeErrorCode(t *testing.T, recorder *httptest.ResponseRecorder) string {
 	}
 	code, _ := payload["code"].(string)
 	return code
+}
+
+func TestExamPaperResponseReportsWhetherRewardIsRevocable(t *testing.T) {
+	rewardedAt := time.Now().Add(-time.Hour)
+	revokedAt := time.Now()
+
+	unrewarded := examPaperToResponse(models.ExamPaper{})
+	if unrewarded.RewardRevocable {
+		t.Fatal("从未奖励的试卷不得标记为可撤销奖励")
+	}
+	revocable := examPaperToResponse(models.ExamPaper{RewardedAt: &rewardedAt})
+	if !revocable.RewardRevocable {
+		t.Fatal("已奖励且未撤销的试卷必须标记为可撤销奖励")
+	}
+	revoked := examPaperToResponse(models.ExamPaper{RewardedAt: &rewardedAt, RewardRevokedAt: &revokedAt})
+	if revoked.RewardRevocable {
+		t.Fatal("奖励已撤销的试卷不得标记为可撤销奖励")
+	}
 }
 
 func createStoredExamPaper(t *testing.T, env examPaperTestEnv, submitter models.User, status models.ExamPaperStatus) models.ExamPaper {
@@ -391,7 +410,7 @@ func TestExamPaperPreviewDoesNotCountAndDownloadCountsOnce(t *testing.T) {
 
 func TestExamPaperWithdrawDeletesPendingRecordAndFile(t *testing.T) {
 	env := newExamPaperTestEnv(t)
-	user := createExamPaperTestUser(t, env.db, "withdrawer", models.RoleUser, true, 0)
+	user := createExamPaperTestUser(t, env.db, "withdrawer", models.RoleUser, true, 30)
 	paper := createStoredExamPaper(t, env, user, models.ExamPaperStatusPending)
 	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
 
@@ -399,13 +418,195 @@ func TestExamPaperWithdrawDeletesPendingRecordAndFile(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("撤回投稿失败: status=%d body=%s", response.Code, response.Body.String())
 	}
+	var payload struct {
+		Message    string `json:"message"`
+		ExpRevoked bool   `json:"exp_revoked"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析撤回响应失败: %v", err)
+	}
+	if payload.Message != "投稿已撤回" || payload.ExpRevoked {
+		t.Fatalf("待审核投稿撤回应返回未撤销经验: %s", response.Body.String())
+	}
 	var count int64
 	env.db.Model(&models.ExamPaper{}).Where("id = ?", paper.ID).Count(&count)
 	if count != 0 {
 		t.Fatalf("撤回后记录仍存在: %d", count)
 	}
+	var refreshed models.User
+	if err := env.db.First(&refreshed, user.ID).Error; err != nil || refreshed.Exp != 30 {
+		t.Fatalf("待审核投稿撤回不应扣除经验: exp=%d err=%v", refreshed.Exp, err)
+	}
 	if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); !os.IsNotExist(err) {
 		t.Fatalf("撤回后私有文件仍存在: %v", err)
+	}
+}
+
+func TestExamPaperWithdrawPermanentlyDeletesRewardedSubmission(t *testing.T) {
+	statuses := []models.ExamPaperStatus{
+		models.ExamPaperStatusPublished,
+		models.ExamPaperStatusUnpublished,
+	}
+	for _, status := range statuses {
+		t.Run(string(status), func(t *testing.T) {
+			env := newExamPaperTestEnv(t)
+			user := createExamPaperTestUser(t, env.db, "delete-"+string(status), models.RoleUser, true, 30)
+			paper := createStoredExamPaper(t, env, user, status)
+			rewardedAt := time.Now().Add(-time.Hour)
+			if err := env.db.Model(&paper).Update("rewarded_at", rewardedAt).Error; err != nil {
+				t.Fatalf("设置奖励时间失败: %v", err)
+			}
+			params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+			response := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, user.ID, nil, "")
+			if response.Code != http.StatusOK {
+				t.Fatalf("永久删除投稿失败: status=%d body=%s", response.Code, response.Body.String())
+			}
+			var payload struct {
+				Message    string `json:"message"`
+				ExpRevoked bool   `json:"exp_revoked"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("解析永久删除响应失败: %v", err)
+			}
+			if payload.Message != "投稿已永久删除" || !payload.ExpRevoked {
+				t.Fatalf("永久删除响应错误: %s", response.Body.String())
+			}
+
+			var count int64
+			if err := env.db.Model(&models.ExamPaper{}).Where("id = ?", paper.ID).Count(&count).Error; err != nil || count != 0 {
+				t.Fatalf("永久删除后投稿记录仍存在: count=%d err=%v", count, err)
+			}
+			var refreshed models.User
+			if err := env.db.First(&refreshed, user.ID).Error; err != nil || refreshed.Exp != 20 {
+				t.Fatalf("永久删除后经验撤销错误: exp=%d err=%v", refreshed.Exp, err)
+			}
+			if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); !os.IsNotExist(err) {
+				t.Fatalf("永久删除后文件仍存在: %v", err)
+			}
+
+			repeated := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, user.ID, nil, "")
+			if repeated.Code != http.StatusNotFound || decodeErrorCode(t, repeated) != "exam_paper_not_found" {
+				t.Fatalf("重复删除应返回 404: status=%d body=%s", repeated.Code, repeated.Body.String())
+			}
+			if err := env.db.First(&refreshed, user.ID).Error; err != nil || refreshed.Exp != 20 {
+				t.Fatalf("重复删除不应重复扣除经验: exp=%d err=%v", refreshed.Exp, err)
+			}
+		})
+	}
+}
+
+func TestExamPaperWithdrawRejectsNonOwnerWithoutChangingData(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	owner := createExamPaperTestUser(t, env.db, "delete-owner", models.RoleUser, true, 30)
+	other := createExamPaperTestUser(t, env.db, "delete-other", models.RoleUser, true, 50)
+	paper := createStoredExamPaper(t, env, owner, models.ExamPaperStatusPublished)
+	rewardedAt := time.Now().Add(-time.Hour)
+	if err := env.db.Model(&paper).Update("rewarded_at", rewardedAt).Error; err != nil {
+		t.Fatalf("设置奖励时间失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, other.ID, nil, "")
+	if response.Code != http.StatusNotFound || decodeErrorCode(t, response) != "exam_paper_not_found" {
+		t.Fatalf("非投稿人删除应返回 404: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var stored models.ExamPaper
+	if err := env.db.First(&stored, paper.ID).Error; err != nil || stored.RewardRevokedAt != nil {
+		t.Fatalf("非投稿人删除不应修改投稿: paper=%#v err=%v", stored, err)
+	}
+	var refreshedOwner models.User
+	if err := env.db.First(&refreshedOwner, owner.ID).Error; err != nil || refreshedOwner.Exp != 30 {
+		t.Fatalf("非投稿人删除不应扣除投稿人经验: exp=%d err=%v", refreshedOwner.Exp, err)
+	}
+	if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); err != nil {
+		t.Fatalf("非投稿人删除不应删除文件: %v", err)
+	}
+}
+
+func TestExamPaperWithdrawDeletesAlreadyRevokedUnpublishedWithoutDeductingExp(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "delete-revoked", models.RoleUser, true, 20)
+	paper := createStoredExamPaper(t, env, user, models.ExamPaperStatusUnpublished)
+	rewardedAt := time.Now().Add(-2 * time.Hour)
+	revokedAt := time.Now().Add(-time.Hour)
+	if err := env.db.Model(&paper).Updates(map[string]any{
+		"rewarded_at": rewardedAt, "reward_revoked_at": revokedAt,
+	}).Error; err != nil {
+		t.Fatalf("设置已撤销奖励状态失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, user.ID, nil, "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"exp_revoked":false`) {
+		t.Fatalf("删除已撤销投稿失败: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var refreshed models.User
+	if err := env.db.First(&refreshed, user.ID).Error; err != nil || refreshed.Exp != 20 {
+		t.Fatalf("已撤销投稿删除不应再次扣经验: exp=%d err=%v", refreshed.Exp, err)
+	}
+}
+
+func TestExamPaperWithdrawDeletesUnrewardedAdminSubmissionWithoutDeductingExp(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	admin := createExamPaperTestUser(t, env.db, "delete-admin", models.RoleAdmin, false, 120)
+	paper := createStoredExamPaper(t, env, admin, models.ExamPaperStatusPublished)
+	if err := env.db.Model(&paper).Update("source", models.ExamPaperSourceAdmin).Error; err != nil {
+		t.Fatalf("设置管理员来源失败: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, admin.ID, nil, "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"exp_revoked":false`) {
+		t.Fatalf("删除未奖励的管理员投稿失败: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var refreshed models.User
+	if err := env.db.First(&refreshed, admin.ID).Error; err != nil || refreshed.Exp != 120 {
+		t.Fatalf("未奖励管理员投稿删除不应扣经验: exp=%d err=%v", refreshed.Exp, err)
+	}
+}
+
+func TestExamPaperWithdrawRollsBackWhenRecordDeleteFails(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "delete-rollback", models.RoleUser, true, 30)
+	paper := createStoredExamPaper(t, env, user, models.ExamPaperStatusPublished)
+	rewardedAt := time.Now().Add(-time.Hour)
+	if err := env.db.Model(&paper).Update("rewarded_at", rewardedAt).Error; err != nil {
+		t.Fatalf("设置奖励时间失败: %v", err)
+	}
+
+	const callbackName = "test:fail_exam_paper_delete"
+	if err := env.db.Callback().Delete().Before("gorm:delete").Register(callbackName, func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Model.(*models.ExamPaper); ok {
+			tx.AddError(errors.New("注入试卷删除失败"))
+		}
+	}); err != nil {
+		t.Fatalf("注册删除失败回调失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := env.db.Callback().Delete().Remove(callbackName); err != nil {
+			t.Errorf("移除删除失败回调失败: %v", err)
+		}
+	})
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, user.ID, nil, "")
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("事务删除失败应返回 500: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var stored models.ExamPaper
+	if err := env.db.First(&stored, paper.ID).Error; err != nil {
+		t.Fatalf("事务失败后投稿记录应保留: %v", err)
+	}
+	if stored.RewardRevokedAt != nil {
+		t.Fatalf("事务失败后奖励撤销时间应回滚: %v", stored.RewardRevokedAt)
+	}
+	var refreshed models.User
+	if err := env.db.First(&refreshed, user.ID).Error; err != nil || refreshed.Exp != 30 {
+		t.Fatalf("事务失败后经验应回滚: exp=%d err=%v", refreshed.Exp, err)
+	}
+	if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); err != nil {
+		t.Fatalf("事务失败前不应删除文件: %v", err)
 	}
 }
 
@@ -540,7 +741,7 @@ func TestExamPaperGetOnlyReturnsPublishedPaper(t *testing.T) {
 	}
 }
 
-func TestExamPaperMySubmissionsReturnsPendingAndPublishedOnly(t *testing.T) {
+func TestExamPaperMySubmissionsFiltersStatusAndReturnsCounts(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	user := createExamPaperTestUser(t, env.db, "submission-user", models.RoleUser, true, 0)
 	other := createExamPaperTestUser(t, env.db, "submission-other", models.RoleUser, true, 0)
@@ -574,7 +775,7 @@ func TestExamPaperMySubmissionsReturnsPendingAndPublishedOnly(t *testing.T) {
 		t.Fatalf("????????: %v", err)
 	}
 
-	response := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions", nil, user.ID, nil, "")
+	response := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions?status=unpublished", nil, user.ID, nil, "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("????????: status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -582,17 +783,69 @@ func TestExamPaperMySubmissionsReturnsPendingAndPublishedOnly(t *testing.T) {
 		Items []struct {
 			Status models.ExamPaperStatus `json:"status"`
 		} `json:"items"`
-		Total int64 `json:"total"`
+		Total        int64            `json:"total"`
+		StatusCounts map[string]int64 `json:"status_counts"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("????????: %v", err)
 	}
-	if payload.Total != 2 || len(payload.Items) != 2 {
-		t.Fatalf("????????: %s", response.Body.String())
+	if payload.Total != 1 || len(payload.Items) != 1 || payload.Items[0].Status != models.ExamPaperStatusUnpublished {
+		t.Fatalf("状态筛选结果错误: %s", response.Body.String())
 	}
-	for _, item := range payload.Items {
+	if payload.StatusCounts["all"] != 3 || payload.StatusCounts["pending"] != 1 || payload.StatusCounts["published"] != 1 || payload.StatusCounts["unpublished"] != 1 {
+		t.Fatalf("投稿状态计数错误: %s", response.Body.String())
+	}
+
+	legacy := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions", nil, user.ID, nil, "")
+	var legacyPayload struct {
+		Items []struct {
+			Status models.ExamPaperStatus `json:"status"`
+		} `json:"items"`
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(legacy.Body.Bytes(), &legacyPayload); err != nil {
+		t.Fatalf("解析兼容响应失败: %v", err)
+	}
+	if legacyPayload.Total != 2 || len(legacyPayload.Items) != 2 {
+		t.Fatalf("未传 status 时必须保持旧客户端行为: %s", legacy.Body.String())
+	}
+	for _, item := range legacyPayload.Items {
 		if item.Status == models.ExamPaperStatusUnpublished {
-			t.Fatalf("?????????????: %s", response.Body.String())
+			t.Fatalf("旧客户端默认响应不能包含已下架投稿: %s", legacy.Body.String())
+		}
+	}
+
+	all := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions?status=all", nil, user.ID, nil, "")
+	var allPayload struct {
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(all.Body.Bytes(), &allPayload); err != nil || allPayload.Total != 3 {
+		t.Fatalf("显式 all 必须返回全部状态: %s", all.Body.String())
+	}
+
+	invalid := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions?status=deleted", nil, user.ID, nil, "")
+	if invalid.Code != http.StatusBadRequest || decodeErrorCode(t, invalid) != "invalid_exam_paper_status" {
+		t.Fatalf("非法状态必须被拒绝: status=%d body=%s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestExamPaperMySubmissionsEmptyCountsIncludeAllStatuses(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "empty-submission-user", models.RoleUser, true, 0)
+	response := performExamPaperRequest(env.handler.MySubmissions, http.MethodGet, "/api/exam-papers/my-submissions?status=all", nil, user.ID, nil, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("空投稿列表响应失败: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		StatusCounts map[string]int64 `json:"status_counts"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析空投稿计数失败: %v", err)
+	}
+	for _, status := range []string{"all", "pending", "published", "unpublished"} {
+		value, ok := payload.StatusCounts[status]
+		if !ok || value != 0 {
+			t.Fatalf("空投稿必须显式返回 %s=0: %s", status, response.Body.String())
 		}
 	}
 }

@@ -24,6 +24,7 @@ const (
 	maxExamPaperPageSize                  = 50
 	maxPendingExamPaperSubmissionsPerUser = 5
 	maxExamPaperUploadsPerWindow          = 3
+	examPaperRewardExp                    = 10
 	examPaperUploadRateWindow             = time.Minute
 )
 
@@ -90,15 +91,17 @@ type examPaperResponse struct {
 	UnpublishReason string                       `json:"unpublish_reason,omitempty"`
 	PublishedAt     *time.Time                   `json:"published_at,omitempty"`
 	UnpublishedAt   *time.Time                   `json:"unpublished_at,omitempty"`
+	RewardRevocable bool                         `json:"reward_revocable"`
 	CreatedAt       time.Time                    `json:"created_at"`
 	Contributor     examPaperContributorResponse `json:"contributor"`
 }
 
 type examPaperListResponse struct {
-	Items    []examPaperResponse `json:"items"`
-	Page     int                 `json:"page"`
-	PageSize int                 `json:"page_size"`
-	Total    int64               `json:"total"`
+	Items        []examPaperResponse `json:"items"`
+	Page         int                 `json:"page"`
+	PageSize     int                 `json:"page_size"`
+	Total        int64               `json:"total"`
+	StatusCounts map[string]int64    `json:"status_counts,omitempty"`
 }
 
 func examPaperToResponse(paper models.ExamPaper) examPaperResponse {
@@ -117,6 +120,7 @@ func examPaperToResponse(paper models.ExamPaper) examPaperResponse {
 		UnpublishReason: paper.UnpublishReason,
 		PublishedAt:     paper.PublishedAt,
 		UnpublishedAt:   paper.UnpublishedAt,
+		RewardRevocable: paper.RewardedAt != nil && paper.RewardRevokedAt == nil,
 		CreatedAt:       paper.CreatedAt,
 		Contributor: examPaperContributorResponse{
 			ID:       paper.Submitter.ID,
@@ -125,6 +129,36 @@ func examPaperToResponse(paper models.ExamPaper) examPaperResponse {
 			Level:    services.CalculateUserLevel(paper.Submitter.Exp),
 		},
 	}
+}
+
+// revokeExamPaperReward 在当前事务内撤销尚未撤销的试卷投稿奖励。
+func revokeExamPaperReward(tx *gorm.DB, paper *models.ExamPaper, now time.Time) (bool, error) {
+	paperResult := tx.Model(&models.ExamPaper{}).
+		Where("id = ? AND rewarded_at IS NOT NULL AND reward_revoked_at IS NULL", paper.ID).
+		UpdateColumn("reward_revoked_at", now)
+	if paperResult.Error != nil {
+		return false, paperResult.Error
+	}
+	if paperResult.RowsAffected == 0 {
+		return false, nil
+	}
+	if paperResult.RowsAffected != 1 {
+		return false, fmt.Errorf("撤销试卷奖励失败：更新了 %d 条试卷记录", paperResult.RowsAffected)
+	}
+
+	userResult := tx.Model(&models.User{}).Where("id = ?", paper.SubmitterID).UpdateColumn(
+		"exp",
+		gorm.Expr("CASE WHEN exp >= ? THEN exp - ? ELSE 0 END", examPaperRewardExp, examPaperRewardExp),
+	)
+	if userResult.Error != nil {
+		return false, userResult.Error
+	}
+	if userResult.RowsAffected != 1 {
+		return false, fmt.Errorf("撤销试卷奖励失败：投稿人不存在")
+	}
+
+	paper.RewardRevokedAt = &now
+	return true, nil
 }
 
 func writeExamPaperError(c *gin.Context, status int, code, message string) {
@@ -243,7 +277,7 @@ func (h *ExamPaperHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, examPaperToResponse(paper))
 }
 
-// MySubmissions 分页返回当前用户的待审核和已发布投稿。
+// MySubmissions 分页返回当前用户的全部投稿，并支持按状态筛选。
 func (h *ExamPaperHandler) MySubmissions(c *gin.Context) {
 	user, ok := h.currentExamPaperUser(c)
 	if !ok {
@@ -254,11 +288,50 @@ func (h *ExamPaperHandler) MySubmissions(c *gin.Context) {
 	if pageSize > maxExamPaperPageSize {
 		pageSize = maxExamPaperPageSize
 	}
-	query := h.db.Model(&models.ExamPaper{}).Where(
-		"submitter_id = ? AND status IN ?",
-		user.ID,
-		[]models.ExamPaperStatus{models.ExamPaperStatusPending, models.ExamPaperStatusPublished},
-	)
+	statuses := []models.ExamPaperStatus{
+		models.ExamPaperStatusPending,
+		models.ExamPaperStatusPublished,
+		models.ExamPaperStatusUnpublished,
+	}
+	status := strings.TrimSpace(c.Query("status"))
+	if status != "" && status != "all" && status != string(models.ExamPaperStatusPending) && status != string(models.ExamPaperStatusPublished) && status != string(models.ExamPaperStatusUnpublished) {
+		writeExamPaperError(c, http.StatusBadRequest, "invalid_exam_paper_status", "投稿状态无效")
+		return
+	}
+
+	counts := make(map[string]int64, 4)
+	counts["all"] = 0
+	countRows := make([]struct {
+		Status models.ExamPaperStatus
+		Count  int64
+	}, 0, len(statuses))
+	if err := h.db.Model(&models.ExamPaper{}).
+		Select("status, COUNT(*) AS count").
+		Where("submitter_id = ? AND status IN ?", user.ID, statuses).
+		Group("status").Scan(&countRows).Error; err != nil {
+		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "获取我的投稿失败")
+		return
+	}
+	for _, item := range statuses {
+		counts[string(item)] = 0
+	}
+	for _, row := range countRows {
+		counts[string(row.Status)] = row.Count
+		counts["all"] += row.Count
+	}
+
+	queryStatuses := statuses
+	if status == "" {
+		// 未升级客户端没有状态分段，继续只返回待审核和已发布，避免点击已下架条目后进入无权限详情。
+		queryStatuses = []models.ExamPaperStatus{
+			models.ExamPaperStatusPending,
+			models.ExamPaperStatusPublished,
+		}
+	}
+	query := h.db.Model(&models.ExamPaper{}).Where("submitter_id = ? AND status IN ?", user.ID, queryStatuses)
+	if status != "" && status != "all" {
+		query = query.Where("status = ?", status)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "\u83b7\u53d6\u6211\u7684\u6295\u7a3f\u5931\u8d25")
@@ -274,7 +347,7 @@ func (h *ExamPaperHandler) MySubmissions(c *gin.Context) {
 	for _, paper := range papers {
 		items = append(items, examPaperToResponse(paper))
 	}
-	c.JSON(http.StatusOK, examPaperListResponse{Items: items, Page: page, PageSize: pageSize, Total: total})
+	c.JSON(http.StatusOK, examPaperListResponse{Items: items, Page: page, PageSize: pageSize, Total: total, StatusCounts: counts})
 }
 
 // Upload 接收 PDF 投稿；管理员从同一入口上传时直接发布。
@@ -580,7 +653,7 @@ func (h *ExamPaperHandler) serveExamPaperFile(c *gin.Context, paper models.ExamP
 	http.ServeContent(c.Writer, c.Request, paper.Title+".pdf", info.ModTime(), file)
 }
 
-// Withdraw 允许投稿人撤回自己的待审核记录，并在事务提交后尽力删除私有文件。
+// Withdraw 允许投稿人撤回待审核投稿，或永久删除已发布、已下架的本人投稿。
 func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 	user, ok := h.currentExamPaperUser(c)
 	if !ok {
@@ -590,17 +663,10 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var paper models.ExamPaper
-	if err := h.db.Where("id = ? AND submitter_id = ?", id, user.ID).First(&paper).Error; err != nil {
-		writeExamPaperError(c, http.StatusNotFound, "exam_paper_not_found", "投稿不存在")
-		return
-	}
-	if paper.Status != models.ExamPaperStatusPending {
-		writeExamPaperError(c, http.StatusConflict, "exam_paper_not_pending", "只有待审核投稿可以撤回")
-		return
-	}
-	fileKey := paper.FileKey
 
+	var fileKey string
+	var status models.ExamPaperStatus
+	rewardRevoked := false
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ? AND submitter_id = ?", id, user.ID)
@@ -610,21 +676,41 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 		if err := query.First(&locked).Error; err != nil {
 			return err
 		}
-		if locked.Status != models.ExamPaperStatusPending || locked.FileKey != paper.FileKey {
-			return errExamPaperNotPending
+		status = locked.Status
+		fileKey = locked.FileKey
+		switch locked.Status {
+		case models.ExamPaperStatusPending:
+		case models.ExamPaperStatusPublished, models.ExamPaperStatusUnpublished:
+			if locked.Source == models.ExamPaperSourceUser {
+				var err error
+				rewardRevoked, err = revokeExamPaperReward(tx, &locked, time.Now())
+				if err != nil {
+					return err
+				}
+			}
+		default:
+			return errExamPaperNotDeletable
 		}
 		return tx.Delete(&locked).Error
 	})
 	if err != nil {
-		if errors.Is(err, errExamPaperNotPending) {
-			writeExamPaperError(c, http.StatusConflict, "exam_paper_not_pending", "投稿已不处于待审核状态")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeExamPaperError(c, http.StatusNotFound, "exam_paper_not_found", "投稿不存在")
 			return
 		}
-		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "撤回投稿失败")
+		if errors.Is(err, errExamPaperNotDeletable) {
+			writeExamPaperError(c, http.StatusConflict, "exam_paper_not_deletable", "当前投稿状态不允许删除")
+			return
+		}
+		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "删除投稿失败")
 		return
 	}
 	h.removeExamPaperFileAfterCommit(fileKey)
-	c.JSON(http.StatusOK, gin.H{"message": "投稿已撤回"})
+	message := "投稿已永久删除"
+	if status == models.ExamPaperStatusPending {
+		message = "投稿已撤回"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": message, "exp_revoked": rewardRevoked})
 }
 
 func (h *ExamPaperHandler) removeExamPaperFileAfterCommit(fileKey string) {
@@ -635,7 +721,10 @@ func (h *ExamPaperHandler) removeExamPaperFileAfterCommit(fileKey string) {
 	_ = h.files.Remove(fileKey)
 }
 
-var errExamPaperNotPending = errors.New("exam paper not pending")
+var (
+	errExamPaperNotPending   = errors.New("exam paper not pending")
+	errExamPaperNotDeletable = errors.New("exam paper not deletable")
+)
 
 type examPaperReviewInput struct {
 	CourseName   string                   `json:"course_name"`
@@ -681,14 +770,25 @@ func (h *ExamPaperHandler) AdminList(c *gin.Context) {
 	if pageSize > maxExamPaperPageSize {
 		pageSize = maxExamPaperPageSize
 	}
-	query := h.db.Model(&models.ExamPaper{}).Where("status = ?", status)
+	query := h.db.Model(&models.ExamPaper{}).Where("exam_papers.status = ?", status)
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		query = query.Where("LOWER(exam_papers.course_name) LIKE ?", "%"+strings.ToLower(keyword)+"%")
+	}
+	if contributor := strings.TrimSpace(c.Query("contributor")); contributor != "" {
+		query = query.Joins("JOIN users ON users.id = exam_papers.submitter_id").
+			Where("LOWER(users.nickname) LIKE ?", "%"+strings.ToLower(contributor)+"%")
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "获取试卷管理列表失败")
 		return
 	}
 	var papers []models.ExamPaper
-	if err := query.Preload("Submitter").Order("created_at ASC, id ASC").
+	order := "exam_papers.created_at ASC, exam_papers.id ASC"
+	if c.Query("sort") == "latest" {
+		order = "exam_papers.created_at DESC, exam_papers.id DESC"
+	}
+	if err := query.Preload("Submitter").Order(order).
 		Limit(pageSize).Offset((page - 1) * pageSize).Find(&papers).Error; err != nil {
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "获取试卷管理列表失败")
 		return
@@ -757,6 +857,7 @@ func (h *ExamPaperHandler) AdminApprove(c *gin.Context) {
 	}
 
 	now := time.Now()
+	var responsePaper models.ExamPaper
 	err = h.runApprovalTransaction(func(tx *gorm.DB) error {
 		var paper models.ExamPaper
 		query := tx.Where("id = ?", id)
@@ -799,14 +900,14 @@ func (h *ExamPaperHandler) AdminApprove(c *gin.Context) {
 		}
 		if awarded {
 			if err := tx.Model(&models.User{}).Where("id = ?", paper.SubmitterID).
-				UpdateColumn("exp", gorm.Expr("exp + ?", 10)).Error; err != nil {
+				UpdateColumn("exp", gorm.Expr("exp + ?", examPaperRewardExp)).Error; err != nil {
 				return err
 			}
 		}
 
 		message := fmt.Sprintf("你投稿的试卷《%s》已通过审核并发布。", metadata.Title)
 		if awarded {
-			message += "本次投稿已奖励 10 经验。"
+			message += fmt.Sprintf("本次投稿已奖励 %d 经验。", examPaperRewardExp)
 		}
 		if input.Reason != "" {
 			message += "\n审核说明：" + input.Reason
@@ -814,24 +915,22 @@ func (h *ExamPaperHandler) AdminApprove(c *gin.Context) {
 		if _, _, err := services.CreateSystemMessage(tx, paper.SubmitterID, message); err != nil {
 			return err
 		}
-		return tx.Create(&models.AdminLog{
+		if err := tx.Create(&models.AdminLog{
 			AdminID:   admin.ID,
 			AdminName: admin.Nickname,
 			Action:    "审核通过试卷",
 			Target:    metadata.Title,
 			Detail:    fmt.Sprintf("试卷ID=%d，奖励经验=%t，理由=%s", id, awarded, input.Reason),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Preload("Submitter").First(&responsePaper, id).Error
 	})
 	if err != nil {
 		h.writeAdminTransactionError(c, err)
 		return
 	}
-	var paper models.ExamPaper
-	if err := h.db.Preload("Submitter").First(&paper, id).Error; err != nil {
-		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "读取已发布试卷失败")
-		return
-	}
-	c.JSON(http.StatusOK, examPaperToResponse(paper))
+	c.JSON(http.StatusOK, examPaperToResponse(responsePaper))
 }
 
 // AdminReject 拒绝待审核投稿，并在事务提交后尽力删除私有文件。
@@ -928,6 +1027,7 @@ func (h *ExamPaperHandler) AdminUpdate(c *gin.Context) {
 		writeExamPaperError(c, http.StatusBadRequest, "invalid_exam_paper_metadata", err.Error())
 		return
 	}
+	var responsePaper models.ExamPaper
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var paper models.ExamPaper
 		query := tx.Where("id = ?", id)
@@ -949,21 +1049,19 @@ func (h *ExamPaperHandler) AdminUpdate(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&models.AdminLog{
+		if err := tx.Create(&models.AdminLog{
 			AdminID: admin.ID, AdminName: admin.Nickname, Action: "编辑已发布试卷",
 			Target: metadata.Title, Detail: fmt.Sprintf("试卷ID=%d", id),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Preload("Submitter").First(&responsePaper, id).Error
 	})
 	if err != nil {
 		h.writeAdminTransactionError(c, err)
 		return
 	}
-	var paper models.ExamPaper
-	if err := h.db.Preload("Submitter").First(&paper, id).Error; err != nil {
-		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "读取试卷失败")
-		return
-	}
-	c.JSON(http.StatusOK, examPaperToResponse(paper))
+	c.JSON(http.StatusOK, examPaperToResponse(responsePaper))
 }
 
 // AdminUnpublish 下架已发布试卷，保留元数据和哈希，但删除可访问文件。
@@ -1001,6 +1099,7 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 	}
 	fileKey := paper.FileKey
 	now := time.Now()
+	var responsePaper models.ExamPaper
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ?", id)
@@ -1016,6 +1115,10 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 		if locked.Status != models.ExamPaperStatusPublished || locked.FileKey != paper.FileKey {
 			return errExamPaperNotPublished
 		}
+		rewardRevoked, err := revokeExamPaperReward(tx, &locked, now)
+		if err != nil {
+			return err
+		}
 		if err := tx.Model(&locked).Updates(map[string]any{
 			"status": models.ExamPaperStatusUnpublished, "file_key": "",
 			"unpublisher_id": admin.ID, "unpublish_reason": input.Reason, "unpublished_at": now,
@@ -1023,25 +1126,26 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 			return err
 		}
 		message := fmt.Sprintf("你投稿的试卷《%s》已下架。\n下架理由：%s", locked.Title, input.Reason)
+		if rewardRevoked {
+			message += fmt.Sprintf("\n该投稿获得的 %d 经验已扣回。", examPaperRewardExp)
+		}
 		if _, _, err := services.CreateSystemMessage(tx, locked.SubmitterID, message); err != nil {
 			return err
 		}
-		return tx.Create(&models.AdminLog{
+		if err := tx.Create(&models.AdminLog{
 			AdminID: admin.ID, AdminName: admin.Nickname, Action: "下架试卷",
-			Target: locked.Title, Detail: fmt.Sprintf("试卷ID=%d，理由=%s", id, input.Reason),
-		}).Error
+			Target: locked.Title, Detail: fmt.Sprintf("试卷ID=%d，撤销经验=%t，理由=%s", id, rewardRevoked, input.Reason),
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Preload("Submitter").First(&responsePaper, id).Error
 	})
 	if err != nil {
 		h.writeAdminTransactionError(c, err)
 		return
 	}
 	h.removeExamPaperFileAfterCommit(fileKey)
-	var refreshed models.ExamPaper
-	if err := h.db.Preload("Submitter").First(&refreshed, id).Error; err != nil {
-		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "读取已下架试卷失败")
-		return
-	}
-	c.JSON(http.StatusOK, examPaperToResponse(refreshed))
+	c.JSON(http.StatusOK, examPaperToResponse(responsePaper))
 }
 
 func (h *ExamPaperHandler) writeAdminTransactionError(c *gin.Context, err error) {

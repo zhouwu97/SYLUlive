@@ -966,7 +966,7 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
 		return
 	}
-	
+
 	var ids []uint
 	if scene == "loadmore" {
 		value, ok := ActiveSnapshots.Load(sessionID)
@@ -987,7 +987,7 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
 			return
 		}
-		
+
 		// 把置顶帖的ID放在前面
 		var finalIDs []uint
 		seen := map[uint]bool{}
@@ -1007,7 +1007,7 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), Sort: "all", FeedKind: "legacy_hot"})
 		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
 	}
-	
+
 	end := offset + limit
 	if end > len(ids) {
 		end = len(ids)

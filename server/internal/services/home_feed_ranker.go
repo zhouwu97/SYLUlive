@@ -159,7 +159,7 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 		} else if c.Post.IsFeatured && !c.Post.CreatedAt.Before(now.Add(-180*24*time.Hour)) {
 			isPrimary = true
 		}
-		
+
 		if isPrimary {
 			primaryPool = append(primaryPool, c)
 			inPrimary[c.Post.ID] = true
@@ -171,7 +171,7 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 			recent30NormalPool = append(recent30NormalPool, c)
 		}
 	}
-	
+
 	// 如候选充足但硬约束阻塞，则逐级放宽。
 	relaxPolicies := []PlacementPolicy{RelaxedPolicy1, RelaxedPolicy2}
 	for _, policy := range relaxPolicies {

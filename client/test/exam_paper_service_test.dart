@@ -231,6 +231,66 @@ void main() {
     expect(captured?.queryParameters['contributor'], '张同学');
     expect(captured?.queryParameters['sort'], 'latest');
   });
+
+  test('删除投稿发送 DELETE 并解析经验撤销结果', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    RequestOptions? captured;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          captured = options;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'message': '投稿已永久删除',
+                'exp_revoked': true,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final result = await ExamPaperService(dio).deleteSubmission(12);
+
+    expect(captured?.method, 'DELETE');
+    expect(captured?.path, '/exam-papers/my-submissions/12');
+    expect(result.message, '投稿已永久删除');
+    expect(result.expRevoked, isTrue);
+  });
+
+  test('删除结果缺失字段时使用默认值', () {
+    final result = ExamPaperDeleteResult.fromJson(const <String, dynamic>{});
+
+    expect(result.message, '操作成功');
+    expect(result.expRevoked, isFalse);
+  });
+
+  test('withdraw 保持兼容并发送同一 DELETE', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
+    RequestOptions? captured;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          captured = options;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: const <String, dynamic>{},
+            ),
+          );
+        },
+      ),
+    );
+
+    await ExamPaperService(dio).withdraw(27);
+
+    expect(captured?.method, 'DELETE');
+    expect(captured?.path, '/exam-papers/my-submissions/27');
+  });
 }
 
 ExamPaper _paper(int id, String title) {

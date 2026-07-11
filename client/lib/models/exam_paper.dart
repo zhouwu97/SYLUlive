@@ -32,6 +32,7 @@ class ExamPaper {
   final String title;
   final int fileSize;
   final int downloadCount;
+  final bool rewardRevocable;
   final String approvalReason;
   final String unpublishReason;
   final DateTime? publishedAt;
@@ -50,6 +51,7 @@ class ExamPaper {
     required this.title,
     required this.fileSize,
     required this.downloadCount,
+    this.rewardRevocable = false,
     required this.approvalReason,
     required this.unpublishReason,
     required this.publishedAt,
@@ -71,6 +73,7 @@ class ExamPaper {
       title: json['title']?.toString() ?? '',
       fileSize: (json['file_size'] as num?)?.toInt() ?? 0,
       downloadCount: (json['download_count'] as num?)?.toInt() ?? 0,
+      rewardRevocable: json['reward_revocable'] == true,
       approvalReason: json['approval_reason']?.toString() ?? '',
       unpublishReason: json['unpublish_reason']?.toString() ?? '',
       publishedAt: _parseTime(json['published_at']),

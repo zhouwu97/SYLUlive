@@ -226,6 +226,9 @@ func main() {
 	if err := ensurePostPinColumns(db); err != nil {
 		log.Fatal("帖子置顶字段迁移失败:", err)
 	}
+	if err := ensurePostActivitySchema(db); err != nil {
+		log.Fatal("帖子活跃时间迁移失败:", err)
+	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
 	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
@@ -1373,4 +1376,26 @@ func ensurePostPinColumns(db *gorm.DB) error {
 
 func ensurePostMarketTagsColumn(db *gorm.DB) error {
 	return db.Exec(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS market_tags VARCHAR(200) NOT NULL DEFAULT ''`).Error
+}
+
+// ensurePostActivitySchema 回填历史讨论时间并建立首页候选查询索引。
+// Post 字段由 AutoMigrate 创建；这里的 SQL 同时兼容 PostgreSQL 与 SQLite。
+func ensurePostActivitySchema(db *gorm.DB) error {
+	statements := []string{
+		`UPDATE posts
+SET last_activity_at = COALESCE(
+    (SELECT MAX(replies.created_at) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal'),
+    posts.created_at
+)
+WHERE last_activity_at IS NULL OR last_activity_at < posts.created_at`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_home_created ON posts(board_id, status, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_home_activity ON posts(board_id, status, last_activity_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_home_featured ON posts(board_id, is_featured, created_at DESC)`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

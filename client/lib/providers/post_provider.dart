@@ -203,7 +203,10 @@ class PostProvider extends ChangeNotifier {
     if (!_enableCache || sort == 'following') return;
     try {
       final board = _boards[_stateKey(boardId, sort, type, tagId: tagId)];
-      final algorithmVersion = board?.algorithmVersion ?? (sort == 'all' ? PostCacheService.homeAllAlgorithmVersion : 'feed_v1');
+      final algorithmVersion = board != null && board.algorithmVersion.isNotEmpty
+          ? board.algorithmVersion
+          : PostCacheService.expectedAlgorithmVersion(
+              boardId: boardId, sort: sort, type: type, tagId: tagId);
       final feed = CachedPostFeed(
         posts: posts,
         pinnedPosts: board?.pinnedPosts ?? [],
@@ -275,21 +278,22 @@ class PostProvider extends ChangeNotifier {
       notifyListeners();
     }
 
+    CachedPostFeed? cachedFeed;
     // 第一步：极速上屏 — 读本地缓存（关注信息流不使用缓存）
     if (_enableCache && sort != 'following') {
       try {
-        final feed = await PostCacheService.loadPosts(
+        cachedFeed = await PostCacheService.loadPosts(
           boardId,
           sort: sort,
           type: type,
           tagId: tagId,
         );
         if (requestVersion != board.requestVersion) return;
-        if (feed != null && feed.posts.isNotEmpty) {
-          board.posts = feed.posts;
+        if (cachedFeed != null && cachedFeed.posts.isNotEmpty && cachedFeed.freshness == PostFeedCacheFreshness.fresh) {
+          board.posts = cachedFeed.posts;
           if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
-            board.pinnedPosts = feed.pinnedPosts;
-            board.algorithmVersion = feed.algorithmVersion;
+            board.pinnedPosts = cachedFeed.pinnedPosts;
+            board.algorithmVersion = cachedFeed.algorithmVersion;
           }
           board.revision++;
           notifyListeners();
@@ -403,9 +407,22 @@ class PostProvider extends ChangeNotifier {
         board.currentPage = 2;
       }
     } on DioException catch (e) {
-      // 网络失败时，缓存已上屏，静默忽略
+      if (cachedFeed != null && cachedFeed.posts.isNotEmpty && cachedFeed.freshness == PostFeedCacheFreshness.stale) {
+        board.posts = cachedFeed.posts;
+        if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+          board.pinnedPosts = cachedFeed.pinnedPosts;
+          board.algorithmVersion = cachedFeed.algorithmVersion;
+        }
+      }
       debugPrint('增量拉取失败(board=$boardId): ${e.type}');
     } catch (e) {
+      if (cachedFeed != null && cachedFeed.posts.isNotEmpty && cachedFeed.freshness == PostFeedCacheFreshness.stale) {
+        board.posts = cachedFeed.posts;
+        if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+          board.pinnedPosts = cachedFeed.pinnedPosts;
+          board.algorithmVersion = cachedFeed.algorithmVersion;
+        }
+      }
       debugPrint('增量拉取异常(board=$boardId)');
     }
 
@@ -529,13 +546,16 @@ class PostProvider extends ChangeNotifier {
           board.sessionId = null;
           board.error = null;
           board.isLoading = false;
-          await _refreshInternal(
-            boardId: boardId,
-            type: type,
-            tagId: tagId,
-            sort: sort,
-          );
-          board.isRecoveringExpiredSession = false;
+          try {
+            await _refreshInternal(
+              boardId: boardId,
+              type: type,
+              tagId: tagId,
+              sort: sort,
+            );
+          } finally {
+            board.isRecoveringExpiredSession = false;
+          }
           return;
         }
       }

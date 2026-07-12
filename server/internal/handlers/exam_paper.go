@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -499,16 +500,26 @@ type createExamPaperUploadSessionResponse struct {
 
 func bindExamPaperJSON(c *gin.Context, destination any, invalidCode, invalidMessage string) bool {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxExamPaperJSONBodyBytes)
-	if err := c.ShouldBindJSON(destination); err != nil {
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
-			writeExamPaperError(c, http.StatusRequestEntityTooLarge, "request_body_too_large", "JSON 请求体不能超过 64 KiB")
-			return false
-		}
-		writeExamPaperError(c, http.StatusBadRequest, invalidCode, invalidMessage)
+	decoder := json.NewDecoder(c.Request.Body)
+	if err := decoder.Decode(destination); err != nil {
+		writeExamPaperJSONDecodeError(c, err, invalidCode, invalidMessage)
+		return false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		writeExamPaperJSONDecodeError(c, err, invalidCode, invalidMessage)
 		return false
 	}
 	return true
+}
+
+func writeExamPaperJSONDecodeError(c *gin.Context, err error, invalidCode, invalidMessage string) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		writeExamPaperError(c, http.StatusRequestEntityTooLarge, "request_body_too_large", "JSON 请求体不能超过 64 KiB")
+		return
+	}
+	writeExamPaperError(c, http.StatusBadRequest, invalidCode, invalidMessage)
 }
 
 // CreateUploadSession 校验投稿信息并签发直传到文件服务器的短时凭证。

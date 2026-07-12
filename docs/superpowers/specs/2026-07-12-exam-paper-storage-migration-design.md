@@ -9,7 +9,7 @@
 已确认约束：
 
 - 主服务器域名为 `couqie.ccwu.cc`。
-- 文件服务器使用 `paper.couqie.ccwu.cc`，指向 `139.196.148.174`。
+- 文件服务器使用 `sylulive.online`，指向 `139.196.148.174`；`www.sylulive.online` 仅重定向到根域名。
 - 大流量服务器为 Ubuntu 24.04，约 35 GiB 可用磁盘、1.6 GiB 内存。
 - 允许要求用户升级到新版客户端。
 - 现有试卷记录、投稿人、审核状态和下载次数必须保留。
@@ -19,7 +19,7 @@
 
 ## 2. 方案选择
 
-采用独立 Go 文件服务方案。主服务器签发短时凭证，客户端直接连接 `paper.couqie.ccwu.cc` 上传或下载 PDF。
+采用独立 Go 文件服务方案。主服务器签发短时凭证，客户端直接连接 `sylulive.online` 上传或下载 PDF。
 
 未采用以下方案：
 
@@ -142,7 +142,7 @@
 
 网络与运行要求：
 
-- Cloudflare 为 `paper.couqie.ccwu.cc` 提供 TLS 和代理，Nginx 只开放 HTTPS 文件服务。
+- Cloudflare 为 `sylulive.online` 提供 TLS 和代理，Nginx 只开放 HTTPS 文件服务；`www.sylulive.online` 永久重定向到根域名。
 - UFW 只开放 `22`、`80`、`443`；SSH 完成密钥配置后关闭 root 密码登录。
 - 文件服务和 Nginx 工作进程使用专用非 root 用户；Nginx 通过同一专用用户读取 `0600` 文件并执行内部文件发送。
 - 大服务器增加约 2 GiB Swap，并限制 PDF 校验并发数。
@@ -184,7 +184,7 @@
 1. 安装 Go 运行时依赖、Nginx、Certbot 或 Cloudflare Origin 证书、UFW 和 Swap。
 2. 创建专用服务用户及 `0700` 数据目录。
 3. 部署文件服务和 systemd 单元，先只开放健康检查。
-4. 创建 `paper.couqie.ccwu.cc` DNS 记录并验证 HTTPS。
+4. 创建 `sylulive.online` 和 `www.sylulive.online` DNS 记录并验证 HTTPS。
 5. 部署主服务器双后端代码，保持旧记录 `local`。
 6. 复制现有 2 份 PDF 到大服务器，逐个比较源文件与目标文件的大小和 SHA-256。
 7. 校验通过后，把对应数据库记录更新为 `remote`。
@@ -220,7 +220,7 @@
 ### 9.2 上线验收
 
 - 新版客户端上传时，主服务器不接收 PDF 请求体。
-- 预览和下载的 PDF 响应来自 `paper.couqie.ccwu.cc`。
+- 预览和下载的 PDF 响应来自 `sylulive.online`。
 - 两份历史试卷的业务记录和 SHA-256 完全不变。
 - 过期、篡改和未登录请求无法获取有效文件。
 - 远端不能列出目录或按任意 key 访问文件。

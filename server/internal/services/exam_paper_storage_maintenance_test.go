@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -13,18 +14,25 @@ import (
 )
 
 type storageMaintenanceRemoteStub struct {
-	mu          sync.Mutex
-	metadata    map[string]StoredExamPaperFile
-	errors      map[string]error
-	calls       []string
-	maintenance ExamPaperRemoteMaintenanceResult
-	cancel      context.CancelFunc
+	mu               sync.Mutex
+	metadata         map[string]StoredExamPaperFile
+	errors           map[string]error
+	calls            []string
+	maintenance      ExamPaperRemoteMaintenanceResult
+	cancel           context.CancelFunc
+	onMetadata       func(context.Context, string) error
+	maintenanceCalls int
 }
 
 func (s *storageMaintenanceRemoteStub) Metadata(ctx context.Context, key string) (StoredExamPaperFile, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls = append(s.calls, key)
+	if s.onMetadata != nil {
+		if err := s.onMetadata(ctx, key); err != nil {
+			return StoredExamPaperFile{}, err
+		}
+	}
 	if s.cancel != nil {
 		s.cancel()
 		s.cancel = nil
@@ -36,7 +44,16 @@ func (s *storageMaintenanceRemoteStub) Metadata(ctx context.Context, key string)
 }
 
 func (s *storageMaintenanceRemoteStub) Maintenance(context.Context) (ExamPaperRemoteMaintenanceResult, error) {
+	s.mu.Lock()
+	s.maintenanceCalls++
+	s.mu.Unlock()
 	return s.maintenance, nil
+}
+
+func (s *storageMaintenanceRemoteStub) snapshot() ([]string, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.calls...), s.maintenanceCalls
 }
 
 func TestExamPaperStorageMaintenanceReportsMissingMismatchAndContinues(t *testing.T) {
@@ -90,4 +107,67 @@ func TestExamPaperStorageMaintenanceStopsOnContextCancellation(t *testing.T) {
 	_, err := service.Run(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Len(t, remote.calls, 1)
+	_, maintenanceCalls := remote.snapshot()
+	require.Zero(t, maintenanceCalls)
+}
+
+func TestExamPaperStorageMaintenanceReleasesQueryConnectionBeforeRemoteCall(t *testing.T) {
+	db := openStorageJobTestDB(t)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, db.Create(&models.ExamPaper{
+		Status: models.ExamPaperStatusPublished, Source: models.ExamPaperSourceUser, SubmitterID: 1,
+		StorageBackend: models.ExamPaperStorageRemote, CourseName: "A", AcademicYear: "2025-2026",
+		Semester: models.ExamPaperSemesterFirst, ExamType: models.ExamPaperTypeFinal, Title: "A",
+		FileKey: "paper.pdf", FileSize: 10, SHA256: strings.Repeat("a", 64),
+	}).Error)
+	remote := &storageMaintenanceRemoteStub{
+		metadata: map[string]StoredExamPaperFile{"paper.pdf": {FileKey: "paper.pdf", Size: 10, SHA256: strings.Repeat("a", 64)}},
+		onMetadata: func(ctx context.Context, _ string) error {
+			if inUse := sqlDB.Stats().InUse; inUse != 0 {
+				return errors.New("远程调用期间仍持有数据库查询连接")
+			}
+			var count int64
+			return db.WithContext(ctx).Model(&models.ExamPaper{}).Count(&count).Error
+		},
+	}
+
+	report, err := NewExamPaperStorageMaintenance(db, remote, nil).Run(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Referenced)
+	require.Zero(t, report.MetadataErrors)
+}
+
+func TestExamPaperStorageMaintenanceCapsIssueDetailsWithoutLosingTotals(t *testing.T) {
+	db := openStorageJobTestDB(t)
+	const total = 150
+	papers := make([]models.ExamPaper, 0, total)
+	remoteErrors := make(map[string]error, total)
+	for index := 0; index < total; index++ {
+		fileKey := fmt.Sprintf("issue-%03d.pdf", index)
+		papers = append(papers, models.ExamPaper{
+			Status: models.ExamPaperStatusPublished, Source: models.ExamPaperSourceUser, SubmitterID: 1,
+			StorageBackend: models.ExamPaperStorageRemote, CourseName: "A", AcademicYear: "2025-2026",
+			Semester: models.ExamPaperSemesterFirst, ExamType: models.ExamPaperTypeFinal, Title: fileKey,
+			FileKey: fileKey, FileSize: 10, SHA256: strings.Repeat("a", 64),
+		})
+		if index%2 == 0 {
+			remoteErrors[fileKey] = ErrExamPaperRemoteNotFound
+		} else {
+			remoteErrors[fileKey] = errors.New("远端查询失败")
+		}
+	}
+	require.NoError(t, db.CreateInBatches(&papers, 50).Error)
+	remote := &storageMaintenanceRemoteStub{metadata: map[string]StoredExamPaperFile{}, errors: remoteErrors}
+
+	report, err := NewExamPaperStorageMaintenance(db, remote, func(ExamPaperStorageMaintenanceIssue) {}).Run(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, total, report.Referenced)
+	require.Equal(t, total/2, report.Missing)
+	require.Equal(t, total/2, report.MetadataErrors)
+	require.Len(t, report.Issues, 100)
+	require.Equal(t, 50, report.DroppedIssues)
+	_, maintenanceCalls := remote.snapshot()
+	require.Equal(t, 1, maintenanceCalls)
 }

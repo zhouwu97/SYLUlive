@@ -11,6 +11,11 @@ import (
 	"shenliyuan/internal/models"
 )
 
+const (
+	examPaperStorageMaintenancePageSize = 100
+	examPaperStorageMaintenanceIssueCap = 100
+)
+
 // ExamPaperStorageMaintenanceRemote 定义完整性核对所需的远端查询与维护操作。
 type ExamPaperStorageMaintenanceRemote interface {
 	Metadata(context.Context, string) (StoredExamPaperFile, error)
@@ -36,6 +41,7 @@ type ExamPaperStorageMaintenanceReport struct {
 	DiskUsagePercent   float64                            `json:"disk_usage_percent"`
 	Remote             ExamPaperRemoteMaintenanceResult   `json:"remote"`
 	Issues             []ExamPaperStorageMaintenanceIssue `json:"issues,omitempty"`
+	DroppedIssues      int                                `json:"dropped_issues"`
 }
 
 // ExamPaperStorageMaintenanceLogger 接收结构化维护异常。
@@ -67,46 +73,51 @@ func (s *ExamPaperStorageMaintenance) Run(ctx context.Context) (ExamPaperStorage
 	if s.remote == nil {
 		return report, errors.New("试卷远端维护客户端未配置")
 	}
-	rows, err := s.db.WithContext(ctx).Model(&models.ExamPaper{}).
-		Select("id", "file_key", "file_size", "sha256").
-		Where("storage_backend = ? AND status IN ?", models.ExamPaperStorageRemote, []models.ExamPaperStatus{models.ExamPaperStatusPending, models.ExamPaperStatusPublished}).
-		Order("id ASC").Rows()
-	if err != nil {
-		return report, err
-	}
-	defer rows.Close()
-	for rows.Next() {
+	var lastID uint
+	for {
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
-		var paper models.ExamPaper
-		if err := s.db.ScanRows(rows, &paper); err != nil {
+		var papers []models.ExamPaper
+		if err := s.db.WithContext(ctx).Model(&models.ExamPaper{}).
+			Select("id", "file_key", "file_size", "sha256").
+			Where("storage_backend = ? AND status IN ? AND id > ?", models.ExamPaperStorageRemote, []models.ExamPaperStatus{models.ExamPaperStatusPending, models.ExamPaperStatusPublished}, lastID).
+			Order("id ASC").Limit(examPaperStorageMaintenancePageSize).Find(&papers).Error; err != nil {
 			return report, err
 		}
-		report.Referenced++
-		metadata, err := s.remote.Metadata(ctx, paper.FileKey)
-		if err != nil {
-			if contextErr := ctx.Err(); contextErr != nil {
-				return report, contextErr
-			}
-			kind := "metadata_error"
-			if errors.Is(err, ErrExamPaperRemoteNotFound) {
-				kind = "missing"
-				report.Missing++
-			} else {
-				report.MetadataErrors++
-			}
-			s.recordIssue(&report, paper, kind, err.Error())
-			continue
+		if len(papers) == 0 {
+			break
 		}
-		if metadata.FileKey != paper.FileKey || metadata.Size != paper.FileSize || metadata.SHA256 != paper.SHA256 {
-			report.Mismatched++
-			detail := fmt.Sprintf("expected_size=%d actual_size=%d expected_sha256=%s actual_sha256=%s", paper.FileSize, metadata.Size, paper.SHA256, metadata.SHA256)
-			s.recordIssue(&report, paper, "mismatch", detail)
+		for _, paper := range papers {
+			if err := ctx.Err(); err != nil {
+				return report, err
+			}
+			report.Referenced++
+			metadata, err := s.remote.Metadata(ctx, paper.FileKey)
+			if err != nil {
+				if contextErr := ctx.Err(); contextErr != nil {
+					return report, contextErr
+				}
+				kind := "metadata_error"
+				if errors.Is(err, ErrExamPaperRemoteNotFound) {
+					kind = "missing"
+					report.Missing++
+				} else {
+					report.MetadataErrors++
+				}
+				s.recordIssue(&report, paper, kind, err.Error())
+				continue
+			}
+			if metadata.FileKey != paper.FileKey || metadata.Size != paper.FileSize || metadata.SHA256 != paper.SHA256 {
+				report.Mismatched++
+				detail := fmt.Sprintf("expected_size=%d actual_size=%d expected_sha256=%s actual_sha256=%s", paper.FileSize, metadata.Size, paper.SHA256, metadata.SHA256)
+				s.recordIssue(&report, paper, "mismatch", detail)
+			}
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return report, err
+		lastID = papers[len(papers)-1].ID
+		if len(papers) < examPaperStorageMaintenancePageSize {
+			break
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return report, err
@@ -124,6 +135,10 @@ func (s *ExamPaperStorageMaintenance) Run(ctx context.Context) (ExamPaperStorage
 
 func (s *ExamPaperStorageMaintenance) recordIssue(report *ExamPaperStorageMaintenanceReport, paper models.ExamPaper, kind, detail string) {
 	issue := ExamPaperStorageMaintenanceIssue{PaperID: paper.ID, FileKey: paper.FileKey, Kind: kind, Detail: detail}
-	report.Issues = append(report.Issues, issue)
+	if len(report.Issues) < examPaperStorageMaintenanceIssueCap {
+		report.Issues = append(report.Issues, issue)
+	} else {
+		report.DroppedIssues++
+	}
 	s.log(issue)
 }

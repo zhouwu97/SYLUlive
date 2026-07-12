@@ -14,7 +14,9 @@ import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 
 class AnnouncementScreen extends StatefulWidget {
-  const AnnouncementScreen({super.key});
+  const AnnouncementScreen({super.key, this.unreadOnly = false});
+
+  final bool unreadOnly;
 
   @override
   State<AnnouncementScreen> createState() => _AnnouncementScreenState();
@@ -48,10 +50,16 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
     try {
       Response response;
       try {
-        response = await authProvider.dio.get(ApiConstants.noticesPath);
+        response = await authProvider.dio.get(
+          widget.unreadOnly
+              ? '${ApiConstants.noticesPath}/unread'
+              : ApiConstants.noticesPath,
+        );
       } on DioException catch (e) {
         if (e.response?.statusCode == 404) {
-          response = await authProvider.dio.get('/announcements');
+          response = await authProvider.dio.get(
+            widget.unreadOnly ? '/announcements/unread' : '/announcements',
+          );
         } else {
           rethrow;
         }
@@ -81,6 +89,23 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _markAnnouncementRead(model.Announcement announcement) async {
+    try {
+      await context.read<AuthProvider>().dio.post(
+            '${ApiConstants.noticesPath}/${announcement.id}/read',
+          );
+      if (!mounted) return;
+      setState(() {
+        _announcements.removeWhere((item) => item.id == announcement.id);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('标记公告已读失败，请稍后重试')),
+      );
     }
   }
 
@@ -154,7 +179,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
           backgroundColor: Colors.transparent,
           elevation: 0,
           title: Text(
-            '公告',
+            widget.unreadOnly ? '未读公告' : '公告',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               color: foregroundColor,
@@ -184,7 +209,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                                 _buildSectionHeader(
                                   isDark,
                                   icon: Icons.push_pin_rounded,
-                                  title: '置顶公告',
+                                  title: widget.unreadOnly ? '置顶未读' : '置顶公告',
                                   subtitle: '${pinned.length} 条需要优先查看',
                                   accent: Colors.red,
                                 ),
@@ -198,6 +223,11 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                                     emphasized: true,
                                     timeText:
                                         _formatTime(pinned[index].createdAt),
+                                    onMarkRead: widget.unreadOnly
+                                        ? () => _markAnnouncementRead(
+                                              pinned[index],
+                                            )
+                                        : null,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -205,8 +235,12 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                               _buildSectionHeader(
                                 isDark,
                                 icon: Icons.history_rounded,
-                                title: pinned.isEmpty ? '全部公告' : '最新公告',
-                                subtitle: '${regular.length} 条按时间排序',
+                                title: widget.unreadOnly
+                                    ? '未读公告'
+                                    : (pinned.isEmpty ? '全部公告' : '最新公告'),
+                                subtitle: widget.unreadOnly
+                                    ? '${regular.length} 条等待查看'
+                                    : '${regular.length} 条按时间排序',
                                 accent: Theme.of(context).primaryColor,
                               ),
                               const SizedBox(height: 10),
@@ -218,6 +252,11 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                                   index: index + pinned.length,
                                   timeText:
                                       _formatTime(regular[index].createdAt),
+                                  onMarkRead: widget.unreadOnly
+                                      ? () => _markAnnouncementRead(
+                                            regular[index],
+                                          )
+                                      : null,
                                 ),
                               ),
                             ],
@@ -295,7 +334,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              '暂无公告',
+              widget.unreadOnly ? '暂无未读公告' : '暂无公告',
               style: TextStyle(
                 fontSize: 18,
                 color: isDark ? Colors.white70 : Colors.grey[600],
@@ -326,6 +365,7 @@ class _AnnouncementCard extends StatefulWidget {
   final int index;
   final bool emphasized;
   final String timeText;
+  final VoidCallback? onMarkRead;
 
   const _AnnouncementCard({
     required this.announcement,
@@ -333,6 +373,7 @@ class _AnnouncementCard extends StatefulWidget {
     required this.index,
     this.emphasized = false,
     required this.timeText,
+    this.onMarkRead,
   });
 
   @override
@@ -486,6 +527,17 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                   ],
                 ],
               ),
+              if (widget.onMarkRead != null) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: widget.onMarkRead,
+                    icon: const Icon(Icons.done_rounded, size: 16),
+                    label: const Text('标为已读'),
+                  ),
+                ),
+              ],
             ],
           ],
         ),

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_constants.dart';
 import '../models/water_section.dart';
@@ -242,10 +241,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     try {
       Response<dynamic> response;
       try {
-        response = await authProvider.dio.get(ApiConstants.noticesPath);
+        response =
+            await authProvider.dio.get('${ApiConstants.noticesPath}/unread');
       } on DioException catch (e) {
         if (e.response?.statusCode == 404) {
-          response = await authProvider.dio.get('/announcements');
+          response = await authProvider.dio.get('/announcements/unread');
         } else {
           rethrow;
         }
@@ -261,21 +261,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             }
             return b.createdAt.compareTo(a.createdAt);
           });
-        final dismissed = await _loadDismissedIds();
         if (!mounted) return;
         setState(() {
-          _announcements = all.where((a) => !dismissed.contains(a.id)).toList();
+          _announcements = all;
         });
       }
     } catch (e) {
       debugPrint('加载公告失败: $e');
     }
-  }
-
-  Future<Set<int>> _loadDismissedIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList('dismissed_announcements') ?? [];
-    return list.map((s) => int.tryParse(s) ?? 0).where((i) => i > 0).toSet();
   }
 
   Future<void> _runSearch(String raw) async {
@@ -791,9 +784,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 onOpenToolbox: () {
                   _openPageKeepingPanel(const ToolboxScreen());
                 },
-                onOpenAnnouncements: () {
-                  _openPageKeepingPanel(const AnnouncementScreen());
-                },
+                onOpenAnnouncements: _openUnreadAnnouncements,
                 onOpenCompetitions: () {
                   _openPageKeepingPanel(const CompetitionCenterScreen());
                 },
@@ -833,6 +824,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         );
       },
     );
+  }
+
+  Future<void> _openUnreadAnnouncements() async {
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => const AnnouncementScreen(unreadOnly: true),
+      ),
+    );
+    if (mounted) unawaited(_loadAnnouncements());
   }
 
   void _closePanelThenOpen(BuildContext dialogContext, VoidCallback openPage) {
@@ -1091,7 +1091,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     ),
                     padding: EdgeInsets.zero,
                   ),
-                  if (_showCheckInDot)
+                  if (_showCheckInDot || _announcements.isNotEmpty)
                     Positioned(
                       top: 9,
                       right: 8,

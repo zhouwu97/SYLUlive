@@ -175,6 +175,31 @@ validate_elf_binary() {
     fi
 }
 
+wait_for_health() {
+    health_url=$1
+    attempts=${PAPER_STORAGE_HEALTH_ATTEMPTS:-15}
+    case "$attempts" in
+        ''|*[!0-9]*)
+            echo "PAPER_STORAGE_HEALTH_ATTEMPTS 必须是正整数" >&2
+            return 1
+            ;;
+    esac
+    if [ "$attempts" -lt 1 ]; then
+        echo "PAPER_STORAGE_HEALTH_ATTEMPTS 必须是正整数" >&2
+        return 1
+    fi
+    while [ "$attempts" -gt 0 ]; do
+        if curl -fsS --max-time 2 "$health_url" >/dev/null; then
+            return 0
+        fi
+        attempts=$((attempts - 1))
+        if [ "$attempts" -gt 0 ]; then
+            sleep 1
+        fi
+    done
+    return 1
+}
+
 activate_binary_candidate() {
     binary_path=$1
     health_url=$2
@@ -204,7 +229,7 @@ activate_binary_candidate() {
     activation_failed=0
     if ! systemctl restart paper-storage; then
         activation_failed=1
-    elif ! curl -fsS --max-time 10 "$health_url" >/dev/null; then
+    elif ! wait_for_health "$health_url"; then
         activation_failed=1
     fi
     if [ "$activation_failed" -eq 0 ]; then

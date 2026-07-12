@@ -99,6 +99,9 @@ class _TeamApplicationManageScreenState
         .applicationsFor(widget.recruitment.id)
         .where((item) => item.status == _filter)
         .toList();
+    final loading =
+        provider.loadingApplicationIds.contains(widget.recruitment.id);
+    final loadError = provider.applicationErrors[widget.recruitment.id];
     return Scaffold(
       backgroundColor: pageColor,
       appBar: AppBar(
@@ -148,36 +151,62 @@ class _TeamApplicationManageScreenState
           child: RefreshIndicator(
             color: TeamUiTokens.accent(isDark),
             onRefresh: _load,
-            child: apps.isEmpty
-                ? Container(
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: TeamUiTokens.accentSoft(isDark),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Icon(Icons.inbox_outlined,
-                            size: 30, color: TeamUiTokens.accent(isDark)),
-                      ),
-                      const SizedBox(height: 16),
-                      Text('暂无记录',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: TeamUiTokens.title(isDark))),
-                    ]),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                    itemCount: apps.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, index) => _ApplicationCard(
-                        application: apps[index], onReview: _review),
-                  ),
+            child: loading && apps.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : loadError != null && apps.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          const SizedBox(height: 120),
+                          Icon(Icons.wifi_off_rounded,
+                              size: 34, color: TeamUiTokens.subtitle(isDark)),
+                          const SizedBox(height: 12),
+                          Center(child: Text(loadError)),
+                          Center(
+                            child: TextButton(
+                              onPressed: _load,
+                              child: const Text('重新加载'),
+                            ),
+                          ),
+                        ],
+                      )
+                    : apps.isEmpty
+                        ? Container(
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      color: TeamUiTokens.accentSoft(isDark),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Icon(Icons.inbox_outlined,
+                                        size: 30,
+                                        color: TeamUiTokens.accent(isDark)),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text('暂无记录',
+                                      style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          color: TeamUiTokens.title(isDark))),
+                                ]),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                            itemCount: apps.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (_, index) => _ApplicationCard(
+                                application: apps[index],
+                                reviewing: provider.reviewingApplicationIds
+                                    .contains(apps[index].id),
+                                onReview: _review),
+                          ),
           ),
         ),
       ]),
@@ -187,8 +216,13 @@ class _TeamApplicationManageScreenState
 
 class _ApplicationCard extends StatelessWidget {
   final WaterTeamApplication application;
+  final bool reviewing;
   final Future<void> Function(WaterTeamApplication, bool) onReview;
-  const _ApplicationCard({required this.application, required this.onReview});
+  const _ApplicationCard({
+    required this.application,
+    required this.reviewing,
+    required this.onReview,
+  });
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -230,13 +264,15 @@ class _ApplicationCard extends StatelessWidget {
                         side: const BorderSide(
                             color: Color(0xFFE54848), width: 0.8),
                       ),
-                      onPressed: () => onReview(application, false),
+                      onPressed:
+                          reviewing ? null : () => onReview(application, false),
                       child: const Text('拒绝')),
                   const SizedBox(width: 8),
                   FilledButton(
                       style: TeamUiTokens.primaryButtonStyle(isDark),
-                      onPressed: () => onReview(application, true),
-                      child: const Text('通过'))
+                      onPressed:
+                          reviewing ? null : () => onReview(application, true),
+                      child: Text(reviewing ? '处理中…' : '通过'))
                 ])
               ],
             ])));

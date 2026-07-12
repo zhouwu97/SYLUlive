@@ -76,7 +76,7 @@ class TeamRecruitment {
               return PostImage(
                 id: (image['id'] as num?)?.toInt() ?? 0,
                 postId: (json['post_id'] as num?)?.toInt() ?? 0,
-                fileId: 0,
+                fileId: (image['file_id'] as num?)?.toInt() ?? 0,
                 file: FileItem(
                   id: 0,
                   hash: '',

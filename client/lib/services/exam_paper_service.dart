@@ -205,13 +205,7 @@ class ExamPaperService {
         onSendProgress: onSendProgress,
       );
     } on DioException catch (error) {
-      if ((error.response?.statusCode ?? 0) >= 400) {
-        throw ExamPaperApiException.fromDio(error);
-      }
-      throw const ExamPaperApiException(
-        message: '文件上传失败，请检查网络后重试',
-        code: 'storage_upload_failed',
-      );
+      throw _storageExceptionFromDio(error);
     }
     final receipt = _parseUploadReceipt(uploadResponse.data);
     final completion = _PendingExamPaperCompletion(
@@ -263,6 +257,78 @@ class ExamPaperService {
       'upload_receipt_invalid',
       'upload_session_invalid',
     }.contains(code);
+  }
+
+  static ExamPaperApiException _storageExceptionFromDio(DioException error) {
+    // 文件服务的 error 字段是协议机器串，只允许映射已知值，禁止直接展示响应正文。
+    final data = error.response?.data;
+    final storageError = data is Map && data['error'] is String
+        ? (data['error'] as String).trim()
+        : '';
+    final mapped = switch (storageError) {
+      'unauthorized' => const ExamPaperApiException(
+          message: '上传凭证已失效，请重新上传',
+          code: 'upload_session_expired',
+        ),
+      'upload_session_expired' => const ExamPaperApiException(
+          message: '上传会话已过期，请重新上传',
+          code: 'upload_session_expired',
+        ),
+      'upload_session_invalid' => const ExamPaperApiException(
+          message: '上传会话已失效，请重新上传',
+          code: 'upload_session_invalid',
+        ),
+      'upload_retry_exhausted' => const ExamPaperApiException(
+          message: '该文件上传失败次数过多，请重新选择文件',
+          code: 'upload_retry_exhausted',
+        ),
+      'upload_unclaimed_quota_exceeded' => const ExamPaperApiException(
+          message: '未完成的上传过多，请稍后重试',
+          code: 'upload_storage_quota_exceeded',
+        ),
+      'upload_session_in_progress' => const ExamPaperApiException(
+          message: '该文件正在上传，请稍后重试',
+          code: 'upload_session_in_progress',
+        ),
+      'file_size_mismatch' => const ExamPaperApiException(
+          message: '文件大小发生变化，请重新选择 PDF',
+          code: 'file_size_mismatch',
+        ),
+      'file too large' => const ExamPaperApiException(
+          message: 'PDF 不能超过 20 MiB',
+          code: 'file_too_large',
+        ),
+      'invalid pdf' || 'encrypted pdf' => const ExamPaperApiException(
+          message: 'PDF 文件无效或已加密，请更换文件',
+          code: 'invalid_pdf',
+        ),
+      'insufficient storage' => const ExamPaperApiException(
+          message: '文件服务器空间不足，请稍后重试',
+          code: 'insufficient_storage',
+        ),
+      'validation busy' || 'validation_busy' => const ExamPaperApiException(
+          message: '文件校验繁忙，请稍后重试',
+          code: 'validation_busy',
+        ),
+      'storage unavailable' => const ExamPaperApiException(
+          message: '文件服务器暂不可用，请稍后重试',
+          code: 'storage_unavailable',
+        ),
+      _ => null,
+    };
+    if (mapped != null) return mapped;
+
+    final statusCode = error.response?.statusCode ?? 0;
+    if (statusCode < 300) {
+      return const ExamPaperApiException(
+        message: '文件上传失败，请检查网络后重试',
+        code: 'storage_upload_failed',
+      );
+    }
+    return const ExamPaperApiException(
+      message: '文件上传失败，请稍后重试',
+      code: 'storage_upload_failed',
+    );
   }
 
   Future<ExamPaperDeleteResult> deleteSubmission(int id) async {

@@ -79,6 +79,9 @@ func NewExamPaperRemoteClient(baseURL string, signer *ExamPaperStorageSigner, cl
 
 // SignedFileURL 生成只允许指定试卷和用途使用的短时文件地址。
 func (c *ExamPaperRemoteClient) SignedFileURL(paper models.ExamPaper, purpose string, ttl time.Duration) (string, error) {
+	if c == nil || c.baseURL == nil || c.signer == nil || c.now == nil {
+		return "", ErrExamPaperRemoteInvalidURL
+	}
 	if purpose != ExamPaperStoragePurposePreview && purpose != ExamPaperStoragePurposeDownload {
 		return "", ErrStorageSignatureInvalid
 	}

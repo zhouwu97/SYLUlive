@@ -781,7 +781,7 @@ func TestReadonlyRemoteExamPaperStorageRejectsNewUploads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("签发切换前回执失败: %v", err)
 	}
-	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, "readonly-remote", "https://sylulive.online", remote.uploads)
+	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, "readonly-remote", "https://sylulive.online", remote.uploads, nil, nil)
 
 	response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, validRemoteExamPaperUploadSessionPayload())
 	if response.Code != http.StatusServiceUnavailable || decodeErrorCode(t, response) != "storage_unavailable" {

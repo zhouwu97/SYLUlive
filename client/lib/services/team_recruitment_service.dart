@@ -73,23 +73,19 @@ class TeamRecruitmentService {
     required int neededCount,
     required List<String> roles,
     DateTime? deadline,
-    List<int> imageFileIds = const [],
+    List<int>? imageFileIds,
   }) async {
-    final response =
-        await _dio.patch('/team/recruitments/$recruitmentId', data: {
+    await _dio.patch('/team/recruitments/$recruitmentId', data: {
       'category': category,
       'title': title,
       'description': description,
       'needed_count': neededCount,
       'roles': roles,
       'deadline': deadline?.toUtc().toIso8601String() ?? '',
-      'image_file_ids': imageFileIds,
+      if (imageFileIds != null) 'image_file_ids': imageFileIds,
     });
-    final data = _map(response.data);
-    final recruitment = data['recruitment'];
-    return TeamRecruitment.fromJson(
-      recruitment is Map ? recruitment.cast<String, dynamic>() : data,
-    );
+    // 更新接口只返回确认消息，随后读取权威详情以同步派生状态和计数。
+    return detail(recruitmentId);
   }
 
   Future<List<TeamRecruitment>> mine() async {

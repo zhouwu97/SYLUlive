@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -65,14 +66,21 @@ func TestStandaloneTeamRecruitmentLifecycle(t *testing.T) {
 	if err := db.Create(&tag).Error; err != nil {
 		t.Fatalf("create team tag: %v", err)
 	}
+	imageFile := models.File{
+		Hash: "team-contract-image", Path: "/uploads/team.png", Size: 10, MimeType: "image/png",
+	}
+	if err := db.Create(&imageFile).Error; err != nil {
+		t.Fatalf("create image file: %v", err)
+	}
 
 	handler := NewWaterTeamHandler(db)
 	create := performTeamJSONRequest(t, handler.CreateTeamRecruitment, http.MethodPost, "/api/team/recruitments", owner.ID, nil, map[string]interface{}{
-		"category":     "competition",
-		"title":        "数学建模竞赛组队",
-		"description":  "寻找两名队友完成数学建模竞赛项目",
-		"needed_count": 1,
-		"roles":        []string{"建模", "编程"},
+		"category":       "competition",
+		"title":          "数学建模竞赛组队",
+		"description":    "寻找两名队友完成数学建模竞赛项目",
+		"needed_count":   1,
+		"roles":          []string{"建模", "编程"},
+		"image_file_ids": []uint{imageFile.ID},
 	})
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create status=%d body=%s", create.Code, create.Body.String())
@@ -108,6 +116,9 @@ func TestStandaloneTeamRecruitmentLifecycle(t *testing.T) {
 	if !detailBody.CanApply || detailBody.IsOwner {
 		t.Fatalf("applicant permissions are wrong: %#v", detailBody)
 	}
+	if len(detailBody.Images) != 1 || detailBody.Images[0].FileID != imageFile.ID {
+		t.Fatalf("detail image file ID is missing: %#v", detailBody.Images)
+	}
 
 	apply := performTeamJSONRequest(t, handler.Apply, http.MethodPost, "/api/team/recruitments/1/apply", applicant.ID, params, map[string]interface{}{
 		"message":      "我擅长建模和数据分析",
@@ -133,6 +144,35 @@ func TestStandaloneTeamRecruitmentLifecycle(t *testing.T) {
 	}
 	if saved.AcceptedCount != 1 || saved.Status != models.RecruitmentStatusFull {
 		t.Fatalf("accepted_count=%d status=%s", saved.AcceptedCount, saved.Status)
+	}
+
+	futureDeadline := time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	update := performTeamJSONRequest(t, handler.UpdateTeamRecruitment, http.MethodPatch, "/api/team/recruitments/1", owner.ID, params, map[string]interface{}{
+		"needed_count": 2,
+		"deadline":     futureDeadline,
+	})
+	if update.Code != http.StatusOK {
+		t.Fatalf("update status=%d body=%s", update.Code, update.Body.String())
+	}
+	if err := db.First(&saved, created.Recruitment.ID).Error; err != nil {
+		t.Fatalf("reload updated recruitment: %v", err)
+	}
+	if saved.Status != models.RecruitmentStatusRecruiting || saved.NeededCount != 2 || saved.Deadline == nil {
+		t.Fatalf("updated recruitment state is wrong: %#v", saved)
+	}
+
+	clearDeadline := performTeamJSONRequest(t, handler.UpdateTeamRecruitment, http.MethodPatch, "/api/team/recruitments/1", owner.ID, params, map[string]interface{}{
+		"deadline": "",
+	})
+	if clearDeadline.Code != http.StatusOK {
+		t.Fatalf("clear deadline status=%d body=%s", clearDeadline.Code, clearDeadline.Body.String())
+	}
+	var cleared models.WaterTeamRecruitment
+	if err := db.First(&cleared, created.Recruitment.ID).Error; err != nil {
+		t.Fatalf("reload recruitment after clearing deadline: %v", err)
+	}
+	if cleared.Deadline != nil {
+		t.Fatalf("deadline was not cleared: %v", cleared.Deadline)
 	}
 }
 

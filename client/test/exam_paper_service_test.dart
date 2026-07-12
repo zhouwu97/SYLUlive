@@ -343,13 +343,12 @@ void main() {
       apiResponses: [_QueuedResponse(201, _uploadSessionJson())],
       storageResponses: const [
         _QueuedResponse(507, {
-          'code': 'storage_readonly',
-          'error': '文件服务器空间不足，请稍后重试',
+          'error': 'insufficient storage',
         }),
       ],
     );
-    expect(storage.code, 'storage_readonly');
-    expect(storage.message, contains('空间不足'));
+    expect(storage.code, 'insufficient_storage');
+    expect(storage.message, '文件服务器空间不足，请稍后重试');
 
     final expired = await runFailure(
       apiResponses: [
@@ -394,6 +393,163 @@ void main() {
     );
     expect(completeNetwork.code, 'upload_complete_failed');
     expect(completeNetwork.message, contains('文件已上传'));
+  });
+
+  test('文件服务真实错误串映射为稳定错误码和中文提示', () async {
+    final cases = <({
+      String serverError,
+      int statusCode,
+      String expectedCode,
+      String expectedMessage,
+    })>[
+      (
+        serverError: 'unauthorized',
+        statusCode: 401,
+        expectedCode: 'upload_session_expired',
+        expectedMessage: '上传凭证已失效，请重新上传',
+      ),
+      (
+        serverError: 'upload_session_expired',
+        statusCode: 410,
+        expectedCode: 'upload_session_expired',
+        expectedMessage: '上传会话已过期，请重新上传',
+      ),
+      (
+        serverError: 'upload_session_invalid',
+        statusCode: 409,
+        expectedCode: 'upload_session_invalid',
+        expectedMessage: '上传会话已失效，请重新上传',
+      ),
+      (
+        serverError: 'upload_retry_exhausted',
+        statusCode: 429,
+        expectedCode: 'upload_retry_exhausted',
+        expectedMessage: '该文件上传失败次数过多，请重新选择文件',
+      ),
+      (
+        serverError: 'upload_unclaimed_quota_exceeded',
+        statusCode: 429,
+        expectedCode: 'upload_storage_quota_exceeded',
+        expectedMessage: '未完成的上传过多，请稍后重试',
+      ),
+      (
+        serverError: 'upload_session_in_progress',
+        statusCode: 409,
+        expectedCode: 'upload_session_in_progress',
+        expectedMessage: '该文件正在上传，请稍后重试',
+      ),
+      (
+        serverError: 'file_size_mismatch',
+        statusCode: 422,
+        expectedCode: 'file_size_mismatch',
+        expectedMessage: '文件大小发生变化，请重新选择 PDF',
+      ),
+      (
+        serverError: 'file too large',
+        statusCode: 413,
+        expectedCode: 'file_too_large',
+        expectedMessage: 'PDF 不能超过 20 MiB',
+      ),
+      (
+        serverError: 'invalid pdf',
+        statusCode: 422,
+        expectedCode: 'invalid_pdf',
+        expectedMessage: 'PDF 文件无效或已加密，请更换文件',
+      ),
+      (
+        serverError: 'encrypted pdf',
+        statusCode: 422,
+        expectedCode: 'invalid_pdf',
+        expectedMessage: 'PDF 文件无效或已加密，请更换文件',
+      ),
+      (
+        serverError: 'insufficient storage',
+        statusCode: 507,
+        expectedCode: 'insufficient_storage',
+        expectedMessage: '文件服务器空间不足，请稍后重试',
+      ),
+      (
+        serverError: 'validation busy',
+        statusCode: 503,
+        expectedCode: 'validation_busy',
+        expectedMessage: '文件校验繁忙，请稍后重试',
+      ),
+      (
+        serverError: 'storage unavailable',
+        statusCode: 500,
+        expectedCode: 'storage_unavailable',
+        expectedMessage: '文件服务器暂不可用，请稍后重试',
+      ),
+    ];
+
+    for (final testCase in cases) {
+      final requests = <_RecordedRequest>[];
+      final apiAdapter = _RecordingAdapter('api', requests)
+        ..enqueueJson(201, _uploadSessionJson());
+      final storageAdapter = _RecordingAdapter('storage', requests)
+        ..enqueueJson(testCase.statusCode, {'error': testCase.serverError});
+      final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+        ..httpClientAdapter = apiAdapter;
+      final storageDio = Dio()..httpClientAdapter = storageAdapter;
+
+      await expectLater(
+        _uploadPaper(
+          ExamPaperService(apiDio, storageDio: storageDio),
+          _pdfPlatformFile('错误映射.pdf'),
+        ),
+        throwsA(
+          isA<ExamPaperApiException>()
+              .having(
+                (error) => error.code,
+                'code',
+                testCase.expectedCode,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                testCase.expectedMessage,
+              ),
+        ),
+        reason: testCase.serverError,
+      );
+    }
+  });
+
+  test('文件服务未知或非对象错误响应不回显原始内容', () async {
+    for (final response in const [
+      _QueuedResponse(500, {'error': 'private backend detail'}),
+      _QueuedResponse(502, <Object>['private', 'backend', 'detail']),
+      _QueuedResponse(400, 'private backend detail'),
+    ]) {
+      final requests = <_RecordedRequest>[];
+      final apiAdapter = _RecordingAdapter('api', requests)
+        ..enqueueJson(201, _uploadSessionJson());
+      final storageAdapter = _RecordingAdapter('storage', requests)
+        ..enqueueJson(response.statusCode, response.data);
+      final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+        ..httpClientAdapter = apiAdapter;
+      final storageDio = Dio()..httpClientAdapter = storageAdapter;
+
+      await expectLater(
+        _uploadPaper(
+          ExamPaperService(apiDio, storageDio: storageDio),
+          _pdfPlatformFile('未知错误.pdf'),
+        ),
+        throwsA(
+          isA<ExamPaperApiException>()
+              .having(
+                (error) => error.code,
+                'code',
+                'storage_upload_failed',
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                '文件上传失败，请稍后重试',
+              ),
+        ),
+      );
+    }
   });
 
   test('拒绝字段类型错误的会话、文件服务和完成响应', () async {

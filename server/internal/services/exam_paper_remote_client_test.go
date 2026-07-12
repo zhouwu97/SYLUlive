@@ -36,6 +36,22 @@ func TestExamPaperRemoteClientSignedFileURLBindsPaperAndPurpose(t *testing.T) {
 	require.Equal(t, now.Add(2*time.Minute).Unix(), grant.ExpiresAt)
 }
 
+func TestExamPaperRemoteClientSignedFileURLRejectsUninitializedClient(t *testing.T) {
+	paper := models.ExamPaper{ID: 42, FileKey: "paper.pdf", StorageBackend: models.ExamPaperStorageRemote}
+	for _, test := range []struct {
+		name   string
+		client *ExamPaperRemoteClient
+	}{
+		{name: "nil receiver", client: nil},
+		{name: "zero value", client: &ExamPaperRemoteClient{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := test.client.SignedFileURL(paper, ExamPaperStoragePurposePreview, time.Minute)
+			require.ErrorIs(t, err, ErrExamPaperRemoteInvalidURL)
+		})
+	}
+}
+
 func TestExamPaperRemoteClientRejectsUnsafeBaseURLAndFileKey(t *testing.T) {
 	signer, err := NewExamPaperStorageSigner("remote-client-secret", time.Now)
 	require.NoError(t, err)

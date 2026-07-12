@@ -17,11 +17,11 @@ type WaterSection struct {
 	IconKey              string    `gorm:"size:64" json:"icon_key"`
 	AvatarURL            string    `gorm:"size:500" json:"avatar_url"`
 	ColorHex             string    `gorm:"size:20" json:"color_hex"`
-	CoverURL             string    `gorm:"size:500" json:"cover_url"` // 兼容旧字段
-	CoverPortraitURL     string    `gorm:"size:500" json:"cover_portrait_url"` // 手机版块背景 3:4
-	CoverLandscapeURL    string    `gorm:"size:500" json:"cover_landscape_url"`// 横向封面 16:9
-	CoverSquareURL       string    `gorm:"size:500" json:"cover_square_url"`   // 方形入口 1:1
-	CoverBlurColor       string    `gorm:"size:20" json:"cover_blur_color"`    // 可选，加载前底色
+	CoverURL             string    `gorm:"size:500" json:"cover_url"`           // 兼容旧字段
+	CoverPortraitURL     string    `gorm:"size:500" json:"cover_portrait_url"`  // 手机版块背景 3:4
+	CoverLandscapeURL    string    `gorm:"size:500" json:"cover_landscape_url"` // 横向封面 16:9
+	CoverSquareURL       string    `gorm:"size:500" json:"cover_square_url"`    // 方形入口 1:1
+	CoverBlurColor       string    `gorm:"size:20" json:"cover_blur_color"`     // 可选，加载前底色
 	PublishActionText    string    `gorm:"size:40" json:"publish_action_text"`
 	EmptyTitle           string    `gorm:"size:100" json:"empty_title"`
 	EmptyDescription     string    `gorm:"size:300" json:"empty_description"`
@@ -214,14 +214,14 @@ const (
 	ModActionFeaturePost   = "feature_post"
 	ModActionUnfeaturePost = "unfeature_post"
 	ModActionDeletePost    = "delete_post"
-	ModActionRestorePost = "restore_post"
-	ModActionMuteUser    = "mute_user"
-	ModActionUnmuteUser  = "unmute_user"
-	ModActionEditSection = "edit_section"
-	ModActionCreateTag   = "create_tag"
-	ModActionUpdateTag   = "update_tag"
-	ModActionEnableTag   = "enable_tag"
-	ModActionDisableTag  = "disable_tag"
+	ModActionRestorePost   = "restore_post"
+	ModActionMuteUser      = "mute_user"
+	ModActionUnmuteUser    = "unmute_user"
+	ModActionEditSection   = "edit_section"
+	ModActionCreateTag     = "create_tag"
+	ModActionUpdateTag     = "update_tag"
+	ModActionEnableTag     = "enable_tag"
+	ModActionDisableTag    = "disable_tag"
 )
 
 // waterSectionSeedEntry seed 表条目

@@ -31,8 +31,12 @@ func main() {
 	var lifeID uint
 	if err := db.Model(&models.WaterSection{}).Where("slug = ?", "campus_life").Select("id").Scan(&lifeID).Error; err == nil && lifeID > 0 {
 		db.Exec("UPDATE water_section_tags SET is_enabled = 0 WHERE section_id = ? AND slug IN ('campus_card', 'snapshot')", lifeID)
-		
-		tags := []struct{Slug string; Name string; Order int}{
+
+		tags := []struct {
+			Slug  string
+			Name  string
+			Order int
+		}{
 			{"daily", "日常", 10},
 			{"dormitory", "宿舍", 20},
 			{"canteen", "食堂", 30},

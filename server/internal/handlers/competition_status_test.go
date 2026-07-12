@@ -19,9 +19,9 @@ func TestCheckEventStatusTransition(t *testing.T) {
 
 		// Published
 		{"published", "archive", "archived", false},
-		{"published", "delete", "", true}, // cannot delete published
+		{"published", "delete", "", true},           // cannot delete published
 		{"published", "restore_to_draft", "", true}, // cannot restore published
-		{"published", "publish", "", true}, // cannot publish published
+		{"published", "publish", "", true},          // cannot publish published
 
 		// Archived
 		{"archived", "restore_to_draft", "draft", false},

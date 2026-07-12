@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1407,6 +1408,148 @@ func TestPaperStorageCorruptCompletedStateDoesNotBlockQuotaOrOtherFileLifecycle(
 	if _, err := os.Stat(quarantinePath); !os.IsNotExist(err) {
 		t.Fatalf("过期隔离状态应被清理: %v", err)
 	}
+}
+
+func TestPaperStorageSemanticCorruptActiveStatesReserveConservativeQuota(t *testing.T) {
+	tests := []struct {
+		name   string
+		stage  string
+		mutate func(map[string]any)
+	}{
+		{name: "completed空对象", stage: "completed", mutate: func(state map[string]any) { clear(state) }},
+		{name: "completed错误状态", stage: "completed", mutate: func(state map[string]any) { state["status"] = "uploading" }},
+		{name: "completed缺少回执", stage: "completed", mutate: func(state map[string]any) { delete(state, "receipt") }},
+		{name: "completed大小越界", stage: "completed", mutate: func(state map[string]any) { state["expected_size"] = ExamPaperMaxFileSize + 1 }},
+		{name: "uploading空对象", stage: "uploading", mutate: func(state map[string]any) { clear(state) }},
+		{name: "uploading错误状态", stage: "uploading", mutate: func(state map[string]any) { state["status"] = "completed" }},
+		{name: "uploading缺少JTI", stage: "uploading", mutate: func(state map[string]any) { delete(state, "jti") }},
+		{name: "uploading大小越界", stage: "uploading", mutate: func(state map[string]any) { state["expected_size"] = ExamPaperMaxFileSize + 1 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, err := NewExamPaperFileService(t.TempDir())
+			if err != nil {
+				t.Fatalf("初始化文件服务失败: %v", err)
+			}
+			const corruptSessionID = "61000000-0000-4000-8000-000000000001"
+			path := semanticSessionStatePath(service, corruptSessionID, tt.stage)
+			payload := semanticSessionStatePayload(t, corruptSessionID, tt.stage, tt.mutate)
+			if err := os.WriteFile(path, payload, 0o600); err != nil {
+				t.Fatalf("写入语义损坏状态失败: %v", err)
+			}
+			now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+			for index := 0; index < 4; index++ {
+				sessionID := fmt.Sprintf("62000000-0000-4000-8000-%012d", index+1)
+				if _, err := service.BeginUploadSessionForUser(sessionID, fmt.Sprintf("semantic-quota-%d", index), 200, ExamPaperMaxFileSize, now.Add(time.Minute), now); err != nil {
+					t.Fatalf("语义损坏状态保守计额后，第 %d 份 reservation 应成功: %v", index+1, err)
+				}
+			}
+			if _, err := service.BeginUploadSessionForUser("62000000-0000-4000-8000-000000000005", "semantic-quota-5", 200, ExamPaperMaxFileSize, now.Add(time.Minute), now); !errors.Is(err, ErrExamPaperUnclaimedQuotaExceeded) {
+				t.Fatalf("语义损坏状态必须为所有用户保守占用一份最大文件配额: %v", err)
+			}
+		})
+	}
+}
+
+func TestPaperStorageMaintenanceQuarantinesSemanticCorruptStatesAcrossRestart(t *testing.T) {
+	tests := []struct {
+		name   string
+		stage  string
+		mutate func(map[string]any)
+	}{
+		{name: "completed空对象", stage: "completed", mutate: func(state map[string]any) { clear(state) }},
+		{name: "completed错误状态", stage: "completed", mutate: func(state map[string]any) { state["status"] = "uploading" }},
+		{name: "completed缺少session_id", stage: "completed", mutate: func(state map[string]any) { delete(state, "session_id") }},
+		{name: "completed缺少JTI", stage: "completed", mutate: func(state map[string]any) { delete(state, "jti") }},
+		{name: "completed缺少expected_size", stage: "completed", mutate: func(state map[string]any) { delete(state, "expected_size") }},
+		{name: "completed缺少receipt", stage: "completed", mutate: func(state map[string]any) { delete(state, "receipt") }},
+		{name: "completed非法大小", stage: "completed", mutate: func(state map[string]any) { state["expected_size"] = -1 }},
+		{name: "completed文件名ID不匹配", stage: "completed", mutate: func(state map[string]any) { state["session_id"] = "61000000-0000-4000-8000-000000000099" }},
+		{name: "uploading空对象", stage: "uploading", mutate: func(state map[string]any) { clear(state) }},
+		{name: "uploading错误状态", stage: "uploading", mutate: func(state map[string]any) { state["status"] = "completed" }},
+		{name: "uploading缺少JTI", stage: "uploading", mutate: func(state map[string]any) { delete(state, "jti") }},
+		{name: "uploading缺少过期时间", stage: "uploading", mutate: func(state map[string]any) { delete(state, "expires_at") }},
+		{name: "failure错误状态", stage: "failure", mutate: func(state map[string]any) { state["status"] = "uploading" }},
+		{name: "failure缺少JTI", stage: "failure", mutate: func(state map[string]any) { delete(state, "jti") }},
+		{name: "failure缺少expected_size", stage: "failure", mutate: func(state map[string]any) { delete(state, "expected_size") }},
+		{name: "failure文件名ID不匹配", stage: "failure", mutate: func(state map[string]any) { state["session_id"] = "61000000-0000-4000-8000-000000000099" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			service, err := NewExamPaperFileService(root)
+			if err != nil {
+				t.Fatalf("初始化文件服务失败: %v", err)
+			}
+			const sessionID = "61000000-0000-4000-8000-000000000001"
+			path := semanticSessionStatePath(service, sessionID, tt.stage)
+			payload := semanticSessionStatePayload(t, sessionID, tt.stage, tt.mutate)
+			if err := os.WriteFile(path, payload, 0o600); err != nil {
+				t.Fatalf("写入语义损坏状态失败: %v", err)
+			}
+
+			restarted, err := NewExamPaperFileService(root)
+			if err != nil {
+				t.Fatalf("重建文件服务失败: %v", err)
+			}
+			now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+			result, err := restarted.Maintenance(now)
+			if err != nil {
+				t.Fatalf("隔离语义损坏状态失败: %v", err)
+			}
+			if result.CorruptUploadSessionRecordsQuarantined != 1 {
+				t.Fatalf("语义损坏状态隔离计数错误: %+v", result)
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("语义损坏状态原路径应被隔离: %v", err)
+			}
+			if _, err := os.Stat(path + ".corrupt"); err != nil {
+				t.Fatalf("语义损坏状态隔离文件不存在: %v", err)
+			}
+
+			restartedAgain, err := NewExamPaperFileService(root)
+			if err != nil {
+				t.Fatalf("再次重建文件服务失败: %v", err)
+			}
+			if _, err := restartedAgain.BeginUploadSessionForUser(sessionID, "after-semantic-quarantine", 42, 100, now.Add(time.Minute), now); err != nil {
+				t.Fatalf("隔离后对应 session 不得永久处于 consumed 状态: %v", err)
+			}
+		})
+	}
+}
+
+func semanticSessionStatePath(service *ExamPaperFileService, sessionID, stage string) string {
+	if stage == "failure" {
+		return service.uploadSessionFailurePath(sessionID, 1)
+	}
+	return service.uploadSessionPath(sessionID, stage)
+}
+
+func semanticSessionStatePayload(t *testing.T, sessionID, stage string, mutate func(map[string]any)) []byte {
+	t.Helper()
+	status := stage
+	if stage == "failure" {
+		status = "failed"
+	}
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	state := map[string]any{
+		"session_id": sessionID, "jti": "semantic-state-jti", "user_id": 1,
+		"expected_size": 100, "expires_at": now.Add(time.Hour), "status": status,
+		"created_at": now, "updated_at": now,
+	}
+	if stage == "completed" {
+		state["receipt"] = "semantic-state-receipt"
+		state["file_key"] = sessionID + ".pdf"
+		state["file_size"] = 100
+		state["sha256"] = strings.Repeat("a", 64)
+		state["completed_at"] = now
+	}
+	mutate(state)
+	payload, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("编码测试会话状态失败: %v", err)
+	}
+	return payload
 }
 
 func TestPaperStorageMaintenanceRemovesCrashedSessionStateTempAcrossRestart(t *testing.T) {

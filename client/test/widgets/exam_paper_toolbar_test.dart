@@ -72,6 +72,44 @@ void main() {
     );
   });
 
+  testWidgets('宽屏工具栏完整展示下载最多排序选项', (tester) async {
+    final searchController = TextEditingController();
+    addTearDown(searchController.dispose);
+
+    await tester.pumpWidget(_buildToolbar(
+      width: 780,
+      sort: 'downloads',
+      searchController: searchController,
+    ));
+
+    final sortLabel = find.text('下载最多');
+    final dropdowns = find.byType(DropdownButton<String>);
+
+    expect(sortLabel, findsOneWidget);
+    expect(dropdowns, findsNWidgets(4));
+
+    final sortDropdownRect = tester.getRect(dropdowns.at(3));
+    final sortLabelRect = tester.getRect(sortLabel);
+    expect(sortDropdownRect.width, greaterThanOrEqualTo(96));
+    expect(
+      sortLabelRect.left,
+      greaterThanOrEqualTo(sortDropdownRect.left - 0.5),
+    );
+    expect(
+      sortLabelRect.right,
+      lessThanOrEqualTo(sortDropdownRect.right + 0.5),
+    );
+    expect(
+      sortLabelRect.top,
+      greaterThanOrEqualTo(sortDropdownRect.top - 0.5),
+    );
+    expect(
+      sortLabelRect.bottom,
+      lessThanOrEqualTo(sortDropdownRect.bottom + 0.5),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('窄屏工具栏将筛选项排列为两列两行', (tester) async {
     final searchController = TextEditingController();
     addTearDown(searchController.dispose);
@@ -109,6 +147,7 @@ void main() {
 Widget _buildToolbar({
   required double width,
   required TextEditingController searchController,
+  String sort = 'latest',
 }) {
   return ChangeNotifierProvider<ThemeProvider>(
     create: (_) => ThemeProvider(loadOnStart: false),
@@ -123,7 +162,7 @@ Widget _buildToolbar({
             academicYear: '',
             semester: '',
             examType: '',
-            sort: 'latest',
+            sort: sort,
             academicYears: const ['2025-2026'],
             onAcademicYearChanged: (_) {},
             onSemesterChanged: (_) {},

@@ -116,3 +116,145 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 		t.Fatal("Dockerfile 必须同时收紧 /app/private 父目录和试卷私有目录权限")
 	}
 }
+
+// TestPaperStorageDeploymentAssets 验证文件服务部署资产维持最小权限、私有文件和密钥隔离边界。
+func TestPaperStorageDeploymentAssets(t *testing.T) {
+	repoRoot := deploymentRepoRoot(t)
+	serviceText := readDeploymentAsset(t, repoRoot, "deploy", "paper-storage", "paper-storage.service")
+	nginxText := readDeploymentAsset(t, repoRoot, "deploy", "paper-storage", "nginx.conf")
+	envText := readDeploymentAsset(t, repoRoot, "deploy", "paper-storage", "paper-storage.env.example")
+	installText := readDeploymentAsset(t, repoRoot, "deploy", "paper-storage", "install.sh")
+	deployDoc := readDeploymentAsset(t, repoRoot, "DEPLOY.md")
+
+	for _, expected := range []string{
+		"User=paper-storage",
+		"Group=paper-storage",
+		"EnvironmentFile=/etc/sylg-paper-storage.env",
+		"ExecStart=/opt/sylg-paper-storage/bin/paper-storage",
+		"Restart=on-failure",
+		"NoNewPrivileges=true",
+		"PrivateTmp=true",
+		"ProtectSystem=strict",
+		"ProtectHome=true",
+		"ReadWritePaths=/opt/sylg-paper-storage/data",
+		"UMask=0077",
+		"TimeoutStopSec=15s",
+	} {
+		if !strings.Contains(serviceText, expected) {
+			t.Errorf("systemd 文件服务缺少加固项 %q", expected)
+		}
+	}
+
+	for _, expected := range []string{
+		"user paper-storage;",
+		"server_name sylulive.online;",
+		"server_name www.sylulive.online;",
+		"return 301 https://sylulive.online$request_uri;",
+		"client_max_body_size 21m;",
+		"proxy_request_buffering off;",
+		"proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
+		"proxy_set_header X-Forwarded-Proto $scheme;",
+		"location /_paper_files/",
+		"internal;",
+		"alias /opt/sylg-paper-storage/data/exam-papers/;",
+		"add_header Cache-Control \"private, no-store\" always;",
+		"add_header Referrer-Policy \"no-referrer\" always;",
+		"autoindex off;",
+		"access_log off;",
+	} {
+		if !strings.Contains(nginxText, expected) {
+			t.Errorf("Nginx 文件服务缺少安全或流量配置 %q", expected)
+		}
+	}
+	for _, route := range []string{"/healthz", "/v1/uploads/", "/v1/files/", "/internal/v1/"} {
+		if !strings.Contains(nginxText, "location "+route) {
+			t.Errorf("Nginx 文件服务必须代理公开服务路由 %s", route)
+		}
+	}
+
+	for _, key := range []string{
+		"PAPER_STORAGE_LISTEN=",
+		"PAPER_STORAGE_DIR=",
+		"PAPER_STORAGE_SIGNING_SECRET=",
+		"PAPER_STORAGE_RECEIPT_SECRET=",
+		"PAPER_STORAGE_MAX_CONCURRENT_VALIDATIONS=",
+	} {
+		if !strings.Contains(envText, key) {
+			t.Errorf("文件服务环境变量示例缺少 %s", key)
+		}
+	}
+	if !strings.Contains(envText, "PAPER_STORAGE_SIGNING_SECRET=CHANGE_ME_SIGNING_SECRET") ||
+		!strings.Contains(envText, "PAPER_STORAGE_RECEIPT_SECRET=CHANGE_ME_RECEIPT_SECRET") {
+		t.Error("文件服务环境变量示例必须使用两把不同且不能通过长度校验的密钥占位符")
+	}
+
+	for _, expected := range []string{
+		"apt-get install",
+		"nginx",
+		"ufw",
+		"certbot",
+		"python3-certbot-nginx",
+		"useradd",
+		"chmod 0700",
+		"chmod 0600",
+		"fallocate -l 2G /swapfile",
+		"swapon /swapfile",
+		"journalctl --vacuum-time=14d",
+		"ufw allow 22/tcp",
+		"ufw allow 80/tcp",
+		"ufw allow 443/tcp",
+		"nginx -t",
+		"systemctl daemon-reload",
+		"systemctl reload nginx",
+	} {
+		if !strings.Contains(installText, expected) {
+			t.Errorf("文件服务安装脚本缺少幂等部署步骤 %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"139.196.148.174", "156.233.229.232", "PAPER_STORAGE_SIGNING_SECRET=change-me", "PAPER_STORAGE_RECEIPT_SECRET=change-me"} {
+		for name, content := range map[string]string{"systemd": serviceText, "nginx": nginxText, "env": envText, "install": installText} {
+			if strings.Contains(content, forbidden) {
+				t.Errorf("%s 部署资产不得包含服务器地址或弱生产密钥 %q", name, forbidden)
+			}
+		}
+	}
+
+	for _, expected := range []string{
+		"sylulive.online",
+		"139.196.148.174",
+		"Cloudflare",
+		"绕过缓存",
+		"每日磁盘快照",
+		"保留 7 天",
+		"openssl rand -hex 32",
+		"certbot",
+		"/healthz",
+		"PasswordAuthentication no",
+		"PermitRootLogin prohibit-password",
+		"确认 SSH 公钥登录成功后",
+		"回滚",
+		"不得记录服务器密码",
+	} {
+		if !strings.Contains(deployDoc, expected) {
+			t.Errorf("部署文档缺少文件服务运维说明 %q", expected)
+		}
+	}
+}
+
+func deploymentRepoRoot(t *testing.T) string {
+	t.Helper()
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("无法定位部署资产测试文件")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+}
+
+func readDeploymentAsset(t *testing.T, repoRoot string, pathParts ...string) string {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(append([]string{repoRoot}, pathParts...)...))
+	if err != nil {
+		t.Fatalf("读取部署资产 %s 失败: %v", filepath.Join(pathParts...), err)
+	}
+	return string(content)
+}

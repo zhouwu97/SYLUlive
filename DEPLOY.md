@@ -582,3 +582,92 @@ echo "=== 最近错误 ===" && journalctl -u shenliyuan -n 10 --no-pager -p err
 mkdir -p /opt/shenliyuan/private/exam-papers
 chmod 0700 /opt/shenliyuan/private /opt/shenliyuan/private/exam-papers
 ```
+
+## 独立试卷文件服务器
+
+试卷文件服务使用域名 `sylulive.online`，根域名与 `www` 的 DNS 记录均指向 `139.196.148.174`。`www.sylulive.online` 只做 301 跳转，客户端上传、预览和下载统一使用根域名。不得记录服务器密码到仓库、部署日志或切换报告中；聊天中曾共享过的密码应在上线前轮换。
+
+### 构建与首次安装
+
+在可信构建机生成 Ubuntu 24.04 可执行文件：
+
+```bash
+cd server
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/paper-storage ./cmd/paper_storage
+```
+
+把仓库和二进制放到文件服务器后，以 root 执行：
+
+```bash
+cd deploy/paper-storage
+PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
+```
+
+脚本创建非登录用户 `paper-storage`、`0700` 数据目录、`0600` 环境文件，安装 Nginx、UFW、certbot 和 systemd 单元，并在现有 Swap 小于 2 GiB 时新增 Swap。脚本不会停用或覆盖已有 Swap。安装脚本不会写入服务器 IP、密码或生产密钥。
+
+生成两把不同的密钥，只写入 `/etc/sylg-paper-storage.env`：
+
+```bash
+openssl rand -hex 32
+openssl rand -hex 32
+```
+
+第一把同时配置为主服务器的 `EXAM_PAPER_STORAGE_SIGNING_SECRET` 和文件服务器的 `PAPER_STORAGE_SIGNING_SECRET`；第二把同时配置为主服务器的 `EXAM_PAPER_STORAGE_RECEIPT_SECRET` 和文件服务器的 `PAPER_STORAGE_RECEIPT_SECRET`。两把密钥不得相同，也不得提交到 Git。
+
+设置正式证书联系人并再次运行安装脚本，certbot 会替换 Nginx 临时证书：
+
+```bash
+LETSENCRYPT_EMAIL=管理员邮箱 PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
+certbot renew --dry-run
+curl -fsS https://sylulive.online/healthz
+```
+
+健康检查应返回 `status=ok`；磁盘使用率达到 70% 时返回 `warning`，达到 95% 时返回 `readonly`。上线前同时检查：
+
+```bash
+systemctl status paper-storage --no-pager
+journalctl -u paper-storage -n 100 --no-pager
+nginx -t
+curl -fsS http://127.0.0.1:8081/healthz
+curl -fsS https://sylulive.online/healthz
+```
+
+### 网络与 SSH 加固
+
+UFW 仅放行 `22/tcp`、`80/tcp` 和 `443/tcp`。如果生产 SSH 端口不是 22，必须先额外放行实际端口并从第二个终端验证，再删除 22 规则。安装脚本不会直接关闭密码登录。
+
+先配置普通运维账号和 SSH 公钥，确认 SSH 公钥登录成功后，再设置：
+
+```text
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+```
+
+修改后先执行 `sshd -t`，保持当前会话不退出，从第二个终端验证公钥登录成功后再关闭旧会话。
+
+### Cloudflare、缓存与备份
+
+在 Cloudflare 为 `/v1/files/*`、`/v1/uploads/*` 和 `/_paper_files/*` 建立 Cache Rule，操作选择绕过缓存；不要启用会缓存 PDF 响应的规则。源站和 Cloudflare 均应保留 `Cache-Control: private, no-store` 与 `Referrer-Policy: no-referrer`。
+
+在云厂商控制台启用每日磁盘快照，至少保留 7 天。快照是灾难恢复手段，不替代每天核对数据库引用、文件数量、大小和 SHA-256。journald 日志保留 14 天；下载位置关闭访问日志，其他日志也不记录查询参数，避免短时 token 泄露。
+
+### 更新、回滚与故障处理
+
+更新前保留上一版二进制：
+
+```bash
+cp -a /opt/sylg-paper-storage/bin/paper-storage /opt/sylg-paper-storage/bin/paper-storage.bak
+PAPER_STORAGE_BINARY=/实际路径/新版本-paper-storage ./deploy/paper-storage/install.sh
+```
+
+若新版本异常，先在主服务器把 `EXAM_PAPER_STORAGE_MODE` 切为 `readonly-remote`，停止新的远端上传。已标记为 `remote` 的试卷继续从文件服务器下载，本地记录继续走主服务器。文件服务二进制回滚命令：
+
+```bash
+install -o root -g paper-storage -m 0750 \
+  /opt/sylg-paper-storage/bin/paper-storage.bak \
+  /opt/sylg-paper-storage/bin/paper-storage
+systemctl restart paper-storage
+curl -fsS http://127.0.0.1:8081/healthz
+```
+
+不要在回滚时删除 `/opt/sylg-paper-storage/data`、远端业务记录或 `.trash`。如果 Nginx 配置导致启动失败，使用安装脚本首次保存的 `/etc/nginx/nginx.conf.pre-sylg-paper-storage` 恢复，执行 `nginx -t` 后再 reload。

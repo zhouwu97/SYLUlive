@@ -26,18 +26,33 @@ const (
 	maxExamPaperUploadsPerWindow          = 3
 	examPaperRewardExp                    = 10
 	examPaperUploadRateWindow             = time.Minute
+	examPaperStorageModeLocal             = "local"
+	examPaperStorageModeRemote            = "remote"
+	examPaperStorageModeReadonlyRemote    = "readonly-remote"
 )
 
 // ExamPaperHandler 提供试卷投稿、浏览、下载与审核接口。
 type ExamPaperHandler struct {
-	db            *gorm.DB
-	files         *services.ExamPaperFileService
-	uploadLimiter *examPaperUploadLimiter
+	db             *gorm.DB
+	files          *services.ExamPaperFileService
+	uploads        *services.ExamPaperUploadService
+	storageMode    string
+	storageBaseURL string
+	uploadLimiter  *examPaperUploadLimiter
 }
 
 // NewExamPaperHandler 创建试卷处理器。
 func NewExamPaperHandler(db *gorm.DB, files *services.ExamPaperFileService) *ExamPaperHandler {
-	return &ExamPaperHandler{db: db, files: files, uploadLimiter: newExamPaperUploadLimiter()}
+	return &ExamPaperHandler{db: db, files: files, storageMode: examPaperStorageModeLocal, uploadLimiter: newExamPaperUploadLimiter()}
+}
+
+// NewExamPaperHandlerWithStorage 创建支持远端上传会话的试卷处理器。
+func NewExamPaperHandlerWithStorage(db *gorm.DB, files *services.ExamPaperFileService, mode, baseURL string, uploads *services.ExamPaperUploadService) *ExamPaperHandler {
+	handler := NewExamPaperHandler(db, files)
+	handler.storageMode = strings.TrimSpace(mode)
+	handler.storageBaseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	handler.uploads = uploads
+	return handler
 }
 
 type examPaperUploadLimiter struct {
@@ -373,6 +388,14 @@ func (h *ExamPaperHandler) Upload(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if h.storageMode == examPaperStorageModeRemote {
+		writeExamPaperError(c, http.StatusUpgradeRequired, "client_upgrade_required", "请升级客户端后上传试卷")
+		return
+	}
+	if h.storageMode == examPaperStorageModeReadonlyRemote {
+		writeExamPaperError(c, http.StatusServiceUnavailable, "storage_unavailable", "试卷上传暂不可用")
+		return
+	}
 	if !isExamPaperAdmin(user) && !h.ensureExamPaperUploadAllowed(c, user) {
 		return
 	}
@@ -455,6 +478,119 @@ func (h *ExamPaperHandler) Upload(c *gin.Context) {
 	keepStoredFile = true
 	paper.Submitter = user
 	c.JSON(http.StatusCreated, examPaperToResponse(paper))
+}
+
+type createExamPaperUploadSessionRequest struct {
+	CourseName       string                   `json:"course_name"`
+	AcademicYear     string                   `json:"academic_year"`
+	Semester         models.ExamPaperSemester `json:"semester"`
+	ExamType         models.ExamPaperType     `json:"exam_type"`
+	PrivacyConfirmed bool                     `json:"privacy_confirmed"`
+	FileSize         int64                    `json:"file_size"`
+}
+
+type createExamPaperUploadSessionResponse struct {
+	SessionID   string    `json:"session_id"`
+	UploadURL   string    `json:"upload_url"`
+	UploadToken string    `json:"upload_token"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+// CreateUploadSession 校验投稿信息并签发直传到文件服务器的短时凭证。
+func (h *ExamPaperHandler) CreateUploadSession(c *gin.Context) {
+	user, ok := h.currentExamPaperUser(c)
+	if !ok {
+		return
+	}
+	if h.storageMode != examPaperStorageModeRemote || h.uploads == nil || h.storageBaseURL == "" {
+		writeExamPaperError(c, http.StatusServiceUnavailable, "storage_unavailable", "试卷上传暂不可用")
+		return
+	}
+
+	var request createExamPaperUploadSessionRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		writeExamPaperError(c, http.StatusBadRequest, "invalid_upload_session_request", "上传会话参数无效")
+		return
+	}
+	if !request.PrivacyConfirmed {
+		writeExamPaperError(c, http.StatusBadRequest, "privacy_confirmation_required", "请确认文件不含隐私信息且拥有分享权限")
+		return
+	}
+	metadata, err := models.NormalizeExamPaperMetadata(request.CourseName, request.AcademicYear, request.Semester, request.ExamType)
+	if err != nil {
+		writeExamPaperError(c, http.StatusBadRequest, "invalid_exam_paper_metadata", err.Error())
+		return
+	}
+	if request.FileSize <= 0 {
+		writeExamPaperError(c, http.StatusBadRequest, "invalid_file_size", "PDF 文件大小无效")
+		return
+	}
+	if request.FileSize > services.ExamPaperMaxFileSize {
+		writeExamPaperError(c, http.StatusRequestEntityTooLarge, "file_too_large", "PDF 不能超过 20 MiB")
+		return
+	}
+	if !isExamPaperAdmin(user) && !h.ensureExamPaperUploadAllowed(c, user) {
+		return
+	}
+
+	session, token, err := h.uploads.CreateSession(user, metadata, request.FileSize)
+	if err != nil {
+		if errors.Is(err, services.ErrExamPaperUploadSizeInvalid) {
+			writeExamPaperError(c, http.StatusBadRequest, "invalid_file_size", "PDF 文件大小无效")
+			return
+		}
+		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "创建上传会话失败")
+		return
+	}
+	path := "/v1/uploads/" + session.ID
+	c.JSON(http.StatusCreated, createExamPaperUploadSessionResponse{
+		SessionID: session.ID, UploadURL: h.storageBaseURL + path, UploadToken: token, ExpiresAt: session.ExpiresAt,
+	})
+}
+
+type completeExamPaperUploadSessionRequest struct {
+	Receipt string `json:"receipt"`
+}
+
+// CompleteUploadSession 验证文件服务回执并完成试卷投稿入库。
+func (h *ExamPaperHandler) CompleteUploadSession(c *gin.Context) {
+	user, ok := h.currentExamPaperUser(c)
+	if !ok {
+		return
+	}
+	if (h.storageMode != examPaperStorageModeRemote && h.storageMode != examPaperStorageModeReadonlyRemote) || h.uploads == nil {
+		writeExamPaperError(c, http.StatusServiceUnavailable, "storage_unavailable", "试卷上传暂不可用")
+		return
+	}
+	var request completeExamPaperUploadSessionRequest
+	if err := c.ShouldBindJSON(&request); err != nil || strings.TrimSpace(request.Receipt) == "" {
+		writeExamPaperError(c, http.StatusBadRequest, "upload_receipt_invalid", "上传回执无效")
+		return
+	}
+
+	paper, err := h.uploads.CompleteSession(user.ID, c.Param("id"), request.Receipt)
+	if err != nil {
+		h.writeUploadSessionError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, examPaperToResponse(*paper))
+}
+
+func (h *ExamPaperHandler) writeUploadSessionError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, services.ErrExamPaperUploadSessionNotFound):
+		writeExamPaperError(c, http.StatusNotFound, "upload_session_not_found", "上传会话不存在")
+	case errors.Is(err, services.ErrExamPaperUploadSessionExpired):
+		writeExamPaperError(c, http.StatusGone, "upload_session_expired", "上传会话已过期")
+	case errors.Is(err, services.ErrExamPaperUploadReceiptInvalid):
+		writeExamPaperError(c, http.StatusBadRequest, "upload_receipt_invalid", "上传回执无效")
+	case errors.Is(err, services.ErrExamPaperUploadDuplicate):
+		writeExamPaperError(c, http.StatusConflict, "duplicate_exam_paper", "该 PDF 已在待审核或已发布试卷中存在")
+	case errors.Is(err, services.ErrExamPaperUploadSessionInconsistent):
+		writeExamPaperError(c, http.StatusConflict, "upload_session_invalid", "上传会话状态无效")
+	default:
+		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "完成试卷投稿失败")
+	}
 }
 
 func (h *ExamPaperHandler) ensureExamPaperUploadAllowed(c *gin.Context, user models.User) bool {

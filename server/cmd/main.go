@@ -341,7 +341,25 @@ func main() {
 	if examPaperFileErr = examPaperFiles.RecoverTrash(db); examPaperFileErr != nil {
 		log.Fatal("恢复试卷私有文件失败:", examPaperFileErr)
 	}
-	examPaperHandler := handlers.NewExamPaperHandler(db, examPaperFiles)
+	var examPaperUploads *services.ExamPaperUploadService
+	if cfg.ExamPaperStorageMode != config.ExamPaperStorageModeLocal {
+		grantSigner, signerErr := services.NewExamPaperStorageSigner(cfg.ExamPaperStorageSigningSecret, time.Now)
+		if signerErr != nil {
+			log.Fatal("初始化试卷存储授权签名器失败:", signerErr)
+		}
+		receiptSigner, receiptErr := services.NewExamPaperStorageSigner(cfg.ExamPaperStorageReceiptSecret, time.Now)
+		if receiptErr != nil {
+			log.Fatal("初始化试卷上传回执签名器失败:", receiptErr)
+		}
+		examPaperUploads = services.NewExamPaperUploadService(db, grantSigner, receiptSigner, time.Now, nil)
+	}
+	examPaperHandler := handlers.NewExamPaperHandlerWithStorage(
+		db,
+		examPaperFiles,
+		cfg.ExamPaperStorageMode,
+		cfg.ExamPaperStorageBaseURL,
+		examPaperUploads,
+	)
 
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
 
@@ -929,6 +947,8 @@ func main() {
 		examPapers.GET("", examPaperHandler.List)
 		examPapers.GET("/my-submissions", examPaperHandler.MySubmissions)
 		examPapers.DELETE("/my-submissions/:id", examPaperHandler.Withdraw)
+		examPapers.POST("/upload-sessions", examPaperHandler.CreateUploadSession)
+		examPapers.POST("/upload-sessions/:id/complete", examPaperHandler.CompleteUploadSession)
 		examPapers.GET("/:id", examPaperHandler.Get)
 		examPapers.POST("", examPaperHandler.Upload)
 		examPapers.GET("/:id/preview", examPaperHandler.Preview)

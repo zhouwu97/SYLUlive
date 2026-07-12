@@ -46,6 +46,9 @@ func loadPaperStorageConfig(getenv func(string) string) (paperStorageConfig, err
 	if config.SigningSecret == "" || config.ReceiptSecret == "" {
 		return paperStorageConfig{}, fmt.Errorf("存储授权密钥和回执密钥均不能为空")
 	}
+	if config.SigningSecret == config.ReceiptSecret {
+		return paperStorageConfig{}, fmt.Errorf("存储授权密钥和回执密钥必须不同")
+	}
 	if concurrencyText != "" {
 		value, err := strconv.Atoi(concurrencyText)
 		if err != nil || value <= 0 {

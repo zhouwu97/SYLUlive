@@ -899,7 +899,11 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
         ChangeNotifierProvider(create: (_) => PostProvider(dio)),
-        ChangeNotifierProvider(create: (_) => TeamRecruitmentProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, TeamRecruitmentProvider>(
+          create: (_) => TeamRecruitmentProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id),
+        ),
         ChangeNotifierProxyProvider<AuthProvider, MessageProvider>(
           create: (_) => MessageProvider(dio),
           update: (_, auth, provider) =>

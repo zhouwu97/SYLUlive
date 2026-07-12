@@ -398,6 +398,7 @@ class _CategoryTabs extends StatelessWidget {
     const values = [
       ('全部', null),
       ('竞赛', 'competition'),
+      ('项目', 'project'),
       ('学习', 'study'),
       ('活动', 'activity'),
       ('其他', 'other'),

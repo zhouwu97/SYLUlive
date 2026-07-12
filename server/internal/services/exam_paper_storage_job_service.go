@@ -60,6 +60,14 @@ func (s *ExamPaperStorageJobService) Enqueue(tx *gorm.DB, backend models.ExamPap
 		if references > 0 {
 			return nil
 		}
+		// 删除是同一文件键的终态；取消未完成的认领任务，避免旧租约在删除后继续重试。
+		if err := tx.Model(&models.ExamPaperStorageJob{}).
+			Where("storage_backend = ? AND file_key = ? AND operation = ? AND completed_at IS NULL", backend, fileKey, ExamPaperStoragePurposeClaim).
+			Updates(map[string]any{
+				"completed_at": s.now(), "locked_at": nil, "lock_token": "", "last_error": "superseded by trash",
+			}).Error; err != nil {
+			return err
+		}
 	}
 	job := models.ExamPaperStorageJob{
 		StorageBackend: backend, FileKey: fileKey, Operation: operation, NextAttemptAt: s.now(),

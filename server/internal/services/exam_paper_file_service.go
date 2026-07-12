@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -565,7 +566,56 @@ func readExamPaperUploadSessionRecord(path string) (examPaperUploadSessionRecord
 	if err := json.Unmarshal(payload, &record); err != nil {
 		return examPaperUploadSessionRecord{}, ErrExamPaperUploadSessionInvalid
 	}
+	if err := validateExamPaperUploadSessionRecord(filepath.Base(path), record); err != nil {
+		return examPaperUploadSessionRecord{}, err
+	}
 	return record, nil
+}
+
+func validateExamPaperUploadSessionRecord(filename string, record examPaperUploadSessionRecord) error {
+	expectedSessionID, expectedStatus, err := examPaperUploadSessionStateIdentity(filename)
+	if err != nil || !validExamPaperUploadSessionID(record.SessionID) || record.SessionID != expectedSessionID ||
+		strings.TrimSpace(record.JTI) == "" || record.ExpectedSize <= 0 || record.ExpectedSize > ExamPaperMaxFileSize ||
+		record.Status != expectedStatus {
+		return ErrExamPaperUploadSessionInvalid
+	}
+	switch expectedStatus {
+	case "uploading", "failed":
+		if record.ExpiresAt.IsZero() {
+			return ErrExamPaperUploadSessionInvalid
+		}
+	case "completed", "released":
+		if strings.TrimSpace(record.Receipt) == "" {
+			return ErrExamPaperUploadSessionInvalid
+		}
+	}
+	if record.FileSize < 0 || record.FileSize > ExamPaperMaxFileSize || (record.FileSize > 0 && record.FileSize != record.ExpectedSize) {
+		return ErrExamPaperUploadSessionInvalid
+	}
+	return nil
+}
+
+func examPaperUploadSessionStateIdentity(filename string) (string, string, error) {
+	for _, status := range []string{"uploading", "completed", "released"} {
+		suffix := "." + status + ".json"
+		if strings.HasSuffix(filename, suffix) {
+			return strings.TrimSuffix(filename, suffix), status, nil
+		}
+	}
+	const jsonSuffix = ".json"
+	if !strings.HasSuffix(filename, jsonSuffix) {
+		return "", "", ErrExamPaperUploadSessionInvalid
+	}
+	stem := strings.TrimSuffix(filename, jsonSuffix)
+	separator := strings.LastIndex(stem, ".failure.")
+	if separator < 0 {
+		return "", "", ErrExamPaperUploadSessionInvalid
+	}
+	attempt, err := strconv.Atoi(stem[separator+len(".failure."):])
+	if err != nil || attempt < 1 || attempt > ExamPaperMaxUploadFailuresPerSession {
+		return "", "", ErrExamPaperUploadSessionInvalid
+	}
+	return stem[:separator], "failed", nil
 }
 
 func writeExamPaperUploadSessionRecordExclusive(path string, record examPaperUploadSessionRecord) (err error) {

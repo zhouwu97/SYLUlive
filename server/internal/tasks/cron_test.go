@@ -23,18 +23,18 @@ func (s *examPaperStorageJobProcessorStub) ProcessDue(_ context.Context, limit i
 }
 
 type examPaperStorageMaintenanceStub struct {
-	called chan struct{}
+	called chan context.Context
 }
 
-func (s *examPaperStorageMaintenanceStub) Run(context.Context) (services.ExamPaperStorageMaintenanceReport, error) {
-	s.called <- struct{}{}
+func (s *examPaperStorageMaintenanceStub) Run(ctx context.Context) (services.ExamPaperStorageMaintenanceReport, error) {
+	s.called <- ctx
 	return services.ExamPaperStorageMaintenanceReport{Referenced: 3}, nil
 }
 
 func TestStartExamPaperStorageCronRunsJobsAndMaintenanceImmediately(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	jobs := &examPaperStorageJobProcessorStub{called: make(chan int, 1)}
-	maintenance := &examPaperStorageMaintenanceStub{called: make(chan struct{}, 1)}
+	maintenance := &examPaperStorageMaintenanceStub{called: make(chan context.Context, 1)}
 
 	cron := StartExamPaperStorageCron(ctx, jobs, maintenance)
 
@@ -47,7 +47,20 @@ func TestStartExamPaperStorageCronRunsJobsAndMaintenanceImmediately(t *testing.T
 		t.Fatal("后台任务未在启动后立即消费 outbox")
 	}
 	select {
-	case <-maintenance.called:
+	case maintenanceCtx := <-maintenance.called:
+		deadline, ok := maintenanceCtx.Deadline()
+		if !ok {
+			t.Fatal("完整性维护每轮必须设置截止时间")
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 29*time.Minute || remaining > examPaperStorageMaintenanceTimeout {
+			t.Fatalf("完整性维护截止时间错误: %v", remaining)
+		}
+		select {
+		case <-maintenanceCtx.Done():
+		case <-time.After(time.Second):
+			t.Fatal("维护返回后应释放子 context")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("后台任务未在启动后立即执行完整性维护")
 	}

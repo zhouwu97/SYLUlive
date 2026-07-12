@@ -34,11 +34,11 @@ type ExamPaperStorageGrant struct {
 	FileKey   string `json:"file_key,omitempty"`
 	UserID    uint   `json:"user_id,omitempty"`
 	PaperID   uint   `json:"paper_id,omitempty"`
-	Method    string `json:"method,omitempty"`
-	Path      string `json:"path,omitempty"`
+	Method    string `json:"method"`
+	Path      string `json:"path"`
 	IssuedAt  int64  `json:"iat"`
 	ExpiresAt int64  `json:"exp"`
-	JTI       string `json:"jti,omitempty"`
+	JTI       string `json:"jti"`
 }
 
 // ExamPaperUploadReceipt 表示文件服务确认接收文件后的不可伪造回执。
@@ -47,7 +47,7 @@ type ExamPaperUploadReceipt struct {
 	FileKey   string `json:"file_key"`
 	FileSize  int64  `json:"file_size"`
 	SHA256    string `json:"sha256"`
-	IssuedAt  int64  `json:"iat"`
+	IssuedAt  int64  `json:"issued_at"`
 }
 
 // ExamPaperStorageSigner 使用 HMAC-SHA256 签发和验证存储授权。

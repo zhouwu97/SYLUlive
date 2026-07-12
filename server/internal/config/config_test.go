@@ -6,6 +6,7 @@ func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret")
 	t.Setenv("SUPER_ADMIN_ID", "root-admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "test-password")
+	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("EXAM_PAPER_DIR", "")
 	production := Load()

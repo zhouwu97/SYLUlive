@@ -344,6 +344,8 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":  fmt.Sprintf("%d", userID),
 			"year":     input.Year,
@@ -426,6 +428,8 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":  fmt.Sprintf("%d", userID),
 			"year":     input.Year,
@@ -485,6 +489,8 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":       fmt.Sprintf("%d", userID),
 			"force_refresh": input.ForceRefresh,
@@ -542,6 +548,8 @@ func (h *EduHandler) GetGradeDetail(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":          fmt.Sprintf("%d", userID),
 			"year":             input.Year,

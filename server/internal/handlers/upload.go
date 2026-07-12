@@ -127,7 +127,7 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		}
 		// 磁盘文件丢失 → 不返回旧记录，继续执行下面的保存逻辑用本次上传内容写回。
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "查询文件记录失败",
 		})

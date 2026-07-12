@@ -45,6 +45,7 @@ import (
 
 var EduServiceConfig = struct {
 	BaseURL string
+	Token   string
 }{
 
 	BaseURL: "", // 浠巆onfig鍔犺浇
@@ -64,7 +65,9 @@ var VerifyCodeConfig = struct {
 }{}
 
 type verifyCodeRecord struct {
-	Code string
+	Code     string
+	Attempts int
+	SentAt   time.Time
 
 	ExpiresAt time.Time
 }
@@ -81,11 +84,15 @@ var verifyCodeStore = struct {
 	codes map[string]verifyCodeRecord
 
 	verified map[string]time.Time
+
+	ipSends map[string][]time.Time
 }{
 
 	codes: map[string]verifyCodeRecord{},
 
 	verified: map[string]time.Time{},
+
+	ipSends: map[string][]time.Time{},
 }
 
 var loginThrottleStore = struct {
@@ -430,13 +437,33 @@ func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
 
 	}
 
-	code := generateVerifyCode()
-
 	verifyCodeStore.Lock()
+	now := time.Now()
+	if previous, exists := verifyCodeStore.codes[qq]; exists && now.Sub(previous.SentAt) < time.Minute {
+		verifyCodeStore.Unlock()
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "同一 QQ 请 60 秒后再发送"})
+		return
+	}
+	ip := c.ClientIP()
+	recent := verifyCodeStore.ipSends[ip][:0]
+	for _, sentAt := range verifyCodeStore.ipSends[ip] {
+		if now.Sub(sentAt) < time.Hour {
+			recent = append(recent, sentAt)
+		}
+	}
+	if len(recent) >= 10 {
+		verifyCodeStore.ipSends[ip] = recent
+		verifyCodeStore.Unlock()
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "该 IP 发送验证码过于频繁，请稍后再试"})
+		return
+	}
+	verifyCodeStore.ipSends[ip] = append(recent, now)
+	code := generateVerifyCode()
 
 	verifyCodeStore.codes[qq] = verifyCodeRecord{
 
-		Code: code,
+		Code:   code,
+		SentAt: now,
 
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
@@ -480,9 +507,22 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 	}
 
 	verifyCodeStore.Lock()
-
 	record, ok := verifyCodeStore.codes[qq]
-
+	if ok && time.Now().After(record.ExpiresAt) {
+		delete(verifyCodeStore.codes, qq)
+		ok = false
+	}
+	if ok && strings.TrimSpace(input.Code) != record.Code {
+		record.Attempts++
+		if record.Attempts >= 5 {
+			delete(verifyCodeStore.codes, qq)
+		} else {
+			verifyCodeStore.codes[qq] = record
+		}
+		verifyCodeStore.Unlock()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
+		return
+	}
 	verifyCodeStore.Unlock()
 
 	if !ok {
@@ -501,14 +541,8 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 
 	}
 
-	if strings.TrimSpace(input.Code) != record.Code {
-
-		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
-
-		return
-
-	}
-
+	markQQVerified(qq)
+	consumeQQVerified(qq)
 	markQQVerified(qq)
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "验证通过"})
@@ -804,6 +838,8 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", strconv.FormatUint(uint64(user.ID), 10)).
 		SetBody(map[string]interface{}{
 
 			"user_id": strconv.FormatUint(uint64(user.ID), 10),
@@ -988,6 +1024,7 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 		resp, err := client.R().
 			SetHeader("Content-Type", "application/json").
+			SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
 			SetBody(map[string]string{
 
 				"student_id": input.StudentID,
@@ -1189,6 +1226,8 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		"edu_password": input.EduPassword,
 
 		"edu_bound": true,
+
+		"token_version": gorm.Expr("token_version + 1"),
 	}
 
 	if result.Grade != "" {
@@ -1216,6 +1255,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		return
 
 	}
+	middleware.InvalidateTokenVersionCache(user.ID)
 
 	clearLoginFailures(normalizeLoginAccount(input.StudentID))
 
@@ -1231,6 +1271,7 @@ func verifyEduWithPython(studentID, eduPassword, appPassword string) (*eduVerify
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
 		SetBody(map[string]string{
 
 			"student_id": studentID,
@@ -1439,7 +1480,11 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	}
 
-	h.db.Model(&user).Updates(map[string]interface{}{"password_hash": string(hashedPassword), "token_version": gorm.Expr("token_version + 1")})
+	if err := h.db.Model(&user).Updates(map[string]interface{}{"password_hash": string(hashedPassword), "token_version": gorm.Expr("token_version + 1")}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码修改失败"})
+		return
+	}
+	middleware.InvalidateTokenVersionCache(user.ID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
 
@@ -1447,6 +1492,17 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 // Logout 退出登录 (清除 cookie)
 func (h *AuthHandler) Logout(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"device_token":  "",
+		"token_version": gorm.Expr("token_version + 1"),
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "退出登录失败"})
+		return
+	}
+	if id, ok := userID.(uint); ok {
+		middleware.InvalidateTokenVersionCache(id)
+	}
 	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", "", -1, "/api", "", secure, true)

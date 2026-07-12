@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -121,7 +120,6 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 	for i := range ratings {
 		if ratings[i].User != nil {
 			ratings[i].UserName = ratings[i].User.Nickname
-			ratings[i].UserStudentID = ratings[i].User.StudentID
 			ratings[i].UserAvatar = ratings[i].User.Avatar
 		}
 		if vote, ok := voteByRatingID[ratings[i].ID]; ok {
@@ -143,7 +141,6 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 			var user models.User
 			if err := h.db.Select("nickname, student_id, avatar").First(&user, rating.UserID).Error; err == nil {
 				rating.UserName = user.Nickname
-				rating.UserStudentID = user.StudentID
 				rating.UserAvatar = user.Avatar
 			}
 			myRating = &rating
@@ -301,7 +298,7 @@ func nonNegativeCountExpr(db *gorm.DB, column string, delta int) clause.Expr {
 	return gorm.Expr("GREATEST("+column+" + ?, 0)", delta)
 }
 
-// Create 添加食堂（用户提交即通过，+10经验）
+// Create 提交食堂；普通用户提交进入待审核状态，不会直接公开或获得经验。
 func (h *CanteenHandler) Create(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
@@ -314,23 +311,38 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 		return
 	}
 
+	name := strings.TrimSpace(input.Name)
+	if len([]rune(name)) < 2 || len([]rune(name)) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "食堂名称长度需在 2 到 100 个字符之间"})
+		return
+	}
 	canteen := models.Canteen{
-		Name:      input.Name,
+		Name:      name,
 		Image:     input.Image,
-		Verified:  true,
+		Verified:  false,
 		CreatedBy: userID.(uint),
 	}
 
-	if err := h.db.Create(&canteen).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&models.Canteen{}).Where("LOWER(name) = LOWER(?)", name).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return fmt.Errorf("duplicate_canteen")
+		}
+		return tx.Create(&canteen).Error
+	}); err != nil {
+		if err.Error() == "duplicate_canteen" {
+			c.JSON(http.StatusConflict, gin.H{"error": "该食堂已存在"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加失败"})
 		return
 	}
 
-	// 增加10经验
-	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("exp", gorm.Expr("exp + ?", 10))
-
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "添加成功，经验+10",
+		"message": "已提交审核",
 		"canteen": canteen,
 	})
 }
@@ -364,11 +376,14 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 	err = h.db.Where("canteen_id = ? AND user_id = ?", cid, userID).First(&rating).Error
 	if err == nil {
 		// 已存在则更新
-		h.db.Model(&rating).Updates(map[string]interface{}{
+		if err := h.db.Model(&rating).Updates(map[string]interface{}{
 			"star":    input.Star,
 			"comment": input.Comment,
 			"images":  input.Images,
-		})
+		}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新评价失败"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"message": "评价已更新", "rating": rating})
 	} else {
 		// 新建
@@ -401,38 +416,28 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 		return
 	}
 
-	// 扣除10经验 (保证不为负数可以做个判断，但简单处理直接减也可以，或者用 gorm expr 保证 > 0)
-	if err := h.db.Exec("UPDATE users SET exp = CASE WHEN exp >= 10 THEN exp - 10 ELSE 0 END WHERE id = ?", canteen.CreatedBy).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-		return
-	}
-
-	// 删除关联的评价
-	if err := h.db.Where("canteen_id = ?", id).Delete(&models.CanteenRating{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除关联评价失败"})
-		return
-	}
-	// 删除食堂
-	if err := h.db.Delete(&canteen).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-		return
-	}
-
-	// 记录管理员操作
 	adminID, _ := c.Get("user_id")
 	var admin models.User
-	h.db.Select("nickname").First(&admin, adminID)
-	if err := h.db.Create(&models.AdminLog{
-		AdminID:   adminID.(uint),
-		AdminName: admin.Nickname,
-		Action:    "删除食堂",
-		Target:    canteen.Name,
-		Detail:    fmt.Sprintf("驳回食堂提交，扣除用户 %d 的10点经验", canteen.CreatedBy),
-	}).Error; err != nil {
-		log.Printf("[DB_WARN] Failed to write admin log: %v", err)
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("canteen_id = ?", id).Delete(&models.CanteenRating{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&canteen).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID.(uint), AdminName: admin.Nickname, Action: "删除食堂", Target: canteen.Name,
+			Detail: fmt.Sprintf("删除食堂提交，创建者 %d", canteen.CreatedBy),
+		}).Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除食堂失败"})
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "已删除并驳回经验"})
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
 // UpdateImage 管理员修改食堂图片

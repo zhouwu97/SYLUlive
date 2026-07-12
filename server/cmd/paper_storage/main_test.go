@@ -60,6 +60,38 @@ func TestPaperStorageLoadConfigRejectsMissingSecretsAndInvalidConcurrency(t *tes
 	}
 }
 
+func TestPaperStorageLoadConfigRejectsEqualSecretsIncludingWhitespace(t *testing.T) {
+	for _, tt := range []struct {
+		name, signing, receipt string
+	}{
+		{name: "完全相同", signing: "same-secret", receipt: "same-secret"},
+		{name: "空白差异", signing: "  same-secret ", receipt: "same-secret"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			values := map[string]string{
+				"PAPER_STORAGE_SIGNING_SECRET": tt.signing,
+				"PAPER_STORAGE_RECEIPT_SECRET": tt.receipt,
+			}
+			_, err := loadPaperStorageConfig(func(key string) string { return values[key] })
+			if err == nil {
+				t.Fatal("相同签名密钥应被拒绝")
+			}
+			if strings.Contains(err.Error(), "same-secret") {
+				t.Fatalf("错误不应泄露密钥: %v", err)
+			}
+		})
+	}
+	config, err := loadPaperStorageConfig(func(key string) string {
+		return map[string]string{
+			"PAPER_STORAGE_SIGNING_SECRET": "grant-secret",
+			"PAPER_STORAGE_RECEIPT_SECRET": "receipt-secret",
+		}[key]
+	})
+	if err != nil || config.SigningSecret == config.ReceiptSecret {
+		t.Fatalf("不同密钥应通过: config=%+v err=%v", config, err)
+	}
+}
+
 func TestPaperStorageRunHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -125,7 +126,7 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, services.ExamPaperMaxRequestBodySize)
 	reader, err := c.Request.MultipartReader()
 	if err != nil {
-		h.writeUploadError(c, err)
+		h.writeMultipartError(c, err)
 		return
 	}
 	var stored *services.StoredExamPaperFile
@@ -138,7 +139,7 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 			if stored != nil {
 				_ = h.files.DiscardPending(stored.FileKey)
 			}
-			h.writeUploadError(c, nextErr)
+			h.writeMultipartError(c, nextErr)
 			return
 		}
 		if part.FormName() != "file" || part.FileName() == "" || stored != nil {
@@ -194,6 +195,15 @@ func (h *PaperStorageHandler) writeUploadError(c *gin.Context, err error) {
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
 	}
+}
+
+func (h *PaperStorageHandler) writeMultipartError(c *gin.Context, err error) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) || errors.Is(err, multipart.ErrMessageTooLarge) {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file too large"})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": "invalid multipart request"})
 }
 
 // Download 验证用途后交由 Nginx 内部位置返回文件。

@@ -242,6 +242,33 @@ func TestPaperStorageUploadRejectsOversizedMultipartBodyAndReleasesSemaphore(t *
 	}
 }
 
+func TestPaperStorageUploadMapsMultipartClientErrorsToBadRequest(t *testing.T) {
+	handler, _, signer, _ := newPaperStorageTestHandler(t, 20)
+	path := "/v1/uploads/session-1"
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+	}{
+		{name: "错误 content type", contentType: "application/json", body: `{}`},
+		{name: "缺少 boundary", contentType: "multipart/form-data", body: ""},
+		{name: "畸形 multipart", contentType: "multipart/form-data; boundary=broken", body: "--broken\r\nContent-Disposition: form-data; name=\"file\"; filename=\"paper.pdf\"\r\nBadHeader\r\n\r\nx\r\n--broken--\r\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(tt.body))
+			request.Header.Set("Content-Type", tt.contentType)
+			request.Header.Set("Authorization", "Bearer "+token)
+			response := httptest.NewRecorder()
+			paperStorageRouter(handler).ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("multipart 客户端错误状态码错误: %d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestPaperStorageDownloadUsesAuthorizedInternalRedirect(t *testing.T) {
 	handler, files, signer, _ := newPaperStorageTestHandler(t, 20)
 	stored, err := files.StoreUploadReader("paper.pdf", bytes.NewReader(paperStoragePDF()))

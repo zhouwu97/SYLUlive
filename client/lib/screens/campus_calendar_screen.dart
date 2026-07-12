@@ -27,6 +27,8 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
   List<ExamModel> _importedExams = const [];
   DateTime? _pendingSelectedDate;
   bool _isMonthPagerScrolling = false;
+  bool? _pendingMonthPagerScrolling;
+  bool _monthPagerScrollUpdateScheduled = false;
 
   @override
   void initState() {
@@ -183,49 +185,66 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
     );
   }
 
-  Widget _buildMonthPager(CampusCalendar calendar, bool isDark) => AnimatedSize(
+  Widget _buildMonthPager(CampusCalendar calendar, bool isDark) =>
+      AnimatedContainer(
         duration: _isMonthPagerScrolling
             ? Duration.zero
             : const Duration(milliseconds: 160),
         curve: Curves.easeOutCubic,
-        child: SizedBox(
-          height: _monthPagerViewportHeight(calendar),
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _handleMonthPagerScrollNotification,
-            child: PageView.builder(
-              controller: _monthPageController,
-              itemCount: _monthPageCount,
-              onPageChanged: _handleMonthPageChanged,
-              itemBuilder: (context, page) {
-                final month = _monthForPage(page);
-                return Align(
-                  alignment: Alignment.topCenter,
-                  child: _CalendarMonthCard(
-                    month: month,
-                    selectedDate: _selectedDate,
-                    calendar: calendar,
-                    exams: _importedExams,
-                    isDark: isDark,
-                    onPrevious: () => _changeMonth(-1),
-                    onNext: () => _changeMonth(1),
-                    onSelect: _selectDate,
-                  ),
-                );
-              },
-            ),
+        height: _monthPagerViewportHeight(calendar),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleMonthPagerScrollNotification,
+          child: PageView.builder(
+            controller: _monthPageController,
+            itemCount: _monthPageCount,
+            onPageChanged: _handleMonthPageChanged,
+            itemBuilder: (context, page) {
+              final month = _monthForPage(page);
+              return Align(
+                alignment: Alignment.topCenter,
+                child: _CalendarMonthCard(
+                  month: month,
+                  selectedDate: _selectedDate,
+                  calendar: calendar,
+                  exams: _importedExams,
+                  isDark: isDark,
+                  onPrevious: () => _changeMonth(-1),
+                  onNext: () => _changeMonth(1),
+                  onSelect: _selectDate,
+                ),
+              );
+            },
           ),
         ),
       );
 
   bool _handleMonthPagerScrollNotification(ScrollNotification notification) {
     if (notification.depth != 0) return false;
-    if (notification is ScrollStartNotification && !_isMonthPagerScrolling) {
-      setState(() => _isMonthPagerScrolling = true);
-    } else if (notification is ScrollEndNotification &&
-        _isMonthPagerScrolling) {
-      setState(() => _isMonthPagerScrolling = false);
+    if (notification is ScrollStartNotification) {
+      _scheduleMonthPagerScrolling(true);
+    } else if (notification is ScrollEndNotification) {
+      _scheduleMonthPagerScrolling(false);
     }
     return false;
+  }
+
+  // 滚动通知可能在 PageView 的布局阶段发出。若此处直接 setState，
+  // 会让外层 AnimatedSize 在自身 performLayout 中再次请求布局。
+  void _scheduleMonthPagerScrolling(bool value) {
+    _pendingMonthPagerScrolling = value;
+    if (_monthPagerScrollUpdateScheduled) return;
+    _monthPagerScrollUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _monthPagerScrollUpdateScheduled = false;
+      final pendingValue = _pendingMonthPagerScrolling;
+      _pendingMonthPagerScrolling = null;
+      if (!mounted ||
+          pendingValue == null ||
+          pendingValue == _isMonthPagerScrolling) {
+        return;
+      }
+      setState(() => _isMonthPagerScrolling = pendingValue);
+    });
   }
 
   double _monthPagerViewportHeight(CampusCalendar calendar) {

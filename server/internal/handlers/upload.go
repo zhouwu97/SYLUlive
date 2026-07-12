@@ -117,6 +117,10 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		// 确认磁盘文件仍然存在再复用，防止"数据库有记录但物理文件丢失"返回 404。
 		diskPath := filepath.Join(h.uploadDir, strings.TrimPrefix(existing.Path, "/uploads/"))
 		if _, statErr := os.Stat(diskPath); statErr == nil {
+			if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
+				return
+			}
 			c.JSON(http.StatusOK, gin.H{
 				"file_id": existing.ID,
 				"url":     existing.Path,
@@ -158,15 +162,21 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 
 	// 创建文件记录
 	fileRecord := models.File{
-		Hash:     hashStr,
-		Path:     "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
-		Size:     file.Size,
-		MimeType: getMimeType(ext),
-		RefCount: 1,
+		Hash:       hashStr,
+		Path:       "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
+		Size:       file.Size,
+		MimeType:   getMimeType(ext),
+		RefCount:   1,
+		UploaderID: c.GetUint("user_id"),
+		Status:     "temporary",
 	}
 
 	if err := h.createOrGetFile(&fileRecord); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建文件记录失败"})
+		return
+	}
+	if err := h.grantFileToUser(fileRecord.ID, c.GetUint("user_id")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
 		return
 	}
 
@@ -235,6 +245,10 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 		if err := h.db.Where("hash = ?", hashStr).First(&existing).Error; err == nil {
 			diskPath := filepath.Join(h.uploadDir, strings.TrimPrefix(existing.Path, "/uploads/"))
 			if _, statErr := os.Stat(diskPath); statErr == nil {
+				if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
+					return
+				}
 				results = append(results, gin.H{
 					"file_id": existing.ID,
 					"url":     existing.Path,
@@ -280,14 +294,20 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 
 		// 创建文件记录
 		fileRecord := models.File{
-			Hash:     hashStr,
-			Path:     "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
-			Size:     file.Size,
-			MimeType: getMimeType(ext),
-			RefCount: 1,
+			Hash:       hashStr,
+			Path:       "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
+			Size:       file.Size,
+			MimeType:   getMimeType(ext),
+			RefCount:   1,
+			UploaderID: c.GetUint("user_id"),
+			Status:     "temporary",
 		}
 		if err := h.createOrGetFile(&fileRecord); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
+		if err := h.grantFileToUser(fileRecord.ID, c.GetUint("user_id")); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
 			return
 		}
 		createdFiles = append(createdFiles, fileRecord)
@@ -316,6 +336,16 @@ func (h *UploadHandler) createOrGetFile(fileRecord *models.File) error {
 
 	// ON CONFLICT DO NOTHING 时重新查询实际记录
 	return h.db.Where("hash = ?", fileRecord.Hash).First(fileRecord).Error
+}
+
+func (h *UploadHandler) grantFileToUser(fileID, userID uint) error {
+	if userID == 0 {
+		return fmt.Errorf("缺少上传用户")
+	}
+	return h.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.FileUploadGrant{
+		FileID: fileID,
+		UserID: userID,
+	}).Error
 }
 
 // getMimeType 根据扩展名获取MIME类型

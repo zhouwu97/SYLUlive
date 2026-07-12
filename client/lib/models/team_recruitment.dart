@@ -20,7 +20,9 @@ class TeamRecruitment {
   final String status;
   final String effectiveStatus;
   final int applicationCount;
+  final int pendingApplicationCount;
   final String? myApplicationStatus;
+  final int? myApplicationId;
   final bool isOwner;
   final bool canApply;
   final bool canManage;
@@ -44,7 +46,9 @@ class TeamRecruitment {
     required this.status,
     required this.effectiveStatus,
     this.applicationCount = 0,
+    this.pendingApplicationCount = 0,
     this.myApplicationStatus,
+    this.myApplicationId,
     this.isOwner = false,
     this.canApply = false,
     this.canManage = false,
@@ -98,7 +102,10 @@ class TeamRecruitment {
       status: json['status']?.toString() ?? 'recruiting',
       effectiveStatus: json['effective_status']?.toString() ?? 'recruiting',
       applicationCount: (json['application_count'] as num?)?.toInt() ?? 0,
+      pendingApplicationCount:
+          (json['pending_application_count'] as num?)?.toInt() ?? 0,
       myApplicationStatus: json['my_application_status']?.toString(),
+      myApplicationId: (json['my_application_id'] as num?)?.toInt(),
       isOwner: json['is_owner'] == true,
       canApply: json['can_apply'] == true,
       canManage: json['can_manage'] == true,

@@ -656,6 +656,8 @@ func main() {
 		waterTeam.POST("/applications/:id/accept", waterTeamHandler.Accept)
 		waterTeam.POST("/applications/:id/reject", waterTeamHandler.Reject)
 		waterTeam.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+		waterTeam.POST("/applications/:id/leave", waterTeamHandler.Leave)
+		waterTeam.POST("/applications/:id/remove", waterTeamHandler.Remove)
 		waterTeam.GET("/my_applications", waterTeamHandler.GetMyApplications)
 		waterTeam.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)
 	}
@@ -674,6 +676,8 @@ func main() {
 		teamAuth.POST("/applications/:id/accept", waterTeamHandler.Accept)
 		teamAuth.POST("/applications/:id/reject", waterTeamHandler.Reject)
 		teamAuth.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+		teamAuth.POST("/applications/:id/leave", waterTeamHandler.Leave)
+		teamAuth.POST("/applications/:id/remove", waterTeamHandler.Remove)
 
 		teamAuth.GET("/my_applications", waterTeamHandler.GetMyApplications)
 		teamAuth.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)

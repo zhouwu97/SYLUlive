@@ -21,6 +21,8 @@ const (
 	ApplicationStatusAccepted  = "accepted"
 	ApplicationStatusRejected  = "rejected"
 	ApplicationStatusCancelled = "cancelled"
+	ApplicationStatusWithdrawn = "withdrawn"
+	ApplicationStatusRemoved   = "removed"
 )
 
 // Team Recruitment Category
@@ -113,7 +115,35 @@ func EnsureWaterTeamSchema(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_business_dedup
+		ON notifications(user_id, type, dedup_key)
+		WHERE dedup_key <> '';
+	`).Error; err != nil {
+		return err
+	}
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	// 历史并发写入可能已产生超员数据，先保留成员并抬高总名额，再添加约束。
+	if err := db.Exec(`
+		UPDATE water_team_recruitments
+		SET accepted_count = GREATEST(accepted_count, 0),
+			needed_count = GREATEST(needed_count, accepted_count, 1)
+		WHERE accepted_count < 0 OR needed_count < 1 OR accepted_count > needed_count;
+	`).Error; err != nil {
+		return err
+	}
+	constraints := []string{
+		`DO $$ BEGIN ALTER TABLE water_team_recruitments ADD CONSTRAINT chk_water_team_needed_count CHECK (needed_count >= 1); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+		`DO $$ BEGIN ALTER TABLE water_team_recruitments ADD CONSTRAINT chk_water_team_accepted_count CHECK (accepted_count >= 0); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+		`DO $$ BEGIN ALTER TABLE water_team_recruitments ADD CONSTRAINT chk_water_team_capacity CHECK (accepted_count <= needed_count); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+	}
+	for _, statement := range constraints {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

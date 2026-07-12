@@ -90,6 +90,33 @@ class _TeamApplicationManageScreenState
     if (error == null) _load();
   }
 
+  Future<void> _remove(WaterTeamApplication app) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('移除成员'),
+            content: const Text('移除后名额会重新开放，确定继续吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('确认移除'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    final error = await context.read<TeamRecruitmentProvider>().remove(app.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(error ?? '已移除成员')));
+    if (error == null) _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
@@ -119,6 +146,8 @@ class _TeamApplicationManageScreenState
               ('已通过', 'accepted'),
               ('已拒绝', 'rejected'),
               ('已取消', 'cancelled'),
+              ('已退出', 'withdrawn'),
+              ('已移除', 'removed'),
             ]
                 .map((item) => Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -205,7 +234,8 @@ class _TeamApplicationManageScreenState
                                 application: apps[index],
                                 reviewing: provider.reviewingApplicationIds
                                     .contains(apps[index].id),
-                                onReview: _review),
+                                onReview: _review,
+                                onRemove: _remove),
                           ),
           ),
         ),
@@ -218,10 +248,12 @@ class _ApplicationCard extends StatelessWidget {
   final WaterTeamApplication application;
   final bool reviewing;
   final Future<void> Function(WaterTeamApplication, bool) onReview;
+  final Future<void> Function(WaterTeamApplication) onRemove;
   const _ApplicationCard({
     required this.application,
     required this.reviewing,
     required this.onReview,
+    required this.onRemove,
   });
   @override
   Widget build(BuildContext context) {
@@ -274,6 +306,20 @@ class _ApplicationCard extends StatelessWidget {
                           reviewing ? null : () => onReview(application, true),
                       child: Text(reviewing ? '处理中…' : '通过'))
                 ])
+              ] else if (application.status == 'accepted') ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFE54848),
+                      side: const BorderSide(color: Color(0xFFE54848)),
+                    ),
+                    onPressed: reviewing ? null : () => onRemove(application),
+                    icon: const Icon(Icons.person_remove_outlined),
+                    label: Text(reviewing ? '处理中…' : '移除成员'),
+                  ),
+                ),
               ],
             ])));
   }

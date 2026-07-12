@@ -88,9 +88,9 @@ class TeamRecruitmentService {
     return detail(recruitmentId);
   }
 
-  Future<List<TeamRecruitment>> mine() async {
-    final response = await _dio
-        .get('/team/recruitments/mine', queryParameters: {'limit': 50});
+  Future<List<TeamRecruitment>> mine({CancelToken? cancelToken}) async {
+    final response = await _dio.get('/team/recruitments/mine',
+        queryParameters: {'limit': 50}, cancelToken: cancelToken);
     return _items(response.data);
   }
 
@@ -107,8 +107,10 @@ class TeamRecruitmentService {
     return WaterTeamApplication.fromJson(_map(response.data));
   }
 
-  Future<List<WaterTeamApplication>> myApplications() async {
-    final response = await _dio.get('/team/my_applications');
+  Future<List<WaterTeamApplication>> myApplications(
+      {CancelToken? cancelToken}) async {
+    final response =
+        await _dio.get('/team/my_applications', cancelToken: cancelToken);
     return _applications(response.data);
   }
 
@@ -120,6 +122,10 @@ class TeamRecruitmentService {
 
   Future<void> cancel(int applicationId) =>
       _dio.post('/team/applications/$applicationId/cancel');
+  Future<void> leave(int applicationId) =>
+      _dio.post('/team/applications/$applicationId/leave');
+  Future<void> remove(int applicationId) =>
+      _dio.post('/team/applications/$applicationId/remove');
   Future<void> accept(int applicationId, {String reply = ''}) => _dio
       .post('/team/applications/$applicationId/accept', data: {'reply': reply});
   Future<void> reject(int applicationId, {String reply = ''}) => _dio

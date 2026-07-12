@@ -127,6 +127,44 @@ void main() {
     loadMoreGate.complete();
     await loadingMore;
   });
+
+  test('切换账号会清空账号相关缓存并丢弃旧请求结果', () async {
+    final mineGate = Completer<void>();
+    final dio = Dio();
+    dio.interceptors
+        .add(InterceptorsWrapper(onRequest: (options, handler) async {
+      if (options.path.contains('/team/recruitments/mine')) {
+        await mineGate.future;
+        handler.resolve(Response<dynamic>(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'items': [_recruitmentJson(id: 8, title: '账号 A 的组队')],
+          },
+        ));
+        return;
+      }
+      handler.resolve(Response<dynamic>(
+        requestOptions: options,
+        statusCode: 200,
+        data: const <Map<String, dynamic>>[],
+      ));
+    }));
+    final provider = TeamRecruitmentProvider(dio);
+
+    provider.syncSessionUser(1);
+    final loading = provider.loadMine();
+    await Future<void>.delayed(Duration.zero);
+    provider.syncSessionUser(2);
+
+    expect(provider.myCreated, isEmpty);
+    expect(provider.myApplications, isEmpty);
+    expect(provider.isLoadingMine, isFalse);
+
+    mineGate.complete();
+    await loading;
+    expect(provider.myCreated, isEmpty);
+  });
 }
 
 Map<String, dynamic> _recruitmentJson(

@@ -384,7 +384,7 @@ class _TeamRecruitmentDetailScreenState
                   _load();
                 },
                 child: Text(
-                    '管理申请${item.applicationCount > 0 ? ' (${item.applicationCount})' : ''}'))),
+                    '管理申请${item.pendingApplicationCount > 0 ? ' (${item.pendingApplicationCount})' : ''}'))),
         const SizedBox(width: 10),
         Expanded(
             child: FilledButton(
@@ -413,17 +413,71 @@ class _TeamRecruitmentDetailScreenState
           child: const Text('等待审核'));
     }
     if (item.myApplicationStatus == 'accepted') {
-      return FilledButton.icon(
-        style: TeamUiTokens.primaryButtonStyle(isDark),
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ChatDetailScreen(targetUser: _authorAsUser(item)),
+      final applicationId = item.myApplicationId;
+      final processing = applicationId != null &&
+          context
+              .watch<TeamRecruitmentProvider>()
+              .reviewingApplicationIds
+              .contains(applicationId);
+      return Row(children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            style: TeamUiTokens.secondaryButtonStyle(isDark),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ChatDetailScreen(targetUser: _authorAsUser(item)),
+              ),
+            ),
+            icon: const Icon(Icons.mail_outline_rounded),
+            label: const Text('私信'),
           ),
         ),
-        icon: const Icon(Icons.mail_outline_rounded),
-        label: const Text('私信发起人'),
-      );
+        const SizedBox(width: 10),
+        Expanded(
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFE54848),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: applicationId == null || processing
+                ? null
+                : () async {
+                    final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('退出队伍'),
+                            content: const Text('退出后名额会重新开放，确定继续吗？'),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, false),
+                                child: const Text('取消'),
+                              ),
+                              FilledButton(
+                                onPressed: () =>
+                                    Navigator.pop(dialogContext, true),
+                                child: const Text('确认退出'),
+                              ),
+                            ],
+                          ),
+                        ) ??
+                        false;
+                    if (!confirmed || !mounted) return;
+                    final error = await context
+                        .read<TeamRecruitmentProvider>()
+                        .leave(applicationId);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(error ?? '已退出队伍')));
+                    if (error == null) _load();
+                  },
+            icon: const Icon(Icons.logout_rounded),
+            label: Text(processing ? '处理中…' : '退出'),
+          ),
+        ),
+      ]);
     }
     if (!item.canApply) {
       return FilledButton(

@@ -78,6 +78,36 @@ class TeamRecruitmentProvider extends ChangeNotifier {
   int _publicRequestVersion = 0;
   int _mineRequestVersion = 0;
   CancelToken? _publicCancelToken;
+  CancelToken? _mineCancelToken;
+  int? _sessionUserId;
+
+  /// 登录用户变化时清空所有带账号语义的数据，并使旧请求结果失效。
+  void syncSessionUser(int? userId) {
+    if (_sessionUserId == userId) return;
+    _sessionUserId = userId;
+    _publicRequestVersion++;
+    _mineRequestVersion++;
+    _publicCancelToken?.cancel('登录用户已变化');
+    _mineCancelToken?.cancel('登录用户已变化');
+    publicItems = const [];
+    myCreated = const [];
+    myApplications = const [];
+    _applications.clear();
+    viewState = TeamFeedViewState.initial;
+    isLoadingPublic = false;
+    isLoadingMore = false;
+    isRefreshing = false;
+    isLoadingMine = false;
+    publicError = null;
+    refreshWarning = null;
+    mineError = null;
+    applyingIds.clear();
+    closingIds.clear();
+    reviewingApplicationIds.clear();
+    loadingApplicationIds.clear();
+    applicationErrors.clear();
+    notifyListeners();
+  }
 
   Future<void> loadPublic(
       {String? category,
@@ -281,12 +311,15 @@ class TeamRecruitmentProvider extends ChangeNotifier {
 
   Future<void> loadMine() async {
     final requestVersion = ++_mineRequestVersion;
+    _mineCancelToken?.cancel('已由最新请求替代');
+    final cancelToken = _mineCancelToken = CancelToken();
     isLoadingMine = true;
     mineError = null;
     notifyListeners();
     try {
-      final created = await _service.mine();
-      final applications = await _service.myApplications();
+      final created = await _service.mine(cancelToken: cancelToken);
+      final applications =
+          await _service.myApplications(cancelToken: cancelToken);
       if (requestVersion != _mineRequestVersion) return;
       myCreated = created;
       myApplications = applications;
@@ -346,6 +379,32 @@ class TeamRecruitmentProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await _service.cancel(applicationId);
+      return null;
+    } catch (error) {
+      return _error(error);
+    } finally {
+      reviewingApplicationIds.remove(applicationId);
+      notifyListeners();
+    }
+  }
+
+  Future<String?> leave(int applicationId) =>
+      _changeMembership(applicationId, remove: false);
+
+  Future<String?> remove(int applicationId) =>
+      _changeMembership(applicationId, remove: true);
+
+  Future<String?> _changeMembership(int applicationId,
+      {required bool remove}) async {
+    if (reviewingApplicationIds.contains(applicationId)) return '正在处理，请勿重复操作';
+    reviewingApplicationIds.add(applicationId);
+    notifyListeners();
+    try {
+      if (remove) {
+        await _service.remove(applicationId);
+      } else {
+        await _service.leave(applicationId);
+      }
       return null;
     } catch (error) {
       return _error(error);
@@ -465,5 +524,12 @@ class TeamRecruitmentProvider extends ChangeNotifier {
           .map((item) => item.id == updated.id ? updated : item)
           .toList(growable: false);
     }
+  }
+
+  @override
+  void dispose() {
+    _publicCancelToken?.cancel('Provider 已销毁');
+    _mineCancelToken?.cancel('Provider 已销毁');
+    super.dispose();
   }
 }

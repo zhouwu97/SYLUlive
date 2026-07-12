@@ -195,6 +195,22 @@ func TestLocalMetadataRejectsMissingSymlinkAndUnsafePath(t *testing.T) {
 	}
 }
 
+func TestLocalMetadataRejectsSymlinkInRootParent(t *testing.T) {
+	base := t.TempDir()
+	realParent := filepath.Join(base, "real-parent")
+	realRoot := filepath.Join(realParent, "exam-papers")
+	require.NoError(t, os.MkdirAll(realRoot, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(realRoot, "paper.pdf"), []byte("paper"), 0o600))
+
+	linkedParent := filepath.Join(base, "linked-parent")
+	if err := os.Symlink(realParent, linkedParent); err != nil {
+		t.Skipf("当前环境无法创建目录符号链接: %v", err)
+	}
+
+	_, err := localMetadata(filepath.Join(linkedParent, "exam-papers"), "paper.pdf")
+	require.Error(t, err)
+}
+
 func TestMigrationBatchContinuesAndReturnsFailureSummary(t *testing.T) {
 	env := newMigrationTestEnv(t)
 	good := env.addPaper(t, "good.pdf", []byte("good"))

@@ -263,12 +263,20 @@ func secureMigrationRoot(root string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("解析试卷目录失败: %w", err)
 	}
-	info, err := os.Lstat(absolute)
-	if err != nil {
-		return "", fmt.Errorf("检查试卷目录失败: %w", err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return "", fmt.Errorf("试卷目录必须是非符号链接目录")
+	for current := absolute; ; current = filepath.Dir(current) {
+		info, statErr := os.Lstat(current)
+		if statErr != nil {
+			return "", fmt.Errorf("检查试卷目录失败: %w", statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("试卷目录及其父目录不能包含符号链接")
+		}
+		if current == absolute && !info.IsDir() {
+			return "", fmt.Errorf("试卷目录必须是目录")
+		}
+		if parent := filepath.Dir(current); parent == current {
+			break
+		}
 	}
 	return absolute, nil
 }

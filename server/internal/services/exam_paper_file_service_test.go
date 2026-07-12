@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -464,6 +465,116 @@ func TestPaperStorageStorePendingUploadAndDiscardAreAtomic(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(service.RootDir(), ".pending", stored.FileKey)); !os.IsNotExist(err) {
 		t.Fatalf("丢弃后标记应不存在: %v", err)
+	}
+}
+
+func TestPaperStoragePendingCommitKeepsMarkerWhenChmodCleanupFails(t *testing.T) {
+	tests := []struct {
+		name       string
+		removeErr  error
+		markerKeep bool
+	}{
+		{name: "remove failure", removeErr: errors.New("模拟最终文件删除失败"), markerKeep: true},
+		{name: "remove success", markerKeep: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, err := NewExamPaperFileService(t.TempDir())
+			if err != nil {
+				t.Fatalf("初始化文件服务失败: %v", err)
+			}
+			service.chmod = func(path string, mode os.FileMode) error {
+				if strings.HasSuffix(path, ".pdf") {
+					return errors.New("模拟 chmod 失败")
+				}
+				return os.Chmod(path, mode)
+			}
+			service.remove = func(path string) error {
+				if strings.HasSuffix(path, ".pdf") && tt.removeErr != nil {
+					return tt.removeErr
+				}
+				return os.Remove(path)
+			}
+			stored, err := service.StorePendingUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+			if err == nil || stored != nil {
+				t.Fatalf("chmod 失败时应返回错误且不返回文件: stored=%v err=%v", stored, err)
+			}
+			entries, readErr := os.ReadDir(filepath.Join(service.RootDir(), ".pending"))
+			if readErr != nil {
+				t.Fatalf("读取 pending 目录失败: %v", readErr)
+			}
+			if (len(entries) != 0) == tt.markerKeep {
+				return
+			}
+			t.Fatalf("marker 保留状态错误: keep=%v entries=%d", tt.markerKeep, len(entries))
+		})
+	}
+}
+
+func TestPaperStorageClaimIntentReferenceCountProtectsConcurrentClaims(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	stored, err := service.StoreUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存 PDF 失败: %v", err)
+	}
+	if err := service.MarkPending(stored.FileKey); err != nil {
+		t.Fatalf("创建 pending marker 失败: %v", err)
+	}
+	old := time.Now().Add(-8 * 24 * time.Hour)
+	if err := os.Chtimes(filepath.Join(service.RootDir(), ".pending", stored.FileKey), old, old); err != nil {
+		t.Fatalf("设置 marker 时间失败: %v", err)
+	}
+	firstRegistered := make(chan struct{})
+	secondRegistered := make(chan struct{})
+	releaseSecond := make(chan struct{})
+	var registrations int32
+	service.claimAfterIntent = func() {
+		count := atomic.AddInt32(&registrations, 1)
+		if count == 1 {
+			close(firstRegistered)
+			return
+		}
+		if count == 2 {
+			close(secondRegistered)
+			<-releaseSecond
+		}
+	}
+	service.claimRemove = func(string) error {
+		return errors.New("模拟第一个 Claim 失败")
+	}
+	firstDone := make(chan error, 1)
+	secondDone := make(chan error, 1)
+	go func() { firstDone <- service.Claim(stored.FileKey) }()
+	select {
+	case <-firstRegistered:
+	case <-time.After(time.Second):
+		t.Fatal("第一个 Claim 未完成 intent 登记")
+	}
+	go func() { secondDone <- service.Claim(stored.FileKey) }()
+	select {
+	case <-secondRegistered:
+	case <-time.After(time.Second):
+		t.Fatal("两个 Claim 未完成 intent 登记")
+	}
+	if err := <-firstDone; err == nil {
+		t.Fatal("第一个 Claim 应返回模拟错误")
+	}
+	result, err := service.Maintenance(time.Now())
+	if err != nil {
+		t.Fatalf("维护失败: %v", err)
+	}
+	if result.UnclaimedFilesRemoved != 0 || result.PendingMarkersRemoved != 0 {
+		t.Fatalf("第二个 Claim 等待时维护不应清理: %+v", result)
+	}
+	close(releaseSecond)
+	if err := <-secondDone; err == nil {
+		t.Fatal("第二个 Claim 应返回模拟错误")
+	}
+	if _, err := service.Stat(stored.FileKey); err != nil {
+		t.Fatalf("Claim 失败后文件应保留: %v", err)
 	}
 }
 

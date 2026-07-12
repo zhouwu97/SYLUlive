@@ -5,8 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
+import '../models/exam_schedule.dart';
+import '../services/exam_schedule_repository.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:share_plus/share_plus.dart';
@@ -14,41 +15,6 @@ import 'package:file_picker/file_picker.dart';
 import '../widgets/glass_container.dart';
 import '../services/home_widget_service.dart';
 import 'home_widget_settings_screen.dart';
-
-// 定义考试模型
-class ExamModel {
-  final String name;
-  final DateTime startTime;
-  final DateTime endTime;
-  final String location;
-  final String semester;
-
-  ExamModel({
-    required this.name,
-    required this.startTime,
-    required this.endTime,
-    required this.location,
-    this.semester = '',
-  });
-
-  factory ExamModel.fromJson(Map<String, dynamic> json) {
-    return ExamModel(
-      name: json['name'] ?? '',
-      startTime: DateTime.parse(json['startTime']),
-      endTime: DateTime.parse(json['endTime']),
-      location: json['location'] ?? '',
-      semester: json['semester'] ?? '',
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'name': name,
-        'startTime': startTime.toIso8601String(),
-        'endTime': endTime.toIso8601String(),
-        'location': location,
-        'semester': semester,
-      };
-}
 
 class ExamScheduleScreen extends StatefulWidget {
   const ExamScheduleScreen({Key? key}) : super(key: key);
@@ -59,6 +25,7 @@ class ExamScheduleScreen extends StatefulWidget {
 
 class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   List<ExamModel> _exams = [];
+  final _examRepository = ExamScheduleRepository();
   Timer? _syncTimer;
 
   late String _currentSemester;
@@ -111,31 +78,18 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   }
 
   Future<void> _loadExams() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? examsJson = prefs.getString('local_exams');
-    if (examsJson != null) {
-      try {
-        final List<dynamic> decoded = jsonDecode(examsJson);
-
-        if (mounted)
-          setState(() {
-            _exams = decoded.map((e) => ExamModel.fromJson(e)).toList();
-
-            // 按 startTime 升序排序
-            _exams.sort((a, b) => a.startTime.compareTo(b.startTime));
-          });
-      } catch (e) {
-        debugPrint('加载考试数据失败: $e');
-      }
-
+    try {
+      final exams = await _examRepository.load();
+      if (!mounted) return;
+      setState(() => _exams = exams);
       _syncWidget();
+    } catch (e) {
+      debugPrint('加载考试数据失败: $e');
     }
   }
 
   Future<void> _saveToLocal() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String encoded = jsonEncode(_exams.map((e) => e.toJson()).toList());
-    await prefs.setString('local_exams', encoded);
+    await _examRepository.save(_exams);
     _syncWidget();
   }
 

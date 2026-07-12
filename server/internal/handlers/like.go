@@ -37,8 +37,12 @@ func (h *LikeHandler) LikePost(c *gin.Context) {
 	}
 
 	var post models.Post
-	if err := h.db.Select("id", "author_id").First(&post, postID).Error; err != nil {
+	if err := h.db.Select("id", "author_id", "status").First(&post, postID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		return
+	}
+	if post.Status != models.PostStatusNormal {
+		c.JSON(http.StatusConflict, gin.H{"error": "该帖子当前不允许点赞"})
 		return
 	}
 
@@ -131,8 +135,17 @@ func (h *LikeHandler) LikeReply(c *gin.Context) {
 	}
 
 	var reply models.Reply
-	if err := h.db.Select("id", "author_id").First(&reply, replyID).Error; err != nil {
+	if err := h.db.Select("id", "author_id", "post_id", "status").First(&reply, replyID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "回复不存在"})
+		return
+	}
+	if reply.Status != models.ReplyStatusNormal {
+		c.JSON(http.StatusConflict, gin.H{"error": "该回复当前不允许点赞"})
+		return
+	}
+	var post models.Post
+	if err := h.db.Select("status").First(&post, reply.PostID).Error; err != nil || post.Status != models.PostStatusNormal {
+		c.JSON(http.StatusConflict, gin.H{"error": "该帖子当前不允许点赞"})
 		return
 	}
 

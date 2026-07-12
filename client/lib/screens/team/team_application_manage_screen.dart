@@ -17,10 +17,22 @@ class TeamApplicationManageScreen extends StatefulWidget {
 class _TeamApplicationManageScreenState
     extends State<TeamApplicationManageScreen> {
   String _filter = 'pending';
+  int _lastSessionVersion = -1;
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final sessionVersion =
+        context.watch<TeamRecruitmentProvider>().sessionVersion;
+    if (_lastSessionVersion == sessionVersion) return;
+    _lastSessionVersion = sessionVersion;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() => context
@@ -90,6 +102,33 @@ class _TeamApplicationManageScreenState
     if (error == null) _load();
   }
 
+  Future<void> _remove(WaterTeamApplication app) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('移除成员'),
+            content: const Text('移除后名额会重新开放，确定继续吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('确认移除'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    final error = await context.read<TeamRecruitmentProvider>().remove(app.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(error ?? '已移除成员')));
+    if (error == null) _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
@@ -99,6 +138,9 @@ class _TeamApplicationManageScreenState
         .applicationsFor(widget.recruitment.id)
         .where((item) => item.status == _filter)
         .toList();
+    final loading =
+        provider.loadingApplicationIds.contains(widget.recruitment.id);
+    final loadError = provider.applicationErrors[widget.recruitment.id];
     return Scaffold(
       backgroundColor: pageColor,
       appBar: AppBar(
@@ -116,6 +158,8 @@ class _TeamApplicationManageScreenState
               ('已通过', 'accepted'),
               ('已拒绝', 'rejected'),
               ('已取消', 'cancelled'),
+              ('已退出', 'withdrawn'),
+              ('已移除', 'removed'),
             ]
                 .map((item) => Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -148,36 +192,63 @@ class _TeamApplicationManageScreenState
           child: RefreshIndicator(
             color: TeamUiTokens.accent(isDark),
             onRefresh: _load,
-            child: apps.isEmpty
-                ? Container(
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: TeamUiTokens.accentSoft(isDark),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Icon(Icons.inbox_outlined,
-                            size: 30, color: TeamUiTokens.accent(isDark)),
-                      ),
-                      const SizedBox(height: 16),
-                      Text('暂无记录',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: TeamUiTokens.title(isDark))),
-                    ]),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                    itemCount: apps.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, index) => _ApplicationCard(
-                        application: apps[index], onReview: _review),
-                  ),
+            child: loading && apps.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : loadError != null && apps.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          const SizedBox(height: 120),
+                          Icon(Icons.wifi_off_rounded,
+                              size: 34, color: TeamUiTokens.subtitle(isDark)),
+                          const SizedBox(height: 12),
+                          Center(child: Text(loadError)),
+                          Center(
+                            child: TextButton(
+                              onPressed: _load,
+                              child: const Text('重新加载'),
+                            ),
+                          ),
+                        ],
+                      )
+                    : apps.isEmpty
+                        ? Container(
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      color: TeamUiTokens.accentSoft(isDark),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Icon(Icons.inbox_outlined,
+                                        size: 30,
+                                        color: TeamUiTokens.accent(isDark)),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text('暂无记录',
+                                      style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          color: TeamUiTokens.title(isDark))),
+                                ]),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                            itemCount: apps.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (_, index) => _ApplicationCard(
+                                application: apps[index],
+                                reviewing: provider.reviewingApplicationIds
+                                    .contains(apps[index].id),
+                                onReview: _review,
+                                onRemove: _remove),
+                          ),
           ),
         ),
       ]),
@@ -187,8 +258,15 @@ class _TeamApplicationManageScreenState
 
 class _ApplicationCard extends StatelessWidget {
   final WaterTeamApplication application;
+  final bool reviewing;
   final Future<void> Function(WaterTeamApplication, bool) onReview;
-  const _ApplicationCard({required this.application, required this.onReview});
+  final Future<void> Function(WaterTeamApplication) onRemove;
+  const _ApplicationCard({
+    required this.application,
+    required this.reviewing,
+    required this.onReview,
+    required this.onRemove,
+  });
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -230,14 +308,30 @@ class _ApplicationCard extends StatelessWidget {
                         side: const BorderSide(
                             color: Color(0xFFE54848), width: 0.8),
                       ),
-                      onPressed: () => onReview(application, false),
+                      onPressed:
+                          reviewing ? null : () => onReview(application, false),
                       child: const Text('拒绝')),
                   const SizedBox(width: 8),
                   FilledButton(
                       style: TeamUiTokens.primaryButtonStyle(isDark),
-                      onPressed: () => onReview(application, true),
-                      child: const Text('通过'))
+                      onPressed:
+                          reviewing ? null : () => onReview(application, true),
+                      child: Text(reviewing ? '处理中…' : '通过'))
                 ])
+              ] else if (application.status == 'accepted') ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFE54848),
+                      side: const BorderSide(color: Color(0xFFE54848)),
+                    ),
+                    onPressed: reviewing ? null : () => onRemove(application),
+                    icon: const Icon(Icons.person_remove_outlined),
+                    label: Text(reviewing ? '处理中…' : '移除成员'),
+                  ),
+                ),
               ],
             ])));
   }

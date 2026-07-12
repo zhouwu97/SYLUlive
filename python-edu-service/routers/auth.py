@@ -6,8 +6,9 @@ from sqlalchemy import select
 from models.database import EduUser, get_db
 from models.schemas import BindInput, BindResponse, UnbindResponse, EduStatusResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse
 from services.crawler import EduCrawler, CookieLapseError, LoginFailedError, NetworkError
+from services.security import decrypt_credential, encrypt_credential, require_internal_service, require_internal_user
 
-router = APIRouter(prefix="/api/edu", tags=["认证"])
+router = APIRouter(prefix="/api/edu", tags=["认证"], dependencies=[Depends(require_internal_service)])
 
 
 def _error_code(exc: Exception) -> str:
@@ -67,6 +68,7 @@ async def pre_verify_edu_account(
 @router.post("/bind", response_model=BindResponse)
 async def bind_edu_account(
     input: BindInput,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db)
 ):
     """绑定教务账号"""
@@ -81,7 +83,7 @@ async def bind_edu_account(
             # 3. 存储到数据库
             # 检查是否已存在
             result = await db.execute(
-                select(EduUser).where(EduUser.user_id == input.user_id)
+                select(EduUser).where(EduUser.user_id == user_id)
             )
             existing_user = result.scalar_one_or_none()
 
@@ -89,8 +91,9 @@ async def bind_edu_account(
                 # 更新
                 existing_user.student_id = input.student_id
                 existing_user.name = student_info.name
-                existing_user.raw_password = input.password
-                existing_user.cookie = cookie
+                existing_user.encrypted_password = encrypt_credential(input.password)
+                existing_user.raw_password = None
+                existing_user.cookie = encrypt_credential(cookie)
                 existing_user.grade = student_info.grade
                 existing_user.college = student_info.college
                 existing_user.major = student_info.major
@@ -98,11 +101,11 @@ async def bind_edu_account(
             else:
                 # 新建
                 edu_user = EduUser(
-                    user_id=input.user_id,
+                    user_id=user_id,
                     student_id=input.student_id,
                     name=student_info.name,
-                    raw_password=input.password,
-                    cookie=cookie,
+                    encrypted_password=encrypt_credential(input.password),
+                    cookie=encrypt_credential(cookie),
                     grade=student_info.grade,
                     college=student_info.college,
                     major=student_info.major,
@@ -116,7 +119,6 @@ async def bind_edu_account(
                 success=True,
                 message="绑定成功",
                 student_id=input.student_id,
-                cookie=cookie,
                 name=student_info.name,
                 grade=student_info.grade,
                 college=student_info.college,
@@ -136,7 +138,7 @@ async def bind_edu_account(
 
 @router.delete("/bind", response_model=UnbindResponse)
 async def unbind_edu_account(
-    user_id: str,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db)
 ):
     """解绑教务账号"""
@@ -156,7 +158,7 @@ async def unbind_edu_account(
 
 @router.get("/status", response_model=EduStatusResponse)
 async def get_edu_status(
-    user_id: str,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db)
 ):
     """获取教务绑定状态"""
@@ -180,7 +182,7 @@ async def get_edu_status(
 
 @router.post("/refresh_cookie")
 async def refresh_cookie(
-    user_id: str,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db)
 ):
     """刷新过期的Cookie"""
@@ -192,13 +194,15 @@ async def refresh_cookie(
     if not edu_user or not edu_user.bound:
         raise HTTPException(status_code=400, detail="未绑定教务账号")
 
-    if not edu_user.raw_password:
-        raise HTTPException(status_code=400, detail="无法刷新Cookie，密码已丢失")
+    try:
+        password = decrypt_credential(edu_user.encrypted_password)
+    except (RuntimeError, ValueError):
+        raise HTTPException(status_code=400, detail="凭据已失效，请重新绑定教务账号")
 
     async with EduCrawler() as crawler:
         try:
-            new_cookie = await crawler.login(edu_user.student_id, edu_user.raw_password)
-            edu_user.cookie = new_cookie
+            new_cookie = await crawler.login(edu_user.student_id, password)
+            edu_user.cookie = encrypt_credential(new_cookie)
             await db.commit()
             return {"success": True, "message": "Cookie刷新成功"}
         except (LoginFailedError, CookieLapseError, NetworkError) as e:

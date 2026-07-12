@@ -1267,6 +1267,14 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
+	if post.Status == models.PostStatusDeleted {
+		userID, loggedIn := c.Get("user_id")
+		role, _ := c.Get("role")
+		if !loggedIn || (userID.(uint) != post.AuthorID && role != "admin" && role != "super_admin") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+			return
+		}
+	}
 
 	// 增加观看次数
 	h.db.Model(&post).UpdateColumn("view_count", gorm.Expr("view_count + 1"))

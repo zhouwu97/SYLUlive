@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/api_constants.dart';
+import '../../models/post.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../models/team_recruitment.dart';
 import '../../widgets/water_team/team_deadline_picker.dart';
@@ -27,7 +29,9 @@ class _TeamRecruitmentCreateScreenState
   final _needed = TextEditingController(text: '1');
   final _role = TextEditingController();
   final List<String> _roles = [];
+  final List<PostImage> _existingImages = [];
   final List<XFile> _images = [];
+  bool _imagesChanged = false;
   String _category = 'competition';
   DateTime? _deadline;
 
@@ -40,6 +44,7 @@ class _TeamRecruitmentCreateScreenState
       _description.text = value.description;
       _needed.text = value.neededCount.toString();
       _roles.addAll(value.roles);
+      _existingImages.addAll(value.images);
       _category = value.category;
       _deadline = value.deadline;
     }
@@ -71,17 +76,26 @@ class _TeamRecruitmentCreateScreenState
   Future<void> _pickImages() async {
     final images = await ImagePicker().pickMultiImage(imageQuality: 88);
     if (images.isNotEmpty && mounted) {
-      setState(() => _images.addAll(images.take(9 - _images.length)));
+      final remaining = 9 - _existingImages.length - _images.length;
+      if (remaining <= 0) return;
+      setState(() {
+        _images.addAll(images.take(remaining));
+        _imagesChanged = true;
+      });
     }
   }
 
   Future<void> _pickDeadline() async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initialDate = _deadline != null && !_deadline!.isBefore(today)
+        ? _deadline!
+        : now.add(const Duration(days: 7));
     final picked = await TeamDeadlinePicker.show(context,
-        firstDate: DateTime(now.year, now.month, now.day),
+        firstDate: today,
         lastDate: DateTime(now.year + 2),
-        initialDate: _deadline ?? now.add(const Duration(days: 7)),
+        initialDate: initialDate,
         accentColor: TeamUiTokens.accent(isDark));
     if (picked != null && mounted) {
       setState(() =>
@@ -93,30 +107,46 @@ class _TeamRecruitmentCreateScreenState
     if (!_formKey.currentState!.validate()) return;
     final provider = context.read<TeamRecruitmentProvider>();
     final existing = widget.initialValue;
-    final created = existing == null
-        ? await provider.create(
-            category: _category,
-            title: _title.text.trim(),
-            description: _description.text.trim(),
-            neededCount: int.parse(_needed.text),
-            roles: _roles,
-            deadline: _deadline,
-            images: _images,
-          )
-        : (await provider.updateRecruitment(
-            recruitmentId: existing.id,
-            category: _category,
-            title: _title.text.trim(),
-            description: _description.text.trim(),
-            neededCount: int.parse(_needed.text),
-            roles: _roles,
-            deadline: _deadline,
-          ))
-            .data;
+    if (existing == null) {
+      final created = await provider.create(
+        category: _category,
+        title: _title.text.trim(),
+        description: _description.text.trim(),
+        neededCount: int.parse(_needed.text),
+        roles: _roles,
+        deadline: _deadline,
+        images: _images,
+      );
+      if (!mounted) return;
+      if (created == null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('发布失败，请检查网络后重试')));
+        return;
+      }
+      Navigator.pop(context, true);
+      return;
+    }
+
+    final result = await provider.updateRecruitment(
+      recruitmentId: existing.id,
+      category: _category,
+      title: _title.text.trim(),
+      description: _description.text.trim(),
+      neededCount: int.parse(_needed.text),
+      roles: _roles,
+      deadline: _deadline,
+      imageFileIds: _imagesChanged
+          ? _existingImages
+              .map((image) => image.fileId)
+              .where((fileId) => fileId > 0)
+              .toList()
+          : null,
+      images: _images,
+    );
     if (!mounted) return;
-    if (created == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(existing == null ? '发布失败，请检查网络后重试' : '保存失败，请检查输入后重试')));
+    if (!result.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.errorMessage ?? '保存失败，请稍后重试')));
       return;
     }
     Navigator.pop(context, true);
@@ -124,7 +154,10 @@ class _TeamRecruitmentCreateScreenState
 
   @override
   Widget build(BuildContext context) {
-    final creating = context.watch<TeamRecruitmentProvider>().isCreating;
+    final provider = context.watch<TeamRecruitmentProvider>();
+    final submitting = provider.isCreating ||
+        (widget.initialValue != null &&
+            provider.updatingIds.contains(widget.initialValue!.id));
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageColor = TeamUiTokens.pageBg(isDark);
     final borderColor = TeamUiTokens.border(isDark);
@@ -163,8 +196,8 @@ class _TeamRecruitmentCreateScreenState
               height: 48,
               child: FilledButton(
                 style: TeamUiTokens.primaryButtonStyle(isDark),
-                onPressed: creating ? null : _submit,
-                child: Text(creating
+                onPressed: submitting ? null : _submit,
+                child: Text(submitting
                     ? '提交中…'
                     : (widget.initialValue == null ? '发布组队' : '保存修改')),
               ),
@@ -193,6 +226,7 @@ class _TeamRecruitmentCreateScreenState
                   spacing: 8,
                   children: const [
                     ('竞赛', 'competition'),
+                    ('项目', 'project'),
                     ('学习', 'study'),
                     ('活动', 'activity'),
                     ('其他', 'other')
@@ -256,7 +290,7 @@ class _TeamRecruitmentCreateScreenState
                 Row(
                   children: [
                     const Expanded(
-                        child: Text('还需人数', style: TextStyle(fontSize: 15))),
+                        child: Text('计划招募总人数', style: TextStyle(fontSize: 15))),
                     IconButton(
                       onPressed: int.parse(_needed.text) > 1
                           ? () => setState(() => _needed.text =
@@ -275,6 +309,12 @@ class _TeamRecruitmentCreateScreenState
                     ),
                   ],
                 ),
+                if (widget.initialValue != null)
+                  Text(
+                    '当前已加入 ${widget.initialValue!.acceptedCount} 人，修改后还缺 ${(int.parse(_needed.text) - widget.initialValue!.acceptedCount).clamp(0, 20)} 人',
+                    style: TextStyle(
+                        fontSize: 12, color: TeamUiTokens.subtitle(isDark)),
+                  ),
                 Divider(color: borderColor),
                 const SizedBox(height: 8),
                 const Row(
@@ -327,6 +367,13 @@ class _TeamRecruitmentCreateScreenState
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (_deadline != null)
+                        IconButton(
+                          tooltip: '清除截止时间',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => setState(() => _deadline = null),
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                        ),
                       Text(
                         _deadline == null
                             ? '不设置'
@@ -352,9 +399,12 @@ class _TeamRecruitmentCreateScreenState
                     crossAxisSpacing: 8,
                     mainAxisSpacing: 8,
                   ),
-                  itemCount: _images.length < 9 ? _images.length + 1 : 9,
+                  itemCount: _existingImages.length + _images.length < 9
+                      ? _existingImages.length + _images.length + 1
+                      : 9,
                   itemBuilder: (_, index) {
-                    if (index == 0 && _images.length < 9) {
+                    final totalImages = _existingImages.length + _images.length;
+                    if (index == 0 && totalImages < 9) {
                       return InkWell(
                         onTap: _pickImages,
                         borderRadius: BorderRadius.circular(10),
@@ -378,19 +428,39 @@ class _TeamRecruitmentCreateScreenState
                         ),
                       );
                     }
-                    final imageIndex = _images.length < 9 ? index - 1 : index;
+                    final imageIndex = totalImages < 9 ? index - 1 : index;
+                    final isExisting = imageIndex < _existingImages.length;
+                    final existingImage =
+                        isExisting ? _existingImages[imageIndex] : null;
+                    final newImageIndex = imageIndex - _existingImages.length;
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: Stack(fit: StackFit.expand, children: [
-                        Image.file(File(_images[imageIndex].path),
-                            fit: BoxFit.cover),
+                        if (existingImage != null)
+                          Image.network(
+                            ApiConstants.fullUrl(existingImage.url),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const ColoredBox(
+                              color: Color(0xFFE8ECEA),
+                              child: Icon(Icons.broken_image_outlined),
+                            ),
+                          )
+                        else
+                          Image.file(File(_images[newImageIndex].path),
+                              fit: BoxFit.cover),
                         Align(
                           alignment: Alignment.topRight,
                           child: IconButton.filledTonal(
                             tooltip: '删除图片',
                             icon: const Icon(Icons.close_rounded, size: 18),
-                            onPressed: () =>
-                                setState(() => _images.removeAt(imageIndex)),
+                            onPressed: () => setState(() {
+                              if (isExisting) {
+                                _existingImages.removeAt(imageIndex);
+                              } else {
+                                _images.removeAt(newImageIndex);
+                              }
+                              _imagesChanged = true;
+                            }),
                           ),
                         ),
                       ]),

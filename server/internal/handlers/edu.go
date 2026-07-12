@@ -344,6 +344,8 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":  fmt.Sprintf("%d", userID),
 			"year":     input.Year,
@@ -426,6 +428,8 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":  fmt.Sprintf("%d", userID),
 			"year":     input.Year,
@@ -485,6 +489,8 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":       fmt.Sprintf("%d", userID),
 			"force_refresh": input.ForceRefresh,
@@ -542,6 +548,8 @@ func (h *EduHandler) GetGradeDetail(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":          fmt.Sprintf("%d", userID),
 			"year":             input.Year,
@@ -652,6 +660,7 @@ func classifyEduLoginFailure(statusCode int, body string) error {
 		strings.Contains(body, "账户或密码错误") ||
 		strings.Contains(body, "账号密码错误") ||
 		strings.Contains(body, "密码错误") ||
+		strings.Contains(body, "密码不正确") ||
 		strings.Contains(body, "用户不存在") {
 		return &eduLoginError{Code: "INVALID_CREDENTIALS", Message: "教务账号或密码错误"}
 	}

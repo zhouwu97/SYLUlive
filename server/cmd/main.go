@@ -186,6 +186,7 @@ func main() {
 		&models.CalendarShareSnapshot{},
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
+		&models.CampusCalendar{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -194,6 +195,9 @@ func main() {
 
 	if err := models.EnsureExamPaperIndexes(db); err != nil {
 		log.Fatal("试卷索引迁移失败:", err)
+	}
+	if err := models.EnsureCampusCalendarIndexes(db); err != nil {
+		log.Fatal("校历索引迁移失败:", err)
 	}
 
 	if err := models.EnsureConversationIndexes(db); err != nil {
@@ -236,12 +240,8 @@ func main() {
 	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
 	db.Exec(`UPDATE posts SET post_type = 'campus_life' WHERE board_id = ? AND (post_type IS NULL OR post_type = '')`, int(models.BoardShuitie))
 
-	// 启动时自动修复可能不同步的评论数和点赞数
-	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
-	db.Exec(`UPDATE posts SET reply_count = (SELECT COUNT(*) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal')`)
-	db.Exec(`UPDATE posts SET like_count = (SELECT COUNT(*) FROM likes WHERE likes.target_id = posts.id AND likes.target_type = 'post')`)
-	db.Exec(`UPDATE users SET total_likes_received = (SELECT COUNT(*) FROM likes WHERE target_type = 'post' AND target_id IN (SELECT id FROM posts WHERE author_id = users.id))`)
-	log.Println("同步完成")
+	// 全表统计回算不应阻塞服务启动；需要修复历史数据时使用独立运维任务执行。
+	log.Println("跳过启动期全表统计回算")
 
 	// 确保默认超级管理员
 
@@ -249,16 +249,30 @@ func main() {
 
 	r := gin.Default()
 
-	// CORS中间件
-
+	// CORS 仅允许显式配置的可信来源，生产环境不能反射任意 Origin。
+	allowedOrigins := make(map[string]struct{})
+	for _, origin := range strings.Split(os.Getenv("CORS_ALLOW_ORIGINS"), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			allowedOrigins[origin] = struct{}{}
+		}
+	}
+	if len(allowedOrigins) == 0 && os.Getenv("GIN_MODE") != "release" {
+		allowedOrigins["http://localhost:3000"] = struct{}{}
+		allowedOrigins["http://localhost:8080"] = struct{}{}
+	}
 	r.Use(func(c *gin.Context) {
-
 		origin := c.GetHeader("Origin")
 		if origin != "" {
+			if _, allowed := allowedOrigins[origin]; !allowed {
+				if c.Request.Method == "OPTIONS" {
+					c.AbortWithStatus(http.StatusForbidden)
+					return
+				}
+				c.Next()
+				return
+			}
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
-		} else {
-			c.Header("Access-Control-Allow-Origin", "*")
 		}
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
@@ -348,6 +362,7 @@ func main() {
 	// 初始化教务服务配置
 
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+	handlers.EduServiceConfig.Token = cfg.EduServiceToken
 
 	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
 
@@ -407,6 +422,7 @@ func main() {
 	}
 
 	campusArticleHandler := handlers.NewCampusArticleHandler(db, campusSyncServices...)
+	campusCalendarHandler := handlers.NewCampusCalendarHandler(db)
 
 	// 启动后台定时任务
 
@@ -465,6 +481,8 @@ func main() {
 		auth.POST("/forgot_password", authHandler.ForgotPassword)
 
 		auth.POST("/change_password", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.ChangePassword)
+
+		auth.POST("/logout", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.Logout)
 
 	}
 
@@ -651,6 +669,8 @@ func main() {
 		waterTeam.POST("/applications/:id/accept", waterTeamHandler.Accept)
 		waterTeam.POST("/applications/:id/reject", waterTeamHandler.Reject)
 		waterTeam.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+		waterTeam.POST("/applications/:id/leave", waterTeamHandler.Leave)
+		waterTeam.POST("/applications/:id/remove", waterTeamHandler.Remove)
 		waterTeam.GET("/my_applications", waterTeamHandler.GetMyApplications)
 		waterTeam.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)
 	}
@@ -669,6 +689,8 @@ func main() {
 		teamAuth.POST("/applications/:id/accept", waterTeamHandler.Accept)
 		teamAuth.POST("/applications/:id/reject", waterTeamHandler.Reject)
 		teamAuth.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+		teamAuth.POST("/applications/:id/leave", waterTeamHandler.Leave)
+		teamAuth.POST("/applications/:id/remove", waterTeamHandler.Remove)
 
 		teamAuth.GET("/my_applications", waterTeamHandler.GetMyApplications)
 		teamAuth.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)
@@ -885,6 +907,8 @@ func main() {
 	appeals.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 
 	{
+
+		appeals.POST("/post/:id", appealHandler.Create)
 
 		appeals.GET("", appealHandler.GetList)
 
@@ -1245,6 +1269,20 @@ func main() {
 		campus.GET("/articles", campusArticleHandler.List)
 		campus.GET("/articles/:id", campusArticleHandler.GetDetail)
 	}
+	campusCalendars := r.Group("/api/campus-calendars")
+	{
+		campusCalendars.GET("/current", campusCalendarHandler.GetCurrent)
+		campusCalendars.GET("/:academic_year", campusCalendarHandler.GetByAcademicYear)
+	}
+
+	calendarAdmin := r.Group("/api/admin/campus-calendars")
+	calendarAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		calendarAdmin.POST("/preview", campusCalendarHandler.Preview)
+		calendarAdmin.POST("", campusCalendarHandler.CreateDraft)
+		calendarAdmin.POST("/:id/publish", campusCalendarHandler.Publish)
+		calendarAdmin.POST("/:id/archive", campusCalendarHandler.Archive)
+	}
 
 	// 版本信息
 
@@ -1264,7 +1302,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1. 优化水帖分类侧边栏入口\n2. 精修水帖分类专题页样式\n3. 优化水帖详情页分类入口、阅读数对齐与正文密度",
+			"update_msg": "1. 优化校园地图首次加载、复位与横屏查看\n2. 校历升级为可点击的结构化月历，支持教学周、假期和日期详情\n3. 校历支持离线回退、后台更新与官方原图核验",
 		})
 
 	})

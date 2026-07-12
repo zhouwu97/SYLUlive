@@ -1,14 +1,19 @@
 import pytest
 import asyncio
+import base64
+import os
 from unittest.mock import AsyncMock, patch
 
 from services.session import execute_with_session_refresh, CookieLapseError
 from services.crawler import LoginFailedError
 from models.database import EduUser
+from services.security import encrypt_credential
 
 @pytest.fixture(autouse=True)
-def _clear_locks():
+def _clear_locks(monkeypatch):
     from services.session import _user_locks
+    # 使用独立的测试密钥，确保会话刷新只接受 AEAD 密文。
+    monkeypatch.setattr("services.security.EDU_CREDENTIAL_ENCRYPTION_KEY", base64.urlsafe_b64encode(os.urandom(32)).decode())
     _user_locks.clear()
     yield
 
@@ -16,7 +21,7 @@ def _clear_locks():
 async def test_session_refresh_success():
     """旧 Cookie 失败 → 自动登录成功 → 同一次请求直接返回"""
     mock_db = AsyncMock()
-    edu_user = EduUser(user_id="u1", student_id="s1", raw_password="p1", cookie="old_cookie")
+    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"))
 
     operation = AsyncMock()
     operation.side_effect = [CookieLapseError("Expired"), "success_data"]
@@ -33,7 +38,7 @@ async def test_session_refresh_success():
         )
 
         assert result == "success_data"
-        assert edu_user.cookie == "new_cookie"
+        assert edu_user.cookie != "new_cookie"
         assert operation.call_count == 2
         mock_crawler_instance.login.assert_called_once_with("s1", "p1")
         mock_db.commit.assert_awaited_once()
@@ -42,7 +47,7 @@ async def test_session_refresh_success():
 async def test_session_refresh_login_failed():
     """旧 Cookie 失败 → 登录失败 → 返回 CookieLapseError"""
     mock_db = AsyncMock()
-    edu_user = EduUser(user_id="u1", student_id="s1", raw_password="p1", cookie="old_cookie")
+    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"))
 
     operation = AsyncMock()
     operation.side_effect = [CookieLapseError("Expired")]
@@ -66,7 +71,7 @@ async def test_session_refresh_login_failed():
 async def test_session_refresh_concurrent_requests():
     """grades 和 academic-situation 同时触发 → 只登录一次，两个请求都成功"""
     mock_db = AsyncMock()
-    edu_user = EduUser(user_id="u1", student_id="s1", raw_password="p1", cookie="old_cookie")
+    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"))
 
     op1 = AsyncMock()
     op2 = AsyncMock()
@@ -103,4 +108,4 @@ async def test_session_refresh_concurrent_requests():
         assert set(results) == {"result_grades", "result_academic"}
         # 确保只调用了一次 login
         assert mock_crawler_instance.login.call_count == 1
-        assert edu_user.cookie == "new_cookie"
+        assert edu_user.cookie != "new_cookie"

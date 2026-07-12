@@ -37,7 +37,10 @@ class _QueuedAuthAdapter implements HttpClientAdapter {
 
 class _FakeAuthCredentialStore implements AuthCredentialStore {
   StoredAuthCredentials stored = const StoredAuthCredentials();
+  final Map<String, String> eduPasswords = {};
+  final List<String> operations = [];
   bool failWrites = false;
+  bool failNextEduWrite = false;
   bool failClear = false;
   int writeCount = 0;
   int clearCount = 0;
@@ -47,6 +50,7 @@ class _FakeAuthCredentialStore implements AuthCredentialStore {
 
   @override
   Future<void> write({required String token, required String userJson}) async {
+    operations.add('auth:write:$token');
     if (failWrites) throw StateError('auth write failed');
     writeCount++;
     stored = StoredAuthCredentials(token: token, userJson: userJson);
@@ -60,7 +64,26 @@ class _FakeAuthCredentialStore implements AuthCredentialStore {
   }
 
   @override
-  Future<void> writeEduPassword(String studentId, String password) async {}
+  Future<void> writeEduPassword(String studentId, String password) async {
+    operations.add('edu:write:$password');
+    if (failNextEduWrite) {
+      failNextEduWrite = false;
+      throw StateError('edu password write failed');
+    }
+    eduPasswords[studentId] = password;
+  }
+
+  @override
+  Future<String?> readEduPassword(String studentId) async {
+    operations.add('edu:read');
+    return eduPasswords[studentId];
+  }
+
+  @override
+  Future<void> deleteEduPassword(String studentId) async {
+    operations.add('edu:delete');
+    eduPasswords.remove(studentId);
+  }
 }
 
 typedef _AuthInvocation = Future<AuthResult> Function(AuthProvider provider);
@@ -107,6 +130,11 @@ final _authCases = <_AuthCase>[
       'password',
     ),
   ),
+];
+
+final _eduAuthCases = <_AuthCase>[
+  _authCases.firstWhere((authCase) => authCase.name == 'loginEdu'),
+  _authCases.firstWhere((authCase) => authCase.name == 'registerWithEdu'),
 ];
 
 void main() {
@@ -164,6 +192,117 @@ void main() {
           provider.dio.options.headers['Authorization'], 'Bearer next-token');
     });
   }
+
+  for (final authCase in _eduAuthCases) {
+    test('${authCase.name} 教务密码写入失败时不改变持久或内存会话', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(authCase.statusCode, {
+          'token': 'next-token',
+          'user': _userJson(2),
+        });
+      final store = _FakeAuthCredentialStore();
+      final provider = _provider(adapter, store);
+      await provider.applyAuthPayload('old-token', _userJson(1));
+      store.eduPasswords['20260001'] = 'old-edu-pass';
+      store.operations.clear();
+      store.failNextEduWrite = true;
+      final generation = provider.sessionGeneration;
+
+      final result = await authCase.invoke(provider);
+
+      expect(result.success, isFalse);
+      _expectOldSession(provider, store, generation);
+      expect(store.eduPasswords['20260001'], 'old-edu-pass');
+      expect(store.operations, ['edu:read', 'edu:write:edu-pass']);
+    });
+
+    test('${authCase.name} 认证写入失败时恢复旧教务密码', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(authCase.statusCode, {
+          'token': 'next-token',
+          'user': _userJson(2),
+        });
+      final store = _FakeAuthCredentialStore();
+      final provider = _provider(adapter, store);
+      await provider.applyAuthPayload('old-token', _userJson(1));
+      store.eduPasswords['20260001'] = 'old-edu-pass';
+      store.operations.clear();
+      store.failWrites = true;
+      final generation = provider.sessionGeneration;
+
+      final result = await authCase.invoke(provider);
+
+      expect(result.success, isFalse);
+      _expectOldSession(provider, store, generation);
+      expect(store.eduPasswords['20260001'], 'old-edu-pass');
+      expect(
+        store.operations,
+        [
+          'edu:read',
+          'edu:write:edu-pass',
+          'auth:write:next-token',
+          'edu:write:old-edu-pass',
+        ],
+      );
+    });
+
+    test('${authCase.name} 合法成功只提交一次会话并持久化新教务密码', () async {
+      final adapter = _QueuedAuthAdapter()
+        ..enqueue(authCase.statusCode, {
+          'token': 'next-token',
+          'user': _userJson(2),
+        });
+      final store = _FakeAuthCredentialStore();
+      final provider = _provider(adapter, store);
+      await provider.applyAuthPayload('old-token', _userJson(1));
+      store.eduPasswords['20260001'] = 'old-edu-pass';
+      store.operations.clear();
+      final generation = provider.sessionGeneration;
+
+      final result = await authCase.invoke(provider);
+
+      expect(result.success, isTrue);
+      expect(provider.sessionGeneration, generation + 1);
+      expect(store.eduPasswords['20260001'], 'edu-pass');
+      expect(
+        store.operations,
+        ['edu:read', 'edu:write:edu-pass', 'auth:write:next-token'],
+      );
+    });
+  }
+
+  test('registerWithEdu 认证写入失败且无旧密码时删除新教务密码', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(201, {
+        'token': 'next-token',
+        'user': _userJson(2),
+      });
+    final store = _FakeAuthCredentialStore();
+    final provider = _provider(adapter, store);
+    await provider.applyAuthPayload('old-token', _userJson(1));
+    store.operations.clear();
+    store.failWrites = true;
+    final generation = provider.sessionGeneration;
+
+    final result = await provider.registerWithEdu(
+      '20260001',
+      'password',
+      eduPassword: 'edu-pass',
+    );
+
+    expect(result.success, isFalse);
+    _expectOldSession(provider, store, generation);
+    expect(store.eduPasswords['20260001'], isNull);
+    expect(
+      store.operations,
+      [
+        'edu:read',
+        'edu:write:edu-pass',
+        'auth:write:next-token',
+        'edu:delete',
+      ],
+    );
+  });
 
   test('applyAuthPayload 先完整解析用户，失败时不改变已有认证会话', () async {
     final provider = _provider(
@@ -304,4 +443,17 @@ Map<String, dynamic> _userJson(int id) {
     'nickname': '用户$id',
     'created_at': '2026-07-13T10:00:00Z',
   };
+}
+
+void _expectOldSession(
+  AuthProvider provider,
+  _FakeAuthCredentialStore store,
+  int generation,
+) {
+  expect(provider.token, 'old-token');
+  expect(provider.user?.id, 1);
+  expect(provider.sessionGeneration, generation);
+  expect(provider.dio.options.headers['Authorization'], 'Bearer old-token');
+  expect(store.stored.token, 'old-token');
+  expect(jsonDecode(store.stored.userJson!)['id'], 1);
 }

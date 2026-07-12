@@ -48,6 +48,10 @@ abstract interface class AuthCredentialStore {
   Future<void> clear();
 
   Future<void> writeEduPassword(String studentId, String password);
+
+  Future<String?> readEduPassword(String studentId);
+
+  Future<void> deleteEduPassword(String studentId);
 }
 
 class _PlatformAuthCredentialStore implements AuthCredentialStore {
@@ -74,13 +78,31 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   Future<void> write({required String token, required String userJson}) async {
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_tokenKey, token);
-      await prefs.setString(_userKey, userJson);
+      final oldToken = prefs.getString(_tokenKey);
+      final oldUserJson = prefs.getString(_userKey);
+      try {
+        if (!await prefs.setString(_tokenKey, token) ||
+            !await prefs.setString(_userKey, userJson)) {
+          throw StateError('写入认证信息失败');
+        }
+      } catch (error, stackTrace) {
+        await _restorePreference(prefs, _tokenKey, oldToken);
+        await _restorePreference(prefs, _userKey, oldUserJson);
+        Error.throwWithStackTrace(error, stackTrace);
+      }
       return;
     }
     const storage = FlutterSecureStorage();
-    await storage.write(key: _tokenKey, value: token);
-    await storage.write(key: _userKey, value: userJson);
+    final oldToken = await storage.read(key: _tokenKey);
+    final oldUserJson = await storage.read(key: _userKey);
+    try {
+      await storage.write(key: _tokenKey, value: token);
+      await storage.write(key: _userKey, value: userJson);
+    } catch (error, stackTrace) {
+      await _restoreSecureValue(storage, _tokenKey, oldToken);
+      await _restoreSecureValue(storage, _userKey, oldUserJson);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   @override
@@ -105,6 +127,53 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
     }
     const storage = FlutterSecureStorage();
     await storage.write(key: 'edu_pwd_$studentId', value: password);
+  }
+
+  @override
+  Future<String?> readEduPassword(String studentId) async {
+    final key = 'edu_pwd_$studentId';
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(key);
+    }
+    const storage = FlutterSecureStorage();
+    return storage.read(key: key);
+  }
+
+  @override
+  Future<void> deleteEduPassword(String studentId) async {
+    final key = 'edu_pwd_$studentId';
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+      return;
+    }
+    const storage = FlutterSecureStorage();
+    await storage.delete(key: key);
+  }
+
+  Future<void> _restorePreference(
+    SharedPreferences prefs,
+    String key,
+    String? value,
+  ) async {
+    if (value == null) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setString(key, value);
+    }
+  }
+
+  Future<void> _restoreSecureValue(
+    FlutterSecureStorage storage,
+    String key,
+    String? value,
+  ) async {
+    if (value == null) {
+      await storage.delete(key: key);
+    } else {
+      await storage.write(key: key, value: value);
+    }
   }
 }
 
@@ -272,6 +341,26 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _saveEduPassword(String studentId, String password) async {
     await _credentialStore.writeEduPassword(studentId, password);
+  }
+
+  Future<void> _saveAndCommitEduAuthSession(
+    _AuthSessionCandidate candidate, {
+    required String studentId,
+    required String eduPassword,
+  }) async {
+    final oldEduPassword = await _credentialStore.readEduPassword(studentId);
+    await _saveEduPassword(studentId, eduPassword);
+    try {
+      await _saveAuthCandidate(candidate);
+    } catch (error, stackTrace) {
+      if (oldEduPassword == null) {
+        await _credentialStore.deleteEduPassword(studentId);
+      } else {
+        await _saveEduPassword(studentId, oldEduPassword);
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+    _commitAuthSession(candidate);
   }
 
   _AuthSessionCandidate _authSessionCandidate(
@@ -686,9 +775,11 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       if (response.statusCode == 200) {
         final candidate = _authSessionCandidateFromResponse(response.data);
-        await _saveAuthCandidate(candidate);
-        await _saveEduPassword(studentId, eduPassword);
-        _commitAuthSession(candidate);
+        await _saveAndCommitEduAuthSession(
+          candidate,
+          studentId: studentId,
+          eduPassword: eduPassword,
+        );
         notifyListeners();
         return AuthResult.success();
       }
@@ -731,9 +822,11 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       if (response.statusCode == 201) {
         final candidate = _authSessionCandidateFromResponse(response.data);
-        await _saveAuthCandidate(candidate);
-        await _saveEduPassword(studentId, eduPassword);
-        _commitAuthSession(candidate);
+        await _saveAndCommitEduAuthSession(
+          candidate,
+          studentId: studentId,
+          eduPassword: eduPassword,
+        );
         notifyListeners();
         return AuthResult.success();
       }

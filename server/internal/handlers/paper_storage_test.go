@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	pdfmodel "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/stretchr/testify/require"
 
 	"shenliyuan/internal/services"
 )
@@ -640,6 +641,45 @@ func TestPaperStorageDownloadRejectsWrongPurposeAndExpiredGrant(t *testing.T) {
 		if response.Code != http.StatusUnauthorized {
 			t.Fatalf("错误授权应拒绝: %d", response.Code)
 		}
+	}
+}
+
+func TestPaperStorageDownloadRejectsConflictingHeaderAndQueryTokens(t *testing.T) {
+	handler, files, signer, _ := newPaperStorageTestHandler(t, 20)
+	stored, err := files.StoreUploadReader("paper.pdf", bytes.NewReader(paperStoragePDF()))
+	require.NoError(t, err)
+	path := "/v1/files/" + stored.FileKey
+	previewToken := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposePreview, http.MethodGet, path, "", stored.FileKey)
+	downloadToken := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeDownload, http.MethodGet, path, "", stored.FileKey)
+
+	request := httptest.NewRequest(http.MethodGet, path+"?token="+url.QueryEscape(previewToken), nil)
+	request.Header.Set("Authorization", "Bearer "+downloadToken)
+	response := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(response, request)
+	require.Equal(t, http.StatusUnauthorized, response.Code)
+	require.Empty(t, response.Header().Get("X-Accel-Redirect"))
+}
+
+func TestPaperStorageQueryTokenIsLimitedToPublicDownloadRoute(t *testing.T) {
+	handler, _, signer, _ := newPaperStorageTestHandler(t, 20)
+	router := paperStorageRouter(handler)
+	fileKey := "00000000-0000-0000-0000-000000000000.pdf"
+	for _, test := range []struct {
+		method, path, purpose, sessionID, fileKey string
+	}{
+		{method: http.MethodPost, path: "/v1/uploads/" + paperStorageSessionID, purpose: services.ExamPaperStoragePurposeUpload, sessionID: paperStorageSessionID},
+		{method: http.MethodGet, path: "/internal/v1/files/" + fileKey + "/meta", purpose: services.ExamPaperStoragePurposeMetadata, fileKey: fileKey},
+		{method: http.MethodPost, path: "/internal/v1/files/" + fileKey + "/claim", purpose: services.ExamPaperStoragePurposeClaim, fileKey: fileKey},
+		{method: http.MethodPost, path: "/internal/v1/files/" + fileKey + "/trash", purpose: services.ExamPaperStoragePurposeDelete, fileKey: fileKey},
+		{method: http.MethodPost, path: "/internal/v1/maintenance", purpose: services.ExamPaperStoragePurposeMaintenance},
+	} {
+		t.Run(test.purpose, func(t *testing.T) {
+			token := signPaperStorageGrant(t, signer, test.purpose, test.method, test.path, test.sessionID, test.fileKey)
+			request := httptest.NewRequest(test.method, test.path+"?token="+url.QueryEscape(token), nil)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			require.Equal(t, http.StatusUnauthorized, response.Code)
+		})
 	}
 }
 

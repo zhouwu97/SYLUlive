@@ -861,6 +861,61 @@ func TestRemoteExamPaperPreviewAndDownloadRedirectWithScopedPurpose(t *testing.T
 	require.Equal(t, int64(1), refreshed.DownloadCount)
 }
 
+func TestRemoteExamPaperRedirectLocationDownloadsFromStorageRouter(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	remote := configureRemoteExamPaperHandler(t, &env, examPaperStorageModeRemote)
+	user := createExamPaperTestUser(t, env.db, "remote-e2e-reader", models.RoleUser, true, 0)
+	storageFiles, err := services.NewExamPaperFileService(t.TempDir())
+	require.NoError(t, err)
+	stored, err := storageFiles.StoreUploadReader("paper.pdf", bytes.NewReader(paperStoragePDF()))
+	require.NoError(t, err)
+	storageHandler := NewPaperStorageHandler(storageFiles, remote.grantSigner, remote.receiptSigner, 1)
+	storageRouter := paperStorageRouter(storageHandler)
+	paper := createRemoteExamPaper(t, env, user, models.ExamPaperStatusPublished, stored.FileKey)
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	for _, test := range []struct {
+		name, purpose, mainPath, disposition string
+		handler                              gin.HandlerFunc
+	}{
+		{name: "preview", purpose: services.ExamPaperStoragePurposePreview, mainPath: "/api/exam-papers/1/preview", disposition: "inline", handler: env.handler.Preview},
+		{name: "download", purpose: services.ExamPaperStoragePurposeDownload, mainPath: "/api/exam-papers/1/download", disposition: "attachment", handler: env.handler.Download},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			redirect := performExamPaperRequest(test.handler, http.MethodGet, test.mainPath, params, user.ID, nil, "")
+			require.Equal(t, http.StatusFound, redirect.Code)
+			location := redirect.Header().Get("Location")
+			verifyRemoteExamPaperLocation(t, remote.grantSigner, location, paper, test.purpose)
+
+			response := httptest.NewRecorder()
+			storageRouter.ServeHTTP(response, httptest.NewRequest(http.MethodGet, location, nil))
+			require.Equal(t, http.StatusOK, response.Code)
+			require.Equal(t, "private, no-store", redirect.Header().Get("Cache-Control"))
+			require.Equal(t, "no-referrer", redirect.Header().Get("Referrer-Policy"))
+			require.Equal(t, "/_paper_files/"+url.PathEscape(stored.FileKey), response.Header().Get("X-Accel-Redirect"))
+			require.True(t, strings.HasPrefix(response.Header().Get("Content-Disposition"), test.disposition))
+			require.Equal(t, "private, no-store", response.Header().Get("Cache-Control"))
+			require.Equal(t, "no-referrer", response.Header().Get("Referrer-Policy"))
+
+			parsed, parseErr := url.Parse(location)
+			require.NoError(t, parseErr)
+			missingToken := *parsed
+			missingToken.RawQuery = ""
+			missing := httptest.NewRecorder()
+			storageRouter.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, missingToken.String(), nil))
+			require.Equal(t, http.StatusUnauthorized, missing.Code)
+
+			tamperedQuery := parsed.Query()
+			tamperedQuery.Set("token", tamperedQuery.Get("token")+"x")
+			tampered := *parsed
+			tampered.RawQuery = tamperedQuery.Encode()
+			tamperedResponse := httptest.NewRecorder()
+			storageRouter.ServeHTTP(tamperedResponse, httptest.NewRequest(http.MethodGet, tampered.String(), nil))
+			require.Equal(t, http.StatusUnauthorized, tamperedResponse.Code)
+		})
+	}
+}
+
 func verifyRemoteExamPaperLocation(t *testing.T, signer *services.ExamPaperStorageSigner, location string, paper models.ExamPaper, purpose string) {
 	t.Helper()
 	parsed, err := url.Parse(location)

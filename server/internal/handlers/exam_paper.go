@@ -826,6 +826,8 @@ func (h *ExamPaperHandler) redirectExamPaperFile(c *gin.Context, paper models.Ex
 			return
 		}
 	}
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("Referrer-Policy", "no-referrer")
 	c.Redirect(http.StatusFound, location)
 }
 

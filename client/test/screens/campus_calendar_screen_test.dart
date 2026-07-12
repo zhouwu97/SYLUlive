@@ -23,6 +23,7 @@ void main() {
     });
     final raw = await rootBundle.loadString(
       'assets/data/campus_calendar_fallback.json',
+      cache: false,
     );
     final calendar = CampusCalendar.fromJson(
       Map<String, dynamic>.from(jsonDecode(raw) as Map),
@@ -72,6 +73,7 @@ void main() {
     });
     final raw = await rootBundle.loadString(
       'assets/data/campus_calendar_fallback.json',
+      cache: false,
     );
     final calendar = CampusCalendar.fromJson(
       Map<String, dynamic>.from(jsonDecode(raw) as Map),

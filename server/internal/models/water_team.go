@@ -149,6 +149,17 @@ func EnsureWaterTeamSchema(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
+	// 原始状态参与 SQL 筛选；人数重算后同步 full/recruiting，但保留人工关闭状态。
+	if err := db.Exec(`
+		UPDATE water_team_recruitments
+		SET status = CASE
+			WHEN accepted_count >= needed_count THEN 'full'
+			ELSE 'recruiting'
+		END
+		WHERE status <> 'closed';
+	`).Error; err != nil {
+		return err
+	}
 	if db.Dialector.Name() != "postgres" {
 		return nil
 	}

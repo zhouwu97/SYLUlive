@@ -29,6 +29,8 @@ func TestEnsureWaterTeamSchemaRecountsAcceptedApplications(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertWaterTeamCounts(t, db, 3, 3)
+	assertWaterTeamState(t, db, 2, 1, 3, RecruitmentStatusRecruiting)
+	assertWaterTeamState(t, db, 3, 0, 3, RecruitmentStatusClosed)
 }
 
 func TestEnsureWaterTeamSchemaPostgres(t *testing.T) {
@@ -64,13 +66,15 @@ func TestEnsureWaterTeamSchemaPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertWaterTeamCounts(t, db, 3, 3)
+	assertWaterTeamState(t, db, 2, 1, 3, RecruitmentStatusRecruiting)
+	assertWaterTeamState(t, db, 3, 0, 3, RecruitmentStatusClosed)
 	if err := db.Exec("UPDATE water_team_recruitments SET needed_count = 2 WHERE id = 1").Error; err == nil {
 		t.Fatal("expected capacity CHECK constraint to reject needed_count below accepted_count")
 	}
-	if err := db.Exec("INSERT INTO notifications(user_id, type, dedup_key) VALUES (1, 'team_application', 'same')").Error; err != nil {
+	if err := db.Exec("INSERT INTO notifications(id, user_id, type, dedup_key) VALUES (1, 1, 'team_application', 'same')").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("INSERT INTO notifications(user_id, type, dedup_key) VALUES (1, 'team_application', 'same')").Error; err == nil {
+	if err := db.Exec("INSERT INTO notifications(id, user_id, type, dedup_key) VALUES (2, 1, 'team_application', 'same')").Error; err == nil {
 		t.Fatal("expected notification dedup unique index to reject duplicate event")
 	}
 }
@@ -80,7 +84,7 @@ func createMinimalWaterTeamSchema(t *testing.T, db *gorm.DB) {
 	statements := []string{
 		"CREATE TABLE water_section_tags (id INTEGER PRIMARY KEY, section_id INTEGER NOT NULL, content_mode VARCHAR(50) NOT NULL)",
 		"CREATE TABLE notifications (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, type VARCHAR(50) NOT NULL, dedup_key VARCHAR(191) NOT NULL DEFAULT '')",
-		"CREATE TABLE water_team_recruitments (id INTEGER PRIMARY KEY, needed_count INTEGER NOT NULL, accepted_count INTEGER NOT NULL)",
+		"CREATE TABLE water_team_recruitments (id INTEGER PRIMARY KEY, needed_count INTEGER NOT NULL, accepted_count INTEGER NOT NULL, status VARCHAR(32) NOT NULL)",
 		"CREATE TABLE water_team_applications (id INTEGER PRIMARY KEY, recruitment_id INTEGER NOT NULL, status VARCHAR(32) NOT NULL)",
 	}
 	for _, statement := range statements {
@@ -92,13 +96,31 @@ func createMinimalWaterTeamSchema(t *testing.T, db *gorm.DB) {
 
 func seedMismatchedWaterTeamCounts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if err := db.Exec("INSERT INTO water_team_recruitments(id, needed_count, accepted_count) VALUES (1, 2, 1)").Error; err != nil {
+	if err := db.Exec("INSERT INTO water_team_recruitments(id, needed_count, accepted_count, status) VALUES (1, 2, 1, 'recruiting'), (2, 3, 3, 'full'), (3, 3, 3, 'closed')").Error; err != nil {
 		t.Fatal(err)
 	}
 	for id := 1; id <= 3; id++ {
 		if err := db.Exec("INSERT INTO water_team_applications(id, recruitment_id, status) VALUES (?, 1, 'accepted')", id).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := db.Exec("INSERT INTO water_team_applications(id, recruitment_id, status) VALUES (4, 2, 'accepted')").Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertWaterTeamState(t *testing.T, db *gorm.DB, id, accepted, needed int, status string) {
+	t.Helper()
+	var row struct {
+		AcceptedCount int
+		NeededCount   int
+		Status        string
+	}
+	if err := db.Raw("SELECT accepted_count, needed_count, status FROM water_team_recruitments WHERE id = ?", id).Scan(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.AcceptedCount != accepted || row.NeededCount != needed || row.Status != status {
+		t.Fatalf("id=%d accepted_count=%d needed_count=%d status=%s, want %d/%d/%s", id, row.AcceptedCount, row.NeededCount, row.Status, accepted, needed, status)
 	}
 }
 

@@ -215,7 +215,7 @@ func TestMigrationBatchContinuesAndReturnsFailureSummary(t *testing.T) {
 	env := newMigrationTestEnv(t)
 	good := env.addPaper(t, "good.pdf", []byte("good"))
 	bad := env.addPaper(t, "bad.pdf", []byte("bad"))
-	env.remote.errors[bad.FileKey] = errors.New("远端暂时不可用")
+	env.remote.errors[bad.FileKey] = errors.New(`Get "https://sylulive.online/v1/files/bad.pdf/metadata?token=super-secret": 500`)
 	var output bytes.Buffer
 
 	summary, err := runMigration(context.Background(), env.db, env.remote, env.root, migrationOptions{Apply: true, PageSize: 1}, &output)
@@ -226,7 +226,10 @@ func TestMigrationBatchContinuesAndReturnsFailureSummary(t *testing.T) {
 	require.Equal(t, 1, summary.Failed)
 	require.Equal(t, models.ExamPaperStorageRemote, loadMigrationPaper(t, env.db, good.ID).StorageBackend)
 	require.Equal(t, models.ExamPaperStorageLocal, loadMigrationPaper(t, env.db, bad.ID).StorageBackend)
-	require.NotContains(t, output.String(), "token")
+	require.Contains(t, output.String(), "读取远端元数据失败")
+	require.NotContains(t, output.String(), "bad.pdf")
+	require.NotContains(t, output.String(), "super-secret")
+	require.NotContains(t, output.String(), "sylulive.online")
 }
 
 func TestMigrationOnlyProcessesActiveLocalRecordsWithFileKeys(t *testing.T) {

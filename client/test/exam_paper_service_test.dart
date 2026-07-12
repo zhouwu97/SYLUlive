@@ -91,6 +91,145 @@ class _RecordingAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('创建会话期间认证切换会终止旧流程且新会话独立上传', () async {
+    var scope = 1;
+    final createStarted = Completer<void>();
+    final releaseCreate = Completer<void>();
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(
+        201,
+        _uploadSessionJson(sessionID: 'auth-a'),
+        started: createStarted,
+        release: releaseCreate.future,
+      )
+      ..enqueueJson(201, _uploadSessionJson(sessionID: 'auth-b'))
+      ..enqueueJson(201, _paperJson(51, '认证切换'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'auth-b-receipt'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final file = _pdfPlatformFile('认证切换.pdf');
+    final serviceA = ExamPaperService(
+      apiDio,
+      storageDio: storageDio,
+      authSessionScope: 1,
+      currentAuthSessionScope: () => scope,
+    );
+
+    final oldUpload = _uploadPaper(serviceA, file, courseName: '认证切换');
+    await createStarted.future;
+    scope = 2;
+    releaseCreate.complete();
+    await expectLater(oldUpload, throwsA(_authSessionChangedMatcher()));
+    expect(requests.map((request) => request.adapter), ['api']);
+
+    final serviceB = ExamPaperService(
+      apiDio,
+      storageDio: storageDio,
+      authSessionScope: 2,
+      currentAuthSessionScope: () => scope,
+    );
+    final paper = await _uploadPaper(serviceB, file, courseName: '认证切换');
+
+    expect(paper.id, 51);
+    expect(requests.map((request) => request.adapter), [
+      'api',
+      'api',
+      'storage',
+      'api',
+    ]);
+  });
+
+  test('认证切换后旧服务不能复用待完成回执', () async {
+    var scope = 1;
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(201, _uploadSessionJson(sessionID: 'pending-a'))
+      ..enqueueJson(500, {'code': 'internal_error', 'error': '完成 A 失败'})
+      ..enqueueJson(201, _uploadSessionJson(sessionID: 'pending-b'))
+      ..enqueueJson(201, _paperJson(52, '待完成切换'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'pending-a-receipt'})
+      ..enqueueJson(201, {'receipt': 'pending-b-receipt'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final file = _pdfPlatformFile('待完成切换.pdf');
+    final serviceA = ExamPaperService(
+      apiDio,
+      storageDio: storageDio,
+      authSessionScope: 1,
+      currentAuthSessionScope: () => scope,
+    );
+
+    await expectLater(
+      _uploadPaper(serviceA, file, courseName: '待完成切换'),
+      throwsA(isA<ExamPaperApiException>()),
+    );
+    scope = 2;
+    await expectLater(
+      _uploadPaper(serviceA, file, courseName: '待完成切换'),
+      throwsA(_authSessionChangedMatcher()),
+    );
+    final serviceB = ExamPaperService(
+      apiDio,
+      storageDio: storageDio,
+      authSessionScope: 2,
+      currentAuthSessionScope: () => scope,
+    );
+    final paper = await _uploadPaper(serviceB, file, courseName: '待完成切换');
+
+    expect(paper.id, 52);
+    expect(
+      requests
+          .where((request) => request.adapter == 'storage')
+          .map((request) => request.options.path),
+      [
+        'https://sylulive.online/v1/uploads/pending-a',
+        'https://sylulive.online/v1/uploads/pending-b',
+      ],
+    );
+  });
+
+  test('完成响应期间认证切换时旧 Future 不返回原账号试卷', () async {
+    var scope = 1;
+    final completeStarted = Completer<void>();
+    final releaseComplete = Completer<void>();
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(201, _uploadSessionJson(sessionID: 'complete-a'))
+      ..enqueueJson(
+        201,
+        _paperJson(53, '旧账号试卷'),
+        started: completeStarted,
+        release: releaseComplete.future,
+      );
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'complete-a-receipt'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final service = ExamPaperService(
+      apiDio,
+      storageDio: storageDio,
+      authSessionScope: 1,
+      currentAuthSessionScope: () => scope,
+    );
+
+    final upload = _uploadPaper(
+      service,
+      _pdfPlatformFile('旧账号试卷.pdf'),
+      courseName: '旧账号试卷',
+    );
+    await completeStarted.future;
+    scope = 2;
+    releaseComplete.complete();
+
+    await expectLater(upload, throwsA(_authSessionChangedMatcher()));
+  });
+
   test('同一上传指纹的并发调用共享一套上传流程', () async {
     final sessionStarted = Completer<void>();
     final releaseSession = Completer<void>();
@@ -191,6 +330,79 @@ void main() {
       {'receipt': 'receipt-a'},
       {'receipt': 'receipt-b'},
     ]);
+  });
+
+  test('pending 超限时不淘汰仍在完成请求中的上传', () async {
+    const uploadCount = 17;
+    final completeStarted = List.generate(
+      uploadCount,
+      (_) => Completer<void>(),
+    );
+    final releaseComplete = List.generate(
+      uploadCount,
+      (_) => Completer<void>(),
+    );
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests);
+    final storageAdapter = _RecordingAdapter('storage', requests);
+    for (var index = 0; index < uploadCount; index++) {
+      apiAdapter
+        ..enqueueJson(
+          201,
+          _uploadSessionJson(sessionID: 'active-$index'),
+        )
+        ..enqueueJson(
+          500,
+          {'code': 'internal_error', 'error': '完成 $index 失败'},
+          started: completeStarted[index],
+          release: releaseComplete[index].future,
+        );
+      storageAdapter.enqueueJson(201, {'receipt': 'active-receipt-$index'});
+    }
+    apiAdapter.enqueueJson(201, _paperJson(71, '活跃缓存 0'));
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final service = ExamPaperService(apiDio, storageDio: storageDio);
+    final files = List.generate(
+      uploadCount,
+      (index) => _pdfPlatformFileWithMarker('活跃缓存.pdf', index),
+    );
+    final failures = <Future<ExamPaperApiException>>[];
+
+    for (var index = 0; index < uploadCount; index++) {
+      final upload = _uploadPaper(
+        service,
+        files[index],
+        courseName: '活跃缓存 $index',
+      );
+      failures.add(
+        upload.then<ExamPaperApiException>(
+          (_) => throw StateError('测试上传应当完成失败'),
+          onError: (Object error) => error as ExamPaperApiException,
+        ),
+      );
+      await completeStarted[index].future;
+    }
+    for (final barrier in releaseComplete) {
+      barrier.complete();
+    }
+    await Future.wait(failures);
+
+    final retried = await _uploadPaper(
+      service,
+      files.first,
+      courseName: '活跃缓存 0',
+    );
+
+    expect(retried.id, 71);
+    expect(
+      requests.where((request) => request.adapter == 'storage').length,
+      uploadCount,
+    );
+    expect(requests.last.options.path,
+        '/exam-papers/upload-sessions/active-0/complete');
+    expect(requests.last.options.data, {'receipt': 'active-receipt-0'});
   });
 
   test('上传先创建会话，再直传文件，最后完成会话', () async {
@@ -363,6 +575,53 @@ void main() {
       'storage',
       'api',
     ]);
+  });
+
+  test('同路径同大小同修改时间但内容变化时生成新上传指纹', () async {
+    final directory = await Directory.systemTemp.createTemp('paper-hash-');
+    addTearDown(() => directory.delete(recursive: true));
+    final localFile = File('${directory.path}${Platform.pathSeparator}碰撞.pdf');
+    final fixedModified = DateTime.utc(2026, 7, 13, 12);
+    await localFile.writeAsBytes(utf8.encode('%PDF-A01'));
+    await localFile.setLastModified(fixedModified);
+    final platformFile = PlatformFile(
+      name: '碰撞.pdf',
+      size: await localFile.length(),
+      path: localFile.path,
+    );
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(201, _uploadSessionJson(sessionID: 'path-a'))
+      ..enqueueJson(500, {'code': 'internal_error', 'error': '完成 A 失败'})
+      ..enqueueJson(201, _uploadSessionJson(sessionID: 'path-b'))
+      ..enqueueJson(201, _paperJson(61, '路径内容'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'path-a-receipt'})
+      ..enqueueJson(201, {'receipt': 'path-b-receipt'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final service = ExamPaperService(apiDio, storageDio: storageDio);
+
+    await expectLater(
+      _uploadPaper(service, platformFile, courseName: '路径内容'),
+      throwsA(isA<ExamPaperApiException>()),
+    );
+    await localFile.writeAsBytes(utf8.encode('%PDF-B02'));
+    await localFile.setLastModified(fixedModified);
+
+    final paper = await _uploadPaper(service, platformFile, courseName: '路径内容');
+
+    expect(paper.id, 61);
+    expect(
+      requests
+          .where((request) => request.adapter == 'storage')
+          .map((request) => request.options.path),
+      [
+        'https://sylulive.online/v1/uploads/path-a',
+        'https://sylulive.online/v1/uploads/path-b',
+      ],
+    );
   });
 
   test('拒绝把上传令牌发送到非文件服务域名', () async {
@@ -629,6 +888,11 @@ void main() {
                 (error) => error.message,
                 'message',
                 testCase.expectedMessage,
+              )
+              .having(
+                (error) => error.statusCode,
+                'statusCode',
+                testCase.statusCode,
               ),
         ),
         reason: testCase.serverError,
@@ -667,6 +931,11 @@ void main() {
                 (error) => error.message,
                 'message',
                 '文件上传失败，请稍后重试',
+              )
+              .having(
+                (error) => error.statusCode,
+                'statusCode',
+                response.statusCode,
               ),
         ),
       );
@@ -1150,4 +1419,10 @@ Future<ExamPaper> _uploadPaper(
     privacyConfirmed: true,
     onSendProgress: onSendProgress,
   );
+}
+
+Matcher _authSessionChangedMatcher() {
+  return isA<ExamPaperApiException>()
+      .having((error) => error.code, 'code', 'auth_session_changed')
+      .having((error) => error.message, 'message', '登录状态已变化，请重新上传');
 }

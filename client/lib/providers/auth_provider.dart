@@ -44,12 +44,14 @@ class AuthProvider extends ChangeNotifier {
   String? _token;
   bool _isLoading = false;
   bool _initialized = false;
+  int _sessionGeneration = 0;
 
   User? get user => _user;
   String? get token => _token;
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _token != null && _user != null;
   bool get isInitialized => _initialized;
+  int get sessionGeneration => _sessionGeneration;
   Dio get dio => _dio;
   PersistCookieJar? _cookieJar;
 
@@ -141,6 +143,7 @@ class AuthProvider extends ChangeNotifier {
 
     if (token != null) {
       _token = token;
+      _sessionGeneration++;
       _applyAuthHeader();
       if (userJson != null) {
         try {
@@ -234,6 +237,7 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 201) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
+        _sessionGeneration++;
         _applyAuthHeader();
         WallpaperPrefetchService.start();
         await _saveAuth();
@@ -270,6 +274,7 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
+        _sessionGeneration++;
         _applyAuthHeader();
         WallpaperPrefetchService.start();
         await _saveAuth();
@@ -304,12 +309,14 @@ class AuthProvider extends ChangeNotifier {
   ///
   /// [clearPushAlias] 为 true 时同时清除极光 Alias（手动退出 / 401）。
   Future<void> _clearLocalSession({required bool clearPushAlias}) async {
+    final hadSession = _token != null || _user != null;
     final oldUserId = _user?.id.toString();
     if (oldUserId != null) {
       await GradeReminderService.instance.clearForUser(oldUserId);
     }
     _token = null;
     _user = null;
+    if (hadSession) _sessionGeneration++;
     _applyAuthHeader();
     if (!kIsWeb && _cookieJar != null) {
       await _cookieJar!.deleteAll();
@@ -399,6 +406,7 @@ class AuthProvider extends ChangeNotifier {
   ) async {
     _token = token;
     _user = User.fromJson(userJson);
+    _sessionGeneration++;
     _applyAuthHeader();
     WallpaperPrefetchService.start();
     await _saveAuth();
@@ -588,6 +596,7 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
+        _sessionGeneration++;
         _applyAuthHeader();
         await _saveAuth();
         await _saveEduPassword(studentId, eduPassword);
@@ -634,6 +643,7 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 201) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
+        _sessionGeneration++;
         _applyAuthHeader();
         await _saveAuth();
         await _saveEduPassword(studentId, eduPassword);
@@ -691,6 +701,7 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 201) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
+        _sessionGeneration++;
         _applyAuthHeader();
         await _saveAuth();
         notifyListeners();

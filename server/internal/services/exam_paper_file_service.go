@@ -55,9 +55,13 @@ type ExamPaperFileService struct {
 	pendingDir               string
 	lifecycleMu              sync.Mutex
 	claimIntentMu            sync.Mutex
-	claimIntents             map[string]struct{}
+	claimIntents             map[string]int
 	maintenanceAfterSnapshot func()
 	trashRename              func(string, string) error
+	chmod                    func(string, os.FileMode) error
+	remove                   func(string) error
+	claimAfterIntent         func()
+	claimRemove              func(string) error
 }
 
 // NewExamPaperFileService 初始化权限为 0700 的私有目录和垃圾目录。
@@ -92,7 +96,7 @@ func NewExamPaperFileService(rootDir string) (*ExamPaperFileService, error) {
 	}
 
 	pdfCPUConfigOnce.Do(api.DisableConfigDir)
-	return &ExamPaperFileService{rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir, trashRename: os.Rename, claimIntents: make(map[string]struct{})}, nil
+	return &ExamPaperFileService{rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir, trashRename: os.Rename, chmod: os.Chmod, remove: os.Remove, claimRemove: os.Remove, claimIntents: make(map[string]int)}, nil
 }
 
 // RootDir 返回私有根目录，仅供启动与测试代码使用。
@@ -196,10 +200,10 @@ func (s *ExamPaperFileService) storeUploadReader(filename string, source io.Read
 		return nil, fmt.Errorf("提交试卷文件失败: %w", err)
 	}
 	tempKept = true
-	if err := os.Chmod(finalPath, 0o600); err != nil {
-		_ = os.Remove(finalPath)
-		if pending {
-			_ = os.Remove(filepath.Join(s.pendingDir, fileKey))
+	if err := s.chmod(finalPath, 0o600); err != nil {
+		removeErr := s.remove(finalPath)
+		if pending && (removeErr == nil || os.IsNotExist(removeErr)) {
+			_ = s.remove(filepath.Join(s.pendingDir, fileKey))
 		}
 		return nil, fmt.Errorf("设置试卷文件权限失败: %w", err)
 	}
@@ -340,11 +344,18 @@ func (s *ExamPaperFileService) createPendingMarkerLocked(fileKey string) error {
 // Claim 幂等移除待认领标记。
 func (s *ExamPaperFileService) Claim(fileKey string) error {
 	s.claimIntentMu.Lock()
-	s.claimIntents[fileKey] = struct{}{}
+	s.claimIntents[fileKey]++
 	s.claimIntentMu.Unlock()
+	if s.claimAfterIntent != nil {
+		s.claimAfterIntent()
+	}
 	defer func() {
 		s.claimIntentMu.Lock()
-		delete(s.claimIntents, fileKey)
+		if count := s.claimIntents[fileKey]; count <= 1 {
+			delete(s.claimIntents, fileKey)
+		} else {
+			s.claimIntents[fileKey] = count - 1
+		}
 		s.claimIntentMu.Unlock()
 	}()
 	s.lifecycleMu.Lock()
@@ -355,15 +366,14 @@ func (s *ExamPaperFileService) Claim(fileKey string) error {
 func (s *ExamPaperFileService) claimIntentExists(fileKey string) bool {
 	s.claimIntentMu.Lock()
 	defer s.claimIntentMu.Unlock()
-	_, exists := s.claimIntents[fileKey]
-	return exists
+	return s.claimIntents[fileKey] > 0
 }
 
 func (s *ExamPaperFileService) claimLocked(fileKey string) error {
 	if _, err := s.resolveFileKey(fileKey); err != nil {
 		return err
 	}
-	if err := os.Remove(filepath.Join(s.pendingDir, fileKey)); err != nil && !os.IsNotExist(err) {
+	if err := s.claimRemove(filepath.Join(s.pendingDir, fileKey)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil

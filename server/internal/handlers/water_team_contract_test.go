@@ -78,6 +78,32 @@ func TestStandaloneTeamRecruitmentLifecycle(t *testing.T) {
 	}
 
 	handler := NewWaterTeamHandler(db)
+	tooManyImages := make([]uint, 10)
+	for i := range tooManyImages {
+		tooManyImages[i] = imageFile.ID
+	}
+	invalidImageCreate := performTeamJSONRequest(t, handler.CreateTeamRecruitment, http.MethodPost, "/api/team/recruitments", owner.ID, nil, map[string]interface{}{
+		"category":       "competition",
+		"title":          "图片校验测试组队",
+		"description":    "用于验证图片数量错误返回客户端错误",
+		"needed_count":   1,
+		"roles":          []string{"建模"},
+		"image_file_ids": tooManyImages,
+	})
+	if invalidImageCreate.Code != http.StatusBadRequest {
+		t.Fatalf("too many images status=%d body=%s", invalidImageCreate.Code, invalidImageCreate.Body.String())
+	}
+	duplicateImageCreate := performTeamJSONRequest(t, handler.CreateTeamRecruitment, http.MethodPost, "/api/team/recruitments", owner.ID, nil, map[string]interface{}{
+		"category":       "competition",
+		"title":          "重复图片测试组队",
+		"description":    "用于验证重复图片引用会被服务端拒绝",
+		"needed_count":   1,
+		"roles":          []string{"建模"},
+		"image_file_ids": []uint{imageFile.ID, imageFile.ID},
+	})
+	if duplicateImageCreate.Code != http.StatusBadRequest {
+		t.Fatalf("duplicate images status=%d body=%s", duplicateImageCreate.Code, duplicateImageCreate.Body.String())
+	}
 	create := performTeamJSONRequest(t, handler.CreateTeamRecruitment, http.MethodPost, "/api/team/recruitments", owner.ID, nil, map[string]interface{}{
 		"category":       "competition",
 		"title":          "数学建模竞赛组队",

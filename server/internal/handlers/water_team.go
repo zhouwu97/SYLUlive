@@ -412,7 +412,7 @@ func validateTeamRoles(roles []string) ([]string, error) {
 // validateTeamImageFiles 校验组队图片引用，避免关联不存在或非图片文件。
 func validateTeamImageFiles(tx *gorm.DB, fileIDs []uint) error {
 	if len(fileIDs) > 9 {
-		return fmt.Errorf("最多上传9张图片")
+		return &teamInputError{message: "最多上传9张图片"}
 	}
 	if len(fileIDs) == 0 {
 		return nil
@@ -420,7 +420,10 @@ func validateTeamImageFiles(tx *gorm.DB, fileIDs []uint) error {
 	seen := make(map[uint]struct{}, len(fileIDs))
 	for _, fileID := range fileIDs {
 		if fileID == 0 {
-			return fmt.Errorf("图片文件不存在")
+			return &teamInputError{message: "图片文件不存在"}
+		}
+		if _, exists := seen[fileID]; exists {
+			return &teamInputError{message: "图片不能重复选择"}
 		}
 		seen[fileID] = struct{}{}
 	}
@@ -429,14 +432,22 @@ func validateTeamImageFiles(tx *gorm.DB, fileIDs []uint) error {
 		return err
 	}
 	if len(files) != len(seen) {
-		return fmt.Errorf("图片文件不存在")
+		return &teamInputError{message: "图片文件不存在"}
 	}
 	for _, file := range files {
 		if !strings.HasPrefix(strings.ToLower(file.MimeType), "image/") {
-			return fmt.Errorf("仅支持图片文件")
+			return &teamInputError{message: "仅支持图片文件"}
 		}
 	}
 	return nil
+}
+
+type teamInputError struct {
+	message string
+}
+
+func (e *teamInputError) Error() string {
+	return e.message
 }
 
 // applyRecruitmentStatusFilter 统一数据库筛选与有效状态的优先级。
@@ -847,15 +858,21 @@ func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := validateTeamImageFiles(h.db, req.ImageFileIDs); err != nil {
+		var inputErr *teamInputError
+		if errors.As(err, &inputErr) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": inputErr.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "校验图片失败"})
+		}
+		return
+	}
 
 	// 分类是组队大厅的业务分类；底层统一关联比赛竞赛版块的内部标签。
 	sectionSlug := "competition"
 
 	var detail TeamRecruitmentDetail
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		if err := validateTeamImageFiles(tx, req.ImageFileIDs); err != nil {
-			return err
-		}
 		// 找到系统内部 team_recruitment 标签
 		sectionID, tagID, tagErr := h.ensureTeamTag(tx, sectionSlug)
 		if tagErr != nil {

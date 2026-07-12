@@ -62,19 +62,22 @@ func NewExamPaperHandler(db *gorm.DB, files *services.ExamPaperFileService) *Exa
 }
 
 // NewExamPaperHandlerWithStorage 创建支持远端上传会话的试卷处理器。
-func NewExamPaperHandlerWithStorage(db *gorm.DB, files *services.ExamPaperFileService, mode, baseURL string, uploads *services.ExamPaperUploadService, dependencies ...any) *ExamPaperHandler {
+func NewExamPaperHandlerWithStorage(
+	db *gorm.DB,
+	files *services.ExamPaperFileService,
+	mode, baseURL string,
+	uploads *services.ExamPaperUploadService,
+	remoteFiles *services.ExamPaperRemoteClient,
+	storageJobs *services.ExamPaperStorageJobService,
+) *ExamPaperHandler {
 	handler := NewExamPaperHandler(db, files)
 	handler.storageMode = strings.TrimSpace(mode)
 	handler.storageBaseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	handler.uploads = uploads
-	for _, dependency := range dependencies {
-		switch value := dependency.(type) {
-		case examPaperRemoteFileURLSigner:
-			handler.remoteFiles = value
-		case *services.ExamPaperStorageJobService:
-			handler.storageJobs = value
-		}
+	if remoteFiles != nil {
+		handler.remoteFiles = remoteFiles
 	}
+	handler.storageJobs = storageJobs
 	return handler
 }
 

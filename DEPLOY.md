@@ -603,7 +603,7 @@ cd deploy/paper-storage
 PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
 ```
 
-脚本创建非登录用户 `paper-storage`、`0700` 数据目录、`0600` 环境文件，安装 Nginx、UFW、certbot 和 systemd 单元，并在现有 Swap 小于 2 GiB 时新增 Swap。脚本不会停用或覆盖已有 Swap。安装脚本不会写入服务器 IP、密码或生产密钥。
+脚本创建非登录用户 `paper-storage`、`0700` 数据目录、`0600` 环境文件，安装 Nginx、UFW、certbot 和 systemd 单元，并在现有 Swap 小于 2 GiB 时新增 Swap。活动 Swap 不会被停用或重建；非活动文件会同时通过 `blkid` 与 `file` 校验签名，损坏文件使用 `.new` 完整创建并同步后原子替换。符号链接和非普通文件会被拒绝。安装脚本不会写入服务器 IP、密码或生产密钥。
 
 生成两把不同的密钥，只写入 `/etc/sylg-paper-storage.env`：
 
@@ -640,7 +640,20 @@ curl -fsS https://sylulive.online/healthz
 
 ### 网络与 SSH 加固
 
-UFW 仅放行 `22/tcp`、`80/tcp` 和 `443/tcp`。如果生产 SSH 端口不是 22，必须先额外放行实际端口并从第二个终端验证，再删除 22 规则。安装脚本不会直接关闭密码登录。
+`SSH_PORT` 默认为 `22`，只接受 `1` 到 `65535` 的十进制端口。如果生产 SSH 端口不是 22，每次首次安装和后续升级都必须显式传入，例如：
+
+```bash
+SSH_PORT=2222 PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
+```
+
+脚本先审计 `ufw show added`，默认只接受 `${SSH_PORT}/tcp`、`80/tcp` 和 `443/tcp` 三类 ALLOW 规则；发现其他放行规则会在修改防火墙前中止。确认额外规则确属必要时，可显式执行：
+
+```bash
+ALLOW_EXISTING_UFW_RULES=1 SSH_PORT=2222 \
+  PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
+```
+
+该开关会保留全部既有放行规则，可能扩大攻击面，必须先逐条人工核对。脚本不会执行 `ufw reset`，会先放行 SSH，再设置 `ufw default deny incoming`、`default allow outgoing`，最后放行 80/443 并启用 UFW。安装脚本不会直接关闭 SSH 密码登录。
 
 先配置普通运维账号和 SSH 公钥，确认 SSH 公钥登录成功后，再设置：
 
@@ -659,21 +672,21 @@ PermitRootLogin prohibit-password
 
 ### 更新、回滚与故障处理
 
-更新前保留上一版二进制：
+安装脚本先校验输入是 Linux ELF，把新版本写入同目录 `paper-storage.new`；所有 Nginx、UFW、Swap 和 systemd 前置检查完成后，才把当前版本备份为 `paper-storage.bak` 并原子切换。重启或本机 `/healthz` 检查失败时会自动恢复旧版本、再次重启并返回失败。升级命令不需要手工创建备份：
 
 ```bash
-cp -a /opt/sylg-paper-storage/bin/paper-storage /opt/sylg-paper-storage/bin/paper-storage.bak
 PAPER_STORAGE_BINARY=/实际路径/新版本-paper-storage ./deploy/paper-storage/install.sh
 ```
 
-若新版本异常，先在主服务器把 `EXAM_PAPER_STORAGE_MODE` 切为 `readonly-remote`，停止新的远端上传。已标记为 `remote` 的试卷继续从文件服务器下载，本地记录继续走主服务器。文件服务二进制回滚命令：
+正常成功后 `.bak` 会删除；健康检查失败并自动恢复后也不会残留 `.bak`。如果安装进程被断电或强制终止并留下 `.bak`，下一次安装会拒绝覆盖恢复点。先核对当前二进制和日志，再手工恢复：
 
 ```bash
-install -o root -g paper-storage -m 0750 \
-  /opt/sylg-paper-storage/bin/paper-storage.bak \
+mv -f /opt/sylg-paper-storage/bin/paper-storage.bak \
   /opt/sylg-paper-storage/bin/paper-storage
+chown root:paper-storage /opt/sylg-paper-storage/bin/paper-storage
+chmod 0755 /opt/sylg-paper-storage/bin/paper-storage
 systemctl restart paper-storage
 curl -fsS http://127.0.0.1:8081/healthz
 ```
 
-不要在回滚时删除 `/opt/sylg-paper-storage/data`、远端业务记录或 `.trash`。如果 Nginx 配置导致启动失败，使用安装脚本首次保存的 `/etc/nginx/nginx.conf.pre-sylg-paper-storage` 恢复，执行 `nginx -t` 后再 reload。
+若新版本异常，先在主服务器把 `EXAM_PAPER_STORAGE_MODE` 切为 `readonly-remote`，停止新的远端上传。已标记为 `remote` 的试卷继续从文件服务器下载，本地记录继续走主服务器。不要在回滚时删除 `/opt/sylg-paper-storage/data`、远端业务记录或 `.trash`。如果 Nginx 配置导致启动失败，使用安装脚本首次保存的 `/etc/nginx/nginx.conf.pre-sylg-paper-storage` 恢复，执行 `nginx -t` 后再 reload。

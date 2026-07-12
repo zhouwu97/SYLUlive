@@ -611,6 +611,126 @@ func TestPaperStorageMaintenanceRemovesStaleUploadTemps(t *testing.T) {
 	}
 }
 
+func TestPaperStorageUploadSessionPersistsCompletedReplayAcrossRestart(t *testing.T) {
+	root := t.TempDir()
+	service, err := NewExamPaperFileService(root)
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	const sessionID = "11111111-1111-4111-8111-111111111111"
+	const jti = "upload-jti-1"
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	begin, err := service.BeginUploadSession(sessionID, jti, 123, now.Add(time.Minute), now)
+	if err != nil || begin.Completed {
+		t.Fatalf("首次占用上传会话失败: result=%+v err=%v", begin, err)
+	}
+	stored := StoredExamPaperFile{FileKey: "22222222-2222-4222-8222-222222222222.pdf", Size: 123, SHA256: strings.Repeat("a", 64)}
+	if err := service.CompleteUploadSession(sessionID, jti, "signed-receipt", stored, now); err != nil {
+		t.Fatalf("完成上传会话失败: %v", err)
+	}
+
+	restarted, err := NewExamPaperFileService(root)
+	if err != nil {
+		t.Fatalf("重建文件服务失败: %v", err)
+	}
+	replay, err := restarted.BeginUploadSession(sessionID, jti, 123, now.Add(time.Minute), now.Add(time.Second))
+	if err != nil || !replay.Completed || replay.Receipt != "signed-receipt" {
+		t.Fatalf("重启后幂等重放错误: result=%+v err=%v", replay, err)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, ".sessions"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("完成后应仅保留一个会话记录: entries=%d err=%v", len(entries), err)
+	}
+	info, err := entries[0].Info()
+	if err != nil {
+		t.Fatalf("读取会话记录权限失败: %v", err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("会话记录权限错误: %o", info.Mode().Perm())
+	}
+}
+
+func TestPaperStorageUploadSessionRejectsConcurrentOrMismatchedUse(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	const sessionID = "33333333-3333-4333-8333-333333333333"
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	if _, err := service.BeginUploadSession(sessionID, "jti-a", 100, now.Add(time.Minute), now); err != nil {
+		t.Fatalf("首次占用上传会话失败: %v", err)
+	}
+	if _, err := service.BeginUploadSession(sessionID, "jti-a", 100, now.Add(time.Minute), now); !errors.Is(err, ErrExamPaperUploadInProgress) {
+		t.Fatalf("并发重入错误类型不符: %v", err)
+	}
+	if _, err := service.BeginUploadSession(sessionID, "jti-b", 100, now.Add(time.Minute), now); !errors.Is(err, ErrExamPaperUploadSessionConsumed) {
+		t.Fatalf("不同 token 重用错误类型不符: %v", err)
+	}
+	if err := service.AbortUploadSession(sessionID, "jti-a"); err != nil {
+		t.Fatalf("取消上传占用失败: %v", err)
+	}
+	if _, err := service.BeginUploadSession(sessionID, "jti-a", 100, now.Add(time.Minute), now); err != nil {
+		t.Fatalf("取消后同 token 应可重试: %v", err)
+	}
+}
+
+func TestPaperStorageUploadSessionRejectsInvalidSessionID(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	for _, sessionID := range []string{"session-1", "../escape", "11111111-1111-4111-8111-111111111111/extra"} {
+		if _, err := service.BeginUploadSession(sessionID, "jti", 100, now.Add(time.Minute), now); !errors.Is(err, ErrExamPaperUploadSessionInvalid) {
+			t.Fatalf("非法会话 ID 应被拒绝: id=%q err=%v", sessionID, err)
+		}
+	}
+}
+
+func TestPaperStorageMaintenanceRemovesExpiredUploadSessionRecords(t *testing.T) {
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	const staleUploading = "44444444-4444-4444-8444-444444444444"
+	const freshUploading = "55555555-5555-4555-8555-555555555555"
+	const staleCompleted = "66666666-6666-4666-8666-666666666666"
+	const freshCompleted = "77777777-7777-4777-8777-777777777777"
+	if _, err := service.BeginUploadSession(staleUploading, "stale-uploading", 100, now.Add(time.Minute), now.Add(-time.Hour-time.Second)); err != nil {
+		t.Fatalf("创建旧 uploading 记录失败: %v", err)
+	}
+	if _, err := service.BeginUploadSession(freshUploading, "fresh-uploading", 100, now.Add(time.Minute), now); err != nil {
+		t.Fatalf("创建新 uploading 记录失败: %v", err)
+	}
+	for _, item := range []struct {
+		id, jti     string
+		completedAt time.Time
+	}{
+		{staleCompleted, "stale-completed", now.Add(-24*time.Hour - time.Second)},
+		{freshCompleted, "fresh-completed", now},
+	} {
+		if _, err := service.BeginUploadSession(item.id, item.jti, 100, now.Add(time.Minute), item.completedAt); err != nil {
+			t.Fatalf("创建 completed 会话失败: %v", err)
+		}
+		stored := StoredExamPaperFile{FileKey: item.id + ".pdf", Size: 100, SHA256: strings.Repeat("b", 64)}
+		if err := service.CompleteUploadSession(item.id, item.jti, "receipt-"+item.id, stored, item.completedAt); err != nil {
+			t.Fatalf("完成会话失败: %v", err)
+		}
+	}
+	result, err := service.Maintenance(now)
+	if err != nil {
+		t.Fatalf("维护失败: %v", err)
+	}
+	if result.StaleUploadSessionsRemoved != 1 || result.CompletedUploadSessionsRemoved != 1 {
+		t.Fatalf("上传会话清理计数错误: %+v", result)
+	}
+	entries, err := os.ReadDir(filepath.Join(service.RootDir(), ".sessions"))
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("维护后应保留两条新记录: entries=%d err=%v", len(entries), err)
+	}
+}
+
 func TestPaperStorageTrashKeepsMarkerWhenMoveFails(t *testing.T) {
 	service, err := NewExamPaperFileService(t.TempDir())
 	if err != nil {
@@ -656,6 +776,15 @@ func TestPaperStorageServiceRejectsSymlinkDirectoriesAndFiles(t *testing.T) {
 		}
 		if _, err := NewExamPaperFileService(root); err == nil {
 			t.Fatal("pending symlink 应被拒绝")
+		}
+	})
+	t.Run("sessions", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.Symlink(t.TempDir(), filepath.Join(root, ".sessions")); err != nil {
+			t.Skipf("无法创建 symlink: %v", err)
+		}
+		if _, err := NewExamPaperFileService(root); err == nil {
+			t.Fatal("sessions symlink 应被拒绝")
 		}
 	})
 	t.Run("file", func(t *testing.T) {

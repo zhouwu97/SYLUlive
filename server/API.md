@@ -195,8 +195,8 @@
 
 - `GET /api/exam-papers`：已发布列表，支持 `keyword`、`academic_year`、`semester`、`exam_type`、`sort`、`page`、`page_size`。响应额外包含 `academic_years`：全部已发布试卷的去重学年列表，按倒序排列，不受本次筛选条件影响。
 - `GET /api/exam-papers/:id`：已发布详情。
-- `POST /api/exam-papers/upload-sessions`：创建 10 分钟有效的远端直传会话。JSON 字段为 `course_name`、`academic_year`、`semester`、`exam_type`、`privacy_confirmed=true`、`file_size`，成功返回 `session_id`、`upload_url`、`upload_token` 和 `expires_at`。
-- `POST /api/exam-papers/upload-sessions/:id/complete`：提交文件服务器返回的 `receipt`，验证会话归属和回执后创建试卷投稿；重复完成同一会话会返回同一份试卷，不重复创建记录或任务。
+- `POST /api/exam-papers/upload-sessions`：创建 10 分钟有效的远端直传会话。JSON 字段为 `course_name`、`academic_year`、`semester`、`exam_type`、`privacy_confirmed=true`、`file_size`，成功返回 `session_id`、`upload_url`、`upload_token` 和 `expires_at`。文件服务器会精确校验实际 PDF 字节数与授权中的 `expected_size`。
+- `POST /api/exam-papers/upload-sessions/:id/complete`：提交文件服务器返回的 `receipt`，验证会话归属和回执后创建试卷投稿；普通用户最多同时保留 5 份待审核投稿。重复完成同一会话会返回同一份试卷，不重复创建记录或任务。
 - `POST /api/exam-papers`：仅供 `local` 存储模式下的旧客户端使用。启用 `remote` 后立即返回 HTTP `426` 和 `client_upgrade_required`，主服务器不会读取 multipart 文件体。
 - `GET /api/exam-papers/my-submissions`：我的投稿列表，支持 `status=all|pending|published|unpublished`、`page`、`page_size`；响应中的 `status_counts` 返回本人全部投稿在 `all`、`pending`、`published`、`unpublished` 各状态下的数量。未传 `status` 时为兼容旧客户端，仅返回待审核和已发布投稿。
 - `DELETE /api/exam-papers/my-submissions/:id`：删除本人投稿。`pending` 状态执行撤回；`published`、`unpublished` 状态执行永久删除，并按实际奖励状态撤销经验。成功响应为 `{"message":"投稿已撤回|投稿已永久删除","exp_revoked":true|false}`。
@@ -217,4 +217,4 @@
 
 功能错误统一为 `{"error":"中文说明","code":"机器错误码"}`。
 
-远端上传相关错误码包括：`request_body_too_large`、`invalid_upload_session_request`、`privacy_confirmation_required`、`invalid_file_size`、`file_too_large`、`upload_session_not_found`、`upload_session_expired`、`upload_receipt_invalid`、`duplicate_exam_paper`、`storage_unavailable` 和 `client_upgrade_required`。两个上传会话 JSON 接口的请求体上限均为 64 KiB，超限返回 HTTP `413`。`readonly-remote` 模式禁止创建新上传会话和旧 multipart 上传，但允许已创建会话提交回执完成入库。
+远端上传相关错误码包括：`request_body_too_large`、`invalid_upload_session_request`、`privacy_confirmation_required`、`invalid_file_size`、`file_too_large`、`upload_session_not_found`、`upload_session_expired`、`upload_session_invalid`、`upload_receipt_invalid`、`exam_paper_pending_limit_reached`、`duplicate_exam_paper`、`storage_unavailable` 和 `client_upgrade_required`。两个上传会话 JSON 接口的请求体上限均为 64 KiB，超限返回 HTTP `413`。上传 token 只能对应一个上传会话和一个 `expected_size`；首次成功后，同一 token 的重放返回原始回执且不会重复落盘，其他 token 不得消费该会话。`readonly-remote` 模式禁止创建新上传会话和旧 multipart 上传，但允许已创建会话提交回执完成入库。

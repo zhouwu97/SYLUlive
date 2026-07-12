@@ -31,16 +31,17 @@ var (
 
 // ExamPaperStorageGrant 表示主服务发给文件服务的短时授权。
 type ExamPaperStorageGrant struct {
-	Purpose   string `json:"purpose"`
-	SessionID string `json:"session_id,omitempty"`
-	FileKey   string `json:"file_key,omitempty"`
-	UserID    uint   `json:"user_id,omitempty"`
-	PaperID   uint   `json:"paper_id,omitempty"`
-	Method    string `json:"method"`
-	Path      string `json:"path"`
-	IssuedAt  int64  `json:"iat"`
-	ExpiresAt int64  `json:"exp"`
-	JTI       string `json:"jti"`
+	Purpose      string `json:"purpose"`
+	SessionID    string `json:"session_id,omitempty"`
+	ExpectedSize int64  `json:"expected_size,omitempty"`
+	FileKey      string `json:"file_key,omitempty"`
+	UserID       uint   `json:"user_id,omitempty"`
+	PaperID      uint   `json:"paper_id,omitempty"`
+	Method       string `json:"method"`
+	Path         string `json:"path"`
+	IssuedAt     int64  `json:"iat"`
+	ExpiresAt    int64  `json:"exp"`
+	JTI          string `json:"jti"`
 }
 
 // ExamPaperUploadReceipt 表示文件服务确认接收文件后的不可伪造回执。

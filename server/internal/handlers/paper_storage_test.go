@@ -25,6 +25,11 @@ import (
 
 var paperStorageNow = time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
 
+const (
+	paperStorageSessionID  = "11111111-1111-4111-8111-111111111111"
+	paperStorageSessionID2 = "22222222-2222-4222-8222-222222222222"
+)
+
 func paperStoragePDF() []byte {
 	objects := []string{
 		"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
@@ -79,9 +84,13 @@ func paperStorageRouter(handler *PaperStorageHandler) *gin.Engine {
 
 func signPaperStorageGrant(t *testing.T, signer *services.ExamPaperStorageSigner, purpose, method, path, sessionID, fileKey string) string {
 	t.Helper()
+	expectedSize := int64(0)
+	if purpose == services.ExamPaperStoragePurposeUpload {
+		expectedSize = int64(len(paperStoragePDF()))
+	}
 	token, err := signer.SignGrant(services.ExamPaperStorageGrant{
 		Purpose: purpose, Method: method, Path: path, SessionID: sessionID, FileKey: fileKey,
-		IssuedAt: paperStorageNow.Add(-time.Minute).Unix(), ExpiresAt: paperStorageNow.Add(time.Minute).Unix(), JTI: "test-jti",
+		ExpectedSize: expectedSize, IssuedAt: paperStorageNow.Add(-time.Minute).Unix(), ExpiresAt: paperStorageNow.Add(time.Minute).Unix(), JTI: "test-jti",
 	})
 	if err != nil {
 		t.Fatalf("签发授权失败: %v", err)
@@ -105,6 +114,30 @@ func multipartPaperStorageRequest(t *testing.T, path, token, filename string, co
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	return request
+}
+
+func signPaperStorageUploadGrant(t *testing.T, signer *services.ExamPaperStorageSigner, path, sessionID, jti string, expectedSize int64) string {
+	t.Helper()
+	token, err := signer.SignGrant(services.ExamPaperStorageGrant{
+		Purpose: services.ExamPaperStoragePurposeUpload, Method: http.MethodPost, Path: path,
+		SessionID: sessionID, ExpectedSize: expectedSize, IssuedAt: paperStorageNow.Add(-time.Minute).Unix(),
+		ExpiresAt: paperStorageNow.Add(time.Minute).Unix(), JTI: jti,
+	})
+	if err != nil {
+		t.Fatalf("签发上传授权失败: %v", err)
+	}
+	return token
+}
+
+func paperStorageReceiptFromResponse(t *testing.T, response *httptest.ResponseRecorder) string {
+	t.Helper()
+	var payload struct {
+		Receipt string `json:"receipt"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || payload.Receipt == "" {
+		t.Fatalf("解析上传回执失败: receipt=%q err=%v body=%s", payload.Receipt, err, response.Body.String())
+	}
+	return payload.Receipt
 }
 
 func oversizedMultipartPaperStorageRequest(t *testing.T, path, token string) *http.Request {
@@ -131,7 +164,7 @@ func oversizedMultipartPaperStorageRequest(t *testing.T, path, token string) *ht
 func TestPaperStorageUploadRequiresGrantAndReturnsVerifiableReceipt(t *testing.T) {
 	handler, files, grantSigner, receiptSigner := newPaperStorageTestHandler(t, 20)
 	router := paperStorageRouter(handler)
-	path := "/v1/uploads/session-1"
+	path := "/v1/uploads/" + paperStorageSessionID
 
 	unauthorized := httptest.NewRecorder()
 	router.ServeHTTP(unauthorized, multipartPaperStorageRequest(t, path, "", "paper.pdf", paperStoragePDF()))
@@ -139,7 +172,7 @@ func TestPaperStorageUploadRequiresGrantAndReturnsVerifiableReceipt(t *testing.T
 		t.Fatalf("无授权上传状态码错误: %d", unauthorized.Code)
 	}
 
-	token := signPaperStorageGrant(t, grantSigner, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	token := signPaperStorageGrant(t, grantSigner, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, paperStorageSessionID, "")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
 	if response.Code != http.StatusCreated {
@@ -155,11 +188,181 @@ func TestPaperStorageUploadRequiresGrantAndReturnsVerifiableReceipt(t *testing.T
 	if err != nil {
 		t.Fatalf("验证上传回执失败: %v", err)
 	}
-	if receipt.SessionID != "session-1" || receipt.FileSize != int64(len(paperStoragePDF())) {
+	if receipt.SessionID != paperStorageSessionID || receipt.FileSize != int64(len(paperStoragePDF())) {
 		t.Fatalf("上传回执内容错误: %+v", receipt)
 	}
 	if _, err := files.Metadata(receipt.FileKey); err != nil {
 		t.Fatalf("上传文件未落盘: %v", err)
+	}
+}
+
+func TestPaperStorageUploadReplaysReceiptWithoutReadingBodyAcrossRestart(t *testing.T) {
+	handler, files, grantSigner, receiptSigner := newPaperStorageTestHandler(t, 20)
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageUploadGrant(t, grantSigner, path, paperStorageSessionID, "replay-jti", int64(len(paperStoragePDF())))
+	first := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(first, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+	if first.Code != http.StatusCreated {
+		t.Fatalf("首次上传失败: code=%d body=%s", first.Code, first.Body.String())
+	}
+	firstReceipt := paperStorageReceiptFromResponse(t, first)
+
+	replayRequest := httptest.NewRequest(http.MethodPost, path, strings.NewReader("正文不应被读取"))
+	replayRequest.Header.Set("Content-Type", "application/json")
+	replayRequest.Header.Set("Authorization", "Bearer "+token)
+	replay := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(replay, replayRequest)
+	if replay.Code != http.StatusCreated || paperStorageReceiptFromResponse(t, replay) != firstReceipt {
+		t.Fatalf("顺序重放未返回原回执: code=%d body=%s", replay.Code, replay.Body.String())
+	}
+
+	restartedFiles, err := services.NewExamPaperFileService(files.RootDir())
+	if err != nil {
+		t.Fatalf("重建文件服务失败: %v", err)
+	}
+	restarted := NewPaperStorageHandler(restartedFiles, grantSigner, receiptSigner, 2)
+	restarted.now = func() time.Time { return paperStorageNow }
+	restarted.diskUsage = func(string) (float64, error) { return 20, nil }
+	restartReplay := httptest.NewRecorder()
+	paperStorageRouter(restarted).ServeHTTP(restartReplay, replayRequest.Clone(replayRequest.Context()))
+	if restartReplay.Code != http.StatusCreated || paperStorageReceiptFromResponse(t, restartReplay) != firstReceipt {
+		t.Fatalf("重启重放未返回原回执: code=%d body=%s", restartReplay.Code, restartReplay.Body.String())
+	}
+	rootEntries, err := os.ReadDir(files.RootDir())
+	if err != nil {
+		t.Fatalf("读取存储目录失败: %v", err)
+	}
+	pdfCount := 0
+	for _, entry := range rootEntries {
+		if filepath.Ext(entry.Name()) == ".pdf" {
+			pdfCount++
+		}
+	}
+	pendingEntries, err := os.ReadDir(filepath.Join(files.RootDir(), ".pending"))
+	if err != nil || pdfCount != 1 || len(pendingEntries) != 1 {
+		t.Fatalf("重放产生重复文件: pdf=%d pending=%d err=%v", pdfCount, len(pendingEntries), err)
+	}
+}
+
+func TestPaperStorageUploadSizeMismatchAbortsReservationAndAllowsRetry(t *testing.T) {
+	handler, files, signer, _ := newPaperStorageTestHandler(t, 20)
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageUploadGrant(t, signer, path, paperStorageSessionID, "size-jti", int64(len(paperStoragePDF())))
+	originalStore := handler.storePending
+	handler.storePending = func(filename string, source io.Reader) (*services.StoredExamPaperFile, error) {
+		stored, err := originalStore(filename, source)
+		if stored != nil {
+			stored.Size++
+		}
+		return stored, err
+	}
+	bad := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(bad, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+	if bad.Code != http.StatusUnprocessableEntity || !bytes.Contains(bad.Body.Bytes(), []byte(`"error":"file_size_mismatch"`)) {
+		t.Fatalf("大小不符响应错误: code=%d body=%s", bad.Code, bad.Body.String())
+	}
+	handler.storePending = originalStore
+	retry := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(retry, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+	if retry.Code != http.StatusCreated {
+		t.Fatalf("大小不符后同 token 无法重试: code=%d body=%s", retry.Code, retry.Body.String())
+	}
+	pendingEntries, err := os.ReadDir(filepath.Join(files.RootDir(), ".pending"))
+	if err != nil || len(pendingEntries) != 1 {
+		t.Fatalf("重试后 pending 数量错误: count=%d err=%v", len(pendingEntries), err)
+	}
+}
+
+func TestPaperStorageUploadCompletionPersistenceFailureRollsBackAndAllowsRetry(t *testing.T) {
+	handler, files, signer, _ := newPaperStorageTestHandler(t, 20)
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageUploadGrant(t, signer, path, paperStorageSessionID, "persistence-jti", int64(len(paperStoragePDF())))
+	originalComplete := handler.completeUploadSession
+	handler.completeUploadSession = func(string, string, string, services.StoredExamPaperFile, time.Time) error {
+		return errors.New("模拟完成记录持久化失败")
+	}
+	failed := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(failed, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+	if failed.Code != http.StatusInternalServerError {
+		t.Fatalf("完成记录持久化失败状态码错误: code=%d body=%s", failed.Code, failed.Body.String())
+	}
+	pendingEntries, err := os.ReadDir(filepath.Join(files.RootDir(), ".pending"))
+	if err != nil || len(pendingEntries) != 0 {
+		t.Fatalf("持久化失败后遗留 pending: count=%d err=%v", len(pendingEntries), err)
+	}
+	handler.completeUploadSession = originalComplete
+	retry := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(retry, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+	if retry.Code != http.StatusCreated {
+		t.Fatalf("持久化失败后同 token 无法重试: code=%d body=%s", retry.Code, retry.Body.String())
+	}
+}
+
+func TestPaperStorageUploadConcurrentReplayReturnsConflict(t *testing.T) {
+	handler, _, signer, _ := newPaperStorageTestHandler(t, 20)
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageUploadGrant(t, signer, path, paperStorageSessionID, "concurrent-jti", int64(len(paperStoragePDF())))
+	originalStore := handler.storePending
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	handler.storePending = func(filename string, source io.Reader) (*services.StoredExamPaperFile, error) {
+		close(entered)
+		<-release
+		return originalStore(filename, source)
+	}
+	first := httptest.NewRecorder()
+	firstDone := make(chan struct{})
+	go func() {
+		paperStorageRouter(handler).ServeHTTP(first, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+		close(firstDone)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("首次上传未进入存储阶段")
+	}
+	second := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(second, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+	if second.Code != http.StatusConflict || !bytes.Contains(second.Body.Bytes(), []byte(`"error":"upload_session_in_progress"`)) {
+		t.Fatalf("并发重放响应错误: code=%d body=%s", second.Code, second.Body.String())
+	}
+	close(release)
+	select {
+	case <-firstDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("首次上传未完成")
+	}
+	if first.Code != http.StatusCreated {
+		t.Fatalf("首次上传失败: code=%d body=%s", first.Code, first.Body.String())
+	}
+}
+
+func TestPaperStorageUploadRejectsInvalidSessionClaimsBeforeStore(t *testing.T) {
+	handler, _, signer, _ := newPaperStorageTestHandler(t, 20)
+	storeCalled := false
+	handler.storePending = func(string, io.Reader) (*services.StoredExamPaperFile, error) {
+		storeCalled = true
+		return nil, errors.New("不应调用")
+	}
+	for _, item := range []struct {
+		name, sessionID string
+		expectedSize    int64
+	}{
+		{name: "非法会话 ID", sessionID: "session-1", expectedSize: int64(len(paperStoragePDF()))},
+		{name: "缺少预期大小", sessionID: paperStorageSessionID, expectedSize: 0},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			path := "/v1/uploads/" + item.sessionID
+			token := signPaperStorageUploadGrant(t, signer, path, item.sessionID, "invalid-jti", item.expectedSize)
+			response := httptest.NewRecorder()
+			paperStorageRouter(handler).ServeHTTP(response, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+			if response.Code != http.StatusBadRequest || !bytes.Contains(response.Body.Bytes(), []byte(`"error":"upload_session_invalid"`)) {
+				t.Fatalf("非法上传声明响应错误: code=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+	if storeCalled {
+		t.Fatal("非法上传声明不应读取或存储文件")
 	}
 }
 
@@ -178,8 +381,8 @@ func TestPaperStorageUploadMapsValidationSizeAndCapacityErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler, _, signer, _ := newPaperStorageTestHandler(t, tt.disk)
 			router := paperStorageRouter(handler)
-			path := "/v1/uploads/session-1"
-			token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+			path := "/v1/uploads/" + paperStorageSessionID
+			token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, paperStorageSessionID, "")
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, multipartPaperStorageRequest(t, path, token, "paper.pdf", tt.content))
 			if response.Code != tt.want {
@@ -203,8 +406,8 @@ func TestPaperStorageUploadRejectsEncryptedPDFWith422(t *testing.T) {
 		t.Fatalf("读取加密 PDF 失败: %v", err)
 	}
 	handler, _, signer, _ := newPaperStorageTestHandler(t, 20)
-	path := "/v1/uploads/session-1"
-	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, paperStorageSessionID, "")
 	response := httptest.NewRecorder()
 	paperStorageRouter(handler).ServeHTTP(response, multipartPaperStorageRequest(t, path, token, "encrypted.pdf", encrypted))
 	if response.Code != http.StatusUnprocessableEntity {
@@ -214,8 +417,8 @@ func TestPaperStorageUploadRejectsEncryptedPDFWith422(t *testing.T) {
 
 func TestPaperStorageUploadRejectsOversizedMultipartBodyAndReleasesSemaphore(t *testing.T) {
 	handler, files, signer, _ := newPaperStorageTestHandler(t, 20)
-	path := "/v1/uploads/session-1"
-	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, paperStorageSessionID, "")
 	response := httptest.NewRecorder()
 	paperStorageRouter(handler).ServeHTTP(response, oversizedMultipartPaperStorageRequest(t, path, token))
 	if response.Code != http.StatusRequestEntityTooLarge {
@@ -244,8 +447,8 @@ func TestPaperStorageUploadRejectsOversizedMultipartBodyAndReleasesSemaphore(t *
 
 func TestPaperStorageUploadMapsMultipartClientErrorsToBadRequest(t *testing.T) {
 	handler, _, signer, _ := newPaperStorageTestHandler(t, 20)
-	path := "/v1/uploads/session-1"
-	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, paperStorageSessionID, "")
 	tests := []struct {
 		name        string
 		contentType string
@@ -453,8 +656,8 @@ func TestPaperStorageValidationSemaphoreBlocksUntilReleased(t *testing.T) {
 	handler, _, signer, _ := newPaperStorageTestHandler(t, 20)
 	handler.validations = make(chan struct{}, 1)
 	handler.validations <- struct{}{}
-	path := "/v1/uploads/session-1"
-	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, paperStorageSessionID, "")
 	request := multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF())
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
@@ -477,8 +680,8 @@ func TestPaperStorageValidationSemaphoreBlocksUntilReleased(t *testing.T) {
 		t.Fatalf("释放校验槽后结果或信号量错误: code=%d slots=%d", response.Code, len(handler.validations))
 	}
 	invalid := httptest.NewRecorder()
-	badPath := "/v1/uploads/session-2"
-	badToken := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, badPath, "session-2", "")
+	badPath := "/v1/uploads/" + paperStorageSessionID2
+	badToken := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, badPath, paperStorageSessionID2, "")
 	paperStorageRouter(handler).ServeHTTP(invalid, multipartPaperStorageRequest(t, badPath, badToken, "bad.pdf", []byte("bad")))
 	if len(handler.validations) != 0 {
 		t.Fatalf("异常路径泄漏校验槽: %d", len(handler.validations))
@@ -490,8 +693,8 @@ func TestPaperStorageUploadMapsInternalStoreErrorTo500(t *testing.T) {
 	handler.storePending = func(string, io.Reader) (*services.StoredExamPaperFile, error) {
 		return nil, errors.New("模拟磁盘写入失败")
 	}
-	path := "/v1/uploads/session-1"
-	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, paperStorageSessionID, "")
 	response := httptest.NewRecorder()
 	paperStorageRouter(handler).ServeHTTP(response, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
 	if response.Code != http.StatusInternalServerError {
@@ -510,8 +713,8 @@ func TestPaperStorageUploadPanicReleasesValidationSlot(t *testing.T) {
 		}
 		return original(filename, source)
 	}
-	path := "/v1/uploads/session-1"
-	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	path := "/v1/uploads/" + paperStorageSessionID
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, paperStorageSessionID, "")
 	first := httptest.NewRecorder()
 	paperStorageRouter(handler).ServeHTTP(first, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
 	if first.Code != http.StatusInternalServerError || len(handler.validations) != 0 {
@@ -564,8 +767,8 @@ func TestPaperStorageUploadRollsBackWhenMarkerOrReceiptFails(t *testing.T) {
 			} else {
 				handler.receiptSigner = failingReceiptSigner{}
 			}
-			path := "/v1/uploads/session-1"
-			token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+			path := "/v1/uploads/" + paperStorageSessionID
+			token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, paperStorageSessionID, "")
 			response := httptest.NewRecorder()
 			paperStorageRouter(handler).ServeHTTP(response, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
 			if response.Code != http.StatusInternalServerError {

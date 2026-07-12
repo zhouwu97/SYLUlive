@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
@@ -228,5 +230,160 @@ func TestExamPaperFileServiceRejectsPathTraversal(t *testing.T) {
 	}
 	if _, err := service.Open("../secret.pdf"); err == nil {
 		t.Fatal("文件服务不得允许路径穿越")
+	}
+}
+
+func TestPaperStoragePendingClaimAndTrashAreIdempotent(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	stored, err := service.StoreUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存 PDF 失败: %v", err)
+	}
+	if err := service.MarkPending(stored.FileKey); err != nil {
+		t.Fatalf("创建待认领标记失败: %v", err)
+	}
+	if err := service.Claim(stored.FileKey); err != nil {
+		t.Fatalf("认领文件失败: %v", err)
+	}
+	if err := service.Claim(stored.FileKey); err != nil {
+		t.Fatalf("重复认领应成功: %v", err)
+	}
+	if err := service.Trash(stored.FileKey); err != nil {
+		t.Fatalf("移入回收站失败: %v", err)
+	}
+	if err := service.Trash(stored.FileKey); err != nil {
+		t.Fatalf("重复移入回收站应成功: %v", err)
+	}
+	if _, err := service.Metadata(stored.FileKey); !os.IsNotExist(err) {
+		t.Fatalf("移入回收站后元数据应不存在: %v", err)
+	}
+}
+
+func TestPaperStorageTrashDoesNotMoveFileWhenPendingMarkerCannotBeRemoved(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	stored, err := service.StoreUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存 PDF 失败: %v", err)
+	}
+	markerPath := filepath.Join(service.RootDir(), ".pending", stored.FileKey)
+	if err := os.Mkdir(markerPath, 0o700); err != nil {
+		t.Fatalf("创建异常标记目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(markerPath, "child"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("创建异常标记内容失败: %v", err)
+	}
+	if err := service.Trash(stored.FileKey); err == nil {
+		t.Fatal("标记无法清理时 Trash 应返回错误")
+	}
+	if _, err := service.Metadata(stored.FileKey); err != nil {
+		t.Fatalf("标记清理失败时原文件不应移动: %v", err)
+	}
+}
+
+func TestPaperStorageMetadataUsesOnDiskContentAndRejectsTraversal(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	stored, err := service.StoreUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存 PDF 失败: %v", err)
+	}
+	metadata, err := service.Metadata(stored.FileKey)
+	if err != nil {
+		t.Fatalf("读取元数据失败: %v", err)
+	}
+	if metadata.FileKey != stored.FileKey || metadata.Size != stored.Size || metadata.SHA256 != stored.SHA256 {
+		t.Fatalf("元数据不匹配: got=%+v want=%+v", metadata, stored)
+	}
+	if _, err := service.Metadata("../secret.pdf"); !errors.Is(err, ErrInvalidExamPaperFileKey) {
+		t.Fatalf("路径穿越应被拒绝: %v", err)
+	}
+}
+
+func TestPaperStorageMaintenanceOnlyRemovesItemsOlderThanSevenDays(t *testing.T) {
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	oldFile, err := service.StoreUploadReader("old.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存旧 PDF 失败: %v", err)
+	}
+	newFile, err := service.StoreUploadReader("new.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存新 PDF 失败: %v", err)
+	}
+	for _, item := range []*StoredExamPaperFile{oldFile, newFile} {
+		if err := service.MarkPending(item.FileKey); err != nil {
+			t.Fatalf("创建待认领标记失败: %v", err)
+		}
+	}
+	oldTime := now.Add(-7*24*time.Hour - time.Second)
+	newTime := now.Add(-7*24*time.Hour + time.Second)
+	if err := os.Chtimes(filepath.Join(service.RootDir(), ".pending", oldFile.FileKey), oldTime, oldTime); err != nil {
+		t.Fatalf("设置旧标记时间失败: %v", err)
+	}
+	if err := os.Chtimes(filepath.Join(service.RootDir(), ".pending", newFile.FileKey), newTime, newTime); err != nil {
+		t.Fatalf("设置新标记时间失败: %v", err)
+	}
+
+	trashOld, err := service.StoreUploadReader("trash-old.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存旧回收站 PDF 失败: %v", err)
+	}
+	trashNew, err := service.StoreUploadReader("trash-new.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存新回收站 PDF 失败: %v", err)
+	}
+	if err := service.Trash(trashOld.FileKey); err != nil {
+		t.Fatalf("移入旧回收站失败: %v", err)
+	}
+	if err := service.Trash(trashNew.FileKey); err != nil {
+		t.Fatalf("移入新回收站失败: %v", err)
+	}
+	trashEntries, err := os.ReadDir(filepath.Join(service.RootDir(), ".trash"))
+	if err != nil {
+		t.Fatalf("读取回收站失败: %v", err)
+	}
+	for _, entry := range trashEntries {
+		modTime := newTime
+		if strings.HasSuffix(entry.Name(), "--"+trashOld.FileKey) {
+			modTime = oldTime
+		}
+		if err := os.Chtimes(filepath.Join(service.RootDir(), ".trash", entry.Name()), modTime, modTime); err != nil {
+			t.Fatalf("设置回收站时间失败: %v", err)
+		}
+	}
+
+	result, err := service.Maintenance(now)
+	if err != nil {
+		t.Fatalf("执行维护失败: %v", err)
+	}
+	if result.UnclaimedFilesRemoved != 1 || result.PendingMarkersRemoved != 1 || result.TrashFilesRemoved != 1 {
+		t.Fatalf("维护计数错误: %+v", result)
+	}
+	if _, err := service.Metadata(oldFile.FileKey); !os.IsNotExist(err) {
+		t.Fatalf("旧待认领文件应删除: %v", err)
+	}
+	if _, err := service.Metadata(newFile.FileKey); err != nil {
+		t.Fatalf("新待认领文件不应删除: %v", err)
+	}
+}
+
+func TestPaperStorageDiskUsagePercentReturnsValidRange(t *testing.T) {
+	usage, err := ExamPaperDiskUsagePercent(t.TempDir())
+	if err != nil {
+		t.Fatalf("读取磁盘使用率失败: %v", err)
+	}
+	if usage < 0 || usage > 100 {
+		t.Fatalf("磁盘使用率超出范围: %v", usage)
 	}
 }

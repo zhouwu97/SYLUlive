@@ -50,8 +50,9 @@ type ExamPaperTrashMove struct {
 
 // ExamPaperFileService 管理试卷私有目录、校验、原子删除和启动恢复。
 type ExamPaperFileService struct {
-	rootDir  string
-	trashDir string
+	rootDir    string
+	trashDir   string
+	pendingDir string
 }
 
 // NewExamPaperFileService 初始化权限为 0700 的私有目录和垃圾目录。
@@ -64,7 +65,8 @@ func NewExamPaperFileService(rootDir string) (*ExamPaperFileService, error) {
 		return nil, fmt.Errorf("解析试卷私有目录失败: %w", err)
 	}
 	trashDir := filepath.Join(absoluteRoot, ".trash")
-	for _, dir := range []string{absoluteRoot, trashDir} {
+	pendingDir := filepath.Join(absoluteRoot, ".pending")
+	for _, dir := range []string{absoluteRoot, trashDir, pendingDir} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("创建试卷私有目录失败: %w", err)
 		}
@@ -74,7 +76,7 @@ func NewExamPaperFileService(rootDir string) (*ExamPaperFileService, error) {
 	}
 
 	pdfCPUConfigOnce.Do(api.DisableConfigDir)
-	return &ExamPaperFileService{rootDir: absoluteRoot, trashDir: trashDir}, nil
+	return &ExamPaperFileService{rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir}, nil
 }
 
 // RootDir 返回私有根目录，仅供启动与测试代码使用。
@@ -269,6 +271,128 @@ func (s *ExamPaperFileService) Remove(fileKey string) error {
 		return err
 	}
 	return nil
+}
+
+// MarkPending 创建仅文件服务可见的待认领标记。
+func (s *ExamPaperFileService) MarkPending(fileKey string) error {
+	if _, err := s.resolveFileKey(fileKey); err != nil {
+		return err
+	}
+	markerPath := filepath.Join(s.pendingDir, fileKey)
+	file, err := os.OpenFile(markerPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	return file.Close()
+}
+
+// Claim 幂等移除待认领标记。
+func (s *ExamPaperFileService) Claim(fileKey string) error {
+	if _, err := s.resolveFileKey(fileKey); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(s.pendingDir, fileKey)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// Trash 幂等地将文件移入回收站，并清理待认领标记。
+func (s *ExamPaperFileService) Trash(fileKey string) error {
+	originalPath, err := s.resolveFileKey(fileKey)
+	if err != nil {
+		return err
+	}
+	if err := s.Claim(fileKey); err != nil {
+		return err
+	}
+	if _, err := os.Stat(originalPath); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	trashPath := filepath.Join(s.trashDir, uuid.NewString()+"--"+fileKey)
+	if err := os.Rename(originalPath, trashPath); err != nil {
+		return err
+	}
+	return os.Chmod(trashPath, 0o600)
+}
+
+// Metadata 从磁盘重新读取文件大小和 SHA-256，避免返回过期信息。
+func (s *ExamPaperFileService) Metadata(fileKey string) (*StoredExamPaperFile, error) {
+	path, err := s.resolveFileKey(fileKey)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	size, err := io.Copy(hash, file)
+	if err != nil {
+		return nil, err
+	}
+	return &StoredExamPaperFile{FileKey: fileKey, Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+}
+
+// ExamPaperMaintenanceResult 汇总一次文件存储维护实际删除的内容。
+type ExamPaperMaintenanceResult struct {
+	UnclaimedFilesRemoved int `json:"unclaimed_files_removed"`
+	PendingMarkersRemoved int `json:"pending_markers_removed"`
+	TrashFilesRemoved     int `json:"trash_files_removed"`
+}
+
+// Maintenance 清理超过七天仍未认领的文件和超过七天的回收站文件。
+func (s *ExamPaperFileService) Maintenance(now time.Time) (ExamPaperMaintenanceResult, error) {
+	result := ExamPaperMaintenanceResult{}
+	cutoff := now.Add(-7 * 24 * time.Hour)
+	pendingEntries, err := os.ReadDir(s.pendingDir)
+	if err != nil {
+		return result, err
+	}
+	for _, entry := range pendingEntries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		fileKey := entry.Name()
+		if path, resolveErr := s.resolveFileKey(fileKey); resolveErr == nil {
+			if removeErr := os.Remove(path); removeErr == nil {
+				result.UnclaimedFilesRemoved++
+			} else if !os.IsNotExist(removeErr) {
+				return result, removeErr
+			}
+		}
+		if removeErr := os.Remove(filepath.Join(s.pendingDir, fileKey)); removeErr == nil {
+			result.PendingMarkersRemoved++
+		} else if !os.IsNotExist(removeErr) {
+			return result, removeErr
+		}
+	}
+	trashEntries, err := os.ReadDir(s.trashDir)
+	if err != nil {
+		return result, err
+	}
+	for _, entry := range trashEntries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(s.trashDir, entry.Name())); err == nil {
+			result.TrashFilesRemoved++
+		} else if !os.IsNotExist(err) {
+			return result, err
+		}
+	}
+	return result, nil
 }
 
 // RecoverTrash 根据数据库引用恢复仍有效的文件，并清理无引用垃圾文件。

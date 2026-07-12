@@ -281,16 +281,30 @@ func (h *PaperStorageHandler) Download(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, fileKey))
 	c.Header("Cache-Control", "private, no-store")
+	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("X-Accel-Redirect", "/_paper_files/"+url.PathEscape(fileKey))
 	c.Status(http.StatusOK)
 }
 
 func (h *PaperStorageHandler) authorizeFileWithoutResponse(c *gin.Context, purpose, fileKey string) (services.ExamPaperStorageGrant, bool) {
 	authorization := strings.TrimSpace(c.GetHeader("Authorization"))
-	if !strings.HasPrefix(authorization, "Bearer ") {
+	queryToken := strings.TrimSpace(c.Query("token"))
+	var token string
+	if authorization != "" {
+		if !strings.HasPrefix(authorization, "Bearer ") {
+			return services.ExamPaperStorageGrant{}, false
+		}
+		token = strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+		if token == "" || (queryToken != "" && queryToken != token) {
+			return services.ExamPaperStorageGrant{}, false
+		}
+	} else {
+		token = queryToken
+	}
+	if token == "" {
 		return services.ExamPaperStorageGrant{}, false
 	}
-	grant, err := h.grantSigner.VerifyGrant(strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer ")), purpose, c.Request.Method, c.Request.URL.Path)
+	grant, err := h.grantSigner.VerifyGrant(token, purpose, c.Request.Method, c.Request.URL.Path)
 	return grant, err == nil && grant.FileKey == fileKey
 }
 

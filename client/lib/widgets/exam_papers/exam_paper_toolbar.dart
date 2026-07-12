@@ -91,7 +91,7 @@ class ExamPaperToolbar extends StatelessWidget {
               const SizedBox(width: 4),
               Expanded(child: filters[2]),
               const SizedBox(width: 4),
-              SizedBox(width: 76, child: filters[3]),
+              SizedBox(width: 96, child: filters[3]),
             ],
           );
         }
@@ -192,7 +192,6 @@ class _CompactDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 32,
-      padding: const EdgeInsets.only(left: 8, right: 4),
       decoration: BoxDecoration(
         color: Theme.of(context)
             .colorScheme
@@ -205,6 +204,7 @@ class _CompactDropdown extends StatelessWidget {
           value: value,
           isDense: true,
           isExpanded: true,
+          padding: const EdgeInsets.only(left: 8, right: 4),
           borderRadius: BorderRadius.circular(12),
           icon: const Icon(Icons.arrow_drop_down, size: 18),
           style: Theme.of(context).textTheme.bodyMedium,

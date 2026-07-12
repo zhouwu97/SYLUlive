@@ -227,7 +227,7 @@ func migrateExamPaper(ctx context.Context, db *gorm.DB, remote migrationRemote, 
 	}
 	remoteMetadata, err := remote.Metadata(ctx, paper.FileKey)
 	if err != nil {
-		return fmt.Errorf("读取远端元数据失败: %w", err)
+		return errors.New("读取远端元数据失败")
 	}
 	if local.Size != paper.FileSize || !strings.EqualFold(local.SHA256, paper.SHA256) {
 		return fmt.Errorf("数据库记录的大小或 SHA-256 与本地文件不一致")

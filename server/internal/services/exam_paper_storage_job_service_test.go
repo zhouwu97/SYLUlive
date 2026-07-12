@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -244,4 +245,87 @@ func TestExamPaperStorageJobTrashSupersessionRollsBackAndRespectsActiveReference
 	require.Nil(t, claim.CompletedAt)
 	require.NoError(t, db.Model(&models.ExamPaperStorageJob{}).Where("file_key = ? AND operation = ?", "paper.pdf", ExamPaperStoragePurposeDelete).Count(&trashCount).Error)
 	require.Zero(t, trashCount)
+}
+
+func TestExamPaperStorageJobConcurrentTrashSupersessionDoesNotAbortBatch(t *testing.T) {
+	for _, failClaim := range []bool{false, true} {
+		t.Run(fmt.Sprintf("claim_failure_%t", failClaim), func(t *testing.T) {
+			db := openStorageJobTestDB(t)
+			failures := map[string]int{}
+			if failClaim {
+				failures["claim:paper.pdf"] = 1
+			}
+			remote := &dispatchingStorageJobRemoteStub{storageJobRemoteStub: storageJobRemoteStub{
+				failures: failures, started: make(chan string, 3), release: make(chan struct{}),
+			}}
+			service := NewExamPaperStorageJobService(db, remote, time.Now)
+			require.NoError(t, service.EnqueueClaim(db, models.ExamPaperStorageRemote, "paper.pdf"))
+			require.NoError(t, service.EnqueueTrash(db, models.ExamPaperStorageRemote, "later.pdf"))
+			done := make(chan error, 1)
+			go func() {
+				_, err := service.ProcessDue(context.Background(), 10)
+				done <- err
+			}()
+			require.Equal(t, "claim:paper.pdf", <-remote.started)
+			require.NoError(t, service.EnqueueTrash(db, models.ExamPaperStorageRemote, "paper.pdf"))
+			close(remote.release)
+			require.NoError(t, <-done)
+
+			remote.mu.Lock()
+			defer remote.mu.Unlock()
+			require.Equal(t, 1, remote.calls["claim:paper.pdf"])
+			require.Equal(t, 1, remote.calls["trash:later.pdf"])
+		})
+	}
+}
+
+func TestExamPaperStorageJobConcurrentTrashSupersessionEndsImmediateAttempt(t *testing.T) {
+	for _, failClaim := range []bool{false, true} {
+		t.Run(fmt.Sprintf("claim_failure_%t", failClaim), func(t *testing.T) {
+			db := openStorageJobTestDB(t)
+			failures := map[string]int{}
+			if failClaim {
+				failures["claim:paper.pdf"] = 1
+			}
+			remote := &dispatchingStorageJobRemoteStub{storageJobRemoteStub: storageJobRemoteStub{
+				failures: failures, started: make(chan string, 1), release: make(chan struct{}),
+			}}
+			service := NewExamPaperStorageJobService(db, remote, time.Now)
+			require.NoError(t, service.EnqueueClaim(db, models.ExamPaperStorageRemote, "paper.pdf"))
+			var claim models.ExamPaperStorageJob
+			require.NoError(t, db.Where("file_key = ? AND operation = ?", "paper.pdf", ExamPaperStoragePurposeClaim).First(&claim).Error)
+
+			done := make(chan error, 1)
+			go func() { done <- service.ProcessJob(context.Background(), claim.ID) }()
+			require.Equal(t, "claim:paper.pdf", <-remote.started)
+			require.NoError(t, service.EnqueueTrash(db, models.ExamPaperStorageRemote, "paper.pdf"))
+			close(remote.release)
+			require.NoError(t, <-done)
+		})
+	}
+}
+
+func TestExamPaperStorageJobStateMismatchIsNotMistakenForTrashSupersession(t *testing.T) {
+	db := openStorageJobTestDB(t)
+	now := time.Now()
+	service := NewExamPaperStorageJobService(db, &dispatchingStorageJobRemoteStub{}, func() time.Time { return now })
+	job := models.ExamPaperStorageJob{
+		StorageBackend: models.ExamPaperStorageRemote,
+		FileKey:        "paper.pdf",
+		Operation:      ExamPaperStoragePurposeClaim,
+		NextAttemptAt:  now,
+		CompletedAt:    &now,
+		LastError:      "other state change",
+	}
+	require.NoError(t, db.Create(&job).Error)
+	stale := job
+	stale.LockToken = "stale-token"
+
+	completeErr := service.complete(context.Background(), stale)
+	require.ErrorContains(t, completeErr, "完成状态已变化")
+	require.NotErrorIs(t, completeErr, errExamPaperStorageJobSuperseded)
+
+	failErr := service.fail(context.Background(), stale, errors.New("远端失败"))
+	require.ErrorContains(t, failErr, "失败状态已变化")
+	require.NotErrorIs(t, failErr, errExamPaperStorageJobSuperseded)
 }

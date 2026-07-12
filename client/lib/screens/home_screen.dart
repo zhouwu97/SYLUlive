@@ -76,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen>
   int _tabTransitionSerial = 0;
   double _mainSwipeDx = 0;
   Timer? _announcementTimer;
+  Timer? _announcementRetryTimer;
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
   bool _announcementDialogOpen = false;
@@ -132,6 +133,7 @@ class _HomeScreenState extends State<HomeScreen>
   static const _snoozeDuration = Duration(hours: 4);
   // Fallback polling interval (keep until JPush trigger is implemented)
   static const _announcementPollInterval = Duration(minutes: 15);
+  static const _announcementRetryDelay = Duration(seconds: 15);
   static const _mainSwitchDistanceThreshold = 0.30;
   static const _mainSwitchVelocityThreshold = 620.0;
   Offset? _navigationSwipeStart;
@@ -207,6 +209,7 @@ class _HomeScreenState extends State<HomeScreen>
       ..dispose();
     _contentTabController.dispose();
     _announcementTimer?.cancel();
+    _announcementRetryTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -247,6 +250,9 @@ class _HomeScreenState extends State<HomeScreen>
     _seenAnnouncementIds.clear();
     _announcementTimer?.cancel();
     _announcementTimer = null;
+    _announcementRetryTimer?.cancel();
+    _announcementRetryTimer = null;
+    _updateBadge(0, false);
 
     if (authKey == null) return;
 
@@ -363,6 +369,12 @@ class _HomeScreenState extends State<HomeScreen>
       }
       // 1. Get lightweight unread count first
       final countResult = await _fetchUnreadCount(auth);
+      if (countResult == null) {
+        _scheduleAnnouncementRetry();
+        return;
+      }
+      _announcementRetryTimer?.cancel();
+      _announcementRetryTimer = null;
       final count = (countResult['count'] as num?)?.toInt() ?? 0;
       final hasUrgent = countResult['has_urgent'] == true;
       _updateBadge(count, hasUrgent);
@@ -505,7 +517,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Future<Map<String, dynamic>> _fetchUnreadCount(AuthProvider auth) async {
+  Future<Map<String, dynamic>?> _fetchUnreadCount(AuthProvider auth) async {
     try {
       var resp;
       try {
@@ -517,17 +529,40 @@ class _HomeScreenState extends State<HomeScreen>
           rethrow;
         }
       }
-      return resp.data is Map ? Map<String, dynamic>.from(resp.data) : {};
+      if (resp.data is! Map) {
+        debugPrint('获取未读公告数量失败: 响应格式无效');
+        return null;
+      }
+
+      final result = Map<String, dynamic>.from(resp.data as Map);
+      if (result['count'] is! num || result['has_urgent'] is! bool) {
+        debugPrint('获取未读公告数量失败: 响应字段无效');
+        return null;
+      }
+      return result;
     } catch (e) {
       debugPrint('获取未读公告数量失败: $e');
-      return {};
+      return null;
     }
+  }
+
+  void _scheduleAnnouncementRetry() {
+    if (!mounted || _announcementRetryTimer != null) return;
+    _announcementRetryTimer = Timer(_announcementRetryDelay, () {
+      _announcementRetryTimer = null;
+      if (mounted) {
+        unawaited(_checkUnreadAnnouncements());
+      }
+    });
   }
 
   void _updateBadge(int count, bool hasUrgent) {
     if (_unreadBadgeCount == count && _hasUrgentUnread == hasUrgent) return;
-    _unreadBadgeCount = count;
-    _hasUrgentUnread = hasUrgent;
+    if (!mounted) return;
+    setState(() {
+      _unreadBadgeCount = count;
+      _hasUrgentUnread = hasUrgent;
+    });
   }
 
   // ─── Snooze helpers (SharedPreferences, keyed by userId:announcementId) ───
@@ -1658,7 +1693,9 @@ class _HomeScreenState extends State<HomeScreen>
                 visualIndex: _mainVisualIndex,
                 onTap: _onTabTapped,
                 authProvider: authProvider,
-                badges: {4: _hasAdminTasks},
+                badges: {
+                  4: _hasAdminTasks,
+                },
               ),
         floatingActionButton: _currentIndex == 0 && useBottomNav
             ? Padding(

@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
@@ -215,7 +216,11 @@ func (h *SuperAdminHandler) ResetUserPassword(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{"password_hash": string(hashedPassword), "token_version": gorm.Expr("token_version + 1")})
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{"password_hash": string(hashedPassword), "token_version": gorm.Expr("token_version + 1")}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置密码失败"})
+		return
+	}
+	middleware.InvalidateTokenVersionCache(uint(userID))
 
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置为系统默认密码"})
 
@@ -501,8 +506,6 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 	})
 
 }
-
-
 
 type CreateLotteryEventInput struct {
 	Title       string `json:"title" binding:"required"`

@@ -29,7 +29,10 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 	uid := userID.(uint)
 
 	var count int64
-	h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Count(&count)
+	if err := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读数量失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"count": count,
@@ -62,13 +65,27 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 	}
 
 	var res []NotificationRes
+	userIDs := make([]uint, 0, len(notifications))
+	for _, n := range notifications {
+		if n.FromUID > 0 {
+			userIDs = append(userIDs, n.FromUID)
+		}
+	}
+	users := make(map[uint]models.User, len(userIDs))
+	if len(userIDs) > 0 {
+		var records []models.User
+		if err := h.db.Where("id IN ?", userIDs).Select("id, nickname, avatar").Find(&records).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取通知发送者失败"})
+			return
+		}
+		for _, user := range records {
+			users[user.ID] = user
+		}
+	}
 	for _, n := range notifications {
 		item := NotificationRes{Notification: n}
-		if n.FromUID > 0 {
-			var u models.User
-			if h.db.Where("id = ?", n.FromUID).Select("id, nickname, avatar").First(&u).Error == nil {
-				item.FromUser = &UserInfo{ID: u.ID, Nickname: u.Nickname, Avatar: u.Avatar}
-			}
+		if u, ok := users[n.FromUID]; ok {
+			item.FromUser = &UserInfo{ID: u.ID, Nickname: u.Nickname, Avatar: u.Avatar}
 		}
 		res = append(res, item)
 	}
@@ -82,7 +99,8 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 	uid := userID.(uint)
 
 	if err := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Update("is_read", true).Error; err != nil {
-		log.Printf("[DB_WARN] Failed to write side-effect record: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "标记已读失败"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "已全部标记为已读"})
@@ -217,10 +235,7 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 		return
 	}
 
-	contentPreview := content
-	if len(contentPreview) > 50 {
-		contentPreview = contentPreview[:50] + "..."
-	}
+	contentPreview := truncateRunes(content, 50)
 
 	go func() {
 		jpush := utils.NewJPushClient(jpushAppKey, jpushMasterSecret)
@@ -251,10 +266,7 @@ func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price 
 		return
 	}
 
-	titlePreview := title
-	if len(titlePreview) > 50 {
-		titlePreview = titlePreview[:50] + "..."
-	}
+	titlePreview := truncateRunes(title, 50)
 	content := titlePreview
 	if price > 0 {
 		content = fmt.Sprintf("%s  ¥%.2f", titlePreview, price)

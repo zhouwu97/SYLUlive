@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -85,31 +84,34 @@ func (h *AppealHandler) Create(c *gin.Context) {
 	}
 
 	// 随机选择10名高诚信非当事人陪审员
-	h.selectJury(appeal.ID, post.AuthorID)
+	if err := h.selectJury(appeal.ID, post.AuthorID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "分配陪审员失败"})
+		return
+	}
 
 	c.JSON(http.StatusCreated, appeal)
 }
 
 // selectJury 随机选择陪审员
-func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
+func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) error {
 	var candidates []models.User
 	// 近90天举报数为0且诚信度>90%的普通用户（排除管理员和超管）
 	if err := h.db.Where("id != ? AND report_count = 0 AND credit_score > 90 AND role = ?", excludeUserID, models.RoleUser).
 		Find(&candidates).Error; err != nil {
-		log.Printf("[DB_ERROR] selectJury Find candidates failed: %v", err)
+		return err
 	}
 
 	if len(candidates) < 10 {
 		// 如果候选人不足，随机选择
 		if err := h.db.Where("id != ?", excludeUserID).Limit(10).Find(&candidates).Error; err != nil {
-			log.Printf("[DB_ERROR] selectJury Find fallback candidates failed: %v", err)
+			return err
 		}
 	}
 
 	// 如果还是没有候选人（系统里只有发帖人和超级管理员等情况），则自动分配超级管理员
 	if len(candidates) == 0 {
 		if err := h.db.Where("role = ?", models.RoleSuperAdmin).First(&candidates).Error; err != nil {
-			log.Printf("[DB_WARN] selectJury failed to find fallback super_admin: %v", err)
+			return err
 		}
 	}
 
@@ -129,10 +131,13 @@ func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
 			Vote:     "",
 		}
 		if err := h.db.Create(&vote).Error; err != nil {
-			log.Printf("[DB_ERROR] Failed to create appeal vote: %v", err)
-			return
+			return err
 		}
 	}
+	if count == 0 {
+		return fmt.Errorf("没有可用陪审员")
+	}
+	return nil
 }
 
 // GetList 获取申诉列表

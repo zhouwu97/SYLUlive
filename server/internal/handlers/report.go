@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -37,6 +37,42 @@ func (h *ReportHandler) Create(c *gin.Context) {
 	var input CreateReportInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.TargetType != "post" && input.TargetType != "reply" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "target_type 仅支持 post 或 reply"})
+		return
+	}
+	if reasonLength := len([]rune(input.Reason)); reasonLength < 2 || reasonLength > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "举报理由长度需在 2 到 500 个字符之间"})
+		return
+	}
+	var targetOwner uint
+	if input.TargetType == "post" {
+		var post models.Post
+		if err := h.db.Select("author_id", "status").First(&post, input.TargetID).Error; err != nil || post.Status == models.PostStatusDeleted {
+			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在或已删除"})
+			return
+		}
+		targetOwner = post.AuthorID
+	} else {
+		var reply models.Reply
+		if err := h.db.Select("author_id", "status").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
+			c.JSON(http.StatusNotFound, gin.H{"error": "回复不存在或已删除"})
+			return
+		}
+		targetOwner = reply.AuthorID
+	}
+	if targetOwner == userID.(uint) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能举报自己的内容"})
+		return
+	}
+	var existing models.Report
+	if err := h.db.Where("reporter_id = ? AND target_type = ? AND target_id = ? AND status = ?", userID, input.TargetType, input.TargetID, models.ReportStatusPending).First(&existing).Error; err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "请勿重复举报"})
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询举报状态失败"})
 		return
 	}
 
@@ -98,92 +134,80 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		return
 	}
 
+	if input.Status != string(models.ReportStatusHandled) && input.Status != string(models.ReportStatusIgnored) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status 仅支持 handled 或 ignored"})
+		return
+	}
 	var report models.Report
-	if err := h.db.First(&report, reportID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "举报不存在"})
-		return
-	}
-
-	now := time.Now()
-	report.Status = models.ReportStatus(input.Status)
-	report.HandlerID = new(uint)
-	*report.HandlerID = userID.(uint)
-	report.Result = input.Result
-	report.DeleteReason = input.DeleteReason
-	report.HandledAt = &now
-
-	if err := h.db.Save(&report).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-		return
-	}
-
-	// 如果是处理举报且理由是删除，则删除内容并允许申诉
-	if input.Status == "handled" && input.DeleteReason != "" {
-		if report.TargetType == "post" {
-			if err := h.db.Model(&models.Post{}).Where("id = ?", report.TargetID).Update("status", models.PostStatusDeleted).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-				return
-			}
-
-			// 创建申诉记录
-			var post models.Post
-			if err := h.db.First(&post, report.TargetID).Error; err != nil {
-				log.Printf("[DB_WARN] Failed to find post for appeal creation: report_id=%d, err=%v", report.ID, err)
-			} else {
-				appeal := models.Appeal{
-					PostID:      report.TargetID,
-					AppellantID: post.AuthorID,
-					AdminID:     userID.(uint),
-					AdminReason: input.DeleteReason,
-					Status:      models.AppealStatusPending,
-				}
-				if err := h.db.Create(&appeal).Error; err != nil {
-					log.Printf("[DB_ERROR] Failed to create appeal: %v", err)
-				}
-			}
-		} else if report.TargetType == "reply" {
-			if err := h.db.Model(&models.Reply{}).Where("id = ?", report.TargetID).Update("status", models.ReplyStatusDeleted).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-				return
-			}
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&report, reportID).Error; err != nil {
+			return err
+		}
+		if report.Status != models.ReportStatusPending {
+			return fmt.Errorf("report_already_handled")
+		}
+		now := time.Now()
+		report.Status = models.ReportStatus(input.Status)
+		report.HandlerID = new(uint)
+		*report.HandlerID = userID.(uint)
+		report.Result, report.DeleteReason, report.HandledAt = input.Result, input.DeleteReason, &now
+		if err := tx.Save(&report).Error; err != nil {
+			return err
 		}
 
-		// 更新被举报者的举报计数
-		var targetUserID uint
-		if report.TargetType == "post" {
-			var post models.Post
-			if h.db.First(&post, report.TargetID).Error == nil {
+		if input.Status == string(models.ReportStatusHandled) && input.DeleteReason != "" {
+			var targetUserID uint
+			switch report.TargetType {
+			case "post":
+				var post models.Post
+				if err := tx.First(&post, report.TargetID).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+					return err
+				}
 				targetUserID = post.AuthorID
-			}
-		} else if report.TargetType == "reply" {
-			var reply models.Reply
-			if h.db.First(&reply, report.TargetID).Error == nil {
+				appeal := models.Appeal{PostID: post.ID, AppellantID: post.AuthorID, AdminID: userID.(uint), AdminReason: input.DeleteReason, Status: models.AppealStatusPending}
+				if err := tx.Create(&appeal).Error; err != nil {
+					return err
+				}
+				if err := NewAppealHandler(tx).selectJury(appeal.ID, post.AuthorID); err != nil {
+					return err
+				}
+			case "reply":
+				var reply models.Reply
+				if err := tx.First(&reply, report.TargetID).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&reply).Update("status", models.ReplyStatusDeleted).Error; err != nil {
+					return err
+				}
+				if err := recalculatePostReplyStats(tx, reply.PostID); err != nil {
+					return err
+				}
 				targetUserID = reply.AuthorID
+			default:
+				return fmt.Errorf("invalid_target_type")
+			}
+			if err := tx.Model(&models.User{}).Where("id = ?", targetUserID).Update("report_count", gorm.Expr("report_count + 1")).Error; err != nil {
+				return err
 			}
 		}
-		if targetUserID > 0 {
-			if err := h.db.Model(&models.User{}).Where("id = ?", targetUserID).Update("report_count", gorm.Expr("report_count + 1")).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-				return
-			}
+		if err := tx.Create(&models.AdminActionLog{AdminID: userID.(uint), Action: "handle_report", TargetType: "report", TargetID: uint(reportID), Detail: fmt.Sprintf("处理举报: %s, 结果: %s", report.Reason, input.Status)}).Error; err != nil {
+			return err
 		}
-	}
-
-	// 记录管理员操作
-	log := models.AdminActionLog{
-		AdminID:    userID.(uint),
-		Action:     "handle_report",
-		TargetType: "report",
-		TargetID:   uint(reportID),
-		Detail:     fmt.Sprintf("处理举报: %s, 结果: %s", report.Reason, input.Status),
-	}
-	if err := h.db.Create(&log).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return tx.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1")).Error
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "举报或目标内容不存在"})
+		case err.Error() == "report_already_handled":
+			c.JSON(http.StatusConflict, gin.H{"error": "举报已处理，请勿重复提交"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "处理举报失败"})
+		}
 		return
 	}
-
-	// 管理员处理举报，经验+1
-	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
-
 	c.JSON(http.StatusOK, report)
 }

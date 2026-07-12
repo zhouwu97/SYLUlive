@@ -197,7 +197,7 @@ class HomeServiceDrawer extends StatelessWidget {
     );
   }
 
-  // ---- 系统公告 ----
+  // ---- 未读公告 ----
   Widget _buildAnnouncementSection(BuildContext context, bool isDark) {
     final latest = announcements.isNotEmpty ? announcements.first : null;
     return Material(
@@ -238,7 +238,7 @@ class HomeServiceDrawer extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      '系统公告',
+                      '未读公告',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
@@ -246,15 +246,25 @@ class HomeServiceDrawer extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (announcements.isNotEmpty)
+                  if (announcements.isNotEmpty) ...[
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     Text(
-                      announcements.length.toString(),
+                      '${announcements.length} 条',
                       style: const TextStyle(
                         fontSize: 13,
-                        color: Color(0xFF3B82F6),
+                        color: Color(0xFFEF4444),
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                  ],
                   Icon(
                     Icons.chevron_right_rounded,
                     size: 20,
@@ -265,7 +275,7 @@ class HomeServiceDrawer extends StatelessWidget {
               const SizedBox(height: 10),
               if (latest == null)
                 Text(
-                  '暂无新公告',
+                  '暂无未读公告',
                   style: TextStyle(
                     fontSize: 13,
                     color: isDark ? Colors.white54 : Colors.black54,

@@ -314,14 +314,22 @@ func (h *AnnouncementHandler) GetUnreadCount(c *gin.Context) {
 		Where("id NOT IN (SELECT announcement_id FROM announcement_reads WHERE user_id = ?)", uid)
 
 	var count int64
-	base.Model(&models.Announcement{}).Count(&count)
+	if err := base.Model(&models.Announcement{}).Count(&count).Error; err != nil {
+		log.Printf("[ANNOUNCEMENT] count unread failed user_id=%d: %v", uid, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读公告数量失败"})
+		return
+	}
 
 	var urgentCount int64
-	h.visibleUnreadScope(h.db, user).
+	if err := h.visibleUnreadScope(h.db, user).
 		Where("id NOT IN (SELECT announcement_id FROM announcement_reads WHERE user_id = ?)", uid).
 		Where("priority = ?", "urgent").
 		Model(&models.Announcement{}).
-		Count(&urgentCount)
+		Count(&urgentCount).Error; err != nil {
+		log.Printf("[ANNOUNCEMENT] count urgent unread failed user_id=%d: %v", uid, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读公告数量失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"count":      count,

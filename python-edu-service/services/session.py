@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import EduUser
 from services.crawler import EduCrawler, CookieLapseError, LoginFailedError, NetworkError
+from services.security import decrypt_credential, encrypt_credential
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,10 @@ async def execute_with_session_refresh(
             except (LoginFailedError, NetworkError):
                 raise
 
-    original_cookie = edu_user.cookie
+    try:
+        original_cookie = decrypt_credential(edu_user.cookie)
+    except (RuntimeError, ValueError) as exc:
+        raise CookieLapseError("Cookie 已失效，请重新绑定教务账号") from exc
 
     # 首次尝试
     try:
@@ -71,15 +75,20 @@ async def execute_with_session_refresh(
     async with lock:
         # 重新读取最新 Cookie（可能被前一个锁持有者刷新过）
         await db.refresh(edu_user)
-        refreshed_cookie = edu_user.cookie
+        try:
+            refreshed_cookie = decrypt_credential(edu_user.cookie)
+        except (RuntimeError, ValueError):
+            refreshed_cookie = ""
         if refreshed_cookie and refreshed_cookie != original_cookie:
             try:
                 return await _attempt_fresh(refreshed_cookie)
             except CookieLapseError:
                 pass
 
-        if not edu_user.raw_password:
-            raise CookieLapseError("Cookie 已失效，请重新绑定教务账号")
+        try:
+            password = decrypt_credential(edu_user.encrypted_password)
+        except (RuntimeError, ValueError) as exc:
+            raise CookieLapseError("Cookie 已失效，请重新绑定教务账号") from exc
 
         logger.info(
             "[EDU-SESSION] refreshing session user_id=%s student_id=%s",
@@ -90,7 +99,7 @@ async def execute_with_session_refresh(
         try:
             async with EduCrawler(timeout=timeout) as login_crawler:
                 new_cookie = await login_crawler.login(
-                    edu_user.student_id, edu_user.raw_password,
+                    edu_user.student_id, password,
                 )
         except LoginFailedError as e:
             logger.warning(
@@ -103,10 +112,10 @@ async def execute_with_session_refresh(
             ) from e
 
         # 锁内持久化，保证后续请求能看到最新 Cookie
-        edu_user.cookie = new_cookie
+        edu_user.cookie = encrypt_credential(new_cookie)
         await db.commit()
         await db.refresh(edu_user)
-        refreshed_cookie = edu_user.cookie
+        refreshed_cookie = new_cookie
 
     # 重试（锁已释放，不阻塞其他用户）
     try:

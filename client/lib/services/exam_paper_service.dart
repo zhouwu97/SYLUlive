@@ -1,7 +1,9 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
@@ -74,10 +76,14 @@ class ExamPaperDeleteResult {
 class ExamPaperService {
   static const int maxFileSize = 20 * 1024 * 1024;
   static const String storageHost = 'sylulive.online';
+  static const int _maxPendingCompletions = 16;
+  static const Duration _pendingCompletionTTL = Duration(minutes: 15);
 
   final Dio _dio;
   final Dio _storageDio;
-  _PendingExamPaperCompletion? _pendingCompletion;
+  final Map<String, Future<ExamPaper>> _inFlightUploads = {};
+  final LinkedHashMap<String, _PendingExamPaperCompletion> _pendingCompletions =
+      LinkedHashMap();
 
   ExamPaperService(this._dio, {Dio? storageDio})
       : _storageDio = storageDio ?? Dio();
@@ -161,17 +167,51 @@ class ExamPaperService {
       );
     }
 
-    final pending = _pendingCompletion;
-    if (pending != null &&
-        pending.matches(
-          file: file,
-          courseName: courseName,
-          academicYear: academicYear,
-          semester: semester,
-          examType: examType,
-          privacyConfirmed: privacyConfirmed,
-        )) {
-      return _completePendingUpload(pending);
+    final fingerprint = await _uploadFingerprint(
+      file: file,
+      courseName: courseName,
+      academicYear: academicYear,
+      semester: semester,
+      examType: examType,
+      privacyConfirmed: privacyConfirmed,
+    );
+    _prunePendingCompletions(DateTime.now());
+    final inFlight = _inFlightUploads[fingerprint];
+    if (inFlight != null) return inFlight;
+
+    final operation = _performUpload(
+      fingerprint: fingerprint,
+      file: file,
+      courseName: courseName,
+      academicYear: academicYear,
+      semester: semester,
+      examType: examType,
+      privacyConfirmed: privacyConfirmed,
+      onSendProgress: onSendProgress,
+    );
+    _inFlightUploads[fingerprint] = operation;
+    try {
+      return await operation;
+    } finally {
+      if (identical(_inFlightUploads[fingerprint], operation)) {
+        _inFlightUploads.remove(fingerprint);
+      }
+    }
+  }
+
+  Future<ExamPaper> _performUpload({
+    required String fingerprint,
+    required PlatformFile file,
+    required String courseName,
+    required String academicYear,
+    required String semester,
+    required String examType,
+    required bool privacyConfirmed,
+    ProgressCallback? onSendProgress,
+  }) async {
+    final pending = _pendingCompletions[fingerprint];
+    if (pending != null) {
+      return _completePendingUpload(fingerprint, pending);
     }
 
     late final Response<dynamic> sessionResponse;
@@ -209,20 +249,16 @@ class ExamPaperService {
     }
     final receipt = _parseUploadReceipt(uploadResponse.data);
     final completion = _PendingExamPaperCompletion(
-      file: file,
-      courseName: courseName.trim(),
-      academicYear: academicYear,
-      semester: semester,
-      examType: examType,
-      privacyConfirmed: privacyConfirmed,
       sessionID: session.id,
       receipt: receipt,
+      cachedAt: DateTime.now(),
     );
-    _pendingCompletion = completion;
-    return _completePendingUpload(completion);
+    _cachePendingCompletion(fingerprint, completion);
+    return _completePendingUpload(fingerprint, completion);
   }
 
   Future<ExamPaper> _completePendingUpload(
+    String fingerprint,
     _PendingExamPaperCompletion completion,
   ) async {
     try {
@@ -231,8 +267,8 @@ class ExamPaperService {
         data: {'receipt': completion.receipt},
       );
       final paper = _parseCompletedPaper(response.data);
-      if (identical(_pendingCompletion, completion)) {
-        _pendingCompletion = null;
+      if (identical(_pendingCompletions[fingerprint], completion)) {
+        _pendingCompletions.remove(fingerprint);
       }
       return paper;
     } on DioException catch (error) {
@@ -243,11 +279,76 @@ class ExamPaperService {
             )
           : ExamPaperApiException.fromDio(error);
       if (_completionCannotBeRetried(mapped.code) &&
-          identical(_pendingCompletion, completion)) {
-        _pendingCompletion = null;
+          identical(_pendingCompletions[fingerprint], completion)) {
+        _pendingCompletions.remove(fingerprint);
       }
       throw mapped;
     }
+  }
+
+  Future<String> _uploadFingerprint({
+    required PlatformFile file,
+    required String courseName,
+    required String academicYear,
+    required String semester,
+    required String examType,
+    required bool privacyConfirmed,
+  }) async {
+    late final List<Object> fileIdentity;
+    if (file.path != null && file.path!.isNotEmpty) {
+      var normalizedPath = path.normalize(path.absolute(file.path!));
+      if (Platform.isWindows) normalizedPath = normalizedPath.toLowerCase();
+      final stat = await File(normalizedPath).stat();
+      if (stat.type != FileSystemEntityType.file) {
+        throw const ExamPaperApiException(
+          message: '无法读取所选 PDF 文件',
+          code: 'invalid_pdf',
+        );
+      }
+      fileIdentity = [
+        'path',
+        normalizedPath,
+        stat.size,
+        stat.modified.toUtc().microsecondsSinceEpoch,
+      ];
+    } else if (file.bytes != null) {
+      fileIdentity = ['bytes', sha256.convert(file.bytes!).toString()];
+    } else {
+      throw const ExamPaperApiException(
+        message: '无法读取所选 PDF 文件',
+        code: 'invalid_pdf',
+      );
+    }
+    final payload = jsonEncode([
+      fileIdentity,
+      file.name,
+      file.size,
+      courseName.trim(),
+      academicYear,
+      semester,
+      examType,
+      privacyConfirmed,
+    ]);
+    return sha256.convert(utf8.encode(payload)).toString();
+  }
+
+  void _cachePendingCompletion(
+    String fingerprint,
+    _PendingExamPaperCompletion completion,
+  ) {
+    _prunePendingCompletions(completion.cachedAt);
+    _pendingCompletions.remove(fingerprint);
+    while (_pendingCompletions.length >= _maxPendingCompletions) {
+      _pendingCompletions.remove(_pendingCompletions.keys.first);
+    }
+    _pendingCompletions[fingerprint] = completion;
+  }
+
+  void _prunePendingCompletions(DateTime now) {
+    _pendingCompletions.removeWhere(
+      (_, completion) =>
+          now.difference(completion.cachedAt) > _pendingCompletionTTL,
+    );
   }
 
   static bool _completionCannotBeRetried(String code) {
@@ -787,39 +888,13 @@ class _ExamPaperUploadSession {
 }
 
 class _PendingExamPaperCompletion {
-  final PlatformFile file;
-  final String courseName;
-  final String academicYear;
-  final String semester;
-  final String examType;
-  final bool privacyConfirmed;
   final String sessionID;
   final String receipt;
+  final DateTime cachedAt;
 
   const _PendingExamPaperCompletion({
-    required this.file,
-    required this.courseName,
-    required this.academicYear,
-    required this.semester,
-    required this.examType,
-    required this.privacyConfirmed,
     required this.sessionID,
     required this.receipt,
+    required this.cachedAt,
   });
-
-  bool matches({
-    required PlatformFile file,
-    required String courseName,
-    required String academicYear,
-    required String semester,
-    required String examType,
-    required bool privacyConfirmed,
-  }) {
-    return identical(this.file, file) &&
-        this.courseName == courseName.trim() &&
-        this.academicYear == academicYear &&
-        this.semester == semester &&
-        this.examType == examType &&
-        this.privacyConfirmed == privacyConfirmed;
-  }
 }

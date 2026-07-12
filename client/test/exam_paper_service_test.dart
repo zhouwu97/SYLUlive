@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -19,11 +20,15 @@ class _QueuedResponse {
   final int statusCode;
   final Object? data;
   final DioExceptionType? exceptionType;
+  final Completer<void>? started;
+  final Future<void>? release;
 
   const _QueuedResponse(
     this.statusCode,
     this.data, {
     this.exceptionType,
+    this.started,
+    this.release,
   });
 }
 
@@ -35,8 +40,20 @@ class _RecordingAdapter implements HttpClientAdapter {
 
   _RecordingAdapter(this.name, this.requests);
 
-  void enqueueJson(int statusCode, Object? data) {
-    _responses.add(_QueuedResponse(statusCode, data));
+  void enqueueJson(
+    int statusCode,
+    Object? data, {
+    Completer<void>? started,
+    Future<void>? release,
+  }) {
+    _responses.add(
+      _QueuedResponse(
+        statusCode,
+        data,
+        started: started,
+        release: release,
+      ),
+    );
   }
 
   @override
@@ -54,6 +71,8 @@ class _RecordingAdapter implements HttpClientAdapter {
       throw StateError('$name 缺少预设响应: ${options.method} ${options.uri}');
     }
     final response = _responses.removeAt(0);
+    response.started?.complete();
+    if (response.release != null) await response.release;
     if (response.exceptionType != null) {
       throw DioException(
         requestOptions: options,
@@ -72,6 +91,108 @@ class _RecordingAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('同一上传指纹的并发调用共享一套上传流程', () async {
+    final sessionStarted = Completer<void>();
+    final releaseSession = Completer<void>();
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(
+        201,
+        _uploadSessionJson(sessionID: 'singleflight-session'),
+        started: sessionStarted,
+        release: releaseSession.future,
+      )
+      ..enqueueJson(201, _paperJson(31, '并发上传'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'singleflight-receipt'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final service = ExamPaperService(apiDio, storageDio: storageDio);
+    final firstFile = _pdfPlatformFile('并发上传.pdf');
+    final secondFile = _pdfPlatformFile('并发上传.pdf');
+
+    final first = _uploadPaper(service, firstFile, courseName: '并发上传');
+    await sessionStarted.future;
+    final second = _uploadPaper(service, secondFile, courseName: '并发上传');
+    releaseSession.complete();
+    final papers = await Future.wait([first, second]);
+
+    expect(papers.map((paper) => paper.id), [31, 31]);
+    expect(requests.map((request) => request.adapter), [
+      'api',
+      'storage',
+      'api',
+    ]);
+  });
+
+  test('不同文件完成失败后分别保留回执并只重试各自完成请求', () async {
+    final firstCompleteStarted = Completer<void>();
+    final releaseFirstComplete = Completer<void>();
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(201, _uploadSessionJson(sessionID: 'session-a'))
+      ..enqueueJson(
+        500,
+        {'code': 'internal_error', 'error': '完成 A 失败'},
+        started: firstCompleteStarted,
+        release: releaseFirstComplete.future,
+      )
+      ..enqueueJson(201, _uploadSessionJson(sessionID: 'session-b'))
+      ..enqueueJson(500, {'code': 'internal_error', 'error': '完成 B 失败'})
+      ..enqueueJson(201, _paperJson(41, '交错上传'))
+      ..enqueueJson(201, _paperJson(42, '交错上传'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'receipt-a'})
+      ..enqueueJson(201, {'receipt': 'receipt-b'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final service = ExamPaperService(apiDio, storageDio: storageDio);
+    final firstFile = _pdfPlatformFileWithMarker('交错上传.pdf', 1);
+    final secondFile = _pdfPlatformFileWithMarker('交错上传.pdf', 2);
+
+    final first = _uploadPaper(service, firstFile, courseName: '交错上传');
+    await firstCompleteStarted.future;
+    await expectLater(
+      _uploadPaper(service, secondFile, courseName: '交错上传'),
+      throwsA(isA<ExamPaperApiException>()),
+    );
+    releaseFirstComplete.complete();
+    await expectLater(first, throwsA(isA<ExamPaperApiException>()));
+
+    final firstPaper =
+        await _uploadPaper(service, firstFile, courseName: '交错上传');
+    final secondPaper =
+        await _uploadPaper(service, secondFile, courseName: '交错上传');
+
+    expect([firstPaper.id, secondPaper.id], [41, 42]);
+    expect(
+      requests
+          .where((request) => request.adapter == 'storage')
+          .map((request) => request.options.path),
+      [
+        'https://sylulive.online/v1/uploads/session-a',
+        'https://sylulive.online/v1/uploads/session-b',
+      ],
+    );
+    final completes = requests
+        .where((request) => request.options.path.endsWith('/complete'))
+        .toList();
+    expect(completes.map((request) => request.options.path), [
+      '/exam-papers/upload-sessions/session-a/complete',
+      '/exam-papers/upload-sessions/session-b/complete',
+      '/exam-papers/upload-sessions/session-a/complete',
+      '/exam-papers/upload-sessions/session-b/complete',
+    ]);
+    expect(completes.map((request) => request.options.data), [
+      {'receipt': 'receipt-a'},
+      {'receipt': 'receipt-b'},
+      {'receipt': 'receipt-a'},
+      {'receipt': 'receipt-b'},
+    ]);
+  });
+
   test('上传先创建会话，再直传文件，最后完成会话', () async {
     final requests = <_RecordedRequest>[];
     final apiAdapter = _RecordingAdapter('api', requests)
@@ -993,11 +1114,12 @@ Map<String, dynamic> _paperJson(int id, String title) {
 }
 
 Map<String, dynamic> _uploadSessionJson({
-  String uploadURL = 'https://sylulive.online/v1/uploads/session-1',
+  String sessionID = 'session-1',
+  String? uploadURL,
 }) {
   return {
-    'session_id': 'session-1',
-    'upload_url': uploadURL,
+    'session_id': sessionID,
+    'upload_url': uploadURL ?? 'https://sylulive.online/v1/uploads/$sessionID',
     'upload_token': 'signed-upload-token',
     'expires_at': '2026-07-13T10:10:00Z',
   };
@@ -1005,6 +1127,11 @@ Map<String, dynamic> _uploadSessionJson({
 
 PlatformFile _pdfPlatformFile(String name) {
   final bytes = Uint8List.fromList(utf8.encode('%PDF-1.4'));
+  return PlatformFile(name: name, size: bytes.length, bytes: bytes);
+}
+
+PlatformFile _pdfPlatformFileWithMarker(String name, int marker) {
+  final bytes = Uint8List.fromList([...utf8.encode('%PDF-1.'), marker]);
   return PlatformFile(name: name, size: bytes.length, bytes: bytes);
 }
 

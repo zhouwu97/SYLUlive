@@ -448,6 +448,34 @@ func TestPaperStorageUploadMapsUnclaimedQuotaBeforeReadingBody(t *testing.T) {
 	}
 }
 
+func TestPaperStorageUploadPrioritizesInProgressOverFullQuota(t *testing.T) {
+	handler, files, signer, _ := newPaperStorageTestHandler(t, 20)
+	for index := 0; index < 5; index++ {
+		sessionID := fmt.Sprintf("51000000-0000-4000-8000-%012d", index+1)
+		if _, err := files.BeginUploadSessionForUser(sessionID, fmt.Sprintf("http-full-quota-%d", index), 53, services.ExamPaperMaxFileSize, paperStorageNow.Add(time.Minute), paperStorageNow); err != nil {
+			t.Fatalf("填充配额失败: %v", err)
+		}
+	}
+	sessionID := "51000000-0000-4000-8000-000000000001"
+	path := "/v1/uploads/" + sessionID
+	token, err := signer.SignGrant(services.ExamPaperStorageGrant{
+		Purpose: services.ExamPaperStoragePurposeUpload, Method: http.MethodPost, Path: path,
+		SessionID: sessionID, UserID: 53, ExpectedSize: services.ExamPaperMaxFileSize, IssuedAt: paperStorageNow.Add(-time.Minute).Unix(),
+		ExpiresAt: paperStorageNow.Add(time.Minute).Unix(), JTI: "http-full-quota-0",
+	})
+	if err != nil {
+		t.Fatalf("签发并发重放授权失败: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, path, nil)
+	request.Body = panicPaperStorageBody{}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !bytes.Contains(response.Body.Bytes(), []byte(`"error":"upload_session_in_progress"`)) {
+		t.Fatalf("满配额时同 token 重放响应错误: code=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestPaperStorageUploadMapsValidationSizeAndCapacityErrors(t *testing.T) {
 	tests := []struct {
 		name         string

@@ -122,17 +122,35 @@ func EnsureWaterTeamSchema(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
-	if db.Dialector.Name() != "postgres" {
-		return nil
-	}
-	// 历史并发写入可能已产生超员数据，先保留成员并抬高总名额，再添加约束。
+	// 申请记录是成员关系真值；一次性同步计数和总名额，兼容已有容量约束。
 	if err := db.Exec(`
-		UPDATE water_team_recruitments
-		SET accepted_count = GREATEST(accepted_count, 0),
-			needed_count = GREATEST(needed_count, accepted_count, 1)
-		WHERE accepted_count < 0 OR needed_count < 1 OR accepted_count > needed_count;
+		UPDATE water_team_recruitments AS recruitment
+		SET accepted_count = (
+				SELECT COUNT(*)
+				FROM water_team_applications AS application
+				WHERE application.recruitment_id = recruitment.id
+					AND application.status = 'accepted'
+			),
+			needed_count = CASE
+				WHEN needed_count < (
+					SELECT COUNT(*)
+					FROM water_team_applications AS application
+					WHERE application.recruitment_id = recruitment.id
+						AND application.status = 'accepted'
+				) THEN (
+					SELECT COUNT(*)
+					FROM water_team_applications AS application
+					WHERE application.recruitment_id = recruitment.id
+						AND application.status = 'accepted'
+				)
+				WHEN needed_count < 1 THEN 1
+				ELSE needed_count
+			END;
 	`).Error; err != nil {
 		return err
+	}
+	if db.Dialector.Name() != "postgres" {
+		return nil
 	}
 	constraints := []string{
 		`DO $$ BEGIN ALTER TABLE water_team_recruitments ADD CONSTRAINT chk_water_team_needed_count CHECK (needed_count >= 1); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,

@@ -80,11 +80,15 @@ class TeamRecruitmentProvider extends ChangeNotifier {
   CancelToken? _publicCancelToken;
   CancelToken? _mineCancelToken;
   int? _sessionUserId;
+  int _sessionVersion = 0;
+
+  int get sessionVersion => _sessionVersion;
 
   /// 登录用户变化时清空所有带账号语义的数据，并使旧请求结果失效。
   void syncSessionUser(int? userId) {
     if (_sessionUserId == userId) return;
     _sessionUserId = userId;
+    _sessionVersion++;
     _publicRequestVersion++;
     _mineRequestVersion++;
     _publicCancelToken?.cancel('登录用户已变化');
@@ -98,12 +102,14 @@ class TeamRecruitmentProvider extends ChangeNotifier {
     isLoadingMore = false;
     isRefreshing = false;
     isLoadingMine = false;
+    isCreating = false;
     publicError = null;
     refreshWarning = null;
     mineError = null;
     applyingIds.clear();
     closingIds.clear();
     reviewingApplicationIds.clear();
+    updatingIds.clear();
     loadingApplicationIds.clear();
     applicationErrors.clear();
     notifyListeners();
@@ -222,8 +228,10 @@ class TeamRecruitmentProvider extends ChangeNotifier {
   }
 
   Future<TeamRecruitment?> loadDetail(int recruitmentId) async {
+    final sessionVersion = _sessionVersion;
     try {
       final item = await _service.detail(recruitmentId);
+      if (sessionVersion != _sessionVersion) return null;
       _upsertRecruitment(item);
       notifyListeners();
       return item;
@@ -242,10 +250,12 @@ class TeamRecruitmentProvider extends ChangeNotifier {
     List<XFile> images = const [],
   }) async {
     if (isCreating) return null;
+    final sessionVersion = _sessionVersion;
     isCreating = true;
     notifyListeners();
     try {
       final fileIds = await _uploadImages(images);
+      if (sessionVersion != _sessionVersion) return null;
       final created = await _service.create(
         category: category,
         title: title,
@@ -255,14 +265,17 @@ class TeamRecruitmentProvider extends ChangeNotifier {
         deadline: deadline,
         imageFileIds: fileIds,
       );
+      if (sessionVersion != _sessionVersion) return null;
       myCreated = [created, ...myCreated];
       _upsertRecruitment(created);
       return created;
     } catch (_) {
       return null;
     } finally {
-      isCreating = false;
-      notifyListeners();
+      if (sessionVersion == _sessionVersion) {
+        isCreating = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -281,10 +294,15 @@ class TeamRecruitmentProvider extends ChangeNotifier {
       return const TeamOperationResult.failure(
           '正在保存，请勿重复提交', TeamErrorType.validation);
     }
+    final sessionVersion = _sessionVersion;
     updatingIds.add(recruitmentId);
     notifyListeners();
     try {
       final uploadedIds = await _uploadImages(images);
+      if (sessionVersion != _sessionVersion) {
+        return const TeamOperationResult.failure(
+            '登录状态已变化，请重试', TeamErrorType.unauthorized);
+      }
       final finalImageIds = imageFileIds == null && uploadedIds.isEmpty
           ? null
           : [...?imageFileIds, ...uploadedIds];
@@ -298,19 +316,30 @@ class TeamRecruitmentProvider extends ChangeNotifier {
         deadline: deadline,
         imageFileIds: finalImageIds,
       );
+      if (sessionVersion != _sessionVersion) {
+        return const TeamOperationResult.failure(
+            '登录状态已变化，请重试', TeamErrorType.unauthorized);
+      }
       _upsertRecruitment(updated);
       notifyListeners();
       return TeamOperationResult.success(updated);
     } catch (error) {
+      if (sessionVersion != _sessionVersion) {
+        return const TeamOperationResult.failure(
+            '登录状态已变化，请重试', TeamErrorType.unauthorized);
+      }
       return TeamOperationResult.failure(_error(error), _errorType(error));
     } finally {
-      updatingIds.remove(recruitmentId);
-      notifyListeners();
+      if (sessionVersion == _sessionVersion) {
+        updatingIds.remove(recruitmentId);
+        notifyListeners();
+      }
     }
   }
 
   Future<void> loadMine() async {
     final requestVersion = ++_mineRequestVersion;
+    final sessionVersion = _sessionVersion;
     _mineCancelToken?.cancel('已由最新请求替代');
     final cancelToken = _mineCancelToken = CancelToken();
     isLoadingMine = true;
@@ -318,16 +347,27 @@ class TeamRecruitmentProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final created = await _service.mine(cancelToken: cancelToken);
+      if (requestVersion != _mineRequestVersion ||
+          sessionVersion != _sessionVersion) {
+        return;
+      }
       final applications =
           await _service.myApplications(cancelToken: cancelToken);
-      if (requestVersion != _mineRequestVersion) return;
+      if (requestVersion != _mineRequestVersion ||
+          sessionVersion != _sessionVersion) {
+        return;
+      }
       myCreated = created;
       myApplications = applications;
     } catch (error) {
-      if (requestVersion != _mineRequestVersion) return;
+      if (requestVersion != _mineRequestVersion ||
+          sessionVersion != _sessionVersion) {
+        return;
+      }
       mineError = _error(error);
     } finally {
-      if (requestVersion == _mineRequestVersion) {
+      if (requestVersion == _mineRequestVersion &&
+          sessionVersion == _sessionVersion) {
         isLoadingMine = false;
         notifyListeners();
       }
@@ -339,16 +379,22 @@ class TeamRecruitmentProvider extends ChangeNotifier {
 
   Future<void> loadApplications(int recruitmentId) async {
     if (loadingApplicationIds.contains(recruitmentId)) return;
+    final sessionVersion = _sessionVersion;
     loadingApplicationIds.add(recruitmentId);
     applicationErrors.remove(recruitmentId);
     notifyListeners();
     try {
-      _applications[recruitmentId] = await _service.applications(recruitmentId);
+      final applications = await _service.applications(recruitmentId);
+      if (sessionVersion != _sessionVersion) return;
+      _applications[recruitmentId] = applications;
     } catch (error) {
+      if (sessionVersion != _sessionVersion) return;
       applicationErrors[recruitmentId] = _error(error);
     } finally {
-      loadingApplicationIds.remove(recruitmentId);
-      notifyListeners();
+      if (sessionVersion == _sessionVersion) {
+        loadingApplicationIds.remove(recruitmentId);
+        notifyListeners();
+      }
     }
   }
 
@@ -357,6 +403,7 @@ class TeamRecruitmentProvider extends ChangeNotifier {
       required String message,
       String availability = ''}) async {
     if (applyingIds.contains(recruitmentId)) return '申请正在提交，请勿重复操作';
+    final sessionVersion = _sessionVersion;
     applyingIds.add(recruitmentId);
     notifyListeners();
     try {
@@ -364,27 +411,36 @@ class TeamRecruitmentProvider extends ChangeNotifier {
           recruitmentId: recruitmentId,
           message: message,
           availability: availability);
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return null;
     } catch (error) {
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return _error(error);
     } finally {
-      applyingIds.remove(recruitmentId);
-      notifyListeners();
+      if (sessionVersion == _sessionVersion) {
+        applyingIds.remove(recruitmentId);
+        notifyListeners();
+      }
     }
   }
 
   Future<String?> cancel(int applicationId) async {
     if (reviewingApplicationIds.contains(applicationId)) return '正在处理，请勿重复操作';
+    final sessionVersion = _sessionVersion;
     reviewingApplicationIds.add(applicationId);
     notifyListeners();
     try {
       await _service.cancel(applicationId);
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return null;
     } catch (error) {
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return _error(error);
     } finally {
-      reviewingApplicationIds.remove(applicationId);
-      notifyListeners();
+      if (sessionVersion == _sessionVersion) {
+        reviewingApplicationIds.remove(applicationId);
+        notifyListeners();
+      }
     }
   }
 
@@ -397,6 +453,7 @@ class TeamRecruitmentProvider extends ChangeNotifier {
   Future<String?> _changeMembership(int applicationId,
       {required bool remove}) async {
     if (reviewingApplicationIds.contains(applicationId)) return '正在处理，请勿重复操作';
+    final sessionVersion = _sessionVersion;
     reviewingApplicationIds.add(applicationId);
     notifyListeners();
     try {
@@ -405,18 +462,23 @@ class TeamRecruitmentProvider extends ChangeNotifier {
       } else {
         await _service.leave(applicationId);
       }
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return null;
     } catch (error) {
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return _error(error);
     } finally {
-      reviewingApplicationIds.remove(applicationId);
-      notifyListeners();
+      if (sessionVersion == _sessionVersion) {
+        reviewingApplicationIds.remove(applicationId);
+        notifyListeners();
+      }
     }
   }
 
   Future<String?> review(int applicationId,
       {required bool accepted, String reply = ''}) async {
     if (reviewingApplicationIds.contains(applicationId)) return '正在处理，请勿重复操作';
+    final sessionVersion = _sessionVersion;
     reviewingApplicationIds.add(applicationId);
     notifyListeners();
     try {
@@ -425,27 +487,36 @@ class TeamRecruitmentProvider extends ChangeNotifier {
       } else {
         await _service.reject(applicationId, reply: reply);
       }
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return null;
     } catch (error) {
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return _error(error);
     } finally {
-      reviewingApplicationIds.remove(applicationId);
-      notifyListeners();
+      if (sessionVersion == _sessionVersion) {
+        reviewingApplicationIds.remove(applicationId);
+        notifyListeners();
+      }
     }
   }
 
   Future<String?> updateStatus(int recruitmentId, String status) async {
     if (closingIds.contains(recruitmentId)) return '正在更新状态，请勿重复操作';
+    final sessionVersion = _sessionVersion;
     closingIds.add(recruitmentId);
     notifyListeners();
     try {
       await _service.updateStatus(recruitmentId, status);
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return null;
     } catch (error) {
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
       return _error(error);
     } finally {
-      closingIds.remove(recruitmentId);
-      notifyListeners();
+      if (sessionVersion == _sessionVersion) {
+        closingIds.remove(recruitmentId);
+        notifyListeners();
+      }
     }
   }
 

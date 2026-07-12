@@ -17,10 +17,22 @@ class TeamApplicationManageScreen extends StatefulWidget {
 class _TeamApplicationManageScreenState
     extends State<TeamApplicationManageScreen> {
   String _filter = 'pending';
+  int _lastSessionVersion = -1;
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final sessionVersion =
+        context.watch<TeamRecruitmentProvider>().sessionVersion;
+    if (_lastSessionVersion == sessionVersion) return;
+    _lastSessionVersion = sessionVersion;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() => context

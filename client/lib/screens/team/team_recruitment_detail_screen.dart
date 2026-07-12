@@ -25,14 +25,32 @@ class _TeamRecruitmentDetailScreenState
   TeamRecruitment? _item;
   bool _loading = true;
   String? _error;
+  int _lastSessionVersion = -1;
+  int _loadVersion = 0;
 
   @override
   void initState() {
     super.initState();
-    _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final sessionVersion =
+        context.watch<TeamRecruitmentProvider>().sessionVersion;
+    if (_lastSessionVersion == sessionVersion) return;
+    _lastSessionVersion = sessionVersion;
+    _loadVersion++;
+    _item = null;
+    _loading = true;
+    _error = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {
+    final loadVersion = ++_loadVersion;
     setState(() {
       _loading = true;
       _error = null;
@@ -40,7 +58,7 @@ class _TeamRecruitmentDetailScreenState
     final item = await context
         .read<TeamRecruitmentProvider>()
         .loadDetail(widget.recruitmentId);
-    if (!mounted) return;
+    if (!mounted || loadVersion != _loadVersion) return;
     setState(() {
       _item = item;
       _loading = false;

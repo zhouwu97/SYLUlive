@@ -14,8 +14,8 @@ import (
 
 // WaterModeratorHandler 版主任命维护处理器
 type WaterModeratorHandler struct {
-	db         *gorm.DB
-	permSvc    *services.WaterPermissionService
+	db      *gorm.DB
+	permSvc *services.WaterPermissionService
 }
 
 // NewWaterModeratorHandler 构造
@@ -28,22 +28,22 @@ func NewWaterModeratorHandler(db *gorm.DB) *WaterModeratorHandler {
 
 // moderatorResponse 版主列表/详情返回体
 type moderatorResponse struct {
-	ID              uint       `json:"id"`
-	SectionID       uint       `json:"section_id"`
-	SectionSlug     string     `json:"section_slug"`
-	UserID          uint       `json:"user_id"`
-	User            *userBrief `json:"user,omitempty"`
-	Role            string     `json:"role"`
-	CanEditSection  bool       `json:"can_edit_section"`
-	CanManageTags   bool       `json:"can_manage_tags"`
-	CanPinPost      bool       `json:"can_pin_post"`
-	CanDeletePost   bool       `json:"can_delete_post"`
-	CanMuteUser     bool       `json:"can_mute_user"`
-	Status          string     `json:"status"`
-	AssignedBy      uint       `json:"assigned_by"`
-	AssignReason    string     `json:"assign_reason"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID             uint       `json:"id"`
+	SectionID      uint       `json:"section_id"`
+	SectionSlug    string     `json:"section_slug"`
+	UserID         uint       `json:"user_id"`
+	User           *userBrief `json:"user,omitempty"`
+	Role           string     `json:"role"`
+	CanEditSection bool       `json:"can_edit_section"`
+	CanManageTags  bool       `json:"can_manage_tags"`
+	CanPinPost     bool       `json:"can_pin_post"`
+	CanDeletePost  bool       `json:"can_delete_post"`
+	CanMuteUser    bool       `json:"can_mute_user"`
+	Status         string     `json:"status"`
+	AssignedBy     uint       `json:"assigned_by"`
+	AssignReason   string     `json:"assign_reason"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // userBrief 公开版主用户摘要（不含私密字段）
@@ -62,22 +62,22 @@ func userToBrief(u *models.User) *userBrief {
 
 func toModeratorResponse(m *models.WaterSectionModerator) moderatorResponse {
 	resp := moderatorResponse{
-		ID:              m.ID,
-		SectionID:        m.SectionID,
-		SectionSlug:      m.Section.Slug,
-		UserID:           m.UserID,
-		User:             userToBrief(&m.User),
-		Role:             m.Role,
-		CanEditSection:   m.CanEditSection,
-		CanManageTags:    m.CanManageTags,
-		CanPinPost:       m.CanPinPost,
-		CanDeletePost:    m.CanDeletePost,
-		CanMuteUser:      m.CanMuteUser,
-		Status:           m.Status,
-		AssignedBy:       m.AssignedBy,
-		AssignReason:     m.AssignReason,
-		CreatedAt:        m.CreatedAt,
-		UpdatedAt:        m.UpdatedAt,
+		ID:             m.ID,
+		SectionID:      m.SectionID,
+		SectionSlug:    m.Section.Slug,
+		UserID:         m.UserID,
+		User:           userToBrief(&m.User),
+		Role:           m.Role,
+		CanEditSection: m.CanEditSection,
+		CanManageTags:  m.CanManageTags,
+		CanPinPost:     m.CanPinPost,
+		CanDeletePost:  m.CanDeletePost,
+		CanMuteUser:    m.CanMuteUser,
+		Status:         m.Status,
+		AssignedBy:     m.AssignedBy,
+		AssignReason:   m.AssignReason,
+		CreatedAt:      m.CreatedAt,
+		UpdatedAt:      m.UpdatedAt,
 	}
 	return resp
 }
@@ -151,14 +151,14 @@ func (h *WaterModeratorHandler) GetModerators(c *gin.Context) {
 
 // assignModeratorRequest 任命请求体
 type assignModeratorRequest struct {
-	UserID          uint   `json:"user_id" binding:"required"`
-	Role            string `json:"role"`
-	CanEditSection  *bool  `json:"can_edit_section"`
-	CanManageTags   *bool  `json:"can_manage_tags"`
-	CanPinPost      *bool  `json:"can_pin_post"`
-	CanDeletePost   *bool  `json:"can_delete_post"`
-	CanMuteUser     *bool  `json:"can_mute_user"`
-	Reason          string `json:"reason"`
+	UserID         uint   `json:"user_id" binding:"required"`
+	Role           string `json:"role"`
+	CanEditSection *bool  `json:"can_edit_section"`
+	CanManageTags  *bool  `json:"can_manage_tags"`
+	CanPinPost     *bool  `json:"can_pin_post"`
+	CanDeletePost  *bool  `json:"can_delete_post"`
+	CanMuteUser    *bool  `json:"can_mute_user"`
+	Reason         string `json:"reason"`
 }
 
 // AssignModerator POST /api/admin/water/sections/:slug/moderators
@@ -276,13 +276,13 @@ func (h *WaterModeratorHandler) AssignModerator(c *gin.Context) {
 
 // updateModeratorRequest 修改权限请求体
 type updateModeratorRequest struct {
-	Role            *string `json:"role"`
-	CanEditSection  *bool   `json:"can_edit_section"`
-	CanManageTags   *bool   `json:"can_manage_tags"`
-	CanPinPost      *bool   `json:"can_pin_post"`
-	CanDeletePost   *bool   `json:"can_delete_post"`
-	CanMuteUser     *bool   `json:"can_mute_user"`
-	Reason          string  `json:"reason"`
+	Role           *string `json:"role"`
+	CanEditSection *bool   `json:"can_edit_section"`
+	CanManageTags  *bool   `json:"can_manage_tags"`
+	CanPinPost     *bool   `json:"can_pin_post"`
+	CanDeletePost  *bool   `json:"can_delete_post"`
+	CanMuteUser    *bool   `json:"can_mute_user"`
+	Reason         string  `json:"reason"`
 }
 
 // UpdateModerator PATCH /api/admin/water/sections/:slug/moderators/:moderator_id
@@ -385,10 +385,10 @@ func (h *WaterModeratorHandler) RevokeModerator(c *gin.Context) {
 
 	now := time.Now()
 	updates := map[string]interface{}{
-		"status":         models.ModeratorStatusRevoked,
-		"revoked_by":     c.GetUint("user_id"),
-		"revoked_at":     &now,
-		"revoke_reason":  req.Reason,
+		"status":        models.ModeratorStatusRevoked,
+		"revoked_by":    c.GetUint("user_id"),
+		"revoked_at":    &now,
+		"revoke_reason": req.Reason,
 	}
 	if err := h.db.Model(&mod).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "罢免版主失败"})

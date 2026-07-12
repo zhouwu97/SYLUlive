@@ -1694,7 +1694,6 @@ class _HomeScreenState extends State<HomeScreen>
                 onTap: _onTabTapped,
                 authProvider: authProvider,
                 badges: {
-                  0: _unreadBadgeCount > 0,
                   4: _hasAdminTasks,
                 },
               ),

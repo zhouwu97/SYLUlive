@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -30,6 +31,18 @@ type Reply struct {
 	Author    User         `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt time.Time    `json:"created_at"`
 	UpdatedAt time.Time    `json:"updated_at"`
+}
+
+// MarshalJSON 确保回复作者始终使用公开 DTO，而非数据库 User 模型。
+func (r Reply) MarshalJSON() ([]byte, error) {
+	type replyAlias Reply
+	return json.Marshal(struct {
+		replyAlias
+		Author PublicUserResponse `json:"author"`
+	}{
+		replyAlias: replyAlias(r),
+		Author:     PublicUser(r.Author),
+	})
 }
 
 // ReplyImage 回复图片关联

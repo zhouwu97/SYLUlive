@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -57,6 +58,41 @@ type User struct {
 	FollowersCount     int `gorm:"default:0;index" json:"followers_count"`
 	FollowingCount     int `gorm:"default:0;index" json:"following_count"`
 	TotalLikesReceived int `gorm:"default:0;index" json:"total_likes_received"`
+}
+
+// PublicUserResponse 是所有面向其他用户的用户资料响应。
+// 数据库 User 同时承载认证、信誉和教务字段，绝不能直接作为公开 API 的嵌套对象返回。
+type PublicUserResponse struct {
+	ID                 uint   `json:"id"`
+	Nickname           string `json:"nickname"`
+	Avatar             string `json:"avatar"`
+	Background         string `json:"background"`
+	Exp                int    `json:"exp"`
+	FollowersCount     int    `json:"followers_count"`
+	FollowingCount     int    `json:"following_count"`
+	TotalLikesReceived int    `json:"total_likes_received"`
+	IsFollowing        bool   `json:"is_following"`
+}
+
+// PublicUser 将数据库用户转换为安全的公开资料。
+func PublicUser(user User) PublicUserResponse {
+	return PublicUserResponse{
+		ID:                 user.ID,
+		Nickname:           user.Nickname,
+		Avatar:             user.Avatar,
+		Background:         user.Background,
+		Exp:                user.Exp,
+		FollowersCount:     user.FollowersCount,
+		FollowingCount:     user.FollowingCount,
+		TotalLikesReceived: user.TotalLikesReceived,
+		IsFollowing:        user.IsFollowing,
+	}
+}
+
+// MarshalJSON 为仍使用 User 关联模型的旧接口提供最后一道公开字段保护。
+// 本人资料必须由 handlers 的 SelfUserResponse 显式返回，不能依赖此方法。
+func (u User) MarshalJSON() ([]byte, error) {
+	return json.Marshal(PublicUser(u))
 }
 
 func (u *User) BeforeSave(tx *gorm.DB) (err error) {

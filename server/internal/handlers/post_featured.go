@@ -51,15 +51,7 @@ func lockingClause() clause.Locking {
 }
 
 func (h *PostHandler) GetFeaturedList(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 || limit > 50 {
-		limit = 20
-	}
-	offset := (page - 1) * limit
+	page, limit, offset := ParsePagination(c, 20, 50)
 
 	query := h.db.Model(&models.Post{}).
 		Where("status != ? AND is_featured = ?", models.PostStatusDeleted, true).

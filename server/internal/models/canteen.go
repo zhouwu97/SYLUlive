@@ -4,13 +4,14 @@ import "time"
 
 // Canteen 食堂/店铺
 type Canteen struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"size:100;not null;index" json:"name"`
-	Image     string    `gorm:"size:500;not null" json:"image"` // 封面图
-	Verified  bool      `gorm:"default:true" json:"verified"`   // 用户添加直接通过
-	CreatedBy uint      `gorm:"index" json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	Name           string    `gorm:"size:100;not null;index" json:"name"`
+	NormalizedName string    `gorm:"size:100;not null;default:''" json:"-"`
+	Image          string    `gorm:"size:500;not null" json:"image"` // 封面图
+	Verified       bool      `gorm:"default:false" json:"verified"`  // 仅管理员审核通过后公开
+	CreatedBy      uint      `gorm:"index" json:"created_by"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 
 	RatingCount int     `gorm:"-" json:"rating_count"`
 	AverageStar float64 `gorm:"-" json:"average_star"`

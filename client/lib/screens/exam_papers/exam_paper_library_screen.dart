@@ -18,10 +18,17 @@ import 'exam_paper_detail_screen.dart';
 import 'exam_paper_upload_screen.dart';
 import 'my_exam_paper_submissions_screen.dart';
 
+typedef ExamPaperServiceFactory = ExamPaperService Function(AuthProvider auth);
+
 class ExamPaperLibraryScreen extends StatefulWidget {
   final ExamPaperService? service;
+  final ExamPaperServiceFactory? serviceFactory;
 
-  const ExamPaperLibraryScreen({super.key, this.service});
+  const ExamPaperLibraryScreen({
+    super.key,
+    this.service,
+    this.serviceFactory,
+  });
 
   @override
   State<ExamPaperLibraryScreen> createState() => _ExamPaperLibraryScreenState();
@@ -33,6 +40,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   final List<ExamPaper> _items = [];
   final List<String> _academicYears = [];
   ExamPaperService? _service;
+  int? _serviceAuthGeneration;
   Timer? _searchDebounce;
   bool _loadScheduled = false;
   bool _loading = false;
@@ -58,7 +66,29 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final auth = context.watch<AuthProvider>();
-    _service ??= widget.service ?? ExamPaperService(auth.dio);
+    if (widget.service != null) {
+      _service ??= widget.service;
+    } else if (_service == null ||
+        _serviceAuthGeneration != auth.sessionGeneration) {
+      _requestGeneration++;
+      _serviceAuthGeneration = auth.sessionGeneration;
+      _service = widget.serviceFactory?.call(auth) ??
+          ExamPaperService(
+            auth.dio,
+            authSessionScope: auth.sessionGeneration,
+            currentAuthSessionScope: () => auth.sessionGeneration,
+          );
+      _items.clear();
+      _academicYears.clear();
+      _loading = false;
+      _refreshing = false;
+      _loadingMore = false;
+      _loadScheduled = false;
+      _hasMore = false;
+      _page = 1;
+      _total = 0;
+      _error = null;
+    }
     final canAccess = auth.isLoggedIn &&
         (auth.user?.isAdmin == true || auth.user?.eduBound == true);
     if (canAccess && !_loadScheduled && _items.isEmpty && !_loading) {

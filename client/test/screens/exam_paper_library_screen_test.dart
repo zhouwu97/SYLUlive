@@ -33,6 +33,20 @@ class _FakeAuthProvider extends AuthProvider {
   Future<void> refreshUser() async {}
 }
 
+class _SwitchableAuthProvider extends _FakeAuthProvider {
+  _SwitchableAuthProvider(super.fakeUser);
+
+  int _generation = 7;
+
+  @override
+  int get sessionGeneration => _generation;
+
+  void rotateSession() {
+    _generation++;
+    notifyListeners();
+  }
+}
+
 class _FakeExamPaperService extends ExamPaperService {
   _FakeExamPaperService() : super(Dio());
 
@@ -195,6 +209,44 @@ class _DelayedRefreshExamPaperService extends ExamPaperService {
 }
 
 void main() {
+  testWidgets('认证 generation 变化时重建生产试卷服务', (tester) async {
+    final user = User(
+      id: 1,
+      studentId: '20260001',
+      nickname: '测试用户',
+      eduBound: true,
+      createdAt: DateTime(2026),
+    );
+    final auth = _SwitchableAuthProvider(user);
+    final createdScopes = <int>[];
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ThemeProvider>(
+            create: (_) => ThemeProvider(loadOnStart: false),
+          ),
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+        ],
+        child: MaterialApp(
+          home: ExamPaperLibraryScreen(
+            serviceFactory: (currentAuth) {
+              createdScopes.add(currentAuth.sessionGeneration);
+              return _FakeExamPaperService();
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(createdScopes, [7]);
+
+    auth.rotateSession();
+    await tester.pumpAndSettle();
+
+    expect(createdScopes, [7, 8]);
+  });
+
   testWidgets('已认证用户看到搜索筛选、我的投稿和投稿入口', (tester) async {
     final user = User(
       id: 1,

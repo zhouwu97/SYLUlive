@@ -136,7 +136,7 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 		}
 		if nextErr != nil {
 			if stored != nil {
-				_ = h.files.Remove(stored.FileKey)
+				_ = h.files.DiscardPending(stored.FileKey)
 			}
 			h.writeUploadError(c, nextErr)
 			return

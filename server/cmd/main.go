@@ -1271,7 +1271,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.6.2",
+			"version": "1.6.1",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 

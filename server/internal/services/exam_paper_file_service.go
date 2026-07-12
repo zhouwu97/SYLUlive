@@ -105,7 +105,11 @@ type ExamPaperFileService struct {
 	maintenanceAfterSnapshot       func()
 	maintenanceBeforePendingDelete func(string)
 	maintenanceAfterPendingDelete  func(string)
+	maintenanceBeforeTrashDelete   func(string)
+	stageDeleteAfterRename         func()
 	trashRename                    func(string, string) error
+	chtimes                        func(string, time.Time, time.Time) error
+	now                            func() time.Time
 	chmod                          func(string, os.FileMode) error
 	remove                         func(string) error
 	claimAfterIntent               func()
@@ -150,7 +154,8 @@ func NewExamPaperFileService(rootDir string) (*ExamPaperFileService, error) {
 		rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir, sessionsDir: sessionsDir,
 		quotaLock: flock.New(filepath.Join(sessionsDir, ".quota.lock")), trashRename: os.Rename,
 		lifecycleLock: flock.New(filepath.Join(absoluteRoot, ".lifecycle.lock")),
-		chmod:         os.Chmod, remove: os.Remove, claimRemove: os.Remove, validateUpload: validateExamPaperPDF,
+		chtimes:       os.Chtimes, now: time.Now, chmod: os.Chmod, remove: os.Remove,
+		claimRemove: os.Remove, validateUpload: validateExamPaperPDF,
 		claimIntents: make(map[string]int),
 	}, nil
 }
@@ -844,6 +849,10 @@ func (s *ExamPaperFileService) Open(fileKey string) (*os.File, error) {
 
 // StageDelete 将文件原子移动到同一文件系统的 .trash 目录。
 func (s *ExamPaperFileService) StageDelete(fileKey string) (ExamPaperTrashMove, error) {
+	if err := s.lockLifecycle(); err != nil {
+		return ExamPaperTrashMove{}, err
+	}
+	defer s.unlockLifecycle()
 	originalPath, err := s.resolveFileKey(fileKey)
 	if err != nil {
 		return ExamPaperTrashMove{}, err
@@ -851,6 +860,16 @@ func (s *ExamPaperFileService) StageDelete(fileKey string) (ExamPaperTrashMove, 
 	trashPath := filepath.Join(s.trashDir, uuid.NewString()+"--"+fileKey)
 	if err := os.Rename(originalPath, trashPath); err != nil {
 		return ExamPaperTrashMove{}, err
+	}
+	if s.stageDeleteAfterRename != nil {
+		s.stageDeleteAfterRename()
+	}
+	now := s.now()
+	if err := s.chtimes(trashPath, now, now); err != nil {
+		if rollbackErr := os.Rename(trashPath, originalPath); rollbackErr != nil {
+			return ExamPaperTrashMove{}, fmt.Errorf("刷新暂存删除时间失败: %v；回滚文件失败: %w", err, rollbackErr)
+		}
+		return ExamPaperTrashMove{}, fmt.Errorf("刷新暂存删除时间失败: %w", err)
 	}
 	return ExamPaperTrashMove{FileKey: fileKey, OriginalPath: originalPath, TrashPath: trashPath}, nil
 }
@@ -860,6 +879,10 @@ func (s *ExamPaperFileService) RestoreDelete(move ExamPaperTrashMove) error {
 	if move.OriginalPath == "" || move.TrashPath == "" {
 		return nil
 	}
+	if err := s.lockLifecycle(); err != nil {
+		return err
+	}
+	defer s.unlockLifecycle()
 	if _, err := os.Stat(move.OriginalPath); err == nil {
 		return os.Remove(move.TrashPath)
 	} else if !os.IsNotExist(err) {
@@ -873,6 +896,10 @@ func (s *ExamPaperFileService) PurgeDelete(move ExamPaperTrashMove) error {
 	if move.TrashPath == "" {
 		return nil
 	}
+	if err := s.lockLifecycle(); err != nil {
+		return err
+	}
+	defer s.unlockLifecycle()
 	if err := os.Remove(move.TrashPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -1146,6 +1173,9 @@ func (s *ExamPaperFileService) Maintenance(now time.Time) (ExamPaperMaintenanceR
 		info, err := entry.Info()
 		if err != nil || !info.ModTime().Before(cutoff) {
 			continue
+		}
+		if s.maintenanceBeforeTrashDelete != nil {
+			s.maintenanceBeforeTrashDelete(entry.Name())
 		}
 		if err := s.lifecycleLock.Lock(); err != nil {
 			return result, err

@@ -18,6 +18,7 @@ import (
 const (
 	examPaperStorageJobInterval         = time.Minute
 	examPaperStorageMaintenanceInterval = 24 * time.Hour
+	examPaperStorageMaintenanceTimeout  = 30 * time.Minute
 	examPaperStorageJobBatchSize        = 50
 )
 
@@ -78,7 +79,9 @@ func StartExamPaperStorageCron(ctx context.Context, jobs examPaperStorageJobProc
 				return
 			default:
 			}
-			report, err := maintenance.Run(ctx)
+			maintenanceCtx, cancel := context.WithTimeout(ctx, examPaperStorageMaintenanceTimeout)
+			report, err := maintenance.Run(maintenanceCtx)
+			cancel()
 			if err != nil {
 				log.Printf("执行试卷存储完整性维护失败: %v", err)
 			} else {

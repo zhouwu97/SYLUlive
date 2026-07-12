@@ -282,6 +282,104 @@ func TestExamPaperFileServiceRejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestExamPaperFileServiceStageDeleteRefreshesTrashAgeBeforeCrossInstanceMaintenance(t *testing.T) {
+	root := t.TempDir()
+	stageService, err := NewExamPaperFileService(root)
+	if err != nil {
+		t.Fatalf("初始化暂存删除服务失败: %v", err)
+	}
+	maintenanceService, err := NewExamPaperFileService(root)
+	if err != nil {
+		t.Fatalf("初始化维护服务失败: %v", err)
+	}
+	stored, err := stageService.StoreUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存 PDF 失败: %v", err)
+	}
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	stageService.now = func() time.Time { return now }
+	old := now.Add(-8 * 24 * time.Hour)
+	if err := os.Chtimes(filepath.Join(root, stored.FileKey), old, old); err != nil {
+		t.Fatalf("设置旧文件时间失败: %v", err)
+	}
+
+	renameDone := make(chan struct{})
+	continueStage := make(chan struct{})
+	maintenanceReady := make(chan struct{})
+	stageService.stageDeleteAfterRename = func() {
+		close(renameDone)
+		<-continueStage
+	}
+	maintenanceService.maintenanceBeforeTrashDelete = func(string) { close(maintenanceReady) }
+	type stageResult struct {
+		move ExamPaperTrashMove
+		err  error
+	}
+	stageDone := make(chan stageResult, 1)
+	go func() {
+		move, err := stageService.StageDelete(stored.FileKey)
+		stageDone <- stageResult{move: move, err: err}
+	}()
+	<-renameDone
+	maintenanceDone := make(chan struct {
+		result ExamPaperMaintenanceResult
+		err    error
+	}, 1)
+	go func() {
+		result, err := maintenanceService.Maintenance(now)
+		maintenanceDone <- struct {
+			result ExamPaperMaintenanceResult
+			err    error
+		}{result: result, err: err}
+	}()
+	<-maintenanceReady
+	close(continueStage)
+	staged := <-stageDone
+	if staged.err != nil {
+		t.Fatalf("暂存删除失败: %v", staged.err)
+	}
+	maintained := <-maintenanceDone
+	if maintained.err != nil {
+		t.Fatalf("跨实例维护失败: %v", maintained.err)
+	}
+	result := maintained.result
+	if result.TrashFilesRemoved != 0 {
+		t.Fatalf("刚暂存的旧文件不得被维护删除: %+v", result)
+	}
+	if err := stageService.RestoreDelete(staged.move); err != nil {
+		t.Fatalf("维护后回滚暂存删除失败: %v", err)
+	}
+	if _, err := stageService.Stat(stored.FileKey); err != nil {
+		t.Fatalf("回滚后原文件应存在: %v", err)
+	}
+}
+
+func TestExamPaperFileServiceStageDeleteRollsBackWhenTrashAgeRefreshFails(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	stored, err := service.StoreUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存 PDF 失败: %v", err)
+	}
+	service.chtimes = func(string, time.Time, time.Time) error { return errors.New("模拟刷新时间失败") }
+
+	if _, err := service.StageDelete(stored.FileKey); err == nil {
+		t.Fatal("刷新回收站文件时间失败时暂存删除应失败")
+	}
+	if _, err := service.Stat(stored.FileKey); err != nil {
+		t.Fatalf("暂存删除失败后原文件应恢复: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(service.RootDir(), ".trash"))
+	if err != nil {
+		t.Fatalf("读取回收站失败: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("暂存删除失败后不得遗留回收站文件: %v", entries)
+	}
+}
+
 func TestPaperStoragePendingClaimAndTrashAreIdempotent(t *testing.T) {
 	service, err := NewExamPaperFileService(t.TempDir())
 	if err != nil {

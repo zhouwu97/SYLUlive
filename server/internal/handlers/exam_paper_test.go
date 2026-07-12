@@ -41,6 +41,8 @@ func newExamPaperTestEnv(t *testing.T) examPaperTestEnv {
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.ExamPaper{},
+		&models.ExamPaperUploadSession{},
+		&models.ExamPaperStorageJob{},
 		&models.Conversation{},
 		&models.Message{},
 		&models.AdminLog{},
@@ -379,6 +381,231 @@ func TestExamPaperUploadRateLimitsBurstSubmissions(t *testing.T) {
 	response := performExamPaperRequest(env.handler.Upload, http.MethodPost, "/api/exam-papers", nil, user.ID, body, contentType)
 	if response.Code != http.StatusTooManyRequests || decodeErrorCode(t, response) != "exam_paper_upload_rate_limited" {
 		t.Fatalf("短时间第 4 次上传应被限流: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+type remoteExamPaperHandlerTestEnv struct {
+	grantSigner   *services.ExamPaperStorageSigner
+	receiptSigner *services.ExamPaperStorageSigner
+	uploads       *services.ExamPaperUploadService
+}
+
+func configureRemoteExamPaperHandler(t *testing.T, env *examPaperTestEnv, mode string) remoteExamPaperHandlerTestEnv {
+	t.Helper()
+	now := func() time.Time { return examPaperUploadHandlerTestNow }
+	grantSigner, err := services.NewExamPaperStorageSigner("handler-grant-secret", now)
+	if err != nil {
+		t.Fatalf("创建上传授权签名器失败: %v", err)
+	}
+	receiptSigner, err := services.NewExamPaperStorageSigner("handler-receipt-secret", now)
+	if err != nil {
+		t.Fatalf("创建上传回执签名器失败: %v", err)
+	}
+	uploads := services.NewExamPaperUploadService(env.db, grantSigner, receiptSigner, now, nil)
+	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, mode, "https://sylulive.online/", uploads)
+	return remoteExamPaperHandlerTestEnv{grantSigner: grantSigner, receiptSigner: receiptSigner, uploads: uploads}
+}
+
+var examPaperUploadHandlerTestNow = time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
+
+func TestCreateRemoteExamPaperUploadSessionReturnsDirectUploadURL(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	remote := configureRemoteExamPaperHandler(t, &env, "remote")
+	user := createExamPaperTestUser(t, env.db, "remote-uploader", models.RoleUser, true, 0)
+
+	response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, map[string]any{
+		"course_name": "高等数学", "academic_year": "2025-2026", "semester": "first", "exam_type": "final",
+		"privacy_confirmed": true, "file_size": 1024,
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("创建远端上传会话失败: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		SessionID   string    `json:"session_id"`
+		UploadURL   string    `json:"upload_url"`
+		UploadToken string    `json:"upload_token"`
+		ExpiresAt   time.Time `json:"expires_at"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析上传会话响应失败: %v", err)
+	}
+	if payload.SessionID == "" || payload.UploadURL != "https://sylulive.online/v1/uploads/"+payload.SessionID {
+		t.Fatalf("直传地址错误: %+v", payload)
+	}
+	if !payload.ExpiresAt.Equal(examPaperUploadHandlerTestNow.Add(services.ExamPaperUploadSessionTTL)) {
+		t.Fatalf("会话过期时间错误: %s", payload.ExpiresAt)
+	}
+	grant, err := remote.grantSigner.VerifyGrant(payload.UploadToken, services.ExamPaperStoragePurposeUpload, http.MethodPost, "/v1/uploads/"+payload.SessionID)
+	if err != nil || grant.UserID != user.ID {
+		t.Fatalf("上传授权范围错误: grant=%+v err=%v", grant, err)
+	}
+	if strings.Contains(response.Body.String(), "storage_key") || strings.Contains(response.Body.String(), "sha256") {
+		t.Fatalf("上传会话响应泄露私有文件信息: %s", response.Body.String())
+	}
+}
+
+func TestCompleteRemoteExamPaperUploadSessionCreatesSubmission(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	remote := configureRemoteExamPaperHandler(t, &env, "remote")
+	user := createExamPaperTestUser(t, env.db, "remote-completer", models.RoleUser, true, 0)
+	metadata, err := models.NormalizeExamPaperMetadata("高等数学", "2025-2026", models.ExamPaperSemesterFirst, models.ExamPaperTypeFinal)
+	if err != nil {
+		t.Fatalf("创建测试元数据失败: %v", err)
+	}
+	session, _, err := remote.uploads.CreateSession(user, metadata, 1024)
+	if err != nil {
+		t.Fatalf("创建测试上传会话失败: %v", err)
+	}
+	receipt, err := remote.receiptSigner.SignReceipt(services.ExamPaperUploadReceipt{
+		SessionID: session.ID, FileKey: "11111111-1111-4111-8111-111111111111.pdf", FileSize: 1024,
+		SHA256: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", IssuedAt: examPaperUploadHandlerTestNow.Unix(),
+	})
+	if err != nil {
+		t.Fatalf("签发测试回执失败: %v", err)
+	}
+
+	response := performExamPaperJSONRequest(
+		env.handler.CompleteUploadSession,
+		http.MethodPost,
+		"/api/exam-papers/upload-sessions/"+session.ID+"/complete",
+		gin.Params{{Key: "id", Value: session.ID}},
+		user.ID,
+		map[string]any{"receipt": receipt},
+	)
+	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"status":"pending"`) {
+		t.Fatalf("完成远端上传会话失败: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "file_key") || strings.Contains(response.Body.String(), "sha256") {
+		t.Fatalf("完成响应泄露私有文件信息: %s", response.Body.String())
+	}
+	var paper models.ExamPaper
+	if err := env.db.First(&paper).Error; err != nil {
+		t.Fatalf("读取远端试卷失败: %v", err)
+	}
+	if paper.StorageBackend != models.ExamPaperStorageRemote {
+		t.Fatalf("试卷存储后端错误: %s", paper.StorageBackend)
+	}
+}
+
+func TestCompleteRemoteExamPaperUploadSessionMapsBoundaryErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		prepare    func(t *testing.T, env *examPaperTestEnv, remote remoteExamPaperHandlerTestEnv, owner, caller models.User) (*models.ExamPaperUploadSession, string)
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name: "伪造回执", wantStatus: http.StatusBadRequest, wantCode: "upload_receipt_invalid",
+			prepare: func(t *testing.T, _ *examPaperTestEnv, remote remoteExamPaperHandlerTestEnv, _ models.User, caller models.User) (*models.ExamPaperUploadSession, string) {
+				metadata, _ := models.NormalizeExamPaperMetadata("高等数学", "2025-2026", models.ExamPaperSemesterFirst, models.ExamPaperTypeFinal)
+				session, _, err := remote.uploads.CreateSession(caller, metadata, 1024)
+				if err != nil {
+					t.Fatalf("创建测试会话失败: %v", err)
+				}
+				return session, "forged-receipt"
+			},
+		},
+		{
+			name: "他人会话", wantStatus: http.StatusNotFound, wantCode: "upload_session_not_found",
+			prepare: func(t *testing.T, _ *examPaperTestEnv, remote remoteExamPaperHandlerTestEnv, owner, _ models.User) (*models.ExamPaperUploadSession, string) {
+				metadata, _ := models.NormalizeExamPaperMetadata("高等数学", "2025-2026", models.ExamPaperSemesterFirst, models.ExamPaperTypeFinal)
+				session, _, err := remote.uploads.CreateSession(owner, metadata, 1024)
+				if err != nil {
+					t.Fatalf("创建测试会话失败: %v", err)
+				}
+				receipt, err := remote.receiptSigner.SignReceipt(services.ExamPaperUploadReceipt{SessionID: session.ID, FileKey: "22222222-2222-4222-8222-222222222222.pdf", FileSize: 1024, SHA256: "2234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", IssuedAt: examPaperUploadHandlerTestNow.Unix()})
+				if err != nil {
+					t.Fatalf("签发测试回执失败: %v", err)
+				}
+				return session, receipt
+			},
+		},
+		{
+			name: "过期会话", wantStatus: http.StatusGone, wantCode: "upload_session_expired",
+			prepare: func(t *testing.T, env *examPaperTestEnv, remote remoteExamPaperHandlerTestEnv, _ models.User, caller models.User) (*models.ExamPaperUploadSession, string) {
+				metadata, _ := models.NormalizeExamPaperMetadata("高等数学", "2025-2026", models.ExamPaperSemesterFirst, models.ExamPaperTypeFinal)
+				session, _, err := remote.uploads.CreateSession(caller, metadata, 1024)
+				if err != nil {
+					t.Fatalf("创建测试会话失败: %v", err)
+				}
+				if err := env.db.Model(session).Update("expires_at", examPaperUploadHandlerTestNow.Add(-time.Second)).Error; err != nil {
+					t.Fatalf("设置过期会话失败: %v", err)
+				}
+				receipt, err := remote.receiptSigner.SignReceipt(services.ExamPaperUploadReceipt{SessionID: session.ID, FileKey: "33333333-3333-4333-8333-333333333333.pdf", FileSize: 1024, SHA256: "3234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", IssuedAt: examPaperUploadHandlerTestNow.Unix()})
+				if err != nil {
+					t.Fatalf("签发测试回执失败: %v", err)
+				}
+				return session, receipt
+			},
+		},
+		{
+			name: "重复文件", wantStatus: http.StatusConflict, wantCode: "duplicate_exam_paper",
+			prepare: func(t *testing.T, env *examPaperTestEnv, remote remoteExamPaperHandlerTestEnv, _ models.User, caller models.User) (*models.ExamPaperUploadSession, string) {
+				const duplicateSHA = "4234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+				if err := env.db.Create(&models.ExamPaper{Status: models.ExamPaperStatusPublished, Source: models.ExamPaperSourceUser, SubmitterID: caller.ID, CourseName: "已有试卷", AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst, ExamType: models.ExamPaperTypeFinal, Title: "已有试卷", FileKey: "existing.pdf", FileSize: 1024, SHA256: duplicateSHA}).Error; err != nil {
+					t.Fatalf("创建重复试卷失败: %v", err)
+				}
+				metadata, _ := models.NormalizeExamPaperMetadata("高等数学", "2025-2026", models.ExamPaperSemesterFirst, models.ExamPaperTypeFinal)
+				session, _, err := remote.uploads.CreateSession(caller, metadata, 1024)
+				if err != nil {
+					t.Fatalf("创建测试会话失败: %v", err)
+				}
+				receipt, err := remote.receiptSigner.SignReceipt(services.ExamPaperUploadReceipt{SessionID: session.ID, FileKey: "44444444-4444-4444-8444-444444444444.pdf", FileSize: 1024, SHA256: duplicateSHA, IssuedAt: examPaperUploadHandlerTestNow.Unix()})
+				if err != nil {
+					t.Fatalf("签发测试回执失败: %v", err)
+				}
+				return session, receipt
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := newExamPaperTestEnv(t)
+			remote := configureRemoteExamPaperHandler(t, &env, "remote")
+			owner := createExamPaperTestUser(t, env.db, "remote-owner-"+test.name, models.RoleUser, true, 0)
+			caller := createExamPaperTestUser(t, env.db, "remote-caller-"+test.name, models.RoleUser, true, 0)
+			session, receipt := test.prepare(t, &env, remote, owner, caller)
+			response := performExamPaperJSONRequest(env.handler.CompleteUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions/"+session.ID+"/complete", gin.Params{{Key: "id", Value: session.ID}}, caller.ID, map[string]any{"receipt": receipt})
+			if response.Code != test.wantStatus || decodeErrorCode(t, response) != test.wantCode {
+				t.Fatalf("错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestRemoteExamPaperUploadRequiresNewClientWithoutReadingMultipartBody(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	configureRemoteExamPaperHandler(t, &env, "remote")
+	user := createExamPaperTestUser(t, env.db, "legacy-remote-uploader", models.RoleUser, true, 0)
+	reader := &examPaperCountingReader{reader: bytes.NewReader(bytes.Repeat([]byte{'x'}, 1024))}
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/exam-papers", reader)
+	context.Request.Header.Set("Content-Type", "multipart/form-data")
+	context.Set("user_id", user.ID)
+
+	env.handler.Upload(context)
+
+	if recorder.Code != http.StatusUpgradeRequired || decodeErrorCode(t, recorder) != "client_upgrade_required" {
+		t.Fatalf("旧客户端上传应要求升级: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if reader.read != 0 {
+		t.Fatalf("主服务器不应读取旧客户端 PDF 请求体: read=%d", reader.read)
+	}
+}
+
+func TestReadonlyRemoteExamPaperStorageRejectsNewUploads(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	configureRemoteExamPaperHandler(t, &env, "readonly-remote")
+	user := createExamPaperTestUser(t, env.db, "readonly-uploader", models.RoleUser, true, 0)
+
+	response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, map[string]any{
+		"course_name": "高等数学", "academic_year": "2025-2026", "semester": "first", "exam_type": "final",
+		"privacy_confirmed": true, "file_size": 1024,
+	})
+	if response.Code != http.StatusServiceUnavailable || decodeErrorCode(t, response) != "storage_unavailable" {
+		t.Fatalf("只读远端模式应拒绝新上传: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

@@ -233,6 +233,13 @@ func TestPaperStorageUploadRejectsOversizedMultipartBodyAndReleasesSemaphore(t *
 			t.Fatalf("请求体超限后遗留文件: %s", entry.Name())
 		}
 	}
+	pendingEntries, err := os.ReadDir(filepath.Join(files.RootDir(), ".pending"))
+	if err != nil {
+		t.Fatalf("读取 pending 目录失败: %v", err)
+	}
+	if len(pendingEntries) != 0 {
+		t.Fatalf("请求体超限后遗留 pending marker: %d", len(pendingEntries))
+	}
 }
 
 func TestPaperStorageDownloadUsesAuthorizedInternalRedirect(t *testing.T) {

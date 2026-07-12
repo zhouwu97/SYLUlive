@@ -622,6 +622,54 @@ certbot renew --dry-run
 curl -fsS https://sylulive.online/healthz
 ```
 
+### 历史试卷文件迁移
+
+迁移命令只处理仍有效的 `pending`、`published` 本地试卷记录。它会流式读取主服务器上的原文件，重新计算实际大小和 SHA-256，再通过带 `metadata` scope 的短时授权读取文件服务器元数据；数据库记录、本地文件和远端文件的 key、大小、SHA-256 全部一致时，才允许把 `storage_backend` 条件更新为 `remote`。命令不会重新解析或解密 PDF，不会删除源文件，也不会输出密钥或授权 token。
+
+先在文件服务器准备目标目录，再从主服务器复制。SSH 用户、端口和密钥路径按生产实际值填写，不要把密码写入脚本或命令历史：
+
+```bash
+# 文件服务器：目标目录必须归 paper-storage 用户管理
+install -d -o paper-storage -g paper-storage -m 0700 \
+  /opt/sylg-paper-storage/data/exam-papers
+
+# 主服务器：保持 file_key 原文件名，不复制内部状态和临时文件
+rsync -a --checksum --itemize-changes \
+  --exclude='/.trash/' --exclude='/.pending/' --exclude='/.sessions/' --exclude='/.upload-*' \
+  -e "ssh -p <SSH端口> -i <SSH私钥路径>" \
+  /opt/shenliyuan/private/exam-papers/ \
+  <文件服务器SSH用户>@sylulive.online:/opt/sylg-paper-storage/data/exam-papers/
+
+# 文件服务器：复制完成后恢复服务属主和私有权限
+chown -R paper-storage:paper-storage /opt/sylg-paper-storage/data/exam-papers
+find /opt/sylg-paper-storage/data/exam-papers -type d -exec chmod 0700 {} +
+find /opt/sylg-paper-storage/data/exam-papers -type f -exec chmod 0600 {} +
+```
+
+`--checksum` 会按内容核对源和目标。不得复制 `.trash`、`.pending`、`.sessions` 或迁移期间产生的临时文件；目标端权限修复命令必须在文件服务器本机执行。
+
+复制后先运行默认 dry-run。命令从主服务器 `.env` 读取 `DSN`、`EXAM_PAPER_DIR`、`EXAM_PAPER_STORAGE_BASE_URL` 和签名密钥；生产环境应已配置文件服务地址 `https://sylulive.online`。可用 `--id` 单独演练，也可用 `--page-size` 调整批量分页：
+
+```bash
+cd /opt/shenliyuan-src/server
+
+# 默认即 dry-run；显式写出便于操作审计
+go run ./cmd/migrate_exam_papers_remote --dry-run
+go run ./cmd/migrate_exam_papers_remote --dry-run --id <试卷ID>
+```
+
+确认报告中 `failed=0`，并人工核对待迁移数量、源文件、目标文件两份副本后，再显式执行正式更新：
+
+```bash
+go run ./cmd/migrate_exam_papers_remote --apply
+# 或逐条切换
+go run ./cmd/migrate_exam_papers_remote --apply --id <试卷ID>
+```
+
+任意单条文件缺失、符号链接、路径非法、远端 metadata 缺失或不一致都会保留该记录为 `local`；批量任务会继续检查其余记录，最终以非零状态退出并汇总 `failed`。并发修改过的记录也不会被误标为远端。修正文件后可安全重跑；已是 `remote` 的记录会被跳过。
+
+迁移完成后主服务器源文件以只读方式保留至少 7 天，在备份和线上下载核验稳定前不得删除。发生异常时，把主服务器 `EXAM_PAPER_STORAGE_MODE` 设为 `readonly-remote` 并重启，可停止新远端上传；已标记为 `remote` 的记录仍从文件服务器读取，未迁移的 `local` 记录仍使用主服务器副本。该开关不会自动把数据库标记改回 `local`，因此不要依赖它将已迁移记录切回旧副本。
+
 后续升级只需传入新二进制，不需要再次提供邮箱，也不会重复签发或退回临时证书。安装脚本检测到 `/etc/letsencrypt/live/sylulive.online/fullchain.pem` 和 `privkey.pem` 后，会从模板重新渲染正式证书路径：
 
 ```bash

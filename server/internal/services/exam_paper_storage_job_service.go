@@ -14,7 +14,12 @@ import (
 	"shenliyuan/internal/models"
 )
 
-const examPaperStorageJobLease = 5 * time.Minute
+const (
+	examPaperStorageJobLease             = 5 * time.Minute
+	examPaperStorageJobSupersededByTrash = "superseded by trash"
+)
+
+var errExamPaperStorageJobSuperseded = errors.New("试卷存储任务已被删除终态取代")
 
 // ExamPaperStorageJobRemote 定义 outbox 消费者需要的远端幂等操作。
 type ExamPaperStorageJobRemote interface {
@@ -64,7 +69,7 @@ func (s *ExamPaperStorageJobService) Enqueue(tx *gorm.DB, backend models.ExamPap
 		if err := tx.Model(&models.ExamPaperStorageJob{}).
 			Where("storage_backend = ? AND file_key = ? AND operation = ? AND completed_at IS NULL", backend, fileKey, ExamPaperStoragePurposeClaim).
 			Updates(map[string]any{
-				"completed_at": s.now(), "locked_at": nil, "lock_token": "", "last_error": "superseded by trash",
+				"completed_at": s.now(), "locked_at": nil, "lock_token": "", "last_error": examPaperStorageJobSupersededByTrash,
 			}).Error; err != nil {
 			return err
 		}
@@ -105,12 +110,18 @@ func (s *ExamPaperStorageJobService) ProcessDue(ctx context.Context, limit int) 
 		operationErr := s.execute(ctx, job)
 		if operationErr == nil {
 			if err := s.complete(ctx, job); err != nil {
+				if errors.Is(err, errExamPaperStorageJobSuperseded) {
+					continue
+				}
 				return report, err
 			}
 			report.Completed++
 			continue
 		}
 		if err := s.fail(ctx, job, operationErr); err != nil {
+			if errors.Is(err, errExamPaperStorageJobSuperseded) {
+				continue
+			}
 			return report, err
 		}
 		report.Failed++
@@ -126,9 +137,16 @@ func (s *ExamPaperStorageJobService) ProcessJob(ctx context.Context, jobID uint)
 	}
 	operationErr := s.execute(ctx, job)
 	if operationErr == nil {
-		return s.complete(ctx, job)
+		err := s.complete(ctx, job)
+		if errors.Is(err, errExamPaperStorageJobSuperseded) {
+			return nil
+		}
+		return err
 	}
 	if err := s.fail(ctx, job, operationErr); err != nil {
+		if errors.Is(err, errExamPaperStorageJobSuperseded) {
+			return nil
+		}
 		return err
 	}
 	return operationErr
@@ -227,7 +245,7 @@ func (s *ExamPaperStorageJobService) complete(ctx context.Context, job models.Ex
 		return result.Error
 	}
 	if result.RowsAffected != 1 {
-		return errors.New("试卷存储任务完成状态已变化")
+		return s.storageJobStateChange(ctx, job.ID, errors.New("试卷存储任务完成状态已变化"))
 	}
 	return nil
 }
@@ -249,9 +267,25 @@ func (s *ExamPaperStorageJobService) fail(ctx context.Context, job models.ExamPa
 		return result.Error
 	}
 	if result.RowsAffected != 1 {
-		return errors.New("试卷存储任务失败状态已变化")
+		return s.storageJobStateChange(ctx, job.ID, errors.New("试卷存储任务失败状态已变化"))
 	}
 	return nil
+}
+
+// storageJobStateChange 仅将明确由删除终态取代的并发状态变化视为正常结束。
+func (s *ExamPaperStorageJobService) storageJobStateChange(ctx context.Context, jobID uint, stateErr error) error {
+	var current models.ExamPaperStorageJob
+	err := s.db.WithContext(ctx).Select("completed_at", "last_error").First(&current, jobID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return stateErr
+		}
+		return err
+	}
+	if current.CompletedAt != nil && current.LastError == examPaperStorageJobSupersededByTrash {
+		return errExamPaperStorageJobSuperseded
+	}
+	return stateErr
 }
 
 func examPaperStorageRetryDelay(attempt int) time.Duration {

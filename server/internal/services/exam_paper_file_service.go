@@ -25,17 +25,24 @@ import (
 const (
 	// ExamPaperMaxFileSize 是服务端允许的 PDF 最大字节数（20 MiB）。
 	ExamPaperMaxFileSize int64 = 20 * 1024 * 1024
+	// ExamPaperMaxUploadFailuresPerSession 限制单个上传会话可消耗的校验次数。
+	ExamPaperMaxUploadFailuresPerSession = 3
+	// ExamPaperMaxUnclaimedBytesPerUser 限制单用户尚未认领的文件和上传预留总量。
+	ExamPaperMaxUnclaimedBytesPerUser int64 = 100 * 1024 * 1024
 )
 
 var (
-	ErrInvalidPDF                     = errors.New("invalid pdf")
-	ErrEncryptedPDF                   = errors.New("encrypted pdf")
-	ErrExamPaperFileTooLarge          = errors.New("exam paper file too large")
-	ErrInvalidExamPaperFileKey        = errors.New("invalid exam paper file key")
-	ErrExamPaperUploadSessionInvalid  = errors.New("exam paper upload session invalid")
-	ErrExamPaperUploadSessionConsumed = errors.New("exam paper upload session consumed")
-	ErrExamPaperUploadInProgress      = errors.New("exam paper upload in progress")
-	pdfCPUConfigOnce                  sync.Once
+	ErrInvalidPDF                      = errors.New("invalid pdf")
+	ErrEncryptedPDF                    = errors.New("encrypted pdf")
+	ErrExamPaperFileTooLarge           = errors.New("exam paper file too large")
+	ErrInvalidExamPaperFileKey         = errors.New("invalid exam paper file key")
+	ErrExamPaperUploadSessionInvalid   = errors.New("exam paper upload session invalid")
+	ErrExamPaperUploadSessionConsumed  = errors.New("exam paper upload session consumed")
+	ErrExamPaperUploadInProgress       = errors.New("exam paper upload in progress")
+	ErrExamPaperUploadSizeMismatch     = errors.New("exam paper upload size mismatch")
+	ErrExamPaperUploadRetryExhausted   = errors.New("exam paper upload retry exhausted")
+	ErrExamPaperUnclaimedQuotaExceeded = errors.New("exam paper unclaimed quota exceeded")
+	pdfCPUConfigOnce                   sync.Once
 )
 
 // StoredExamPaperFile 是完成校验并落盘后的私有文件信息。
@@ -54,6 +61,7 @@ type ExamPaperUploadSessionBeginResult struct {
 type examPaperUploadSessionRecord struct {
 	SessionID    string    `json:"session_id"`
 	JTI          string    `json:"jti"`
+	UserID       uint      `json:"user_id"`
 	ExpectedSize int64     `json:"expected_size"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	Status       string    `json:"status"`
@@ -64,6 +72,7 @@ type examPaperUploadSessionRecord struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 	CompletedAt  time.Time `json:"completed_at,omitempty"`
+	ReleasedAt   time.Time `json:"released_at,omitempty"`
 }
 
 // ExamPaperTrashMove 描述同一文件系统内的一次原子暂存删除。
@@ -89,6 +98,7 @@ type ExamPaperFileService struct {
 	remove                   func(string) error
 	claimAfterIntent         func()
 	claimRemove              func(string) error
+	validateUpload           func(string) error
 }
 
 // NewExamPaperFileService 初始化权限为 0700 的私有目录和垃圾目录。
@@ -124,7 +134,7 @@ func NewExamPaperFileService(rootDir string) (*ExamPaperFileService, error) {
 	}
 
 	pdfCPUConfigOnce.Do(api.DisableConfigDir)
-	return &ExamPaperFileService{rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir, sessionsDir: sessionsDir, trashRename: os.Rename, chmod: os.Chmod, remove: os.Remove, claimRemove: os.Remove, claimIntents: make(map[string]int)}, nil
+	return &ExamPaperFileService{rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir, sessionsDir: sessionsDir, trashRename: os.Rename, chmod: os.Chmod, remove: os.Remove, claimRemove: os.Remove, validateUpload: validateExamPaperPDF, claimIntents: make(map[string]int)}, nil
 }
 
 // RootDir 返回私有根目录，仅供启动与测试代码使用。
@@ -134,6 +144,18 @@ func (s *ExamPaperFileService) RootDir() string {
 
 // BeginUploadSession 以独占文件创建方式占用一次上传授权，并返回已完成会话的原始回执。
 func (s *ExamPaperFileService) BeginUploadSession(sessionID, jti string, expectedSize int64, expiresAt, now time.Time) (ExamPaperUploadSessionBeginResult, error) {
+	return s.beginUploadSession(sessionID, jti, 0, expectedSize, expiresAt, now)
+}
+
+// BeginUploadSessionForUser 在占用前原子检查用户未认领字节配额。
+func (s *ExamPaperFileService) BeginUploadSessionForUser(sessionID, jti string, userID uint, expectedSize int64, expiresAt, now time.Time) (ExamPaperUploadSessionBeginResult, error) {
+	if userID == 0 {
+		return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadSessionInvalid
+	}
+	return s.beginUploadSession(sessionID, jti, userID, expectedSize, expiresAt, now)
+}
+
+func (s *ExamPaperFileService) beginUploadSession(sessionID, jti string, userID uint, expectedSize int64, expiresAt, now time.Time) (ExamPaperUploadSessionBeginResult, error) {
 	if !validExamPaperUploadSessionID(sessionID) || strings.TrimSpace(jti) == "" || expectedSize <= 0 || expectedSize > ExamPaperMaxFileSize {
 		return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadSessionInvalid
 	}
@@ -142,13 +164,34 @@ func (s *ExamPaperFileService) BeginUploadSession(sessionID, jti string, expecte
 
 	completedPath := s.uploadSessionPath(sessionID, "completed")
 	if completed, err := readExamPaperUploadSessionRecord(completedPath); err == nil {
-		return completedUploadSessionResult(completed, sessionID, jti, expectedSize)
+		return completedUploadSessionResult(completed, sessionID, jti, userID, expectedSize)
 	} else if !os.IsNotExist(err) {
 		return ExamPaperUploadSessionBeginResult{}, err
 	}
+	failures, err := s.uploadSessionFailureRecordsLocked(sessionID)
+	if err != nil {
+		return ExamPaperUploadSessionBeginResult{}, err
+	}
+	for _, failure := range failures {
+		if failure.SessionID != sessionID || failure.JTI != jti || failure.ExpectedSize != expectedSize || (userID != 0 && failure.UserID != userID) {
+			return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadSessionConsumed
+		}
+	}
+	if len(failures) >= ExamPaperMaxUploadFailuresPerSession {
+		return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadRetryExhausted
+	}
+	if userID != 0 {
+		used, err := s.unclaimedBytesForUserLocked(userID)
+		if err != nil {
+			return ExamPaperUploadSessionBeginResult{}, err
+		}
+		if used > ExamPaperMaxUnclaimedBytesPerUser-expectedSize {
+			return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUnclaimedQuotaExceeded
+		}
+	}
 
 	uploading := examPaperUploadSessionRecord{
-		SessionID: sessionID, JTI: jti, ExpectedSize: expectedSize, ExpiresAt: expiresAt,
+		SessionID: sessionID, JTI: jti, UserID: userID, ExpectedSize: expectedSize, ExpiresAt: expiresAt,
 		Status: "uploading", CreatedAt: now, UpdatedAt: now,
 	}
 	uploadingPath := s.uploadSessionPath(sessionID, "uploading")
@@ -157,7 +200,7 @@ func (s *ExamPaperFileService) BeginUploadSession(sessionID, jti string, expecte
 			return ExamPaperUploadSessionBeginResult{}, err
 		}
 		if completed, completedErr := readExamPaperUploadSessionRecord(completedPath); completedErr == nil {
-			return completedUploadSessionResult(completed, sessionID, jti, expectedSize)
+			return completedUploadSessionResult(completed, sessionID, jti, userID, expectedSize)
 		} else if !os.IsNotExist(completedErr) {
 			return ExamPaperUploadSessionBeginResult{}, completedErr
 		}
@@ -165,7 +208,7 @@ func (s *ExamPaperFileService) BeginUploadSession(sessionID, jti string, expecte
 		if readErr != nil {
 			return ExamPaperUploadSessionBeginResult{}, readErr
 		}
-		if existing.SessionID != sessionID || existing.JTI != jti || existing.ExpectedSize != expectedSize {
+		if existing.SessionID != sessionID || existing.JTI != jti || existing.ExpectedSize != expectedSize || (userID != 0 && existing.UserID != userID) {
 			return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadSessionConsumed
 		}
 		return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadInProgress
@@ -174,7 +217,7 @@ func (s *ExamPaperFileService) BeginUploadSession(sessionID, jti string, expecte
 	// 跨进程完成可能发生在首次检查之后；完成记录始终优先于刚创建的占用记录。
 	if completed, err := readExamPaperUploadSessionRecord(completedPath); err == nil {
 		_ = os.Remove(uploadingPath)
-		return completedUploadSessionResult(completed, sessionID, jti, expectedSize)
+		return completedUploadSessionResult(completed, sessionID, jti, userID, expectedSize)
 	} else if !os.IsNotExist(err) {
 		_ = os.Remove(uploadingPath)
 		return ExamPaperUploadSessionBeginResult{}, err
@@ -234,6 +277,44 @@ func (s *ExamPaperFileService) CompleteUploadSession(sessionID, jti, receipt str
 	}
 	// completed 已经同步落盘，是幂等结果的最终事实；占用记录清理失败可交给维护任务处理。
 	_ = os.Remove(uploadingPath)
+	s.removeUploadSessionFailureRecordsLocked(sessionID)
+	return nil
+}
+
+// FailUploadSession 原子记录一次可重试失败；记录成功后才释放 uploading 占用。
+func (s *ExamPaperFileService) FailUploadSession(sessionID, jti string, now time.Time) error {
+	if !validExamPaperUploadSessionID(sessionID) || strings.TrimSpace(jti) == "" {
+		return ErrExamPaperUploadSessionInvalid
+	}
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	uploadingPath := s.uploadSessionPath(sessionID, "uploading")
+	record, err := readExamPaperUploadSessionRecord(uploadingPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if record.SessionID != sessionID || record.JTI != jti {
+		return ErrExamPaperUploadSessionConsumed
+	}
+	failures, err := s.uploadSessionFailureRecordsLocked(sessionID)
+	if err != nil {
+		return err
+	}
+	if len(failures) >= ExamPaperMaxUploadFailuresPerSession {
+		return ErrExamPaperUploadRetryExhausted
+	}
+	record.Status = "failed"
+	record.UpdatedAt = now
+	failurePath := s.uploadSessionFailurePath(sessionID, len(failures)+1)
+	if err := writeExamPaperUploadSessionRecordExclusive(failurePath, record); err != nil {
+		return err
+	}
+	if err := os.Remove(uploadingPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return nil
 }
 
@@ -261,8 +342,155 @@ func (s *ExamPaperFileService) AbortUploadSession(sessionID, jti string) error {
 	return nil
 }
 
+// ReleaseUploadSessionByFileKey 持久标记文件已认领或已移入回收站，随后才释放用户配额。
+func (s *ExamPaperFileService) ReleaseUploadSessionByFileKey(fileKey string, now time.Time) error {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	_, err := s.releaseUploadSessionByFileKeyLocked(fileKey, now)
+	return err
+}
+
+func (s *ExamPaperFileService) releaseUploadSessionByFileKeyLocked(fileKey string, now time.Time) (bool, error) {
+	entries, err := os.ReadDir(s.sessionsDir)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".completed.json") {
+			continue
+		}
+		record, err := readExamPaperUploadSessionRecord(filepath.Join(s.sessionsDir, entry.Name()))
+		if err != nil {
+			return false, err
+		}
+		if record.FileKey != fileKey {
+			continue
+		}
+		releasedPath := s.uploadSessionPath(record.SessionID, "released")
+		if existing, err := readExamPaperUploadSessionRecord(releasedPath); err == nil {
+			if existing.SessionID == record.SessionID && existing.FileKey == fileKey {
+				return true, nil
+			}
+			return false, ErrExamPaperUploadSessionInvalid
+		} else if !os.IsNotExist(err) {
+			return false, err
+		}
+		released := record
+		released.Status = "released"
+		released.UpdatedAt = now
+		released.ReleasedAt = now
+		if err := writeExamPaperUploadSessionRecordExclusive(releasedPath, released); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func (s *ExamPaperFileService) removeUploadSessionStateByFileKey(fileKey string) (bool, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	entries, err := os.ReadDir(s.sessionsDir)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".completed.json") {
+			continue
+		}
+		path := filepath.Join(s.sessionsDir, entry.Name())
+		record, err := readExamPaperUploadSessionRecord(path)
+		if err != nil {
+			return false, err
+		}
+		if record.FileKey != fileKey {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return false, err
+		}
+		_ = os.Remove(s.uploadSessionPath(record.SessionID, "released"))
+		s.removeUploadSessionFailureRecordsLocked(record.SessionID)
+		return true, nil
+	}
+	return false, nil
+}
+
 func (s *ExamPaperFileService) uploadSessionPath(sessionID, status string) string {
 	return filepath.Join(s.sessionsDir, sessionID+"."+status+".json")
+}
+
+func (s *ExamPaperFileService) uploadSessionFailurePath(sessionID string, attempt int) string {
+	return filepath.Join(s.sessionsDir, fmt.Sprintf("%s.failure.%d.json", sessionID, attempt))
+}
+
+func (s *ExamPaperFileService) uploadSessionFailureRecordsLocked(sessionID string) ([]examPaperUploadSessionRecord, error) {
+	records := make([]examPaperUploadSessionRecord, 0, ExamPaperMaxUploadFailuresPerSession)
+	for attempt := 1; attempt <= ExamPaperMaxUploadFailuresPerSession; attempt++ {
+		record, err := readExamPaperUploadSessionRecord(s.uploadSessionFailurePath(sessionID, attempt))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func (s *ExamPaperFileService) removeUploadSessionFailureRecordsLocked(sessionID string) {
+	for attempt := 1; attempt <= ExamPaperMaxUploadFailuresPerSession; attempt++ {
+		_ = os.Remove(s.uploadSessionFailurePath(sessionID, attempt))
+	}
+}
+
+func (s *ExamPaperFileService) unclaimedBytesForUserLocked(userID uint) (int64, error) {
+	entries, err := os.ReadDir(s.sessionsDir)
+	if err != nil {
+		return 0, err
+	}
+	completedSessions := make(map[string]struct{})
+	var total int64
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".completed.json") {
+			continue
+		}
+		record, err := readExamPaperUploadSessionRecord(filepath.Join(s.sessionsDir, entry.Name()))
+		if err != nil {
+			return 0, err
+		}
+		completedSessions[record.SessionID] = struct{}{}
+		if record.UserID != userID {
+			continue
+		}
+		if _, err := readExamPaperUploadSessionRecord(s.uploadSessionPath(record.SessionID, "released")); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return 0, err
+		}
+		if record.FileSize <= 0 || record.FileSize > ExamPaperMaxFileSize {
+			return 0, ErrExamPaperUploadSessionInvalid
+		}
+		total += record.FileSize
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".uploading.json") {
+			continue
+		}
+		record, err := readExamPaperUploadSessionRecord(filepath.Join(s.sessionsDir, entry.Name()))
+		if err != nil {
+			return 0, err
+		}
+		if _, completed := completedSessions[record.SessionID]; completed || record.UserID != userID {
+			continue
+		}
+		if record.ExpectedSize <= 0 || record.ExpectedSize > ExamPaperMaxFileSize {
+			return 0, ErrExamPaperUploadSessionInvalid
+		}
+		total += record.ExpectedSize
+	}
+	return total, nil
 }
 
 func validExamPaperUploadSessionID(sessionID string) bool {
@@ -270,9 +498,9 @@ func validExamPaperUploadSessionID(sessionID string) bool {
 	return err == nil && parsed.String() == sessionID
 }
 
-func completedUploadSessionResult(record examPaperUploadSessionRecord, sessionID, jti string, expectedSize int64) (ExamPaperUploadSessionBeginResult, error) {
+func completedUploadSessionResult(record examPaperUploadSessionRecord, sessionID, jti string, userID uint, expectedSize int64) (ExamPaperUploadSessionBeginResult, error) {
 	if record.Status != "completed" || record.SessionID != sessionID || record.JTI != jti ||
-		record.ExpectedSize != expectedSize || strings.TrimSpace(record.Receipt) == "" {
+		record.ExpectedSize != expectedSize || (userID != 0 && record.UserID != userID) || strings.TrimSpace(record.Receipt) == "" {
 		return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadSessionConsumed
 	}
 	return ExamPaperUploadSessionBeginResult{Completed: true, Receipt: record.Receipt}, nil
@@ -350,15 +578,23 @@ func (s *ExamPaperFileService) StoreUpload(header *multipart.FileHeader) (_ *Sto
 // StoreUploadReader 流式保存、计算 SHA-256，并用 pdfcpu 验证 PDF 结构和加密状态。
 // 调用方应确保 reader 直接来自受限的 HTTP 请求体，避免框架先将大文件写入系统临时目录。
 func (s *ExamPaperFileService) StoreUploadReader(filename string, source io.Reader) (_ *StoredExamPaperFile, err error) {
-	return s.storeUploadReader(filename, source, false)
+	return s.storeUploadReader(filename, source, false, 0)
 }
 
 // StorePendingUploadReader 在生命周期锁内提交文件和待认领标记，避免落盘孤儿。
 func (s *ExamPaperFileService) StorePendingUploadReader(filename string, source io.Reader) (*StoredExamPaperFile, error) {
-	return s.storeUploadReader(filename, source, true)
+	return s.storeUploadReader(filename, source, true, 0)
 }
 
-func (s *ExamPaperFileService) storeUploadReader(filename string, source io.Reader, pending bool) (_ *StoredExamPaperFile, err error) {
+// StorePendingUploadReaderExpected 按授权大小多读取一个字节即停止，避免小授权消耗大文件校验资源。
+func (s *ExamPaperFileService) StorePendingUploadReaderExpected(filename string, source io.Reader, expectedSize int64) (*StoredExamPaperFile, error) {
+	if expectedSize <= 0 || expectedSize > ExamPaperMaxFileSize {
+		return nil, ErrExamPaperUploadSizeMismatch
+	}
+	return s.storeUploadReader(filename, source, true, expectedSize)
+}
+
+func (s *ExamPaperFileService) storeUploadReader(filename string, source io.Reader, pending bool, expectedSize int64) (_ *StoredExamPaperFile, err error) {
 	if source == nil || !strings.EqualFold(filepath.Ext(filename), ".pdf") {
 		return nil, ErrInvalidPDF
 	}
@@ -376,7 +612,11 @@ func (s *ExamPaperFileService) storeUploadReader(filename string, source io.Read
 	}()
 
 	hash := sha256.New()
-	limited := &io.LimitedReader{R: source, N: ExamPaperMaxFileSize + 1}
+	readLimit := ExamPaperMaxFileSize + 1
+	if expectedSize > 0 {
+		readLimit = expectedSize + 1
+	}
+	limited := &io.LimitedReader{R: source, N: readLimit}
 	written, copyErr := io.Copy(io.MultiWriter(tempFile, hash), limited)
 	closeErr := tempFile.Close()
 	if copyErr != nil {
@@ -387,6 +627,9 @@ func (s *ExamPaperFileService) storeUploadReader(filename string, source io.Read
 	}
 	if written > ExamPaperMaxFileSize {
 		return nil, ErrExamPaperFileTooLarge
+	}
+	if expectedSize > 0 && written != expectedSize {
+		return nil, ErrExamPaperUploadSizeMismatch
 	}
 	if written < 5 {
 		return nil, ErrInvalidPDF
@@ -403,7 +646,11 @@ func (s *ExamPaperFileService) storeUploadReader(filename string, source io.Read
 		return nil, ErrInvalidPDF
 	}
 
-	if err := validateExamPaperPDF(tempPath); err != nil {
+	validate := s.validateUpload
+	if validate == nil {
+		validate = validateExamPaperPDF
+	}
+	if err := validate(tempPath); err != nil {
 		return nil, err
 	}
 
@@ -582,8 +829,12 @@ func (s *ExamPaperFileService) Claim(fileKey string) error {
 		s.claimAfterIntent()
 	}
 	s.lifecycleMu.Lock()
-	defer s.lifecycleMu.Unlock()
-	return s.claimLocked(fileKey)
+	err := s.claimLocked(fileKey)
+	s.lifecycleMu.Unlock()
+	if err != nil {
+		return err
+	}
+	return s.ReleaseUploadSessionByFileKey(fileKey, time.Now())
 }
 
 func (s *ExamPaperFileService) claimIntentExists(fileKey string) bool {
@@ -605,24 +856,31 @@ func (s *ExamPaperFileService) claimLocked(fileKey string) error {
 // Trash 幂等地将文件移入回收站，并清理待认领标记。
 func (s *ExamPaperFileService) Trash(fileKey string) error {
 	s.lifecycleMu.Lock()
-	defer s.lifecycleMu.Unlock()
 	originalPath, err := s.resolveFileKey(fileKey)
+	if err != nil {
+		s.lifecycleMu.Unlock()
+		return err
+	}
+	_, statErr := s.Stat(fileKey)
+	if os.IsNotExist(statErr) {
+		err = s.claimLocked(fileKey)
+	} else if statErr != nil {
+		s.lifecycleMu.Unlock()
+		return statErr
+	} else {
+		trashPath := filepath.Join(s.trashDir, uuid.NewString()+"--"+fileKey)
+		if err = s.trashRename(originalPath, trashPath); err == nil {
+			err = os.Chmod(trashPath, 0o600)
+		}
+		if err == nil {
+			err = s.claimLocked(fileKey)
+		}
+	}
+	s.lifecycleMu.Unlock()
 	if err != nil {
 		return err
 	}
-	if _, err := s.Stat(fileKey); os.IsNotExist(err) {
-		return s.claimLocked(fileKey)
-	} else if err != nil {
-		return err
-	}
-	trashPath := filepath.Join(s.trashDir, uuid.NewString()+"--"+fileKey)
-	if err := s.trashRename(originalPath, trashPath); err != nil {
-		return err
-	}
-	if err := os.Chmod(trashPath, 0o600); err != nil {
-		return err
-	}
-	return s.claimLocked(fileKey)
+	return s.ReleaseUploadSessionByFileKey(fileKey, time.Now())
 }
 
 // DiscardPending 原子删除待认领文件；文件删除失败时保留 marker 供维护清理。
@@ -727,6 +985,13 @@ func (s *ExamPaperFileService) Maintenance(now time.Time) (ExamPaperMaintenanceR
 				return result, removeErr
 			}
 		}
+		stateRemoved, stateErr := s.removeUploadSessionStateByFileKey(fileKey)
+		if stateErr != nil {
+			return result, stateErr
+		}
+		if stateRemoved {
+			result.CompletedUploadSessionsRemoved++
+		}
 		if removeErr := os.Remove(filepath.Join(s.pendingDir, fileKey)); removeErr == nil {
 			result.PendingMarkersRemoved++
 		} else if !os.IsNotExist(removeErr) {
@@ -790,23 +1055,28 @@ func (s *ExamPaperFileService) maintainUploadSessions(now time.Time, result *Exa
 		if readErr != nil {
 			continue
 		}
-		remove := false
 		completed := strings.HasSuffix(entry.Name(), ".completed.json") && record.Status == "completed"
-		switch {
-		case completed && record.CompletedAt.Before(now.Add(-24*time.Hour)):
-			remove = true
-		case strings.HasSuffix(entry.Name(), ".uploading.json") && record.Status == "uploading" && record.UpdatedAt.Before(now.Add(-time.Hour)):
-			remove = true
-		}
-		if !remove {
+		if completed {
+			releasedPath := s.uploadSessionPath(record.SessionID, "released")
+			released, err := readExamPaperUploadSessionRecord(releasedPath)
+			if os.IsNotExist(err) || (err == nil && !released.ReleasedAt.Before(now.Add(-24*time.Hour))) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			_ = os.Remove(releasedPath)
+			s.removeUploadSessionFailureRecordsLocked(record.SessionID)
+			result.CompletedUploadSessionsRemoved++
 			continue
 		}
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if completed {
-			result.CompletedUploadSessionsRemoved++
-		} else {
+		if strings.HasSuffix(entry.Name(), ".uploading.json") && record.Status == "uploading" && record.UpdatedAt.Before(now.Add(-time.Hour)) {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
 			result.StaleUploadSessionsRemoved++
 		}
 	}

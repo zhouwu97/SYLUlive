@@ -28,11 +28,11 @@ type PaperStorageHandler struct {
 	now                   func() time.Time
 	diskUsage             func(string) (float64, error)
 	validations           chan struct{}
-	storePending          func(string, io.Reader) (*services.StoredExamPaperFile, error)
+	storePending          func(string, io.Reader, int64) (*services.StoredExamPaperFile, error)
 	statFile              func(string) (os.FileInfo, error)
-	beginUploadSession    func(string, string, int64, time.Time, time.Time) (services.ExamPaperUploadSessionBeginResult, error)
+	beginUploadSession    func(string, string, uint, int64, time.Time, time.Time) (services.ExamPaperUploadSessionBeginResult, error)
 	completeUploadSession func(string, string, string, services.StoredExamPaperFile, time.Time) error
-	abortUploadSession    func(string, string) error
+	failUploadSession     func(string, string, time.Time) error
 }
 
 // NewPaperStorageHandler 创建独立文件服务处理器。
@@ -46,11 +46,11 @@ func NewPaperStorageHandler(files *services.ExamPaperFileService, grantSigner, r
 		validations: make(chan struct{}, maxConcurrentValidations),
 	}
 	if files != nil {
-		handler.storePending = files.StorePendingUploadReader
+		handler.storePending = files.StorePendingUploadReaderExpected
 		handler.statFile = files.Stat
-		handler.beginUploadSession = files.BeginUploadSession
+		handler.beginUploadSession = files.BeginUploadSessionForUser
 		handler.completeUploadSession = files.CompleteUploadSession
-		handler.abortUploadSession = files.AbortUploadSession
+		handler.failUploadSession = files.FailUploadSession
 	}
 	return handler
 }
@@ -119,7 +119,7 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	begin, err := h.beginUploadSession(sessionID, grant.JTI, grant.ExpectedSize, time.Unix(grant.ExpiresAt, 0), h.now())
+	begin, err := h.beginUploadSession(sessionID, grant.JTI, grant.UserID, grant.ExpectedSize, time.Unix(grant.ExpiresAt, 0), h.now())
 	if err != nil {
 		h.writeUploadSessionError(c, err)
 		return
@@ -131,7 +131,7 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 	completed := false
 	defer func() {
 		if !completed {
-			_ = h.abortUploadSession(sessionID, grant.JTI)
+			_ = h.failUploadSession(sessionID, grant.JTI, h.now())
 		}
 	}()
 	usage, err := h.diskUsage(h.files.RootDir())
@@ -169,7 +169,7 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 			continue
 		}
 		defer part.Close()
-		stored, err = h.storePendingWithSlot(c, part.FileName(), part)
+		stored, err = h.storePendingWithSlot(c, part.FileName(), part, grant.ExpectedSize)
 		if err != nil {
 			h.writeUploadError(c, err)
 			return
@@ -210,12 +210,16 @@ func (h *PaperStorageHandler) writeUploadSessionError(c *gin.Context, err error)
 		c.JSON(http.StatusConflict, gin.H{"error": "upload_session_invalid"})
 	case errors.Is(err, services.ErrExamPaperUploadSessionInvalid):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "upload_session_invalid"})
+	case errors.Is(err, services.ErrExamPaperUploadRetryExhausted):
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "upload_retry_exhausted"})
+	case errors.Is(err, services.ErrExamPaperUnclaimedQuotaExceeded):
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "upload_unclaimed_quota_exceeded"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
 	}
 }
 
-func (h *PaperStorageHandler) storePendingWithSlot(c *gin.Context, filename string, source io.Reader) (stored *services.StoredExamPaperFile, err error) {
+func (h *PaperStorageHandler) storePendingWithSlot(c *gin.Context, filename string, source io.Reader, expectedSize int64) (stored *services.StoredExamPaperFile, err error) {
 	select {
 	case h.validations <- struct{}{}:
 	case <-c.Request.Context().Done():
@@ -227,7 +231,7 @@ func (h *PaperStorageHandler) storePendingWithSlot(c *gin.Context, filename stri
 			panic(recovered)
 		}
 	}()
-	return h.storePending(filename, source)
+	return h.storePending(filename, source, expectedSize)
 }
 
 func (h *PaperStorageHandler) writeUploadError(c *gin.Context, err error) {
@@ -237,6 +241,8 @@ func (h *PaperStorageHandler) writeUploadError(c *gin.Context, err error) {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file too large"})
 	case errors.Is(err, services.ErrInvalidPDF), errors.Is(err, services.ErrEncryptedPDF):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid pdf"})
+	case errors.Is(err, services.ErrExamPaperUploadSizeMismatch):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "file_size_mismatch"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
 	}

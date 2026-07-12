@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -74,6 +76,17 @@ func multipartFileHeader(t *testing.T, filename string, content []byte) *multipa
 	return header
 }
 
+type examPaperCountingReader struct {
+	reader io.Reader
+	read   int64
+}
+
+func (r *examPaperCountingReader) Read(buffer []byte) (int, error) {
+	count, err := r.reader.Read(buffer)
+	r.read += int64(count)
+	return count, err
+}
+
 func TestExamPaperFileServiceStoresValidatedPDFPrivately(t *testing.T) {
 	root := t.TempDir()
 	service, err := NewExamPaperFileService(root)
@@ -129,6 +142,39 @@ func TestExamPaperFileServiceRejectsInvalidAndOversizedFiles(t *testing.T) {
 				t.Fatalf("错误类型不符: got=%v want=%v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestPaperStoragePendingUploadStopsAtExpectedSizeBeforePDFValidation(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	validated := false
+	service.validateUpload = func(string) error {
+		validated = true
+		return nil
+	}
+	const expectedSize int64 = 8
+	source := &examPaperCountingReader{reader: io.MultiReader(strings.NewReader("%PDF-1234"), bytes.NewReader(bytes.Repeat([]byte("x"), 1024*1024)))}
+	stored, err := service.StorePendingUploadReaderExpected("paper.pdf", source, expectedSize)
+	if !errors.Is(err, ErrExamPaperUploadSizeMismatch) || stored != nil {
+		t.Fatalf("大小不符错误类型错误: stored=%+v err=%v", stored, err)
+	}
+	if source.read != expectedSize+1 {
+		t.Fatalf("应在 expectedSize+1 字节停止读取: read=%d", source.read)
+	}
+	if validated {
+		t.Fatal("大小不符不应进入 PDF 结构验证")
+	}
+	entries, err := os.ReadDir(service.RootDir())
+	if err != nil {
+		t.Fatalf("读取存储目录失败: %v", err)
+	}
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) == ".pdf" {
+			t.Fatalf("大小不符后遗留 PDF: %s", entry.Name())
+		}
 	}
 }
 
@@ -674,6 +720,169 @@ func TestPaperStorageUploadSessionRejectsConcurrentOrMismatchedUse(t *testing.T)
 	}
 }
 
+func TestPaperStorageUploadSessionFailureLimitPersistsAcrossRestart(t *testing.T) {
+	root := t.TempDir()
+	service, err := NewExamPaperFileService(root)
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	const sessionID = "88888888-8888-4888-8888-888888888888"
+	const jti = "failure-limit-jti"
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	for attempt := 0; attempt < ExamPaperMaxUploadFailuresPerSession; attempt++ {
+		if _, err := service.BeginUploadSessionForUser(sessionID, jti, 42, 100, now.Add(time.Minute), now); err != nil {
+			t.Fatalf("第 %d 次占用失败: %v", attempt+1, err)
+		}
+		if err := service.FailUploadSession(sessionID, jti, now); err != nil {
+			t.Fatalf("第 %d 次记录失败次数失败: %v", attempt+1, err)
+		}
+	}
+	restarted, err := NewExamPaperFileService(root)
+	if err != nil {
+		t.Fatalf("重建文件服务失败: %v", err)
+	}
+	if _, err := restarted.BeginUploadSessionForUser(sessionID, jti, 42, 100, now.Add(time.Minute), now); !errors.Is(err, ErrExamPaperUploadRetryExhausted) {
+		t.Fatalf("跨重启后第 4 次应被锁定: %v", err)
+	}
+}
+
+func TestPaperStorageUploadSessionEnforcesPerUserUnclaimedQuota(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	sessionIDs := []string{
+		"10000000-0000-4000-8000-000000000001",
+		"10000000-0000-4000-8000-000000000002",
+		"10000000-0000-4000-8000-000000000003",
+		"10000000-0000-4000-8000-000000000004",
+		"10000000-0000-4000-8000-000000000005",
+	}
+	for index, sessionID := range sessionIDs {
+		jti := fmt.Sprintf("quota-jti-%d", index)
+		if _, err := service.BeginUploadSessionForUser(sessionID, jti, 42, ExamPaperMaxFileSize, now.Add(time.Minute), now); err != nil {
+			t.Fatalf("创建配额内会话失败: %v", err)
+		}
+		stored := StoredExamPaperFile{FileKey: sessionID + ".pdf", Size: ExamPaperMaxFileSize, SHA256: strings.Repeat("c", 64)}
+		if err := service.CompleteUploadSession(sessionID, jti, "receipt-"+sessionID, stored, now); err != nil {
+			t.Fatalf("完成配额内会话失败: %v", err)
+		}
+	}
+	if _, err := service.BeginUploadSessionForUser("10000000-0000-4000-8000-000000000006", "quota-over", 42, 1, now.Add(time.Minute), now); !errors.Is(err, ErrExamPaperUnclaimedQuotaExceeded) {
+		t.Fatalf("超过用户未认领配额应被拒绝: %v", err)
+	}
+	if _, err := service.BeginUploadSessionForUser("20000000-0000-4000-8000-000000000001", "other-user", 43, ExamPaperMaxFileSize, now.Add(time.Minute), now); err != nil {
+		t.Fatalf("其他用户不应受影响: %v", err)
+	}
+}
+
+func TestPaperStorageUploadSessionSerializesConcurrentPerUserReservations(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	ids := []string{
+		"30000000-0000-4000-8000-000000000001", "30000000-0000-4000-8000-000000000002",
+		"30000000-0000-4000-8000-000000000003", "30000000-0000-4000-8000-000000000004",
+		"30000000-0000-4000-8000-000000000005", "30000000-0000-4000-8000-000000000006",
+	}
+	var acquired, rejected atomic.Int32
+	var wait sync.WaitGroup
+	for index, sessionID := range ids {
+		wait.Add(1)
+		go func(index int, sessionID string) {
+			defer wait.Done()
+			_, err := service.BeginUploadSessionForUser(sessionID, fmt.Sprintf("concurrent-%d", index), 99, ExamPaperMaxFileSize, now.Add(time.Minute), now)
+			switch {
+			case err == nil:
+				acquired.Add(1)
+			case errors.Is(err, ErrExamPaperUnclaimedQuotaExceeded):
+				rejected.Add(1)
+			default:
+				t.Errorf("并发占用返回意外错误: %v", err)
+			}
+		}(index, sessionID)
+	}
+	wait.Wait()
+	if acquired.Load() != 5 || rejected.Load() != 1 {
+		t.Fatalf("并发配额结果错误: acquired=%d rejected=%d", acquired.Load(), rejected.Load())
+	}
+}
+
+func TestPaperStorageClaimReleasesPerUserUnclaimedQuota(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	var firstFileKey string
+	for index := 0; index < 5; index++ {
+		sessionID := fmt.Sprintf("40000000-0000-4000-8000-%012d", index+1)
+		jti := fmt.Sprintf("claim-quota-%d", index)
+		if _, err := service.BeginUploadSessionForUser(sessionID, jti, 77, ExamPaperMaxFileSize, now.Add(time.Minute), now); err != nil {
+			t.Fatalf("创建占用失败: %v", err)
+		}
+		fileKey := sessionID + ".pdf"
+		if index == 0 {
+			firstFileKey = fileKey
+			if err := os.WriteFile(filepath.Join(service.RootDir(), fileKey), buildMinimalPDF(), 0o600); err != nil {
+				t.Fatalf("创建认领文件失败: %v", err)
+			}
+			if err := service.MarkPending(fileKey); err != nil {
+				t.Fatalf("创建 pending 标记失败: %v", err)
+			}
+		}
+		stored := StoredExamPaperFile{FileKey: fileKey, Size: ExamPaperMaxFileSize, SHA256: strings.Repeat("d", 64)}
+		if err := service.CompleteUploadSession(sessionID, jti, "receipt-"+sessionID, stored, now); err != nil {
+			t.Fatalf("完成会话失败: %v", err)
+		}
+	}
+	if err := service.Claim(firstFileKey); err != nil {
+		t.Fatalf("认领文件并释放配额失败: %v", err)
+	}
+	if _, err := service.BeginUploadSessionForUser("40000000-0000-4000-8000-000000000006", "after-claim", 77, ExamPaperMaxFileSize, now.Add(time.Minute), now); err != nil {
+		t.Fatalf("认领后应释放一份配额: %v", err)
+	}
+}
+
+func TestPaperStorageTrashReleasesPerUserUnclaimedQuota(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	var firstFileKey string
+	for index := 0; index < 5; index++ {
+		sessionID := fmt.Sprintf("41000000-0000-4000-8000-%012d", index+1)
+		jti := fmt.Sprintf("trash-quota-%d", index)
+		if _, err := service.BeginUploadSessionForUser(sessionID, jti, 78, ExamPaperMaxFileSize, now.Add(time.Minute), now); err != nil {
+			t.Fatalf("创建占用失败: %v", err)
+		}
+		fileKey := sessionID + ".pdf"
+		if index == 0 {
+			firstFileKey = fileKey
+			if err := os.WriteFile(filepath.Join(service.RootDir(), fileKey), buildMinimalPDF(), 0o600); err != nil {
+				t.Fatalf("创建待删除文件失败: %v", err)
+			}
+			if err := service.MarkPending(fileKey); err != nil {
+				t.Fatalf("创建 pending 标记失败: %v", err)
+			}
+		}
+		stored := StoredExamPaperFile{FileKey: fileKey, Size: ExamPaperMaxFileSize, SHA256: strings.Repeat("e", 64)}
+		if err := service.CompleteUploadSession(sessionID, jti, "receipt-"+sessionID, stored, now); err != nil {
+			t.Fatalf("完成会话失败: %v", err)
+		}
+	}
+	if err := service.Trash(firstFileKey); err != nil {
+		t.Fatalf("移入回收站并释放配额失败: %v", err)
+	}
+	if _, err := service.BeginUploadSessionForUser("41000000-0000-4000-8000-000000000006", "after-trash", 78, ExamPaperMaxFileSize, now.Add(time.Minute), now); err != nil {
+		t.Fatalf("移入回收站后应释放一份配额: %v", err)
+	}
+}
+
 func TestPaperStorageUploadSessionRejectsInvalidSessionID(t *testing.T) {
 	service, err := NewExamPaperFileService(t.TempDir())
 	if err != nil {
@@ -697,6 +906,7 @@ func TestPaperStorageMaintenanceRemovesExpiredUploadSessionRecords(t *testing.T)
 	const freshUploading = "55555555-5555-4555-8555-555555555555"
 	const staleCompleted = "66666666-6666-4666-8666-666666666666"
 	const freshCompleted = "77777777-7777-4777-8777-777777777777"
+	const staleUnclaimed = "99999999-9999-4999-8999-999999999999"
 	if _, err := service.BeginUploadSession(staleUploading, "stale-uploading", 100, now.Add(time.Minute), now.Add(-time.Hour-time.Second)); err != nil {
 		t.Fatalf("创建旧 uploading 记录失败: %v", err)
 	}
@@ -709,6 +919,7 @@ func TestPaperStorageMaintenanceRemovesExpiredUploadSessionRecords(t *testing.T)
 	}{
 		{staleCompleted, "stale-completed", now.Add(-24*time.Hour - time.Second)},
 		{freshCompleted, "fresh-completed", now},
+		{staleUnclaimed, "stale-unclaimed", now.Add(-24*time.Hour - time.Second)},
 	} {
 		if _, err := service.BeginUploadSession(item.id, item.jti, 100, now.Add(time.Minute), item.completedAt); err != nil {
 			t.Fatalf("创建 completed 会话失败: %v", err)
@@ -718,6 +929,9 @@ func TestPaperStorageMaintenanceRemovesExpiredUploadSessionRecords(t *testing.T)
 			t.Fatalf("完成会话失败: %v", err)
 		}
 	}
+	if err := service.ReleaseUploadSessionByFileKey(staleCompleted+".pdf", now.Add(-24*time.Hour-time.Second)); err != nil {
+		t.Fatalf("标记旧 completed 已释放失败: %v", err)
+	}
 	result, err := service.Maintenance(now)
 	if err != nil {
 		t.Fatalf("维护失败: %v", err)
@@ -726,8 +940,50 @@ func TestPaperStorageMaintenanceRemovesExpiredUploadSessionRecords(t *testing.T)
 		t.Fatalf("上传会话清理计数错误: %+v", result)
 	}
 	entries, err := os.ReadDir(filepath.Join(service.RootDir(), ".sessions"))
-	if err != nil || len(entries) != 2 {
-		t.Fatalf("维护后应保留两条新记录: entries=%d err=%v", len(entries), err)
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("维护后应保留新记录和未认领 completed: entries=%d err=%v", len(entries), err)
+	}
+	if _, err := os.Stat(filepath.Join(service.RootDir(), ".sessions", staleUnclaimed+".completed.json")); err != nil {
+		t.Fatalf("超过 24 小时但未认领的 completed 不应清理: %v", err)
+	}
+}
+
+func TestPaperStorageMaintenanceRemovesCompletedStateWithExpiredUnclaimedFile(t *testing.T) {
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	stored, err := service.StoreUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存待认领文件失败: %v", err)
+	}
+	if err := service.MarkPending(stored.FileKey); err != nil {
+		t.Fatalf("创建 pending 标记失败: %v", err)
+	}
+	const sessionID = "42000000-0000-4000-8000-000000000001"
+	const jti = "maintenance-state"
+	if _, err := service.BeginUploadSessionForUser(sessionID, jti, 79, stored.Size, now.Add(time.Minute), now); err != nil {
+		t.Fatalf("创建上传会话失败: %v", err)
+	}
+	if err := service.CompleteUploadSession(sessionID, jti, "receipt-maintenance", *stored, now); err != nil {
+		t.Fatalf("完成上传会话失败: %v", err)
+	}
+	old := now.Add(-7*24*time.Hour - time.Second)
+	if err := os.Chtimes(filepath.Join(service.RootDir(), ".pending", stored.FileKey), old, old); err != nil {
+		t.Fatalf("设置旧 pending 标记时间失败: %v", err)
+	}
+
+	result, err := service.Maintenance(now)
+	if err != nil {
+		t.Fatalf("执行维护失败: %v", err)
+	}
+	if result.UnclaimedFilesRemoved != 1 || result.CompletedUploadSessionsRemoved != 1 {
+		t.Fatalf("维护计数错误: %+v", result)
+	}
+	completedPath := filepath.Join(service.RootDir(), ".sessions", sessionID+".completed.json")
+	if _, err := os.Stat(completedPath); !os.IsNotExist(err) {
+		t.Fatalf("过期未认领文件的 completed 状态应同步删除: %v", err)
 	}
 }
 

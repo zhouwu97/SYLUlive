@@ -17,6 +17,29 @@ type UserHandler struct {
 	db *gorm.DB
 }
 
+// PublicUserResponse 是公开资料接口的最小响应模型。不要直接序列化 User，
+// 因为 User 同时包含账号、信誉和教务等仅限本人或后台使用的字段。
+type PublicUserResponse struct {
+	ID                 uint   `json:"id"`
+	Nickname           string `json:"nickname"`
+	Avatar             string `json:"avatar"`
+	Background         string `json:"background"`
+	Exp                int    `json:"exp"`
+	FollowersCount     int    `json:"followers_count"`
+	FollowingCount     int    `json:"following_count"`
+	TotalLikesReceived int    `json:"total_likes_received"`
+	IsFollowing        bool   `json:"is_following"`
+}
+
+func publicUserResponse(user models.User) PublicUserResponse {
+	return PublicUserResponse{
+		ID: user.ID, Nickname: user.Nickname, Avatar: user.Avatar,
+		Background: user.Background, Exp: user.Exp,
+		FollowersCount: user.FollowersCount, FollowingCount: user.FollowingCount,
+		TotalLikesReceived: user.TotalLikesReceived, IsFollowing: user.IsFollowing,
+	}
+}
+
 // NewUserHandler 创建用户处理器
 func NewUserHandler(db *gorm.DB) *UserHandler {
 	return &UserHandler{db: db}
@@ -40,7 +63,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		user.IsCheckedInToday = false
 	}
 
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, publicUserResponse(user))
 }
 
 // UpdateProfileInput 更新资料输入
@@ -228,8 +251,12 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 		}
 	}
 
+	items := make([]PublicUserResponse, 0, len(users))
+	for _, user := range users {
+		items = append(items, publicUserResponse(user))
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"items": users,
+		"items": items,
 		"total": total,
 		"page":  page,
 		"limit": limit,
@@ -281,8 +308,12 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 		}
 	}
 
+	items := make([]PublicUserResponse, 0, len(users))
+	for _, user := range users {
+		items = append(items, publicUserResponse(user))
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"items": users,
+		"items": items,
 		"total": total,
 		"page":  page,
 		"limit": limit,
@@ -319,9 +350,16 @@ func (h *UserHandler) Follow(c *gin.Context) {
 			FollowingID: uint(followingID),
 		})
 
+		if result.Error != nil {
+			return result.Error
+		}
 		if result.RowsAffected > 0 {
-			tx.Model(&models.User{}).Where("id = ?", followerID).UpdateColumn("following_count", gorm.Expr("following_count + 1"))
-			tx.Model(&models.User{}).Where("id = ?", followingID).UpdateColumn("followers_count", gorm.Expr("followers_count + 1"))
+			if err := tx.Model(&models.User{}).Where("id = ?", followerID).UpdateColumn("following_count", gorm.Expr("following_count + 1")).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&models.User{}).Where("id = ?", followingID).UpdateColumn("followers_count", gorm.Expr("followers_count + 1")).Error; err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -352,8 +390,12 @@ func (h *UserHandler) Unfollow(c *gin.Context) {
 			return result.Error
 		}
 		if result.RowsAffected > 0 {
-			tx.Model(&models.User{}).Where("id = ?", followerID).UpdateColumn("following_count", gorm.Expr("GREATEST(following_count - 1, 0)"))
-			tx.Model(&models.User{}).Where("id = ?", followingID).UpdateColumn("followers_count", gorm.Expr("GREATEST(followers_count - 1, 0)"))
+			if err := tx.Model(&models.User{}).Where("id = ?", followerID).UpdateColumn("following_count", gorm.Expr("GREATEST(following_count - 1, 0)")).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&models.User{}).Where("id = ?", followingID).UpdateColumn("followers_count", gorm.Expr("GREATEST(followers_count - 1, 0)")).Error; err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -503,7 +545,7 @@ func (h *UserHandler) GetUserPostCount(c *gin.Context) {
 
 // UpdateDeviceTokenInput 更新设备Token输入
 type UpdateDeviceTokenInput struct {
-	DeviceToken string `json:"device_token" binding:"required"`
+	DeviceToken string `json:"device_token"`
 }
 
 // UpdateDeviceToken 更新极光设备Token（用户登录时前端调用）
@@ -515,7 +557,15 @@ func (h *UserHandler) UpdateDeviceToken(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("device_token", input.DeviceToken).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		// 同一 RegistrationID 只能归属一个账号，切换账号时先解除旧绑定。
+		if input.DeviceToken != "" {
+			if err := tx.Model(&models.User{}).Where("device_token = ? AND id <> ?", input.DeviceToken, userID).Update("device_token", "").Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&models.User{}).Where("id = ?", userID).Update("device_token", input.DeviceToken).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}

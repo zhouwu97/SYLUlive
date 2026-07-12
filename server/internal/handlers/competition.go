@@ -679,7 +679,7 @@ func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取比赛失败"})
 		return
 	}
-	
+
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 	if totalPages == 0 {
 		totalPages = 1
@@ -1038,7 +1038,7 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "计算匹配数量失败"})
 			return
 		}
-		
+
 		if totalMatched > 5000 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "单次查询模式批量操作最多匹配 5000 项"})
 			return
@@ -1048,7 +1048,7 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 		if len(input.Selection.ExcludedIDs) > 0 {
 			query = query.Where("id NOT IN ?", input.Selection.ExcludedIDs)
 		}
-		
+
 		if err := query.Pluck("id", &targetIDs).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询匹配数据失败"})
 			return
@@ -1070,7 +1070,7 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	if (input.Selection == nil || input.Selection.Mode != "query") && len(targetIDs) > 200 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "单次 IDs 模式批量操作最多 200 项"})
 		return
@@ -1105,7 +1105,7 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 	var toDeleteIDs []uint
 	var toVerifyIDs []uint
 	newStatus := ""
-	
+
 	reasonCounts := make(map[string]int)
 
 	for _, id := range cleanIDs {
@@ -1115,7 +1115,7 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 			reasonCounts["比赛不存在或已删除"]++
 			continue
 		}
-		
+
 		if input.Action == "verify" {
 			toVerifyIDs = append(toVerifyIDs, id)
 			continue
@@ -1135,7 +1135,7 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 			toUpdateIDs = append(toUpdateIDs, id)
 		}
 	}
-	
+
 	var skippedReasons []map[string]interface{}
 	for reason, count := range reasonCounts {
 		skippedReasons = append(skippedReasons, map[string]interface{}{
@@ -1177,7 +1177,7 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 				return err
 			}
 		}
-		
+
 		if len(toVerifyIDs) > 0 {
 			now := time.Now()
 			if err := tx.Model(&models.CompetitionEvent{}).Where("id IN ?", toVerifyIDs).Updates(map[string]interface{}{
@@ -1210,7 +1210,7 @@ func (h *CompetitionHandler) adminBatchVerify(c *gin.Context, ids []uint, userID
 	if err := h.db.Where("id IN ?", ids).Find(&events).Error; err != nil {
 		return fmt.Errorf("查询比赛失败")
 	}
-	
+
 	foundIDs := make(map[uint]bool)
 	var toVerifyIDs []uint
 	var skipped []batchSkippedDetail
@@ -1326,7 +1326,14 @@ func (h *CompetitionHandler) ensureCalendar(userID uint) (models.UserCompetition
 		return calendar, err
 	}
 	calendar = models.UserCompetitionCalendar{UserID: userID, Title: "我的竞赛计划", Visibility: "private"}
-	return calendar, h.db.Create(&calendar).Error
+	if err := h.db.Create(&calendar).Error; err == nil {
+		return calendar, nil
+	}
+	// 并发初始化时唯一索引可能由另一请求先占用，重新读取即可。
+	if err := h.db.Where("user_id = ?", userID).First(&calendar).Error; err != nil {
+		return calendar, err
+	}
+	return calendar, nil
 }
 
 func (h *CompetitionHandler) UpdateCalendar(c *gin.Context) {
@@ -1335,10 +1342,22 @@ func (h *CompetitionHandler) UpdateCalendar(c *gin.Context) {
 		return
 	}
 	var input struct{ Title, Description, Visibility string }
-	_ = c.ShouldBindJSON(&input)
-	if err := h.db.Model(&models.UserCompetitionCalendar{}).Where("user_id = ?", userID).Updates(map[string]interface{}{
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	if input.Visibility != "private" && input.Visibility != "public" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "visibility 必须为 private 或 public"})
+		return
+	}
+	calendar, err := h.ensureCalendar(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取日历失败"})
+		return
+	}
+	if result := h.db.Model(&models.UserCompetitionCalendar{}).Where("id = ?", calendar.ID).Updates(map[string]interface{}{
 		"title": input.Title, "description": input.Description, "visibility": input.Visibility,
-	}).Error; err != nil {
+	}); result.Error != nil || result.RowsAffected != 1 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新日历失败"})
 		return
 	}

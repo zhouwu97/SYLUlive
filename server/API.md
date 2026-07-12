@@ -195,7 +195,9 @@
 
 - `GET /api/exam-papers`：已发布列表，支持 `keyword`、`academic_year`、`semester`、`exam_type`、`sort`、`page`、`page_size`。响应额外包含 `academic_years`：全部已发布试卷的去重学年列表，按倒序排列，不受本次筛选条件影响。
 - `GET /api/exam-papers/:id`：已发布详情。
-- `POST /api/exam-papers`：`multipart/form-data` 投稿，字段为 `file`、`course_name`、`academic_year`、`semester`、`exam_type`、`privacy_confirmed=true`。
+- `POST /api/exam-papers/upload-sessions`：创建 10 分钟有效的远端直传会话。JSON 字段为 `course_name`、`academic_year`、`semester`、`exam_type`、`privacy_confirmed=true`、`file_size`，成功返回 `session_id`、`upload_url`、`upload_token` 和 `expires_at`。
+- `POST /api/exam-papers/upload-sessions/:id/complete`：提交文件服务器返回的 `receipt`，验证会话归属和回执后创建试卷投稿；重复完成同一会话会返回同一份试卷，不重复创建记录或任务。
+- `POST /api/exam-papers`：仅供 `local` 存储模式下的旧客户端使用。启用 `remote` 后立即返回 HTTP `426` 和 `client_upgrade_required`，主服务器不会读取 multipart 文件体。
 - `GET /api/exam-papers/my-submissions`：我的投稿列表，支持 `status=all|pending|published|unpublished`、`page`、`page_size`；响应中的 `status_counts` 返回本人全部投稿在 `all`、`pending`、`published`、`unpublished` 各状态下的数量。未传 `status` 时为兼容旧客户端，仅返回待审核和已发布投稿。
 - `DELETE /api/exam-papers/my-submissions/:id`：删除本人投稿。`pending` 状态执行撤回；`published`、`unpublished` 状态执行永久删除，并按实际奖励状态撤销经验。成功响应为 `{"message":"投稿已撤回|投稿已永久删除","exp_revoked":true|false}`。
 - `GET /api/exam-papers/:id/preview`：内联预览，不增加下载量。
@@ -214,3 +216,5 @@
 - `POST /api/admin/exam-papers/:id/unpublish`
 
 功能错误统一为 `{"error":"中文说明","code":"机器错误码"}`。
+
+远端上传相关错误码包括：`invalid_upload_session_request`、`privacy_confirmation_required`、`invalid_file_size`、`file_too_large`、`upload_session_not_found`、`upload_session_expired`、`upload_receipt_invalid`、`duplicate_exam_paper`、`storage_unavailable` 和 `client_upgrade_required`。`readonly-remote` 模式禁止创建新上传会话，但允许已创建会话提交回执完成入库。

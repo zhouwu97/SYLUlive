@@ -1,7 +1,10 @@
 package services
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -24,6 +27,23 @@ func testStorageGrant() ExamPaperStorageGrant {
 		ExpiresAt: now.Add(10 * time.Minute).Unix(),
 		JTI:       "jti-1",
 	}
+}
+
+func decodeStorageTokenPayload(t *testing.T, token string) map[string]any {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		t.Fatalf("token 段数错误: %d", len(parts))
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatalf("解码 token payload 失败: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("解析 token payload 失败: %v", err)
+	}
+	return decoded
 }
 
 func TestExamPaperStorageSignerGrantRoundTrip(t *testing.T) {
@@ -136,6 +156,45 @@ func TestExamPaperStorageSignerReceiptRoundTrip(t *testing.T) {
 	}
 	if got != receipt {
 		t.Fatalf("回执内容不匹配: %#v", got)
+	}
+}
+
+func TestExamPaperStorageReceiptUsesIssuedAtWireField(t *testing.T) {
+	signer, err := NewExamPaperStorageSigner("receipt-secret", fixedStorageSignerNow)
+	if err != nil {
+		t.Fatalf("创建签名器失败: %v", err)
+	}
+	token, err := signer.SignReceipt(ExamPaperUploadReceipt{IssuedAt: fixedStorageSignerNow().Unix()})
+	if err != nil {
+		t.Fatalf("签发回执失败: %v", err)
+	}
+	payload := decodeStorageTokenPayload(t, token)
+	if _, ok := payload["issued_at"]; !ok {
+		t.Fatal("回执 payload 必须包含 issued_at 字段")
+	}
+	if _, ok := payload["iat"]; ok {
+		t.Fatal("回执 payload 不得包含 iat 字段")
+	}
+}
+
+func TestExamPaperStorageSignerGrantAlwaysIncludesRequiredWireFields(t *testing.T) {
+	signer, err := NewExamPaperStorageSigner("grant-secret", fixedStorageSignerNow)
+	if err != nil {
+		t.Fatalf("创建签名器失败: %v", err)
+	}
+	grant := testStorageGrant()
+	grant.Method = ""
+	grant.Path = ""
+	grant.JTI = ""
+	token, err := signer.SignGrant(grant)
+	if err != nil {
+		t.Fatalf("签发授权失败: %v", err)
+	}
+	payload := decodeStorageTokenPayload(t, token)
+	for _, field := range []string{"method", "path", "jti"} {
+		if _, ok := payload[field]; !ok {
+			t.Fatalf("授权 payload 必须包含 %s 字段", field)
+		}
 	}
 }
 

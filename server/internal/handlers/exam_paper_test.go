@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -707,6 +708,69 @@ func TestExamPaperListAppliesFiltersAndDownloadSort(t *testing.T) {
 	}
 	if payload.Total != 1 || len(payload.Items) != 1 || payload.Items[0].ID != papers[0].ID {
 		t.Fatalf("筛选结果错误: %s", response.Body.String())
+	}
+}
+
+func TestExamPaperListReturnsGlobalPublishedAcademicYears(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	reader := createExamPaperTestUser(t, env.db, "year-reader", models.RoleUser, true, 0)
+	contributor := createExamPaperTestUser(t, env.db, "year-contributor", models.RoleUser, true, 0)
+	now := time.Now()
+	papers := []models.ExamPaper{
+		{
+			Status: models.ExamPaperStatusPublished, Source: models.ExamPaperSourceUser, SubmitterID: contributor.ID,
+			CourseName: "高等数学", AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: "高等数学 2025", FileKey: "year-1.pdf",
+			FileSize: 1, SHA256: "year-hash-1", PublishedAt: &now,
+		},
+		{
+			Status: models.ExamPaperStatusPublished, Source: models.ExamPaperSourceUser, SubmitterID: contributor.ID,
+			CourseName: "线性代数", AcademicYear: "2024-2025", Semester: models.ExamPaperSemesterSecond,
+			ExamType: models.ExamPaperTypeMidterm, Title: "线性代数 2024", FileKey: "year-2.pdf",
+			FileSize: 1, SHA256: "year-hash-2", PublishedAt: &now,
+		},
+		{
+			Status: models.ExamPaperStatusPublished, Source: models.ExamPaperSourceUser, SubmitterID: contributor.ID,
+			CourseName: "大学物理", AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: "大学物理 2025", FileKey: "year-3.pdf",
+			FileSize: 1, SHA256: "year-hash-3", PublishedAt: &now,
+		},
+		{
+			Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: contributor.ID,
+			CourseName: "待审核", AcademicYear: "2023-2024", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: "待审核 2023", FileKey: "year-4.pdf",
+			FileSize: 1, SHA256: "year-hash-4",
+		},
+	}
+	if err := env.db.Create(&papers).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := performExamPaperRequest(
+		env.handler.List,
+		http.MethodGet,
+		"/api/exam-papers?keyword="+url.QueryEscape("高等")+"&academic_year=2025-2026",
+		nil,
+		reader.ID,
+		nil,
+		"",
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("列表请求失败: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Total         int64    `json:"total"`
+		AcademicYears []string `json:"academic_years"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Total != 1 {
+		t.Fatalf("筛选结果数量错误: %d", payload.Total)
+	}
+	wantYears := []string{"2025-2026", "2024-2025"}
+	if !reflect.DeepEqual(payload.AcademicYears, wantYears) {
+		t.Fatalf("学年集合 = %v，期望 %v", payload.AcademicYears, wantYears)
 	}
 }
 

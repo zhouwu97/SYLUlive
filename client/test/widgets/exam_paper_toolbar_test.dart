@@ -110,7 +110,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('窄屏工具栏将筛选项排列为两列两行', (tester) async {
+  testWidgets('窄屏工具栏将四个筛选项排列在同一行', (tester) async {
     final searchController = TextEditingController();
     addTearDown(searchController.dispose);
 
@@ -118,11 +118,6 @@ void main() {
       width: 320,
       searchController: searchController,
     ));
-
-    expect(find.text('全部学年'), findsOneWidget);
-    expect(find.text('全部学期'), findsOneWidget);
-    expect(find.text('全部类型'), findsOneWidget);
-    expect(find.text('最新'), findsOneWidget);
 
     final dropdowns = find.byType(DropdownButton<String>);
     expect(dropdowns, findsNWidgets(4));
@@ -132,15 +127,45 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(dropdownRects[1].top, closeTo(dropdownRects[0].top, 0.5));
-    expect(dropdownRects[2].top, greaterThan(dropdownRects[0].top));
-    expect(dropdownRects[3].top, closeTo(dropdownRects[2].top, 0.5));
-    expect(dropdownRects[0].left, lessThan(dropdownRects[1].left));
-    expect(dropdownRects[0].right, lessThan(dropdownRects[1].right));
-    expect(dropdownRects[2].left, lessThan(dropdownRects[3].left));
-    expect(dropdownRects[2].right, lessThan(dropdownRects[3].right));
-    expect(dropdownRects[2].left, closeTo(dropdownRects[0].left, 0.5));
-    expect(dropdownRects[3].left, closeTo(dropdownRects[1].left, 0.5));
+    for (final dropdownRect in dropdownRects.skip(1)) {
+      expect(dropdownRect.top, closeTo(dropdownRects.first.top, 0.5));
+    }
+  });
+
+  testWidgets('学年下拉展示服务端返回的全部学年并限制菜单高度', (tester) async {
+    final searchController = TextEditingController();
+    addTearDown(searchController.dispose);
+
+    await tester.pumpWidget(_buildToolbar(
+      width: 320,
+      searchController: searchController,
+      academicYears: const [
+        '2025-2026',
+        '2024-2025',
+        '2023-2024',
+        '2022-2023',
+      ],
+    ));
+
+    final academicYearDropdown = tester.widget<DropdownButton<String>>(
+      find.byType(DropdownButton<String>).first,
+    );
+    expect(
+      academicYearDropdown.menuMaxHeight,
+      kMinInteractiveDimension * 4,
+    );
+
+    await tester.tap(find.text('全部学年'));
+    await tester.pumpAndSettle();
+    expect(find.text('2025-2026'), findsOneWidget);
+    expect(find.text('2024-2025'), findsOneWidget);
+    expect(find.text('2023-2024'), findsOneWidget);
+    expect(find.text('2022-2023'), findsNothing);
+
+    await tester.drag(find.byType(Scrollable).last, const Offset(0, -160));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2022-2023'), findsOneWidget);
   });
 }
 
@@ -148,6 +173,7 @@ Widget _buildToolbar({
   required double width,
   required TextEditingController searchController,
   String sort = 'latest',
+  List<String> academicYears = const ['2025-2026'],
 }) {
   return ChangeNotifierProvider<ThemeProvider>(
     create: (_) => ThemeProvider(loadOnStart: false),
@@ -163,7 +189,7 @@ Widget _buildToolbar({
             semester: '',
             examType: '',
             sort: sort,
-            academicYears: const ['2025-2026'],
+            academicYears: academicYears,
             onAcademicYearChanged: (_) {},
             onSemesterChanged: (_) {},
             onExamTypeChanged: (_) {},

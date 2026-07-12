@@ -31,7 +31,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   final List<ExamPaper> _items = [];
-  late final List<String> _academicYears;
+  final List<String> _academicYears = [];
   ExamPaperService? _service;
   Timer? _searchDebounce;
   bool _loadScheduled = false;
@@ -51,7 +51,6 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
   @override
   void initState() {
     super.initState();
-    _academicYears = ExamPaperMetadata.academicYears(DateTime.now());
     _scrollController.addListener(_onScroll);
   }
 
@@ -127,6 +126,9 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
           ..addAll(result.items);
         _page = result.page;
         _total = result.total;
+        _academicYears
+          ..clear()
+          ..addAll(result.academicYears);
         _hasMore = result.hasMore;
         _loading = false;
         _refreshing = false;

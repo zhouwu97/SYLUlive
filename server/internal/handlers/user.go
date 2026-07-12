@@ -17,24 +17,48 @@ type UserHandler struct {
 	db *gorm.DB
 }
 
-// PublicUserResponse 是公开资料接口的最小响应模型。不要直接序列化 User，
-// 因为 User 同时包含账号、信誉和教务等仅限本人或后台使用的字段。
-type PublicUserResponse struct {
-	ID                 uint   `json:"id"`
-	Nickname           string `json:"nickname"`
-	Avatar             string `json:"avatar"`
-	Background         string `json:"background"`
-	Exp                int    `json:"exp"`
-	FollowersCount     int    `json:"followers_count"`
-	FollowingCount     int    `json:"following_count"`
-	TotalLikesReceived int    `json:"total_likes_received"`
-	IsFollowing        bool   `json:"is_following"`
-}
+// PublicUserResponse 是公开资料接口的最小响应模型。
+type PublicUserResponse = models.PublicUserResponse
 
 func publicUserResponse(user models.User) PublicUserResponse {
-	return PublicUserResponse{
-		ID: user.ID, Nickname: user.Nickname, Avatar: user.Avatar,
-		Background: user.Background, Exp: user.Exp,
+	return models.PublicUser(user)
+}
+
+// SelfUserResponse 仅用于当前登录用户，保留客户端刷新会话所需的账号和教务状态。
+type SelfUserResponse struct {
+	ID                 uint        `json:"id"`
+	StudentID          string      `json:"student_id"`
+	Nickname           string      `json:"nickname"`
+	Gender             string      `json:"gender"`
+	Avatar             string      `json:"avatar"`
+	Background         string      `json:"background"`
+	NightMode          bool        `json:"night_mode"`
+	CreditScore        int         `json:"credit_score"`
+	Role               models.Role `json:"role"`
+	AdminExp           int         `json:"admin_exp"`
+	Exp                int         `json:"exp"`
+	ReportCount        int         `json:"report_count"`
+	CreatedAt          time.Time   `json:"created_at"`
+	EduStudentID       string      `json:"edu_student_id"`
+	EduBound           bool        `json:"edu_bound"`
+	EduGrade           string      `json:"edu_grade"`
+	EduCollege         string      `json:"edu_college"`
+	EduMajor           string      `json:"edu_major"`
+	IsCheckedInToday   bool        `json:"is_checked_in_today"`
+	FollowersCount     int         `json:"followers_count"`
+	FollowingCount     int         `json:"following_count"`
+	TotalLikesReceived int         `json:"total_likes_received"`
+	IsFollowing        bool        `json:"is_following"`
+}
+
+func selfUserResponse(user models.User) SelfUserResponse {
+	return SelfUserResponse{
+		ID: user.ID, StudentID: user.StudentID, Nickname: user.Nickname, Gender: user.Gender,
+		Avatar: user.Avatar, Background: user.Background, NightMode: user.NightMode,
+		CreditScore: user.CreditScore, Role: user.Role, AdminExp: user.AdminExp, Exp: user.Exp,
+		ReportCount: user.ReportCount, CreatedAt: user.CreatedAt, EduStudentID: user.EduStudentID,
+		EduBound: user.EduBound, EduGrade: user.EduGrade, EduCollege: user.EduCollege,
+		EduMajor: user.EduMajor, IsCheckedInToday: user.IsCheckedInToday,
 		FollowersCount: user.FollowersCount, FollowingCount: user.FollowingCount,
 		TotalLikesReceived: user.TotalLikesReceived, IsFollowing: user.IsFollowing,
 	}
@@ -63,7 +87,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		user.IsCheckedInToday = false
 	}
 
-	c.JSON(http.StatusOK, publicUserResponse(user))
+	c.JSON(http.StatusOK, selfUserResponse(user))
 }
 
 // UpdateProfileInput 更新资料输入
@@ -99,7 +123,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, selfUserResponse(user))
 }
 
 // UpdateAvatarInput 更新头像输入
@@ -203,7 +227,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	}
 	user.IsFollowing = isFollowing
 
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, publicUserResponse(user))
 }
 
 // GetFollowing 获取关注列表
@@ -215,9 +239,7 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset := (page - 1) * limit
+	page, limit, offset := ParsePagination(c, 20, 50)
 
 	var follows []models.UserFollow
 	var total int64
@@ -232,6 +254,7 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 	users := make([]models.User, 0)
 	if len(userIDs) > 0 {
 		h.db.Where("id IN ?", userIDs).Find(&users)
+		users = orderUsersByIDs(users, userIDs)
 
 		// 填充 IsFollowing
 		currentUserIDAny, exists := c.Get("user_id")
@@ -272,9 +295,7 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset := (page - 1) * limit
+	page, limit, offset := ParsePagination(c, 20, 50)
 
 	var follows []models.UserFollow
 	var total int64
@@ -289,6 +310,7 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 	users := make([]models.User, 0)
 	if len(userIDs) > 0 {
 		h.db.Where("id IN ?", userIDs).Find(&users)
+		users = orderUsersByIDs(users, userIDs)
 
 		// 填充 IsFollowing
 		currentUserIDAny, exists := c.Get("user_id")
@@ -318,6 +340,20 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 		"page":  page,
 		"limit": limit,
 	})
+}
+
+func orderUsersByIDs(users []models.User, ids []uint) []models.User {
+	byID := make(map[uint]models.User, len(users))
+	for _, user := range users {
+		byID[user.ID] = user
+	}
+	ordered := make([]models.User, 0, len(users))
+	for _, id := range ids {
+		if user, exists := byID[id]; exists {
+			ordered = append(ordered, user)
+		}
+	}
+	return ordered
 }
 
 // Follow 关注用户
@@ -435,9 +471,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset := (page - 1) * limit
+	_, limit, offset := ParsePagination(c, 20, 50)
 
 	var posts []models.Post
 	if err := h.db.
@@ -465,15 +499,7 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 || limit > 50 {
-		limit = 20
-	}
-	offset := (page - 1) * limit
+	page, limit, offset := ParsePagination(c, 20, 50)
 	postType := c.DefaultQuery("post_type", "sell")
 
 	buildQuery := func() *gorm.DB {

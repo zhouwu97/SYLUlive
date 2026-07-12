@@ -135,17 +135,21 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 
 	// 回复、回复图片和帖子活跃统计必须原子提交，避免列表出现已显示回复却没有刷新活跃时间的状态。
 	fileIDs := c.PostForm("file_ids")
+	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if _, err := services.ValidateImageFileIDs(tx, parsedFileIDs, 9, userID.(uint)); err != nil {
+			return err
+		}
 		if err := tx.Create(&reply).Error; err != nil {
 			return err
 		}
-		if fileIDs != "" {
-			for i, idStr := range strings.Split(fileIDs, ",") {
-				fileID, parseErr := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
-				if parseErr != nil || fileID == 0 {
-					continue
-				}
-				if err := tx.Create(&models.ReplyImage{ReplyID: reply.ID, FileID: uint(fileID), SortOrder: i}).Error; err != nil {
+		if len(parsedFileIDs) > 0 {
+			for i, fileID := range parsedFileIDs {
+				if err := tx.Create(&models.ReplyImage{ReplyID: reply.ID, FileID: fileID, SortOrder: i}).Error; err != nil {
 					return err
 				}
 			}
@@ -155,6 +159,10 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 			"last_activity_at": reply.CreatedAt,
 		}).Error
 	}); err != nil {
+		if errors.Is(err, services.ErrInvalidImageFileReference) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建回复失败"})
 		return
 	}
@@ -197,12 +205,16 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		var parentReply models.Reply
 		if err := h.db.First(&parentReply, *input.ParentReplyID).Error; err == nil {
 			notifyUserID := parentReply.AuthorID
-			CreateReplyNotification(h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
+			if err := CreateReplyNotification(h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview); err != nil {
+				log.Printf("[DB_ERROR] 创建回复通知失败: reply_id=%d user_id=%d err=%v", reply.ID, notifyUserID, err)
+			}
 			SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
 		}
 	} else {
 		// 直接回复帖子 → 通知帖子作者
-		CreateReplyNotification(h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
+		if err := CreateReplyNotification(h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview); err != nil {
+			log.Printf("[DB_ERROR] 创建帖子回复通知失败: reply_id=%d user_id=%d err=%v", reply.ID, post.AuthorID, err)
+		}
 		SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
 	}
 

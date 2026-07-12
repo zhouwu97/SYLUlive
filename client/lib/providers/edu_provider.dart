@@ -3,7 +3,6 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
-import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_grade.dart';
@@ -43,7 +42,6 @@ class AcademicSituationCacheEntry {
 }
 
 class EduProvider extends ChangeNotifier {
-  late final Dio _eduDio; // Python 教务服务专用
   late final Dio _authDio; // Go 服务器（获取当前用户信息）
 
   String? _userId;
@@ -154,13 +152,6 @@ class EduProvider extends ChangeNotifier {
 
   EduProvider(Dio authDio) {
     _authDio = authDio;
-    _eduDio = Dio(
-      BaseOptions(
-        baseUrl: ApiConstants.eduServiceUrl,
-        connectTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 60),
-      ),
-    );
   }
 
   void setUserId(String userId) {
@@ -200,7 +191,11 @@ class EduProvider extends ChangeNotifier {
     debugPrint(
       'Edu Dio error: uri=${e.requestOptions.uri} '
       'status=$statusCode type=${e.type} '
-      'data=${data is Map ? {'code': data['code'], 'error': data['error'], 'upstream_code': data['upstream_code']} : data} '
+      'data=${data is Map ? {
+          'code': data['code'],
+          'error': data['error'],
+          'upstream_code': data['upstream_code']
+        } : data} '
       'error=${e.error}',
     );
     return AppFeedback.dioErrorMessage(
@@ -383,10 +378,9 @@ class EduProvider extends ChangeNotifier {
     }
 
     try {
-      final response = await _eduDio.post(
-        '/api/edu/bind',
+      final response = await _authDio.post(
+        '/edu/bind',
         data: {
-          'user_id': _userId,
           'student_id': studentId,
           'password': password,
         },
@@ -398,11 +392,11 @@ class EduProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = response.data;
         _isBound = true;
-        _studentId = data['student_id'] ?? studentId;
+        _studentId = data['edu_student_id'] ?? studentId;
         _name = data['name'] ?? '';
-        _grade = data['grade'] ?? '';
-        _college = data['college'] ?? '';
-        _major = data['major'] ?? '';
+        _grade = data['edu_grade'] ?? '';
+        _college = data['edu_college'] ?? '';
+        _major = data['edu_major'] ?? '';
         _errorMessage = null;
         _statusLoaded = true;
         final boundUserId = _userId!;
@@ -438,10 +432,7 @@ class EduProvider extends ChangeNotifier {
     final currentStudentId = _studentId; // 先保存，字段之后会被清空
 
     try {
-      final response = await _eduDio.delete(
-        '/api/edu/bind',
-        queryParameters: {'user_id': _userId},
-      );
+      final response = await _authDio.delete('/edu/bind');
 
       if (response.statusCode == 200) {
         // 清除本地状态
@@ -558,9 +549,7 @@ class EduProvider extends ChangeNotifier {
             final retryMessage = _parseDioError(retryError);
             if (_isEduSessionExpired(retryError)) {
               return OperationResult.fail(
-                rebindSuccess
-                    ? '教务会话恢复后仍无法读取课表，请稍后重试'
-                    : '教务登录状态已失效，请重新绑定',
+                rebindSuccess ? '教务会话恢复后仍无法读取课表，请稍后重试' : '教务登录状态已失效，请重新绑定',
               );
             }
             return OperationResult.fail(retryMessage);
@@ -683,9 +672,7 @@ class EduProvider extends ChangeNotifier {
             final retryMessage = _parseDioError(retryError);
             if (_isEduSessionExpired(retryError)) {
               return OperationResult.fail(
-                rebindSuccess
-                    ? '教务会话恢复后仍无法读取成绩构成，请稍后重试'
-                    : '教务登录状态已失效，请重新绑定',
+                rebindSuccess ? '教务会话恢复后仍无法读取成绩构成，请稍后重试' : '教务登录状态已失效，请重新绑定',
               );
             }
             return OperationResult.fail(retryMessage);
@@ -763,9 +750,7 @@ class EduProvider extends ChangeNotifier {
             final retryMessage = _parseDioError(retryError);
             if (_isEduSessionExpired(retryError)) {
               return OperationResult.fail(
-                rebindSuccess
-                    ? '教务会话恢复后仍无法读取学业情况，请稍后重试'
-                    : '教务登录状态已失效，请重新绑定',
+                rebindSuccess ? '教务会话恢复后仍无法读取学业情况，请稍后重试' : '教务登录状态已失效，请重新绑定',
               );
             }
             return OperationResult.fail(retryMessage);
@@ -827,9 +812,7 @@ class EduProvider extends ChangeNotifier {
             final retryMessage = _parseDioError(retryError);
             if (_isEduSessionExpired(retryError)) {
               return OperationResult.fail(
-                rebindSuccess
-                    ? '教务会话恢复后仍无法读取成绩，请稍后重试'
-                    : '教务登录状态已失效，请重新绑定',
+                rebindSuccess ? '教务会话恢复后仍无法读取成绩，请稍后重试' : '教务登录状态已失效，请重新绑定',
               );
             }
             return OperationResult.fail(retryMessage);
@@ -868,10 +851,9 @@ class EduProvider extends ChangeNotifier {
     final rawJson = jsonEncode({'kbList': kbList});
 
     try {
-      final response = await _eduDio.post(
-        '/api/edu/courses/sync',
+      final response = await _authDio.post(
+        '/edu/courses/sync',
         data: {
-          'user_id': _userId,
           'year': year,
           'semester': semester,
           'raw_json': rawJson,

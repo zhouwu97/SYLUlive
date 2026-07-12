@@ -910,7 +910,7 @@ class MyApp extends StatelessWidget {
               provider!..syncSessionUser(auth.user?.id),
         ),
         ChangeNotifierProvider(create: (_) => EduProvider(dio)),
-        ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
+        ChangeNotifierProvider(create: (_) => CourseScheduleProvider(dio)),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),

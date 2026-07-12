@@ -30,8 +30,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/go-resty/resty/v2"
-
 	"golang.org/x/crypto/bcrypt"
 
 	"gorm.io/gorm"
@@ -542,8 +540,6 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 	}
 
 	markQQVerified(qq)
-	consumeQQVerified(qq)
-	markQQVerified(qq)
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "验证通过"})
 
@@ -585,34 +581,25 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	}
 
-	verifyCodeStore.Lock()
+	// 已验证的凭证是注册唯一可信的完成态。验证码记录可在验证后被清理，
+	// 因此不能要求它仍然存在。
+	if !isQQVerified(qq) {
+		verifyCodeStore.Lock()
+		record, ok := verifyCodeStore.codes[qq]
+		verifyCodeStore.Unlock()
 
-	record, ok := verifyCodeStore.codes[qq]
-
-	verifyCodeStore.Unlock()
-
-	if !ok {
-
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请先发送验证码"})
-
-		return
-
-	}
-
-	if time.Now().After(record.ExpiresAt) {
-
-		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码已过期，请重新发送"})
-
-		return
-
-	}
-
-	if strings.TrimSpace(input.Code) != record.Code && !isQQVerified(qq) {
-
-		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
-
-		return
-
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请先发送验证码"})
+			return
+		}
+		if time.Now().After(record.ExpiresAt) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "验证码已过期，请重新发送"})
+			return
+		}
+		if strings.TrimSpace(input.Code) != record.Code {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
+			return
+		}
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -685,7 +672,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 		"token": token,
 
-		"user": user,
+		"user": selfUserResponse(user),
 	})
 
 }
@@ -796,17 +783,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 		CreditScore: 100,
 
-		EduStudentID: input.StudentID,
-
-		EduPassword: input.EduPassword,
-
-		EduBound: true,
-
-		EduGrade: verifyResult.Grade,
-
-		EduCollege: verifyResult.College,
-
-		EduMajor: verifyResult.Major,
+		EduBound: false,
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
@@ -822,6 +799,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	if input.Nickname == "" {
 
 		if err := h.db.Model(&user).Update("nickname", "校园用户"+strconv.FormatUint(uint64(user.ID), 10)).Error; err != nil {
+			_ = h.db.Delete(&models.User{}, user.ID).Error
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 			return
 		}
@@ -830,112 +808,23 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 	}
 
-	// 闈欓粯缁戝畾锛氳皟鐢≒ython鐨刡ind鎺ュ彛鑾峰彇cookie
-
-	client := resty.New()
-
-	client.SetTimeout(10 * time.Second)
-
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
-		SetHeader("X-Internal-User-ID", strconv.FormatUint(uint64(user.ID), 10)).
-		SetBody(map[string]interface{}{
-
-			"user_id": strconv.FormatUint(uint64(user.ID), 10),
-
-			"student_id": input.StudentID,
-
-			"password": input.EduPassword,
-		}).
-		Post(EduServiceConfig.BaseURL + "/api/edu/bind")
-
+	// 创建本地账号后，必须由同一条 Go -> Python 绑定链路完成凭据落库。
+	bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
 	if err != nil {
-
-		// Python璋冪敤澶辫触锛屽彧鏍囪板凡缁戝畾锛堝悗缁鍙鎵嬪姩鍒锋柊cookie锛
-
-		h.db.Model(&user).Updates(map[string]interface{}{
-
-			"edu_student_id": input.StudentID,
-
-			"edu_password": input.EduPassword,
-
-			"edu_bound": true,
-		})
-
-		user.EduBound = true
-
-	} else {
-
-		var bindResult struct {
-			Success bool `json:"success"`
-
-			Message string `json:"message"`
-
-			Name string `json:"name"`
-
-			Cookie string `json:"cookie"`
-
-			Grade string `json:"grade"`
-
-			College string `json:"college"`
-
-			Major string `json:"major"`
-		}
-
-		json.Unmarshal(resp.Body(), &bindResult)
-
-		if bindResult.Success {
-
-			h.db.Model(&user).Updates(map[string]interface{}{
-
-				"edu_student_id": input.StudentID,
-
-				"edu_password": input.EduPassword,
-
-				"edu_cookie": bindResult.Cookie,
-
-				"edu_bound": true,
-
-				"edu_grade": bindResult.Grade,
-
-				"edu_college": bindResult.College,
-
-				"edu_major": bindResult.Major,
-			})
-
-			user.EduBound = true
-
-			user.EduCookie = bindResult.Cookie
-
-			user.EduGrade = bindResult.Grade
-
-			user.EduCollege = bindResult.College
-
-			user.EduMajor = bindResult.Major
-
-		} else {
-
-			h.db.Model(&user).Updates(map[string]interface{}{
-
-				"edu_student_id": input.StudentID,
-
-				"edu_password": input.EduPassword,
-
-				"edu_bound": true,
-
-				"edu_grade": verifyResult.Grade,
-
-				"edu_college": verifyResult.College,
-
-				"edu_major": verifyResult.Major,
-			})
-
-			user.EduBound = true
-
-		}
-
+		_ = h.db.Delete(&models.User{}, user.ID).Error
+		writeEduServiceError(c, err)
+		return
 	}
+	if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
+		_ = h.db.Delete(&models.User{}, user.ID).Error
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
+		return
+	}
+	user.EduBound = true
+	user.EduStudentID = input.StudentID
+	user.EduGrade = bindResult.Grade
+	user.EduCollege = bindResult.College
+	user.EduMajor = bindResult.Major
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
 	if err != nil {
@@ -951,7 +840,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 		"token": token,
 
-		"user": user,
+		"user": selfUserResponse(user),
 	})
 
 }
@@ -1016,41 +905,11 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 	if isNewUser {
 
-		// 鏂扮敤鎴凤細閫氳繃Python鏈嶅姟楠岃瘉鏁欏姟
-
-		client := resty.New()
-
-		client.SetTimeout(10 * time.Second)
-
-		resp, err := client.R().
-			SetHeader("Content-Type", "application/json").
-			SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
-			SetBody(map[string]string{
-
-				"student_id": input.StudentID,
-
-				"edu_password": input.EduPassword,
-
-				"password": input.Password,
-			}).
-			Post(EduServiceConfig.BaseURL + "/api/edu/login_edu")
-
+		// 新用户先预验证，再在创建本地账号后调用统一绑定链路持久化凭据。
+		result, err := verifyEduWithPython(input.StudentID, input.EduPassword, input.Password)
 		if err != nil {
-
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务"})
-
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
-
-		}
-
-		var result eduVerifyResult
-
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "解析响应失败"})
-
-			return
-
 		}
 
 		if !result.Success {
@@ -1087,17 +946,7 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 			CreditScore: 100,
 
-			EduStudentID: result.StudentID,
-
-			EduPassword: input.EduPassword,
-
-			EduBound: true,
-
-			EduGrade: result.Grade,
-
-			EduCollege: result.College,
-
-			EduMajor: result.Major,
+			EduBound: false,
 		}
 
 		if err := h.db.Create(&user).Error; err != nil {
@@ -1107,6 +956,23 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 			return
 
 		}
+
+		bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
+		if err != nil {
+			_ = h.db.Delete(&models.User{}, user.ID).Error
+			writeEduServiceError(c, err)
+			return
+		}
+		if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
+			_ = h.db.Delete(&models.User{}, user.ID).Error
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
+			return
+		}
+		user.EduBound = true
+		user.EduStudentID = input.StudentID
+		user.EduGrade = bindResult.Grade
+		user.EduCollege = bindResult.College
+		user.EduMajor = bindResult.Major
 
 	} else {
 
@@ -1119,6 +985,21 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 			return
 
 		}
+
+		bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
+		if err != nil {
+			writeEduServiceError(c, err)
+			return
+		}
+		if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
+			return
+		}
+		user.EduBound = true
+		user.EduStudentID = input.StudentID
+		user.EduGrade = bindResult.Grade
+		user.EduCollege = bindResult.College
+		user.EduMajor = bindResult.Major
 
 	}
 
@@ -1136,7 +1017,7 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 		"token": token,
 
-		"user": user,
+		"user": selfUserResponse(user),
 	})
 
 }
@@ -1207,6 +1088,12 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 	}
 
+	bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
+	if err != nil {
+		writeEduServiceError(c, err)
+		return
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
 
 	if err != nil {
@@ -1223,28 +1110,30 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 		"edu_student_id": input.StudentID,
 
-		"edu_password": input.EduPassword,
+		"edu_password": "",
+
+		"edu_cookie": "",
 
 		"edu_bound": true,
 
 		"token_version": gorm.Expr("token_version + 1"),
 	}
 
-	if result.Grade != "" {
+	if bindResult.Grade != "" {
 
-		updates["edu_grade"] = result.Grade
-
-	}
-
-	if result.College != "" {
-
-		updates["edu_college"] = result.College
+		updates["edu_grade"] = bindResult.Grade
 
 	}
 
-	if result.Major != "" {
+	if bindResult.College != "" {
 
-		updates["edu_major"] = result.Major
+		updates["edu_college"] = bindResult.College
+
+	}
+
+	if bindResult.Major != "" {
+
+		updates["edu_major"] = bindResult.Major
 
 	}
 
@@ -1263,24 +1152,11 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 }
 
-func verifyEduWithPython(studentID, eduPassword, appPassword string) (*eduVerifyResult, error) {
-
-	client := resty.New()
-
-	client.SetTimeout(10 * time.Second)
-
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
-		SetBody(map[string]string{
-
-			"student_id": studentID,
-
-			"edu_password": eduPassword,
-
-			"password": appPassword,
-		}).
-		Post(EduServiceConfig.BaseURL + "/api/edu/login_edu")
+func verifyEduWithPython(studentID, eduPassword, _ string) (*eduVerifyResult, error) {
+	resp, err := pythonEduRequest(http.MethodPost, "/api/edu/pre_verify", nil, map[string]string{
+		"student_id": studentID,
+		"password":   eduPassword,
+	})
 
 	if err != nil {
 
@@ -1423,7 +1299,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 		"token": token,
 
-		"user": user,
+		"user": selfUserResponse(user),
 	})
 
 }

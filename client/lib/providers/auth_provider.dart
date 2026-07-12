@@ -11,7 +11,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
-import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -38,8 +37,6 @@ class AuthProvider extends ChangeNotifier {
   static const String _userKey = 'auth_user';
 
   final Dio _dio;
-  late final Dio _eduDio; // Python 教务服务
-
   User? _user;
   String? _token;
   bool _isLoading = false;
@@ -54,13 +51,6 @@ class AuthProvider extends ChangeNotifier {
   PersistCookieJar? _cookieJar;
 
   AuthProvider(this._dio) {
-    _eduDio = Dio(
-      BaseOptions(
-        baseUrl: ApiConstants.eduServiceUrl,
-        connectTimeout: ApiConstants.connectTimeout,
-        receiveTimeout: ApiConstants.receiveTimeout,
-      ),
-    );
     // 添加 401 拦截器：自动登出并提示重新登录
     _dio.interceptors.add(
       InterceptorsWrapper(
@@ -522,14 +512,11 @@ class AuthProvider extends ChangeNotifier {
   /// 验证教务账号（注册前验证学号是否属于自己）
   Future<AuthResult> verifyEdu(String studentId, String eduPassword) async {
     try {
-      // 教务服务使用专用的 eduDio，路由是 /api/edu/pre_verify
       debugPrint('=== verifyEdu 开始 ===');
       debugPrint('student_id: ${_maskStudentId(studentId)}');
-      debugPrint('baseUrl: ${_eduDio.options.baseUrl}');
-      debugPrint('fullUrl: ${_eduDio.options.baseUrl}/api/edu/pre_verify');
 
-      final response = await _eduDio.post(
-        '/api/edu/pre_verify',
+      final response = await _dio.post(
+        '/edu/pre_verify',
         data: {'student_id': studentId, 'password': eduPassword},
       );
 
@@ -545,7 +532,9 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 200 && response.data['success'] == true) {
         return AuthResult.success();
       }
-      return AuthResult.failure(response.data['error'] ?? '教务验证失败');
+      return AuthResult.failure(
+        response.data['error'] ?? response.data['message'] ?? '教务验证失败',
+      );
     } on DioException catch (e) {
       debugPrint('=== verifyEdu DioException ===');
       debugPrint('type: ${e.type}');

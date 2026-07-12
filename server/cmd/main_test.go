@@ -1,16 +1,31 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
 
-func TestPendingExamPaperStorageJobAttemptIsNonNilAndReturnsDedicatedError(t *testing.T) {
-	attempt := pendingExamPaperStorageJobAttempt
-	if attempt == nil {
-		t.Fatal("主进程必须为远端上传配置明确的存储任务尝试回调")
+type examPaperStorageJobAttemptProcessorStub struct {
+	jobID uint
+	err   error
+}
+
+func (s *examPaperStorageJobAttemptProcessorStub) ProcessJob(_ context.Context, jobID uint) error {
+	s.jobID = jobID
+	return s.err
+}
+
+func TestNewExamPaperStorageJobAttemptCallsConfiguredProcessor(t *testing.T) {
+	wantErr := errors.New("远端暂不可用")
+	processor := &examPaperStorageJobAttemptProcessorStub{err: wantErr}
+	attempt := newExamPaperStorageJobAttempt(processor)
+
+	err := attempt(42)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("应返回处理器错误: %v", err)
 	}
-	if err := attempt(42); !errors.Is(err, errExamPaperStorageJobProcessorPending) {
-		t.Fatalf("未配置任务处理器时应返回专用错误: %v", err)
+	if processor.jobID != 42 {
+		t.Fatalf("应处理任务 42，实际为 %d", processor.jobID)
 	}
 }

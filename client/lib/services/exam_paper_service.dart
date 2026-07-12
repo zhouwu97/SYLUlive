@@ -81,12 +81,24 @@ class ExamPaperService {
 
   final Dio _dio;
   final Dio _storageDio;
+  final int? _authSessionScope;
+  final int Function()? _currentAuthSessionScope;
   final Map<String, Future<ExamPaper>> _inFlightUploads = {};
   final LinkedHashMap<String, _PendingExamPaperCompletion> _pendingCompletions =
       LinkedHashMap();
 
-  ExamPaperService(this._dio, {Dio? storageDio})
-      : _storageDio = storageDio ?? Dio();
+  ExamPaperService(
+    this._dio, {
+    Dio? storageDio,
+    int? authSessionScope,
+    int Function()? currentAuthSessionScope,
+  })  : assert(
+          (authSessionScope == null) == (currentAuthSessionScope == null),
+          'authSessionScope 和 currentAuthSessionScope 必须同时提供',
+        ),
+        _storageDio = storageDio ?? Dio(),
+        _authSessionScope = authSessionScope,
+        _currentAuthSessionScope = currentAuthSessionScope;
 
   Future<ExamPaperPage> list({
     String keyword = '',
@@ -154,6 +166,7 @@ class ExamPaperService {
     required bool privacyConfirmed,
     ProgressCallback? onSendProgress,
   }) async {
+    _ensureAuthSession();
     if (file.extension?.toLowerCase() != 'pdf') {
       throw const ExamPaperApiException(
         message: '请选择 PDF 文件',
@@ -175,6 +188,7 @@ class ExamPaperService {
       examType: examType,
       privacyConfirmed: privacyConfirmed,
     );
+    _ensureAuthSession();
     _prunePendingCompletions(DateTime.now());
     final inFlight = _inFlightUploads[fingerprint];
     if (inFlight != null) return inFlight;
@@ -209,6 +223,7 @@ class ExamPaperService {
     required bool privacyConfirmed,
     ProgressCallback? onSendProgress,
   }) async {
+    _ensureAuthSession();
     final pending = _pendingCompletions[fingerprint];
     if (pending != null) {
       return _completePendingUpload(fingerprint, pending);
@@ -216,6 +231,7 @@ class ExamPaperService {
 
     late final Response<dynamic> sessionResponse;
     try {
+      _ensureAuthSession();
       sessionResponse = await _dio.post<dynamic>(
         '/exam-papers/upload-sessions',
         data: {
@@ -230,10 +246,12 @@ class ExamPaperService {
     } on DioException catch (error) {
       throw ExamPaperApiException.fromDio(error);
     }
+    _ensureAuthSession();
     final session = _parseUploadSession(sessionResponse.data);
 
     late final Response<dynamic> uploadResponse;
     try {
+      _ensureAuthSession();
       uploadResponse = await _storageDio.post<dynamic>(
         session.uploadUri.toString(),
         data: FormData.fromMap({'file': await _multipartFile(file)}),
@@ -247,6 +265,7 @@ class ExamPaperService {
     } on DioException catch (error) {
       throw _storageExceptionFromDio(error);
     }
+    _ensureAuthSession();
     final receipt = _parseUploadReceipt(uploadResponse.data);
     final completion = _PendingExamPaperCompletion(
       sessionID: session.id,
@@ -262,10 +281,12 @@ class ExamPaperService {
     _PendingExamPaperCompletion completion,
   ) async {
     try {
+      _ensureAuthSession();
       final response = await _dio.post<dynamic>(
         '/exam-papers/upload-sessions/${completion.sessionID}/complete',
         data: {'receipt': completion.receipt},
       );
+      _ensureAuthSession();
       final paper = _parseCompletedPaper(response.data);
       if (identical(_pendingCompletions[fingerprint], completion)) {
         _pendingCompletions.remove(fingerprint);
@@ -298,19 +319,23 @@ class ExamPaperService {
     if (file.path != null && file.path!.isNotEmpty) {
       var normalizedPath = path.normalize(path.absolute(file.path!));
       if (Platform.isWindows) normalizedPath = normalizedPath.toLowerCase();
-      final stat = await File(normalizedPath).stat();
-      if (stat.type != FileSystemEntityType.file) {
+      try {
+        final source = File(normalizedPath);
+        final stat = await source.stat();
+        if (stat.type != FileSystemEntityType.file) {
+          throw const ExamPaperApiException(
+            message: '无法读取所选 PDF 文件',
+            code: 'invalid_pdf',
+          );
+        }
+        final digest = await sha256.bind(source.openRead()).first;
+        fileIdentity = ['path', normalizedPath, digest.toString()];
+      } on FileSystemException {
         throw const ExamPaperApiException(
           message: '无法读取所选 PDF 文件',
           code: 'invalid_pdf',
         );
       }
-      fileIdentity = [
-        'path',
-        normalizedPath,
-        stat.size,
-        stat.modified.toUtc().microsecondsSinceEpoch,
-      ];
     } else if (file.bytes != null) {
       fileIdentity = ['bytes', sha256.convert(file.bytes!).toString()];
     } else {
@@ -328,6 +353,7 @@ class ExamPaperService {
       semester,
       examType,
       privacyConfirmed,
+      _authSessionScope,
     ]);
     return sha256.convert(utf8.encode(payload)).toString();
   }
@@ -339,16 +365,36 @@ class ExamPaperService {
     _prunePendingCompletions(completion.cachedAt);
     _pendingCompletions.remove(fingerprint);
     while (_pendingCompletions.length >= _maxPendingCompletions) {
-      _pendingCompletions.remove(_pendingCompletions.keys.first);
+      String? inactiveKey;
+      for (final key in _pendingCompletions.keys) {
+        if (!_inFlightUploads.containsKey(key)) {
+          inactiveKey = key;
+          break;
+        }
+      }
+      if (inactiveKey == null) break;
+      _pendingCompletions.remove(inactiveKey);
     }
     _pendingCompletions[fingerprint] = completion;
   }
 
   void _prunePendingCompletions(DateTime now) {
     _pendingCompletions.removeWhere(
-      (_, completion) =>
+      (fingerprint, completion) =>
+          !_inFlightUploads.containsKey(fingerprint) &&
           now.difference(completion.cachedAt) > _pendingCompletionTTL,
     );
+  }
+
+  void _ensureAuthSession() {
+    final expected = _authSessionScope;
+    final current = _currentAuthSessionScope;
+    if (expected != null && current != null && current() != expected) {
+      throw const ExamPaperApiException(
+        message: '登录状态已变化，请重新上传',
+        code: 'auth_session_changed',
+      );
+    }
   }
 
   static bool _completionCannotBeRetried(String code) {
@@ -366,69 +412,78 @@ class ExamPaperService {
     final storageError = data is Map && data['error'] is String
         ? (data['error'] as String).trim()
         : '';
-    final mapped = switch (storageError) {
-      'unauthorized' => const ExamPaperApiException(
+    final ({String code, String message})? mapped = switch (storageError) {
+      'unauthorized' => (
           message: '上传凭证已失效，请重新上传',
           code: 'upload_session_expired',
         ),
-      'upload_session_expired' => const ExamPaperApiException(
+      'upload_session_expired' => (
           message: '上传会话已过期，请重新上传',
           code: 'upload_session_expired',
         ),
-      'upload_session_invalid' => const ExamPaperApiException(
+      'upload_session_invalid' => (
           message: '上传会话已失效，请重新上传',
           code: 'upload_session_invalid',
         ),
-      'upload_retry_exhausted' => const ExamPaperApiException(
+      'upload_retry_exhausted' => (
           message: '该文件上传失败次数过多，请重新选择文件',
           code: 'upload_retry_exhausted',
         ),
-      'upload_unclaimed_quota_exceeded' => const ExamPaperApiException(
+      'upload_unclaimed_quota_exceeded' => (
           message: '未完成的上传过多，请稍后重试',
           code: 'upload_storage_quota_exceeded',
         ),
-      'upload_session_in_progress' => const ExamPaperApiException(
+      'upload_session_in_progress' => (
           message: '该文件正在上传，请稍后重试',
           code: 'upload_session_in_progress',
         ),
-      'file_size_mismatch' => const ExamPaperApiException(
+      'file_size_mismatch' => (
           message: '文件大小发生变化，请重新选择 PDF',
           code: 'file_size_mismatch',
         ),
-      'file too large' => const ExamPaperApiException(
+      'file too large' => (
           message: 'PDF 不能超过 20 MiB',
           code: 'file_too_large',
         ),
-      'invalid pdf' || 'encrypted pdf' => const ExamPaperApiException(
+      'invalid pdf' || 'encrypted pdf' => (
           message: 'PDF 文件无效或已加密，请更换文件',
           code: 'invalid_pdf',
         ),
-      'insufficient storage' => const ExamPaperApiException(
+      'insufficient storage' => (
           message: '文件服务器空间不足，请稍后重试',
           code: 'insufficient_storage',
         ),
-      'validation busy' || 'validation_busy' => const ExamPaperApiException(
+      'validation busy' || 'validation_busy' => (
           message: '文件校验繁忙，请稍后重试',
           code: 'validation_busy',
         ),
-      'storage unavailable' => const ExamPaperApiException(
+      'storage unavailable' => (
           message: '文件服务器暂不可用，请稍后重试',
           code: 'storage_unavailable',
         ),
       _ => null,
     };
-    if (mapped != null) return mapped;
-
-    final statusCode = error.response?.statusCode ?? 0;
-    if (statusCode < 300) {
-      return const ExamPaperApiException(
-        message: '文件上传失败，请检查网络后重试',
-        code: 'storage_upload_failed',
+    final responseStatusCode = error.response?.statusCode;
+    if (mapped != null) {
+      return ExamPaperApiException(
+        message: mapped.message,
+        code: mapped.code,
+        statusCode: responseStatusCode,
       );
     }
-    return const ExamPaperApiException(
+
+    final statusCode = responseStatusCode ?? 0;
+    if (statusCode < 300) {
+      return ExamPaperApiException(
+        message: '文件上传失败，请检查网络后重试',
+        code: 'storage_upload_failed',
+        statusCode: responseStatusCode,
+      );
+    }
+    return ExamPaperApiException(
       message: '文件上传失败，请稍后重试',
       code: 'storage_upload_failed',
+      statusCode: responseStatusCode,
     );
   }
 

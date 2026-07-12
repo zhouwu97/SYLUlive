@@ -408,15 +408,19 @@ func configureRemoteExamPaperHandler(t *testing.T, env *examPaperTestEnv, mode s
 
 var examPaperUploadHandlerTestNow = time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
 
+func validRemoteExamPaperUploadSessionPayload() map[string]any {
+	return map[string]any{
+		"course_name": "高等数学", "academic_year": "2025-2026", "semester": "first", "exam_type": "final",
+		"privacy_confirmed": true, "file_size": 1024,
+	}
+}
+
 func TestCreateRemoteExamPaperUploadSessionReturnsDirectUploadURL(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	remote := configureRemoteExamPaperHandler(t, &env, "remote")
 	user := createExamPaperTestUser(t, env.db, "remote-uploader", models.RoleUser, true, 0)
 
-	response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, map[string]any{
-		"course_name": "高等数学", "academic_year": "2025-2026", "semester": "first", "exam_type": "final",
-		"privacy_confirmed": true, "file_size": 1024,
-	})
+	response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, validRemoteExamPaperUploadSessionPayload())
 	if response.Code != http.StatusCreated {
 		t.Fatalf("创建远端上传会话失败: status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -442,6 +446,103 @@ func TestCreateRemoteExamPaperUploadSessionReturnsDirectUploadURL(t *testing.T) 
 	if strings.Contains(response.Body.String(), "storage_key") || strings.Contains(response.Body.String(), "sha256") {
 		t.Fatalf("上传会话响应泄露私有文件信息: %s", response.Body.String())
 	}
+}
+
+func TestRemoteExamPaperUploadSessionJSONBodyLimitsAndMalformedPayloads(t *testing.T) {
+	tests := []struct {
+		name       string
+		handler    func(*ExamPaperHandler) gin.HandlerFunc
+		path       string
+		params     gin.Params
+		body       []byte
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "创建会话请求体超限", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CreateUploadSession }, path: "/api/exam-papers/upload-sessions", body: []byte(`{"course_name":"` + strings.Repeat("x", 70*1024) + `"}`), wantStatus: http.StatusRequestEntityTooLarge, wantCode: "request_body_too_large"},
+		{name: "创建会话JSON畸形", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CreateUploadSession }, path: "/api/exam-papers/upload-sessions", body: []byte(`{"course_name":`), wantStatus: http.StatusBadRequest, wantCode: "invalid_upload_session_request"},
+		{name: "完成会话请求体超限", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CompleteUploadSession }, path: "/api/exam-papers/upload-sessions/session-1/complete", params: gin.Params{{Key: "id", Value: "session-1"}}, body: []byte(`{"receipt":"` + strings.Repeat("x", 70*1024) + `"}`), wantStatus: http.StatusRequestEntityTooLarge, wantCode: "request_body_too_large"},
+		{name: "完成会话JSON畸形", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CompleteUploadSession }, path: "/api/exam-papers/upload-sessions/session-1/complete", params: gin.Params{{Key: "id", Value: "session-1"}}, body: []byte(`{"receipt":`), wantStatus: http.StatusBadRequest, wantCode: "upload_receipt_invalid"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := newExamPaperTestEnv(t)
+			configureRemoteExamPaperHandler(t, &env, "remote")
+			user := createExamPaperTestUser(t, env.db, "json-limit-"+test.name, models.RoleUser, true, 0)
+			response := performExamPaperRequest(test.handler(env.handler), http.MethodPost, test.path, test.params, user.ID, test.body, "application/json")
+			if response.Code != test.wantStatus || decodeErrorCode(t, response) != test.wantCode {
+				t.Fatalf("JSON 请求错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreateRemoteExamPaperUploadSessionValidatesBusinessBoundaries(t *testing.T) {
+	t.Run("未确认隐私", func(t *testing.T) {
+		env := newExamPaperTestEnv(t)
+		configureRemoteExamPaperHandler(t, &env, "remote")
+		user := createExamPaperTestUser(t, env.db, "remote-no-privacy", models.RoleUser, true, 0)
+		payload := validRemoteExamPaperUploadSessionPayload()
+		payload["privacy_confirmed"] = false
+		response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, payload)
+		if response.Code != http.StatusBadRequest || decodeErrorCode(t, response) != "privacy_confirmation_required" {
+			t.Fatalf("隐私确认错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("元数据非法", func(t *testing.T) {
+		env := newExamPaperTestEnv(t)
+		configureRemoteExamPaperHandler(t, &env, "remote")
+		user := createExamPaperTestUser(t, env.db, "remote-bad-metadata", models.RoleUser, true, 0)
+		payload := validRemoteExamPaperUploadSessionPayload()
+		payload["semester"] = "invalid"
+		response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, payload)
+		if response.Code != http.StatusBadRequest || decodeErrorCode(t, response) != "invalid_exam_paper_metadata" {
+			t.Fatalf("元数据错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("普通用户未教务认证", func(t *testing.T) {
+		env := newExamPaperTestEnv(t)
+		configureRemoteExamPaperHandler(t, &env, "remote")
+		user := createExamPaperTestUser(t, env.db, "remote-unverified", models.RoleUser, false, 0)
+		response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, validRemoteExamPaperUploadSessionPayload())
+		if response.Code != http.StatusForbidden || decodeErrorCode(t, response) != "edu_verification_required" {
+			t.Fatalf("教务认证错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("待审核配额已满", func(t *testing.T) {
+		env := newExamPaperTestEnv(t)
+		configureRemoteExamPaperHandler(t, &env, "remote")
+		user := createExamPaperTestUser(t, env.db, "remote-pending-limit", models.RoleUser, true, 0)
+		for index := 0; index < maxPendingExamPaperSubmissionsPerUser; index++ {
+			paper := models.ExamPaper{Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: user.ID, CourseName: fmt.Sprintf("配额-%d", index), AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst, ExamType: models.ExamPaperTypeFinal, Title: fmt.Sprintf("配额-%d", index), FileKey: fmt.Sprintf("remote-quota-%d.pdf", index), FileSize: 1, SHA256: fmt.Sprintf("remote-quota-sha-%d", index)}
+			if err := env.db.Create(&paper).Error; err != nil {
+				t.Fatalf("创建配额测试试卷失败: %v", err)
+			}
+		}
+		response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, validRemoteExamPaperUploadSessionPayload())
+		if response.Code != http.StatusTooManyRequests || decodeErrorCode(t, response) != "exam_paper_pending_limit_reached" {
+			t.Fatalf("待审核配额错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("短时创建会话限流", func(t *testing.T) {
+		env := newExamPaperTestEnv(t)
+		configureRemoteExamPaperHandler(t, &env, "remote")
+		user := createExamPaperTestUser(t, env.db, "remote-rate-limit", models.RoleUser, true, 0)
+		for index := 0; index < maxExamPaperUploadsPerWindow; index++ {
+			response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, validRemoteExamPaperUploadSessionPayload())
+			if response.Code != http.StatusCreated {
+				t.Fatalf("第 %d 次创建上传会话失败: status=%d body=%s", index+1, response.Code, response.Body.String())
+			}
+		}
+		response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, validRemoteExamPaperUploadSessionPayload())
+		if response.Code != http.StatusTooManyRequests || decodeErrorCode(t, response) != "exam_paper_upload_rate_limited" {
+			t.Fatalf("创建会话限流错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
 }
 
 func TestCompleteRemoteExamPaperUploadSessionCreatesSubmission(t *testing.T) {
@@ -574,6 +675,29 @@ func TestCompleteRemoteExamPaperUploadSessionMapsBoundaryErrors(t *testing.T) {
 	}
 }
 
+func TestCompleteRemoteExamPaperUploadSessionMapsDatabaseFailureToInternalError(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	remote := configureRemoteExamPaperHandler(t, &env, "remote")
+	user := createExamPaperTestUser(t, env.db, "remote-db-failure", models.RoleUser, true, 0)
+	metadata, _ := models.NormalizeExamPaperMetadata("高等数学", "2025-2026", models.ExamPaperSemesterFirst, models.ExamPaperTypeFinal)
+	session, _, err := remote.uploads.CreateSession(user, metadata, 1024)
+	if err != nil {
+		t.Fatalf("创建测试会话失败: %v", err)
+	}
+	receipt, err := remote.receiptSigner.SignReceipt(services.ExamPaperUploadReceipt{SessionID: session.ID, FileKey: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee.pdf", FileSize: 1024, SHA256: "e234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", IssuedAt: examPaperUploadHandlerTestNow.Unix()})
+	if err != nil {
+		t.Fatalf("签发测试回执失败: %v", err)
+	}
+	if err := env.db.Migrator().DropTable(&models.ExamPaper{}); err != nil {
+		t.Fatalf("注入数据库失败场景失败: %v", err)
+	}
+
+	response := performExamPaperJSONRequest(env.handler.CompleteUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions/"+session.ID+"/complete", gin.Params{{Key: "id", Value: session.ID}}, user.ID, map[string]any{"receipt": receipt})
+	if response.Code != http.StatusInternalServerError || decodeErrorCode(t, response) != "internal_error" {
+		t.Fatalf("内部错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestRemoteExamPaperUploadRequiresNewClientWithoutReadingMultipartBody(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	configureRemoteExamPaperHandler(t, &env, "remote")
@@ -597,15 +721,30 @@ func TestRemoteExamPaperUploadRequiresNewClientWithoutReadingMultipartBody(t *te
 
 func TestReadonlyRemoteExamPaperStorageRejectsNewUploads(t *testing.T) {
 	env := newExamPaperTestEnv(t)
-	configureRemoteExamPaperHandler(t, &env, "readonly-remote")
+	remote := configureRemoteExamPaperHandler(t, &env, "remote")
 	user := createExamPaperTestUser(t, env.db, "readonly-uploader", models.RoleUser, true, 0)
+	metadata, _ := models.NormalizeExamPaperMetadata("高等数学", "2025-2026", models.ExamPaperSemesterFirst, models.ExamPaperTypeFinal)
+	session, _, err := remote.uploads.CreateSession(user, metadata, 1024)
+	if err != nil {
+		t.Fatalf("创建切换前上传会话失败: %v", err)
+	}
+	receipt, err := remote.receiptSigner.SignReceipt(services.ExamPaperUploadReceipt{SessionID: session.ID, FileKey: "ffffffff-ffff-4fff-8fff-ffffffffffff.pdf", FileSize: 1024, SHA256: "f234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", IssuedAt: examPaperUploadHandlerTestNow.Unix()})
+	if err != nil {
+		t.Fatalf("签发切换前回执失败: %v", err)
+	}
+	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, "readonly-remote", "https://sylulive.online", remote.uploads)
 
-	response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, map[string]any{
-		"course_name": "高等数学", "academic_year": "2025-2026", "semester": "first", "exam_type": "final",
-		"privacy_confirmed": true, "file_size": 1024,
-	})
+	response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, validRemoteExamPaperUploadSessionPayload())
 	if response.Code != http.StatusServiceUnavailable || decodeErrorCode(t, response) != "storage_unavailable" {
 		t.Fatalf("只读远端模式应拒绝新上传: status=%d body=%s", response.Code, response.Body.String())
+	}
+	legacy := performExamPaperRequest(env.handler.Upload, http.MethodPost, "/api/exam-papers", nil, user.ID, []byte("not-read"), "multipart/form-data")
+	if legacy.Code != http.StatusServiceUnavailable || decodeErrorCode(t, legacy) != "storage_unavailable" {
+		t.Fatalf("只读远端模式应拒绝旧 multipart 上传: status=%d body=%s", legacy.Code, legacy.Body.String())
+	}
+	completed := performExamPaperJSONRequest(env.handler.CompleteUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions/"+session.ID+"/complete", gin.Params{{Key: "id", Value: session.ID}}, user.ID, map[string]any{"receipt": receipt})
+	if completed.Code != http.StatusCreated {
+		t.Fatalf("只读远端模式应允许完成既有会话: status=%d body=%s", completed.Code, completed.Body.String())
 	}
 }
 

@@ -1122,6 +1122,24 @@ func TestExamPaperWithdrawRollsBackWhenRecordDeleteFails(t *testing.T) {
 	}
 }
 
+func TestExamPaperLocalWithdrawReportsPurgeFailureAfterCommit(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "withdraw-purge-failure", models.RoleUser, true, 0)
+	paper := createStoredExamPaper(t, env, user, models.ExamPaperStatusPending)
+	env.handler.purgeLocalDelete = func(services.ExamPaperTrashMove) error { return errors.New("清理暂存文件失败") }
+
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	response := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, user.ID, nil, "")
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "exam_paper_file_cleanup_pending") {
+		t.Fatalf("暂存文件清理失败应可观察: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var count int64
+	env.db.Model(&models.ExamPaper{}).Where("id = ?", paper.ID).Count(&count)
+	if count != 0 {
+		t.Fatalf("数据库事务已提交，记录应删除: %d", count)
+	}
+}
+
 func TestExamPaperWithdrawCleansRecordWhenStoredFileAlreadyMissing(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	user := createExamPaperTestUser(t, env.db, "withdraw-missing-file", models.RoleUser, true, 0)

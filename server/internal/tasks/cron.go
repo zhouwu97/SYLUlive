@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -28,12 +29,32 @@ type examPaperStorageMaintainer interface {
 	Run(context.Context) (services.ExamPaperStorageMaintenanceReport, error)
 }
 
+// ExamPaperStorageCron 持有存储后台任务的退出同步状态。
+type ExamPaperStorageCron struct {
+	wg sync.WaitGroup
+}
+
+// Wait 等待所有存储后台任务在 context 取消后退出。
+func (c *ExamPaperStorageCron) Wait() {
+	if c != nil {
+		c.wg.Wait()
+	}
+}
+
 // StartExamPaperStorageCron 启动远端文件 outbox 消费与每日完整性维护。
-func StartExamPaperStorageCron(ctx context.Context, jobs examPaperStorageJobProcessor, maintenance examPaperStorageMaintainer) {
+func StartExamPaperStorageCron(ctx context.Context, jobs examPaperStorageJobProcessor, maintenance examPaperStorageMaintainer) *ExamPaperStorageCron {
+	cron := &ExamPaperStorageCron{}
+	cron.wg.Add(2)
 	go func() {
+		defer cron.wg.Done()
 		ticker := time.NewTicker(examPaperStorageJobInterval)
 		defer ticker.Stop()
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			report, err := jobs.ProcessDue(ctx, examPaperStorageJobBatchSize)
 			if err != nil {
 				log.Printf("处理试卷存储任务失败: %v", err)
@@ -48,9 +69,15 @@ func StartExamPaperStorageCron(ctx context.Context, jobs examPaperStorageJobProc
 		}
 	}()
 	go func() {
+		defer cron.wg.Done()
 		ticker := time.NewTicker(examPaperStorageMaintenanceInterval)
 		defer ticker.Stop()
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			report, err := maintenance.Run(ctx)
 			if err != nil {
 				log.Printf("执行试卷存储完整性维护失败: %v", err)
@@ -67,6 +94,7 @@ func StartExamPaperStorageCron(ctx context.Context, jobs examPaperStorageJobProc
 		}
 	}()
 	log.Println("试卷远端存储后台任务已启动")
+	return cron
 }
 
 // StartLotteryCron 启动抽奖自动开奖轮询任务

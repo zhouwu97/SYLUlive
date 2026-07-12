@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -121,11 +122,16 @@ func TestExamPaperStorageJobDispatchesClaimAndTrashIdempotently(t *testing.T) {
 	service := NewExamPaperStorageJobService(db, remote, time.Now)
 	for index := 0; index < 2; index++ {
 		require.NoError(t, service.Enqueue(db, models.ExamPaperStorageRemote, "paper.pdf", ExamPaperStoragePurposeClaim))
-		require.NoError(t, service.Enqueue(db, models.ExamPaperStorageRemote, "paper.pdf", ExamPaperStoragePurposeDelete))
 	}
 	report, err := service.ProcessDue(context.Background(), 10)
 	require.NoError(t, err)
-	require.Equal(t, 2, report.Completed)
+	require.Equal(t, 1, report.Completed)
+	for index := 0; index < 2; index++ {
+		require.NoError(t, service.Enqueue(db, models.ExamPaperStorageRemote, "paper.pdf", ExamPaperStoragePurposeDelete))
+	}
+	report, err = service.ProcessDue(context.Background(), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Completed)
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
 	require.Equal(t, 1, remote.calls["claim:paper.pdf"])
@@ -173,4 +179,69 @@ func TestExamPaperStorageJobPostgresClaimHonorsDueFilters(t *testing.T) {
 	require.Equal(t, 1, remote.calls["trash:due.pdf"])
 	require.Zero(t, remote.calls["trash:future.pdf"])
 	require.Zero(t, remote.calls["trash:completed.pdf"])
+}
+
+func TestExamPaperStorageJobTrashSupersedesFailedClaimIncludingLeasedClaim(t *testing.T) {
+	db := openStorageJobTestDB(t)
+	now := time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
+	remote := &dispatchingStorageJobRemoteStub{storageJobRemoteStub: storageJobRemoteStub{failures: map[string]int{"claim:paper.pdf": 99}}}
+	service := NewExamPaperStorageJobService(db, remote, func() time.Time { return now })
+	require.NoError(t, service.EnqueueClaim(db, models.ExamPaperStorageRemote, "paper.pdf"))
+	first, err := service.ProcessDue(context.Background(), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Failed)
+	var claim models.ExamPaperStorageJob
+	require.NoError(t, db.Where("file_key = ? AND operation = ?", "paper.pdf", ExamPaperStoragePurposeClaim).First(&claim).Error)
+	claim.LockedAt = &now
+	claim.LockToken = "leased-claim"
+	require.NoError(t, db.Model(&claim).Updates(map[string]any{"locked_at": claim.LockedAt, "lock_token": claim.LockToken}).Error)
+
+	require.NoError(t, service.EnqueueTrash(db, models.ExamPaperStorageRemote, "paper.pdf"))
+	now = now.Add(time.Hour)
+	report, err := service.ProcessDue(context.Background(), 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Processed)
+	require.Equal(t, 1, report.Completed)
+	var jobs []models.ExamPaperStorageJob
+	require.NoError(t, db.Where("file_key = ?", "paper.pdf").Order("operation").Find(&jobs).Error)
+	require.Len(t, jobs, 2)
+	for _, job := range jobs {
+		require.NotNil(t, job.CompletedAt, job.Operation)
+	}
+	remote.mu.Lock()
+	defer remote.mu.Unlock()
+	require.Equal(t, 1, remote.calls["claim:paper.pdf"])
+	require.Equal(t, 1, remote.calls["trash:paper.pdf"])
+}
+
+func TestExamPaperStorageJobTrashSupersessionRollsBackAndRespectsActiveReference(t *testing.T) {
+	db := openStorageJobTestDB(t)
+	now := time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
+	service := NewExamPaperStorageJobService(db, &dispatchingStorageJobRemoteStub{}, func() time.Time { return now })
+	require.NoError(t, service.EnqueueClaim(db, models.ExamPaperStorageRemote, "paper.pdf"))
+	errRollback := errors.New("回滚删除事务")
+	err := db.Transaction(func(tx *gorm.DB) error {
+		require.NoError(t, service.EnqueueTrash(tx, models.ExamPaperStorageRemote, "paper.pdf"))
+		return errRollback
+	})
+	require.ErrorIs(t, err, errRollback)
+	var claim models.ExamPaperStorageJob
+	require.NoError(t, db.Where("file_key = ? AND operation = ?", "paper.pdf", ExamPaperStoragePurposeClaim).First(&claim).Error)
+	require.Nil(t, claim.CompletedAt)
+	var trashCount int64
+	require.NoError(t, db.Model(&models.ExamPaperStorageJob{}).Where("file_key = ? AND operation = ?", "paper.pdf", ExamPaperStoragePurposeDelete).Count(&trashCount).Error)
+	require.Zero(t, trashCount)
+
+	paper := models.ExamPaper{
+		Status: models.ExamPaperStatusPublished, Source: models.ExamPaperSourceUser, SubmitterID: 1,
+		StorageBackend: models.ExamPaperStorageRemote, CourseName: "高等数学", AcademicYear: "2025-2026",
+		Semester: models.ExamPaperSemesterFirst, ExamType: models.ExamPaperTypeFinal, Title: "高等数学期末",
+		FileKey: "paper.pdf", FileSize: 10, SHA256: strings.Repeat("a", 64),
+	}
+	require.NoError(t, db.Create(&paper).Error)
+	require.NoError(t, service.EnqueueTrash(db, models.ExamPaperStorageRemote, "paper.pdf"))
+	require.NoError(t, db.First(&claim, claim.ID).Error)
+	require.Nil(t, claim.CompletedAt)
+	require.NoError(t, db.Model(&models.ExamPaperStorageJob{}).Where("file_key = ? AND operation = ?", "paper.pdf", ExamPaperStoragePurposeDelete).Count(&trashCount).Error)
+	require.Zero(t, trashCount)
 }

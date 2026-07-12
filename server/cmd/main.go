@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 	_ "time/tzdata"
 
@@ -38,6 +40,11 @@ type examPaperStorageJobAttemptProcessor interface {
 	ProcessJob(context.Context, uint) error
 }
 
+type gracefulHTTPServer interface {
+	ListenAndServe() error
+	Shutdown(context.Context) error
+}
+
 // newExamPaperStorageJobAttempt 创建上传事务提交后的即时认领回调。
 func newExamPaperStorageJobAttempt(processor examPaperStorageJobAttemptProcessor) services.ExamPaperStorageJobAttempt {
 	return func(jobID uint) error {
@@ -47,11 +54,45 @@ func newExamPaperStorageJobAttempt(processor examPaperStorageJobAttemptProcessor
 	}
 }
 
+func serveUntilShutdown(ctx context.Context, server gracefulHTTPServer, shutdownTimeout time.Duration) error {
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ListenAndServe() }()
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	shutdownErr := server.Shutdown(shutdownCtx)
+	select {
+	case err := <-serveErr:
+		if shutdownErr != nil {
+			return shutdownErr
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	case <-shutdownCtx.Done():
+		if shutdownErr != nil {
+			return shutdownErr
+		}
+		return shutdownCtx.Err()
+	}
+}
+
 func main() {
 	// 强制设置时区为东八区（北京时间），使用 FixedZone 确保在任何没有 tzdata 的系统上也能生效
 	time.Local = time.FixedZone("CST", 8*3600)
 
 	cfg := config.Load()
+	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopApp()
 
 	// 确保上传目录存在
 
@@ -463,7 +504,7 @@ func main() {
 		}
 		campusSyncServices = append(campusSyncServices, services.NewCampusSyncService(db, competitionSpec))
 
-		go tasks.StartCampusSyncTask(context.Background(), campusSyncServices, cfg)
+		go tasks.StartCampusSyncTask(appCtx, campusSyncServices, cfg)
 		log.Println("校园资讯同步已启用 (JWC + Competition)")
 	} else {
 		log.Println("校园资讯同步未启用 (JWC_SYNC_ENABLED=false)")
@@ -475,8 +516,9 @@ func main() {
 	// 启动后台定时任务
 
 	tasks.StartLotteryCron(db)
+	var examPaperStorageCron *tasks.ExamPaperStorageCron
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
-		tasks.StartExamPaperStorageCron(context.Background(), examPaperStorageJobs, examPaperStorageMaintenance)
+		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
 	}
 
 	// 健康检查接口
@@ -1361,11 +1403,12 @@ func main() {
 	})
 
 	log.Println("服务器启动在 :8080")
-
-	if err := r.Run(":8080"); err != nil {
-
-		log.Fatal("服务器启动失败:", err)
-
+	server := &http.Server{Addr: ":8080", Handler: r, ReadHeaderTimeout: 10 * time.Second}
+	serveErr := serveUntilShutdown(appCtx, server, 10*time.Second)
+	stopApp()
+	examPaperStorageCron.Wait()
+	if serveErr != nil {
+		log.Fatal("服务器运行失败:", serveErr)
 	}
 
 }

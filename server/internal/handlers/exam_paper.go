@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,19 +41,24 @@ type examPaperRemoteFileURLSigner interface {
 
 // ExamPaperHandler 提供试卷投稿、浏览、下载与审核接口。
 type ExamPaperHandler struct {
-	db             *gorm.DB
-	files          *services.ExamPaperFileService
-	uploads        *services.ExamPaperUploadService
-	storageMode    string
-	storageBaseURL string
-	remoteFiles    examPaperRemoteFileURLSigner
-	storageJobs    *services.ExamPaperStorageJobService
-	uploadLimiter  *examPaperUploadLimiter
+	db               *gorm.DB
+	files            *services.ExamPaperFileService
+	uploads          *services.ExamPaperUploadService
+	storageMode      string
+	storageBaseURL   string
+	remoteFiles      examPaperRemoteFileURLSigner
+	storageJobs      *services.ExamPaperStorageJobService
+	uploadLimiter    *examPaperUploadLimiter
+	purgeLocalDelete func(services.ExamPaperTrashMove) error
 }
 
 // NewExamPaperHandler 创建试卷处理器。
 func NewExamPaperHandler(db *gorm.DB, files *services.ExamPaperFileService) *ExamPaperHandler {
-	return &ExamPaperHandler{db: db, files: files, storageMode: examPaperStorageModeLocal, uploadLimiter: newExamPaperUploadLimiter()}
+	handler := &ExamPaperHandler{db: db, files: files, storageMode: examPaperStorageModeLocal, uploadLimiter: newExamPaperUploadLimiter()}
+	if files != nil {
+		handler.purgeLocalDelete = files.PurgeDelete
+	}
+	return handler
 }
 
 // NewExamPaperHandlerWithStorage 创建支持远端上传会话的试卷处理器。
@@ -891,11 +898,30 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 		return
 	}
 
-	var fileKey string
-	var storageBackend models.ExamPaperStorageBackend
+	var paper models.ExamPaper
+	if err := h.db.Where("id = ? AND submitter_id = ?", id, user.ID).First(&paper).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeExamPaperError(c, http.StatusNotFound, "exam_paper_not_found", "投稿不存在")
+			return
+		}
+		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "读取投稿失败")
+		return
+	}
+	switch paper.Status {
+	case models.ExamPaperStatusPending, models.ExamPaperStatusPublished, models.ExamPaperStatusUnpublished:
+	default:
+		writeExamPaperError(c, http.StatusConflict, "exam_paper_not_deletable", "当前投稿状态不允许删除")
+		return
+	}
+	localDelete, err := h.stageLocalExamPaperDelete(paper.StorageBackend, paper.FileKey)
+	if err != nil {
+		writeExamPaperError(c, http.StatusInternalServerError, "exam_paper_file_unavailable", "试卷文件暂不可用")
+		return
+	}
+
 	var status models.ExamPaperStatus
 	rewardRevoked := false
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ? AND submitter_id = ?", id, user.ID)
 		if tx.Dialector.Name() == "postgres" {
@@ -904,9 +930,10 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 		if err := query.First(&locked).Error; err != nil {
 			return err
 		}
+		if locked.FileKey != paper.FileKey || locked.StorageBackend != paper.StorageBackend {
+			return errExamPaperNotDeletable
+		}
 		status = locked.Status
-		fileKey = locked.FileKey
-		storageBackend = locked.StorageBackend
 		switch locked.Status {
 		case models.ExamPaperStatusPending:
 		case models.ExamPaperStatusPublished, models.ExamPaperStatusUnpublished:
@@ -926,6 +953,7 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 		return h.enqueueRemoteExamPaperTrash(tx, locked.StorageBackend, locked.FileKey)
 	})
 	if err != nil {
+		h.restoreLocalExamPaperDelete(localDelete)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeExamPaperError(c, http.StatusNotFound, "exam_paper_not_found", "投稿不存在")
 			return
@@ -937,7 +965,9 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "删除投稿失败")
 		return
 	}
-	h.removeExamPaperFileAfterCommit(storageBackend, fileKey)
+	if !h.purgeLocalExamPaperDelete(c, localDelete) {
+		return
+	}
 	message := "投稿已永久删除"
 	if status == models.ExamPaperStatusPending {
 		message = "投稿已撤回"
@@ -945,12 +975,44 @@ func (h *ExamPaperHandler) Withdraw(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": message, "exp_revoked": rewardRevoked})
 }
 
-func (h *ExamPaperHandler) removeExamPaperFileAfterCommit(storageBackend models.ExamPaperStorageBackend, fileKey string) {
+func (h *ExamPaperHandler) stageLocalExamPaperDelete(storageBackend models.ExamPaperStorageBackend, fileKey string) (*services.ExamPaperTrashMove, error) {
 	if fileKey == "" || storageBackend == models.ExamPaperStorageRemote {
+		return nil, nil
+	}
+	move, err := h.files.StageDelete(fileKey)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &move, nil
+}
+
+func (h *ExamPaperHandler) restoreLocalExamPaperDelete(move *services.ExamPaperTrashMove) {
+	if move == nil {
 		return
 	}
-	// 数据库状态已经提交，文件清理失败不再回滚用户可见状态；孤儿文件可由后续巡检清理。
-	_ = h.files.Remove(fileKey)
+	if err := h.files.RestoreDelete(*move); err != nil {
+		log.Printf("恢复暂存试卷文件失败 file_key=%q: %v", move.FileKey, err)
+	}
+}
+
+func (h *ExamPaperHandler) purgeLocalExamPaperDelete(c *gin.Context, move *services.ExamPaperTrashMove) bool {
+	if move == nil {
+		return true
+	}
+	if h.purgeLocalDelete == nil {
+		log.Printf("试卷文件清理器未配置 file_key=%q", move.FileKey)
+		writeExamPaperError(c, http.StatusInternalServerError, "exam_paper_file_cleanup_pending", "试卷文件清理待处理")
+		return false
+	}
+	if err := h.purgeLocalDelete(*move); err != nil {
+		log.Printf("清理暂存试卷文件失败 file_key=%q: %v", move.FileKey, err)
+		writeExamPaperError(c, http.StatusInternalServerError, "exam_paper_file_cleanup_pending", "试卷文件清理待处理")
+		return false
+	}
+	return true
 }
 
 func (h *ExamPaperHandler) enqueueRemoteExamPaperTrash(tx *gorm.DB, storageBackend models.ExamPaperStorageBackend, fileKey string) error {
@@ -1209,10 +1271,13 @@ func (h *ExamPaperHandler) AdminReject(c *gin.Context) {
 		writeExamPaperError(c, http.StatusConflict, "exam_paper_not_pending", "试卷已不处于待审核状态")
 		return
 	}
-	fileKey := paper.FileKey
-	storageBackend := paper.StorageBackend
+	localDelete, err := h.stageLocalExamPaperDelete(paper.StorageBackend, paper.FileKey)
+	if err != nil {
+		writeExamPaperError(c, http.StatusInternalServerError, "exam_paper_file_unavailable", "试卷文件暂不可用")
+		return
+	}
 
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ?", id)
 		if tx.Dialector.Name() == "postgres" {
@@ -1224,7 +1289,7 @@ func (h *ExamPaperHandler) AdminReject(c *gin.Context) {
 			}
 			return err
 		}
-		if locked.Status != models.ExamPaperStatusPending || locked.FileKey != paper.FileKey {
+		if locked.Status != models.ExamPaperStatusPending || locked.FileKey != paper.FileKey || locked.StorageBackend != paper.StorageBackend {
 			return errExamPaperNotPending
 		}
 		message := fmt.Sprintf("你投稿的试卷《%s》未通过审核。\n拒绝理由：%s", locked.Title, input.Reason)
@@ -1246,10 +1311,13 @@ func (h *ExamPaperHandler) AdminReject(c *gin.Context) {
 		return h.enqueueRemoteExamPaperTrash(tx, locked.StorageBackend, locked.FileKey)
 	})
 	if err != nil {
+		h.restoreLocalExamPaperDelete(localDelete)
 		h.writeAdminTransactionError(c, err)
 		return
 	}
-	h.removeExamPaperFileAfterCommit(storageBackend, fileKey)
+	if !h.purgeLocalExamPaperDelete(c, localDelete) {
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "投稿已拒绝并删除"})
 }
 
@@ -1343,11 +1411,14 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 		writeExamPaperError(c, http.StatusConflict, "exam_paper_not_published", "只有已发布试卷可以下架")
 		return
 	}
-	fileKey := paper.FileKey
-	storageBackend := paper.StorageBackend
+	localDelete, err := h.stageLocalExamPaperDelete(paper.StorageBackend, paper.FileKey)
+	if err != nil {
+		writeExamPaperError(c, http.StatusInternalServerError, "exam_paper_file_unavailable", "试卷文件暂不可用")
+		return
+	}
 	now := time.Now()
 	var responsePaper models.ExamPaper
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	err = h.db.Transaction(func(tx *gorm.DB) error {
 		var locked models.ExamPaper
 		query := tx.Where("id = ?", id)
 		if tx.Dialector.Name() == "postgres" {
@@ -1359,7 +1430,7 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 			}
 			return err
 		}
-		if locked.Status != models.ExamPaperStatusPublished || locked.FileKey != paper.FileKey {
+		if locked.Status != models.ExamPaperStatusPublished || locked.FileKey != paper.FileKey || locked.StorageBackend != paper.StorageBackend {
 			return errExamPaperNotPublished
 		}
 		rewardRevoked, err := revokeExamPaperReward(tx, &locked, now)
@@ -1392,10 +1463,13 @@ func (h *ExamPaperHandler) AdminUnpublish(c *gin.Context) {
 		return tx.Preload("Submitter").First(&responsePaper, id).Error
 	})
 	if err != nil {
+		h.restoreLocalExamPaperDelete(localDelete)
 		h.writeAdminTransactionError(c, err)
 		return
 	}
-	h.removeExamPaperFileAfterCommit(storageBackend, fileKey)
+	if !h.purgeLocalExamPaperDelete(c, localDelete) {
+		return
+	}
 	c.JSON(http.StatusOK, examPaperToResponse(responsePaper))
 }
 

@@ -596,7 +596,7 @@ cd server
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/paper-storage ./cmd/paper_storage
 ```
 
-把仓库和二进制放到文件服务器后，以 root 执行：
+把仓库和二进制放到文件服务器后，首次先以 root 执行安装，创建环境文件并使用临时证书启动 Nginx：
 
 ```bash
 cd deploy/paper-storage
@@ -614,12 +614,18 @@ openssl rand -hex 32
 
 第一把同时配置为主服务器的 `EXAM_PAPER_STORAGE_SIGNING_SECRET` 和文件服务器的 `PAPER_STORAGE_SIGNING_SECRET`；第二把同时配置为主服务器的 `EXAM_PAPER_STORAGE_RECEIPT_SECRET` 和文件服务器的 `PAPER_STORAGE_RECEIPT_SECRET`。两把密钥不得相同，也不得提交到 Git。
 
-设置正式证书联系人并再次运行安装脚本，certbot 会替换 Nginx 临时证书：
+写入真实密钥、确认 DNS 生效后，首次签发正式证书时提供联系人邮箱；certbot 会替换 Nginx 临时证书并启用自动续期 timer：
 
 ```bash
 LETSENCRYPT_EMAIL=管理员邮箱 PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
 certbot renew --dry-run
 curl -fsS https://sylulive.online/healthz
+```
+
+后续升级只需传入新二进制，不需要再次提供邮箱，也不会重复签发或退回临时证书。安装脚本检测到 `/etc/letsencrypt/live/sylulive.online/fullchain.pem` 和 `privkey.pem` 后，会从模板重新渲染正式证书路径：
+
+```bash
+PAPER_STORAGE_BINARY=/实际路径/新版本-paper-storage ./install.sh
 ```
 
 健康检查应返回 `status=ok`；磁盘使用率达到 70% 时返回 `warning`，达到 95% 时返回 `readonly`。上线前同时检查：

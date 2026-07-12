@@ -188,6 +188,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       actionText = '组队申请结果';
     } else if (type == 'team_deadline_soon') {
       actionText = '组队即将截止';
+    } else if (type == 'team_member_left') {
+      actionText = '有成员退出了你的组队';
+    } else if (type == 'team_member_removed') {
+      actionText = '你已被移出组队';
     }
 
     return InkWell(

@@ -137,7 +137,9 @@ class _ApplicationItem extends StatelessWidget {
           'pending': '等待审核',
           'accepted': '已加入',
           'rejected': '未通过',
-          'cancelled': '已取消'
+          'cancelled': '已取消',
+          'withdrawn': '已退出',
+          'removed': '已移除'
         }[application.status] ??
         application.status;
     final statusColor = const {
@@ -226,6 +228,44 @@ class _ApplicationItem extends StatelessWidget {
                               if (error == null) onCancelled();
                             },
                       child: Text(cancelling ? '处理中…' : '撤回'))
+                else if (application.status == 'accepted')
+                  TextButton(
+                    style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFE54848)),
+                    onPressed: cancelling
+                        ? null
+                        : () async {
+                            final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (dialogContext) => AlertDialog(
+                                    title: const Text('退出队伍'),
+                                    content: const Text('退出后名额会重新开放，确定继续吗？'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dialogContext, false),
+                                        child: const Text('取消'),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dialogContext, true),
+                                        child: const Text('确认退出'),
+                                      ),
+                                    ],
+                                  ),
+                                ) ??
+                                false;
+                            if (!confirmed || !context.mounted) return;
+                            final error = await context
+                                .read<TeamRecruitmentProvider>()
+                                .leave(application.id);
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(error ?? '已退出队伍')));
+                            if (error == null) onCancelled();
+                          },
+                    child: Text(cancelling ? '处理中…' : '退出队伍'),
+                  )
               ]),
         ));
   }

@@ -226,6 +226,7 @@ class _TeamRecruitmentCreateScreenState
                   spacing: 8,
                   children: const [
                     ('竞赛', 'competition'),
+                    ('项目', 'project'),
                     ('学习', 'study'),
                     ('活动', 'activity'),
                     ('其他', 'other')
@@ -289,7 +290,7 @@ class _TeamRecruitmentCreateScreenState
                 Row(
                   children: [
                     const Expanded(
-                        child: Text('还需人数', style: TextStyle(fontSize: 15))),
+                        child: Text('计划招募总人数', style: TextStyle(fontSize: 15))),
                     IconButton(
                       onPressed: int.parse(_needed.text) > 1
                           ? () => setState(() => _needed.text =
@@ -308,6 +309,12 @@ class _TeamRecruitmentCreateScreenState
                     ),
                   ],
                 ),
+                if (widget.initialValue != null)
+                  Text(
+                    '当前已加入 ${widget.initialValue!.acceptedCount} 人，修改后还缺 ${(int.parse(_needed.text) - widget.initialValue!.acceptedCount).clamp(0, 20)} 人',
+                    style: TextStyle(
+                        fontSize: 12, color: TeamUiTokens.subtitle(isDark)),
+                  ),
                 Divider(color: borderColor),
                 const SizedBox(height: 8),
                 const Row(

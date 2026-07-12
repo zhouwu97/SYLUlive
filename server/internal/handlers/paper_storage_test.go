@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -71,6 +72,7 @@ func newPaperStorageTestHandler(t *testing.T, diskUsage float64) (*PaperStorageH
 func paperStorageRouter(handler *PaperStorageHandler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	router.Use(gin.Recovery())
 	RegisterPaperStorageRoutes(router, handler)
 	return router
 }
@@ -317,8 +319,9 @@ func TestPaperStorageRejectsEncodedBackslashTraversalAtRoutes(t *testing.T) {
 	} {
 		request := httptest.NewRequest(route.method, route.path, nil)
 		fileKey := request.URL.Path[strings.Index(request.URL.Path, "/files/")+len("/files/"):]
-		if strings.HasPrefix(fileKey, "") {
-			fileKey = strings.TrimSuffix(fileKey, "/meta")
+		fileKey = strings.TrimSuffix(fileKey, "/meta")
+		if !strings.Contains(fileKey, `\`) {
+			t.Fatalf("测试路径未解码为反斜杠 file key: %q", fileKey)
 		}
 		token, err := signer.SignGrant(services.ExamPaperStorageGrant{
 			Purpose: route.purpose, Method: route.method, Path: request.URL.Path, FileKey: fileKey,
@@ -330,8 +333,8 @@ func TestPaperStorageRejectsEncodedBackslashTraversalAtRoutes(t *testing.T) {
 		request.Header.Set("Authorization", "Bearer "+token)
 		response := httptest.NewRecorder()
 		paperStorageRouter(handler).ServeHTTP(response, request)
-		if response.Code == http.StatusOK || response.Code == http.StatusCreated || response.Code == http.StatusFound || response.Header().Get("X-Accel-Redirect") != "" {
-			t.Fatalf("路径穿越不得成功或生成重定向: code=%d headers=%v", response.Code, response.Header())
+		if response.Code != http.StatusNotFound || !bytes.Contains(response.Body.Bytes(), []byte(`"error":"not found"`)) || response.Header().Get("X-Accel-Redirect") != "" {
+			t.Fatalf("路径穿越应由 handler 明确拒绝: code=%d body=%s headers=%v", response.Code, response.Body.String(), response.Header())
 		}
 	}
 }
@@ -448,6 +451,68 @@ func TestPaperStorageValidationSemaphoreBlocksUntilReleased(t *testing.T) {
 	}
 }
 
+func TestPaperStorageUploadMapsInternalStoreErrorTo500(t *testing.T) {
+	handler, _, signer, _ := newPaperStorageTestHandler(t, 20)
+	handler.storePending = func(string, io.Reader) (*services.StoredExamPaperFile, error) {
+		return nil, errors.New("模拟磁盘写入失败")
+	}
+	path := "/v1/uploads/session-1"
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	response := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(response, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("内部 I/O 错误应返回 500: %d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestPaperStorageUploadPanicReleasesValidationSlot(t *testing.T) {
+	handler, _, signer, _ := newPaperStorageTestHandler(t, 1)
+	panicOnce := true
+	original := handler.storePending
+	handler.storePending = func(filename string, source io.Reader) (*services.StoredExamPaperFile, error) {
+		if panicOnce {
+			panicOnce = false
+			panic("模拟校验 panic")
+		}
+		return original(filename, source)
+	}
+	path := "/v1/uploads/session-1"
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeUpload, http.MethodPost, path, "session-1", "")
+	first := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(first, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+	if first.Code != http.StatusInternalServerError || len(handler.validations) != 0 {
+		t.Fatalf("panic 后状态或 slot 错误: code=%d slots=%d", first.Code, len(handler.validations))
+	}
+	second := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(second, multipartPaperStorageRequest(t, path, token, "paper.pdf", paperStoragePDF()))
+	if second.Code != http.StatusCreated || len(handler.validations) != 0 {
+		t.Fatalf("panic 后 slot 不可复用: code=%d slots=%d", second.Code, len(handler.validations))
+	}
+}
+
+func TestPaperStorageDownloadUsesLightweightStatWithoutMetadataHash(t *testing.T) {
+	handler, _, signer, _ := newPaperStorageTestHandler(t, 20)
+	tempFile := filepath.Join(t.TempDir(), "regular.pdf")
+	if err := os.WriteFile(tempFile, paperStoragePDF(), 0o600); err != nil {
+		t.Fatalf("创建 stat 测试文件失败: %v", err)
+	}
+	info, err := os.Stat(tempFile)
+	if err != nil {
+		t.Fatalf("读取 stat 测试文件失败: %v", err)
+	}
+	handler.statFile = func(string) (os.FileInfo, error) { return info, nil }
+	fileKey := "00000000-0000-0000-0000-000000000001.pdf"
+	path := "/v1/files/" + fileKey
+	token := signPaperStorageGrant(t, signer, services.ExamPaperStoragePurposeDownload, http.MethodGet, path, "", fileKey)
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	paperStorageRouter(handler).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("X-Accel-Redirect") == "" {
+		t.Fatalf("轻量 stat 后应直接重定向: code=%d headers=%v", response.Code, response.Header())
+	}
+}
+
 type failingReceiptSigner struct{}
 
 func (failingReceiptSigner) SignReceipt(services.ExamPaperUploadReceipt) (string, error) {
@@ -459,7 +524,9 @@ func TestPaperStorageUploadRollsBackWhenMarkerOrReceiptFails(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			handler, files, signer, _ := newPaperStorageTestHandler(t, 20)
 			if failure == "marker" {
-				handler.markPending = func(string) error { return errors.New("标记失败") }
+				handler.storePending = func(string, io.Reader) (*services.StoredExamPaperFile, error) {
+					return nil, errors.New("标记失败")
+				}
 			} else {
 				handler.receiptSigner = failingReceiptSigner{}
 			}

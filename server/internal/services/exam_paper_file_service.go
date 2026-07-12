@@ -50,9 +50,14 @@ type ExamPaperTrashMove struct {
 
 // ExamPaperFileService 管理试卷私有目录、校验、原子删除和启动恢复。
 type ExamPaperFileService struct {
-	rootDir    string
-	trashDir   string
-	pendingDir string
+	rootDir                  string
+	trashDir                 string
+	pendingDir               string
+	lifecycleMu              sync.Mutex
+	claimIntentMu            sync.Mutex
+	claimIntents             map[string]struct{}
+	maintenanceAfterSnapshot func()
+	trashRename              func(string, string) error
 }
 
 // NewExamPaperFileService 初始化权限为 0700 的私有目录和垃圾目录。
@@ -67,8 +72,19 @@ func NewExamPaperFileService(rootDir string) (*ExamPaperFileService, error) {
 	trashDir := filepath.Join(absoluteRoot, ".trash")
 	pendingDir := filepath.Join(absoluteRoot, ".pending")
 	for _, dir := range []string{absoluteRoot, trashDir, pendingDir} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return nil, fmt.Errorf("创建试卷私有目录失败: %w", err)
+		if info, statErr := os.Lstat(dir); statErr == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("试卷存储目录不得为符号链接")
+			}
+			if !info.IsDir() {
+				return nil, fmt.Errorf("试卷存储路径必须为目录")
+			}
+		} else if os.IsNotExist(statErr) {
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				return nil, fmt.Errorf("创建试卷私有目录失败: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("检查试卷私有目录失败: %w", statErr)
 		}
 		if err := os.Chmod(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("设置试卷私有目录权限失败: %w", err)
@@ -76,7 +92,7 @@ func NewExamPaperFileService(rootDir string) (*ExamPaperFileService, error) {
 	}
 
 	pdfCPUConfigOnce.Do(api.DisableConfigDir)
-	return &ExamPaperFileService{rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir}, nil
+	return &ExamPaperFileService{rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir, trashRename: os.Rename, claimIntents: make(map[string]struct{})}, nil
 }
 
 // RootDir 返回私有根目录，仅供启动与测试代码使用。
@@ -107,6 +123,15 @@ func (s *ExamPaperFileService) StoreUpload(header *multipart.FileHeader) (_ *Sto
 // StoreUploadReader 流式保存、计算 SHA-256，并用 pdfcpu 验证 PDF 结构和加密状态。
 // 调用方应确保 reader 直接来自受限的 HTTP 请求体，避免框架先将大文件写入系统临时目录。
 func (s *ExamPaperFileService) StoreUploadReader(filename string, source io.Reader) (_ *StoredExamPaperFile, err error) {
+	return s.storeUploadReader(filename, source, false)
+}
+
+// StorePendingUploadReader 在生命周期锁内提交文件和待认领标记，避免落盘孤儿。
+func (s *ExamPaperFileService) StorePendingUploadReader(filename string, source io.Reader) (*StoredExamPaperFile, error) {
+	return s.storeUploadReader(filename, source, true)
+}
+
+func (s *ExamPaperFileService) storeUploadReader(filename string, source io.Reader, pending bool) (_ *StoredExamPaperFile, err error) {
 	if source == nil || !strings.EqualFold(filepath.Ext(filename), ".pdf") {
 		return nil, ErrInvalidPDF
 	}
@@ -157,12 +182,25 @@ func (s *ExamPaperFileService) StoreUploadReader(filename string, source io.Read
 
 	fileKey := uuid.NewString() + ".pdf"
 	finalPath := filepath.Join(s.rootDir, fileKey)
+	if pending {
+		s.lifecycleMu.Lock()
+		defer s.lifecycleMu.Unlock()
+		if err := s.createPendingMarkerLocked(fileKey); err != nil {
+			return nil, err
+		}
+	}
 	if err := os.Rename(tempPath, finalPath); err != nil {
+		if pending {
+			_ = os.Remove(filepath.Join(s.pendingDir, fileKey))
+		}
 		return nil, fmt.Errorf("提交试卷文件失败: %w", err)
 	}
 	tempKept = true
 	if err := os.Chmod(finalPath, 0o600); err != nil {
 		_ = os.Remove(finalPath)
+		if pending {
+			_ = os.Remove(filepath.Join(s.pendingDir, fileKey))
+		}
 		return nil, fmt.Errorf("设置试卷文件权限失败: %w", err)
 	}
 
@@ -221,6 +259,9 @@ func (s *ExamPaperFileService) Open(fileKey string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := s.Stat(fileKey); err != nil {
+		return nil, err
+	}
 	return os.Open(path)
 }
 
@@ -275,6 +316,12 @@ func (s *ExamPaperFileService) Remove(fileKey string) error {
 
 // MarkPending 创建仅文件服务可见的待认领标记。
 func (s *ExamPaperFileService) MarkPending(fileKey string) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.createPendingMarkerLocked(fileKey)
+}
+
+func (s *ExamPaperFileService) createPendingMarkerLocked(fileKey string) error {
 	if _, err := s.resolveFileKey(fileKey); err != nil {
 		return err
 	}
@@ -283,11 +330,36 @@ func (s *ExamPaperFileService) MarkPending(fileKey string) error {
 	if err != nil {
 		return err
 	}
-	return file.Close()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(markerPath)
+		return err
+	}
+	return nil
 }
 
 // Claim 幂等移除待认领标记。
 func (s *ExamPaperFileService) Claim(fileKey string) error {
+	s.claimIntentMu.Lock()
+	s.claimIntents[fileKey] = struct{}{}
+	s.claimIntentMu.Unlock()
+	defer func() {
+		s.claimIntentMu.Lock()
+		delete(s.claimIntents, fileKey)
+		s.claimIntentMu.Unlock()
+	}()
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.claimLocked(fileKey)
+}
+
+func (s *ExamPaperFileService) claimIntentExists(fileKey string) bool {
+	s.claimIntentMu.Lock()
+	defer s.claimIntentMu.Unlock()
+	_, exists := s.claimIntents[fileKey]
+	return exists
+}
+
+func (s *ExamPaperFileService) claimLocked(fileKey string) error {
 	if _, err := s.resolveFileKey(fileKey); err != nil {
 		return err
 	}
@@ -299,29 +371,64 @@ func (s *ExamPaperFileService) Claim(fileKey string) error {
 
 // Trash 幂等地将文件移入回收站，并清理待认领标记。
 func (s *ExamPaperFileService) Trash(fileKey string) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	originalPath, err := s.resolveFileKey(fileKey)
 	if err != nil {
 		return err
 	}
-	if err := s.Claim(fileKey); err != nil {
-		return err
-	}
-	if _, err := os.Stat(originalPath); os.IsNotExist(err) {
-		return nil
+	if _, err := s.Stat(fileKey); os.IsNotExist(err) {
+		return s.claimLocked(fileKey)
 	} else if err != nil {
 		return err
 	}
 	trashPath := filepath.Join(s.trashDir, uuid.NewString()+"--"+fileKey)
-	if err := os.Rename(originalPath, trashPath); err != nil {
+	if err := s.trashRename(originalPath, trashPath); err != nil {
 		return err
 	}
-	return os.Chmod(trashPath, 0o600)
+	if err := os.Chmod(trashPath, 0o600); err != nil {
+		return err
+	}
+	return s.claimLocked(fileKey)
+}
+
+// DiscardPending 原子删除待认领文件；文件删除失败时保留 marker 供维护清理。
+func (s *ExamPaperFileService) DiscardPending(fileKey string) error {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	path, err := s.resolveFileKey(fileKey)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return s.claimLocked(fileKey)
+}
+
+// Stat 轻量检查文件存在、为普通文件且不是符号链接。
+func (s *ExamPaperFileService) Stat(fileKey string) (os.FileInfo, error) {
+	path, err := s.resolveFileKey(fileKey)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, ErrInvalidExamPaperFileKey
+	}
+	return info, nil
 }
 
 // Metadata 从磁盘重新读取文件大小和 SHA-256，避免返回过期信息。
 func (s *ExamPaperFileService) Metadata(fileKey string) (*StoredExamPaperFile, error) {
 	path, err := s.resolveFileKey(fileKey)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := s.Stat(fileKey); err != nil {
 		return nil, err
 	}
 	file, err := os.Open(path)
@@ -342,25 +449,42 @@ type ExamPaperMaintenanceResult struct {
 	UnclaimedFilesRemoved int `json:"unclaimed_files_removed"`
 	PendingMarkersRemoved int `json:"pending_markers_removed"`
 	TrashFilesRemoved     int `json:"trash_files_removed"`
+	TemporaryFilesRemoved int `json:"temporary_files_removed"`
 }
 
 // Maintenance 清理超过七天仍未认领的文件和超过七天的回收站文件。
 func (s *ExamPaperFileService) Maintenance(now time.Time) (ExamPaperMaintenanceResult, error) {
 	result := ExamPaperMaintenanceResult{}
 	cutoff := now.Add(-7 * 24 * time.Hour)
+	tempCutoff := now.Add(-time.Hour)
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
 	pendingEntries, err := os.ReadDir(s.pendingDir)
 	if err != nil {
 		return result, err
 	}
+	stalePending := make([]string, 0, len(pendingEntries))
 	for _, entry := range pendingEntries {
 		if entry.IsDir() {
 			continue
 		}
 		info, err := entry.Info()
-		if err != nil || !info.ModTime().Before(cutoff) {
+		if err == nil && info.ModTime().Before(cutoff) {
+			stalePending = append(stalePending, entry.Name())
+		}
+	}
+	if s.maintenanceAfterSnapshot != nil {
+		s.maintenanceAfterSnapshot()
+	}
+	for _, fileKey := range stalePending {
+		if s.claimIntentExists(fileKey) {
 			continue
 		}
-		fileKey := entry.Name()
+		markerPath := filepath.Join(s.pendingDir, fileKey)
+		info, infoErr := os.Stat(markerPath)
+		if infoErr != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
 		if path, resolveErr := s.resolveFileKey(fileKey); resolveErr == nil {
 			if removeErr := os.Remove(path); removeErr == nil {
 				result.UnclaimedFilesRemoved++
@@ -390,6 +514,23 @@ func (s *ExamPaperFileService) Maintenance(now time.Time) (ExamPaperMaintenanceR
 			result.TrashFilesRemoved++
 		} else if !os.IsNotExist(err) {
 			return result, err
+		}
+	}
+	rootEntries, err := os.ReadDir(s.rootDir)
+	if err != nil {
+		return result, err
+	}
+	for _, entry := range rootEntries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), ".upload-") {
+			continue
+		}
+		info, infoErr := entry.Info()
+		if infoErr == nil && info.ModTime().Before(tempCutoff) {
+			if removeErr := os.Remove(filepath.Join(s.rootDir, entry.Name())); removeErr == nil {
+				result.TemporaryFilesRemoved++
+			} else if !os.IsNotExist(removeErr) {
+				return result, removeErr
+			}
 		}
 	}
 	return result, nil

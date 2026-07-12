@@ -46,6 +46,9 @@ func loadPaperStorageConfig(getenv func(string) string) (paperStorageConfig, err
 	if config.SigningSecret == "" || config.ReceiptSecret == "" {
 		return paperStorageConfig{}, fmt.Errorf("存储授权密钥和回执密钥均不能为空")
 	}
+	if len([]byte(config.SigningSecret)) < 32 || len([]byte(config.ReceiptSecret)) < 32 {
+		return paperStorageConfig{}, fmt.Errorf("存储授权密钥和回执密钥长度不足")
+	}
 	if config.SigningSecret == config.ReceiptSecret {
 		return paperStorageConfig{}, fmt.Errorf("存储授权密钥和回执密钥必须不同")
 	}
@@ -83,7 +86,7 @@ func run(ctx context.Context, config paperStorageConfig) error {
 	if err != nil {
 		return fmt.Errorf("监听文件服务失败: %w", err)
 	}
-	server := &http.Server{Handler: router, ReadHeaderTimeout: 10 * time.Second}
+	server := newPaperStorageServer(router)
 	serveErrors := make(chan error, 1)
 	go func() {
 		serveErrors <- server.Serve(listener)
@@ -105,6 +108,15 @@ func run(ctx context.Context, config paperStorageConfig) error {
 			return err
 		}
 		return nil
+	}
+}
+
+func newPaperStorageServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		IdleTimeout:       60 * time.Second,
 	}
 }
 

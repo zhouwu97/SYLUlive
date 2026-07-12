@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import '../config/api_constants.dart';
 import '../providers/auth_provider.dart';
 
 class SuperAdminScreen extends StatefulWidget {
@@ -673,9 +674,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                           leading: CircleAvatar(
                             backgroundImage: avatar.isNotEmpty
                                 ? NetworkImage(
-                                    avatar.startsWith('http')
-                                        ? avatar
-                                        : 'http://156.233.229.232$avatar',
+                                    ApiConstants.fullUrl(avatar),
                                   )
                                 : null,
                             child: avatar.isEmpty

@@ -20,10 +20,10 @@ type ExpAward struct {
 // WaterSectionAuthorMeta 帖子作者在该帖子所属水帖版块内的等级与称号。
 // 仅当 board_id=1 且 post_type 是有效水帖版块 slug 时由后端填充。
 type WaterSectionAuthorMeta struct {
-	SectionID uint   `json:"section_id"`
-	SectionSlug string `json:"section_slug"`
+	SectionID    uint   `json:"section_id"`
+	SectionSlug  string `json:"section_slug"`
 	SectionTitle string `json:"section_title,omitempty"`
-	Level      int    `json:"level"`
-	Exp        int    `json:"exp"`
-	Title      string `json:"title"` // 版主自定义优先；否则默认称号
+	Level        int    `json:"level"`
+	Exp          int    `json:"exp"`
+	Title        string `json:"title"` // 版主自定义优先；否则默认称号
 }

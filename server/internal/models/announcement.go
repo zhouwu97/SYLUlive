@@ -6,10 +6,10 @@ import (
 
 // Announcement 公告
 type Announcement struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Title     string    `gorm:"size:200;not null" json:"title"`
-	Content   string    `gorm:"type:text;not null" json:"content"`
-	IsPinned  bool      `gorm:"default:false" json:"is_pinned"`
+	ID       uint   `gorm:"primaryKey" json:"id"`
+	Title    string `gorm:"size:200;not null" json:"title"`
+	Content  string `gorm:"type:text;not null" json:"content"`
+	IsPinned bool   `gorm:"default:false" json:"is_pinned"`
 
 	// Status: draft / published / archived
 	Status string `gorm:"size:20;not null;default:'published';index" json:"status"`

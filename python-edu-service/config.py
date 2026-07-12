@@ -15,6 +15,7 @@ PORT = int(os.getenv("PORT", "8081"))
 
 # 内部服务认证
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "")
+EDU_CREDENTIAL_ENCRYPTION_KEY = os.getenv("EDU_CREDENTIAL_ENCRYPTION_KEY", "")
 JWC_CRAWLER_CONTACT = os.getenv("JWC_CRAWLER_CONTACT", "")
 
 # 默认课时设置（分钟）

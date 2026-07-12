@@ -12,17 +12,19 @@ from services.crawler import (
     NetworkError,
 )
 from services.session import execute_with_session_refresh
+from services.security import require_internal_service, require_internal_user
 
-router = APIRouter(prefix="/api/edu/academic-situation", tags=["学业情况"])
+router = APIRouter(prefix="/api/edu/academic-situation", tags=["学业情况"], dependencies=[Depends(require_internal_service)])
 
 
 @router.post("/", response_model=AcademicSituationResponse)
 async def get_academic_situation(
     input: AcademicSituationInput,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db),
 ):
     """获取官方学生学业情况。"""
-    result = await db.execute(select(EduUser).where(EduUser.user_id == input.user_id))
+    result = await db.execute(select(EduUser).where(EduUser.user_id == user_id))
     edu_user = result.scalar_one_or_none()
 
     if not edu_user or not edu_user.bound:

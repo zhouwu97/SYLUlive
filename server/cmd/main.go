@@ -240,12 +240,8 @@ func main() {
 	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
 	db.Exec(`UPDATE posts SET post_type = 'campus_life' WHERE board_id = ? AND (post_type IS NULL OR post_type = '')`, int(models.BoardShuitie))
 
-	// 启动时自动修复可能不同步的评论数和点赞数
-	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
-	db.Exec(`UPDATE posts SET reply_count = (SELECT COUNT(*) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal')`)
-	db.Exec(`UPDATE posts SET like_count = (SELECT COUNT(*) FROM likes WHERE likes.target_id = posts.id AND likes.target_type = 'post')`)
-	db.Exec(`UPDATE users SET total_likes_received = (SELECT COUNT(*) FROM likes WHERE target_type = 'post' AND target_id IN (SELECT id FROM posts WHERE author_id = users.id))`)
-	log.Println("同步完成")
+	// 全表统计回算不应阻塞服务启动；需要修复历史数据时使用独立运维任务执行。
+	log.Println("跳过启动期全表统计回算")
 
 	// 确保默认超级管理员
 
@@ -253,16 +249,30 @@ func main() {
 
 	r := gin.Default()
 
-	// CORS中间件
-
+	// CORS 仅允许显式配置的可信来源，生产环境不能反射任意 Origin。
+	allowedOrigins := make(map[string]struct{})
+	for _, origin := range strings.Split(os.Getenv("CORS_ALLOW_ORIGINS"), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			allowedOrigins[origin] = struct{}{}
+		}
+	}
+	if len(allowedOrigins) == 0 && os.Getenv("GIN_MODE") != "release" {
+		allowedOrigins["http://localhost:3000"] = struct{}{}
+		allowedOrigins["http://localhost:8080"] = struct{}{}
+	}
 	r.Use(func(c *gin.Context) {
-
 		origin := c.GetHeader("Origin")
 		if origin != "" {
+			if _, allowed := allowedOrigins[origin]; !allowed {
+				if c.Request.Method == "OPTIONS" {
+					c.AbortWithStatus(http.StatusForbidden)
+					return
+				}
+				c.Next()
+				return
+			}
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
-		} else {
-			c.Header("Access-Control-Allow-Origin", "*")
 		}
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
@@ -352,6 +362,7 @@ func main() {
 	// 初始化教务服务配置
 
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+	handlers.EduServiceConfig.Token = cfg.EduServiceToken
 
 	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
 
@@ -470,6 +481,8 @@ func main() {
 		auth.POST("/forgot_password", authHandler.ForgotPassword)
 
 		auth.POST("/change_password", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.ChangePassword)
+
+		auth.POST("/logout", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.Logout)
 
 	}
 
@@ -894,6 +907,8 @@ func main() {
 	appeals.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 
 	{
+
+		appeals.POST("/post/:id", appealHandler.Create)
 
 		appeals.GET("", appealHandler.GetList)
 

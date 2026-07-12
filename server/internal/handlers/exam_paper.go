@@ -97,11 +97,12 @@ type examPaperResponse struct {
 }
 
 type examPaperListResponse struct {
-	Items        []examPaperResponse `json:"items"`
-	Page         int                 `json:"page"`
-	PageSize     int                 `json:"page_size"`
-	Total        int64               `json:"total"`
-	StatusCounts map[string]int64    `json:"status_counts,omitempty"`
+	Items         []examPaperResponse `json:"items"`
+	Page          int                 `json:"page"`
+	PageSize      int                 `json:"page_size"`
+	Total         int64               `json:"total"`
+	AcademicYears []string            `json:"academic_years"`
+	StatusCounts  map[string]int64    `json:"status_counts,omitempty"`
 }
 
 func examPaperToResponse(paper models.ExamPaper) examPaperResponse {
@@ -220,6 +221,16 @@ func (h *ExamPaperHandler) List(c *gin.Context) {
 		pageSize = maxExamPaperPageSize
 	}
 
+	var academicYears []string
+	if err := h.db.Model(&models.ExamPaper{}).
+		Where("status = ?", models.ExamPaperStatusPublished).
+		Distinct("academic_year").
+		Order("academic_year DESC").
+		Pluck("academic_year", &academicYears).Error; err != nil {
+		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "获取试卷学年失败")
+		return
+	}
+
 	query := h.db.Model(&models.ExamPaper{}).Where("status = ?", models.ExamPaperStatusPublished)
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		query = query.Where("LOWER(course_name) LIKE ?", "%"+strings.ToLower(keyword)+"%")
@@ -255,7 +266,13 @@ func (h *ExamPaperHandler) List(c *gin.Context) {
 	for _, paper := range papers {
 		items = append(items, examPaperToResponse(paper))
 	}
-	c.JSON(http.StatusOK, examPaperListResponse{Items: items, Page: page, PageSize: pageSize, Total: total})
+	c.JSON(http.StatusOK, examPaperListResponse{
+		Items:         items,
+		Page:          page,
+		PageSize:      pageSize,
+		Total:         total,
+		AcademicYears: academicYears,
+	})
 }
 
 // Get 仅返回已发布试卷详情。

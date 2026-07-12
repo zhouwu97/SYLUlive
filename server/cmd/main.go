@@ -121,6 +121,10 @@ func main() {
 
 		&models.ExamPaper{},
 
+		&models.ExamPaperUploadSession{},
+
+		&models.ExamPaperStorageJob{},
+
 		&models.Conversation{},
 
 		&models.Message{},

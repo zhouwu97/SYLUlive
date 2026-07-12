@@ -217,4 +217,4 @@
 
 功能错误统一为 `{"error":"中文说明","code":"机器错误码"}`。
 
-远端上传相关错误码包括：`invalid_upload_session_request`、`privacy_confirmation_required`、`invalid_file_size`、`file_too_large`、`upload_session_not_found`、`upload_session_expired`、`upload_receipt_invalid`、`duplicate_exam_paper`、`storage_unavailable` 和 `client_upgrade_required`。`readonly-remote` 模式禁止创建新上传会话，但允许已创建会话提交回执完成入库。
+远端上传相关错误码包括：`request_body_too_large`、`invalid_upload_session_request`、`privacy_confirmation_required`、`invalid_file_size`、`file_too_large`、`upload_session_not_found`、`upload_session_expired`、`upload_receipt_invalid`、`duplicate_exam_paper`、`storage_unavailable` 和 `client_upgrade_required`。两个上传会话 JSON 接口的请求体上限均为 64 KiB，超限返回 HTTP `413`。`readonly-remote` 模式禁止创建新上传会话和旧 multipart 上传，但允许已创建会话提交回执完成入库。

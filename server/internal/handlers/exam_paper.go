@@ -20,15 +20,16 @@ import (
 )
 
 const (
-	defaultExamPaperPageSize              = 20
-	maxExamPaperPageSize                  = 50
-	maxPendingExamPaperSubmissionsPerUser = 5
-	maxExamPaperUploadsPerWindow          = 3
-	examPaperRewardExp                    = 10
-	examPaperUploadRateWindow             = time.Minute
-	examPaperStorageModeLocal             = "local"
-	examPaperStorageModeRemote            = "remote"
-	examPaperStorageModeReadonlyRemote    = "readonly-remote"
+	defaultExamPaperPageSize                    = 20
+	maxExamPaperPageSize                        = 50
+	maxPendingExamPaperSubmissionsPerUser       = 5
+	maxExamPaperUploadsPerWindow                = 3
+	examPaperRewardExp                          = 10
+	examPaperUploadRateWindow                   = time.Minute
+	examPaperStorageModeLocal                   = "local"
+	examPaperStorageModeRemote                  = "remote"
+	examPaperStorageModeReadonlyRemote          = "readonly-remote"
+	maxExamPaperJSONBodyBytes             int64 = 64 * 1024
 )
 
 // ExamPaperHandler 提供试卷投稿、浏览、下载与审核接口。
@@ -496,6 +497,20 @@ type createExamPaperUploadSessionResponse struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 
+func bindExamPaperJSON(c *gin.Context, destination any, invalidCode, invalidMessage string) bool {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxExamPaperJSONBodyBytes)
+	if err := c.ShouldBindJSON(destination); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeExamPaperError(c, http.StatusRequestEntityTooLarge, "request_body_too_large", "JSON 请求体不能超过 64 KiB")
+			return false
+		}
+		writeExamPaperError(c, http.StatusBadRequest, invalidCode, invalidMessage)
+		return false
+	}
+	return true
+}
+
 // CreateUploadSession 校验投稿信息并签发直传到文件服务器的短时凭证。
 func (h *ExamPaperHandler) CreateUploadSession(c *gin.Context) {
 	user, ok := h.currentExamPaperUser(c)
@@ -508,8 +523,7 @@ func (h *ExamPaperHandler) CreateUploadSession(c *gin.Context) {
 	}
 
 	var request createExamPaperUploadSessionRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		writeExamPaperError(c, http.StatusBadRequest, "invalid_upload_session_request", "上传会话参数无效")
+	if !bindExamPaperJSON(c, &request, "invalid_upload_session_request", "上传会话参数无效") {
 		return
 	}
 	if !request.PrivacyConfirmed {
@@ -563,7 +577,10 @@ func (h *ExamPaperHandler) CompleteUploadSession(c *gin.Context) {
 		return
 	}
 	var request completeExamPaperUploadSessionRequest
-	if err := c.ShouldBindJSON(&request); err != nil || strings.TrimSpace(request.Receipt) == "" {
+	if !bindExamPaperJSON(c, &request, "upload_receipt_invalid", "上传回执无效") {
+		return
+	}
+	if strings.TrimSpace(request.Receipt) == "" {
 		writeExamPaperError(c, http.StatusBadRequest, "upload_receipt_invalid", "上传回执无效")
 		return
 	}

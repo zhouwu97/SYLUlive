@@ -32,6 +32,13 @@ import (
 	"shenliyuan/internal/tasks"
 )
 
+var errExamPaperStorageJobProcessorPending = errors.New("试卷存储任务处理器尚未启用")
+
+// pendingExamPaperStorageJobAttempt 明确返回任务暂待后台处理器接管的错误。
+func pendingExamPaperStorageJobAttempt(_ uint) error {
+	return errExamPaperStorageJobProcessorPending
+}
+
 func main() {
 	// 强制设置时区为东八区（北京时间），使用 FixedZone 确保在任何没有 tzdata 的系统上也能生效
 	time.Local = time.FixedZone("CST", 8*3600)
@@ -351,7 +358,7 @@ func main() {
 		if receiptErr != nil {
 			log.Fatal("初始化试卷上传回执签名器失败:", receiptErr)
 		}
-		examPaperUploads = services.NewExamPaperUploadService(db, grantSigner, receiptSigner, time.Now, nil)
+		examPaperUploads = services.NewExamPaperUploadService(db, grantSigner, receiptSigner, time.Now, pendingExamPaperStorageJobAttempt)
 	}
 	examPaperHandler := handlers.NewExamPaperHandlerWithStorage(
 		db,

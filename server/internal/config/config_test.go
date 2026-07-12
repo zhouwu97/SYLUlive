@@ -140,6 +140,32 @@ func TestLoadReleaseRejectsIncompleteOrInsecureRemoteStorageConfig(t *testing.T)
 	}
 }
 
+func TestLoadReleaseRejectsSharedExamPaperStorageSecret(t *testing.T) {
+	setBaseConfigEnv(t, "release")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "remote")
+	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://paper.example.com")
+	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "  shared-storage-secret  ")
+	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "shared-storage-secret")
+
+	require.PanicsWithError(
+		t,
+		"EXAM_PAPER_STORAGE_SIGNING_SECRET 与 EXAM_PAPER_STORAGE_RECEIPT_SECRET 不能相同",
+		func() { Load() },
+	)
+}
+
+func TestLoadReleaseAcceptsDistinctExamPaperStorageSecrets(t *testing.T) {
+	setBaseConfigEnv(t, "release")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "remote")
+	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://paper.example.com")
+	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "signing-secret-0123456789abcdef")
+	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "receipt-secret-fedcba9876543210")
+
+	cfg := Load()
+	require.Equal(t, "signing-secret-0123456789abcdef", cfg.ExamPaperStorageSigningSecret)
+	require.Equal(t, "receipt-secret-fedcba9876543210", cfg.ExamPaperStorageReceiptSecret)
+}
+
 func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Helper()
 	t.Setenv("GIN_MODE", ginMode)

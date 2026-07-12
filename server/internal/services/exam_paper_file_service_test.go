@@ -806,9 +806,11 @@ func TestExamPaperUploadSessionStatePublicationIsAtomic(t *testing.T) {
 	}
 	const sessionID = "11999999-9999-4999-8999-999999999999"
 	receipt := strings.Repeat("r", 8*1024*1024)
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
 	record := examPaperUploadSessionRecord{
 		SessionID: sessionID, JTI: "atomic-state-jti", ExpectedSize: 123,
-		Status: "completed", Receipt: receipt,
+		Status: "completed", Receipt: receipt, FileKey: sessionID + ".pdf",
+		FileSize: 123, SHA256: strings.Repeat("a", 64), CompletedAt: now,
 	}
 	path := service.uploadSessionPath(sessionID, "completed")
 	done := make(chan error, 1)
@@ -853,11 +855,19 @@ func TestPaperStorageUploadSessionReplaysLegacyCompletedStateWithoutUserID(t *te
 	}
 	const sessionID = "12111111-1111-4111-8111-111111111111"
 	const jti = "legacy-upload-jti"
-	legacy := fmt.Sprintf(`{"session_id":%q,"jti":%q,"expected_size":123,"status":"completed","receipt":"legacy-receipt"}`, sessionID, jti)
-	if err := os.WriteFile(service.uploadSessionPath(sessionID, "completed"), []byte(legacy), 0o600); err != nil {
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	legacy, err := json.Marshal(map[string]any{
+		"session_id": sessionID, "jti": jti, "expected_size": 123, "expires_at": now.Add(time.Minute),
+		"status": "completed", "receipt": "legacy-receipt", "file_key": sessionID + ".pdf",
+		"file_size": 123, "sha256": strings.Repeat("a", 64), "created_at": now,
+		"updated_at": now, "completed_at": now,
+	})
+	if err != nil {
+		t.Fatalf("编码旧 completed 状态失败: %v", err)
+	}
+	if err := os.WriteFile(service.uploadSessionPath(sessionID, "completed"), legacy, 0o600); err != nil {
 		t.Fatalf("写入旧 completed 状态失败: %v", err)
 	}
-	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
 	replay, err := service.BeginUploadSessionForUser(sessionID, jti, 42, 123, now.Add(time.Minute), now)
 	if err != nil || !replay.Completed || replay.Receipt != "legacy-receipt" {
 		t.Fatalf("旧 completed 状态应支持原 token 幂等重放: result=%+v err=%v", replay, err)
@@ -1295,7 +1305,7 @@ func TestPaperStorageMaintenanceRemovesExpiredUploadSessionRecords(t *testing.T)
 		{freshCompleted, "fresh-completed", now},
 		{staleUnclaimed, "stale-unclaimed", now.Add(-24*time.Hour - time.Second)},
 	} {
-		if _, err := service.BeginUploadSession(item.id, item.jti, 100, now.Add(time.Minute), item.completedAt); err != nil {
+		if _, err := service.BeginUploadSessionForUser(item.id, item.jti, 42, 100, now.Add(time.Minute), item.completedAt); err != nil {
 			t.Fatalf("创建 completed 会话失败: %v", err)
 		}
 		stored := StoredExamPaperFile{FileKey: item.id + ".pdf", Size: 100, SHA256: strings.Repeat("b", 64)}
@@ -1465,6 +1475,14 @@ func TestPaperStorageMaintenanceQuarantinesSemanticCorruptStatesAcrossRestart(t 
 		{name: "completed缺少receipt", stage: "completed", mutate: func(state map[string]any) { delete(state, "receipt") }},
 		{name: "completed非法大小", stage: "completed", mutate: func(state map[string]any) { state["expected_size"] = -1 }},
 		{name: "completed文件名ID不匹配", stage: "completed", mutate: func(state map[string]any) { state["session_id"] = "61000000-0000-4000-8000-000000000099" }},
+		{name: "completed缺少file_key", stage: "completed", mutate: func(state map[string]any) { delete(state, "file_key") }},
+		{name: "completed缺少file_size", stage: "completed", mutate: func(state map[string]any) { delete(state, "file_size") }},
+		{name: "completed文件大小不匹配", stage: "completed", mutate: func(state map[string]any) { state["file_size"] = 99 }},
+		{name: "completed缺少sha256", stage: "completed", mutate: func(state map[string]any) { delete(state, "sha256") }},
+		{name: "completed缺少completed_at", stage: "completed", mutate: func(state map[string]any) { delete(state, "completed_at") }},
+		{name: "completed文件路径穿越", stage: "completed", mutate: func(state map[string]any) { state["file_key"] = "../paper.pdf" }},
+		{name: "completed哈希长度错误", stage: "completed", mutate: func(state map[string]any) { state["sha256"] = strings.Repeat("a", 63) }},
+		{name: "completed哈希非十六进制", stage: "completed", mutate: func(state map[string]any) { state["sha256"] = strings.Repeat("z", 64) }},
 		{name: "uploading空对象", stage: "uploading", mutate: func(state map[string]any) { clear(state) }},
 		{name: "uploading错误状态", stage: "uploading", mutate: func(state map[string]any) { state["status"] = "completed" }},
 		{name: "uploading缺少JTI", stage: "uploading", mutate: func(state map[string]any) { delete(state, "jti") }},
@@ -1473,6 +1491,17 @@ func TestPaperStorageMaintenanceQuarantinesSemanticCorruptStatesAcrossRestart(t 
 		{name: "failure缺少JTI", stage: "failure", mutate: func(state map[string]any) { delete(state, "jti") }},
 		{name: "failure缺少expected_size", stage: "failure", mutate: func(state map[string]any) { delete(state, "expected_size") }},
 		{name: "failure文件名ID不匹配", stage: "failure", mutate: func(state map[string]any) { state["session_id"] = "61000000-0000-4000-8000-000000000099" }},
+		{name: "released缺少receipt", stage: "released", mutate: func(state map[string]any) { delete(state, "receipt") }},
+		{name: "released缺少file_key", stage: "released", mutate: func(state map[string]any) { delete(state, "file_key") }},
+		{name: "released缺少file_size", stage: "released", mutate: func(state map[string]any) { delete(state, "file_size") }},
+		{name: "released文件大小不匹配", stage: "released", mutate: func(state map[string]any) { state["file_size"] = 99 }},
+		{name: "released缺少sha256", stage: "released", mutate: func(state map[string]any) { delete(state, "sha256") }},
+		{name: "released缺少completed_at", stage: "released", mutate: func(state map[string]any) { delete(state, "completed_at") }},
+		{name: "released缺少released_at", stage: "released", mutate: func(state map[string]any) { delete(state, "released_at") }},
+		{name: "released缺少user_id", stage: "released", mutate: func(state map[string]any) { delete(state, "user_id") }},
+		{name: "released文件路径穿越", stage: "released", mutate: func(state map[string]any) { state["file_key"] = `..\paper.pdf` }},
+		{name: "released哈希非十六进制", stage: "released", mutate: func(state map[string]any) { state["sha256"] = strings.Repeat("g", 64) }},
+		{name: "released时间早于完成", stage: "released", mutate: func(state map[string]any) { state["released_at"] = time.Date(2026, 7, 12, 11, 59, 59, 0, time.UTC) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1518,6 +1547,47 @@ func TestPaperStorageMaintenanceQuarantinesSemanticCorruptStatesAcrossRestart(t 
 	}
 }
 
+func TestPaperStorageMaintenanceQuarantinesCorruptReleasedStateBesideCompleted(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	const sessionID = "63000000-0000-4000-8000-000000000001"
+	const jti = "paired-corrupt-released-jti"
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	if _, err := service.BeginUploadSessionForUser(sessionID, jti, 42, 100, now.Add(time.Minute), now); err != nil {
+		t.Fatalf("创建上传会话失败: %v", err)
+	}
+	stored := StoredExamPaperFile{FileKey: sessionID + ".pdf", Size: 100, SHA256: strings.Repeat("a", 64)}
+	if err := service.CompleteUploadSession(sessionID, jti, "paired-released-receipt", stored, now); err != nil {
+		t.Fatalf("完成上传会话失败: %v", err)
+	}
+	if err := service.ReleaseUploadSessionByFileKey(stored.FileKey, now.Add(time.Minute)); err != nil {
+		t.Fatalf("释放上传会话失败: %v", err)
+	}
+	releasedPath := service.uploadSessionPath(sessionID, "released")
+	payload := semanticSessionStatePayload(t, sessionID, "released", func(state map[string]any) {
+		state["released_at"] = now.Add(-time.Second)
+	})
+	if err := os.WriteFile(releasedPath, payload, 0o600); err != nil {
+		t.Fatalf("写入损坏 released 状态失败: %v", err)
+	}
+
+	result, err := service.Maintenance(now.Add(2 * time.Minute))
+	if err != nil {
+		t.Fatalf("维护与 completed 并存的损坏 released 状态失败: %v", err)
+	}
+	if result.CorruptUploadSessionRecordsQuarantined != 1 {
+		t.Fatalf("损坏 released 状态隔离计数错误: %+v", result)
+	}
+	if _, err := os.Stat(releasedPath + ".corrupt"); err != nil {
+		t.Fatalf("损坏 released 状态未被隔离: %v", err)
+	}
+	if _, err := os.Stat(service.uploadSessionPath(sessionID, "completed")); err != nil {
+		t.Fatalf("隔离 released 时不得删除 completed: %v", err)
+	}
+}
+
 func semanticSessionStatePath(service *ExamPaperFileService, sessionID, stage string) string {
 	if stage == "failure" {
 		return service.uploadSessionFailurePath(sessionID, 1)
@@ -1537,12 +1607,15 @@ func semanticSessionStatePayload(t *testing.T, sessionID, stage string, mutate f
 		"expected_size": 100, "expires_at": now.Add(time.Hour), "status": status,
 		"created_at": now, "updated_at": now,
 	}
-	if stage == "completed" {
+	if stage == "completed" || stage == "released" {
 		state["receipt"] = "semantic-state-receipt"
 		state["file_key"] = sessionID + ".pdf"
 		state["file_size"] = 100
 		state["sha256"] = strings.Repeat("a", 64)
 		state["completed_at"] = now
+	}
+	if stage == "released" {
+		state["released_at"] = now.Add(time.Minute)
 	}
 	mutate(state)
 	payload, err := json.Marshal(state)

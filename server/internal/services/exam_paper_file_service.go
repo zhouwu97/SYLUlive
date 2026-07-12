@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/google/uuid"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
@@ -88,6 +89,7 @@ type ExamPaperFileService struct {
 	trashDir                 string
 	pendingDir               string
 	sessionsDir              string
+	quotaLock                *flock.Flock
 	lifecycleMu              sync.Mutex
 	sessionMu                sync.Mutex
 	claimIntentMu            sync.Mutex
@@ -134,7 +136,12 @@ func NewExamPaperFileService(rootDir string) (*ExamPaperFileService, error) {
 	}
 
 	pdfCPUConfigOnce.Do(api.DisableConfigDir)
-	return &ExamPaperFileService{rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir, sessionsDir: sessionsDir, trashRename: os.Rename, chmod: os.Chmod, remove: os.Remove, claimRemove: os.Remove, validateUpload: validateExamPaperPDF, claimIntents: make(map[string]int)}, nil
+	return &ExamPaperFileService{
+		rootDir: absoluteRoot, trashDir: trashDir, pendingDir: pendingDir, sessionsDir: sessionsDir,
+		quotaLock: flock.New(filepath.Join(sessionsDir, ".quota.lock")), trashRename: os.Rename,
+		chmod: os.Chmod, remove: os.Remove, claimRemove: os.Remove, validateUpload: validateExamPaperPDF,
+		claimIntents: make(map[string]int),
+	}, nil
 }
 
 // RootDir 返回私有根目录，仅供启动与测试代码使用。
@@ -161,10 +168,25 @@ func (s *ExamPaperFileService) beginUploadSession(sessionID, jti string, userID 
 	}
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
+	// sessionMu 保护单实例状态，文件锁额外串行化共享同一目录的多进程配额预留。
+	if err := s.quotaLock.Lock(); err != nil {
+		return ExamPaperUploadSessionBeginResult{}, err
+	}
+	defer func() { _ = s.quotaLock.Unlock() }()
 
 	completedPath := s.uploadSessionPath(sessionID, "completed")
 	if completed, err := readExamPaperUploadSessionRecord(completedPath); err == nil {
 		return completedUploadSessionResult(completed, sessionID, jti, userID, expectedSize)
+	} else if !os.IsNotExist(err) {
+		return ExamPaperUploadSessionBeginResult{}, err
+	}
+	uploadingPath := s.uploadSessionPath(sessionID, "uploading")
+	if existing, err := readExamPaperUploadSessionRecord(uploadingPath); err == nil {
+		if existing.SessionID != sessionID || existing.JTI != jti || existing.ExpectedSize != expectedSize ||
+			(existing.UserID != 0 && existing.UserID != userID) {
+			return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadSessionConsumed
+		}
+		return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadInProgress
 	} else if !os.IsNotExist(err) {
 		return ExamPaperUploadSessionBeginResult{}, err
 	}
@@ -194,7 +216,6 @@ func (s *ExamPaperFileService) beginUploadSession(sessionID, jti string, userID 
 		SessionID: sessionID, JTI: jti, UserID: userID, ExpectedSize: expectedSize, ExpiresAt: expiresAt,
 		Status: "uploading", CreatedAt: now, UpdatedAt: now,
 	}
-	uploadingPath := s.uploadSessionPath(sessionID, "uploading")
 	if err := writeExamPaperUploadSessionRecordExclusive(uploadingPath, uploading); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return ExamPaperUploadSessionBeginResult{}, err
@@ -208,7 +229,8 @@ func (s *ExamPaperFileService) beginUploadSession(sessionID, jti string, userID 
 		if readErr != nil {
 			return ExamPaperUploadSessionBeginResult{}, readErr
 		}
-		if existing.SessionID != sessionID || existing.JTI != jti || existing.ExpectedSize != expectedSize || (userID != 0 && existing.UserID != userID) {
+		if existing.SessionID != sessionID || existing.JTI != jti || existing.ExpectedSize != expectedSize ||
+			(existing.UserID != 0 && existing.UserID != userID) {
 			return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadSessionConsumed
 		}
 		return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadInProgress
@@ -500,7 +522,7 @@ func validExamPaperUploadSessionID(sessionID string) bool {
 
 func completedUploadSessionResult(record examPaperUploadSessionRecord, sessionID, jti string, userID uint, expectedSize int64) (ExamPaperUploadSessionBeginResult, error) {
 	if record.Status != "completed" || record.SessionID != sessionID || record.JTI != jti ||
-		record.ExpectedSize != expectedSize || (userID != 0 && record.UserID != userID) || strings.TrimSpace(record.Receipt) == "" {
+		record.ExpectedSize != expectedSize || (record.UserID != 0 && record.UserID != userID) || strings.TrimSpace(record.Receipt) == "" {
 		return ExamPaperUploadSessionBeginResult{}, ErrExamPaperUploadSessionConsumed
 	}
 	return ExamPaperUploadSessionBeginResult{Completed: true, Receipt: record.Receipt}, nil

@@ -684,15 +684,63 @@ func TestPaperStorageUploadSessionPersistsCompletedReplayAcrossRestart(t *testin
 		t.Fatalf("重启后幂等重放错误: result=%+v err=%v", replay, err)
 	}
 	entries, err := os.ReadDir(filepath.Join(root, ".sessions"))
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("完成后应仅保留一个会话记录: entries=%d err=%v", len(entries), err)
+	var sessionEntries []os.DirEntry
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".json") {
+			sessionEntries = append(sessionEntries, entry)
+		}
 	}
-	info, err := entries[0].Info()
+	if err != nil || len(sessionEntries) != 1 {
+		t.Fatalf("完成后应仅保留一个会话记录: entries=%d err=%v", len(sessionEntries), err)
+	}
+	info, err := sessionEntries[0].Info()
 	if err != nil {
 		t.Fatalf("读取会话记录权限失败: %v", err)
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("会话记录权限错误: %o", info.Mode().Perm())
+	}
+}
+
+func TestPaperStorageUploadSessionReplaysLegacyCompletedStateWithoutUserID(t *testing.T) {
+	root := t.TempDir()
+	service, err := NewExamPaperFileService(root)
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	const sessionID = "12111111-1111-4111-8111-111111111111"
+	const jti = "legacy-upload-jti"
+	legacy := fmt.Sprintf(`{"session_id":%q,"jti":%q,"expected_size":123,"status":"completed","receipt":"legacy-receipt"}`, sessionID, jti)
+	if err := os.WriteFile(service.uploadSessionPath(sessionID, "completed"), []byte(legacy), 0o600); err != nil {
+		t.Fatalf("写入旧 completed 状态失败: %v", err)
+	}
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	replay, err := service.BeginUploadSessionForUser(sessionID, jti, 42, 123, now.Add(time.Minute), now)
+	if err != nil || !replay.Completed || replay.Receipt != "legacy-receipt" {
+		t.Fatalf("旧 completed 状态应支持原 token 幂等重放: result=%+v err=%v", replay, err)
+	}
+	if _, err := service.BeginUploadSessionForUser(sessionID, "other-user-jti", 43, 123, now.Add(time.Minute), now); !errors.Is(err, ErrExamPaperUploadSessionConsumed) {
+		t.Fatalf("旧 completed 状态不得被其他 token 跨用户重放: %v", err)
+	}
+}
+
+func TestPaperStorageUploadSessionRejectsCrossUserReplayForUserBoundCompletedState(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	const sessionID = "12222222-2222-4222-8222-222222222222"
+	const jti = "user-bound-jti"
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	if _, err := service.BeginUploadSessionForUser(sessionID, jti, 42, 123, now.Add(time.Minute), now); err != nil {
+		t.Fatalf("占用用户绑定会话失败: %v", err)
+	}
+	stored := StoredExamPaperFile{FileKey: "12333333-3333-4333-8333-333333333333.pdf", Size: 123, SHA256: strings.Repeat("a", 64)}
+	if err := service.CompleteUploadSession(sessionID, jti, "user-bound-receipt", stored, now); err != nil {
+		t.Fatalf("完成用户绑定会话失败: %v", err)
+	}
+	if _, err := service.BeginUploadSessionForUser(sessionID, jti, 43, 123, now.Add(time.Minute), now); !errors.Is(err, ErrExamPaperUploadSessionConsumed) {
+		t.Fatalf("新 completed 状态不得被其他用户重放: %v", err)
 	}
 }
 
@@ -777,6 +825,23 @@ func TestPaperStorageUploadSessionEnforcesPerUserUnclaimedQuota(t *testing.T) {
 	}
 }
 
+func TestPaperStorageUploadSessionPrioritizesInProgressAtFullQuota(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	for index := 0; index < 5; index++ {
+		sessionID := fmt.Sprintf("13000000-0000-4000-8000-%012d", index+1)
+		if _, err := service.BeginUploadSessionForUser(sessionID, fmt.Sprintf("full-quota-%d", index), 51, ExamPaperMaxFileSize, now.Add(time.Minute), now); err != nil {
+			t.Fatalf("填充配额失败: %v", err)
+		}
+	}
+	if _, err := service.BeginUploadSessionForUser("13000000-0000-4000-8000-000000000001", "full-quota-0", 51, ExamPaperMaxFileSize, now.Add(time.Minute), now); !errors.Is(err, ErrExamPaperUploadInProgress) {
+		t.Fatalf("满配额时同 token 重放应优先返回上传中: %v", err)
+	}
+}
+
 func TestPaperStorageUploadSessionSerializesConcurrentPerUserReservations(t *testing.T) {
 	service, err := NewExamPaperFileService(t.TempDir())
 	if err != nil {
@@ -808,6 +873,60 @@ func TestPaperStorageUploadSessionSerializesConcurrentPerUserReservations(t *tes
 	wait.Wait()
 	if acquired.Load() != 5 || rejected.Load() != 1 {
 		t.Fatalf("并发配额结果错误: acquired=%d rejected=%d", acquired.Load(), rejected.Load())
+	}
+}
+
+func TestPaperStorageUploadSessionSerializesReservationsAcrossServiceInstances(t *testing.T) {
+	root := t.TempDir()
+	seed, err := NewExamPaperFileService(root)
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	for index := 0; index < 4; index++ {
+		sessionID := fmt.Sprintf("14000000-0000-4000-8000-%012d", index+1)
+		jti := fmt.Sprintf("shared-quota-seed-%d", index)
+		if _, err := seed.BeginUploadSessionForUser(sessionID, jti, 52, ExamPaperMaxFileSize, now.Add(time.Minute), now); err != nil {
+			t.Fatalf("创建初始配额占用失败: %v", err)
+		}
+		stored := StoredExamPaperFile{FileKey: sessionID + ".pdf", Size: ExamPaperMaxFileSize, SHA256: strings.Repeat("f", 64)}
+		if err := seed.CompleteUploadSession(sessionID, jti, "receipt-"+sessionID, stored, now); err != nil {
+			t.Fatalf("完成初始配额占用失败: %v", err)
+		}
+	}
+
+	const contenders = 8
+	instances := make([]*ExamPaperFileService, contenders)
+	for index := range instances {
+		instances[index], err = NewExamPaperFileService(root)
+		if err != nil {
+			t.Fatalf("创建第 %d 个文件服务实例失败: %v", index+1, err)
+		}
+	}
+	start := make(chan struct{})
+	results := make(chan error, contenders)
+	for index, instance := range instances {
+		go func(index int, instance *ExamPaperFileService) {
+			<-start
+			sessionID := fmt.Sprintf("15000000-0000-4000-8000-%012d", index+1)
+			_, err := instance.BeginUploadSessionForUser(sessionID, fmt.Sprintf("shared-quota-%d", index), 52, ExamPaperMaxFileSize, now.Add(time.Minute), now)
+			results <- err
+		}(index, instance)
+	}
+	close(start)
+	var acquired, rejected int
+	for range contenders {
+		switch err := <-results; {
+		case err == nil:
+			acquired++
+		case errors.Is(err, ErrExamPaperUnclaimedQuotaExceeded):
+			rejected++
+		default:
+			t.Fatalf("跨实例占用返回意外错误: %v", err)
+		}
+	}
+	if acquired != 1 || rejected != contenders-1 {
+		t.Fatalf("跨实例配额预留不原子: acquired=%d rejected=%d", acquired, rejected)
 	}
 }
 
@@ -940,8 +1059,14 @@ func TestPaperStorageMaintenanceRemovesExpiredUploadSessionRecords(t *testing.T)
 		t.Fatalf("上传会话清理计数错误: %+v", result)
 	}
 	entries, err := os.ReadDir(filepath.Join(service.RootDir(), ".sessions"))
-	if err != nil || len(entries) != 3 {
-		t.Fatalf("维护后应保留新记录和未认领 completed: entries=%d err=%v", len(entries), err)
+	remainingStates := 0
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".json") {
+			remainingStates++
+		}
+	}
+	if err != nil || remainingStates != 3 {
+		t.Fatalf("维护后应保留新记录和未认领 completed: entries=%d err=%v", remainingStates, err)
 	}
 	if _, err := os.Stat(filepath.Join(service.RootDir(), ".sessions", staleUnclaimed+".completed.json")); err != nil {
 		t.Fatalf("超过 24 小时但未认领的 completed 不应清理: %v", err)

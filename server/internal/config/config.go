@@ -221,7 +221,7 @@ func validateExamPaperStorageConfig(mode, baseURL, signingSecret, receiptSecret 
 			return fmt.Errorf("生产环境远端试卷存储必须完整设置 EXAM_PAPER_STORAGE_BASE_URL、EXAM_PAPER_STORAGE_SIGNING_SECRET 和 EXAM_PAPER_STORAGE_RECEIPT_SECRET")
 		}
 		parsed, err := url.Parse(baseURL)
-		if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {
+		if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
 			return fmt.Errorf("生产环境 EXAM_PAPER_STORAGE_BASE_URL 必须使用 HTTPS")
 		}
 		return nil

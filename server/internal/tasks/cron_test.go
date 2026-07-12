@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +10,49 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
+
+type examPaperStorageJobProcessorStub struct {
+	called chan int
+}
+
+func (s *examPaperStorageJobProcessorStub) ProcessDue(_ context.Context, limit int) (services.ExamPaperStorageJobProcessReport, error) {
+	s.called <- limit
+	return services.ExamPaperStorageJobProcessReport{Processed: 2, Completed: 2}, nil
+}
+
+type examPaperStorageMaintenanceStub struct {
+	called chan struct{}
+}
+
+func (s *examPaperStorageMaintenanceStub) Run(context.Context) (services.ExamPaperStorageMaintenanceReport, error) {
+	s.called <- struct{}{}
+	return services.ExamPaperStorageMaintenanceReport{Referenced: 3}, nil
+}
+
+func TestStartExamPaperStorageCronRunsJobsAndMaintenanceImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	jobs := &examPaperStorageJobProcessorStub{called: make(chan int, 1)}
+	maintenance := &examPaperStorageMaintenanceStub{called: make(chan struct{}, 1)}
+
+	StartExamPaperStorageCron(ctx, jobs, maintenance)
+
+	select {
+	case limit := <-jobs.called:
+		if limit != 50 {
+			t.Fatalf("后台任务批量大小错误: %d", limit)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("后台任务未在启动后立即消费 outbox")
+	}
+	select {
+	case <-maintenance.called:
+	case <-time.After(time.Second):
+		t.Fatal("后台任务未在启动后立即执行完整性维护")
+	}
+}
 
 func newLotteryTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

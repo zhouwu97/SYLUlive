@@ -59,12 +59,14 @@ func NewExamPaperUploadSession(id string, submitterID uint, metadata ExamPaperMe
 // ExamPaperStorageJob 保存异步文件操作及其重试状态。
 type ExamPaperStorageJob struct {
 	ID             uint                    `gorm:"primaryKey" json:"id"`
-	StorageBackend ExamPaperStorageBackend `gorm:"size:20;not null;index" json:"-"`
-	FileKey        string                  `gorm:"size:200;not null" json:"-"`
-	Operation      string                  `gorm:"size:30;not null" json:"operation"`
+	StorageBackend ExamPaperStorageBackend `gorm:"size:20;not null;index;uniqueIndex:uq_exam_paper_storage_jobs_target" json:"-"`
+	FileKey        string                  `gorm:"size:200;not null;uniqueIndex:uq_exam_paper_storage_jobs_target" json:"-"`
+	Operation      string                  `gorm:"size:30;not null;uniqueIndex:uq_exam_paper_storage_jobs_target" json:"operation"`
 	Attempts       int                     `gorm:"not null;default:0" json:"attempts"`
 	NextAttemptAt  time.Time               `gorm:"not null;index" json:"next_attempt_at"`
 	CompletedAt    *time.Time              `gorm:"index" json:"completed_at,omitempty"`
+	LockedAt       *time.Time              `gorm:"index" json:"-"`
+	LockToken      string                  `gorm:"size:36;index" json:"-"`
 	LastError      string                  `gorm:"size:1000" json:"last_error,omitempty"`
 	CreatedAt      time.Time               `gorm:"index" json:"created_at"`
 	UpdatedAt      time.Time               `json:"updated_at"`

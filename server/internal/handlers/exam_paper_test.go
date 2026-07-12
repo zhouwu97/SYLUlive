@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -388,6 +389,7 @@ type remoteExamPaperHandlerTestEnv struct {
 	grantSigner   *services.ExamPaperStorageSigner
 	receiptSigner *services.ExamPaperStorageSigner
 	uploads       *services.ExamPaperUploadService
+	remote        *services.ExamPaperRemoteClient
 }
 
 func configureRemoteExamPaperHandler(t *testing.T, env *examPaperTestEnv, mode string) remoteExamPaperHandlerTestEnv {
@@ -402,8 +404,13 @@ func configureRemoteExamPaperHandler(t *testing.T, env *examPaperTestEnv, mode s
 		t.Fatalf("创建上传回执签名器失败: %v", err)
 	}
 	uploads := services.NewExamPaperUploadService(env.db, grantSigner, receiptSigner, now, nil)
-	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, mode, "https://sylulive.online/", uploads)
-	return remoteExamPaperHandlerTestEnv{grantSigner: grantSigner, receiptSigner: receiptSigner, uploads: uploads}
+	remoteClient, err := services.NewExamPaperRemoteClient("https://sylulive.online", grantSigner, nil, now)
+	if err != nil {
+		t.Fatalf("创建远端文件客户端失败: %v", err)
+	}
+	storageJobs := services.NewExamPaperStorageJobService(env.db, remoteClient, now)
+	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, mode, "https://sylulive.online/", uploads, remoteClient, storageJobs)
+	return remoteExamPaperHandlerTestEnv{grantSigner: grantSigner, receiptSigner: receiptSigner, uploads: uploads, remote: remoteClient}
 }
 
 var examPaperUploadHandlerTestNow = time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
@@ -817,6 +824,74 @@ func TestExamPaperPreviewDoesNotCountAndDownloadCountsOnce(t *testing.T) {
 	}
 }
 
+func createRemoteExamPaper(t *testing.T, env examPaperTestEnv, submitter models.User, status models.ExamPaperStatus, fileKey string) models.ExamPaper {
+	t.Helper()
+	paper := models.ExamPaper{
+		Status: status, Source: models.ExamPaperSourceUser, SubmitterID: submitter.ID,
+		StorageBackend: models.ExamPaperStorageRemote, CourseName: "高等数学", AcademicYear: "2025-2026",
+		Semester: models.ExamPaperSemesterFirst, ExamType: models.ExamPaperTypeFinal,
+		Title: "高等数学远端试卷", FileKey: fileKey, FileSize: 12, SHA256: strings.Repeat("a", 64),
+	}
+	if err := env.db.Create(&paper).Error; err != nil {
+		t.Fatalf("创建远端试卷失败: %v", err)
+	}
+	return paper
+}
+
+func TestRemoteExamPaperPreviewAndDownloadRedirectWithScopedPurpose(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	remote := configureRemoteExamPaperHandler(t, &env, examPaperStorageModeRemote)
+	user := createExamPaperTestUser(t, env.db, "remote-reader", models.RoleUser, true, 0)
+	paper := createRemoteExamPaper(t, env, user, models.ExamPaperStatusPublished, "remote paper.pdf")
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	preview := performExamPaperRequest(env.handler.Preview, http.MethodGet, "/api/exam-papers/1/preview", params, user.ID, nil, "")
+	if preview.Code != http.StatusFound {
+		t.Fatalf("远端预览应重定向: status=%d body=%s", preview.Code, preview.Body.String())
+	}
+	verifyRemoteExamPaperLocation(t, remote.grantSigner, preview.Header().Get("Location"), paper, services.ExamPaperStoragePurposePreview)
+
+	download := performExamPaperRequest(env.handler.Download, http.MethodGet, "/api/exam-papers/1/download", params, user.ID, nil, "")
+	if download.Code != http.StatusFound {
+		t.Fatalf("远端下载应重定向: status=%d body=%s", download.Code, download.Body.String())
+	}
+	verifyRemoteExamPaperLocation(t, remote.grantSigner, download.Header().Get("Location"), paper, services.ExamPaperStoragePurposeDownload)
+	var refreshed models.ExamPaper
+	require.NoError(t, env.db.First(&refreshed, paper.ID).Error)
+	require.Equal(t, int64(1), refreshed.DownloadCount)
+}
+
+func verifyRemoteExamPaperLocation(t *testing.T, signer *services.ExamPaperStorageSigner, location string, paper models.ExamPaper, purpose string) {
+	t.Helper()
+	parsed, err := url.Parse(location)
+	require.NoError(t, err)
+	require.Equal(t, "sylulive.online", parsed.Host)
+	grant, err := signer.VerifyGrant(parsed.Query().Get("token"), purpose, http.MethodGet, parsed.EscapedPath())
+	require.NoError(t, err)
+	require.Equal(t, paper.ID, grant.PaperID)
+	require.Equal(t, paper.FileKey, grant.FileKey)
+}
+
+type failingExamPaperFileURLSigner struct{}
+
+func (failingExamPaperFileURLSigner) SignedFileURL(models.ExamPaper, string, time.Duration) (string, error) {
+	return "", errors.New("签名失败")
+}
+
+func TestRemoteExamPaperDownloadSigningFailureDoesNotCount(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	user := createExamPaperTestUser(t, env.db, "remote-sign-fail", models.RoleUser, true, 0)
+	paper := createRemoteExamPaper(t, env, user, models.ExamPaperStatusPublished, "sign-fail.pdf")
+	env.handler.remoteFiles = failingExamPaperFileURLSigner{}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperRequest(env.handler.Download, http.MethodGet, "/api/exam-papers/1/download", params, user.ID, nil, "")
+	require.Equal(t, http.StatusInternalServerError, response.Code)
+	var refreshed models.ExamPaper
+	require.NoError(t, env.db.First(&refreshed, paper.ID).Error)
+	require.Zero(t, refreshed.DownloadCount)
+}
+
 func TestExamPaperWithdrawDeletesPendingRecordAndFile(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	user := createExamPaperTestUser(t, env.db, "withdrawer", models.RoleUser, true, 30)
@@ -849,6 +924,34 @@ func TestExamPaperWithdrawDeletesPendingRecordAndFile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(env.root, paper.FileKey)); !os.IsNotExist(err) {
 		t.Fatalf("撤回后私有文件仍存在: %v", err)
 	}
+}
+
+func TestRemoteExamPaperWithdrawEnqueuesTrashInTransaction(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	configureRemoteExamPaperHandler(t, &env, examPaperStorageModeRemote)
+	user := createExamPaperTestUser(t, env.db, "remote-withdraw", models.RoleUser, true, 0)
+	paper := createRemoteExamPaper(t, env, user, models.ExamPaperStatusPending, "withdraw.pdf")
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, user.ID, nil, "")
+	require.Equal(t, http.StatusOK, response.Code)
+	var job models.ExamPaperStorageJob
+	require.NoError(t, env.db.Where("file_key = ? AND operation = ?", paper.FileKey, services.ExamPaperStoragePurposeDelete).First(&job).Error)
+	require.Nil(t, job.CompletedAt)
+}
+
+func TestRemoteExamPaperWithdrawRollsBackWhenTrashEnqueueFails(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	configureRemoteExamPaperHandler(t, &env, examPaperStorageModeRemote)
+	user := createExamPaperTestUser(t, env.db, "remote-withdraw-rollback", models.RoleUser, true, 0)
+	paper := createRemoteExamPaper(t, env, user, models.ExamPaperStatusPending, "withdraw-rollback.pdf")
+	require.NoError(t, env.db.Migrator().DropTable(&models.ExamPaperStorageJob{}))
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperRequest(env.handler.Withdraw, http.MethodDelete, "/api/exam-papers/my-submissions/1", params, user.ID, nil, "")
+	require.Equal(t, http.StatusInternalServerError, response.Code)
+	var retained models.ExamPaper
+	require.NoError(t, env.db.First(&retained, paper.ID).Error)
 }
 
 func TestExamPaperWithdrawPermanentlyDeletesRewardedSubmission(t *testing.T) {

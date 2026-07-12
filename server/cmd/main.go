@@ -32,11 +32,19 @@ import (
 	"shenliyuan/internal/tasks"
 )
 
-var errExamPaperStorageJobProcessorPending = errors.New("试卷存储任务处理器尚未启用")
+const examPaperStorageJobAttemptTimeout = 15 * time.Second
 
-// pendingExamPaperStorageJobAttempt 明确返回任务暂待后台处理器接管的错误。
-func pendingExamPaperStorageJobAttempt(_ uint) error {
-	return errExamPaperStorageJobProcessorPending
+type examPaperStorageJobAttemptProcessor interface {
+	ProcessJob(context.Context, uint) error
+}
+
+// newExamPaperStorageJobAttempt 创建上传事务提交后的即时认领回调。
+func newExamPaperStorageJobAttempt(processor examPaperStorageJobAttemptProcessor) services.ExamPaperStorageJobAttempt {
+	return func(jobID uint) error {
+		ctx, cancel := context.WithTimeout(context.Background(), examPaperStorageJobAttemptTimeout)
+		defer cancel()
+		return processor.ProcessJob(ctx, jobID)
+	}
 }
 
 func main() {
@@ -349,6 +357,9 @@ func main() {
 		log.Fatal("恢复试卷私有文件失败:", examPaperFileErr)
 	}
 	var examPaperUploads *services.ExamPaperUploadService
+	var examPaperRemote *services.ExamPaperRemoteClient
+	var examPaperStorageJobs *services.ExamPaperStorageJobService
+	var examPaperStorageMaintenance *services.ExamPaperStorageMaintenance
 	if cfg.ExamPaperStorageMode != config.ExamPaperStorageModeLocal {
 		grantSigner, signerErr := services.NewExamPaperStorageSigner(cfg.ExamPaperStorageSigningSecret, time.Now)
 		if signerErr != nil {
@@ -358,7 +369,13 @@ func main() {
 		if receiptErr != nil {
 			log.Fatal("初始化试卷上传回执签名器失败:", receiptErr)
 		}
-		examPaperUploads = services.NewExamPaperUploadService(db, grantSigner, receiptSigner, time.Now, pendingExamPaperStorageJobAttempt)
+		examPaperRemote, signerErr = services.NewExamPaperRemoteClient(cfg.ExamPaperStorageBaseURL, grantSigner, nil, time.Now)
+		if signerErr != nil {
+			log.Fatal("初始化试卷远端存储客户端失败:", signerErr)
+		}
+		examPaperStorageJobs = services.NewExamPaperStorageJobService(db, examPaperRemote, time.Now)
+		examPaperStorageMaintenance = services.NewExamPaperStorageMaintenance(db, examPaperRemote, nil)
+		examPaperUploads = services.NewExamPaperUploadService(db, grantSigner, receiptSigner, time.Now, newExamPaperStorageJobAttempt(examPaperStorageJobs))
 	}
 	examPaperHandler := handlers.NewExamPaperHandlerWithStorage(
 		db,
@@ -366,6 +383,8 @@ func main() {
 		cfg.ExamPaperStorageMode,
 		cfg.ExamPaperStorageBaseURL,
 		examPaperUploads,
+		examPaperRemote,
+		examPaperStorageJobs,
 	)
 
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
@@ -456,6 +475,9 @@ func main() {
 	// 启动后台定时任务
 
 	tasks.StartLotteryCron(db)
+	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
+		tasks.StartExamPaperStorageCron(context.Background(), examPaperStorageJobs, examPaperStorageMaintenance)
+	}
 
 	// 健康检查接口
 	r.GET("/health", func(c *gin.Context) {

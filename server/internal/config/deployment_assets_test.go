@@ -194,10 +194,11 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 		"useradd",
 		"chmod 0700",
 		"chmod 0600",
-		"fallocate -l 2G /swapfile",
-		"swapon /swapfile",
+		"SWAP_SIZE=${PAPER_STORAGE_SWAP_SIZE:-2G}",
+		"fallocate -l \"$SWAP_SIZE\" \"$swap_new\"",
+		"swapon \"$swap_path\"",
 		"journalctl --vacuum-time=14d",
-		"ufw allow 22/tcp",
+		"ufw allow \"${SSH_PORT}/tcp\"",
 		"ufw allow 80/tcp",
 		"ufw allow 443/tcp",
 		"nginx -t",
@@ -209,6 +210,23 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 		"privkey.pem",
 		"nginx -t -c",
 		"systemctl enable --now certbot.timer",
+		"SSH_PORT=${SSH_PORT:-22}",
+		"ALLOW_EXISTING_UFW_RULES",
+		"ufw show added",
+		"ufw default deny incoming",
+		"ufw default allow outgoing",
+		"[ -L \"$swap_path\" ]",
+		"[ ! -f \"$swap_path\" ]",
+		"${swap_path}.new",
+		"blkid -p",
+		"file -b",
+		"sync \"$swap_new\"",
+		"mv -f \"$swap_new\" \"$swap_path\"",
+		"chown root:root \"$secure_path\"",
+		"od -An -tx1 -N4",
+		"paper-storage.new",
+		"paper-storage.bak",
+		"activate_binary_candidate",
 	} {
 		if !strings.Contains(installText, expected) {
 			t.Errorf("文件服务安装脚本缺少幂等部署步骤 %q", expected)
@@ -229,6 +247,19 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	if !strings.Contains(installText, "mv -f \"$nginx_candidate\" /etc/nginx/nginx.conf") ||
 		!strings.Contains(installText, "cp -p \"$nginx_previous\" /etc/nginx/nginx.conf") {
 		t.Error("Nginx 配置必须原子替换，并在安装后校验失败时恢复上一版")
+	}
+	sshAllow := strings.Index(installText, "ufw allow \"${SSH_PORT}/tcp\"")
+	denyIncoming := strings.Index(installText, "ufw default deny incoming")
+	allowOutgoing := strings.Index(installText, "ufw default allow outgoing")
+	webAllow := strings.Index(installText, "ufw allow 80/tcp")
+	if sshAllow < 0 || denyIncoming <= sshAllow || allowOutgoing <= denyIncoming || webAllow <= allowOutgoing {
+		t.Error("UFW 必须先放行已校验的 SSH 端口，再设置默认策略，最后放行 Web 端口")
+	}
+	binaryActivation := strings.LastIndex(installText, "activate_binary_candidate \"$binary_path\"")
+	for _, prerequisite := range []string{"nginx -t", "prepare_swap_file", "ufw --force enable", "systemctl daemon-reload", "systemctl enable --now certbot.timer"} {
+		if prerequisiteIndex := strings.LastIndex(installText, prerequisite); prerequisiteIndex < 0 || binaryActivation <= prerequisiteIndex {
+			t.Errorf("二进制原子切换必须晚于前置部署步骤 %q", prerequisite)
+		}
 	}
 	for _, forbidden := range []string{"139.196.148.174", "156.233.229.232", "PAPER_STORAGE_SIGNING_SECRET=change-me", "PAPER_STORAGE_RECEIPT_SECRET=change-me"} {
 		for name, content := range map[string]string{"systemd": serviceText, "nginx": nginxText, "env": envText, "install": installText} {
@@ -253,6 +284,11 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 		"确认 SSH 公钥登录成功后",
 		"回滚",
 		"不得记录服务器密码",
+		"SSH_PORT",
+		"ALLOW_EXISTING_UFW_RULES=1",
+		"default deny incoming",
+		"paper-storage.new",
+		"自动恢复",
 	} {
 		if !strings.Contains(deployDoc, expected) {
 			t.Errorf("部署文档缺少文件服务运维说明 %q", expected)
@@ -303,6 +339,150 @@ func TestPaperStorageNginxRendererKeepsLetsEncryptCertificate(t *testing.T) {
 	}
 	if strings.Contains(upgraded, "ssl-cert-snakeoil") {
 		t.Fatal("重复安装不得把正式证书回退为临时证书")
+	}
+}
+
+// TestPaperStorageInstallerValidatesFirewallRules 验证安装脚本拒绝无效 SSH 端口和意外放行规则。
+func TestPaperStorageInstallerValidatesFirewallRules(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 环境没有 POSIX sh；Linux CI 和部署环境执行本测试")
+	}
+	repoRoot := deploymentRepoRoot(t)
+	installScript := filepath.Join(repoRoot, "deploy", "paper-storage", "install.sh")
+
+	for _, port := range []string{"", "0", "65536", "22x", "-1"} {
+		command := exec.Command("sh", installScript, "--validate-ssh-port", port)
+		if err := command.Run(); err == nil {
+			t.Errorf("无效 SSH 端口 %q 必须被拒绝", port)
+		}
+	}
+	for _, port := range []string{"1", "22", "65535"} {
+		command := exec.Command("sh", installScript, "--validate-ssh-port", port)
+		if combined, err := command.CombinedOutput(); err != nil {
+			t.Errorf("有效 SSH 端口 %q 被拒绝: %v\n%s", port, err, combined)
+		}
+	}
+
+	stubDir := t.TempDir()
+	ufwStub := filepath.Join(stubDir, "ufw")
+	writeExecutableTestScript(t, ufwStub, "#!/bin/sh\nprintf '%s\\n' 'Added user rules:' 'ufw allow 22/tcp' 'ufw allow 80/tcp' 'ufw allow 443/tcp' 'ufw allow 9000/tcp'\n")
+	command := exec.Command("sh", installScript, "--audit-ufw")
+	command.Env = append(os.Environ(), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"), "SSH_PORT=22")
+	if err := command.Run(); err == nil {
+		t.Fatal("存在意外 ALLOW 规则时安装脚本必须中止")
+	}
+	command = exec.Command("sh", installScript, "--audit-ufw")
+	command.Env = append(os.Environ(), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"), "SSH_PORT=22", "ALLOW_EXISTING_UFW_RULES=1")
+	if combined, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("显式确认后应保留已有规则: %v\n%s", err, combined)
+	}
+}
+
+// TestPaperStorageInstallerRebuildsSwapSafely 验证损坏 Swap 原子重建且拒绝符号链接。
+func TestPaperStorageInstallerRebuildsSwapSafely(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 环境没有 POSIX sh；Linux CI 和部署环境执行本测试")
+	}
+	for _, commandName := range []string{"fallocate", "mkswap", "blkid", "file"} {
+		if _, err := exec.LookPath(commandName); err != nil {
+			t.Skipf("缺少部署环境命令 %s", commandName)
+		}
+	}
+	repoRoot := deploymentRepoRoot(t)
+	installScript := filepath.Join(repoRoot, "deploy", "paper-storage", "install.sh")
+	tempDir := t.TempDir()
+	swapPath := filepath.Join(tempDir, "swapfile")
+	fstabPath := filepath.Join(tempDir, "fstab")
+	swapsPath := filepath.Join(tempDir, "swaps")
+	if err := os.WriteFile(swapPath, []byte("interrupted"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fstabPath, []byte(swapPath+" none swap sw 0 0\n"+swapPath+" none swap sw 0 0\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(swapsPath, []byte("Filename Type Size Used Priority\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("sh", installScript, "--prepare-swap", swapPath)
+	command.Env = append(os.Environ(),
+		"PAPER_STORAGE_SWAP_SIZE=1M",
+		"PAPER_STORAGE_FSTAB="+fstabPath,
+		"PAPER_STORAGE_SWAPS_FILE="+swapsPath,
+		"PAPER_STORAGE_SKIP_OWNERSHIP=1",
+		"PAPER_STORAGE_SKIP_SWAPON=1",
+	)
+	if combined, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("原子重建损坏 Swap 失败: %v\n%s", err, combined)
+	}
+	blkid := exec.Command("blkid", "-p", "-s", "TYPE", "-o", "value", swapPath)
+	if output, err := blkid.Output(); err != nil || strings.TrimSpace(string(output)) != "swap" {
+		t.Fatalf("重建文件缺少 Swap 签名: %v, %q", err, output)
+	}
+	if _, err := os.Stat(swapPath + ".new"); !os.IsNotExist(err) {
+		t.Fatal("原子重建成功后不得残留 .new 文件")
+	}
+	fstab := readDeploymentAsset(t, tempDir, "fstab")
+	if strings.Count(fstab, swapPath+" none swap sw 0 0") != 1 {
+		t.Fatalf("fstab 中 Swap 记录必须去重，实际内容: %q", fstab)
+	}
+
+	target := filepath.Join(tempDir, "target")
+	linkedSwap := filepath.Join(tempDir, "linked-swap")
+	if err := os.WriteFile(target, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, linkedSwap); err != nil {
+		t.Fatal(err)
+	}
+	command = exec.Command("sh", installScript, "--prepare-swap", linkedSwap)
+	command.Env = append(os.Environ(), "PAPER_STORAGE_FSTAB="+fstabPath, "PAPER_STORAGE_SWAPS_FILE="+swapsPath)
+	if err := command.Run(); err == nil {
+		t.Fatal("Swap 符号链接必须被拒绝")
+	}
+	if content, err := os.ReadFile(target); err != nil || string(content) != "keep" {
+		t.Fatal("拒绝符号链接时不得修改链接目标")
+	}
+}
+
+// TestPaperStorageInstallerRestoresBinaryAfterHealthFailure 验证新版本健康检查失败时恢复旧二进制。
+func TestPaperStorageInstallerRestoresBinaryAfterHealthFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 环境没有 POSIX sh；Linux CI 和部署环境执行本测试")
+	}
+	repoRoot := deploymentRepoRoot(t)
+	installScript := filepath.Join(repoRoot, "deploy", "paper-storage", "install.sh")
+	tempDir := t.TempDir()
+	binaryPath := filepath.Join(tempDir, "paper-storage")
+	if err := os.WriteFile(binaryPath, []byte("old-version"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath+".new", []byte("bad-new-version"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	stubDir := filepath.Join(tempDir, "bin")
+	if err := os.Mkdir(stubDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutableTestScript(t, filepath.Join(stubDir, "systemctl"), "#!/bin/sh\nexit 0\n")
+	writeExecutableTestScript(t, filepath.Join(stubDir, "curl"), "#!/bin/sh\nexit 1\n")
+	command := exec.Command("sh", installScript, "--activate-binary", binaryPath, "http://127.0.0.1/healthz")
+	command.Env = append(os.Environ(), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := command.Run(); err == nil {
+		t.Fatal("新版本健康检查失败时安装命令必须返回失败")
+	}
+	content, err := os.ReadFile(binaryPath)
+	if err != nil || string(content) != "old-version" {
+		t.Fatalf("健康检查失败后未恢复旧二进制: %v, %q", err, content)
+	}
+	if _, err := os.Stat(binaryPath + ".bak"); !os.IsNotExist(err) {
+		t.Fatal("恢复旧版本后不得残留 .bak")
+	}
+}
+
+func writeExecutableTestScript(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0700); err != nil {
+		t.Fatalf("写入测试脚本失败: %v", err)
 	}
 }
 

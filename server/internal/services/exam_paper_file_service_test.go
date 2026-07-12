@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -281,8 +282,12 @@ func TestPaperStorageTrashDoesNotMoveFileWhenPendingMarkerCannotBeRemoved(t *tes
 	if err := service.Trash(stored.FileKey); err == nil {
 		t.Fatal("标记无法清理时 Trash 应返回错误")
 	}
-	if _, err := service.Metadata(stored.FileKey); err != nil {
-		t.Fatalf("标记清理失败时原文件不应移动: %v", err)
+	if _, err := service.Stat(stored.FileKey); !os.IsNotExist(err) {
+		t.Fatalf("移动成功后原文件应不存在: %v", err)
+	}
+	trashEntries, err := os.ReadDir(filepath.Join(service.RootDir(), ".trash"))
+	if err != nil || len(trashEntries) != 1 {
+		t.Fatalf("移动成功后回收站应保留文件: entries=%v err=%v", trashEntries, err)
 	}
 }
 
@@ -385,5 +390,186 @@ func TestPaperStorageDiskUsagePercentReturnsValidRange(t *testing.T) {
 	}
 	if usage < 0 || usage > 100 {
 		t.Fatalf("磁盘使用率超出范围: %v", usage)
+	}
+}
+
+func TestPaperStorageMaintenanceAndClaimDoNotLoseClaimedFile(t *testing.T) {
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	stored, err := service.StoreUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存 PDF 失败: %v", err)
+	}
+	if err := service.MarkPending(stored.FileKey); err != nil {
+		t.Fatalf("创建待认领标记失败: %v", err)
+	}
+	old := now.Add(-7*24*time.Hour - time.Second)
+	if err := os.Chtimes(filepath.Join(service.RootDir(), ".pending", stored.FileKey), old, old); err != nil {
+		t.Fatalf("设置标记时间失败: %v", err)
+	}
+	snapshotReady := make(chan struct{})
+	release := make(chan struct{})
+	service.maintenanceAfterSnapshot = func() {
+		close(snapshotReady)
+		<-release
+	}
+	maintenanceDone := make(chan error, 1)
+	go func() {
+		_, maintenanceErr := service.Maintenance(now)
+		maintenanceDone <- maintenanceErr
+	}()
+	<-snapshotReady
+	claimDone := make(chan error, 1)
+	go func() { claimDone <- service.Claim(stored.FileKey) }()
+	select {
+	case err := <-claimDone:
+		t.Fatalf("维护持锁时 Claim 不应提前完成: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	if err := <-maintenanceDone; err != nil {
+		t.Fatalf("维护失败: %v", err)
+	}
+	if err := <-claimDone; err != nil {
+		t.Fatalf("释放维护锁后 Claim 失败: %v", err)
+	}
+	if _, err := service.Stat(stored.FileKey); err != nil {
+		t.Fatalf("Claim 后文件不应被维护删除: %v", err)
+	}
+}
+
+func TestPaperStorageStorePendingUploadAndDiscardAreAtomic(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	stored, err := service.StorePendingUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("原子保存待认领文件失败: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(service.RootDir(), ".pending", stored.FileKey)); err != nil {
+		t.Fatalf("原子保存后待认领标记不存在: %v", err)
+	}
+	if _, err := service.Stat(stored.FileKey); err != nil {
+		t.Fatalf("原子保存后文件不存在: %v", err)
+	}
+	if err := service.DiscardPending(stored.FileKey); err != nil {
+		t.Fatalf("丢弃待认领文件失败: %v", err)
+	}
+	if _, err := service.Stat(stored.FileKey); !os.IsNotExist(err) {
+		t.Fatalf("丢弃后文件应不存在: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(service.RootDir(), ".pending", stored.FileKey)); !os.IsNotExist(err) {
+		t.Fatalf("丢弃后标记应不存在: %v", err)
+	}
+}
+
+func TestPaperStorageMaintenanceRemovesStaleUploadTemps(t *testing.T) {
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	oldPath := filepath.Join(service.RootDir(), ".upload-old")
+	newPath := filepath.Join(service.RootDir(), ".upload-new")
+	if err := os.WriteFile(oldPath, []byte("old"), 0o600); err != nil {
+		t.Fatalf("创建旧临时文件失败: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte("new"), 0o600); err != nil {
+		t.Fatalf("创建新临时文件失败: %v", err)
+	}
+	oldTime := now.Add(-time.Hour - time.Second)
+	if err := os.Chtimes(oldPath, oldTime, oldTime); err != nil {
+		t.Fatalf("设置旧临时文件时间失败: %v", err)
+	}
+	result, err := service.Maintenance(now)
+	if err != nil {
+		t.Fatalf("维护失败: %v", err)
+	}
+	if result.TemporaryFilesRemoved != 1 {
+		t.Fatalf("临时文件清理计数错误: %+v", result)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("旧临时文件应被清理: %v", err)
+	}
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("新临时文件不应被清理: %v", err)
+	}
+}
+
+func TestPaperStorageTrashKeepsMarkerWhenMoveFails(t *testing.T) {
+	service, err := NewExamPaperFileService(t.TempDir())
+	if err != nil {
+		t.Fatalf("初始化文件服务失败: %v", err)
+	}
+	stored, err := service.StoreUploadReader("paper.pdf", bytes.NewReader(buildMinimalPDF()))
+	if err != nil {
+		t.Fatalf("保存 PDF 失败: %v", err)
+	}
+	if err := service.MarkPending(stored.FileKey); err != nil {
+		t.Fatalf("创建待认领标记失败: %v", err)
+	}
+	service.trashRename = func(string, string) error { return errors.New("模拟移动失败") }
+	if err := service.Trash(stored.FileKey); err == nil {
+		t.Fatal("移动失败时 Trash 应返回错误")
+	}
+	if _, err := os.Stat(filepath.Join(service.RootDir(), ".pending", stored.FileKey)); err != nil {
+		t.Fatalf("移动失败时标记必须保留: %v", err)
+	}
+	if _, err := service.Stat(stored.FileKey); err != nil {
+		t.Fatalf("移动失败时原文件必须保留: %v", err)
+	}
+}
+
+func TestPaperStorageServiceRejectsSymlinkDirectoriesAndFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 创建 symlink 需要额外权限")
+	}
+	t.Run("root", func(t *testing.T) {
+		target := t.TempDir()
+		link := filepath.Join(t.TempDir(), "root-link")
+		if err := os.Symlink(target, link); err != nil {
+			t.Skipf("无法创建 symlink: %v", err)
+		}
+		if _, err := NewExamPaperFileService(link); err == nil {
+			t.Fatal("root symlink 应被拒绝")
+		}
+	})
+	t.Run("pending", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.Symlink(t.TempDir(), filepath.Join(root, ".pending")); err != nil {
+			t.Skipf("无法创建 symlink: %v", err)
+		}
+		if _, err := NewExamPaperFileService(root); err == nil {
+			t.Fatal("pending symlink 应被拒绝")
+		}
+	})
+	t.Run("file", func(t *testing.T) {
+		root := t.TempDir()
+		service, err := NewExamPaperFileService(root)
+		if err != nil {
+			t.Fatalf("初始化文件服务失败: %v", err)
+		}
+		if err := os.Symlink(filepath.Join(root, "target.pdf"), filepath.Join(root, "link.pdf")); err != nil {
+			t.Skipf("无法创建 symlink: %v", err)
+		}
+		if _, err := service.Stat("link.pdf"); err == nil {
+			t.Fatal("symlink 文件应被拒绝")
+		}
+		if err := os.Mkdir(filepath.Join(root, "directory.pdf"), 0o700); err != nil {
+			t.Fatalf("创建目录文件失败: %v", err)
+		}
+		if _, err := service.Stat("directory.pdf"); err == nil {
+			t.Fatal("非普通文件应被拒绝")
+		}
+	})
+}
+
+func TestExamPaperDiskUsagePercentUsesAvailableQuota(t *testing.T) {
+	if got := diskUsagePercent(100, 20); got != 80 {
+		t.Fatalf("磁盘使用率计算错误: got=%v want=80", got)
 	}
 }

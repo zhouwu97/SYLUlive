@@ -346,9 +346,6 @@ func (s *ExamPaperFileService) Claim(fileKey string) error {
 	s.claimIntentMu.Lock()
 	s.claimIntents[fileKey]++
 	s.claimIntentMu.Unlock()
-	if s.claimAfterIntent != nil {
-		s.claimAfterIntent()
-	}
 	defer func() {
 		s.claimIntentMu.Lock()
 		if count := s.claimIntents[fileKey]; count <= 1 {
@@ -358,6 +355,9 @@ func (s *ExamPaperFileService) Claim(fileKey string) error {
 		}
 		s.claimIntentMu.Unlock()
 	}()
+	if s.claimAfterIntent != nil {
+		s.claimAfterIntent()
+	}
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
 	return s.claimLocked(fileKey)

@@ -40,6 +40,29 @@ class StoredAuthCredentials {
   const StoredAuthCredentials({this.token, this.userJson});
 }
 
+abstract interface class PreferenceStore {
+  String? getString(String key);
+
+  Future<bool> setString(String key, String value);
+
+  Future<bool> remove(String key);
+}
+
+class AuthCredentialConsistencyException implements Exception {
+  final String message;
+  final Object operationError;
+  final Object rollbackError;
+
+  const AuthCredentialConsistencyException({
+    required this.message,
+    required this.operationError,
+    required this.rollbackError,
+  });
+
+  @override
+  String toString() => message;
+}
+
 abstract interface class AuthCredentialStore {
   Future<StoredAuthCredentials> read();
 
@@ -54,6 +77,120 @@ abstract interface class AuthCredentialStore {
   Future<void> deleteEduPassword(String studentId);
 }
 
+class PreferenceAuthCredentialStore implements AuthCredentialStore {
+  static const _tokenKey = 'auth_token';
+  static const _userKey = 'auth_user';
+
+  final PreferenceStore _preferences;
+
+  const PreferenceAuthCredentialStore(this._preferences);
+
+  @override
+  Future<StoredAuthCredentials> read() async {
+    return StoredAuthCredentials(
+      token: _preferences.getString(_tokenKey),
+      userJson: _preferences.getString(_userKey),
+    );
+  }
+
+  @override
+  Future<void> write({required String token, required String userJson}) async {
+    final oldToken = _preferences.getString(_tokenKey);
+    final oldUserJson = _preferences.getString(_userKey);
+    try {
+      await _setString(_tokenKey, token, '写入认证令牌失败');
+      await _setString(_userKey, userJson, '写入认证用户失败');
+    } catch (error, stackTrace) {
+      try {
+        await _restore(_tokenKey, oldToken);
+        await _restore(_userKey, oldUserJson);
+      } catch (rollbackError) {
+        throw AuthCredentialConsistencyException(
+          message: '回滚认证信息失败，持久化凭据可能不一致',
+          operationError: error,
+          rollbackError: rollbackError,
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  @override
+  Future<void> clear() async {
+    final oldToken = _preferences.getString(_tokenKey);
+    final oldUserJson = _preferences.getString(_userKey);
+    try {
+      await _remove(_tokenKey, '删除认证令牌失败');
+      await _remove(_userKey, '删除认证用户失败');
+    } catch (error, stackTrace) {
+      try {
+        await _restore(_tokenKey, oldToken);
+        await _restore(_userKey, oldUserJson);
+      } catch (rollbackError) {
+        throw AuthCredentialConsistencyException(
+          message: '回滚认证清理失败，持久化凭据可能不一致',
+          operationError: error,
+          rollbackError: rollbackError,
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  @override
+  Future<void> writeEduPassword(String studentId, String password) async {
+    await _setString(
+      'edu_pwd_$studentId',
+      password,
+      '写入教务密码失败',
+    );
+  }
+
+  @override
+  Future<String?> readEduPassword(String studentId) async {
+    return _preferences.getString('edu_pwd_$studentId');
+  }
+
+  @override
+  Future<void> deleteEduPassword(String studentId) async {
+    await _remove('edu_pwd_$studentId', '删除教务密码失败');
+  }
+
+  Future<void> _setString(String key, String value, String message) async {
+    if (!await _preferences.setString(key, value)) {
+      throw StateError(message);
+    }
+  }
+
+  Future<void> _remove(String key, String message) async {
+    if (!await _preferences.remove(key)) throw StateError(message);
+  }
+
+  Future<void> _restore(String key, String? value) async {
+    final restored = value == null
+        ? await _preferences.remove(key)
+        : await _preferences.setString(key, value);
+    if (!restored) throw StateError('回滚偏好设置失败: $key');
+  }
+}
+
+class _SharedPreferencesStore implements PreferenceStore {
+  final SharedPreferences _preferences;
+
+  const _SharedPreferencesStore(this._preferences);
+
+  @override
+  String? getString(String key) => _preferences.getString(key);
+
+  @override
+  Future<bool> setString(String key, String value) {
+    return _preferences.setString(key, value);
+  }
+
+  @override
+  Future<bool> remove(String key) => _preferences.remove(key);
+}
+
 class _PlatformAuthCredentialStore implements AuthCredentialStore {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
@@ -61,11 +198,7 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   @override
   Future<StoredAuthCredentials> read() async {
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      return StoredAuthCredentials(
-        token: prefs.getString(_tokenKey),
-        userJson: prefs.getString(_userKey),
-      );
+      return (await _preferenceStore()).read();
     }
     const storage = FlutterSecureStorage();
     return StoredAuthCredentials(
@@ -77,20 +210,10 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   @override
   Future<void> write({required String token, required String userJson}) async {
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      final oldToken = prefs.getString(_tokenKey);
-      final oldUserJson = prefs.getString(_userKey);
-      try {
-        if (!await prefs.setString(_tokenKey, token) ||
-            !await prefs.setString(_userKey, userJson)) {
-          throw StateError('写入认证信息失败');
-        }
-      } catch (error, stackTrace) {
-        await _restorePreference(prefs, _tokenKey, oldToken);
-        await _restorePreference(prefs, _userKey, oldUserJson);
-        Error.throwWithStackTrace(error, stackTrace);
-      }
-      return;
+      return (await _preferenceStore()).write(
+        token: token,
+        userJson: userJson,
+      );
     }
     const storage = FlutterSecureStorage();
     final oldToken = await storage.read(key: _tokenKey);
@@ -108,10 +231,7 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   @override
   Future<void> clear() async {
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_tokenKey);
-      await prefs.remove(_userKey);
-      return;
+      return (await _preferenceStore()).clear();
     }
     const storage = FlutterSecureStorage();
     await storage.delete(key: _tokenKey);
@@ -121,9 +241,7 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   @override
   Future<void> writeEduPassword(String studentId, String password) async {
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('edu_pwd_$studentId', password);
-      return;
+      return (await _preferenceStore()).writeEduPassword(studentId, password);
     }
     const storage = FlutterSecureStorage();
     await storage.write(key: 'edu_pwd_$studentId', value: password);
@@ -133,8 +251,7 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   Future<String?> readEduPassword(String studentId) async {
     final key = 'edu_pwd_$studentId';
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(key);
+      return (await _preferenceStore()).readEduPassword(studentId);
     }
     const storage = FlutterSecureStorage();
     return storage.read(key: key);
@@ -144,24 +261,10 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   Future<void> deleteEduPassword(String studentId) async {
     final key = 'edu_pwd_$studentId';
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(key);
-      return;
+      return (await _preferenceStore()).deleteEduPassword(studentId);
     }
     const storage = FlutterSecureStorage();
     await storage.delete(key: key);
-  }
-
-  Future<void> _restorePreference(
-    SharedPreferences prefs,
-    String key,
-    String? value,
-  ) async {
-    if (value == null) {
-      await prefs.remove(key);
-    } else {
-      await prefs.setString(key, value);
-    }
   }
 
   Future<void> _restoreSecureValue(
@@ -174,6 +277,13 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
     } else {
       await storage.write(key: key, value: value);
     }
+  }
+
+  Future<PreferenceAuthCredentialStore> _preferenceStore() async {
+    final preferences = await SharedPreferences.getInstance();
+    return PreferenceAuthCredentialStore(
+      _SharedPreferencesStore(preferences),
+    );
   }
 }
 

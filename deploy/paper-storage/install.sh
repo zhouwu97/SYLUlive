@@ -1,6 +1,39 @@
 #!/bin/sh
 set -eu
 
+LETSENCRYPT_LIVE_DIR=${PAPER_STORAGE_LETSENCRYPT_LIVE_DIR:-/etc/letsencrypt/live/sylulive.online}
+
+has_lets_encrypt_certificate() {
+    [ -f "$LETSENCRYPT_LIVE_DIR/fullchain.pem" ] && [ -f "$LETSENCRYPT_LIVE_DIR/privkey.pem" ]
+}
+
+render_nginx_config() {
+    nginx_template=$1
+    nginx_output=$2
+    if has_lets_encrypt_certificate; then
+        tls_certificate=$LETSENCRYPT_LIVE_DIR/fullchain.pem
+        tls_certificate_key=$LETSENCRYPT_LIVE_DIR/privkey.pem
+    else
+        tls_certificate=/etc/ssl/certs/ssl-cert-snakeoil.pem
+        tls_certificate_key=/etc/ssl/private/ssl-cert-snakeoil.key
+    fi
+    escaped_certificate=$(printf '%s' "$tls_certificate" | sed 's/[&|]/\\&/g')
+    escaped_certificate_key=$(printf '%s' "$tls_certificate_key" | sed 's/[&|]/\\&/g')
+    sed \
+        -e "s|__PAPER_STORAGE_TLS_CERTIFICATE__|$escaped_certificate|g" \
+        -e "s|__PAPER_STORAGE_TLS_CERTIFICATE_KEY__|$escaped_certificate_key|g" \
+        "$nginx_template" > "$nginx_output"
+}
+
+if [ "${1:-}" = "--render-nginx" ]; then
+    if [ "$#" -ne 3 ]; then
+        echo "用法: install.sh --render-nginx 模板路径 输出路径" >&2
+        exit 2
+    fi
+    render_nginx_config "$2" "$3"
+    exit 0
+fi
+
 # Ubuntu 24.04 独立试卷文件服务器幂等安装脚本。
 if [ "$(id -u)" -ne 0 ]; then
     echo "请使用 root 运行此脚本" >&2
@@ -46,7 +79,29 @@ install -o root -g root -m 0644 "$SCRIPT_DIR/paper-storage.service" /etc/systemd
 if [ -f /etc/nginx/nginx.conf ] && [ ! -f /etc/nginx/nginx.conf.pre-sylg-paper-storage ]; then
     cp -p /etc/nginx/nginx.conf /etc/nginx/nginx.conf.pre-sylg-paper-storage
 fi
-install -o root -g root -m 0644 "$SCRIPT_DIR/nginx.conf" /etc/nginx/nginx.conf
+
+nginx_candidate=$(mktemp /etc/nginx/nginx.conf.sylg-candidate.XXXXXX)
+nginx_previous=$(mktemp /etc/nginx/nginx.conf.sylg-previous.XXXXXX)
+cleanup_nginx_temporary_files() {
+    rm -f "$nginx_candidate" "$nginx_previous"
+}
+trap cleanup_nginx_temporary_files EXIT HUP INT TERM
+
+render_nginx_config "$SCRIPT_DIR/nginx.conf" "$nginx_candidate"
+chown root:root "$nginx_candidate"
+chmod 0644 "$nginx_candidate"
+if ! nginx -t -c "$nginx_candidate"; then
+    echo "新 Nginx 配置校验失败，保留当前配置" >&2
+    exit 1
+fi
+cp -p /etc/nginx/nginx.conf "$nginx_previous"
+mv -f "$nginx_candidate" /etc/nginx/nginx.conf
+if ! nginx -t; then
+    cp -p "$nginx_previous" /etc/nginx/nginx.conf
+    nginx -t || true
+    echo "安装后的 Nginx 配置校验失败，已恢复上一版" >&2
+    exit 1
+fi
 
 # Nginx 工作进程与文件服务使用同一用户，避免放宽 PDF 的 0600 权限。
 for directory in /var/lib/nginx /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi /var/lib/nginx/uwsgi /var/lib/nginx/scgi; do
@@ -98,7 +153,6 @@ ufw allow 443/tcp
 ufw --force enable
 
 systemctl daemon-reload
-nginx -t
 systemctl enable nginx paper-storage
 if systemctl is-active --quiet nginx; then
     systemctl reload nginx
@@ -106,7 +160,10 @@ else
     systemctl start nginx
 fi
 
-if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
+systemctl enable --now certbot.timer
+if has_lets_encrypt_certificate; then
+    echo "检测到现有 Let's Encrypt 证书，保留证书并跳过重复签发。"
+elif [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
     certbot --nginx --non-interactive --agree-tos --redirect \
         --email "$LETSENCRYPT_EMAIL" \
         -d sylulive.online -d www.sylulive.online

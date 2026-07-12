@@ -193,7 +193,7 @@
 
 普通接口均需 JWT；普通用户还需完成教务认证，管理员可绕过教务认证。
 
-- `GET /api/exam-papers`：已发布列表，支持 `keyword`、`academic_year`、`semester`、`exam_type`、`sort`、`page`、`page_size`。
+- `GET /api/exam-papers`：已发布列表，支持 `keyword`、`academic_year`、`semester`、`exam_type`、`sort`、`page`、`page_size`。响应额外包含 `academic_years`：全部已发布试卷的去重学年列表，按倒序排列，不受本次筛选条件影响。
 - `GET /api/exam-papers/:id`：已发布详情。
 - `POST /api/exam-papers`：`multipart/form-data` 投稿，字段为 `file`、`course_name`、`academic_year`、`semester`、`exam_type`、`privacy_confirmed=true`。
 - `GET /api/exam-papers/my-submissions`：我的投稿列表，支持 `status=all|pending|published|unpublished`、`page`、`page_size`；响应中的 `status_counts` 返回本人全部投稿在 `all`、`pending`、`published`、`unpublished` 各状态下的数量。未传 `status` 时为兼容旧客户端，仅返回待审核和已发布投稿。

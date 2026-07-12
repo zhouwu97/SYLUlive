@@ -1,12 +1,489 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/exam_paper.dart';
 import 'package:shenliyuan/services/exam_paper_service.dart';
 
+class _RecordedRequest {
+  final String adapter;
+  final RequestOptions options;
+
+  const _RecordedRequest(this.adapter, this.options);
+}
+
+class _QueuedResponse {
+  final int statusCode;
+  final Object? data;
+  final DioExceptionType? exceptionType;
+
+  const _QueuedResponse(
+    this.statusCode,
+    this.data, {
+    this.exceptionType,
+  });
+}
+
+/// 记录 Dio 最终发出的请求，并按顺序返回预设响应。
+class _RecordingAdapter implements HttpClientAdapter {
+  final String name;
+  final List<_RecordedRequest> requests;
+  final List<_QueuedResponse> _responses = [];
+
+  _RecordingAdapter(this.name, this.requests);
+
+  void enqueueJson(int statusCode, Object? data) {
+    _responses.add(_QueuedResponse(statusCode, data));
+  }
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    requests.add(_RecordedRequest(name, options));
+    await requestStream?.drain<void>();
+    if (_responses.isEmpty) {
+      throw StateError('$name 缺少预设响应: ${options.method} ${options.uri}');
+    }
+    final response = _responses.removeAt(0);
+    if (response.exceptionType != null) {
+      throw DioException(
+        requestOptions: options,
+        type: response.exceptionType!,
+        message: 'socket failed',
+      );
+    }
+    return ResponseBody.fromString(
+      jsonEncode(response.data),
+      response.statusCode,
+      headers: {
+        Headers.contentTypeHeader: ['application/json'],
+      },
+    );
+  }
+}
+
 void main() {
+  test('上传先创建会话，再直传文件，最后完成会话', () async {
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(201, {
+        'session_id': 'session-1',
+        'upload_url': 'https://sylulive.online/v1/uploads/session-1',
+        'upload_token': 'signed-upload-token',
+        'expires_at': '2026-07-13T10:10:00Z',
+      })
+      ..enqueueJson(201, _paperJson(9, '高等数学'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'signed-receipt'});
+    final apiDio = Dio(
+      BaseOptions(
+        baseUrl: 'https://couqie.ccwu.cc/api',
+        headers: {
+          'Authorization': 'Bearer main-jwt',
+          'Cookie': 'session=main-cookie',
+        },
+      ),
+    )..httpClientAdapter = apiAdapter;
+    apiDio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          options.headers['X-Main-Interceptor'] = 'present';
+          handler.next(options);
+        },
+      ),
+    );
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+
+    final paper = await ExamPaperService(
+      apiDio,
+      storageDio: storageDio,
+    ).upload(
+      file: PlatformFile(
+        name: '高等数学.pdf',
+        size: 8,
+        bytes: Uint8List.fromList(utf8.encode('%PDF-1.4')),
+      ),
+      courseName: ' 高等数学 ',
+      academicYear: '2025-2026',
+      semester: 'first',
+      examType: 'final',
+      privacyConfirmed: true,
+    );
+
+    expect(paper.id, 9);
+    expect(requests.map((request) => request.adapter), [
+      'api',
+      'storage',
+      'api',
+    ]);
+    expect(requests[0].options.path, '/exam-papers/upload-sessions');
+    expect(requests[0].options.data, {
+      'course_name': '高等数学',
+      'academic_year': '2025-2026',
+      'semester': 'first',
+      'exam_type': 'final',
+      'privacy_confirmed': true,
+      'file_size': 8,
+    });
+    expect(requests[1].options.uri.host, 'sylulive.online');
+    expect(
+      requests[1].options.headers['Authorization'],
+      'Bearer signed-upload-token',
+    );
+    expect(requests[1].options.headers['Cookie'], isNull);
+    expect(requests[1].options.headers['X-Main-Interceptor'], isNull);
+    expect(requests[1].options.followRedirects, isFalse);
+    expect(requests[2].options.path,
+        '/exam-papers/upload-sessions/session-1/complete');
+    expect(requests[2].options.data, {'receipt': 'signed-receipt'});
+  });
+
+  test('完成请求失败后重试只重新完成会话，不重复上传文件', () async {
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(201, _uploadSessionJson())
+      ..enqueueJson(500, {
+        'code': 'internal_error',
+        'error': '完成试卷投稿失败',
+      })
+      ..enqueueJson(201, _paperJson(10, '数据结构'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'receipt-for-retry'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final service = ExamPaperService(apiDio, storageDio: storageDio);
+    final file = _pdfPlatformFile('数据结构.pdf');
+
+    await expectLater(
+      _uploadPaper(service, file, courseName: '数据结构'),
+      throwsA(
+        isA<ExamPaperApiException>()
+            .having((error) => error.code, 'code', 'internal_error'),
+      ),
+    );
+    final paper = await _uploadPaper(service, file, courseName: '数据结构');
+
+    expect(paper.id, 10);
+    expect(requests.map((request) => request.adapter), [
+      'api',
+      'storage',
+      'api',
+      'api',
+    ]);
+    expect(
+      requests.last.options.path,
+      '/exam-papers/upload-sessions/session-1/complete',
+    );
+  });
+
+  test('上传进度只由文件服务器请求产生', () async {
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(201, _uploadSessionJson())
+      ..enqueueJson(201, _paperJson(11, '离散数学'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'receipt-with-progress'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final progressRequestCounts = <int>[];
+
+    await _uploadPaper(
+      ExamPaperService(apiDio, storageDio: storageDio),
+      _pdfPlatformFile('离散数学.pdf'),
+      courseName: '离散数学',
+      onSendProgress: (sent, total) {
+        progressRequestCounts.add(requests.length);
+      },
+    );
+
+    expect(progressRequestCounts, isNotEmpty);
+    expect(progressRequestCounts, everyElement(2));
+  });
+
+  test('path 文件可以完成两阶段直传', () async {
+    final directory = await Directory.systemTemp.createTemp('paper-upload-');
+    addTearDown(() => directory.delete(recursive: true));
+    final localFile = File('${directory.path}${Platform.pathSeparator}试卷.pdf');
+    await localFile.writeAsBytes(utf8.encode('%PDF-1.4'));
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(201, _uploadSessionJson())
+      ..enqueueJson(201, _paperJson(12, '大学物理'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'path-receipt'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+
+    final paper = await _uploadPaper(
+      ExamPaperService(apiDio, storageDio: storageDio),
+      PlatformFile(
+        name: '试卷.pdf',
+        size: await localFile.length(),
+        path: localFile.path,
+      ),
+      courseName: '大学物理',
+    );
+
+    expect(paper.id, 12);
+    expect(requests.map((request) => request.adapter), [
+      'api',
+      'storage',
+      'api',
+    ]);
+  });
+
+  test('拒绝把上传令牌发送到非文件服务域名', () async {
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(
+          201,
+          _uploadSessionJson(
+            uploadURL: 'https://attacker.example/v1/uploads/session-1',
+          ));
+    final storageAdapter = _RecordingAdapter('storage', requests);
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+
+    await expectLater(
+      _uploadPaper(
+        ExamPaperService(apiDio, storageDio: storageDio),
+        _pdfPlatformFile('恶意地址.pdf'),
+      ),
+      throwsA(
+        isA<ExamPaperApiException>()
+            .having((error) => error.code, 'code', 'invalid_storage_url'),
+      ),
+    );
+    expect(requests.map((request) => request.adapter), ['api']);
+  });
+
+  test('拒绝非标准端口和不匹配会话的文件服务地址', () async {
+    for (final uploadURL in [
+      'https://sylulive.online:8443/v1/uploads/session-1',
+      'https://sylulive.online/v1/uploads/another-session',
+      'http://sylulive.online/v1/uploads/session-1',
+    ]) {
+      final requests = <_RecordedRequest>[];
+      final apiAdapter = _RecordingAdapter('api', requests)
+        ..enqueueJson(201, _uploadSessionJson(uploadURL: uploadURL));
+      final storageAdapter = _RecordingAdapter('storage', requests);
+      final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+        ..httpClientAdapter = apiAdapter;
+      final storageDio = Dio()..httpClientAdapter = storageAdapter;
+
+      await expectLater(
+        _uploadPaper(
+          ExamPaperService(apiDio, storageDio: storageDio),
+          _pdfPlatformFile('地址约束.pdf'),
+        ),
+        throwsA(
+          isA<ExamPaperApiException>()
+              .having((error) => error.code, 'code', 'invalid_storage_url'),
+        ),
+        reason: uploadURL,
+      );
+      expect(requests.map((request) => request.adapter), ['api']);
+    }
+  });
+
+  test('三阶段服务错误均转换为可判断的上传异常', () async {
+    Future<ExamPaperApiException> runFailure({
+      required List<_QueuedResponse> apiResponses,
+      required List<_QueuedResponse> storageResponses,
+    }) async {
+      final requests = <_RecordedRequest>[];
+      final apiAdapter = _RecordingAdapter('api', requests);
+      final storageAdapter = _RecordingAdapter('storage', requests);
+      for (final response in apiResponses) {
+        apiAdapter.enqueueJson(response.statusCode, response.data);
+      }
+      for (final response in storageResponses) {
+        storageAdapter.enqueueJson(response.statusCode, response.data);
+      }
+      final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+        ..httpClientAdapter = apiAdapter;
+      final storageDio = Dio()..httpClientAdapter = storageAdapter;
+      try {
+        await _uploadPaper(
+          ExamPaperService(apiDio, storageDio: storageDio),
+          _pdfPlatformFile('错误映射.pdf'),
+        );
+      } on ExamPaperApiException catch (error) {
+        return error;
+      }
+      throw StateError('测试请求应当失败');
+    }
+
+    final upgrade = await runFailure(
+      apiResponses: const [
+        _QueuedResponse(426, {
+          'code': 'client_upgrade_required',
+          'error': '请升级客户端后上传试卷',
+        }),
+      ],
+      storageResponses: const [],
+    );
+    expect(upgrade.code, 'client_upgrade_required');
+    expect(upgrade.message, contains('升级'));
+
+    final storage = await runFailure(
+      apiResponses: [_QueuedResponse(201, _uploadSessionJson())],
+      storageResponses: const [
+        _QueuedResponse(507, {
+          'code': 'storage_readonly',
+          'error': '文件服务器空间不足，请稍后重试',
+        }),
+      ],
+    );
+    expect(storage.code, 'storage_readonly');
+    expect(storage.message, contains('空间不足'));
+
+    final expired = await runFailure(
+      apiResponses: [
+        _QueuedResponse(201, _uploadSessionJson()),
+        const _QueuedResponse(410, {
+          'code': 'upload_session_expired',
+          'error': '上传会话已过期，请重新上传',
+        }),
+      ],
+      storageResponses: const [
+        _QueuedResponse(201, {'receipt': 'expired-receipt'}),
+      ],
+    );
+    expect(expired.code, 'upload_session_expired');
+    expect(expired.message, contains('过期'));
+
+    final storageNetwork = await runFailure(
+      apiResponses: [_QueuedResponse(201, _uploadSessionJson())],
+      storageResponses: const [
+        _QueuedResponse(
+          0,
+          null,
+          exceptionType: DioExceptionType.connectionError,
+        ),
+      ],
+    );
+    expect(storageNetwork.code, 'storage_upload_failed');
+    expect(storageNetwork.message, '文件上传失败，请检查网络后重试');
+
+    final completeNetwork = await runFailure(
+      apiResponses: [
+        _QueuedResponse(201, _uploadSessionJson()),
+        const _QueuedResponse(
+          0,
+          null,
+          exceptionType: DioExceptionType.connectionError,
+        ),
+      ],
+      storageResponses: const [
+        _QueuedResponse(201, {'receipt': 'network-receipt'}),
+      ],
+    );
+    expect(completeNetwork.code, 'upload_complete_failed');
+    expect(completeNetwork.message, contains('文件已上传'));
+  });
+
+  test('拒绝字段类型错误的会话、文件服务和完成响应', () async {
+    Future<String> invalidResponseCode({
+      required List<_QueuedResponse> apiResponses,
+      required List<_QueuedResponse> storageResponses,
+    }) async {
+      final requests = <_RecordedRequest>[];
+      final apiAdapter = _RecordingAdapter('api', requests);
+      final storageAdapter = _RecordingAdapter('storage', requests);
+      for (final response in apiResponses) {
+        apiAdapter.enqueueJson(response.statusCode, response.data);
+      }
+      for (final response in storageResponses) {
+        storageAdapter.enqueueJson(response.statusCode, response.data);
+      }
+      final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+        ..httpClientAdapter = apiAdapter;
+      final storageDio = Dio()..httpClientAdapter = storageAdapter;
+      try {
+        await _uploadPaper(
+          ExamPaperService(apiDio, storageDio: storageDio),
+          _pdfPlatformFile('响应校验.pdf'),
+        );
+      } on ExamPaperApiException catch (error) {
+        return error.code;
+      }
+      throw StateError('测试响应应当被拒绝');
+    }
+
+    expect(
+      await invalidResponseCode(
+        apiResponses: [
+          _QueuedResponse(201, {
+            ..._uploadSessionJson(),
+            'session_id': 1,
+          }),
+        ],
+        storageResponses: const [],
+      ),
+      'invalid_upload_session_response',
+    );
+    expect(
+      await invalidResponseCode(
+        apiResponses: [_QueuedResponse(201, _uploadSessionJson())],
+        storageResponses: const [
+          _QueuedResponse(201, {'receipt': 1}),
+        ],
+      ),
+      'invalid_storage_response',
+    );
+    expect(
+      await invalidResponseCode(
+        apiResponses: [
+          _QueuedResponse(201, _uploadSessionJson()),
+          _QueuedResponse(201, {
+            ..._paperJson(13, '严格校验'),
+            'id': '13',
+          }),
+        ],
+        storageResponses: const [
+          _QueuedResponse(201, {'receipt': 'strict-receipt'}),
+        ],
+      ),
+      'invalid_complete_response',
+    );
+    expect(
+      await invalidResponseCode(
+        apiResponses: const [_QueuedResponse(201, <Object>[])],
+        storageResponses: const [],
+      ),
+      'invalid_upload_session_response',
+    );
+    expect(
+      await invalidResponseCode(
+        apiResponses: [
+          _QueuedResponse(201, _uploadSessionJson()),
+          _QueuedResponse(201, {
+            ..._paperJson(14, '布尔校验'),
+            'reward_revocable': 'false',
+          }),
+        ],
+        storageResponses: const [
+          _QueuedResponse(201, {'receipt': 'boolean-receipt'}),
+        ],
+      ),
+      'invalid_complete_response',
+    );
+  });
+
   test('列表服务传递筛选参数并解析分页响应', () async {
     final dio = Dio(BaseOptions(baseUrl: 'http://test/api'));
     RequestOptions? captured;
@@ -348,6 +825,7 @@ Map<String, dynamic> _paperJson(int id, String title) {
     'title': title,
     'file_size': 1024,
     'download_count': 0,
+    'reward_revocable': false,
     'created_at': '2026-07-10T10:00:00Z',
     'contributor': {
       'id': 1,
@@ -356,4 +834,37 @@ Map<String, dynamic> _paperJson(int id, String title) {
       'level': 1,
     },
   };
+}
+
+Map<String, dynamic> _uploadSessionJson({
+  String uploadURL = 'https://sylulive.online/v1/uploads/session-1',
+}) {
+  return {
+    'session_id': 'session-1',
+    'upload_url': uploadURL,
+    'upload_token': 'signed-upload-token',
+    'expires_at': '2026-07-13T10:10:00Z',
+  };
+}
+
+PlatformFile _pdfPlatformFile(String name) {
+  final bytes = Uint8List.fromList(utf8.encode('%PDF-1.4'));
+  return PlatformFile(name: name, size: bytes.length, bytes: bytes);
+}
+
+Future<ExamPaper> _uploadPaper(
+  ExamPaperService service,
+  PlatformFile file, {
+  String courseName = '高等数学',
+  ProgressCallback? onSendProgress,
+}) {
+  return service.upload(
+    file: file,
+    courseName: courseName,
+    academicYear: '2025-2026',
+    semester: 'first',
+    examType: 'final',
+    privacyConfirmed: true,
+    onSendProgress: onSendProgress,
+  );
 }

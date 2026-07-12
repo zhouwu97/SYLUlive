@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ var (
 	ErrStorageSignatureInvalid = errors.New("storage signature invalid")
 	ErrStorageGrantExpired     = errors.New("storage grant expired")
 	ErrStorageSecretRequired   = errors.New("storage signing secret required")
+	ErrStorageReceiptInvalid   = errors.New("storage receipt invalid")
 )
 
 // ExamPaperStorageGrant 表示主服务发给文件服务的短时授权。
@@ -91,6 +93,9 @@ func (s *ExamPaperStorageSigner) VerifyGrant(token, expectedPurpose, expectedMet
 
 // SignReceipt 签发文件服务上传回执。
 func (s *ExamPaperStorageSigner) SignReceipt(receipt ExamPaperUploadReceipt) (string, error) {
+	if err := validateExamPaperUploadReceipt(receipt); err != nil {
+		return "", err
+	}
 	return s.sign(receipt)
 }
 
@@ -100,7 +105,24 @@ func (s *ExamPaperStorageSigner) VerifyReceipt(token string) (ExamPaperUploadRec
 	if err := s.verify(token, &receipt); err != nil {
 		return ExamPaperUploadReceipt{}, err
 	}
+	if err := validateExamPaperUploadReceipt(receipt); err != nil {
+		return ExamPaperUploadReceipt{}, err
+	}
 	return receipt, nil
+}
+
+func validateExamPaperUploadReceipt(receipt ExamPaperUploadReceipt) error {
+	if strings.TrimSpace(receipt.SessionID) == "" ||
+		strings.TrimSpace(receipt.FileKey) == "" ||
+		receipt.FileSize <= 0 ||
+		len(receipt.SHA256) != sha256.Size*2 ||
+		receipt.IssuedAt <= 0 {
+		return ErrStorageReceiptInvalid
+	}
+	if _, err := hex.DecodeString(receipt.SHA256); err != nil {
+		return ErrStorageReceiptInvalid
+	}
+	return nil
 }
 
 func (s *ExamPaperStorageSigner) sign(value any) (string, error) {

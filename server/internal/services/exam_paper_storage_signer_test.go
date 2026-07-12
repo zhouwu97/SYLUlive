@@ -29,6 +29,16 @@ func testStorageGrant() ExamPaperStorageGrant {
 	}
 }
 
+func testStorageReceipt() ExamPaperUploadReceipt {
+	return ExamPaperUploadReceipt{
+		SessionID: "session-1",
+		FileKey:   "papers/a.pdf",
+		FileSize:  123,
+		SHA256:    strings.Repeat("a", 64),
+		IssuedAt:  fixedStorageSignerNow().Unix(),
+	}
+}
+
 func decodeStorageTokenPayload(t *testing.T, token string) map[string]any {
 	t.Helper()
 	parts := strings.Split(token, ".")
@@ -132,6 +142,9 @@ func TestExamPaperStorageSignerRejectsMalformedGrant(t *testing.T) {
 	if _, err := signer.VerifyGrant("malformed", ExamPaperStoragePurposeUpload, "POST", "/v1/papers/upload"); !errors.Is(err, ErrStorageSignatureInvalid) {
 		t.Fatalf("格式错误不正确: %v", err)
 	}
+	if _, err := signer.VerifyGrant("***.***", ExamPaperStoragePurposeUpload, "POST", "/v1/papers/upload"); !errors.Is(err, ErrStorageSignatureInvalid) {
+		t.Fatalf("非法 base64url 错误不正确: %v", err)
+	}
 }
 
 func TestNewExamPaperStorageSignerRejectsEmptySecret(t *testing.T) {
@@ -145,7 +158,7 @@ func TestExamPaperStorageSignerReceiptRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
-	receipt := ExamPaperUploadReceipt{SessionID: "session-1", FileKey: "papers/a.pdf", FileSize: 123, SHA256: "abc", IssuedAt: fixedStorageSignerNow().Unix()}
+	receipt := testStorageReceipt()
 	token, err := signer.SignReceipt(receipt)
 	if err != nil {
 		t.Fatalf("签发回执失败: %v", err)
@@ -159,12 +172,60 @@ func TestExamPaperStorageSignerReceiptRoundTrip(t *testing.T) {
 	}
 }
 
+func TestExamPaperStorageSignerRejectsInvalidReceiptSemantics(t *testing.T) {
+	signer, err := NewExamPaperStorageSigner("receipt-secret", fixedStorageSignerNow)
+	if err != nil {
+		t.Fatalf("创建签名器失败: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		receipt ExamPaperUploadReceipt
+	}{
+		{name: "零值回执", receipt: ExamPaperUploadReceipt{}},
+		{name: "空会话", receipt: func() ExamPaperUploadReceipt { value := testStorageReceipt(); value.SessionID = " \t"; return value }()},
+		{name: "空文件键", receipt: func() ExamPaperUploadReceipt { value := testStorageReceipt(); value.FileKey = " "; return value }()},
+		{name: "文件大小为零", receipt: func() ExamPaperUploadReceipt { value := testStorageReceipt(); value.FileSize = 0; return value }()},
+		{name: "文件大小为负", receipt: func() ExamPaperUploadReceipt { value := testStorageReceipt(); value.FileSize = -1; return value }()},
+		{name: "摘要过短", receipt: func() ExamPaperUploadReceipt { value := testStorageReceipt(); value.SHA256 = "abc"; return value }()},
+		{name: "摘要非十六进制", receipt: func() ExamPaperUploadReceipt {
+			value := testStorageReceipt()
+			value.SHA256 = strings.Repeat("z", 64)
+			return value
+		}()},
+		{name: "签发时间为零", receipt: func() ExamPaperUploadReceipt { value := testStorageReceipt(); value.IssuedAt = 0; return value }()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := signer.SignReceipt(tt.receipt); !errors.Is(err, ErrStorageReceiptInvalid) {
+				t.Fatalf("签发无效回执错误不正确: %v", err)
+			}
+			token, err := signer.sign(tt.receipt)
+			if err != nil {
+				t.Fatalf("构造签名正确的测试回执失败: %v", err)
+			}
+			if _, err := signer.VerifyReceipt(token); !errors.Is(err, ErrStorageReceiptInvalid) {
+				t.Fatalf("验签无效回执错误不正确: %v", err)
+			}
+		})
+	}
+
+	nullToken, err := signer.sign(nil)
+	if err != nil {
+		t.Fatalf("构造 null 测试回执失败: %v", err)
+	}
+	if _, err := signer.VerifyReceipt(nullToken); !errors.Is(err, ErrStorageReceiptInvalid) {
+		t.Fatalf("null 回执错误不正确: %v", err)
+	}
+}
+
 func TestExamPaperStorageReceiptUsesIssuedAtWireField(t *testing.T) {
 	signer, err := NewExamPaperStorageSigner("receipt-secret", fixedStorageSignerNow)
 	if err != nil {
 		t.Fatalf("创建签名器失败: %v", err)
 	}
-	token, err := signer.SignReceipt(ExamPaperUploadReceipt{IssuedAt: fixedStorageSignerNow().Unix()})
+	token, err := signer.SignReceipt(testStorageReceipt())
 	if err != nil {
 		t.Fatalf("签发回执失败: %v", err)
 	}
@@ -207,7 +268,7 @@ func TestExamPaperStorageSignerGrantAndReceiptSecretsAreIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建回执签名器失败: %v", err)
 	}
-	receiptToken, err := receiptSigner.SignReceipt(ExamPaperUploadReceipt{SessionID: "session-1", FileKey: "papers/a.pdf", FileSize: 123, SHA256: "abc", IssuedAt: fixedStorageSignerNow().Unix()})
+	receiptToken, err := receiptSigner.SignReceipt(testStorageReceipt())
 	if err != nil {
 		t.Fatalf("签发回执失败: %v", err)
 	}

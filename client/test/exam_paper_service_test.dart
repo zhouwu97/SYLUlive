@@ -23,6 +23,7 @@ void main() {
                 'page': 2,
                 'page_size': 10,
                 'total': 11,
+                'academic_years': ['2025-2026', '2024-2025'],
               },
             ),
           );
@@ -43,6 +44,7 @@ void main() {
 
     expect(result.page, 2);
     expect(result.hasMore, isFalse);
+    expect(result.academicYears, ['2025-2026', '2024-2025']);
     expect(captured?.path, '/exam-papers');
     expect(captured?.queryParameters['keyword'], '高数');
     expect(captured?.queryParameters['sort'], 'downloads');

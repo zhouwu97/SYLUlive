@@ -118,7 +118,13 @@ class _CapturingExamPaperService extends ExamPaperService {
   }) async {
     this.keyword = keyword;
     this.academicYear = academicYear;
-    return const ExamPaperPage(items: [], page: 1, pageSize: 20, total: 0);
+    return const ExamPaperPage(
+      items: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      academicYears: ['2025-2026', '2024-2025'],
+    );
   }
 }
 

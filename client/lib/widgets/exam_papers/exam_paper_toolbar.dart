@@ -38,19 +38,76 @@ class ExamPaperToolbar extends StatelessWidget {
     required this.onClearFilters,
   });
 
+  Widget _buildFilters(BuildContext context) {
+    final academicYearItems = <String, String>{
+      '': '全部学年',
+      for (final year in academicYears) year: year,
+    };
+    final filters = [
+      _CompactDropdown(
+        value: academicYear,
+        items: academicYearItems,
+        onChanged: onAcademicYearChanged,
+        menuMaxHeight: kMinInteractiveDimension * 4,
+      ),
+      _CompactDropdown(
+        value: semester,
+        items: const {
+          '': '全部学期',
+          'first': '第一学期',
+          'second': '第二学期',
+          'other': '其他',
+        },
+        onChanged: onSemesterChanged,
+      ),
+      _CompactDropdown(
+        value: examType,
+        items: const {
+          '': '全部类型',
+          'midterm': '期中',
+          'final': '期末',
+          'makeup': '补考',
+          'retake': '重修',
+          'other': '其他',
+        },
+        onChanged: onExamTypeChanged,
+      ),
+      _CompactDropdown(
+        value: sort,
+        items: const {
+          'latest': '最新',
+          'downloads': '下载最多',
+        },
+        onChanged: onSortChanged,
+      ),
+    ];
+
+    return Row(
+      children: [
+        Expanded(flex: 4, child: filters[0]),
+        const SizedBox(width: 2),
+        Expanded(flex: 4, child: filters[1]),
+        const SizedBox(width: 2),
+        Expanded(flex: 4, child: filters[2]),
+        const SizedBox(width: 2),
+        Expanded(flex: 3, child: filters[3]),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
       child: GlassContainer(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         borderRadius: 14,
         blur: 0,
         showHighlight: false,
         child: Column(
           children: [
             SizedBox(
-              height: 44,
+              height: 38,
               child: TextField(
                 controller: searchController,
                 onChanged: onSearchChanged,
@@ -68,53 +125,9 @@ class ExamPaperToolbar extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _CompactDropdown(
-                    value: academicYear,
-                    items: {
-                      '': '全部学年',
-                      for (final year in academicYears) year: year,
-                    },
-                    onChanged: onAcademicYearChanged,
-                  ),
-                  _CompactDropdown(
-                    value: semester,
-                    items: const {
-                      '': '全部学期',
-                      'first': '第一学期',
-                      'second': '第二学期',
-                      'other': '其他',
-                    },
-                    onChanged: onSemesterChanged,
-                  ),
-                  _CompactDropdown(
-                    value: examType,
-                    items: const {
-                      '': '全部类型',
-                      'midterm': '期中',
-                      'final': '期末',
-                      'makeup': '补考',
-                      'retake': '重修',
-                      'other': '其他',
-                    },
-                    onChanged: onExamTypeChanged,
-                  ),
-                  _CompactDropdown(
-                    value: sort,
-                    items: const {
-                      'latest': '最新',
-                      'downloads': '下载最多',
-                    },
-                    onChanged: onSortChanged,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
+            _buildFilters(context),
+            const SizedBox(height: 4),
             Row(
               children: [
                 Text(
@@ -136,8 +149,8 @@ class ExamPaperToolbar extends StatelessWidget {
                   TextButton(
                     onPressed: onClearFilters,
                     style: TextButton.styleFrom(
-                      minimumSize: const Size(44, 36),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(40, 28),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
                     child: const Text('清除'),
                   ),
@@ -155,33 +168,36 @@ class _CompactDropdown extends StatelessWidget {
   final String value;
   final Map<String, String> items;
   final ValueChanged<String> onChanged;
+  final double? menuMaxHeight;
 
   const _CompactDropdown({
     required this.value,
     required this.items,
     required this.onChanged,
+    this.menuMaxHeight,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 36,
-      margin: const EdgeInsets.only(right: 6),
-      padding: const EdgeInsets.only(left: 10, right: 6),
+      height: 28,
       decoration: BoxDecoration(
         color: Theme.of(context)
             .colorScheme
             .surfaceContainerHighest
             .withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value,
           isDense: true,
-          borderRadius: BorderRadius.circular(12),
-          icon: const Icon(Icons.arrow_drop_down, size: 18),
-          style: Theme.of(context).textTheme.bodyMedium,
+          isExpanded: true,
+          menuMaxHeight: menuMaxHeight,
+          padding: const EdgeInsets.only(left: 4),
+          borderRadius: BorderRadius.circular(8),
+          icon: const Icon(Icons.arrow_drop_down, size: 16),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12),
           items: items.entries
               .map(
                 (entry) => DropdownMenuItem(

@@ -39,14 +39,17 @@ class ExamPaperToolbar extends StatelessWidget {
   });
 
   Widget _buildFilters(BuildContext context) {
+    final academicYearItems = <String, String>{
+      '': '全部学年',
+      for (final year in academicYears) year: year,
+    };
+
     final filters = [
       _CompactDropdown(
         value: academicYear,
-        items: {
-          '': '全部学年',
-          for (final year in academicYears) year: year,
-        },
+        items: academicYearItems,
         onChanged: onAcademicYearChanged,
+        menuMaxHeight: kMinInteractiveDimension * 4,
       ),
       _CompactDropdown(
         value: semester,
@@ -80,31 +83,16 @@ class ExamPaperToolbar extends StatelessWidget {
       ),
     ];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth >= 600) {
-          return Row(
-            children: [
-              Expanded(child: filters[0]),
-              const SizedBox(width: 4),
-              Expanded(child: filters[1]),
-              const SizedBox(width: 4),
-              Expanded(child: filters[2]),
-              const SizedBox(width: 4),
-              SizedBox(width: 96, child: filters[3]),
-            ],
-          );
-        }
-
-        final itemWidth = (constraints.maxWidth - 4) / 2;
-        return Wrap(
-          spacing: 4,
-          runSpacing: 4,
-          children: filters
-              .map((filter) => SizedBox(width: itemWidth, child: filter))
-              .toList(),
-        );
-      },
+    return Row(
+      children: [
+        Expanded(flex: 4, child: filters[0]),
+        const SizedBox(width: 2),
+        Expanded(flex: 4, child: filters[1]),
+        const SizedBox(width: 2),
+        Expanded(flex: 4, child: filters[2]),
+        const SizedBox(width: 2),
+        Expanded(flex: 3, child: filters[3]),
+      ],
     );
   }
 
@@ -181,17 +169,19 @@ class _CompactDropdown extends StatelessWidget {
   final String value;
   final Map<String, String> items;
   final ValueChanged<String> onChanged;
+  final double? menuMaxHeight;
 
   const _CompactDropdown({
     required this.value,
     required this.items,
     required this.onChanged,
+    this.menuMaxHeight,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 32,
+      height: 28,
       decoration: BoxDecoration(
         color: Theme.of(context)
             .colorScheme
@@ -204,10 +194,11 @@ class _CompactDropdown extends StatelessWidget {
           value: value,
           isDense: true,
           isExpanded: true,
-          padding: const EdgeInsets.only(left: 8, right: 4),
-          borderRadius: BorderRadius.circular(12),
-          icon: const Icon(Icons.arrow_drop_down, size: 18),
-          style: Theme.of(context).textTheme.bodyMedium,
+          menuMaxHeight: menuMaxHeight,
+          padding: const EdgeInsets.only(left: 4),
+          borderRadius: BorderRadius.circular(8),
+          icon: const Icon(Icons.arrow_drop_down, size: 16),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12),
           items: items.entries
               .map(
                 (entry) => DropdownMenuItem(

@@ -532,7 +532,7 @@ func TestCreateRemoteExamPaperUploadSessionValidatesBusinessBoundaries(t *testin
 		env := newExamPaperTestEnv(t)
 		configureRemoteExamPaperHandler(t, &env, "remote")
 		user := createExamPaperTestUser(t, env.db, "remote-pending-limit", models.RoleUser, true, 0)
-		for index := 0; index < maxPendingExamPaperSubmissionsPerUser; index++ {
+		for index := 0; index < services.ExamPaperMaxPendingSubmissionsPerUser; index++ {
 			paper := models.ExamPaper{Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: user.ID, CourseName: fmt.Sprintf("配额-%d", index), AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst, ExamType: models.ExamPaperTypeFinal, Title: fmt.Sprintf("配额-%d", index), FileKey: fmt.Sprintf("remote-quota-%d.pdf", index), FileSize: 1, SHA256: fmt.Sprintf("remote-quota-sha-%d", index)}
 			if err := env.db.Create(&paper).Error; err != nil {
 				t.Fatalf("创建配额测试试卷失败: %v", err)
@@ -559,6 +559,32 @@ func TestCreateRemoteExamPaperUploadSessionValidatesBusinessBoundaries(t *testin
 			t.Fatalf("创建会话限流错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
 		}
 	})
+}
+
+func TestCompleteRemoteExamPaperUploadSessionMapsPendingQuotaToTooManyRequests(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	remote := configureRemoteExamPaperHandler(t, &env, "remote")
+	user := createExamPaperTestUser(t, env.db, "remote-complete-quota", models.RoleUser, true, 0)
+	metadata, _ := models.NormalizeExamPaperMetadata("高等数学", "2025-2026", models.ExamPaperSemesterFirst, models.ExamPaperTypeFinal)
+	session, _, err := remote.uploads.CreateSession(user, metadata, 1024)
+	if err != nil {
+		t.Fatalf("创建测试会话失败: %v", err)
+	}
+	for index := 0; index < services.ExamPaperMaxPendingSubmissionsPerUser; index++ {
+		paper := models.ExamPaper{Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: user.ID, CourseName: fmt.Sprintf("完成配额-%d", index), AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst, ExamType: models.ExamPaperTypeFinal, Title: fmt.Sprintf("完成配额-%d", index), FileKey: fmt.Sprintf("complete-quota-%d.pdf", index), FileSize: 1, SHA256: fmt.Sprintf("complete-quota-sha-%d", index)}
+		if err := env.db.Create(&paper).Error; err != nil {
+			t.Fatalf("创建配额试卷失败: %v", err)
+		}
+	}
+	receipt, err := remote.receiptSigner.SignReceipt(services.ExamPaperUploadReceipt{SessionID: session.ID, FileKey: "17171717-1717-4717-8717-171717171717.pdf", FileSize: 1024, SHA256: "5234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", IssuedAt: examPaperUploadHandlerTestNow.Unix()})
+	if err != nil {
+		t.Fatalf("签发测试回执失败: %v", err)
+	}
+
+	response := performExamPaperJSONRequest(env.handler.CompleteUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions/"+session.ID+"/complete", gin.Params{{Key: "id", Value: session.ID}}, user.ID, map[string]any{"receipt": receipt})
+	if response.Code != http.StatusTooManyRequests || decodeErrorCode(t, response) != "exam_paper_pending_limit_reached" {
+		t.Fatalf("完成配额错误映射不符合预期: status=%d body=%s", response.Code, response.Body.String())
+	}
 }
 
 func TestCompleteRemoteExamPaperUploadSessionCreatesSubmission(t *testing.T) {

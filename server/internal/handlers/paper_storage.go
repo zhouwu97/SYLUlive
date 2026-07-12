@@ -22,14 +22,17 @@ type paperStorageReceiptSigner interface {
 
 // PaperStorageHandler 提供独立试卷文件服务器的 HTTP 边界。
 type PaperStorageHandler struct {
-	files         *services.ExamPaperFileService
-	grantSigner   *services.ExamPaperStorageSigner
-	receiptSigner paperStorageReceiptSigner
-	now           func() time.Time
-	diskUsage     func(string) (float64, error)
-	validations   chan struct{}
-	storePending  func(string, io.Reader) (*services.StoredExamPaperFile, error)
-	statFile      func(string) (os.FileInfo, error)
+	files                 *services.ExamPaperFileService
+	grantSigner           *services.ExamPaperStorageSigner
+	receiptSigner         paperStorageReceiptSigner
+	now                   func() time.Time
+	diskUsage             func(string) (float64, error)
+	validations           chan struct{}
+	storePending          func(string, io.Reader) (*services.StoredExamPaperFile, error)
+	statFile              func(string) (os.FileInfo, error)
+	beginUploadSession    func(string, string, int64, time.Time, time.Time) (services.ExamPaperUploadSessionBeginResult, error)
+	completeUploadSession func(string, string, string, services.StoredExamPaperFile, time.Time) error
+	abortUploadSession    func(string, string) error
 }
 
 // NewPaperStorageHandler 创建独立文件服务处理器。
@@ -45,6 +48,9 @@ func NewPaperStorageHandler(files *services.ExamPaperFileService, grantSigner, r
 	if files != nil {
 		handler.storePending = files.StorePendingUploadReader
 		handler.statFile = files.Stat
+		handler.beginUploadSession = files.BeginUploadSession
+		handler.completeUploadSession = files.CompleteUploadSession
+		handler.abortUploadSession = files.AbortUploadSession
 	}
 	return handler
 }
@@ -113,6 +119,21 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	begin, err := h.beginUploadSession(sessionID, grant.JTI, grant.ExpectedSize, time.Unix(grant.ExpiresAt, 0), h.now())
+	if err != nil {
+		h.writeUploadSessionError(c, err)
+		return
+	}
+	if begin.Completed {
+		c.JSON(http.StatusCreated, gin.H{"receipt": begin.Receipt})
+		return
+	}
+	completed := false
+	defer func() {
+		if !completed {
+			_ = h.abortUploadSession(sessionID, grant.JTI)
+		}
+	}()
 	usage, err := h.diskUsage(h.files.RootDir())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
@@ -158,6 +179,11 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid pdf"})
 		return
 	}
+	if stored.Size != grant.ExpectedSize {
+		_ = h.files.DiscardPending(stored.FileKey)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "file_size_mismatch"})
+		return
+	}
 	receipt, err := h.receiptSigner.SignReceipt(services.ExamPaperUploadReceipt{
 		SessionID: sessionID, FileKey: stored.FileKey, FileSize: stored.Size,
 		SHA256: stored.SHA256, IssuedAt: h.now().Unix(),
@@ -167,7 +193,26 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
 		return
 	}
+	if err := h.completeUploadSession(sessionID, grant.JTI, receipt, *stored, h.now()); err != nil {
+		_ = h.files.DiscardPending(stored.FileKey)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
+		return
+	}
+	completed = true
 	c.JSON(http.StatusCreated, gin.H{"receipt": receipt})
+}
+
+func (h *PaperStorageHandler) writeUploadSessionError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, services.ErrExamPaperUploadInProgress):
+		c.JSON(http.StatusConflict, gin.H{"error": "upload_session_in_progress"})
+	case errors.Is(err, services.ErrExamPaperUploadSessionConsumed):
+		c.JSON(http.StatusConflict, gin.H{"error": "upload_session_invalid"})
+	case errors.Is(err, services.ErrExamPaperUploadSessionInvalid):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "upload_session_invalid"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
+	}
 }
 
 func (h *PaperStorageHandler) storePendingWithSlot(c *gin.Context, filename string, source io.Reader) (stored *services.StoredExamPaperFile, err error) {
@@ -307,10 +352,12 @@ func (h *PaperStorageHandler) Maintenance(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"unclaimed_files_removed": result.UnclaimedFilesRemoved,
-		"pending_markers_removed": result.PendingMarkersRemoved,
-		"trash_files_removed":     result.TrashFilesRemoved,
-		"temporary_files_removed": result.TemporaryFilesRemoved,
-		"disk_usage_percent":      usage,
+		"unclaimed_files_removed":           result.UnclaimedFilesRemoved,
+		"pending_markers_removed":           result.PendingMarkersRemoved,
+		"trash_files_removed":               result.TrashFilesRemoved,
+		"temporary_files_removed":           result.TemporaryFilesRemoved,
+		"stale_upload_sessions_removed":     result.StaleUploadSessionsRemoved,
+		"completed_upload_sessions_removed": result.CompletedUploadSessionsRemoved,
+		"disk_usage_percent":                usage,
 	})
 }

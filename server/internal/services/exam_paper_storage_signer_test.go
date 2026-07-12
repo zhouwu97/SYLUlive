@@ -16,16 +16,17 @@ func fixedStorageSignerNow() time.Time {
 func testStorageGrant() ExamPaperStorageGrant {
 	now := fixedStorageSignerNow()
 	return ExamPaperStorageGrant{
-		Purpose:   ExamPaperStoragePurposeUpload,
-		SessionID: "session-1",
-		FileKey:   "papers/a.pdf",
-		UserID:    42,
-		PaperID:   7,
-		Method:    "post",
-		Path:      "/v1/papers/upload",
-		IssuedAt:  now.Unix(),
-		ExpiresAt: now.Add(10 * time.Minute).Unix(),
-		JTI:       "jti-1",
+		Purpose:      ExamPaperStoragePurposeUpload,
+		SessionID:    "session-1",
+		ExpectedSize: 123,
+		FileKey:      "papers/a.pdf",
+		UserID:       42,
+		PaperID:      7,
+		Method:       "post",
+		Path:         "/v1/papers/upload",
+		IssuedAt:     now.Unix(),
+		ExpiresAt:    now.Add(10 * time.Minute).Unix(),
+		JTI:          "jti-1",
 	}
 }
 
@@ -70,7 +71,7 @@ func TestExamPaperStorageSignerGrantRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("验证授权失败: %v", err)
 	}
-	if got.SessionID != "session-1" || got.FileKey != "papers/a.pdf" || got.Method != "POST" {
+	if got.SessionID != "session-1" || got.FileKey != "papers/a.pdf" || got.Method != "POST" || got.ExpectedSize != 123 {
 		t.Fatalf("授权内容不匹配: %#v", got)
 	}
 }

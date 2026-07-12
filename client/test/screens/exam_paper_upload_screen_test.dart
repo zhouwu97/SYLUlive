@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -24,8 +25,8 @@ class _FailingUploadService extends ExamPaperService {
     ProgressCallback? onSendProgress,
   }) async {
     throw const ExamPaperApiException(
-      message: '上传失败，请稍后重试',
-      code: 'network_error',
+      message: '文件服务器空间不足，请稍后重试',
+      code: 'insufficient_storage',
     );
   }
 }
@@ -66,6 +67,32 @@ class _SuccessfulUploadService extends ExamPaperService {
   }
 }
 
+class _JsonAdapter implements HttpClientAdapter {
+  final List<(int, Object)> responses;
+
+  _JsonAdapter(this.responses);
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<List<int>>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    await requestStream?.drain<void>();
+    final response = responses.removeAt(0);
+    return ResponseBody.fromString(
+      jsonEncode(response.$2),
+      response.$1,
+      headers: {
+        Headers.contentTypeHeader: ['application/json'],
+      },
+    );
+  }
+}
+
 void main() {
   testWidgets('投稿条件完成前按钮禁用，选择有效 PDF 后展示校验状态', (tester) async {
     await tester.pumpWidget(
@@ -101,14 +128,30 @@ void main() {
   });
 
   testWidgets('上传失败后保留课程、文件与隐私确认', (tester) async {
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = _JsonAdapter([
+        (
+          201,
+          {
+            'session_id': 'screen-session',
+            'upload_url': 'https://sylulive.online/v1/uploads/screen-session',
+            'upload_token': 'screen-upload-token',
+            'expires_at': '2026-07-13T10:10:00Z',
+          },
+        ),
+      ]);
+    final storageDio = Dio()
+      ..httpClientAdapter = _JsonAdapter([
+        (507, {'error': 'insufficient storage'}),
+      ]);
     await tester.pumpWidget(
       _buildApp(
-        service: _FailingUploadService(),
+        service: ExamPaperService(apiDio, storageDio: storageDio),
         initialCourseName: '数据结构',
         pickFile: () async => PlatformFile(
           name: '数据结构.pdf',
           size: 1024,
-          path: 'C:/tmp/数据结构.pdf',
+          bytes: Uint8List.fromList(List<int>.filled(1024, 1)),
         ),
       ),
     );
@@ -123,7 +166,7 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -160));
     await tester.pump();
 
-    expect(find.text('上传失败，请稍后重试'), findsOneWidget);
+    expect(find.text('文件服务器空间不足，请稍后重试'), findsOneWidget);
     expect(find.text('数据结构.pdf'), findsOneWidget);
     expect(find.textContaining('数据结构 ·'), findsOneWidget);
     expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);

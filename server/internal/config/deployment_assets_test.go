@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -10,11 +11,7 @@ import (
 
 // TestDeploymentAssetsSupportExamPaperUpload 防止部署脚本或反向代理阻断 20 MiB 试卷上传。
 func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("无法定位部署资产测试文件")
-	}
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	repoRoot := deploymentRepoRoot(t)
 
 	deployScript, err := os.ReadFile(filepath.Join(repoRoot, "deploy.sh"))
 	if err != nil {
@@ -206,10 +203,32 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 		"nginx -t",
 		"systemctl daemon-reload",
 		"systemctl reload nginx",
+		"--render-nginx",
+		"PAPER_STORAGE_LETSENCRYPT_LIVE_DIR",
+		"fullchain.pem",
+		"privkey.pem",
+		"nginx -t -c",
+		"systemctl enable --now certbot.timer",
 	} {
 		if !strings.Contains(installText, expected) {
 			t.Errorf("文件服务安装脚本缺少幂等部署步骤 %q", expected)
 		}
+	}
+	for _, expected := range []string{
+		"__PAPER_STORAGE_TLS_CERTIFICATE__",
+		"__PAPER_STORAGE_TLS_CERTIFICATE_KEY__",
+	} {
+		if !strings.Contains(nginxText, expected) {
+			t.Errorf("Nginx 模板缺少可幂等渲染的 TLS 占位符 %q", expected)
+		}
+	}
+	if !strings.Contains(installText, "if has_lets_encrypt_certificate; then") ||
+		!strings.Contains(installText, "elif [ -n \"${LETSENCRYPT_EMAIL:-}\" ]; then") {
+		t.Error("已有 Let's Encrypt 证书时不得依赖邮箱或重新签发证书")
+	}
+	if !strings.Contains(installText, "mv -f \"$nginx_candidate\" /etc/nginx/nginx.conf") ||
+		!strings.Contains(installText, "cp -p \"$nginx_previous\" /etc/nginx/nginx.conf") {
+		t.Error("Nginx 配置必须原子替换，并在安装后校验失败时恢复上一版")
 	}
 	for _, forbidden := range []string{"139.196.148.174", "156.233.229.232", "PAPER_STORAGE_SIGNING_SECRET=change-me", "PAPER_STORAGE_RECEIPT_SECRET=change-me"} {
 		for name, content := range map[string]string{"systemd": serviceText, "nginx": nginxText, "env": envText, "install": installText} {
@@ -241,8 +260,57 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	}
 }
 
+// TestPaperStorageNginxRendererKeepsLetsEncryptCertificate 验证重复安装不会把正式证书退回临时证书。
+func TestPaperStorageNginxRendererKeepsLetsEncryptCertificate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 环境没有 POSIX sh；Linux CI 和部署环境执行本测试")
+	}
+	repoRoot := deploymentRepoRoot(t)
+	installScript := filepath.Join(repoRoot, "deploy", "paper-storage", "install.sh")
+	template := filepath.Join(repoRoot, "deploy", "paper-storage", "nginx.conf")
+	tempDir := t.TempDir()
+	liveDir := filepath.Join(tempDir, "letsencrypt", "live", "sylulive.online")
+	output := filepath.Join(tempDir, "nginx-rendered.conf")
+
+	render := func() string {
+		t.Helper()
+		command := exec.Command("sh", installScript, "--render-nginx", template, output)
+		command.Env = append(os.Environ(), "PAPER_STORAGE_LETSENCRYPT_LIVE_DIR="+liveDir)
+		if combined, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("渲染 Nginx 配置失败: %v\n%s", err, combined)
+		}
+		return readDeploymentAsset(t, tempDir, "nginx-rendered.conf")
+	}
+
+	first := render()
+	if !strings.Contains(first, "/etc/ssl/certs/ssl-cert-snakeoil.pem") ||
+		!strings.Contains(first, "/etc/ssl/private/ssl-cert-snakeoil.key") {
+		t.Fatal("首次无正式证书时必须渲染 Ubuntu 临时证书")
+	}
+
+	if err := os.MkdirAll(liveDir, 0700); err != nil {
+		t.Fatalf("创建模拟 Let's Encrypt 目录失败: %v", err)
+	}
+	for _, name := range []string{"fullchain.pem", "privkey.pem"} {
+		if err := os.WriteFile(filepath.Join(liveDir, name), []byte("test"), 0600); err != nil {
+			t.Fatalf("创建模拟证书 %s 失败: %v", name, err)
+		}
+	}
+	upgraded := render()
+	if !strings.Contains(upgraded, filepath.Join(liveDir, "fullchain.pem")) ||
+		!strings.Contains(upgraded, filepath.Join(liveDir, "privkey.pem")) {
+		t.Fatal("检测到正式证书后必须渲染 Let's Encrypt 证书路径")
+	}
+	if strings.Contains(upgraded, "ssl-cert-snakeoil") {
+		t.Fatal("重复安装不得把正式证书回退为临时证书")
+	}
+}
+
 func deploymentRepoRoot(t *testing.T) string {
 	t.Helper()
+	if override := strings.TrimSpace(os.Getenv("PAPER_STORAGE_TEST_REPO_ROOT")); override != "" {
+		return filepath.Clean(override)
+	}
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("无法定位部署资产测试文件")

@@ -58,6 +58,9 @@ android/.kotlin/
 .sisyphus/
 .worktrees/
 
+# 本地任务设计文档，不纳入版本控制
+/docs/superpowers/
+
 # 本地构建、崩溃与调试日志
 *.log
 hs_err_pid*.log

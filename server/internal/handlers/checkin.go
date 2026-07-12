@@ -122,10 +122,10 @@ func (h *CheckInHandler) DoCheckIn(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success":        true,
-		"message":        fmt.Sprintf("签到成功！经验+%d", expEarned),
-		"streak_days":    streak,
-		"exp_earned":     expEarned,
+		"success":     true,
+		"message":     fmt.Sprintf("签到成功！经验+%d", expEarned),
+		"streak_days": streak,
+		"exp_earned":  expEarned,
 	})
 }
 

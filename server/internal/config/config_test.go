@@ -104,6 +104,27 @@ func TestLoadReleaseRejectsIncompleteOrInsecureRemoteStorageConfig(t *testing.T)
 			signingSecret: "signing-secret",
 			receiptSecret: "receipt-secret",
 		},
+		{
+			name:          "远端地址缺少主机名",
+			mode:          "remote",
+			baseURL:       "https://@",
+			signingSecret: "signing-secret",
+			receiptSecret: "receipt-secret",
+		},
+		{
+			name:          "远端地址包含用户信息",
+			mode:          "remote",
+			baseURL:       "https://user:password@paper.example.com",
+			signingSecret: "signing-secret",
+			receiptSecret: "receipt-secret",
+		},
+		{
+			name:          "远端地址包含fragment",
+			mode:          "readonly-remote",
+			baseURL:       "https://paper.example.com/download#private",
+			signingSecret: "signing-secret",
+			receiptSecret: "receipt-secret",
+		},
 	}
 
 	for _, tt := range tests {

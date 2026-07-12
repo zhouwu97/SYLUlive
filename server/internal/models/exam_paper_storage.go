@@ -31,9 +31,9 @@ type ExamPaperUploadSession struct {
 	Title        string                `gorm:"size:300;not null" json:"title"`
 	ExpectedSize int64                 `gorm:"not null" json:"expected_size"`
 	Status       ExamPaperUploadStatus `gorm:"size:20;not null;index" json:"status"`
-	StorageKey   string                `gorm:"size:200" json:"storage_key"`
+	StorageKey   string                `gorm:"size:200" json:"-"`
 	FileSize     int64                 `gorm:"not null;default:0" json:"file_size"`
-	SHA256       string                `gorm:"size:64" json:"sha256"`
+	SHA256       string                `gorm:"size:64" json:"-"`
 	ExpiresAt    time.Time             `gorm:"not null;index" json:"expires_at"`
 	CompletedAt  *time.Time            `json:"completed_at,omitempty"`
 	CreatedAt    time.Time             `gorm:"index" json:"created_at"`
@@ -59,12 +59,12 @@ func NewExamPaperUploadSession(id string, submitterID uint, metadata ExamPaperMe
 // ExamPaperStorageJob 保存异步文件操作及其重试状态。
 type ExamPaperStorageJob struct {
 	ID             uint                    `gorm:"primaryKey" json:"id"`
-	StorageBackend ExamPaperStorageBackend `gorm:"size:20;not null;index" json:"storage_backend"`
-	FileKey        string                  `gorm:"size:200;not null" json:"file_key"`
+	StorageBackend ExamPaperStorageBackend `gorm:"size:20;not null;index" json:"-"`
+	FileKey        string                  `gorm:"size:200;not null" json:"-"`
 	Operation      string                  `gorm:"size:30;not null" json:"operation"`
 	Attempts       int                     `gorm:"not null;default:0" json:"attempts"`
-	NextAttemptAt  *time.Time              `gorm:"index" json:"next_attempt_at,omitempty"`
-	CompletedAt    *time.Time              `json:"completed_at,omitempty"`
+	NextAttemptAt  time.Time               `gorm:"not null;index" json:"next_attempt_at"`
+	CompletedAt    *time.Time              `gorm:"index" json:"completed_at,omitempty"`
 	LastError      string                  `gorm:"size:1000" json:"last_error,omitempty"`
 	CreatedAt      time.Time               `gorm:"index" json:"created_at"`
 	UpdatedAt      time.Time               `json:"updated_at"`

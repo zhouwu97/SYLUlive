@@ -23,5 +23,5 @@ func ExamPaperDiskUsagePercent(path string) (float64, error) {
 	if total == 0 {
 		return 0, fmt.Errorf("磁盘总容量为零")
 	}
-	return float64(total-free) * 100 / float64(total), nil
+	return diskUsagePercent(total, available), nil
 }

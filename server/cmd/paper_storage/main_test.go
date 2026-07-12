@@ -6,12 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestPaperStorageLoadConfigUsesDefaultsAndOnlyAllowedEnvironment(t *testing.T) {
 	values := map[string]string{
-		"PAPER_STORAGE_SIGNING_SECRET": "grant-secret",
-		"PAPER_STORAGE_RECEIPT_SECRET": "receipt-secret",
+		"PAPER_STORAGE_SIGNING_SECRET": "grant-secret-012345678901234567890",
+		"PAPER_STORAGE_RECEIPT_SECRET": "receipt-secret-012345678901234567890",
 		"DATABASE_DSN":                 "不得读取",
 		"JWT_SECRET":                   "不得读取",
 	}
@@ -38,8 +41,8 @@ func TestPaperStorageLoadConfigUsesDefaultsAndOnlyAllowedEnvironment(t *testing.
 
 func TestPaperStorageLoadConfigRejectsMissingSecretsAndInvalidConcurrency(t *testing.T) {
 	base := map[string]string{
-		"PAPER_STORAGE_SIGNING_SECRET": "grant-secret",
-		"PAPER_STORAGE_RECEIPT_SECRET": "receipt-secret",
+		"PAPER_STORAGE_SIGNING_SECRET": "grant-secret-012345678901234567890",
+		"PAPER_STORAGE_RECEIPT_SECRET": "receipt-secret-012345678901234567890",
 	}
 	for _, tt := range []struct{ name, key, value string }{
 		{name: "缺少授权密钥", key: "PAPER_STORAGE_SIGNING_SECRET", value: ""},
@@ -83,8 +86,8 @@ func TestPaperStorageLoadConfigRejectsEqualSecretsIncludingWhitespace(t *testing
 	}
 	config, err := loadPaperStorageConfig(func(key string) string {
 		return map[string]string{
-			"PAPER_STORAGE_SIGNING_SECRET": "grant-secret",
-			"PAPER_STORAGE_RECEIPT_SECRET": "receipt-secret",
+			"PAPER_STORAGE_SIGNING_SECRET": "grant-secret-012345678901234567890",
+			"PAPER_STORAGE_RECEIPT_SECRET": "receipt-secret-012345678901234567890",
 		}[key]
 	})
 	if err != nil || config.SigningSecret == config.ReceiptSecret {
@@ -97,10 +100,27 @@ func TestPaperStorageRunHonorsCanceledContext(t *testing.T) {
 	cancel()
 	config := paperStorageConfig{
 		Listen: "127.0.0.1:0", Dir: t.TempDir(),
-		SigningSecret: "grant-secret", ReceiptSecret: "receipt-secret", MaxConcurrentValidations: 1,
+		SigningSecret: "grant-secret-012345678901234567890", ReceiptSecret: "receipt-secret-012345678901234567890", MaxConcurrentValidations: 1,
 	}
 	if err := run(ctx, config); err != nil {
 		t.Fatalf("优雅关闭失败: %v", err)
+	}
+}
+
+func TestPaperStorageLoadConfigRejectsShortSecrets(t *testing.T) {
+	values := map[string]string{
+		"PAPER_STORAGE_SIGNING_SECRET": "short",
+		"PAPER_STORAGE_RECEIPT_SECRET": "another-short",
+	}
+	if _, err := loadPaperStorageConfig(func(key string) string { return values[key] }); err == nil {
+		t.Fatal("短密钥应被拒绝")
+	}
+}
+
+func TestPaperStorageServerHasUploadTimeouts(t *testing.T) {
+	server := newPaperStorageServer(gin.New())
+	if server.ReadTimeout < 5*time.Minute || server.IdleTimeout <= 0 {
+		t.Fatalf("server 超时配置不足: read=%v idle=%v", server.ReadTimeout, server.IdleTimeout)
 	}
 }
 

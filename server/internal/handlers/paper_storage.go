@@ -27,7 +27,8 @@ type PaperStorageHandler struct {
 	now           func() time.Time
 	diskUsage     func(string) (float64, error)
 	validations   chan struct{}
-	markPending   func(string) error
+	storePending  func(string, io.Reader) (*services.StoredExamPaperFile, error)
+	statFile      func(string) (os.FileInfo, error)
 }
 
 // NewPaperStorageHandler 创建独立文件服务处理器。
@@ -41,7 +42,8 @@ func NewPaperStorageHandler(files *services.ExamPaperFileService, grantSigner, r
 		validations: make(chan struct{}, maxConcurrentValidations),
 	}
 	if files != nil {
-		handler.markPending = files.MarkPending
+		handler.storePending = files.StorePendingUploadReader
+		handler.statFile = files.Stat
 	}
 	return handler
 }
@@ -144,15 +146,8 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 			_ = part.Close()
 			continue
 		}
-		select {
-		case h.validations <- struct{}{}:
-		case <-c.Request.Context().Done():
-			_ = part.Close()
-			return
-		}
-		stored, err = h.files.StoreUploadReader(part.FileName(), part)
-		<-h.validations
-		_ = part.Close()
+		defer part.Close()
+		stored, err = h.storePendingWithSlot(c, part.FileName(), part)
 		if err != nil {
 			h.writeUploadError(c, err)
 			return
@@ -162,22 +157,31 @@ func (h *PaperStorageHandler) Upload(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid pdf"})
 		return
 	}
-	if err := h.markPending(stored.FileKey); err != nil {
-		_ = h.files.Remove(stored.FileKey)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
-		return
-	}
 	receipt, err := h.receiptSigner.SignReceipt(services.ExamPaperUploadReceipt{
 		SessionID: sessionID, FileKey: stored.FileKey, FileSize: stored.Size,
 		SHA256: stored.SHA256, IssuedAt: h.now().Unix(),
 	})
 	if err != nil {
-		_ = h.files.Claim(stored.FileKey)
-		_ = h.files.Remove(stored.FileKey)
+		_ = h.files.DiscardPending(stored.FileKey)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"receipt": receipt})
+}
+
+func (h *PaperStorageHandler) storePendingWithSlot(c *gin.Context, filename string, source io.Reader) (stored *services.StoredExamPaperFile, err error) {
+	select {
+	case h.validations <- struct{}{}:
+	case <-c.Request.Context().Done():
+		return nil, c.Request.Context().Err()
+	}
+	defer func() {
+		<-h.validations
+		if recovered := recover(); recovered != nil {
+			panic(recovered)
+		}
+	}()
+	return h.storePending(filename, source)
 }
 
 func (h *PaperStorageHandler) writeUploadError(c *gin.Context, err error) {
@@ -188,7 +192,7 @@ func (h *PaperStorageHandler) writeUploadError(c *gin.Context, err error) {
 	case errors.Is(err, services.ErrInvalidPDF), errors.Is(err, services.ErrEncryptedPDF):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid pdf"})
 	default:
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "invalid upload"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage unavailable"})
 	}
 }
 
@@ -205,7 +209,8 @@ func (h *PaperStorageHandler) Download(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	if _, err := h.files.Metadata(fileKey); err != nil {
+	info, err := h.statFile(fileKey)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		if os.IsNotExist(err) || errors.Is(err, services.ErrInvalidExamPaperFileKey) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
@@ -295,6 +300,7 @@ func (h *PaperStorageHandler) Maintenance(c *gin.Context) {
 		"unclaimed_files_removed": result.UnclaimedFilesRemoved,
 		"pending_markers_removed": result.PendingMarkersRemoved,
 		"trash_files_removed":     result.TrashFilesRemoved,
+		"temporary_files_removed": result.TemporaryFilesRemoved,
 		"disk_usage_percent":      usage,
 	})
 }

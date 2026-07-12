@@ -265,7 +265,7 @@ type UpdateTeamRecruitmentRequest struct {
 	Description  string   `json:"description"`
 	NeededCount  int      `json:"needed_count"`
 	Roles        []string `json:"roles"`
-	Deadline     string   `json:"deadline"`
+	Deadline     *string  `json:"deadline"`
 	ImageFileIDs []uint   `json:"image_file_ids"`
 }
 
@@ -339,8 +339,9 @@ type UserBrief struct {
 
 // PostImageDTO 图片传输对象
 type PostImageDTO struct {
-	ID  uint   `json:"id"`
-	URL string `json:"url"`
+	ID     uint   `json:"id"`
+	FileID uint   `json:"file_id"`
+	URL    string `json:"url"`
 }
 
 // ensureTeamTag 查找系统内部的 team_recruitment 标签（用于底层创建 Post）。
@@ -671,7 +672,7 @@ func (h *WaterTeamHandler) GetTeamRecruitment(c *gin.Context) {
 	// 图片
 	images := make([]PostImageDTO, 0, len(recruitment.Post.Images))
 	for _, img := range recruitment.Post.Images {
-		images = append(images, PostImageDTO{ID: img.ID, URL: img.File.Path})
+		images = append(images, PostImageDTO{ID: img.ID, FileID: img.FileID, URL: img.File.Path})
 	}
 
 	detail := TeamRecruitmentDetail{
@@ -851,7 +852,7 @@ func (h *WaterTeamHandler) CreateTeamRecruitment(c *gin.Context) {
 
 		images := make([]PostImageDTO, 0, len(post.Images))
 		for _, img := range post.Images {
-			images = append(images, PostImageDTO{ID: img.ID, URL: img.File.Path})
+			images = append(images, PostImageDTO{ID: img.ID, FileID: img.FileID, URL: img.File.Path})
 		}
 
 		detail = TeamRecruitmentDetail{
@@ -947,6 +948,8 @@ func (h *WaterTeamHandler) UpdateTeamRecruitment(c *gin.Context) {
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{}
 		postUpdates := map[string]interface{}{}
+		nextNeededCount := recruitment.NeededCount
+		nextDeadline := recruitment.Deadline
 
 		if req.Category != "" {
 			if !models.ValidTeamCategories[req.Category] {
@@ -975,7 +978,11 @@ func (h *WaterTeamHandler) UpdateTeamRecruitment(c *gin.Context) {
 			if req.NeededCount < 1 || req.NeededCount > 20 {
 				return fmt.Errorf("count_invalid")
 			}
-			updates["needed_count"] = req.NeededCount
+			if req.NeededCount < recruitment.AcceptedCount {
+				return fmt.Errorf("count_below_accepted")
+			}
+			nextNeededCount = req.NeededCount
+			updates["needed_count"] = nextNeededCount
 		}
 
 		if req.Roles != nil {
@@ -987,15 +994,22 @@ func (h *WaterTeamHandler) UpdateTeamRecruitment(c *gin.Context) {
 			updates["roles_json"] = string(rolesJSON)
 		}
 
-		if req.Deadline != "" {
-			deadline, err := parseTeamDeadline(req.Deadline)
+		if req.Deadline != nil {
+			deadline, err := parseTeamDeadline(*req.Deadline)
 			if err != nil {
 				return err
 			}
-			if deadline == nil {
-				updates["deadline"] = nil
-			} else {
-				updates["deadline"] = deadline
+			nextDeadline = deadline
+			updates["deadline"] = deadline
+		}
+
+		// 名额变化后同步原始状态，避免有空位却仍显示“已满员”。
+		if recruitment.Status != models.RecruitmentStatusClosed {
+			if nextNeededCount <= recruitment.AcceptedCount {
+				updates["status"] = models.RecruitmentStatusFull
+			} else if recruitment.Status == models.RecruitmentStatusFull &&
+				(nextDeadline == nil || nextDeadline.After(time.Now())) {
+				updates["status"] = models.RecruitmentStatusRecruiting
 			}
 		}
 
@@ -1031,7 +1045,11 @@ func (h *WaterTeamHandler) UpdateTeamRecruitment(c *gin.Context) {
 	})
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		message := err.Error()
+		if message == "count_below_accepted" {
+			message = "招募人数不能少于已加入人数"
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": message})
 		return
 	}
 

@@ -128,6 +128,10 @@ class _ApplicationItem extends StatelessWidget {
       {required this.application, required this.onCancelled});
   @override
   Widget build(BuildContext context) {
+    final cancelling = context
+        .watch<TeamRecruitmentProvider>()
+        .reviewingApplicationIds
+        .contains(application.id);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final label = const {
           'pending': '等待审核',
@@ -181,42 +185,47 @@ class _ApplicationItem extends StatelessWidget {
                   TextButton(
                       style: TextButton.styleFrom(
                           foregroundColor: TeamUiTokens.accent(isDark)),
-                      onPressed: () async {
-                        final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (dialogContext) => AlertDialog(
-                                title: const Text('撤回申请'),
-                                content: const Text('撤回后可在需要时重新申请，确定继续吗？'),
-                                actions: [
-                                  TextButton(
-                                    style: TextButton.styleFrom(
-                                        foregroundColor:
-                                            TeamUiTokens.subtitle(isDark)),
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, false),
-                                    child: const Text('暂不撤回'),
-                                  ),
-                                  FilledButton(
-                                    style:
-                                        TeamUiTokens.primaryButtonStyle(isDark),
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, true),
-                                    child: const Text('确认撤回'),
-                                  ),
-                                ],
-                              ),
-                            ) ??
-                            false;
-                        if (!confirmed || !context.mounted) return;
-                        final error = await context
-                            .read<TeamRecruitmentProvider>()
-                            .cancel(application.id);
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(error ?? '已取消申请')));
-                        if (error == null) onCancelled();
-                      },
-                      child: const Text('撤回'))
+                      onPressed: cancelling
+                          ? null
+                          : () async {
+                              final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (dialogContext) => AlertDialog(
+                                      title: const Text('撤回申请'),
+                                      content:
+                                          const Text('撤回后可在需要时重新申请，确定继续吗？'),
+                                      actions: [
+                                        TextButton(
+                                          style: TextButton.styleFrom(
+                                              foregroundColor:
+                                                  TeamUiTokens.subtitle(
+                                                      isDark)),
+                                          onPressed: () => Navigator.pop(
+                                              dialogContext, false),
+                                          child: const Text('暂不撤回'),
+                                        ),
+                                        FilledButton(
+                                          style:
+                                              TeamUiTokens.primaryButtonStyle(
+                                                  isDark),
+                                          onPressed: () => Navigator.pop(
+                                              dialogContext, true),
+                                          child: const Text('确认撤回'),
+                                        ),
+                                      ],
+                                    ),
+                                  ) ??
+                                  false;
+                              if (!confirmed || !context.mounted) return;
+                              final error = await context
+                                  .read<TeamRecruitmentProvider>()
+                                  .cancel(application.id);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(error ?? '已取消申请')));
+                              if (error == null) onCancelled();
+                            },
+                      child: Text(cancelling ? '处理中…' : '撤回'))
               ]),
         ));
   }

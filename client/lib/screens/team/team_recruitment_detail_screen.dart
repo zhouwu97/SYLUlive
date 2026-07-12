@@ -145,6 +145,9 @@ class _TeamRecruitmentDetailScreenState
   }
 
   Future<void> _changeStatus(TeamRecruitment item, String status) async {
+    if (context.read<TeamRecruitmentProvider>().closingIds.contains(item.id)) {
+      return;
+    }
     final error = await context
         .read<TeamRecruitmentProvider>()
         .updateStatus(item.id, status);
@@ -241,7 +244,9 @@ class _TeamRecruitmentDetailScreenState
                           ? null
                           : NetworkImage(item.author.avatar),
                       child: item.author.avatar.isEmpty
-                          ? Text(item.author.name.substring(0, 1))
+                          ? Text(item.author.name.isEmpty
+                              ? '?'
+                              : item.author.name.substring(0, 1))
                           : null),
                   const SizedBox(width: 9),
                   Column(
@@ -364,6 +369,8 @@ class _TeamRecruitmentDetailScreenState
 
   Widget _bottomAction(TeamRecruitment item, bool isDark) {
     if (item.isOwner) {
+      final updatingStatus =
+          context.watch<TeamRecruitmentProvider>().closingIds.contains(item.id);
       return Row(children: [
         Expanded(
             child: OutlinedButton(
@@ -387,10 +394,16 @@ class _TeamRecruitmentDetailScreenState
                       : const Color(0xFFE54848),
                   foregroundColor: Colors.white,
                 ),
-                onPressed: item.isClosed
-                    ? () => _changeStatus(item, 'recruiting')
-                    : () => _changeStatus(item, 'closed'),
-                child: Text(item.isClosed ? '重新开启' : '关闭招募'))),
+                onPressed: updatingStatus
+                    ? null
+                    : item.isClosed
+                        ? () => _changeStatus(item, 'recruiting')
+                        : () => _changeStatus(item, 'closed'),
+                child: Text(updatingStatus
+                    ? '处理中…'
+                    : item.isClosed
+                        ? '重新开启'
+                        : '关闭招募'))),
       ]);
     }
     if (item.myApplicationStatus == 'pending') {

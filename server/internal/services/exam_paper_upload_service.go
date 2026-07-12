@@ -14,7 +14,10 @@ import (
 	"shenliyuan/internal/models"
 )
 
-const ExamPaperUploadSessionTTL = 10 * time.Minute
+const (
+	ExamPaperUploadSessionTTL             = 10 * time.Minute
+	ExamPaperMaxPendingSubmissionsPerUser = 5
+)
 
 var (
 	ErrExamPaperUploadSizeInvalid         = errors.New("exam paper upload size invalid")
@@ -23,6 +26,7 @@ var (
 	ErrExamPaperUploadReceiptInvalid      = errors.New("exam paper upload receipt invalid")
 	ErrExamPaperUploadDuplicate           = errors.New("exam paper upload duplicate")
 	ErrExamPaperUploadSessionInconsistent = errors.New("exam paper upload session inconsistent")
+	ErrExamPaperUploadQuotaExceeded       = errors.New("exam paper pending submission quota exceeded")
 )
 
 // ExamPaperStorageJobAttempt 在业务事务提交后立即尝试执行一次存储任务。
@@ -56,7 +60,7 @@ func (s *ExamPaperUploadService) CreateSession(user models.User, metadata models
 	session.UpdatedAt = now
 	path := "/v1/uploads/" + session.ID
 	token, err := s.grantSigner.SignGrant(ExamPaperStorageGrant{
-		Purpose: ExamPaperStoragePurposeUpload, SessionID: session.ID, UserID: user.ID,
+		Purpose: ExamPaperStoragePurposeUpload, SessionID: session.ID, ExpectedSize: expectedSize, UserID: user.ID,
 		Method: http.MethodPost, Path: path, IssuedAt: now.Unix(), ExpiresAt: session.ExpiresAt.Unix(), JTI: uuid.NewString(),
 	})
 	if err != nil {
@@ -74,6 +78,15 @@ func (s *ExamPaperUploadService) CompleteSession(userID uint, sessionID, receipt
 	var jobID uint
 	shouldAttempt := false
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		userQuery := tx.Where("id = ?", userID)
+		if tx.Dialector.Name() == "postgres" {
+			userQuery = userQuery.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := userQuery.First(&user).Error; err != nil {
+			return err
+		}
+
 		var session models.ExamPaperUploadSession
 		query := tx.Where("id = ? AND submitter_id = ?", sessionID, userID)
 		if tx.Dialector.Name() == "postgres" {
@@ -110,9 +123,16 @@ func (s *ExamPaperUploadService) CompleteSession(userID uint, sessionID, receipt
 			return ErrExamPaperUploadReceiptInvalid
 		}
 
-		var user models.User
-		if err := tx.First(&user, userID).Error; err != nil {
-			return err
+		if user.Role != models.RoleAdmin && user.Role != models.RoleSuperAdmin {
+			var pendingCount int64
+			if err := tx.Model(&models.ExamPaper{}).
+				Where("submitter_id = ? AND status = ?", userID, models.ExamPaperStatusPending).
+				Count(&pendingCount).Error; err != nil {
+				return err
+			}
+			if pendingCount >= ExamPaperMaxPendingSubmissionsPerUser {
+				return ErrExamPaperUploadQuotaExceeded
+			}
 		}
 		now := s.now()
 		paper = models.ExamPaper{
@@ -162,10 +182,21 @@ func (s *ExamPaperUploadService) CompleteSession(userID uint, sessionID, receipt
 	if err != nil {
 		return nil, err
 	}
-	if shouldAttempt && s.attempt != nil {
-		_ = s.attempt(jobID)
+	if shouldAttempt {
+		s.attemptStorageJob(jobID)
 	}
 	return &paper, nil
+}
+
+// attemptStorageJob 在事务提交后尽力触发存储任务；回调异常不得改变已提交的业务结果。
+func (s *ExamPaperUploadService) attemptStorageJob(jobID uint) {
+	if s.attempt == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	_ = s.attempt(jobID)
 }
 
 func isExamPaperUploadFileKey(fileKey string) bool {

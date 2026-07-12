@@ -90,6 +90,7 @@ func TestExamPaperUploadSessionCreateSignsScopedTenMinuteGrant(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, session.ID, grant.SessionID)
 	require.Equal(t, user.ID, grant.UserID)
+	require.Equal(t, int64(4096), grant.ExpectedSize)
 	require.Equal(t, examPaperUploadTestNow.Unix(), grant.IssuedAt)
 	require.Equal(t, session.ExpiresAt.Unix(), grant.ExpiresAt)
 	require.NotEmpty(t, grant.JTI)
@@ -147,6 +148,87 @@ func TestExamPaperUploadReceiptCompletesAdminSubmissionAsPublished(t *testing.T)
 	require.Len(t, logs, 1)
 	require.Equal(t, admin.ID, logs[0].AdminID)
 	require.Contains(t, logs[0].Detail, "不发放经验")
+}
+
+func TestExamPaperUploadReceiptRejectsWhenPendingQuotaReached(t *testing.T) {
+	env := newExamPaperUploadTestEnv(t)
+	user := createExamPaperUploadTestUser(t, env.db, models.RoleUser)
+	for index := 0; index < ExamPaperMaxPendingSubmissionsPerUser; index++ {
+		require.NoError(t, env.db.Create(&models.ExamPaper{
+			Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: user.ID,
+			CourseName: fmt.Sprintf("配额-%d", index), AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: fmt.Sprintf("配额-%d", index), FileKey: fmt.Sprintf("quota-%d.pdf", index),
+			FileSize: 1, SHA256: fmt.Sprintf("quota-sha-%d", index),
+		}).Error)
+	}
+	session, _, err := env.service.CreateSession(user, examPaperUploadTestMetadata(t), 1024)
+	require.NoError(t, err)
+	receipt := signExamPaperUploadReceipt(t, env, session.ID, "12121212-1212-4212-8212-121212121212.pdf", "1134567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 1024)
+
+	_, err = env.service.CompleteSession(user.ID, session.ID, receipt)
+	require.ErrorIs(t, err, ErrExamPaperUploadQuotaExceeded)
+	var reloaded models.ExamPaperUploadSession
+	require.NoError(t, env.db.First(&reloaded, "id = ?", session.ID).Error)
+	require.Equal(t, models.ExamPaperUploadOpen, reloaded.Status)
+	var paperCount, jobCount int64
+	require.NoError(t, env.db.Model(&models.ExamPaper{}).Count(&paperCount).Error)
+	require.NoError(t, env.db.Model(&models.ExamPaperStorageJob{}).Count(&jobCount).Error)
+	require.EqualValues(t, ExamPaperMaxPendingSubmissionsPerUser, paperCount)
+	require.Zero(t, jobCount)
+	require.Empty(t, env.attemptedJobs)
+}
+
+func TestExamPaperUploadReceiptSequentialCompletionsRespectPendingQuota(t *testing.T) {
+	env := newExamPaperUploadTestEnv(t)
+	user := createExamPaperUploadTestUser(t, env.db, models.RoleUser)
+	for index := 0; index < ExamPaperMaxPendingSubmissionsPerUser-1; index++ {
+		require.NoError(t, env.db.Create(&models.ExamPaper{
+			Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: user.ID,
+			CourseName: fmt.Sprintf("顺序-%d", index), AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: fmt.Sprintf("顺序-%d", index), FileKey: fmt.Sprintf("sequential-%d.pdf", index),
+			FileSize: 1, SHA256: fmt.Sprintf("sequential-sha-%d", index),
+		}).Error)
+	}
+	firstSession, _, err := env.service.CreateSession(user, examPaperUploadTestMetadata(t), 1024)
+	require.NoError(t, err)
+	secondSession, _, err := env.service.CreateSession(user, examPaperUploadTestMetadata(t), 1024)
+	require.NoError(t, err)
+	firstReceipt := signExamPaperUploadReceipt(t, env, firstSession.ID, "13131313-1313-4313-8313-131313131313.pdf", "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 1024)
+	secondReceipt := signExamPaperUploadReceipt(t, env, secondSession.ID, "14141414-1414-4414-8414-141414141414.pdf", "2234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 1024)
+
+	_, err = env.service.CompleteSession(user.ID, firstSession.ID, firstReceipt)
+	require.NoError(t, err)
+	_, err = env.service.CompleteSession(user.ID, secondSession.ID, secondReceipt)
+	require.ErrorIs(t, err, ErrExamPaperUploadQuotaExceeded)
+	var pendingCount, jobCount int64
+	require.NoError(t, env.db.Model(&models.ExamPaper{}).Where("submitter_id = ? AND status = ?", user.ID, models.ExamPaperStatusPending).Count(&pendingCount).Error)
+	require.NoError(t, env.db.Model(&models.ExamPaperStorageJob{}).Count(&jobCount).Error)
+	require.EqualValues(t, ExamPaperMaxPendingSubmissionsPerUser, pendingCount)
+	require.EqualValues(t, 1, jobCount)
+	require.Len(t, env.attemptedJobs, 1)
+	var secondReloaded models.ExamPaperUploadSession
+	require.NoError(t, env.db.First(&secondReloaded, "id = ?", secondSession.ID).Error)
+	require.Equal(t, models.ExamPaperUploadOpen, secondReloaded.Status)
+}
+
+func TestExamPaperUploadReceiptAdminIgnoresPendingQuota(t *testing.T) {
+	env := newExamPaperUploadTestEnv(t)
+	admin := createExamPaperUploadTestUser(t, env.db, models.RoleAdmin)
+	for index := 0; index < ExamPaperMaxPendingSubmissionsPerUser; index++ {
+		require.NoError(t, env.db.Create(&models.ExamPaper{
+			Status: models.ExamPaperStatusPending, Source: models.ExamPaperSourceUser, SubmitterID: admin.ID,
+			CourseName: fmt.Sprintf("管理员配额-%d", index), AcademicYear: "2025-2026", Semester: models.ExamPaperSemesterFirst,
+			ExamType: models.ExamPaperTypeFinal, Title: fmt.Sprintf("管理员配额-%d", index), FileKey: fmt.Sprintf("admin-quota-%d.pdf", index),
+			FileSize: 1, SHA256: fmt.Sprintf("admin-quota-sha-%d", index),
+		}).Error)
+	}
+	session, _, err := env.service.CreateSession(admin, examPaperUploadTestMetadata(t), 1024)
+	require.NoError(t, err)
+	receipt := signExamPaperUploadReceipt(t, env, session.ID, "15151515-1515-4515-8515-151515151515.pdf", "3234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 1024)
+
+	paper, err := env.service.CompleteSession(admin.ID, session.ID, receipt)
+	require.NoError(t, err)
+	require.Equal(t, models.ExamPaperStatusPublished, paper.Status)
 }
 
 func TestExamPaperUploadReceiptRepeatedCompletionIsIdempotent(t *testing.T) {
@@ -374,4 +456,23 @@ func TestExamPaperUploadReceiptRollsBackWhenJobCreationFails(t *testing.T) {
 	require.Zero(t, paperCount)
 	require.Zero(t, jobCount)
 	require.Empty(t, env.attemptedJobs)
+}
+
+func TestExamPaperUploadReceiptAttemptPanicDoesNotEscapeCommittedTransaction(t *testing.T) {
+	env := newExamPaperUploadTestEnv(t)
+	env.service.attempt = func(uint) error { panic("注入任务尝试 panic") }
+	user := createExamPaperUploadTestUser(t, env.db, models.RoleUser)
+	session, _, err := env.service.CreateSession(user, examPaperUploadTestMetadata(t), 1024)
+	require.NoError(t, err)
+	receipt := signExamPaperUploadReceipt(t, env, session.ID, "16161616-1616-4616-8616-161616161616.pdf", "4234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", 1024)
+
+	require.NotPanics(t, func() {
+		paper, completeErr := env.service.CompleteSession(user.ID, session.ID, receipt)
+		require.NoError(t, completeErr)
+		require.NotZero(t, paper.ID)
+	})
+	var job models.ExamPaperStorageJob
+	require.NoError(t, env.db.First(&job).Error)
+	require.Nil(t, job.CompletedAt)
+	require.False(t, job.NextAttemptAt.After(examPaperUploadTestNow))
 }

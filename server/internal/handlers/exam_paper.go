@@ -21,16 +21,15 @@ import (
 )
 
 const (
-	defaultExamPaperPageSize                    = 20
-	maxExamPaperPageSize                        = 50
-	maxPendingExamPaperSubmissionsPerUser       = 5
-	maxExamPaperUploadsPerWindow                = 3
-	examPaperRewardExp                          = 10
-	examPaperUploadRateWindow                   = time.Minute
-	examPaperStorageModeLocal                   = "local"
-	examPaperStorageModeRemote                  = "remote"
-	examPaperStorageModeReadonlyRemote          = "readonly-remote"
-	maxExamPaperJSONBodyBytes             int64 = 64 * 1024
+	defaultExamPaperPageSize                 = 20
+	maxExamPaperPageSize                     = 50
+	maxExamPaperUploadsPerWindow             = 3
+	examPaperRewardExp                       = 10
+	examPaperUploadRateWindow                = time.Minute
+	examPaperStorageModeLocal                = "local"
+	examPaperStorageModeRemote               = "remote"
+	examPaperStorageModeReadonlyRemote       = "readonly-remote"
+	maxExamPaperJSONBodyBytes          int64 = 64 * 1024
 )
 
 // ExamPaperHandler 提供试卷投稿、浏览、下载与审核接口。
@@ -614,6 +613,8 @@ func (h *ExamPaperHandler) writeUploadSessionError(c *gin.Context, err error) {
 		writeExamPaperError(c, http.StatusBadRequest, "upload_receipt_invalid", "上传回执无效")
 	case errors.Is(err, services.ErrExamPaperUploadDuplicate):
 		writeExamPaperError(c, http.StatusConflict, "duplicate_exam_paper", "该 PDF 已在待审核或已发布试卷中存在")
+	case errors.Is(err, services.ErrExamPaperUploadQuotaExceeded):
+		writeExamPaperError(c, http.StatusTooManyRequests, "exam_paper_pending_limit_reached", "待审核投稿过多，请等待审核后再继续上传")
 	case errors.Is(err, services.ErrExamPaperUploadSessionInconsistent):
 		writeExamPaperError(c, http.StatusConflict, "upload_session_invalid", "上传会话状态无效")
 	default:
@@ -629,7 +630,7 @@ func (h *ExamPaperHandler) ensureExamPaperUploadAllowed(c *gin.Context, user mod
 		writeExamPaperError(c, http.StatusInternalServerError, "internal_error", "检查投稿配额失败")
 		return false
 	}
-	if pendingCount >= maxPendingExamPaperSubmissionsPerUser {
+	if pendingCount >= services.ExamPaperMaxPendingSubmissionsPerUser {
 		writeExamPaperError(c, http.StatusTooManyRequests, "exam_paper_pending_limit_reached", "待审核投稿过多，请等待审核后再继续上传")
 		return false
 	}

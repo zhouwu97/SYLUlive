@@ -33,11 +33,10 @@ func (s *examPaperStorageMaintenanceStub) Run(context.Context) (services.ExamPap
 
 func TestStartExamPaperStorageCronRunsJobsAndMaintenanceImmediately(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	jobs := &examPaperStorageJobProcessorStub{called: make(chan int, 1)}
 	maintenance := &examPaperStorageMaintenanceStub{called: make(chan struct{}, 1)}
 
-	StartExamPaperStorageCron(ctx, jobs, maintenance)
+	cron := StartExamPaperStorageCron(ctx, jobs, maintenance)
 
 	select {
 	case limit := <-jobs.called:
@@ -51,6 +50,20 @@ func TestStartExamPaperStorageCronRunsJobsAndMaintenanceImmediately(t *testing.T
 	case <-maintenance.called:
 	case <-time.After(time.Second):
 		t.Fatal("后台任务未在启动后立即执行完整性维护")
+	}
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		cron.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("取消后存储后台任务未退出")
+	}
+	if len(jobs.called) != 0 || len(maintenance.called) != 0 {
+		t.Fatal("取消后存储后台任务发生重入")
 	}
 }
 

@@ -466,7 +466,10 @@ func TestPaperStorageInstallerRestoresBinaryAfterHealthFailure(t *testing.T) {
 	writeExecutableTestScript(t, filepath.Join(stubDir, "systemctl"), "#!/bin/sh\nexit 0\n")
 	writeExecutableTestScript(t, filepath.Join(stubDir, "curl"), "#!/bin/sh\nexit 1\n")
 	command := exec.Command("sh", installScript, "--activate-binary", binaryPath, "http://127.0.0.1/healthz")
-	command.Env = append(os.Environ(), "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	command.Env = append(os.Environ(),
+		"PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"PAPER_STORAGE_HEALTH_ATTEMPTS=1",
+	)
 	if err := command.Run(); err == nil {
 		t.Fatal("新版本健康检查失败时安装命令必须返回失败")
 	}
@@ -476,6 +479,56 @@ func TestPaperStorageInstallerRestoresBinaryAfterHealthFailure(t *testing.T) {
 	}
 	if _, err := os.Stat(binaryPath + ".bak"); !os.IsNotExist(err) {
 		t.Fatal("恢复旧版本后不得残留 .bak")
+	}
+}
+
+// TestPaperStorageInstallerWaitsForServiceReadiness 验证服务启动期间的短暂连接失败不会触发回滚。
+func TestPaperStorageInstallerWaitsForServiceReadiness(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 环境没有 POSIX sh；Linux CI 和部署环境执行本测试")
+	}
+	repoRoot := deploymentRepoRoot(t)
+	installScript := filepath.Join(repoRoot, "deploy", "paper-storage", "install.sh")
+	tempDir := t.TempDir()
+	binaryPath := filepath.Join(tempDir, "paper-storage")
+	if err := os.WriteFile(binaryPath, []byte("old-version"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath+".new", []byte("new-version"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	stubDir := filepath.Join(tempDir, "bin")
+	if err := os.Mkdir(stubDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(tempDir, "curl-attempts")
+	writeExecutableTestScript(t, filepath.Join(stubDir, "systemctl"), "#!/bin/sh\nexit 0\n")
+	writeExecutableTestScript(t, filepath.Join(stubDir, "sleep"), "#!/bin/sh\nexit 0\n")
+	writeExecutableTestScript(t, filepath.Join(stubDir, "curl"), `#!/bin/sh
+count=0
+if [ -f "$PAPER_STORAGE_CURL_STATE" ]; then
+    count=$(cat "$PAPER_STORAGE_CURL_STATE")
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$PAPER_STORAGE_CURL_STATE"
+[ "$count" -ge 3 ]
+`)
+	command := exec.Command("sh", installScript, "--activate-binary", binaryPath, "http://127.0.0.1/healthz")
+	command.Env = append(os.Environ(),
+		"PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"PAPER_STORAGE_CURL_STATE="+statePath,
+		"PAPER_STORAGE_HEALTH_ATTEMPTS=3",
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("服务就绪前的短暂失败不应触发回滚: %v, %s", err, output)
+	}
+	content, err := os.ReadFile(binaryPath)
+	if err != nil || string(content) != "new-version" {
+		t.Fatalf("服务就绪后未保留新二进制: %v, %q", err, content)
+	}
+	attempts, err := os.ReadFile(statePath)
+	if err != nil || strings.TrimSpace(string(attempts)) != "3" {
+		t.Fatalf("健康检查没有按预期重试: %v, %q", err, attempts)
 	}
 }
 

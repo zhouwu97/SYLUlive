@@ -73,28 +73,24 @@ class TeamRecruitmentService {
     required int neededCount,
     required List<String> roles,
     DateTime? deadline,
-    List<int> imageFileIds = const [],
+    List<int>? imageFileIds,
   }) async {
-    final response =
-        await _dio.patch('/team/recruitments/$recruitmentId', data: {
+    await _dio.patch('/team/recruitments/$recruitmentId', data: {
       'category': category,
       'title': title,
       'description': description,
       'needed_count': neededCount,
       'roles': roles,
       'deadline': deadline?.toUtc().toIso8601String() ?? '',
-      'image_file_ids': imageFileIds,
+      if (imageFileIds != null) 'image_file_ids': imageFileIds,
     });
-    final data = _map(response.data);
-    final recruitment = data['recruitment'];
-    return TeamRecruitment.fromJson(
-      recruitment is Map ? recruitment.cast<String, dynamic>() : data,
-    );
+    // 更新接口只返回确认消息，随后读取权威详情以同步派生状态和计数。
+    return detail(recruitmentId);
   }
 
-  Future<List<TeamRecruitment>> mine() async {
-    final response = await _dio
-        .get('/team/recruitments/mine', queryParameters: {'limit': 50});
+  Future<List<TeamRecruitment>> mine({CancelToken? cancelToken}) async {
+    final response = await _dio.get('/team/recruitments/mine',
+        queryParameters: {'limit': 50}, cancelToken: cancelToken);
     return _items(response.data);
   }
 
@@ -111,8 +107,10 @@ class TeamRecruitmentService {
     return WaterTeamApplication.fromJson(_map(response.data));
   }
 
-  Future<List<WaterTeamApplication>> myApplications() async {
-    final response = await _dio.get('/team/my_applications');
+  Future<List<WaterTeamApplication>> myApplications(
+      {CancelToken? cancelToken}) async {
+    final response =
+        await _dio.get('/team/my_applications', cancelToken: cancelToken);
     return _applications(response.data);
   }
 
@@ -124,6 +122,10 @@ class TeamRecruitmentService {
 
   Future<void> cancel(int applicationId) =>
       _dio.post('/team/applications/$applicationId/cancel');
+  Future<void> leave(int applicationId) =>
+      _dio.post('/team/applications/$applicationId/leave');
+  Future<void> remove(int applicationId) =>
+      _dio.post('/team/applications/$applicationId/remove');
   Future<void> accept(int applicationId, {String reply = ''}) => _dio
       .post('/team/applications/$applicationId/accept', data: {'reply': reply});
   Future<void> reject(int applicationId, {String reply = ''}) => _dio

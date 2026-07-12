@@ -101,11 +101,22 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
+	if post.Status != models.PostStatusNormal {
+		c.JSON(http.StatusConflict, gin.H{"error": "该帖子当前不允许回复"})
+		return
+	}
 
 	// 如果有父回复，检查是否是一层嵌套
 	if input.ParentReplyID != nil {
 		var parentReply models.Reply
-		if err := h.db.First(&parentReply, input.ParentReplyID).Error; err == nil {
+		if err := h.db.First(&parentReply, input.ParentReplyID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "父回复不存在"})
+			return
+		} else {
+			if parentReply.PostID != uint(postID) || parentReply.Status != models.ReplyStatusNormal {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "父回复不属于当前帖子或已不可回复"})
+				return
+			}
 			if parentReply.ParentReplyID != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "不支持多层嵌套"})
 				return
@@ -180,18 +191,12 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 
 	// 发送通知（数据库 + 极光推送）
-	contentPreview := input.Content
-	if len(contentPreview) > 80 {
-		contentPreview = contentPreview[:80] + "..."
-	}
+	contentPreview := truncateRunes(input.Content, 80)
 	if input.ParentReplyID != nil {
 		// 回复别人的评论 → 通知被回复的评论作者
 		var parentReply models.Reply
 		if err := h.db.First(&parentReply, *input.ParentReplyID).Error; err == nil {
 			notifyUserID := parentReply.AuthorID
-			if input.ReplyToUserID != nil {
-				notifyUserID = *input.ReplyToUserID
-			}
 			CreateReplyNotification(h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
 			SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
 		}
@@ -263,6 +268,14 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit]) + "..."
 }
 
 // recalculatePostReplyStats 从有效回复重建帖子回复数及最后活跃时间；调用方必须提供事务。

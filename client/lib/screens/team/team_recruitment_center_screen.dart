@@ -27,12 +27,24 @@ class _TeamRecruitmentCenterScreenState
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   Timer? _searchDebounce;
+  int _lastSessionVersion = -1;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final sessionVersion =
+        context.watch<TeamRecruitmentProvider>().sessionVersion;
+    if (_lastSessionVersion == sessionVersion) return;
+    _lastSessionVersion = sessionVersion;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   @override
@@ -228,10 +240,18 @@ class _TeamRecruitmentCenterScreenState
           sliver: _TeamFeedSkeleton(),
         );
       case TeamFeedViewState.empty:
+        final emptyTitle = switch (_status) {
+          'recruiting' => '还没有正在招募的队伍',
+          'deadline_soon' => '还没有即将截止的队伍',
+          'full' => '还没有已满员的队伍',
+          'closed' => '还没有已关闭的队伍',
+          'expired' => '还没有已截止的队伍',
+          _ => '还没有组队招募',
+        };
         return SliverToBoxAdapter(
           child: _TeamFeedStateView(
             icon: Icons.groups_2_outlined,
-            title: '还没有正在招募的队伍',
+            title: emptyTitle,
             description: '换个分类看看，或者发起新的组队',
             actionLabel: '发起组队',
             actionIcon: Icons.add_rounded,
@@ -390,6 +410,7 @@ class _CategoryTabs extends StatelessWidget {
     const values = [
       ('全部', null),
       ('竞赛', 'competition'),
+      ('项目', 'project'),
       ('学习', 'study'),
       ('活动', 'activity'),
       ('其他', 'other'),
@@ -465,8 +486,10 @@ class _StatusSegment extends StatelessWidget {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(9),
                   onTap: () => onChanged(selected ? null : value.$2),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
+                  child: Container(
+                    key: selected
+                        ? const ValueKey('team-status-selected-indicator')
+                        : null,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: selected

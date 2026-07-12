@@ -26,6 +26,7 @@ import 'providers/social_provider.dart';
 import 'providers/water_section_provider.dart';
 import 'providers/water_moderator_provider.dart';
 import 'providers/water_moderation_provider.dart';
+import 'providers/campus_calendar_provider.dart';
 import 'models/user.dart';
 import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
@@ -43,6 +44,7 @@ import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
+import 'services/campus_calendar_service.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -897,7 +899,11 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
         ChangeNotifierProvider(create: (_) => PostProvider(dio)),
-        ChangeNotifierProvider(create: (_) => TeamRecruitmentProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, TeamRecruitmentProvider>(
+          create: (_) => TeamRecruitmentProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id),
+        ),
         ChangeNotifierProxyProvider<AuthProvider, MessageProvider>(
           create: (_) => MessageProvider(dio),
           update: (_, auth, provider) =>
@@ -910,6 +916,10 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
         ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
         ChangeNotifierProvider(create: (_) => WaterSectionProvider(dio)),
+        ChangeNotifierProvider(
+          create: (_) =>
+              CampusCalendarProvider(CampusCalendarService(dio))..load(),
+        ),
         ChangeNotifierProxyProvider<AuthProvider, WaterModeratorProvider>(
           create: (_) => WaterModeratorProvider(dio),
           update: (_, auth, provider) =>

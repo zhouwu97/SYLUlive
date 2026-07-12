@@ -153,10 +153,10 @@ func Load() *Config {
 		}
 	}
 
-	// 生产环境 + 启用校园资讯同步时，必须配置服务间 Token
-	if os.Getenv("GIN_MODE") == "release" && jwcSyncEnabled {
+	// 生产环境中 Python 教务服务只接受服务间调用，令牌不能为空。
+	if os.Getenv("GIN_MODE") == "release" {
 		if eduServiceToken == "" {
-			panic(fmt.Errorf("生产环境启用 JWC_SYNC 必须设置 EDU_SERVICE_TOKEN 环境变量"))
+			panic(fmt.Errorf("生产环境必须设置 EDU_SERVICE_TOKEN 环境变量"))
 		}
 	}
 

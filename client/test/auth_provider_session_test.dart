@@ -86,6 +86,35 @@ class _FakeAuthCredentialStore implements AuthCredentialStore {
   }
 }
 
+class _FakePreferenceStore implements PreferenceStore {
+  final Map<String, String> values = {};
+  final Map<String, List<bool>> setResults = {};
+  final Map<String, List<bool>> removeResults = {};
+
+  @override
+  String? getString(String key) => values[key];
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    final result = _nextResult(setResults, key);
+    if (result) values[key] = value;
+    return result;
+  }
+
+  @override
+  Future<bool> remove(String key) async {
+    final result = _nextResult(removeResults, key);
+    if (result) values.remove(key);
+    return result;
+  }
+
+  bool _nextResult(Map<String, List<bool>> results, String key) {
+    final queued = results[key];
+    if (queued == null || queued.isEmpty) return true;
+    return queued.removeAt(0);
+  }
+}
+
 typedef _AuthInvocation = Future<AuthResult> Function(AuthProvider provider);
 
 class _AuthCase {
@@ -304,6 +333,136 @@ void main() {
     );
   });
 
+  test('Web 教务密码 setString 返回 false 时不改变持久或内存会话', () async {
+    final preferences = _FakePreferenceStore();
+    final store = PreferenceAuthCredentialStore(preferences);
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(200, {
+        'token': 'next-token',
+        'user': _userJson(2),
+      });
+    final provider = _provider(adapter, store);
+    await provider.applyAuthPayload('old-token', _userJson(1));
+    preferences.values['edu_pwd_20260001'] = 'old-edu-pass';
+    preferences.setResults['edu_pwd_20260001'] = [false];
+    final generation = provider.sessionGeneration;
+
+    final result = await provider.loginEdu('20260001', 'edu-pass', 'password');
+
+    expect(result.success, isFalse);
+    _expectOldPreferenceSession(provider, preferences, generation);
+    expect(preferences.values['edu_pwd_20260001'], 'old-edu-pass');
+  });
+
+  test('Web 认证 user 写入 false 时回滚已写入的 token', () async {
+    final preferences = _FakePreferenceStore();
+    final store = PreferenceAuthCredentialStore(preferences);
+    final provider = _provider(_QueuedAuthAdapter(), store);
+    await provider.applyAuthPayload('old-token', _userJson(1));
+    final generation = provider.sessionGeneration;
+    preferences.setResults['auth_user'] = [false];
+
+    await expectLater(
+      provider.applyAuthPayload('next-token', _userJson(2)),
+      throwsA(isA<StateError>()),
+    );
+
+    _expectOldPreferenceSession(provider, preferences, generation);
+  });
+
+  test('Web 认证部分写失败且回滚 false 时抛一致性错误且不提交内存', () async {
+    final preferences = _FakePreferenceStore();
+    final store = PreferenceAuthCredentialStore(preferences);
+    final provider = _provider(_QueuedAuthAdapter(), store);
+    await provider.applyAuthPayload('old-token', _userJson(1));
+    final generation = provider.sessionGeneration;
+    preferences.setResults['auth_token'] = [true, false];
+    preferences.setResults['auth_user'] = [false];
+
+    await expectLater(
+      provider.applyAuthPayload('next-token', _userJson(2)),
+      throwsA(
+        isA<AuthCredentialConsistencyException>().having(
+          (error) => error.message,
+          'message',
+          contains('回滚认证信息失败'),
+        ),
+      ),
+    );
+
+    expect(provider.token, 'old-token');
+    expect(provider.user?.id, 1);
+    expect(provider.sessionGeneration, generation);
+    expect(provider.dio.options.headers['Authorization'], 'Bearer old-token');
+  });
+
+  test('Web 新会话部分写失败且回滚 remove false 时不提交内存', () async {
+    final preferences = _FakePreferenceStore()
+      ..setResults['auth_user'] = [false]
+      ..removeResults['auth_token'] = [false];
+    final store = PreferenceAuthCredentialStore(preferences);
+    final provider = _provider(_QueuedAuthAdapter(), store);
+
+    await expectLater(
+      provider.applyAuthPayload('next-token', _userJson(2)),
+      throwsA(isA<AuthCredentialConsistencyException>()),
+    );
+
+    expect(provider.token, isNull);
+    expect(provider.user, isNull);
+    expect(provider.sessionGeneration, 0);
+    expect(provider.dio.options.headers['Authorization'], isNull);
+  });
+
+  test('Web 清理第二项 remove false 时恢复旧 token 和 user', () async {
+    final preferences = _FakePreferenceStore()
+      ..values['auth_token'] = 'old-token'
+      ..values['auth_user'] = jsonEncode(_userJson(1))
+      ..removeResults['auth_user'] = [false];
+    final store = PreferenceAuthCredentialStore(preferences);
+
+    await expectLater(store.clear(), throwsA(isA<StateError>()));
+
+    expect(preferences.values['auth_token'], 'old-token');
+    expect(jsonDecode(preferences.values['auth_user']!)['id'], 1);
+  });
+
+  test('Web 教务密码 remove 返回 false 时抛出可观察错误', () async {
+    final preferences = _FakePreferenceStore()
+      ..values['edu_pwd_20260001'] = 'edu-pass'
+      ..removeResults['edu_pwd_20260001'] = [false];
+    final store = PreferenceAuthCredentialStore(preferences);
+
+    await expectLater(
+      store.deleteEduPassword('20260001'),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('删除教务密码失败'),
+        ),
+      ),
+    );
+
+    expect(preferences.values['edu_pwd_20260001'], 'edu-pass');
+  });
+
+  test('Web 凭据合法写入和删除均成功', () async {
+    final preferences = _FakePreferenceStore();
+    final store = PreferenceAuthCredentialStore(preferences);
+
+    await store.write(
+      token: 'token',
+      userJson: jsonEncode(_userJson(1)),
+    );
+    await store.writeEduPassword('20260001', 'edu-pass');
+    await store.deleteEduPassword('20260001');
+
+    expect(preferences.values['auth_token'], 'token');
+    expect(jsonDecode(preferences.values['auth_user']!)['id'], 1);
+    expect(preferences.values['edu_pwd_20260001'], isNull);
+  });
+
   test('applyAuthPayload 先完整解析用户，失败时不改变已有认证会话', () async {
     final provider = _provider(
       _QueuedAuthAdapter(),
@@ -456,4 +615,17 @@ void _expectOldSession(
   expect(provider.dio.options.headers['Authorization'], 'Bearer old-token');
   expect(store.stored.token, 'old-token');
   expect(jsonDecode(store.stored.userJson!)['id'], 1);
+}
+
+void _expectOldPreferenceSession(
+  AuthProvider provider,
+  _FakePreferenceStore preferences,
+  int generation,
+) {
+  expect(provider.token, 'old-token');
+  expect(provider.user?.id, 1);
+  expect(provider.sessionGeneration, generation);
+  expect(provider.dio.options.headers['Authorization'], 'Bearer old-token');
+  expect(preferences.values['auth_token'], 'old-token');
+  expect(jsonDecode(preferences.values['auth_user']!)['id'], 1);
 }

@@ -33,17 +33,100 @@ class AuthResult {
       AuthResult(success: false, errorMessage: message, statusCode: statusCode);
 }
 
-class AuthProvider extends ChangeNotifier {
-  static const String _tokenKey = 'auth_token';
-  static const String _userKey = 'auth_user';
+class StoredAuthCredentials {
+  final String? token;
+  final String? userJson;
 
+  const StoredAuthCredentials({this.token, this.userJson});
+}
+
+abstract interface class AuthCredentialStore {
+  Future<StoredAuthCredentials> read();
+
+  Future<void> write({required String token, required String userJson});
+
+  Future<void> clear();
+
+  Future<void> writeEduPassword(String studentId, String password);
+}
+
+class _PlatformAuthCredentialStore implements AuthCredentialStore {
+  static const _tokenKey = 'auth_token';
+  static const _userKey = 'auth_user';
+
+  @override
+  Future<StoredAuthCredentials> read() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return StoredAuthCredentials(
+        token: prefs.getString(_tokenKey),
+        userJson: prefs.getString(_userKey),
+      );
+    }
+    const storage = FlutterSecureStorage();
+    return StoredAuthCredentials(
+      token: await storage.read(key: _tokenKey),
+      userJson: await storage.read(key: _userKey),
+    );
+  }
+
+  @override
+  Future<void> write({required String token, required String userJson}) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tokenKey, token);
+      await prefs.setString(_userKey, userJson);
+      return;
+    }
+    const storage = FlutterSecureStorage();
+    await storage.write(key: _tokenKey, value: token);
+    await storage.write(key: _userKey, value: userJson);
+  }
+
+  @override
+  Future<void> clear() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tokenKey);
+      await prefs.remove(_userKey);
+      return;
+    }
+    const storage = FlutterSecureStorage();
+    await storage.delete(key: _tokenKey);
+    await storage.delete(key: _userKey);
+  }
+
+  @override
+  Future<void> writeEduPassword(String studentId, String password) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('edu_pwd_$studentId', password);
+      return;
+    }
+    const storage = FlutterSecureStorage();
+    await storage.write(key: 'edu_pwd_$studentId', value: password);
+  }
+}
+
+class _AuthSessionCandidate {
+  final String token;
+  final User user;
+
+  const _AuthSessionCandidate(this.token, this.user);
+}
+
+class AuthProvider extends ChangeNotifier {
   final Dio _dio;
+  final AuthCredentialStore _credentialStore;
+  final bool _usesPlatformCredentialStore;
+  final VoidCallback _onAuthenticated;
   late final Dio _eduDio; // Python 教务服务
 
   User? _user;
   String? _token;
   bool _isLoading = false;
   bool _initialized = false;
+  Future<void>? _initializationFuture;
   int _sessionGeneration = 0;
 
   User? get user => _user;
@@ -55,7 +138,14 @@ class AuthProvider extends ChangeNotifier {
   Dio get dio => _dio;
   PersistCookieJar? _cookieJar;
 
-  AuthProvider(this._dio) {
+  AuthProvider(
+    this._dio, {
+    AuthCredentialStore? credentialStore,
+    bool loadStoredAuth = true,
+    VoidCallback? onAuthenticated,
+  })  : _credentialStore = credentialStore ?? _PlatformAuthCredentialStore(),
+        _usesPlatformCredentialStore = credentialStore == null,
+        _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start {
     _eduDio = Dio(
       BaseOptions(
         baseUrl: ApiConstants.eduServiceUrl,
@@ -102,7 +192,15 @@ class AuthProvider extends ChangeNotifier {
         },
       ),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadStoredAuth());
+    if (loadStoredAuth) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => initializeStoredAuth(),
+      );
+    }
+  }
+
+  Future<void> initializeStoredAuth() {
+    return _initializationFuture ??= _loadStoredAuth();
   }
 
   void _applyAuthHeader() {
@@ -126,34 +224,23 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _loadStoredAuth() async {
-    await _initCookieJar();
-
-    String? token;
-    String? userJson;
-
-    if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      token = prefs.getString(_tokenKey);
-      userJson = prefs.getString(_userKey);
-    } else {
-      const storage = FlutterSecureStorage();
-      token = await storage.read(key: _tokenKey);
-      userJson = await storage.read(key: _userKey);
-    }
-
-    if (token != null) {
-      _token = token;
-      _sessionGeneration++;
-      _applyAuthHeader();
-      if (userJson != null) {
-        try {
-          final Map<String, dynamic> json = jsonDecode(userJson);
-          _user = User.fromJson(json);
-          WallpaperPrefetchService.start();
-        } catch (e) {
-          debugPrint('解析用户信息失败: $e');
+    try {
+      if (_usesPlatformCredentialStore) await _initCookieJar();
+      final stored = await _credentialStore.read();
+      if (stored.token != null && stored.userJson != null) {
+        final decoded = jsonDecode(stored.userJson!);
+        if (decoded is! Map) {
+          throw const FormatException('本地用户信息不是对象');
         }
+        final candidate = _authSessionCandidate(
+          stored.token,
+          Map<String, dynamic>.from(decoded),
+        );
+        _commitAuthSession(candidate);
+        _onAuthenticated();
       }
+    } catch (e) {
+      debugPrint('解析本地认证信息失败: $e');
     }
     _initialized = true;
     await KeepAliveService.instance.syncAuthToken(_token);
@@ -165,38 +252,62 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _saveAuth() async {
-    if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      if (_token != null) {
-        await prefs.setString(_tokenKey, _token!);
-      }
-      if (_user != null) {
-        await prefs.setString(_userKey, jsonEncode(_user!.toJson()));
-      }
-    } else {
-      const storage = FlutterSecureStorage();
-      if (_token != null) {
-        await storage.write(key: _tokenKey, value: _token);
-      }
-      if (_user != null) {
-        await storage.write(key: _userKey, value: jsonEncode(_user!.toJson()));
-      }
-    }
-    await KeepAliveService.instance.syncAuthToken(_token);
+    final token = _token;
+    final user = _user;
+    if (token == null || user == null) return;
+    await _saveAuthCandidate(_AuthSessionCandidate(token, user));
+  }
+
+  Future<void> _saveAuthCandidate(_AuthSessionCandidate candidate) async {
+    await _credentialStore.write(
+      token: candidate.token,
+      userJson: jsonEncode(candidate.user.toJson()),
+    );
+    await KeepAliveService.instance.syncAuthToken(candidate.token);
     await GradeReminderService.instance.syncRuntimeConfig(
-      userId: _user?.id.toString(),
+      userId: candidate.user.id.toString(),
     );
     await GradeReminderService.instance.ensureScheduledIfEnabled();
   }
 
   Future<void> _saveEduPassword(String studentId, String password) async {
-    if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('edu_pwd_$studentId', password);
-    } else {
-      const storage = FlutterSecureStorage();
-      await storage.write(key: 'edu_pwd_$studentId', value: password);
+    await _credentialStore.writeEduPassword(studentId, password);
+  }
+
+  _AuthSessionCandidate _authSessionCandidate(
+    Object? rawToken,
+    Map<String, dynamic> userJson,
+  ) {
+    if (rawToken is! String || rawToken.trim().isEmpty) {
+      throw const FormatException('认证令牌无效');
     }
+    return _AuthSessionCandidate(rawToken, User.fromJson(userJson));
+  }
+
+  _AuthSessionCandidate _authSessionCandidateFromResponse(Object? data) {
+    if (data is! Map) throw const FormatException('认证响应不是对象');
+    final rawUser = data['user'];
+    if (rawUser is! Map) throw const FormatException('认证用户不是对象');
+    return _authSessionCandidate(
+      data['token'],
+      Map<String, dynamic>.from(rawUser),
+    );
+  }
+
+  void _commitAuthSession(_AuthSessionCandidate candidate) {
+    _token = candidate.token;
+    _user = candidate.user;
+    _sessionGeneration++;
+    _applyAuthHeader();
+  }
+
+  Future<void> _saveAndCommitAuthSession(
+    _AuthSessionCandidate candidate, {
+    bool prefetchWallpaper = false,
+  }) async {
+    await _saveAuthCandidate(candidate);
+    _commitAuthSession(candidate);
+    if (prefetchWallpaper) _onAuthenticated();
   }
 
   /// 解析Dio异常并返回友好的错误信息（附带技术细节方便排查）
@@ -235,12 +346,8 @@ class AuthProvider extends ChangeNotifier {
 
       _isLoading = false;
       if (response.statusCode == 201) {
-        _token = response.data['token'];
-        _user = User.fromJson(response.data['user']);
-        _sessionGeneration++;
-        _applyAuthHeader();
-        WallpaperPrefetchService.start();
-        await _saveAuth();
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        await _saveAndCommitAuthSession(candidate, prefetchWallpaper: true);
         notifyListeners();
         return AuthResult.success();
       }
@@ -272,12 +379,8 @@ class AuthProvider extends ChangeNotifier {
 
       _isLoading = false;
       if (response.statusCode == 200) {
-        _token = response.data['token'];
-        _user = User.fromJson(response.data['user']);
-        _sessionGeneration++;
-        _applyAuthHeader();
-        WallpaperPrefetchService.start();
-        await _saveAuth();
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        await _saveAndCommitAuthSession(candidate, prefetchWallpaper: true);
         notifyListeners();
         return AuthResult.success();
       }
@@ -314,10 +417,6 @@ class AuthProvider extends ChangeNotifier {
     if (oldUserId != null) {
       await GradeReminderService.instance.clearForUser(oldUserId);
     }
-    _token = null;
-    _user = null;
-    if (hadSession) _sessionGeneration++;
-    _applyAuthHeader();
     if (!kIsWeb && _cookieJar != null) {
       await _cookieJar!.deleteAll();
     }
@@ -325,6 +424,10 @@ class AuthProvider extends ChangeNotifier {
     if (clearPushAlias) {
       await _clearPushAlias();
     }
+    _token = null;
+    _user = null;
+    if (hadSession) _sessionGeneration++;
+    _applyAuthHeader();
     notifyListeners();
   }
 
@@ -339,15 +442,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _clearStoredAuth() async {
-    if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_tokenKey);
-      await prefs.remove(_userKey);
-    } else {
-      const storage = FlutterSecureStorage();
-      await storage.delete(key: _tokenKey);
-      await storage.delete(key: _userKey);
-    }
+    await _credentialStore.clear();
     await KeepAliveService.instance.syncAuthToken(null);
     await GradeReminderService.instance.syncRuntimeConfig(userId: null);
   }
@@ -404,12 +499,8 @@ class AuthProvider extends ChangeNotifier {
     String token,
     Map<String, dynamic> userJson,
   ) async {
-    _token = token;
-    _user = User.fromJson(userJson);
-    _sessionGeneration++;
-    _applyAuthHeader();
-    WallpaperPrefetchService.start();
-    await _saveAuth();
+    final candidate = _authSessionCandidate(token, userJson);
+    await _saveAndCommitAuthSession(candidate, prefetchWallpaper: true);
     notifyListeners();
   }
 
@@ -594,12 +685,10 @@ class AuthProvider extends ChangeNotifier {
 
       _isLoading = false;
       if (response.statusCode == 200) {
-        _token = response.data['token'];
-        _user = User.fromJson(response.data['user']);
-        _sessionGeneration++;
-        _applyAuthHeader();
-        await _saveAuth();
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        await _saveAuthCandidate(candidate);
         await _saveEduPassword(studentId, eduPassword);
+        _commitAuthSession(candidate);
         notifyListeners();
         return AuthResult.success();
       }
@@ -641,12 +730,10 @@ class AuthProvider extends ChangeNotifier {
 
       _isLoading = false;
       if (response.statusCode == 201) {
-        _token = response.data['token'];
-        _user = User.fromJson(response.data['user']);
-        _sessionGeneration++;
-        _applyAuthHeader();
-        await _saveAuth();
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        await _saveAuthCandidate(candidate);
         await _saveEduPassword(studentId, eduPassword);
+        _commitAuthSession(candidate);
         notifyListeners();
         return AuthResult.success();
       }
@@ -699,11 +786,8 @@ class AuthProvider extends ChangeNotifier {
 
       _isLoading = false;
       if (response.statusCode == 201) {
-        _token = response.data['token'];
-        _user = User.fromJson(response.data['user']);
-        _sessionGeneration++;
-        _applyAuthHeader();
-        await _saveAuth();
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        await _saveAndCommitAuthSession(candidate);
         notifyListeners();
         return AuthResult.success();
       }

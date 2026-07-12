@@ -180,7 +180,7 @@ class ExamPaperService {
       );
     }
 
-    final fingerprint = await _uploadFingerprint(
+    final preparedFile = await _prepareUploadFile(
       file: file,
       courseName: courseName,
       academicYear: academicYear,
@@ -188,6 +188,7 @@ class ExamPaperService {
       examType: examType,
       privacyConfirmed: privacyConfirmed,
     );
+    final fingerprint = preparedFile.fingerprint;
     _ensureAuthSession();
     _prunePendingCompletions(DateTime.now());
     final inFlight = _inFlightUploads[fingerprint];
@@ -196,6 +197,7 @@ class ExamPaperService {
     final operation = _performUpload(
       fingerprint: fingerprint,
       file: file,
+      fileBytes: preparedFile.bytes,
       courseName: courseName,
       academicYear: academicYear,
       semester: semester,
@@ -216,6 +218,7 @@ class ExamPaperService {
   Future<ExamPaper> _performUpload({
     required String fingerprint,
     required PlatformFile file,
+    required Uint8List fileBytes,
     required String courseName,
     required String academicYear,
     required String semester,
@@ -240,7 +243,7 @@ class ExamPaperService {
           'semester': semester,
           'exam_type': examType,
           'privacy_confirmed': privacyConfirmed,
-          'file_size': file.size,
+          'file_size': fileBytes.length,
         },
       );
     } on DioException catch (error) {
@@ -254,7 +257,9 @@ class ExamPaperService {
       _ensureAuthSession();
       uploadResponse = await _storageDio.post<dynamic>(
         session.uploadUri.toString(),
-        data: FormData.fromMap({'file': await _multipartFile(file)}),
+        data: FormData.fromMap({
+          'file': MultipartFile.fromBytes(fileBytes, filename: file.name),
+        }),
         options: Options(
           contentType: 'multipart/form-data',
           headers: {'Authorization': 'Bearer ${session.uploadToken}'},
@@ -307,7 +312,7 @@ class ExamPaperService {
     }
   }
 
-  Future<String> _uploadFingerprint({
+  Future<({String fingerprint, Uint8List bytes})> _prepareUploadFile({
     required PlatformFile file,
     required String courseName,
     required String academicYear,
@@ -316,6 +321,7 @@ class ExamPaperService {
     required bool privacyConfirmed,
   }) async {
     late final List<Object> fileIdentity;
+    late final Uint8List fileBytes;
     if (file.path != null && file.path!.isNotEmpty) {
       var normalizedPath = path.normalize(path.absolute(file.path!));
       if (Platform.isWindows) normalizedPath = normalizedPath.toLowerCase();
@@ -328,7 +334,8 @@ class ExamPaperService {
             code: 'invalid_pdf',
           );
         }
-        final digest = await sha256.bind(source.openRead()).first;
+        fileBytes = await source.readAsBytes();
+        final digest = sha256.convert(fileBytes);
         fileIdentity = ['path', normalizedPath, digest.toString()];
       } on FileSystemException {
         throw const ExamPaperApiException(
@@ -337,17 +344,24 @@ class ExamPaperService {
         );
       }
     } else if (file.bytes != null) {
-      fileIdentity = ['bytes', sha256.convert(file.bytes!).toString()];
+      fileBytes = Uint8List.fromList(file.bytes!);
+      fileIdentity = ['bytes', sha256.convert(fileBytes).toString()];
     } else {
       throw const ExamPaperApiException(
         message: '无法读取所选 PDF 文件',
         code: 'invalid_pdf',
       );
     }
+    if (fileBytes.length > maxFileSize) {
+      throw const ExamPaperApiException(
+        message: 'PDF 不能超过 20 MiB',
+        code: 'file_too_large',
+      );
+    }
     final payload = jsonEncode([
       fileIdentity,
       file.name,
-      file.size,
+      fileBytes.length,
       courseName.trim(),
       academicYear,
       semester,
@@ -355,7 +369,10 @@ class ExamPaperService {
       privacyConfirmed,
       _authSessionScope,
     ]);
-    return sha256.convert(utf8.encode(payload)).toString();
+    return (
+      fingerprint: sha256.convert(utf8.encode(payload)).toString(),
+      bytes: fileBytes,
+    );
   }
 
   void _cachePendingCompletion(
@@ -676,19 +693,6 @@ class ExamPaperService {
     } on DioException catch (error) {
       throw ExamPaperApiException.fromDio(error);
     }
-  }
-
-  Future<MultipartFile> _multipartFile(PlatformFile file) async {
-    if (file.path != null && file.path!.isNotEmpty) {
-      return MultipartFile.fromFile(file.path!, filename: file.name);
-    }
-    if (file.bytes != null) {
-      return MultipartFile.fromBytes(file.bytes!, filename: file.name);
-    }
-    throw const ExamPaperApiException(
-      message: '无法读取所选 PDF 文件',
-      code: 'invalid_pdf',
-    );
   }
 
   Future<File> _downloadToTemporaryFile({

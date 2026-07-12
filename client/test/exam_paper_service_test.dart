@@ -36,6 +36,7 @@ class _QueuedResponse {
 class _RecordingAdapter implements HttpClientAdapter {
   final String name;
   final List<_RecordedRequest> requests;
+  final List<List<int>> requestBodies = [];
   final List<_QueuedResponse> _responses = [];
 
   _RecordingAdapter(this.name, this.requests);
@@ -66,7 +67,9 @@ class _RecordingAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(_RecordedRequest(name, options));
-    await requestStream?.drain<void>();
+    final requestBody = <int>[];
+    await requestStream?.forEach(requestBody.addAll);
+    requestBodies.add(requestBody);
     if (_responses.isEmpty) {
       throw StateError('$name 缺少预设响应: ${options.method} ${options.uri}');
     }
@@ -622,6 +625,51 @@ void main() {
         'https://sylulive.online/v1/uploads/path-b',
       ],
     );
+  });
+
+  test('路径文件完成指纹后被替换仍上传本次读取的原始字节', () async {
+    final directory = await Directory.systemTemp.createTemp('paper-snapshot-');
+    addTearDown(() => directory.delete(recursive: true));
+    final localFile = File(
+      '${directory.path}${Platform.pathSeparator}snapshot.pdf',
+    );
+    final originalBytes = utf8.encode('%PDF-ORIGINAL-CONTENT');
+    final replacementBytes = utf8.encode('%PDF-REPLACED-CONTENT');
+    expect(replacementBytes.length, originalBytes.length);
+    await localFile.writeAsBytes(originalBytes);
+    final platformFile = PlatformFile(
+      name: 'snapshot.pdf',
+      size: originalBytes.length,
+      path: localFile.path,
+    );
+    final createStarted = Completer<void>();
+    final releaseCreate = Completer<void>();
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueJson(
+        201,
+        _uploadSessionJson(sessionID: 'snapshot-session'),
+        started: createStarted,
+        release: releaseCreate.future,
+      )
+      ..enqueueJson(201, _paperJson(62, '文件快照'));
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueJson(201, {'receipt': 'snapshot-receipt'});
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://couqie.ccwu.cc/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final service = ExamPaperService(apiDio, storageDio: storageDio);
+
+    final upload = _uploadPaper(service, platformFile, courseName: '文件快照');
+    await createStarted.future;
+    await localFile.writeAsBytes(replacementBytes, flush: true);
+    releaseCreate.complete();
+    final paper = await upload;
+
+    expect(paper.id, 62);
+    final multipartBody = storageAdapter.requestBodies.single;
+    expect(_containsBytes(multipartBody, originalBytes), isTrue);
+    expect(_containsBytes(multipartBody, replacementBytes), isFalse);
   });
 
   test('拒绝把上传令牌发送到非文件服务域名', () async {
@@ -1425,4 +1473,19 @@ Matcher _authSessionChangedMatcher() {
   return isA<ExamPaperApiException>()
       .having((error) => error.code, 'code', 'auth_session_changed')
       .having((error) => error.message, 'message', '登录状态已变化，请重新上传');
+}
+
+bool _containsBytes(List<int> source, List<int> pattern) {
+  if (pattern.isEmpty) return true;
+  for (var index = 0; index <= source.length - pattern.length; index++) {
+    var matches = true;
+    for (var offset = 0; offset < pattern.length; offset++) {
+      if (source[index + offset] != pattern[offset]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
 }

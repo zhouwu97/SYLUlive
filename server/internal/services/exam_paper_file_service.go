@@ -584,15 +584,27 @@ func validateExamPaperUploadSessionRecord(filename string, record examPaperUploa
 		if record.ExpiresAt.IsZero() {
 			return ErrExamPaperUploadSessionInvalid
 		}
-	case "completed", "released":
-		if strings.TrimSpace(record.Receipt) == "" {
+	case "completed":
+		if strings.TrimSpace(record.Receipt) == "" || !validExamPaperUploadSessionStoredFile(record) {
+			return ErrExamPaperUploadSessionInvalid
+		}
+	case "released":
+		if strings.TrimSpace(record.Receipt) == "" || !validExamPaperUploadSessionStoredFile(record) || record.UserID == 0 ||
+			record.ReleasedAt.IsZero() || record.ReleasedAt.Before(record.CompletedAt) {
 			return ErrExamPaperUploadSessionInvalid
 		}
 	}
-	if record.FileSize < 0 || record.FileSize > ExamPaperMaxFileSize || (record.FileSize > 0 && record.FileSize != record.ExpectedSize) {
-		return ErrExamPaperUploadSessionInvalid
-	}
 	return nil
+}
+
+func validExamPaperUploadSessionStoredFile(record examPaperUploadSessionRecord) bool {
+	if strings.TrimSpace(record.FileKey) == "" || record.FileKey == "." || record.FileKey == ".." ||
+		filepath.Base(record.FileKey) != record.FileKey || strings.ContainsAny(record.FileKey, `/\`) ||
+		record.FileSize <= 0 || record.FileSize != record.ExpectedSize || record.CompletedAt.IsZero() || len(record.SHA256) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(record.SHA256)
+	return err == nil
 }
 
 func examPaperUploadSessionStateIdentity(filename string) (string, string, error) {
@@ -1292,6 +1304,10 @@ func (s *ExamPaperFileService) maintainUploadSessions(now time.Time, result *Exa
 			releasedPath := s.uploadSessionPath(record.SessionID, "released")
 			released, err := readExamPaperUploadSessionRecord(releasedPath)
 			if os.IsNotExist(err) || (err == nil && !released.ReleasedAt.Before(now.Add(-24*time.Hour))) {
+				continue
+			}
+			if errors.Is(err, ErrExamPaperUploadSessionInvalid) {
+				// released 条目会在同轮扫描中进入统一隔离流程。
 				continue
 			}
 			if err != nil {

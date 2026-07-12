@@ -449,6 +449,16 @@ func TestCreateRemoteExamPaperUploadSessionReturnsDirectUploadURL(t *testing.T) 
 }
 
 func TestRemoteExamPaperUploadSessionJSONBodyLimitsAndMalformedPayloads(t *testing.T) {
+	validCreateBody, err := json.Marshal(validRemoteExamPaperUploadSessionPayload())
+	if err != nil {
+		t.Fatalf("编码合法创建会话请求失败: %v", err)
+	}
+	validCompleteBody := []byte(`{"receipt":"placeholder"}`)
+	withSuffix := func(body, suffix []byte) []byte {
+		result := append([]byte(nil), body...)
+		return append(result, suffix...)
+	}
+	overLimitWhitespace := bytes.Repeat([]byte{' '}, int(maxExamPaperJSONBodyBytes)+1)
 	tests := []struct {
 		name       string
 		handler    func(*ExamPaperHandler) gin.HandlerFunc
@@ -459,8 +469,14 @@ func TestRemoteExamPaperUploadSessionJSONBodyLimitsAndMalformedPayloads(t *testi
 		wantCode   string
 	}{
 		{name: "创建会话请求体超限", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CreateUploadSession }, path: "/api/exam-papers/upload-sessions", body: []byte(`{"course_name":"` + strings.Repeat("x", 70*1024) + `"}`), wantStatus: http.StatusRequestEntityTooLarge, wantCode: "request_body_too_large"},
+		{name: "创建会话合法JSON后超限空白", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CreateUploadSession }, path: "/api/exam-papers/upload-sessions", body: withSuffix(validCreateBody, overLimitWhitespace), wantStatus: http.StatusRequestEntityTooLarge, wantCode: "request_body_too_large"},
+		{name: "创建会话合法JSON后尾随垃圾", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CreateUploadSession }, path: "/api/exam-papers/upload-sessions", body: withSuffix(validCreateBody, []byte("garbage")), wantStatus: http.StatusBadRequest, wantCode: "invalid_upload_session_request"},
+		{name: "创建会话包含第二个JSON值", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CreateUploadSession }, path: "/api/exam-papers/upload-sessions", body: withSuffix(validCreateBody, []byte(` {}`)), wantStatus: http.StatusBadRequest, wantCode: "invalid_upload_session_request"},
 		{name: "创建会话JSON畸形", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CreateUploadSession }, path: "/api/exam-papers/upload-sessions", body: []byte(`{"course_name":`), wantStatus: http.StatusBadRequest, wantCode: "invalid_upload_session_request"},
 		{name: "完成会话请求体超限", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CompleteUploadSession }, path: "/api/exam-papers/upload-sessions/session-1/complete", params: gin.Params{{Key: "id", Value: "session-1"}}, body: []byte(`{"receipt":"` + strings.Repeat("x", 70*1024) + `"}`), wantStatus: http.StatusRequestEntityTooLarge, wantCode: "request_body_too_large"},
+		{name: "完成会话合法JSON后超限空白", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CompleteUploadSession }, path: "/api/exam-papers/upload-sessions/session-1/complete", params: gin.Params{{Key: "id", Value: "session-1"}}, body: withSuffix(validCompleteBody, overLimitWhitespace), wantStatus: http.StatusRequestEntityTooLarge, wantCode: "request_body_too_large"},
+		{name: "完成会话合法JSON后尾随垃圾", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CompleteUploadSession }, path: "/api/exam-papers/upload-sessions/session-1/complete", params: gin.Params{{Key: "id", Value: "session-1"}}, body: withSuffix(validCompleteBody, []byte("garbage")), wantStatus: http.StatusBadRequest, wantCode: "upload_receipt_invalid"},
+		{name: "完成会话包含第二个JSON值", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CompleteUploadSession }, path: "/api/exam-papers/upload-sessions/session-1/complete", params: gin.Params{{Key: "id", Value: "session-1"}}, body: withSuffix(validCompleteBody, []byte(` {}`)), wantStatus: http.StatusBadRequest, wantCode: "upload_receipt_invalid"},
 		{name: "完成会话JSON畸形", handler: func(handler *ExamPaperHandler) gin.HandlerFunc { return handler.CompleteUploadSession }, path: "/api/exam-papers/upload-sessions/session-1/complete", params: gin.Params{{Key: "id", Value: "session-1"}}, body: []byte(`{"receipt":`), wantStatus: http.StatusBadRequest, wantCode: "upload_receipt_invalid"},
 	}
 

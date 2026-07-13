@@ -75,7 +75,7 @@ class ExamPaperDeleteResult {
 
 class ExamPaperService {
   static const int maxFileSize = 20 * 1024 * 1024;
-  static const String storageHost = 'sylulive.online';
+  static const String storageHost = '139.196.148.174';
   static const int _maxPendingCompletions = 16;
   static const Duration _pendingCompletionTTL = Duration(minutes: 15);
 

@@ -134,7 +134,7 @@ void main() {
           201,
           {
             'session_id': 'screen-session',
-            'upload_url': 'https://sylulive.online/v1/uploads/screen-session',
+            'upload_url': 'https://139.196.148.174/v1/uploads/screen-session',
             'upload_token': 'screen-upload-token',
             'expires_at': '2026-07-13T10:10:00Z',
           },

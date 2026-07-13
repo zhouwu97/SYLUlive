@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-LETSENCRYPT_LIVE_DIR=${PAPER_STORAGE_LETSENCRYPT_LIVE_DIR:-/etc/letsencrypt/live/sylulive.online}
+PUBLIC_HOST=${PAPER_STORAGE_PUBLIC_HOST:-sylulive.online}
+LETSENCRYPT_LIVE_DIR=${PAPER_STORAGE_LETSENCRYPT_LIVE_DIR:-/etc/letsencrypt/live/$PUBLIC_HOST}
 SSH_PORT=${SSH_PORT:-22}
 SWAP_SIZE=${PAPER_STORAGE_SWAP_SIZE:-2G}
 FSTAB_PATH=${PAPER_STORAGE_FSTAB:-/etc/fstab}
@@ -26,6 +27,20 @@ has_lets_encrypt_certificate() {
     [ -f "$LETSENCRYPT_LIVE_DIR/fullchain.pem" ] && [ -f "$LETSENCRYPT_LIVE_DIR/privkey.pem" ]
 }
 
+validate_public_host() {
+    public_host=$1
+    case "$public_host" in
+        ''|.*|*.|*..*|*[!A-Za-z0-9.-]*)
+            echo "PAPER_STORAGE_PUBLIC_HOST 必须是规范域名或公网 IP 地址" >&2
+            return 1
+            ;;
+    esac
+    if [ "${#public_host}" -gt 253 ]; then
+        echo "PAPER_STORAGE_PUBLIC_HOST 长度不得超过 253" >&2
+        return 1
+    fi
+}
+
 render_nginx_config() {
     nginx_template=$1
     nginx_output=$2
@@ -38,9 +53,12 @@ render_nginx_config() {
     fi
     escaped_certificate=$(printf '%s' "$tls_certificate" | sed 's/[&|]/\\&/g')
     escaped_certificate_key=$(printf '%s' "$tls_certificate_key" | sed 's/[&|]/\\&/g')
+    validate_public_host "$PUBLIC_HOST"
+    escaped_public_host=$(printf '%s' "$PUBLIC_HOST" | sed 's/[&|]/\\&/g')
     sed \
         -e "s|__PAPER_STORAGE_TLS_CERTIFICATE__|$escaped_certificate|g" \
         -e "s|__PAPER_STORAGE_TLS_CERTIFICATE_KEY__|$escaped_certificate_key|g" \
+        -e "s|__PAPER_STORAGE_PUBLIC_HOST__|$escaped_public_host|g" \
         "$nginx_template" > "$nginx_output"
 }
 
@@ -264,6 +282,12 @@ if [ "${1:-}" = "--validate-ssh-port" ]; then
     exit $?
 fi
 
+if [ "${1:-}" = "--validate-public-host" ]; then
+    [ "$#" -eq 2 ] || exit 2
+    validate_public_host "$2"
+    exit $?
+fi
+
 if [ "${1:-}" = "--audit-ufw" ]; then
     validate_ssh_port "$SSH_PORT"
     audit_ufw_rules
@@ -295,6 +319,7 @@ binary_candidate=/opt/sylg-paper-storage/bin/paper-storage.new
 binary_backup=/opt/sylg-paper-storage/bin/paper-storage.bak
 
 validate_ssh_port "$SSH_PORT"
+validate_public_host "$PUBLIC_HOST"
 if ! validate_elf_binary "$BINARY_SOURCE"; then
     echo "未找到文件服务二进制：$BINARY_SOURCE" >&2
     echo "请先构建 Linux 二进制，或通过 PAPER_STORAGE_BINARY 指定路径" >&2
@@ -370,6 +395,10 @@ fi
 for directory in /var/lib/nginx /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi /var/lib/nginx/uwsgi /var/lib/nginx/scgi; do
     install -d -o paper-storage -g paper-storage -m 0700 "$directory"
 done
+install -d -o root -g paper-storage -m 0750 \
+    /var/lib/letsencrypt \
+    /var/lib/letsencrypt/.well-known \
+    /var/lib/letsencrypt/.well-known/acme-challenge
 
 # 已有 Swap 不足时新增专用文件；活动 Swap 不停用、不缩小、不重建。
 swap_target_kib=2097152

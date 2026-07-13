@@ -144,9 +144,12 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 
 	for _, expected := range []string{
 		"user paper-storage;",
-		"server_name sylulive.online;",
-		"server_name www.sylulive.online;",
-		"return 301 https://sylulive.online$request_uri;",
+		"listen 80 default_server;",
+		"listen 443 ssl http2 default_server;",
+		"server_name __PAPER_STORAGE_PUBLIC_HOST__;",
+		"return 301 https://__PAPER_STORAGE_PUBLIC_HOST__$request_uri;",
+		"location ^~ /.well-known/acme-challenge/",
+		"root /var/lib/letsencrypt;",
 		"client_max_body_size 21m;",
 		"proxy_request_buffering off;",
 		"proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
@@ -206,6 +209,9 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 		"systemctl reload nginx",
 		"--render-nginx",
 		"PAPER_STORAGE_LETSENCRYPT_LIVE_DIR",
+		"PAPER_STORAGE_PUBLIC_HOST",
+		"validate_public_host",
+		"/var/lib/letsencrypt",
 		"fullchain.pem",
 		"privkey.pem",
 		"nginx -t -c",
@@ -235,6 +241,7 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	for _, expected := range []string{
 		"__PAPER_STORAGE_TLS_CERTIFICATE__",
 		"__PAPER_STORAGE_TLS_CERTIFICATE_KEY__",
+		"__PAPER_STORAGE_PUBLIC_HOST__",
 	} {
 		if !strings.Contains(nginxText, expected) {
 			t.Errorf("Nginx 模板缺少可幂等渲染的 TLS 占位符 %q", expected)
@@ -311,7 +318,11 @@ func TestPaperStorageNginxRendererKeepsLetsEncryptCertificate(t *testing.T) {
 	render := func() string {
 		t.Helper()
 		command := exec.Command("sh", installScript, "--render-nginx", template, output)
-		command.Env = append(os.Environ(), "PAPER_STORAGE_LETSENCRYPT_LIVE_DIR="+liveDir)
+		command.Env = append(
+			os.Environ(),
+			"PAPER_STORAGE_LETSENCRYPT_LIVE_DIR="+liveDir,
+			"PAPER_STORAGE_PUBLIC_HOST=139.196.148.174",
+		)
 		if combined, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("渲染 Nginx 配置失败: %v\n%s", err, combined)
 		}
@@ -322,6 +333,10 @@ func TestPaperStorageNginxRendererKeepsLetsEncryptCertificate(t *testing.T) {
 	if !strings.Contains(first, "/etc/ssl/certs/ssl-cert-snakeoil.pem") ||
 		!strings.Contains(first, "/etc/ssl/private/ssl-cert-snakeoil.key") {
 		t.Fatal("首次无正式证书时必须渲染 Ubuntu 临时证书")
+	}
+	if !strings.Contains(first, "server_name 139.196.148.174;") ||
+		strings.Contains(first, "__PAPER_STORAGE_PUBLIC_HOST__") {
+		t.Fatal("Nginx 渲染必须安全替换文件服务公网主机")
 	}
 
 	if err := os.MkdirAll(liveDir, 0700); err != nil {

@@ -21,7 +21,6 @@ import 'providers/course_schedule_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
-
 import 'providers/social_provider.dart';
 import 'providers/water_section_provider.dart';
 import 'providers/water_moderator_provider.dart';

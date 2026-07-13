@@ -3,12 +3,12 @@ import 'package:flutter/foundation.dart';
 class ApiConstants {
   // Web 与 App 使用不同的编译参数，避免网页和 App 误用对方的接口入口。
   // Web: --dart-define=WEB_API_URL=/api
-  // App: --dart-define=APP_API_URL=https://couqie.ccwu.cc/api
+  // App: --dart-define=APP_API_URL=https://sylulive.online/api
   // 生产 App 默认走 HTTPS 域名；Web 默认走同源反代。
   static const String _webBaseUrl = String.fromEnvironment('WEB_API_URL');
   static const String _appBaseUrl = String.fromEnvironment('APP_API_URL');
   static const String _legacyBaseUrl = String.fromEnvironment('API_URL');
-  static const String _defaultAppBaseUrl = 'https://couqie.ccwu.cc/api';
+  static const String _defaultAppBaseUrl = 'https://sylulive.online/api';
 
   static String get baseUrl {
     if (kIsWeb) return _webBaseUrl.isNotEmpty ? _webBaseUrl : '/api';

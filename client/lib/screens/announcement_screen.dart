@@ -48,13 +48,19 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
 
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
+    final sessionGeneration = authProvider.sessionGeneration;
+    final unreadFuture = _loadUnreadAnnouncements(authProvider);
     try {
-      final responses = await Future.wait([
-        _getAnnouncements(authProvider, unreadOnly: false),
-        _getAnnouncements(authProvider, unreadOnly: true),
-      ]);
-      final all = _parseAnnouncements(responses[0]);
-      final unread = _parseAnnouncements(responses[1]);
+      final response = await _getAnnouncements(
+        authProvider,
+        unreadOnly: false,
+      );
+      final all = _parseAnnouncements(response);
+      final loadedUnread = await unreadFuture;
+      final unread = authProvider.isLoggedIn &&
+              authProvider.sessionGeneration == sessionGeneration
+          ? loadedUnread
+          : <model.Announcement>[];
       if (!mounted) return;
       setState(() {
         _announcements = all;
@@ -68,6 +74,22 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<List<model.Announcement>> _loadUnreadAnnouncements(
+    AuthProvider authProvider,
+  ) async {
+    if (!authProvider.isLoggedIn) return [];
+    try {
+      final response = await _getAnnouncements(
+        authProvider,
+        unreadOnly: true,
+      );
+      return _parseAnnouncements(response);
+    } catch (e) {
+      debugPrint('加载未读公告失败: $e');
+      return [];
     }
   }
 

@@ -39,6 +39,16 @@ class _AnnouncementAdapter implements HttpClientAdapter {
   }
 }
 
+class _TestAuthProvider extends AuthProvider {
+  _TestAuthProvider(super.dio, {required this.loggedIn})
+      : super(loadStoredAuth: false);
+
+  final bool loggedIn;
+
+  @override
+  bool get isLoggedIn => loggedIn;
+}
+
 const _allAnnouncements = '''[
   {
     "id": 2,
@@ -82,8 +92,8 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider(
-            create: (_) => AuthProvider(dio, loadStoredAuth: false),
+          ChangeNotifierProvider<AuthProvider>(
+            create: (_) => _TestAuthProvider(dio, loggedIn: true),
           ),
           ChangeNotifierProvider(
             create: (_) => ThemeProvider(loadOnStart: false),
@@ -110,5 +120,31 @@ void main() {
     expect(find.text('已读历史公告'), findsOneWidget);
     expect(find.text('2 条，可随时查看'), findsOneWidget);
     expect(adapter.requests, contains('POST:/notices/1/read'));
+  });
+
+  testWidgets('未登录时只请求公开公告并展示最新内容', (tester) async {
+    final dio = Dio(BaseOptions(baseUrl: 'http://test.local'));
+    final adapter = _AnnouncementAdapter();
+    dio.httpClientAdapter = adapter;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>(
+            create: (_) => _TestAuthProvider(dio, loggedIn: false),
+          ),
+          ChangeNotifierProvider(
+            create: (_) => ThemeProvider(loadOnStart: false),
+          ),
+        ],
+        child: const MaterialApp(home: AnnouncementScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('未读紧急公告'), findsOneWidget);
+    expect(find.text('已读历史公告'), findsOneWidget);
+    expect(adapter.requests, contains('GET:/notices'));
+    expect(adapter.requests, isNot(contains('GET:/notices/unread')));
   });
 }

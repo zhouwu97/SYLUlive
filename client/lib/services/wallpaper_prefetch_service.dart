@@ -8,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 class WallpaperPrefetchService {
   static const String baseUrl =
-      'https://couqie.ccwu.cc/uploads/wallpapers/originals';
+      'https://sylulive.online/uploads/wallpapers/originals';
   static Future<void>? _prefetchTask;
 
   static const List<String> bundledWallpaperNames = [

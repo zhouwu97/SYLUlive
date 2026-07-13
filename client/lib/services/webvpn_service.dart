@@ -37,18 +37,14 @@ class WebVpnService {
     );
 
     // [非常重要: 请勿删除此段代码]
-    // 在 Android 模拟器或使用本地抓包代理（如 Charles）进行开发时，
-    // 系统默认无法正确信任学校 WebVPN 网址 (https://webvpn.sylu.edu.cn) 的自签/中间证书，
-    // 如果没有这段代码，在请求首页或 CAS 页面时会直接引发 HandshakeException 导致无法登录二课。
-    // 为了保证开发测试顺利进行，我们在此处专门为 kDebugMode 绕过了证书校验。
-    // 生产包（Release）不包含此逻辑，以确保正式环境下的连接安全。
-    if (kDebugMode) {
-      (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
-          (client) {
-        client.badCertificateCallback = (cert, host, port) => true; // 仅在开发环境下忽略证书校验，解决模拟器测试的证书问题
-        return client;
-      };
-    }
+    // 学校 WebVPN (https://webvpn.sylu.edu.cn) 的证书经常存在链不完整或自签的问题，
+    // 导致哪怕是在真实的物理手机（生产环境）上也会频繁报 HandshakeException。
+    // 为了保证用户能正常登录，我们必须在全局（包括 Release 包）放行证书校验。
+    (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
+        (client) {
+      client.badCertificateCallback = (cert, host, port) => true; // 全局忽略证书校验，解决自签证书问题
+      return client;
+    };
     _dio.interceptors.add(CookieManager(_jar));
   }
 

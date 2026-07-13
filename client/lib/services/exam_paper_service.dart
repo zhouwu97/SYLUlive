@@ -81,6 +81,7 @@ class ExamPaperService {
 
   final Dio _dio;
   final Dio _storageDio;
+  final Future<Directory> Function() _temporaryDirectoryProvider;
   final int? _authSessionScope;
   final int Function()? _currentAuthSessionScope;
   final Map<String, Future<ExamPaper>> _inFlightUploads = {};
@@ -90,6 +91,7 @@ class ExamPaperService {
   ExamPaperService(
     this._dio, {
     Dio? storageDio,
+    Future<Directory> Function()? temporaryDirectoryProvider,
     int? authSessionScope,
     int Function()? currentAuthSessionScope,
   })  : assert(
@@ -97,6 +99,8 @@ class ExamPaperService {
           'authSessionScope 和 currentAuthSessionScope 必须同时提供',
         ),
         _storageDio = storageDio ?? Dio(),
+        _temporaryDirectoryProvider =
+            temporaryDirectoryProvider ?? getTemporaryDirectory,
         _authSessionScope = authSessionScope,
         _currentAuthSessionScope = currentAuthSessionScope;
 
@@ -700,31 +704,148 @@ class ExamPaperService {
     required String title,
     required String suffix,
   }) async {
+    Uint8List bytes;
     try {
       final response = await _dio.get<List<int>>(
         endpoint,
-        options: Options(responseType: ResponseType.bytes),
-      );
-      final bytes = Uint8List.fromList(response.data ?? const <int>[]);
-      if (bytes.isEmpty) {
-        throw const ExamPaperApiException(
-          message: '下载的 PDF 文件为空',
-          code: 'invalid_pdf',
-        );
-      }
-      final directory = await getTemporaryDirectory();
-      final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final file = File(
-        path.join(
-          directory.path,
-          '${safeTitle}_${suffix}_${DateTime.now().microsecondsSinceEpoch}.pdf',
+        options: Options(
+          responseType: ResponseType.bytes,
+          followRedirects: false,
+          validateStatus: (status) =>
+              status == 200 ||
+              status == 302 ||
+              (status != null && status >= 400 && status < 600),
         ),
       );
-      await file.writeAsBytes(bytes, flush: true);
-      return file;
+      switch (response.statusCode) {
+        case 200:
+          bytes = _validatePdfBytes(response.data);
+        case 302:
+          final uri = _parseAndValidateDownloadRedirect(
+            response.headers.value('location'),
+          );
+          bytes = await _downloadFromStorage(uri);
+        default:
+          throw ExamPaperApiException.fromDio(
+            DioException(
+              requestOptions: response.requestOptions,
+              response: response,
+              type: DioExceptionType.badResponse,
+            ),
+          );
+      }
     } on DioException catch (error) {
       throw ExamPaperApiException.fromDio(error);
     }
+
+    final directory = await _temporaryDirectoryProvider();
+    final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final baseName =
+        '${safeTitle}_${suffix}_${DateTime.now().microsecondsSinceEpoch}';
+    final partFile = File(path.join(directory.path, '$baseName.part'));
+    final finalFile = File(path.join(directory.path, '$baseName.pdf'));
+    try {
+      await partFile.writeAsBytes(bytes, flush: true);
+      return await partFile.rename(finalFile.path);
+    } catch (_) {
+      try {
+        if (await partFile.exists()) await partFile.delete();
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
+  Future<Uint8List> _downloadFromStorage(Uri uri) async {
+    try {
+      final response = await _storageDio.get<List<int>>(
+        uri.toString(),
+        options: Options(
+          responseType: ResponseType.bytes,
+          followRedirects: false,
+          validateStatus: (status) => status == 200,
+          headers: const {
+            'Accept': 'application/pdf',
+            'Authorization': null,
+            'Cookie': null,
+          },
+        ),
+      );
+      return _validatePdfBytes(response.data);
+    } on DioException catch (error) {
+      throw ExamPaperApiException(
+        message: '试卷文件下载失败，请稍后重试',
+        code: 'storage_download_failed',
+        statusCode: error.response?.statusCode,
+      );
+    }
+  }
+
+  static Uri _parseAndValidateDownloadRedirect(String? location) {
+    final uri = location == null ? null : Uri.tryParse(location);
+    final query = uri?.queryParametersAll;
+    final pathSegments = uri?.pathSegments ?? const <String>[];
+    final validPath = uri != null &&
+        uri.path.startsWith('/v1/files/') &&
+        uri.path.length > '/v1/files/'.length &&
+        !pathSegments.any(
+            (segment) => segment.isEmpty || segment == '.' || segment == '..');
+    final validQuery = query != null &&
+        query.length == 1 &&
+        query.keys.single == 'token' &&
+        query['token']!.length == 1 &&
+        query['token']!.single.trim().isNotEmpty;
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host != storageHost ||
+        uri.port != 443 ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasFragment ||
+        !validPath ||
+        !validQuery) {
+      throw const ExamPaperApiException(
+        message: '试卷文件地址无效，请稍后重试',
+        code: 'invalid_storage_url',
+      );
+    }
+    return uri;
+  }
+
+  static Uint8List _validatePdfBytes(List<int>? data) {
+    if (data == null || data.isEmpty) {
+      throw const ExamPaperApiException(
+        message: '下载的 PDF 文件为空',
+        code: 'invalid_pdf',
+      );
+    }
+    if (data.length > maxFileSize) {
+      throw const ExamPaperApiException(
+        message: '下载的 PDF 不能超过 20 MiB',
+        code: 'file_too_large',
+      );
+    }
+    const signature = <int>[0x25, 0x50, 0x44, 0x46, 0x2d];
+    final searchLength = data.length < 1024 ? data.length : 1024;
+    var hasPdfHeader = false;
+    for (var index = 0; index <= searchLength - signature.length; index++) {
+      var matches = true;
+      for (var offset = 0; offset < signature.length; offset++) {
+        if (data[index + offset] != signature[offset]) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        hasPdfHeader = true;
+        break;
+      }
+    }
+    if (!hasPdfHeader) {
+      throw const ExamPaperApiException(
+        message: '下载内容不是有效的 PDF 文件',
+        code: 'invalid_pdf',
+      );
+    }
+    return Uint8List.fromList(data);
   }
 
   static Map<String, dynamic> _responseMap(Map<String, dynamic>? data) {

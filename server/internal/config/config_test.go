@@ -88,14 +88,21 @@ func TestLoadReleaseRejectsIncompleteOrInsecureRemoteStorageConfig(t *testing.T)
 		{
 			name:          "缺少签名密钥",
 			mode:          "remote",
-			baseURL:       "https://paper.example.com",
+			baseURL:       "https://139.196.148.174",
 			receiptSecret: "receipt-secret",
 		},
 		{
 			name:          "缺少回执密钥",
 			mode:          "readonly-remote",
+			baseURL:       "https://139.196.148.174",
+			signingSecret: "signing-secret",
+		},
+		{
+			name:          "远端地址不是固定文件服务器IP",
+			mode:          "remote",
 			baseURL:       "https://paper.example.com",
 			signingSecret: "signing-secret",
+			receiptSecret: "receipt-secret",
 		},
 		{
 			name:          "远端地址不是HTTPS",
@@ -143,7 +150,7 @@ func TestLoadReleaseRejectsIncompleteOrInsecureRemoteStorageConfig(t *testing.T)
 func TestLoadReleaseRejectsSharedExamPaperStorageSecret(t *testing.T) {
 	setBaseConfigEnv(t, "release")
 	t.Setenv("EXAM_PAPER_STORAGE_MODE", "remote")
-	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://paper.example.com")
+	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://139.196.148.174")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "  shared-storage-secret  ")
 	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "shared-storage-secret")
 
@@ -157,7 +164,7 @@ func TestLoadReleaseRejectsSharedExamPaperStorageSecret(t *testing.T) {
 func TestLoadReleaseAcceptsDistinctExamPaperStorageSecrets(t *testing.T) {
 	setBaseConfigEnv(t, "release")
 	t.Setenv("EXAM_PAPER_STORAGE_MODE", "remote")
-	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://paper.example.com")
+	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://139.196.148.174")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "signing-secret-0123456789abcdef")
 	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "receipt-secret-fedcba9876543210")
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -80,6 +81,29 @@ func createPinTestPost(t *testing.T, db *gorm.DB, post models.Post) models.Post 
 		t.Fatalf("create post: %v", err)
 	}
 	return post
+}
+
+// PostgreSQL 排序 SQL 必须使用数据库时间，不能把裸问号发送给数据库。
+func TestApplyPinnedOrderUsesPostgresDatabaseTime(t *testing.T) {
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test dbname=test sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatalf("open dry-run postgres: %v", err)
+	}
+
+	var posts []models.Post
+	statement := applyPinnedOrder(db.Model(&models.Post{}), time.Now()).Find(&posts).Statement
+	sql := statement.SQL.String()
+	if strings.Contains(sql, "pinned_until > ?") {
+		t.Fatalf("pinned order contains unbound placeholder: %s", sql)
+	}
+	if !strings.Contains(sql, "pinned_until > CURRENT_TIMESTAMP") {
+		t.Fatalf("pinned order does not use database time: %s", sql)
+	}
+	if len(statement.Vars) != 0 {
+		t.Fatalf("pinned order vars=%d, want 0: %s", len(statement.Vars), sql)
+	}
 }
 
 func TestAdminPinPostPinsOnlyShuitieAndReturnsUpdatedPost(t *testing.T) {

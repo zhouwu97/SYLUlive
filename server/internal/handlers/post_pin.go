@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,16 +25,14 @@ type pinPostInput struct {
 }
 
 func applyPinnedOrder(query *gorm.DB, now time.Time) *gorm.DB {
-	// GORM 的 Order 不会处理 clause.Expr；将可信的服务端时间按当前方言转为字面量，确保后续排序可继续追加。
-	nowSQL := query.Dialector.Explain("?", now)
-	activeCondition := fmt.Sprintf(
-		"(posts.is_pinned = true AND (posts.pinned_until IS NULL OR posts.pinned_until > %s))",
-		nowSQL,
-	)
+	// CURRENT_TIMESTAMP 由数据库生成，不含裸问号，也不会被后续追加的 Order 覆盖。
+	// now 参数保留用于统一调用语义；置顶是否过期以执行 SQL 时的数据库时间为准。
+	_ = now
+	const activeCondition = "(posts.is_pinned = true AND (posts.pinned_until IS NULL OR posts.pinned_until > CURRENT_TIMESTAMP))"
 	return query.
-		Order(fmt.Sprintf("CASE WHEN %s THEN 0 ELSE 1 END ASC", activeCondition)).
-		Order(fmt.Sprintf("CASE WHEN %s THEN posts.pinned_weight ELSE 0 END DESC", activeCondition)).
-		Order(fmt.Sprintf("CASE WHEN %s THEN posts.pinned_at ELSE NULL END DESC NULLS LAST", activeCondition))
+		Order("CASE WHEN " + activeCondition + " THEN 0 ELSE 1 END ASC").
+		Order("CASE WHEN " + activeCondition + " THEN posts.pinned_weight ELSE 0 END DESC").
+		Order("CASE WHEN " + activeCondition + " THEN posts.pinned_at ELSE NULL END DESC NULLS LAST")
 }
 
 func (h *PostHandler) AdminPinPost(c *gin.Context) {

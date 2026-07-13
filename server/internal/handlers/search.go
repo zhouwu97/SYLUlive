@@ -30,11 +30,7 @@ func (h *SearchHandler) Search(c *gin.Context) {
 
 	searchType := c.DefaultQuery("type", "posts")
 	sort := c.DefaultQuery("sort", "relevance")
-	page := parsePositiveInt(c.Query("page"), 1)
-	limit := parsePositiveInt(c.Query("limit"), 20)
-	if limit > 50 {
-		limit = 50
-	}
+	page, limit, _ := ParsePagination(c, 20, 50)
 
 	switch searchType {
 	case "users":

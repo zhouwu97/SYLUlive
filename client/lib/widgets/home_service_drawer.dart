@@ -5,7 +5,6 @@ import '../config/water_post_taxonomy.dart';
 import '../models/announcement.dart' as model;
 import '../models/water_section.dart';
 import '../providers/theme_provider.dart';
-import '../utils/responsive_util.dart';
 import 'group_chat_dialog.dart';
 import 'water_section/section_avatar.dart';
 
@@ -16,6 +15,7 @@ class HomeServiceDrawer extends StatelessWidget {
   final bool checkInLoading;
   final bool showCheckInDot;
   final List<model.Announcement> announcements;
+  final List<model.Announcement> unreadAnnouncements;
   final VoidCallback onCheckIn;
   final VoidCallback onOpenToolbox;
   final VoidCallback onOpenAnnouncements;
@@ -36,6 +36,7 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.checkInLoading,
     required this.showCheckInDot,
     required this.announcements,
+    required this.unreadAnnouncements,
     required this.onCheckIn,
     required this.onOpenToolbox,
     required this.onOpenAnnouncements,
@@ -197,9 +198,11 @@ class HomeServiceDrawer extends StatelessWidget {
     );
   }
 
-  // ---- 未读公告 ----
+  // ---- 公告中心 ----
   Widget _buildAnnouncementSection(BuildContext context, bool isDark) {
-    final latest = announcements.isNotEmpty ? announcements.first : null;
+    final preview = unreadAnnouncements.isNotEmpty
+        ? unreadAnnouncements.first
+        : (announcements.isNotEmpty ? announcements.first : null);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -238,7 +241,7 @@ class HomeServiceDrawer extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      '未读公告',
+                      '公告中心',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
@@ -246,7 +249,7 @@ class HomeServiceDrawer extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (announcements.isNotEmpty) ...[
+                  if (unreadAnnouncements.isNotEmpty) ...[
                     Container(
                       width: 7,
                       height: 7,
@@ -257,7 +260,7 @@ class HomeServiceDrawer extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      '${announcements.length} 条',
+                      '${unreadAnnouncements.length} 条未读',
                       style: const TextStyle(
                         fontSize: 13,
                         color: Color(0xFFEF4444),
@@ -273,9 +276,9 @@ class HomeServiceDrawer extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              if (latest == null)
+              if (preview == null)
                 Text(
-                  '暂无未读公告',
+                  '暂无公告',
                   style: TextStyle(
                     fontSize: 13,
                     color: isDark ? Colors.white54 : Colors.black54,
@@ -283,7 +286,7 @@ class HomeServiceDrawer extends StatelessWidget {
                 )
               else ...[
                 Text(
-                  latest.title,
+                  preview.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -294,7 +297,7 @@ class HomeServiceDrawer extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  latest.content,
+                  preview.content,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -636,7 +639,6 @@ class _WaterCategoryMiniItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = colorHexToColor(section.colorHex);
-    final icon = iconKeyToIconData(section.iconKey, fallbackSlug: section.slug);
     return Material(
       color: Colors.transparent,
       child: InkWell(

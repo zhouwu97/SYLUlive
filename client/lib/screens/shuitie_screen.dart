@@ -116,6 +116,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _autoRefreshTimer;
   List<model.Announcement> _announcements = [];
+  List<model.Announcement> _unreadAnnouncements = [];
   bool _wasLoggedIn = false;
   bool _checkinStatusLoaded = false;
   String _feedMode = kFeedModes[kDefaultFeedModeIndex].key; // 'all'
@@ -239,36 +240,47 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {
-      Response<dynamic> response;
-      try {
-        response =
-            await authProvider.dio.get('${ApiConstants.noticesPath}/unread');
-      } on DioException catch (e) {
-        if (e.response?.statusCode == 404) {
-          response = await authProvider.dio.get('/announcements/unread');
-        } else {
-          rethrow;
-        }
-      }
-
-      if (response.statusCode == 200) {
-        final all = (response.data as List)
-            .map((e) => model.Announcement.fromJson(e))
-            .toList()
-          ..sort((a, b) {
-            if (a.isPinned != b.isPinned) {
-              return a.isPinned ? -1 : 1;
-            }
-            return b.createdAt.compareTo(a.createdAt);
-          });
-        if (!mounted) return;
-        setState(() {
-          _announcements = all;
-        });
-      }
+      final responses = await Future.wait([
+        _getAnnouncements(authProvider, unreadOnly: false),
+        _getAnnouncements(authProvider, unreadOnly: true),
+      ]);
+      final all = _parseAnnouncements(responses[0]);
+      final unread = _parseAnnouncements(responses[1]);
+      if (!mounted) return;
+      setState(() {
+        _announcements = all;
+        _unreadAnnouncements = unread;
+      });
     } catch (e) {
       debugPrint('加载公告失败: $e');
     }
+  }
+
+  Future<Response<dynamic>> _getAnnouncements(
+    AuthProvider authProvider, {
+    required bool unreadOnly,
+  }) async {
+    final primaryPath = unreadOnly
+        ? '${ApiConstants.noticesPath}/unread'
+        : ApiConstants.noticesPath;
+    final fallbackPath =
+        unreadOnly ? '/announcements/unread' : '/announcements';
+    try {
+      return await authProvider.dio.get(primaryPath);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        return authProvider.dio.get(fallbackPath);
+      }
+      rethrow;
+    }
+  }
+
+  List<model.Announcement> _parseAnnouncements(Response<dynamic> response) {
+    if (response.statusCode != 200 || response.data is! List) return [];
+    return (response.data as List)
+        .map((item) => model.Announcement.fromJson(item))
+        .toList()
+      ..sort(model.Announcement.compareForDisplay);
   }
 
   Future<void> _runSearch(String raw) async {
@@ -776,6 +788,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 checkInLoading: _checkInLoading,
                 showCheckInDot: _showCheckInDot,
                 announcements: _announcements,
+                unreadAnnouncements: _unreadAnnouncements,
                 waterSections:
                     context.read<WaterSectionProvider>().activeSections,
                 onCheckIn: () {
@@ -784,7 +797,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 onOpenToolbox: () {
                   _openPageKeepingPanel(const ToolboxScreen());
                 },
-                onOpenAnnouncements: _openUnreadAnnouncements,
+                onOpenAnnouncements: _openAnnouncements,
                 onOpenCompetitions: () {
                   _openPageKeepingPanel(const CompetitionCenterScreen());
                 },
@@ -826,13 +839,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  Future<void> _openUnreadAnnouncements() async {
+  Future<void> _openAnnouncements() async {
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => const AnnouncementScreen(unreadOnly: true),
+        builder: (_) => AnnouncementScreen(
+          onAnnouncementRead: _handleAnnouncementRead,
+        ),
       ),
     );
-    if (mounted) unawaited(_loadAnnouncements());
+    if (mounted) await _loadAnnouncements();
+  }
+
+  void _handleAnnouncementRead(int announcementId) {
+    if (!mounted) return;
+    setState(() {
+      _unreadAnnouncements.removeWhere((item) => item.id == announcementId);
+    });
   }
 
   void _closePanelThenOpen(BuildContext dialogContext, VoidCallback openPage) {
@@ -1091,7 +1113,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     ),
                     padding: EdgeInsets.zero,
                   ),
-                  if (_showCheckInDot || _announcements.isNotEmpty)
+                  if (_showCheckInDot || _unreadAnnouncements.isNotEmpty)
                     Positioned(
                       top: 9,
                       right: 8,

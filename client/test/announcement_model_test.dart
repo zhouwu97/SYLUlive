@@ -183,5 +183,46 @@ void main() {
       );
       expect(a.isModalUrgent, false);
     });
+
+    test('compareForDisplay sorts by pinned, priority, then newest time', () {
+      Announcement item({
+        required int id,
+        bool isPinned = false,
+        String priority = 'normal',
+        required DateTime createdAt,
+      }) {
+        return Announcement(
+          id: id,
+          title: 'Announcement $id',
+          content: 'Content',
+          createdBy: 1,
+          createdAt: createdAt,
+          isPinned: isPinned,
+          priority: priority,
+        );
+      }
+
+      final announcements = [
+        item(id: 1, createdAt: DateTime(2026, 7, 13)),
+        item(
+          id: 2,
+          priority: 'important',
+          createdAt: DateTime(2026, 7, 12),
+        ),
+        item(
+          id: 3,
+          priority: 'urgent',
+          createdAt: DateTime(2026, 7, 11),
+        ),
+        item(
+          id: 4,
+          isPinned: true,
+          createdAt: DateTime(2026, 7, 10),
+        ),
+        item(id: 5, createdAt: DateTime(2026, 7, 14)),
+      ]..sort(Announcement.compareForDisplay);
+
+      expect(announcements.map((item) => item.id), [4, 3, 2, 5, 1]);
+    });
   });
 }

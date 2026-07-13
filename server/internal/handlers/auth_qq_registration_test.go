@@ -1,0 +1,64 @@
+package handlers
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"shenliyuan/internal/models"
+)
+
+func TestQQVerificationCredentialCanBeConsumedByRegistration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+
+	qq := "12345678"
+	verifyCodeStore.Lock()
+	verifyCodeStore.codes = map[string]verifyCodeRecord{
+		qq: {Code: "123456", SentAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)},
+	}
+	verifyCodeStore.verified = make(map[string]time.Time)
+	verifyCodeStore.ipSends = make(map[string][]time.Time)
+	verifyCodeStore.Unlock()
+	t.Cleanup(func() {
+		verifyCodeStore.Lock()
+		verifyCodeStore.codes = make(map[string]verifyCodeRecord)
+		verifyCodeStore.verified = make(map[string]time.Time)
+		verifyCodeStore.ipSends = make(map[string][]time.Time)
+		verifyCodeStore.Unlock()
+	})
+
+	handler := NewAuthHandler(db, "test-jwt-secret")
+	verifyRecorder := httptest.NewRecorder()
+	verifyContext, _ := gin.CreateTestContext(verifyRecorder)
+	verifyContext.Request = httptest.NewRequest(http.MethodPost, "/verify_code", strings.NewReader(`{"qq":"12345678","code":"123456"}`))
+	verifyContext.Request.Header.Set("Content-Type", "application/json")
+	handler.VerifyCode(verifyContext)
+	if verifyRecorder.Code != http.StatusOK {
+		t.Fatalf("verify code status=%d body=%s", verifyRecorder.Code, verifyRecorder.Body.String())
+	}
+
+	registerRecorder := httptest.NewRecorder()
+	registerContext, _ := gin.CreateTestContext(registerRecorder)
+	registerContext.Request = httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"qq":"12345678","code":"000000","password":"password123"}`))
+	registerContext.Request.Header.Set("Content-Type", "application/json")
+	handler.Register(registerContext)
+	if registerRecorder.Code != http.StatusCreated {
+		t.Fatalf("register status=%d body=%s", registerRecorder.Code, registerRecorder.Body.String())
+	}
+	if isQQVerified(qq) {
+		t.Fatal("registration should consume the one-time QQ verification credential")
+	}
+}

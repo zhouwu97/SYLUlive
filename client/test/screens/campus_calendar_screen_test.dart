@@ -17,8 +17,13 @@ void main() {
 
   testWidgets('在月历上向左滑动会切换到下一个月', (tester) async {
     SharedPreferences.setMockInitialValues({});
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
     final raw = await rootBundle.loadString(
       'assets/data/campus_calendar_fallback.json',
+      cache: false,
     );
     final calendar = CampusCalendar.fromJson(
       Map<String, dynamic>.from(jsonDecode(raw) as Map),
@@ -55,15 +60,20 @@ void main() {
     expect(controller.page, greaterThan(initialPage));
 
     await gesture.up();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text(nextLabel), findsOneWidget);
   });
 
   testWidgets('相邻月份周数不同时半页拖动不会溢出', (tester) async {
     SharedPreferences.setMockInitialValues({});
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
     final raw = await rootBundle.loadString(
       'assets/data/campus_calendar_fallback.json',
+      cache: false,
     );
     final calendar = CampusCalendar.fromJson(
       Map<String, dynamic>.from(jsonDecode(raw) as Map),
@@ -83,7 +93,8 @@ void main() {
     final controller = tester.widget<PageView>(pageView).controller!;
     final septemberPage = controller.initialPage + 2;
     controller.jumpToPage(septemberPage);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
     final gesture = await tester.startGesture(tester.getCenter(pageView));
     await gesture.moveBy(const Offset(40, 0));

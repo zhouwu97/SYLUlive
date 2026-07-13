@@ -33,6 +33,7 @@ func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 		&models.PostImage{},
 		&models.Like{},
 		&models.WaterSection{},
+		&models.WaterSectionFollow{},
 		&models.WaterSectionTag{},
 		&models.WaterSectionModerator{},
 		&models.WaterSectionPin{},
@@ -269,6 +270,47 @@ func TestListSections(t *testing.T) {
 			t.Fatalf("sections not sorted by sort_order ASC: %v then %v", firstOrder, cur)
 		}
 		firstOrder = cur
+	}
+}
+
+// 水区帖子数必须按 posts.post_type 聚合，且只统计正常状态的帖子。
+func TestListSectionsReturnsPostCounts(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	user := newWaterTestUser(t, db, false)
+	posts := []models.Post{
+		{BoardID: models.BoardShuitie, AuthorID: user.ID, PostType: "course_study", Status: models.PostStatusNormal},
+		{BoardID: models.BoardShuitie, AuthorID: user.ID, PostType: "course_study", Status: models.PostStatusNormal},
+		{BoardID: models.BoardShuitie, AuthorID: user.ID, PostType: "course_study", Status: models.PostStatusDeleted},
+		{BoardID: models.BoardShuitie, AuthorID: user.ID, PostType: "campus_life", Status: models.PostStatusNormal},
+	}
+	if err := db.Create(&posts).Error; err != nil {
+		t.Fatalf("create posts: %v", err)
+	}
+
+	handler := NewWaterSectionHandler(db)
+	rec := performWaterSectionGET(t, handler.List, "/api/water/sections")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Sections []waterSectionResponse `json:"sections"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	counts := make(map[string]int64, len(body.Sections))
+	for _, section := range body.Sections {
+		counts[section.Slug] = section.PostCount
+	}
+	if counts["course_study"] != 2 {
+		t.Fatalf("course_study post_count=%d, want 2", counts["course_study"])
+	}
+	if counts["campus_life"] != 1 {
+		t.Fatalf("campus_life post_count=%d, want 1", counts["campus_life"])
 	}
 }
 

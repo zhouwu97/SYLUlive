@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -74,6 +75,18 @@ type Post struct {
 	UpdatedAt              time.Time               `json:"updated_at"`
 	// LastActivityAt 是最后一条有效回复的时间；无回复时等于发帖时间，不能用正文编辑时间替代。
 	LastActivityAt time.Time `gorm:"index" json:"last_activity_at"`
+}
+
+// MarshalJSON 确保帖子作者始终使用公开 DTO，而非数据库 User 模型。
+func (p Post) MarshalJSON() ([]byte, error) {
+	type postAlias Post
+	return json.Marshal(struct {
+		postAlias
+		Author PublicUserResponse `json:"author"`
+	}{
+		postAlias: postAlias(p),
+		Author:    PublicUser(p.Author),
+	})
 }
 
 // TeamRecruitmentMeta 组队招募前端所需数据

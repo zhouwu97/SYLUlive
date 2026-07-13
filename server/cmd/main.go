@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -174,6 +175,7 @@ func main() {
 		&models.Like{},
 
 		&models.File{},
+		&models.FileUploadGrant{},
 
 		&models.ExamPaper{},
 
@@ -258,6 +260,9 @@ func main() {
 	}
 	if err := models.EnsureCampusCalendarIndexes(db); err != nil {
 		log.Fatal("校历索引迁移失败:", err)
+	}
+	if err := ensureCanteenNormalizedNameIndex(db); err != nil {
+		log.Fatal("食堂名称唯一索引迁移失败:", err)
 	}
 
 	if err := models.EnsureConversationIndexes(db); err != nil {
@@ -1114,6 +1119,10 @@ func main() {
 
 		edu.POST("/courses", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCourses)
 
+		edu.GET("/courses/local", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetLocalCourses)
+
+		edu.POST("/courses/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.SyncCourses)
+
 		edu.POST("/grades", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGrades)
 
 		edu.POST("/grades/detail", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGradeDetail)
@@ -1285,6 +1294,12 @@ func main() {
 
 	{
 
+		canteenAdmin.GET("/pending", canteenHandler.AdminListPending)
+
+		canteenAdmin.POST("/:id/approve", canteenHandler.ApproveCanteen)
+
+		canteenAdmin.DELETE("/:id/pending", canteenHandler.RejectCanteen)
+
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
@@ -1391,7 +1406,7 @@ func main() {
 
 			"force_update": false, // 保留兼容旧版逻辑
 
-			"download_url": "http://156.233.229.232:8080/uploads/app-release.apk",
+			"download_url": "https://sylulive.online/uploads/app-release.apk",
 
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
 
@@ -1471,6 +1486,28 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 	log.Printf("系统超级管理员已就绪: %s", studentID)
 
+}
+
+// ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。
+func ensureCanteenNormalizedNameIndex(db *gorm.DB) error {
+	var canteens []models.Canteen
+	if err := db.Select("id", "name", "normalized_name").Find(&canteens).Error; err != nil {
+		return err
+	}
+	seen := make(map[string]uint, len(canteens))
+	for _, canteen := range canteens {
+		normalized := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(canteen.Name)), " "))
+		if previousID, exists := seen[normalized]; exists {
+			return errors.New("食堂名称规范化后重复: id=" + strconv.FormatUint(uint64(previousID), 10) + ", id=" + strconv.FormatUint(uint64(canteen.ID), 10))
+		}
+		seen[normalized] = canteen.ID
+		if canteen.NormalizedName != normalized {
+			if err := db.Model(&models.Canteen{}).Where("id = ?", canteen.ID).Update("normalized_name", normalized).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_canteens_normalized_name ON canteens (normalized_name)").Error
 }
 
 func ensureFeatureCollaborationIndexes(db *gorm.DB) error {

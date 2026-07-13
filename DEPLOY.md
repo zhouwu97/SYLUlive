@@ -585,7 +585,7 @@ chmod 0700 /opt/shenliyuan/private /opt/shenliyuan/private/exam-papers
 
 ## 独立试卷文件服务器
 
-试卷文件服务使用域名 `sylulive.online`，根域名与 `www` 的 DNS 记录均指向 `139.196.148.174`。`www.sylulive.online` 只做 301 跳转，客户端上传、预览和下载统一使用根域名。不得记录服务器密码到仓库、部署日志或切换报告中；聊天中曾共享过的密码应在上线前轮换。
+试卷文件服务直接使用公网 IP `139.196.148.174`，不配置或复用 `sylulive.online` 业务域名。生产 TLS 证书的 SAN 必须包含 `IP Address:139.196.148.174`，客户端上传、预览和下载均直连该 IP。不得记录服务器密码到仓库、部署日志或切换报告中；聊天中曾共享过的密码应在上线前轮换。
 
 ### 构建与首次安装
 
@@ -596,14 +596,14 @@ cd server
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/paper-storage ./cmd/paper_storage
 ```
 
-把仓库和二进制放到文件服务器后，首次先以 root 执行安装，创建环境文件并使用临时证书启动 Nginx：
+把仓库和二进制放到文件服务器后，以 root 执行安装。`auto` 模式要求 Certbot 5.4 或更高版本；脚本会在需要时通过 Snap 安装新版 Certbot，先加载仅开放 80 端口 challenge 的 bootstrap 配置，完成 staging 验证和正式 IP 证书签发后才开放 443：
 
 ```bash
 cd deploy/paper-storage
 PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
 ```
 
-脚本创建非登录用户 `paper-storage`、`0700` 数据目录、`0600` 环境文件，安装 Nginx、UFW、certbot 和 systemd 单元，并在现有 Swap 小于 2 GiB 时新增 Swap。活动 Swap 不会被停用或重建；非活动文件会同时通过 `blkid` 与 `file` 校验签名，损坏文件使用 `.new` 完整创建并同步后原子替换。符号链接和非普通文件会被拒绝。安装脚本不会写入服务器 IP、密码或生产密钥。
+脚本创建非登录用户 `paper-storage`、`0700` 数据目录、`0600` 环境文件，安装 Nginx、UFW、Certbot 和 systemd 单元，并在现有 Swap 小于 2 GiB 时新增 Swap。活动 Swap 不会被停用或重建；非活动文件会同时通过 `blkid` 与 `file` 校验签名，损坏文件使用 `.new` 完整创建并同步后原子替换。符号链接和非普通文件会被拒绝。生产证书不存在、私钥不匹配、有效期不足、SAN 错误或证书链不受系统信任时，脚本会拒绝渲染正式 Nginx 配置，不会回退 snakeoil 或自签证书。
 
 生成两把不同的密钥，只写入 `/etc/sylg-paper-storage.env`：
 
@@ -614,12 +614,31 @@ openssl rand -hex 32
 
 第一把同时配置为主服务器的 `EXAM_PAPER_STORAGE_SIGNING_SECRET` 和文件服务器的 `PAPER_STORAGE_SIGNING_SECRET`；第二把同时配置为主服务器的 `EXAM_PAPER_STORAGE_RECEIPT_SECRET` 和文件服务器的 `PAPER_STORAGE_RECEIPT_SECRET`。两把密钥不得相同，也不得提交到 Git。
 
-写入真实密钥、确认 DNS 生效后，首次签发正式证书时提供联系人邮箱；certbot 会替换 Nginx 临时证书并启用自动续期 timer：
+156 主服务器切换远端存储时使用以下配置；两个密钥值分别与 139 对应配置一致，但彼此必须不同：
+
+```env
+EXAM_PAPER_STORAGE_MODE=remote
+EXAM_PAPER_STORAGE_BASE_URL=https://139.196.148.174
+EXAM_PAPER_STORAGE_SIGNING_SECRET=<高强度随机密钥A>
+EXAM_PAPER_STORAGE_RECEIPT_SECRET=<高强度随机密钥B>
+```
+
+写入真实密钥、确认公网 80/443 已放行后，首次签发正式证书时提供联系人邮箱；Certbot 会申请受系统信任的短期 IP 证书并启用自动续期 timer，deploy hook 只会在 `nginx -t` 成功后 reload：
 
 ```bash
 LETSENCRYPT_EMAIL=管理员邮箱 PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
 certbot renew --dry-run
-curl -fsS https://sylulive.online/healthz
+openssl s_client -connect 139.196.148.174:443 -servername 139.196.148.174 -showcerts
+curl -fsS https://139.196.148.174/healthz
+```
+
+证书由外部系统管理时，必须同时显式指定证书和私钥；脚本仍会执行全部证书校验：
+
+```bash
+PAPER_STORAGE_ACME_MODE=external \
+PAPER_STORAGE_TLS_CERT_PATH=/受控路径/fullchain.pem \
+PAPER_STORAGE_TLS_KEY_PATH=/受控路径/privkey.pem \
+PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
 ```
 
 ### 历史试卷文件迁移
@@ -638,7 +657,7 @@ rsync -a --checksum --itemize-changes \
   --exclude='/.trash/' --exclude='/.pending/' --exclude='/.sessions/' --exclude='/.upload-*' \
   -e "ssh -p <SSH端口> -i <SSH私钥路径>" \
   /opt/shenliyuan/private/exam-papers/ \
-  <文件服务器SSH用户>@sylulive.online:/opt/sylg-paper-storage/data/exam-papers/
+  <文件服务器SSH用户>@139.196.148.174:/opt/sylg-paper-storage/data/exam-papers/
 
 # 文件服务器：复制完成后恢复服务属主和私有权限
 chown -R paper-storage:paper-storage /opt/sylg-paper-storage/data/exam-papers
@@ -648,7 +667,7 @@ find /opt/sylg-paper-storage/data/exam-papers -type f -exec chmod 0600 {} +
 
 `--checksum` 会按内容核对源和目标。不得复制 `.trash`、`.pending`、`.sessions` 或迁移期间产生的临时文件；目标端权限修复命令必须在文件服务器本机执行。
 
-复制后先运行默认 dry-run。命令从主服务器 `.env` 读取 `DSN`、`EXAM_PAPER_DIR`、`EXAM_PAPER_STORAGE_BASE_URL` 和签名密钥；生产环境应已配置文件服务地址 `https://sylulive.online`。可用 `--id` 单独演练，也可用 `--page-size` 调整批量分页：
+复制后先运行默认 dry-run。命令从主服务器 `.env` 读取 `DSN`、`EXAM_PAPER_DIR`、`EXAM_PAPER_STORAGE_BASE_URL` 和签名密钥；生产环境应已配置文件服务地址 `https://139.196.148.174`。可用 `--id` 单独演练，也可用 `--page-size` 调整批量分页：
 
 ```bash
 cd /opt/shenliyuan-src/server
@@ -670,7 +689,7 @@ go run ./cmd/migrate_exam_papers_remote --apply --id <试卷ID>
 
 迁移完成后主服务器源文件以只读方式保留至少 7 天，在备份和线上下载核验稳定前不得删除。发生异常时，把主服务器 `EXAM_PAPER_STORAGE_MODE` 设为 `readonly-remote` 并重启，可停止新远端上传；已标记为 `remote` 的记录仍从文件服务器读取，未迁移的 `local` 记录仍使用主服务器副本。该开关不会自动把数据库标记改回 `local`，因此不要依赖它将已迁移记录切回旧副本。
 
-后续升级只需传入新二进制，不需要再次提供邮箱，也不会重复签发或退回临时证书。安装脚本检测到 `/etc/letsencrypt/live/sylulive.online/fullchain.pem` 和 `privkey.pem` 后，会从模板重新渲染正式证书路径：
+后续升级只需传入新二进制，不需要再次提供邮箱。安装脚本检测到并验证 `/etc/letsencrypt/live/139.196.148.174/fullchain.pem` 和 `privkey.pem` 后，会从模板重新渲染正式证书路径；验证失败时保持原 Nginx 配置不变：
 
 ```bash
 PAPER_STORAGE_BINARY=/实际路径/新版本-paper-storage ./install.sh
@@ -683,7 +702,7 @@ systemctl status paper-storage --no-pager
 journalctl -u paper-storage -n 100 --no-pager
 nginx -t
 curl -fsS http://127.0.0.1:8081/healthz
-curl -fsS https://sylulive.online/healthz
+curl -fsS https://139.196.148.174/healthz
 ```
 
 ### 网络与 SSH 加固
@@ -712,9 +731,9 @@ PermitRootLogin prohibit-password
 
 修改后先执行 `sshd -t`，保持当前会话不退出，从第二个终端验证公钥登录成功后再关闭旧会话。
 
-### Cloudflare、缓存与备份
+### 缓存与备份
 
-在 Cloudflare 为 `/v1/files/*`、`/v1/uploads/*` 和 `/_paper_files/*` 建立 Cache Rule，操作选择绕过缓存；不要启用会缓存 PDF 响应的规则。源站和 Cloudflare 均应保留 `Cache-Control: private, no-store` 与 `Referrer-Policy: no-referrer`。
+139 不接入业务域名或 Cloudflare。源站必须保留 `Cache-Control: private, no-store` 与 `Referrer-Policy: no-referrer`，不得为 `/v1/files/*`、`/v1/uploads/*` 或 `/_paper_files/*` 配置缓存；下载位置关闭访问日志，避免短时 token 落盘。
 
 在云厂商控制台启用每日磁盘快照，至少保留 7 天。快照是灾难恢复手段，不替代每天核对数据库引用、文件数量、大小和 SHA-256。journald 日志保留 14 天；下载位置关闭访问日志，其他日志也不记录查询参数，避免短时 token 泄露。
 

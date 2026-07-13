@@ -1,10 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:io';
-import 'dart:math';
 
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:pointycastle/export.dart' as pc;
@@ -52,17 +49,6 @@ class SyluClientCrawler {
             },
           ),
         );
-
-    // 【核心修复】：强制信任所有证书
-    _dio.httpClientAdapter = IOHttpClientAdapter(
-      createHttpClient: () {
-        final client = HttpClient();
-        // 强制返回 true，忽略任何证书错误
-        client.badCertificateCallback =
-            (X509Certificate cert, String host, int port) => true;
-        return client;
-      },
-    );
 
     _cookieJar = CookieJar();
     _dio.interceptors.add(CookieManager(_cookieJar));

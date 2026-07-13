@@ -404,12 +404,12 @@ func configureRemoteExamPaperHandler(t *testing.T, env *examPaperTestEnv, mode s
 		t.Fatalf("创建上传回执签名器失败: %v", err)
 	}
 	uploads := services.NewExamPaperUploadService(env.db, grantSigner, receiptSigner, now, nil)
-	remoteClient, err := services.NewExamPaperRemoteClient("https://sylulive.online", grantSigner, nil, now)
+	remoteClient, err := services.NewExamPaperRemoteClient("https://139.196.148.174", grantSigner, nil, now)
 	if err != nil {
 		t.Fatalf("创建远端文件客户端失败: %v", err)
 	}
 	storageJobs := services.NewExamPaperStorageJobService(env.db, remoteClient, now)
-	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, mode, "https://sylulive.online/", uploads, remoteClient, storageJobs)
+	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, mode, "https://139.196.148.174/", uploads, remoteClient, storageJobs)
 	return remoteExamPaperHandlerTestEnv{grantSigner: grantSigner, receiptSigner: receiptSigner, uploads: uploads, remote: remoteClient}
 }
 
@@ -440,7 +440,7 @@ func TestCreateRemoteExamPaperUploadSessionReturnsDirectUploadURL(t *testing.T) 
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("解析上传会话响应失败: %v", err)
 	}
-	if payload.SessionID == "" || payload.UploadURL != "https://sylulive.online/v1/uploads/"+payload.SessionID {
+	if payload.SessionID == "" || payload.UploadURL != "https://139.196.148.174/v1/uploads/"+payload.SessionID {
 		t.Fatalf("直传地址错误: %+v", payload)
 	}
 	if !payload.ExpiresAt.Equal(examPaperUploadHandlerTestNow.Add(services.ExamPaperUploadSessionTTL)) {
@@ -781,7 +781,7 @@ func TestReadonlyRemoteExamPaperStorageRejectsNewUploads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("签发切换前回执失败: %v", err)
 	}
-	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, "readonly-remote", "https://sylulive.online", remote.uploads, nil, nil)
+	env.handler = NewExamPaperHandlerWithStorage(env.db, env.files, "readonly-remote", "https://139.196.148.174", remote.uploads, nil, nil)
 
 	response := performExamPaperJSONRequest(env.handler.CreateUploadSession, http.MethodPost, "/api/exam-papers/upload-sessions", nil, user.ID, validRemoteExamPaperUploadSessionPayload())
 	if response.Code != http.StatusServiceUnavailable || decodeErrorCode(t, response) != "storage_unavailable" {
@@ -920,7 +920,7 @@ func verifyRemoteExamPaperLocation(t *testing.T, signer *services.ExamPaperStora
 	t.Helper()
 	parsed, err := url.Parse(location)
 	require.NoError(t, err)
-	require.Equal(t, "sylulive.online", parsed.Host)
+	require.Equal(t, "139.196.148.174", parsed.Host)
 	grant, err := signer.VerifyGrant(parsed.Query().Get("token"), purpose, http.MethodGet, parsed.EscapedPath())
 	require.NoError(t, err)
 	require.Equal(t, paper.ID, grant.PaperID)

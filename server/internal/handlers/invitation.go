@@ -30,6 +30,44 @@ type InvitationHandler struct {
 	jwtSecret string
 }
 
+// adminMemberResponse 是管理员页面专用响应，避免触发 User.MarshalJSON 后丢失管理字段。
+type adminMemberResponse struct {
+	ID        uint   `json:"id"`
+	Nickname  string `json:"nickname"`
+	StudentID string `json:"student_id"`
+	Role      string `json:"role"`
+	Avatar    string `json:"avatar"`
+}
+
+// adminCandidateResponse 只暴露管理员候选列表实际需要的字段。
+type adminCandidateResponse struct {
+	ID        uint   `json:"id"`
+	Nickname  string `json:"nickname"`
+	StudentID string `json:"student_id"`
+	Role      string `json:"role"`
+	Avatar    string `json:"avatar"`
+}
+
+func newAdminMemberResponse(user models.User) adminMemberResponse {
+	return adminMemberResponse{
+		ID:        user.ID,
+		Nickname:  user.Nickname,
+		StudentID: user.StudentID,
+		Role:      string(user.Role),
+		Avatar:    user.Avatar,
+	}
+}
+
+func newAdminCandidateResponse(user models.User) adminCandidateResponse {
+	return adminCandidateResponse{
+		ID:        user.ID,
+		Nickname:  user.Nickname,
+		StudentID: user.StudentID,
+		Role:      string(user.Role),
+		Avatar:    user.Avatar,
+	}
+}
+
 // NewInvitationHandler 创建邀请处理器
 
 func NewInvitationHandler(db *gorm.DB, jwtSecret string) *InvitationHandler {
@@ -61,7 +99,11 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, candidates)
+	response := make([]adminCandidateResponse, 0, len(candidates))
+	for _, candidate := range candidates {
+		response = append(response, newAdminCandidateResponse(candidate))
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // GetCandidatesStats 获取用户分布统计
@@ -92,7 +134,7 @@ func (h *InvitationHandler) GetMembers(c *gin.Context) {
 
 	var members []models.User
 
-	if err := h.db.Where("role IN ?", []string{"admin", "super_admin"}).Select("id, nickname, student_id, role").Find(&members).Error; err != nil {
+	if err := h.db.Where("role IN ?", []string{"admin", "super_admin"}).Select("id, nickname, student_id, role, avatar").Find(&members).Error; err != nil {
 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取管理员列表失败"})
 
@@ -100,7 +142,11 @@ func (h *InvitationHandler) GetMembers(c *gin.Context) {
 
 	}
 
-	c.JSON(http.StatusOK, members)
+	response := make([]adminMemberResponse, 0, len(members))
+	for _, member := range members {
+		response = append(response, newAdminMemberResponse(member))
+	}
+	c.JSON(http.StatusOK, response)
 
 }
 

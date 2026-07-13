@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
 import 'package:shenliyuan/models/exam_paper.dart';
 import 'package:shenliyuan/services/exam_paper_service.dart';
 
@@ -19,6 +20,8 @@ class _RecordedRequest {
 class _QueuedResponse {
   final int statusCode;
   final Object? data;
+  final List<int>? bytes;
+  final Map<String, List<String>> headers;
   final DioExceptionType? exceptionType;
   final Completer<void>? started;
   final Future<void>? release;
@@ -26,6 +29,8 @@ class _QueuedResponse {
   const _QueuedResponse(
     this.statusCode,
     this.data, {
+    this.bytes,
+    this.headers = const {},
     this.exceptionType,
     this.started,
     this.release,
@@ -57,6 +62,21 @@ class _RecordingAdapter implements HttpClientAdapter {
     );
   }
 
+  void enqueueBytes(
+    int statusCode,
+    List<int> bytes, {
+    Map<String, List<String>> headers = const {},
+  }) {
+    _responses.add(
+      _QueuedResponse(
+        statusCode,
+        null,
+        bytes: bytes,
+        headers: headers,
+      ),
+    );
+  }
+
   @override
   void close({bool force = false}) {}
 
@@ -83,13 +103,23 @@ class _RecordingAdapter implements HttpClientAdapter {
         message: 'socket failed',
       );
     }
-    return ResponseBody.fromString(
-      jsonEncode(response.data),
-      response.statusCode,
-      headers: {
-        Headers.contentTypeHeader: ['application/json'],
-      },
-    );
+    final headers = <String, List<String>>{
+      Headers.contentTypeHeader: [
+        response.bytes == null ? 'application/json' : 'application/pdf',
+      ],
+      ...response.headers,
+    };
+    return response.bytes == null
+        ? ResponseBody.fromString(
+            jsonEncode(response.data),
+            response.statusCode,
+            headers: headers,
+          )
+        : ResponseBody.fromBytes(
+            response.bytes!,
+            response.statusCode,
+            headers: headers,
+          );
   }
 }
 
@@ -1191,6 +1221,242 @@ void main() {
             .having((error) => error.code, 'code', 'exam_paper_forbidden')
             .having((error) => error.message, 'message', '无权预览该试卷'),
       ),
+    );
+  });
+
+  test('试卷下载兼容主站直接返回 PDF', () async {
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueBytes(200, utf8.encode('%PDF-1.7 local'));
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://sylulive.online/api'))
+      ..httpClientAdapter = apiAdapter;
+    final directory = await Directory.systemTemp.createTemp('paper-local-');
+    addTearDown(() => directory.delete(recursive: true));
+
+    final file = await ExamPaperService(
+      apiDio,
+      temporaryDirectoryProvider: () async => directory,
+    ).downloadForShare(_paper(1, '本地模式'));
+
+    expect(await file.readAsString(), '%PDF-1.7 local');
+    expect(requests.single.options.followRedirects, isFalse);
+    expect(directory.listSync().whereType<File>().single.path, file.path);
+    expect(file.path, endsWith('.pdf'));
+  });
+
+  test('合法 302 使用独立存储 Dio 且不泄露主站身份', () async {
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueBytes(
+        302,
+        const [],
+        headers: {
+          'location': [
+            'https://139.196.148.174/v1/files/papers/test.pdf?token=signed',
+          ],
+        },
+      );
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueBytes(200, utf8.encode('%PDF-1.7 remote'));
+    final apiDio = Dio(
+      BaseOptions(
+        baseUrl: 'https://sylulive.online/api',
+        headers: const {
+          'Authorization': 'Bearer main-jwt',
+          'Cookie': 'session=main-cookie',
+        },
+      ),
+    )..httpClientAdapter = apiAdapter;
+    apiDio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          options.headers['X-Main-Interceptor'] = 'present';
+          handler.next(options);
+        },
+      ),
+    );
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+    final directory = await Directory.systemTemp.createTemp('paper-remote-');
+    addTearDown(() => directory.delete(recursive: true));
+
+    final file = await ExamPaperService(
+      apiDio,
+      storageDio: storageDio,
+      temporaryDirectoryProvider: () async => directory,
+    ).downloadPreview(_paper(2, '远程模式'));
+
+    expect(await file.readAsString(), '%PDF-1.7 remote');
+    expect(requests.map((request) => request.adapter), ['api', 'storage']);
+    final storageRequest = requests.last.options;
+    expect(storageRequest.uri.host, ExamPaperService.storageHost);
+    expect(storageRequest.followRedirects, isFalse);
+    expect(storageRequest.headers['Accept'], 'application/pdf');
+    expect(storageRequest.headers['Authorization'], isNull);
+    expect(storageRequest.headers['Cookie'], isNull);
+    expect(storageRequest.headers['X-Main-Interceptor'], isNull);
+  });
+
+  test('试卷下载拒绝不可信或格式异常的 302 地址', () async {
+    final invalidLocations = <String>[
+      'http://139.196.148.174/v1/files/test.pdf?token=x',
+      'https://example.com/v1/files/test.pdf?token=x',
+      'https://139.196.148.174:444/v1/files/test.pdf?token=x',
+      'https://139.196.148.174/v1/uploads/test.pdf?token=x',
+      'https://139.196.148.174/v1/files/test.pdf',
+      'https://139.196.148.174/v1/files/test.pdf?token=',
+      'https://user@139.196.148.174/v1/files/test.pdf?token=x',
+      'https://139.196.148.174/v1/files/test.pdf?token=x#fragment',
+      'https://139.196.148.174/v1/files/%2E%2E/test.pdf?token=x',
+      'https://139.196.148.174/v1/files/test.pdf?token=x&extra=1',
+      'https://139.196.148.174/v1/files/test.pdf?token=x&token=y',
+    ];
+
+    for (final location in invalidLocations) {
+      final requests = <_RecordedRequest>[];
+      final apiAdapter = _RecordingAdapter('api', requests)
+        ..enqueueBytes(
+          302,
+          const [],
+          headers: {
+            'location': [location],
+          },
+        );
+      final storageAdapter = _RecordingAdapter('storage', requests);
+      final apiDio = Dio(BaseOptions(baseUrl: 'https://sylulive.online/api'))
+        ..httpClientAdapter = apiAdapter;
+      final storageDio = Dio()..httpClientAdapter = storageAdapter;
+
+      await expectLater(
+        ExamPaperService(apiDio, storageDio: storageDio)
+            .downloadPreview(_paper(3, '无效跳转')),
+        throwsA(
+          isA<ExamPaperApiException>()
+              .having((error) => error.code, 'code', 'invalid_storage_url'),
+        ),
+        reason: location,
+      );
+      expect(requests.map((request) => request.adapter), ['api']);
+    }
+  });
+
+  test('文件服务器再次重定向会被拒绝', () async {
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueBytes(
+        302,
+        const [],
+        headers: {
+          'location': [
+            'https://139.196.148.174/v1/files/test.pdf?token=x',
+          ],
+        },
+      );
+    final storageAdapter = _RecordingAdapter('storage', requests)
+      ..enqueueBytes(
+        302,
+        const [],
+        headers: {
+          'location': ['https://example.com/escaped.pdf'],
+        },
+      );
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://sylulive.online/api'))
+      ..httpClientAdapter = apiAdapter;
+    final storageDio = Dio()..httpClientAdapter = storageAdapter;
+
+    await expectLater(
+      ExamPaperService(apiDio, storageDio: storageDio)
+          .downloadPreview(_paper(4, '二次跳转')),
+      throwsA(
+        isA<ExamPaperApiException>()
+            .having((error) => error.code, 'code', 'storage_download_failed')
+            .having((error) => error.statusCode, 'statusCode', 302),
+      ),
+    );
+    expect(requests.length, 2);
+    expect(requests.last.options.followRedirects, isFalse);
+  });
+
+  test('试卷下载保留主站权限错误码', () async {
+    for (final testCase in const [
+      (status: 401, code: 'unauthorized'),
+      (status: 403, code: 'exam_paper_forbidden'),
+      (status: 404, code: 'exam_paper_not_found'),
+    ]) {
+      final requests = <_RecordedRequest>[];
+      final apiAdapter = _RecordingAdapter('api', requests)
+        ..enqueueJson(testCase.status, {
+          'error': '下载失败',
+          'code': testCase.code,
+        });
+      final apiDio = Dio(BaseOptions(baseUrl: 'https://sylulive.online/api'))
+        ..httpClientAdapter = apiAdapter;
+
+      await expectLater(
+        ExamPaperService(apiDio).downloadPreview(_paper(5, '权限错误')),
+        throwsA(
+          isA<ExamPaperApiException>()
+              .having((error) => error.code, 'code', testCase.code)
+              .having(
+                (error) => error.statusCode,
+                'statusCode',
+                testCase.status,
+              ),
+        ),
+      );
+    }
+  });
+
+  test('空内容、HTML 和 JSON 不会写成 PDF', () async {
+    for (final bytes in <List<int>>[
+      const [],
+      utf8.encode('<html>bad gateway</html>'),
+      utf8.encode('{"error":"not a pdf"}'),
+    ]) {
+      final requests = <_RecordedRequest>[];
+      final apiAdapter = _RecordingAdapter('api', requests)
+        ..enqueueBytes(200, bytes);
+      final apiDio = Dio(BaseOptions(baseUrl: 'https://sylulive.online/api'))
+        ..httpClientAdapter = apiAdapter;
+      final directory = await Directory.systemTemp.createTemp('paper-bad-');
+      addTearDown(() => directory.delete(recursive: true));
+
+      await expectLater(
+        ExamPaperService(
+          apiDio,
+          temporaryDirectoryProvider: () async => directory,
+        ).downloadPreview(_paper(6, '错误内容')),
+        throwsA(
+          isA<ExamPaperApiException>()
+              .having((error) => error.code, 'code', 'invalid_pdf'),
+        ),
+      );
+      expect(directory.listSync(), isEmpty);
+    }
+  });
+
+  test('临时文件写入失败后不残留 part 文件', () async {
+    final requests = <_RecordedRequest>[];
+    final apiAdapter = _RecordingAdapter('api', requests)
+      ..enqueueBytes(200, utf8.encode('%PDF-1.7 valid'));
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://sylulive.online/api'))
+      ..httpClientAdapter = apiAdapter;
+    final parent = await Directory.systemTemp.createTemp('paper-write-fail-');
+    addTearDown(() => parent.delete(recursive: true));
+    final notDirectory = File(path.join(parent.path, 'not-a-directory'));
+    await notDirectory.writeAsString('occupied');
+
+    await expectLater(
+      ExamPaperService(
+        apiDio,
+        temporaryDirectoryProvider: () async => Directory(notDirectory.path),
+      ).downloadPreview(_paper(7, '写入失败')),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect(
+      parent.listSync().whereType<File>().where(
+            (file) => file.path.endsWith('.part'),
+          ),
+      isEmpty,
     );
   });
 

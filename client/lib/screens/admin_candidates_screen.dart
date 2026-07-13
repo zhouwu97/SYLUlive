@@ -279,11 +279,10 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                                     borderRadius: BorderRadius.circular(12)),
                                 child: ListTile(
                                   leading: CircleAvatar(
-                                    backgroundImage: candidate['avatar_url'] !=
-                                            null
-                                        ? NetworkImage(candidate['avatar_url'])
+                                    backgroundImage: candidate['avatar'] != null
+                                        ? NetworkImage(candidate['avatar'])
                                         : null,
-                                    child: candidate['avatar_url'] == null
+                                    child: candidate['avatar'] == null
                                         ? const Icon(Icons.person)
                                         : null,
                                   ),

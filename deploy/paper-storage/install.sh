@@ -1,8 +1,14 @@
 #!/bin/sh
 set -eu
 
-PUBLIC_HOST=${PAPER_STORAGE_PUBLIC_HOST:-sylulive.online}
-LETSENCRYPT_LIVE_DIR=${PAPER_STORAGE_LETSENCRYPT_LIVE_DIR:-/etc/letsencrypt/live/$PUBLIC_HOST}
+TLS_CERT_PATH_WAS_SET=${PAPER_STORAGE_TLS_CERT_PATH+x}
+TLS_KEY_PATH_WAS_SET=${PAPER_STORAGE_TLS_KEY_PATH+x}
+PUBLIC_IP=${PAPER_STORAGE_PUBLIC_IP:-139.196.148.174}
+ACME_MODE=${PAPER_STORAGE_ACME_MODE:-auto}
+TLS_CERT_PATH=${PAPER_STORAGE_TLS_CERT_PATH:-/etc/letsencrypt/live/$PUBLIC_IP/fullchain.pem}
+TLS_KEY_PATH=${PAPER_STORAGE_TLS_KEY_PATH:-/etc/letsencrypt/live/$PUBLIC_IP/privkey.pem}
+TLS_MIN_VALIDITY_SECONDS=${PAPER_STORAGE_TLS_MIN_VALIDITY_SECONDS:-86400}
+SYSTEM_CA_BUNDLE=${PAPER_STORAGE_SYSTEM_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}
 SSH_PORT=${SSH_PORT:-22}
 SWAP_SIZE=${PAPER_STORAGE_SWAP_SIZE:-2G}
 FSTAB_PATH=${PAPER_STORAGE_FSTAB:-/etc/fstab}
@@ -23,43 +29,234 @@ cleanup_temporary_files() {
 }
 trap cleanup_temporary_files EXIT HUP INT TERM
 
-has_lets_encrypt_certificate() {
-    [ -f "$LETSENCRYPT_LIVE_DIR/fullchain.pem" ] && [ -f "$LETSENCRYPT_LIVE_DIR/privkey.pem" ]
+validate_public_ip() {
+    public_ip=$1
+    old_ifs=$IFS
+    IFS=.
+    set -- $public_ip
+    IFS=$old_ifs
+    if [ "$#" -ne 4 ]; then
+        echo "PAPER_STORAGE_PUBLIC_IP 必须是四段十进制 IPv4 地址" >&2
+        return 1
+    fi
+    for octet in "$@"; do
+        case "$octet" in
+            ''|*[!0-9]*)
+                echo "PAPER_STORAGE_PUBLIC_IP 必须是四段十进制 IPv4 地址" >&2
+                return 1
+                ;;
+        esac
+        if [ "${#octet}" -gt 3 ] || [ "$octet" -gt 255 ]; then
+            echo "PAPER_STORAGE_PUBLIC_IP 的每段必须位于 0 到 255" >&2
+            return 1
+        fi
+    done
+    if [ "$public_ip" != "139.196.148.174" ] && \
+       [ "${PAPER_STORAGE_ALLOW_TEST_IP:-0}" != "1" ]; then
+        echo "正式文件服务器 IP 必须是 139.196.148.174" >&2
+        return 1
+    fi
 }
 
-validate_public_host() {
-    public_host=$1
-    case "$public_host" in
-        ''|.*|*.|*..*|*[!A-Za-z0-9.-]*)
-            echo "PAPER_STORAGE_PUBLIC_HOST 必须是规范域名或公网 IP 地址" >&2
+validate_acme_mode() {
+    case "$ACME_MODE" in
+        auto|external) ;;
+        *)
+            echo "PAPER_STORAGE_ACME_MODE 只能是 auto 或 external" >&2
             return 1
             ;;
     esac
-    if [ "${#public_host}" -gt 253 ]; then
-        echo "PAPER_STORAGE_PUBLIC_HOST 长度不得超过 253" >&2
+}
+
+validate_tls_path() {
+    tls_path=$1
+    tls_label=$2
+    if [ ! -f "$tls_path" ]; then
+        echo "$tls_label 不存在或不是普通文件：$tls_path" >&2
         return 1
     fi
+    if [ -L "$tls_path" ]; then
+        resolved_path=$(readlink -f "$tls_path") || return 1
+        case "$resolved_path" in
+            "/etc/letsencrypt/archive/$PUBLIC_IP/"*) ;;
+            *)
+                echo "$tls_label 不得链接到受控证书目录之外：$tls_path" >&2
+                return 1
+                ;;
+        esac
+    fi
+}
+
+validate_tls_certificate() {
+    validate_tls_path "$TLS_CERT_PATH" "TLS 证书"
+    validate_tls_path "$TLS_KEY_PATH" "TLS 私钥"
+    case "$TLS_MIN_VALIDITY_SECONDS" in
+        ''|*[!0-9]*)
+            echo "PAPER_STORAGE_TLS_MIN_VALIDITY_SECONDS 必须是非负整数" >&2
+            return 1
+            ;;
+    esac
+    openssl x509 -in "$TLS_CERT_PATH" -noout >/dev/null
+    openssl pkey -in "$TLS_KEY_PATH" -noout >/dev/null
+    cert_key_digest=$(openssl x509 -in "$TLS_CERT_PATH" -pubkey -noout | \
+        openssl pkey -pubin -outform DER 2>/dev/null | openssl dgst -sha256)
+    private_key_digest=$(openssl pkey -in "$TLS_KEY_PATH" -pubout -outform DER 2>/dev/null | \
+        openssl dgst -sha256)
+    if [ "$cert_key_digest" != "$private_key_digest" ]; then
+        echo "TLS 证书与私钥不匹配" >&2
+        return 1
+    fi
+    if ! openssl x509 -in "$TLS_CERT_PATH" -checkend "$TLS_MIN_VALIDITY_SECONDS" -noout; then
+        echo "TLS 证书已过期或即将进入续期窗口" >&2
+        return 1
+    fi
+    escaped_ip=$(printf '%s' "$PUBLIC_IP" | sed 's/\./\\./g')
+    if ! openssl x509 -in "$TLS_CERT_PATH" -noout -ext subjectAltName | \
+        grep -Eq "(^|[,[:space:]])IP Address:${escaped_ip}([,[:space:]]|$)"; then
+        echo "TLS 证书 SAN 不包含 IP 地址 $PUBLIC_IP" >&2
+        return 1
+    fi
+    if [ ! -f "$SYSTEM_CA_BUNDLE" ] || \
+       ! openssl verify -CAfile "$SYSTEM_CA_BUNDLE" -untrusted "$TLS_CERT_PATH" "$TLS_CERT_PATH" >/dev/null; then
+        echo "TLS 证书链不受系统信任" >&2
+        return 1
+    fi
+}
+
+validate_certbot_version() {
+    certbot_version=$(certbot --version 2>&1 | awk '{ print $2 }')
+    certbot_major=$(printf '%s' "$certbot_version" | cut -d. -f1)
+    certbot_minor=$(printf '%s' "$certbot_version" | cut -d. -f2)
+    case "$certbot_major:$certbot_minor" in
+        *[!0-9:]*|:*)
+            echo "无法识别 Certbot 版本：$certbot_version" >&2
+            return 1
+            ;;
+    esac
+    if [ "$certbot_major" -lt 5 ] || \
+       { [ "$certbot_major" -eq 5 ] && [ "$certbot_minor" -lt 4 ]; }; then
+        echo "IP 地址证书要求 Certbot 5.4 或更高版本，当前为 $certbot_version" >&2
+        return 1
+    fi
+}
+
+ensure_modern_certbot() {
+    if command -v certbot >/dev/null 2>&1 && validate_certbot_version; then
+        return 0
+    fi
+    echo "正在通过 Snap 安装支持 IP 证书的 Certbot。"
+    snap install core
+    snap refresh core
+    snap install --classic certbot
+    ln -sfn /snap/bin/certbot /usr/local/bin/certbot
+    hash -r
+    validate_certbot_version
 }
 
 render_nginx_config() {
     nginx_template=$1
     nginx_output=$2
-    if has_lets_encrypt_certificate; then
-        tls_certificate=$LETSENCRYPT_LIVE_DIR/fullchain.pem
-        tls_certificate_key=$LETSENCRYPT_LIVE_DIR/privkey.pem
-    else
-        tls_certificate=/etc/ssl/certs/ssl-cert-snakeoil.pem
-        tls_certificate_key=/etc/ssl/private/ssl-cert-snakeoil.key
-    fi
-    escaped_certificate=$(printf '%s' "$tls_certificate" | sed 's/[&|]/\\&/g')
-    escaped_certificate_key=$(printf '%s' "$tls_certificate_key" | sed 's/[&|]/\\&/g')
-    validate_public_host "$PUBLIC_HOST"
-    escaped_public_host=$(printf '%s' "$PUBLIC_HOST" | sed 's/[&|]/\\&/g')
+    validate_public_ip "$PUBLIC_IP"
+    validate_tls_certificate
+    escaped_certificate=$(printf '%s' "$TLS_CERT_PATH" | sed 's/[&|]/\\&/g')
+    escaped_certificate_key=$(printf '%s' "$TLS_KEY_PATH" | sed 's/[&|]/\\&/g')
+    escaped_public_ip=$(printf '%s' "$PUBLIC_IP" | sed 's/[&|]/\\&/g')
     sed \
         -e "s|__PAPER_STORAGE_TLS_CERTIFICATE__|$escaped_certificate|g" \
         -e "s|__PAPER_STORAGE_TLS_CERTIFICATE_KEY__|$escaped_certificate_key|g" \
-        -e "s|__PAPER_STORAGE_PUBLIC_HOST__|$escaped_public_host|g" \
+        -e "s|__PAPER_STORAGE_PUBLIC_IP__|$escaped_public_ip|g" \
         "$nginx_template" > "$nginx_output"
+}
+
+render_bootstrap_nginx_config() {
+    nginx_template=$1
+    nginx_output=$2
+    validate_public_ip "$PUBLIC_IP"
+    escaped_public_ip=$(printf '%s' "$PUBLIC_IP" | sed 's/[&|]/\\&/g')
+    sed -e "s|__PAPER_STORAGE_PUBLIC_IP__|$escaped_public_ip|g" \
+        "$nginx_template" > "$nginx_output"
+}
+
+activate_nginx_config() {
+    nginx_template=$1
+    renderer=$2
+    nginx_candidate=$(mktemp /etc/nginx/nginx.conf.sylg-candidate.XXXXXX)
+    nginx_previous=$(mktemp /etc/nginx/nginx.conf.sylg-previous.XXXXXX)
+    "$renderer" "$nginx_template" "$nginx_candidate"
+    chown root:root "$nginx_candidate"
+    chmod 0644 "$nginx_candidate"
+    if ! nginx -t -c "$nginx_candidate"; then
+        echo "新 Nginx 配置校验失败，保留当前配置" >&2
+        return 1
+    fi
+    cp -p /etc/nginx/nginx.conf "$nginx_previous"
+    mv -f "$nginx_candidate" /etc/nginx/nginx.conf
+    nginx_candidate=
+    if ! nginx -t; then
+        cp -p "$nginx_previous" /etc/nginx/nginx.conf
+        nginx -t || true
+        echo "安装后的 Nginx 配置校验失败，已恢复上一版" >&2
+        return 1
+    fi
+    nginx_activation_failed=0
+    if systemctl is-active --quiet nginx; then
+        systemctl reload nginx || nginx_activation_failed=1
+    else
+        systemctl start nginx || nginx_activation_failed=1
+    fi
+    if [ "$nginx_activation_failed" -ne 0 ]; then
+        cp -p "$nginx_previous" /etc/nginx/nginx.conf
+        nginx -t || true
+        if systemctl is-active --quiet nginx; then
+            systemctl reload nginx || true
+        else
+            systemctl start nginx || true
+        fi
+        echo "Nginx 启动或重载失败，已恢复上一版配置" >&2
+        return 1
+    fi
+}
+
+request_ip_certificate() {
+    validate_certbot_version
+    certbot_common_args="--non-interactive --agree-tos --no-eff-email"
+    if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
+        certbot_identity_args="--email $LETSENCRYPT_EMAIL"
+    else
+        certbot_identity_args="--register-unsafely-without-email"
+        echo "未设置 LETSENCRYPT_EMAIL，ACME 账户不会接收续期告警。" >&2
+    fi
+
+    # 先用独立 lineage 验证短期 IP 证书流程，避免 staging 证书进入正式路径。
+    # shellcheck disable=SC2086
+    certbot certonly --staging --preferred-profile shortlived \
+        --webroot --webroot-path /var/lib/letsencrypt \
+        --ip-address "$PUBLIC_IP" --cert-name "$PUBLIC_IP-staging" \
+        $certbot_common_args $certbot_identity_args
+    # shellcheck disable=SC2086
+    certbot certonly --preferred-profile shortlived --force-renewal \
+        --webroot --webroot-path /var/lib/letsencrypt \
+        --ip-address "$PUBLIC_IP" --cert-name "$PUBLIC_IP" \
+        $certbot_common_args $certbot_identity_args
+    validate_tls_certificate
+    certbot delete --cert-name "$PUBLIC_IP-staging" --non-interactive || \
+        echo "清理 staging 证书 lineage 失败，请人工执行 certbot delete。" >&2
+}
+
+install_certbot_deploy_hook() {
+    hook_path=/etc/letsencrypt/renewal-hooks/deploy/paper-storage-nginx-reload.sh
+    install -d -o root -g root -m 0755 "$(dirname "$hook_path")"
+    printf '%s\n' \
+        '#!/bin/sh' \
+        'set -eu' \
+        'if nginx -t; then' \
+        '    systemctl reload nginx' \
+        'else' \
+        '    logger -t paper-storage-acme "续期后 Nginx 配置校验失败，拒绝 reload"' \
+        '    exit 1' \
+        'fi' > "$hook_path"
+    chown root:root "$hook_path"
+    chmod 0755 "$hook_path"
 }
 
 validate_ssh_port() {
@@ -276,15 +473,31 @@ if [ "${1:-}" = "--render-nginx" ]; then
     exit 0
 fi
 
+if [ "${1:-}" = "--render-bootstrap-nginx" ]; then
+    if [ "$#" -ne 3 ]; then
+        echo "用法: install.sh --render-bootstrap-nginx 模板路径 输出路径" >&2
+        exit 2
+    fi
+    render_bootstrap_nginx_config "$2" "$3"
+    exit 0
+fi
+
+if [ "${1:-}" = "--validate-tls-certificate" ]; then
+    [ "$#" -eq 1 ] || exit 2
+    validate_public_ip "$PUBLIC_IP"
+    validate_tls_certificate
+    exit $?
+fi
+
 if [ "${1:-}" = "--validate-ssh-port" ]; then
     [ "$#" -eq 2 ] || exit 2
     validate_ssh_port "$2"
     exit $?
 fi
 
-if [ "${1:-}" = "--validate-public-host" ]; then
+if [ "${1:-}" = "--validate-public-ip" ]; then
     [ "$#" -eq 2 ] || exit 2
-    validate_public_host "$2"
+    validate_public_ip "$2"
     exit $?
 fi
 
@@ -319,7 +532,16 @@ binary_candidate=/opt/sylg-paper-storage/bin/paper-storage.new
 binary_backup=/opt/sylg-paper-storage/bin/paper-storage.bak
 
 validate_ssh_port "$SSH_PORT"
-validate_public_host "$PUBLIC_HOST"
+validate_public_ip "$PUBLIC_IP"
+validate_acme_mode
+if [ "$ACME_MODE" = "external" ] && \
+   { [ -z "$TLS_CERT_PATH_WAS_SET" ] || \
+     [ -z "$TLS_KEY_PATH_WAS_SET" ] || \
+     [ -z "${PAPER_STORAGE_TLS_CERT_PATH:-}" ] || \
+     [ -z "${PAPER_STORAGE_TLS_KEY_PATH:-}" ]; }; then
+    echo "external 模式必须显式设置 PAPER_STORAGE_TLS_CERT_PATH 和 PAPER_STORAGE_TLS_KEY_PATH" >&2
+    exit 1
+fi
 if ! validate_elf_binary "$BINARY_SOURCE"; then
     echo "未找到文件服务二进制：$BINARY_SOURCE" >&2
     echo "请先构建 Linux 二进制，或通过 PAPER_STORAGE_BINARY 指定路径" >&2
@@ -328,7 +550,11 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends nginx ufw certbot python3-certbot-nginx ssl-cert openssl ca-certificates curl file
+apt-get install -y --no-install-recommends nginx ufw openssl ca-certificates curl file
+if [ "$ACME_MODE" = "auto" ]; then
+    apt-get install -y --no-install-recommends snapd
+    ensure_modern_certbot
+fi
 if ! file -Lb "$BINARY_SOURCE" | grep -Eq '^ELF .* executable'; then
     echo "文件服务二进制不是可执行的 Linux ELF：$BINARY_SOURCE" >&2
     exit 1
@@ -369,26 +595,6 @@ fi
 install -o root -g root -m 0644 "$SCRIPT_DIR/paper-storage.service" /etc/systemd/system/paper-storage.service
 if [ -f /etc/nginx/nginx.conf ] && [ ! -f /etc/nginx/nginx.conf.pre-sylg-paper-storage ]; then
     cp -p /etc/nginx/nginx.conf /etc/nginx/nginx.conf.pre-sylg-paper-storage
-fi
-
-nginx_candidate=$(mktemp /etc/nginx/nginx.conf.sylg-candidate.XXXXXX)
-nginx_previous=$(mktemp /etc/nginx/nginx.conf.sylg-previous.XXXXXX)
-
-render_nginx_config "$SCRIPT_DIR/nginx.conf" "$nginx_candidate"
-chown root:root "$nginx_candidate"
-chmod 0644 "$nginx_candidate"
-if ! nginx -t -c "$nginx_candidate"; then
-    echo "新 Nginx 配置校验失败，保留当前配置" >&2
-    exit 1
-fi
-cp -p /etc/nginx/nginx.conf "$nginx_previous"
-mv -f "$nginx_candidate" /etc/nginx/nginx.conf
-nginx_candidate=
-if ! nginx -t; then
-    cp -p "$nginx_previous" /etc/nginx/nginx.conf
-    nginx -t || true
-    echo "安装后的 Nginx 配置校验失败，已恢复上一版" >&2
-    exit 1
 fi
 
 # Nginx 工作进程与文件服务使用同一用户，避免放宽 PDF 的 0600 权限。
@@ -447,23 +653,30 @@ ufw --force enable
 
 systemctl daemon-reload
 systemctl enable nginx paper-storage
-if systemctl is-active --quiet nginx; then
-    systemctl reload nginx
-else
-    systemctl start nginx
-fi
 
-systemctl enable --now certbot.timer
-if has_lets_encrypt_certificate; then
-    echo "检测到现有 Let's Encrypt 证书，保留证书并跳过重复签发。"
-elif [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
-    certbot --nginx --non-interactive --agree-tos --redirect \
-        --email "$LETSENCRYPT_EMAIL" \
-        -d sylulive.online -d www.sylulive.online
-    nginx -t
-    systemctl reload nginx
+if ! validate_tls_certificate; then
+    if [ "$ACME_MODE" = "external" ]; then
+        echo "外部管理的 TLS 证书未通过校验，拒绝替换 Nginx 配置。" >&2
+        exit 1
+    fi
+    requested_validity_window=$TLS_MIN_VALIDITY_SECONDS
+    TLS_MIN_VALIDITY_SECONDS=0
+    if validate_tls_certificate; then
+        # 旧证书仍可安全服务时保留完整 443，只在后台完成续期。
+        activate_nginx_config "$SCRIPT_DIR/nginx.conf" render_nginx_config
+    else
+        activate_nginx_config "$SCRIPT_DIR/nginx-bootstrap.conf" render_bootstrap_nginx_config
+    fi
+    TLS_MIN_VALIDITY_SECONDS=$requested_validity_window
+    request_ip_certificate
+fi
+validate_tls_certificate
+activate_nginx_config "$SCRIPT_DIR/nginx.conf" render_nginx_config
+if [ "$ACME_MODE" = "auto" ]; then
+    install_certbot_deploy_hook
+    systemctl enable --now certbot.timer
 else
-    echo "未设置 LETSENCRYPT_EMAIL；当前仅部署临时证书，请签发正式证书后再开放流量。"
+    echo "TLS 证书由外部系统管理，请确认已配置自动续期和 Nginx reload。" >&2
 fi
 
 if grep -qs 'CHANGE_ME_' /etc/sylg-paper-storage.env; then

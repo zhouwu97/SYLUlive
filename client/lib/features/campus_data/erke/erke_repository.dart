@@ -99,8 +99,7 @@ class ErkeRepository {
         partialGraduation = await _client!.getGraduationSummary();
         debugPrint('[Erke] phase=$phase success');
       } catch (e, st) {
-        debugPrint(
-            '[Erke] phase=$phase failed type=${e.runtimeType} message=$e');
+        debugPrint('[Erke] phase=$phase failed type=${e.runtimeType}');
         debugPrintStack(label: '[Erke] $phase', stackTrace: st);
         rethrow;
       }
@@ -113,8 +112,7 @@ class ErkeRepository {
         newYearly = await _client!.getYearlySummary();
         debugPrint('[Erke] phase=$phase success');
       } catch (e, st) {
-        debugPrint(
-            '[Erke] phase=$phase failed type=${e.runtimeType} message=$e');
+        debugPrint('[Erke] phase=$phase failed type=${e.runtimeType}');
         debugPrintStack(label: '[Erke] $phase', stackTrace: st);
         rethrow;
       }
@@ -126,8 +124,7 @@ class ErkeRepository {
         partialActivities = await _client!.getActivities();
         debugPrint('[Erke] phase=$phase success');
       } catch (e, st) {
-        debugPrint(
-            '[Erke] phase=$phase failed type=${e.runtimeType} message=$e');
+        debugPrint('[Erke] phase=$phase failed type=${e.runtimeType}');
         debugPrintStack(label: '[Erke] $phase', stackTrace: st);
         rethrow;
       }
@@ -152,8 +149,7 @@ class ErkeRepository {
       fetchError = null;
       return true;
     } catch (e, stackTrace) {
-      fetchError =
-          '[Erke] phase=$phase failed type=${e.runtimeType} message=$e';
+      fetchError = '查询失败（阶段：$phase，类型：${e.runtimeType}）';
       debugPrint(fetchError);
       debugPrintStack(label: '[Erke] $phase stack', stackTrace: stackTrace);
 
@@ -219,7 +215,7 @@ class ErkeRepository {
 
       await _cache.saveYearlySummary(newYearly, yearActivities);
     } catch (e) {
-      yearlyError = e.toString();
+      yearlyError = '学年数据查询失败（类型：${e.runtimeType}）';
     } finally {
       isYearlyLoading = false;
     }

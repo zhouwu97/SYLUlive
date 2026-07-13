@@ -119,6 +119,7 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	repoRoot := deploymentRepoRoot(t)
 	serviceText := readDeploymentAsset(t, repoRoot, "deploy", "paper-storage", "paper-storage.service")
 	nginxText := readDeploymentAsset(t, repoRoot, "deploy", "paper-storage", "nginx.conf")
+	bootstrapText := readDeploymentAsset(t, repoRoot, "deploy", "paper-storage", "nginx-bootstrap.conf")
 	envText := readDeploymentAsset(t, repoRoot, "deploy", "paper-storage", "paper-storage.env.example")
 	installText := readDeploymentAsset(t, repoRoot, "deploy", "paper-storage", "install.sh")
 	deployDoc := readDeploymentAsset(t, repoRoot, "DEPLOY.md")
@@ -146,8 +147,8 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 		"user paper-storage;",
 		"listen 80 default_server;",
 		"listen 443 ssl http2 default_server;",
-		"server_name __PAPER_STORAGE_PUBLIC_HOST__;",
-		"return 301 https://__PAPER_STORAGE_PUBLIC_HOST__$request_uri;",
+		"server_name __PAPER_STORAGE_PUBLIC_IP__;",
+		"return 301 https://__PAPER_STORAGE_PUBLIC_IP__$request_uri;",
 		"location ^~ /.well-known/acme-challenge/",
 		"root /var/lib/letsencrypt;",
 		"client_max_body_size 21m;",
@@ -164,6 +165,23 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	} {
 		if !strings.Contains(nginxText, expected) {
 			t.Errorf("Nginx 文件服务缺少安全或流量配置 %q", expected)
+		}
+	}
+	for _, expected := range []string{
+		"listen 80 default_server;",
+		"server_name __PAPER_STORAGE_PUBLIC_IP__;",
+		"location ^~ /.well-known/acme-challenge/",
+		"root /var/lib/letsencrypt;",
+		"location / {",
+		"return 404;",
+	} {
+		if !strings.Contains(bootstrapText, expected) {
+			t.Errorf("Nginx bootstrap 配置缺少最小 ACME 项 %q", expected)
+		}
+	}
+	for _, forbidden := range []string{"listen 443", "proxy_pass", "ssl_certificate"} {
+		if strings.Contains(bootstrapText, forbidden) {
+			t.Errorf("Nginx bootstrap 配置不得在证书签发前开放 %q", forbidden)
 		}
 	}
 	for _, route := range []string{"/healthz", "/v1/uploads/", "/v1/files/", "/internal/v1/"} {
@@ -193,7 +211,6 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 		"nginx",
 		"ufw",
 		"certbot",
-		"python3-certbot-nginx",
 		"useradd",
 		"chmod 0700",
 		"chmod 0600",
@@ -208,9 +225,17 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 		"systemctl daemon-reload",
 		"systemctl reload nginx",
 		"--render-nginx",
-		"PAPER_STORAGE_LETSENCRYPT_LIVE_DIR",
-		"PAPER_STORAGE_PUBLIC_HOST",
-		"validate_public_host",
+		"--render-bootstrap-nginx",
+		"PAPER_STORAGE_PUBLIC_IP",
+		"PAPER_STORAGE_TLS_CERT_PATH",
+		"PAPER_STORAGE_TLS_KEY_PATH",
+		"PAPER_STORAGE_ACME_MODE",
+		"validate_public_ip",
+		"validate_tls_certificate",
+		"IP Address:",
+		"openssl verify",
+		"--ip-address \"$PUBLIC_IP\"",
+		"--preferred-profile shortlived",
 		"/var/lib/letsencrypt",
 		"fullchain.pem",
 		"privkey.pem",
@@ -241,15 +266,34 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	for _, expected := range []string{
 		"__PAPER_STORAGE_TLS_CERTIFICATE__",
 		"__PAPER_STORAGE_TLS_CERTIFICATE_KEY__",
-		"__PAPER_STORAGE_PUBLIC_HOST__",
+		"__PAPER_STORAGE_PUBLIC_IP__",
 	} {
 		if !strings.Contains(nginxText, expected) {
 			t.Errorf("Nginx 模板缺少可幂等渲染的 TLS 占位符 %q", expected)
 		}
 	}
-	if !strings.Contains(installText, "if has_lets_encrypt_certificate; then") ||
-		!strings.Contains(installText, "elif [ -n \"${LETSENCRYPT_EMAIL:-}\" ]; then") {
-		t.Error("已有 Let's Encrypt 证书时不得依赖邮箱或重新签发证书")
+	if strings.Contains(installText, "ssl-cert-snakeoil") ||
+		strings.Contains(installText, "certbot --nginx") ||
+		strings.Contains(installText, "-d sylulive.online") {
+		t.Error("文件服务器不得回退临时证书或申请主业务域名证书")
+	}
+	for name, content := range map[string]string{
+		"nginx":     nginxText,
+		"bootstrap": bootstrapText,
+		"install":   installText,
+	} {
+		if strings.Contains(content, "__PAPER_STORAGE_PUBLIC_HOST__") ||
+			strings.Contains(content, "PAPER_STORAGE_PUBLIC_HOST") {
+			t.Errorf("%s 仍包含已废弃的公网主机配置", name)
+		}
+		if strings.Contains(content, "sylulive.online") {
+			t.Errorf("%s 不得复用 156 的业务域名", name)
+		}
+	}
+	hookStart := strings.Index(installText, "'if nginx -t; then'")
+	hookReload := strings.Index(installText, "'    systemctl reload nginx'")
+	if hookStart < 0 || hookReload <= hookStart {
+		t.Error("Certbot deploy hook 必须仅在 nginx -t 成功后 reload")
 	}
 	if !strings.Contains(installText, "mv -f \"$nginx_candidate\" /etc/nginx/nginx.conf") ||
 		!strings.Contains(installText, "cp -p \"$nginx_previous\" /etc/nginx/nginx.conf") {
@@ -262,13 +306,18 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	if sshAllow < 0 || denyIncoming <= sshAllow || allowOutgoing <= denyIncoming || webAllow <= allowOutgoing {
 		t.Error("UFW 必须先放行已校验的 SSH 端口，再设置默认策略，最后放行 Web 端口")
 	}
+	ufwEnabled := strings.LastIndex(installText, "ufw --force enable")
+	certificateRequest := strings.LastIndex(installText, "request_ip_certificate")
+	if ufwEnabled < 0 || certificateRequest <= ufwEnabled {
+		t.Error("ACME 申请必须晚于 UFW 放行 80/443")
+	}
 	binaryActivation := strings.LastIndex(installText, "activate_binary_candidate \"$binary_path\"")
 	for _, prerequisite := range []string{"nginx -t", "prepare_swap_file", "ufw --force enable", "systemctl daemon-reload", "systemctl enable --now certbot.timer"} {
 		if prerequisiteIndex := strings.LastIndex(installText, prerequisite); prerequisiteIndex < 0 || binaryActivation <= prerequisiteIndex {
 			t.Errorf("二进制原子切换必须晚于前置部署步骤 %q", prerequisite)
 		}
 	}
-	for _, forbidden := range []string{"139.196.148.174", "156.233.229.232", "PAPER_STORAGE_SIGNING_SECRET=change-me", "PAPER_STORAGE_RECEIPT_SECRET=change-me"} {
+	for _, forbidden := range []string{"156.233.229.232", "PAPER_STORAGE_SIGNING_SECRET=change-me", "PAPER_STORAGE_RECEIPT_SECRET=change-me"} {
 		for name, content := range map[string]string{"systemd": serviceText, "nginx": nginxText, "env": envText, "install": installText} {
 			if strings.Contains(content, forbidden) {
 				t.Errorf("%s 部署资产不得包含服务器地址或弱生产密钥 %q", name, forbidden)
@@ -277,10 +326,12 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	}
 
 	for _, expected := range []string{
-		"sylulive.online",
 		"139.196.148.174",
+		"IP Address:139.196.148.174",
+		"PAPER_STORAGE_ACME_MODE=external",
+		"PAPER_STORAGE_TLS_CERT_PATH",
 		"Cloudflare",
-		"绕过缓存",
+		"不得为 `/v1/files/*`",
 		"每日磁盘快照",
 		"保留 7 天",
 		"openssl rand -hex 32",
@@ -303,57 +354,123 @@ func TestPaperStorageDeploymentAssets(t *testing.T) {
 	}
 }
 
-// TestPaperStorageNginxRendererKeepsLetsEncryptCertificate 验证重复安装不会把正式证书退回临时证书。
-func TestPaperStorageNginxRendererKeepsLetsEncryptCertificate(t *testing.T) {
+// TestPaperStorageNginxRendererRequiresTrustedIPCertificate 验证正式配置只接受受信任的 IP SAN 证书。
+func TestPaperStorageNginxRendererRequiresTrustedIPCertificate(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows 环境没有 POSIX sh；Linux CI 和部署环境执行本测试")
+	}
+	if _, err := exec.LookPath("openssl"); err != nil {
+		t.Skip("测试环境缺少 openssl")
 	}
 	repoRoot := deploymentRepoRoot(t)
 	installScript := filepath.Join(repoRoot, "deploy", "paper-storage", "install.sh")
 	template := filepath.Join(repoRoot, "deploy", "paper-storage", "nginx.conf")
+	bootstrapTemplate := filepath.Join(repoRoot, "deploy", "paper-storage", "nginx-bootstrap.conf")
 	tempDir := t.TempDir()
-	liveDir := filepath.Join(tempDir, "letsencrypt", "live", "sylulive.online")
 	output := filepath.Join(tempDir, "nginx-rendered.conf")
+	caKey := filepath.Join(tempDir, "ca.key")
+	caCert := filepath.Join(tempDir, "ca.pem")
+	leafKey := filepath.Join(tempDir, "leaf.key")
+	leafCSR := filepath.Join(tempDir, "leaf.csr")
+	leafCert := filepath.Join(tempDir, "leaf.pem")
+	fullchain := filepath.Join(tempDir, "fullchain.pem")
+	extFile := filepath.Join(tempDir, "leaf.ext")
 
-	render := func() string {
+	runOpenSSL := func(args ...string) {
 		t.Helper()
-		command := exec.Command("sh", installScript, "--render-nginx", template, output)
-		command.Env = append(
-			os.Environ(),
-			"PAPER_STORAGE_LETSENCRYPT_LIVE_DIR="+liveDir,
-			"PAPER_STORAGE_PUBLIC_HOST=139.196.148.174",
-		)
+		command := exec.Command("openssl", args...)
 		if combined, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("渲染 Nginx 配置失败: %v\n%s", err, combined)
-		}
-		return readDeploymentAsset(t, tempDir, "nginx-rendered.conf")
-	}
-
-	first := render()
-	if !strings.Contains(first, "/etc/ssl/certs/ssl-cert-snakeoil.pem") ||
-		!strings.Contains(first, "/etc/ssl/private/ssl-cert-snakeoil.key") {
-		t.Fatal("首次无正式证书时必须渲染 Ubuntu 临时证书")
-	}
-	if !strings.Contains(first, "server_name 139.196.148.174;") ||
-		strings.Contains(first, "__PAPER_STORAGE_PUBLIC_HOST__") {
-		t.Fatal("Nginx 渲染必须安全替换文件服务公网主机")
-	}
-
-	if err := os.MkdirAll(liveDir, 0700); err != nil {
-		t.Fatalf("创建模拟 Let's Encrypt 目录失败: %v", err)
-	}
-	for _, name := range []string{"fullchain.pem", "privkey.pem"} {
-		if err := os.WriteFile(filepath.Join(liveDir, name), []byte("test"), 0600); err != nil {
-			t.Fatalf("创建模拟证书 %s 失败: %v", name, err)
+			t.Fatalf("生成测试证书失败: openssl %v: %v\n%s", args, err, combined)
 		}
 	}
-	upgraded := render()
-	if !strings.Contains(upgraded, filepath.Join(liveDir, "fullchain.pem")) ||
-		!strings.Contains(upgraded, filepath.Join(liveDir, "privkey.pem")) {
-		t.Fatal("检测到正式证书后必须渲染 Let's Encrypt 证书路径")
+	runOpenSSL("genrsa", "-out", caKey, "2048")
+	runOpenSSL("req", "-x509", "-new", "-key", caKey, "-sha256", "-days", "30", "-subj", "/CN=Paper Storage Test CA", "-out", caCert)
+	runOpenSSL("genrsa", "-out", leafKey, "2048")
+	runOpenSSL("req", "-new", "-key", leafKey, "-subj", "/CN=139.196.148.174", "-out", leafCSR)
+	if err := os.WriteFile(extFile, []byte("subjectAltName=IP:139.196.148.174\n"), 0600); err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(upgraded, "ssl-cert-snakeoil") {
-		t.Fatal("重复安装不得把正式证书回退为临时证书")
+	runOpenSSL("x509", "-req", "-in", leafCSR, "-CA", caCert, "-CAkey", caKey, "-CAcreateserial", "-out", leafCert, "-days", "7", "-sha256", "-extfile", extFile)
+	leaf, err := os.ReadFile(leafCert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := os.ReadFile(caCert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fullchain, append(leaf, ca...), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	missingCommand := exec.Command("sh", installScript, "--render-nginx", template, output)
+	missingCommand.Env = append(os.Environ(),
+		"PAPER_STORAGE_TLS_CERT_PATH="+filepath.Join(tempDir, "missing.pem"),
+		"PAPER_STORAGE_TLS_KEY_PATH="+leafKey,
+		"PAPER_STORAGE_SYSTEM_CA_BUNDLE="+caCert,
+	)
+	if err := missingCommand.Run(); err == nil {
+		t.Fatal("正式配置不得在证书不存在时回退到临时证书")
+	}
+
+	bootstrapCommand := exec.Command("sh", installScript, "--render-bootstrap-nginx", bootstrapTemplate, output)
+	if combined, err := bootstrapCommand.CombinedOutput(); err != nil {
+		t.Fatalf("渲染 bootstrap 配置失败: %v\n%s", err, combined)
+	}
+	bootstrap := readDeploymentAsset(t, tempDir, "nginx-rendered.conf")
+	if !strings.Contains(bootstrap, "server_name 139.196.148.174;") || strings.Contains(bootstrap, "listen 443") {
+		t.Fatal("bootstrap 配置必须只为固定 IP 开放 HTTP challenge")
+	}
+
+	renderCommand := exec.Command("sh", installScript, "--render-nginx", template, output)
+	renderCommand.Env = append(os.Environ(),
+		"PAPER_STORAGE_TLS_CERT_PATH="+fullchain,
+		"PAPER_STORAGE_TLS_KEY_PATH="+leafKey,
+		"PAPER_STORAGE_SYSTEM_CA_BUNDLE="+caCert,
+		"PAPER_STORAGE_TLS_MIN_VALIDITY_SECONDS=0",
+	)
+	if combined, err := renderCommand.CombinedOutput(); err != nil {
+		t.Fatalf("受信任 IP 证书应能渲染正式配置: %v\n%s", err, combined)
+	}
+	rendered := readDeploymentAsset(t, tempDir, "nginx-rendered.conf")
+	if !strings.Contains(rendered, "server_name 139.196.148.174;") ||
+		!strings.Contains(rendered, fullchain) || strings.Contains(rendered, "sylulive.online") {
+		t.Fatal("正式 Nginx 配置必须使用固定 IP 和已校验证书")
+	}
+
+	mismatchCommand := exec.Command("sh", installScript, "--validate-tls-certificate")
+	mismatchCommand.Env = append(os.Environ(),
+		"PAPER_STORAGE_TLS_CERT_PATH="+fullchain,
+		"PAPER_STORAGE_TLS_KEY_PATH="+caKey,
+		"PAPER_STORAGE_SYSTEM_CA_BUNDLE="+caCert,
+		"PAPER_STORAGE_TLS_MIN_VALIDITY_SECONDS=0",
+	)
+	if err := mismatchCommand.Run(); err == nil {
+		t.Fatal("证书和私钥不匹配时必须拒绝部署")
+	}
+
+	wrongLeaf := filepath.Join(tempDir, "wrong-san.pem")
+	wrongFullchain := filepath.Join(tempDir, "wrong-san-fullchain.pem")
+	if err := os.WriteFile(extFile, []byte("subjectAltName=DNS:sylulive.online\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runOpenSSL("x509", "-req", "-in", leafCSR, "-CA", caCert, "-CAkey", caKey, "-CAserial", filepath.Join(tempDir, "ca.srl"), "-out", wrongLeaf, "-days", "7", "-sha256", "-extfile", extFile)
+	wrongLeafBytes, err := os.ReadFile(wrongLeaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wrongFullchain, append(wrongLeafBytes, ca...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	wrongSANCommand := exec.Command("sh", installScript, "--validate-tls-certificate")
+	wrongSANCommand.Env = append(os.Environ(),
+		"PAPER_STORAGE_TLS_CERT_PATH="+wrongFullchain,
+		"PAPER_STORAGE_TLS_KEY_PATH="+leafKey,
+		"PAPER_STORAGE_SYSTEM_CA_BUNDLE="+caCert,
+		"PAPER_STORAGE_TLS_MIN_VALIDITY_SECONDS=0",
+	)
+	if err := wrongSANCommand.Run(); err == nil {
+		t.Fatal("SAN 不包含文件服务器 IP 时必须拒绝部署")
 	}
 }
 
@@ -364,6 +481,16 @@ func TestPaperStorageInstallerValidatesFirewallRules(t *testing.T) {
 	}
 	repoRoot := deploymentRepoRoot(t)
 	installScript := filepath.Join(repoRoot, "deploy", "paper-storage", "install.sh")
+	for _, publicIP := range []string{"", "https://139.196.148.174", "139.196.148.174:443", "sylulive.online", "256.1.1.1", "1.2.3"} {
+		command := exec.Command("sh", installScript, "--validate-public-ip", publicIP)
+		if err := command.Run(); err == nil {
+			t.Errorf("非法公网 IPv4 %q 必须被拒绝", publicIP)
+		}
+	}
+	validIPCommand := exec.Command("sh", installScript, "--validate-public-ip", "139.196.148.174")
+	if combined, err := validIPCommand.CombinedOutput(); err != nil {
+		t.Fatalf("固定文件服务器 IP 被拒绝: %v\n%s", err, combined)
+	}
 
 	for _, port := range []string{"", "0", "65536", "22x", "-1"} {
 		command := exec.Command("sh", installScript, "--validate-ssh-port", port)

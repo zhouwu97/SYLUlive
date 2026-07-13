@@ -75,6 +75,10 @@ python-edu-service/tools/*/output/
 /before-low-conflict-cleanup.txt
 /server/shenliyuan.new
 
+# Go 服务端本地构建产物，部署时重新构建或由 CI 发布
+/server/dist/*
+!/server/dist/.gitkeep
+
 
 # 本地服务器运维脚本、临时输出和敏感凭据
 /remote_exec.py

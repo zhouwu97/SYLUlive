@@ -190,8 +190,8 @@ void main() {
           .where((request) => request.adapter == 'storage')
           .map((request) => request.options.path),
       [
-        'https://sylulive.online/v1/uploads/pending-a',
-        'https://sylulive.online/v1/uploads/pending-b',
+        'https://139.196.148.174/v1/uploads/pending-a',
+        'https://139.196.148.174/v1/uploads/pending-b',
       ],
     );
   });
@@ -314,8 +314,8 @@ void main() {
           .where((request) => request.adapter == 'storage')
           .map((request) => request.options.path),
       [
-        'https://sylulive.online/v1/uploads/session-a',
-        'https://sylulive.online/v1/uploads/session-b',
+        'https://139.196.148.174/v1/uploads/session-a',
+        'https://139.196.148.174/v1/uploads/session-b',
       ],
     );
     final completes = requests
@@ -413,7 +413,7 @@ void main() {
     final apiAdapter = _RecordingAdapter('api', requests)
       ..enqueueJson(201, {
         'session_id': 'session-1',
-        'upload_url': 'https://sylulive.online/v1/uploads/session-1',
+        'upload_url': 'https://139.196.148.174/v1/uploads/session-1',
         'upload_token': 'signed-upload-token',
         'expires_at': '2026-07-13T10:10:00Z',
       })
@@ -470,7 +470,7 @@ void main() {
       'privacy_confirmed': true,
       'file_size': 8,
     });
-    expect(requests[1].options.uri.host, 'sylulive.online');
+    expect(requests[1].options.uri.host, '139.196.148.174');
     expect(
       requests[1].options.headers['Authorization'],
       'Bearer signed-upload-token',
@@ -621,8 +621,8 @@ void main() {
           .where((request) => request.adapter == 'storage')
           .map((request) => request.options.path),
       [
-        'https://sylulive.online/v1/uploads/path-a',
-        'https://sylulive.online/v1/uploads/path-b',
+        'https://139.196.148.174/v1/uploads/path-a',
+        'https://139.196.148.174/v1/uploads/path-b',
       ],
     );
   });
@@ -700,9 +700,9 @@ void main() {
 
   test('拒绝非标准端口和不匹配会话的文件服务地址', () async {
     for (final uploadURL in [
-      'https://sylulive.online:8443/v1/uploads/session-1',
-      'https://sylulive.online/v1/uploads/another-session',
-      'http://sylulive.online/v1/uploads/session-1',
+      'https://139.196.148.174:8443/v1/uploads/session-1',
+      'https://139.196.148.174/v1/uploads/another-session',
+      'http://139.196.148.174/v1/uploads/session-1',
     ]) {
       final requests = <_RecordedRequest>[];
       final apiAdapter = _RecordingAdapter('api', requests)
@@ -1436,7 +1436,7 @@ Map<String, dynamic> _uploadSessionJson({
 }) {
   return {
     'session_id': sessionID,
-    'upload_url': uploadURL ?? 'https://sylulive.online/v1/uploads/$sessionID',
+    'upload_url': uploadURL ?? 'https://139.196.148.174/v1/uploads/$sessionID',
     'upload_token': 'signed-upload-token',
     'expires_at': '2026-07-13T10:10:00Z',
   };

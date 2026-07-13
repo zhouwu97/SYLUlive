@@ -1311,7 +1311,7 @@ func main() {
 
 			"force_update": false, // 保留兼容旧版逻辑
 
-			"download_url": "https://couqie.ccwu.cc/uploads/app-release.apk",
+			"download_url": "https://sylulive.online/uploads/app-release.apk",
 
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
 

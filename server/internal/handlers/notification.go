@@ -197,9 +197,9 @@ func (h *NotificationHandler) GetPostUnreadReplyNotifications(c *gin.Context) {
 }
 
 // CreateReplyNotification 创建回复通知（被 reply handler 调用）
-func CreateReplyNotification(db *gorm.DB, toUserID, fromUserID, replyID, postID uint, content string) {
+func CreateReplyNotification(db *gorm.DB, toUserID, fromUserID, replyID, postID uint, content string) error {
 	if toUserID == fromUserID {
-		return // 不通知自己
+		return nil // 不通知自己
 	}
 	notification := models.Notification{
 		UserID:    toUserID,
@@ -210,7 +210,7 @@ func CreateReplyNotification(db *gorm.DB, toUserID, fromUserID, replyID, postID 
 		FromUID:   fromUserID,
 		IsRead:    false,
 	}
-	db.Create(&notification)
+	return db.Create(&notification).Error
 }
 
 // SendJPushNotification 异步发送极光推送（不阻塞主请求）
@@ -253,9 +253,12 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 }
 
 // CreateReplyNotificationFull 创建回复通知并触发极光推送
-func CreateReplyNotificationFull(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID, fromUserID, replyID, postID uint, content string) {
-	CreateReplyNotification(db, toUserID, fromUserID, replyID, postID, content)
+func CreateReplyNotificationFull(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID, fromUserID, replyID, postID uint, content string) error {
+	if err := CreateReplyNotification(db, toUserID, fromUserID, replyID, postID, content); err != nil {
+		return err
+	}
 	SendJPushNotification(jpushAppKey, jpushMasterSecret, db, toUserID, fromUserID, replyID, postID, content)
+	return nil
 }
 
 // CreateMarketPostNotification 集市发帖通知（发给所有用户，除了作者自己）
@@ -272,8 +275,9 @@ func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price 
 		content = fmt.Sprintf("%s  ¥%.2f", titlePreview, price)
 	}
 
+	notifications := make([]models.Notification, 0, len(users))
 	for _, user := range users {
-		notification := models.Notification{
+		notifications = append(notifications, models.Notification{
 			UserID:    user.ID,
 			Type:      "market_post",
 			Content:   content,
@@ -281,8 +285,12 @@ func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price 
 			PostID:    postID,
 			FromUID:   authorID,
 			IsRead:    false,
+		})
+	}
+	if len(notifications) > 0 {
+		if err := db.CreateInBatches(&notifications, 200).Error; err != nil {
+			log.Printf("[DB_ERROR] CreateMarketPostNotification batch insert failed: %v", err)
 		}
-		db.Create(&notification)
 	}
 }
 
@@ -305,7 +313,10 @@ func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret 
 		FromUID:   0, // System
 		IsRead:    false,
 	}
-	db.Create(&notification)
+	if err := db.Create(&notification).Error; err != nil {
+		log.Printf("[DB_ERROR] CreateFeaturedApplicationResultNotification failed: %v", err)
+		return
+	}
 
 	if jpushAppKey != "" && jpushMasterSecret != "" {
 		var user models.User

@@ -26,6 +26,7 @@ func newCanteenTestDB(t *testing.T) *gorm.DB {
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},
+		&models.AdminLog{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
@@ -71,7 +72,7 @@ func TestCanteenVoteRatingTogglesAndReturnsCounts(t *testing.T) {
 	db := newCanteenTestDB(t)
 	createCanteenTestUser(t, db, 1, "Alice")
 	createCanteenTestUser(t, db, 2, "Bob")
-	canteen := models.Canteen{Name: "外卖", Image: "/uploads/canteen.png", CreatedBy: 1}
+	canteen := models.Canteen{Name: "外卖", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
 	if err := db.Create(&canteen).Error; err != nil {
 		t.Fatalf("create canteen: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestCanteenVoteRatingTogglesAndReturnsCounts(t *testing.T) {
 func TestCanteenVoteRatingRejectsInvalidMissingAndOwnRating(t *testing.T) {
 	db := newCanteenTestDB(t)
 	createCanteenTestUser(t, db, 1, "Alice")
-	canteen := models.Canteen{Name: "外卖", Image: "/uploads/canteen.png", CreatedBy: 1}
+	canteen := models.Canteen{Name: "外卖", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
 	if err := db.Create(&canteen).Error; err != nil {
 		t.Fatalf("create canteen: %v", err)
 	}
@@ -183,7 +184,7 @@ func TestCanteenDetailSortFilterAndMyVote(t *testing.T) {
 	createCanteenTestUser(t, db, 1, "Alice")
 	createCanteenTestUser(t, db, 2, "Bob")
 	createCanteenTestUser(t, db, 3, "Cathy")
-	canteen := models.Canteen{Name: "外卖", Image: "/uploads/canteen.png", CreatedBy: 1}
+	canteen := models.Canteen{Name: "外卖", Image: "/uploads/canteen.png", CreatedBy: 1, Verified: true}
 	if err := db.Create(&canteen).Error; err != nil {
 		t.Fatalf("create canteen: %v", err)
 	}
@@ -257,6 +258,71 @@ func TestCanteenDetailSortFilterAndMyVote(t *testing.T) {
 	}
 	if len(imageBody.Ratings) != 1 || imageBody.Ratings[0].ID != ratings[1].ID {
 		t.Fatalf("unexpected with_image ratings: %s", withImage.Body.String())
+	}
+}
+
+func TestCanteenApprovalControlsVisibilityAndRating(t *testing.T) {
+	db := newCanteenTestDB(t)
+	createCanteenTestUser(t, db, 1, "管理员")
+	createCanteenTestUser(t, db, 2, "提交者")
+	canteen := models.Canteen{
+		Name:      "待审食堂",
+		Image:     "/uploads/canteen.png",
+		CreatedBy: 2,
+		Verified:  false,
+	}
+	if err := db.Create(&canteen).Error; err != nil {
+		t.Fatalf("create canteen: %v", err)
+	}
+	handler := NewCanteenHandler(db)
+
+	pending := performCanteenRequest(t, handler.AdminListPending, http.MethodGet, "/api/canteens/pending", nil, 1, "")
+	if pending.Code != http.StatusOK || !strings.Contains(pending.Body.String(), "待审食堂") {
+		t.Fatalf("pending list status=%d body=%s", pending.Code, pending.Body.String())
+	}
+
+	ratingBeforeApproval := performCanteenRequest(
+		t,
+		handler.Rate,
+		http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/rate", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
+		2,
+		`{"star":5,"comment":"很好"}`,
+	)
+	if ratingBeforeApproval.Code != http.StatusNotFound {
+		t.Fatalf("unverified canteen should not accept ratings: %d %s", ratingBeforeApproval.Code, ratingBeforeApproval.Body.String())
+	}
+
+	approved := performCanteenRequest(
+		t,
+		handler.ApproveCanteen,
+		http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/approve", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
+		1,
+		"",
+	)
+	if approved.Code != http.StatusOK {
+		t.Fatalf("approve status=%d body=%s", approved.Code, approved.Body.String())
+	}
+
+	var refreshed models.Canteen
+	if err := db.First(&refreshed, canteen.ID).Error; err != nil || !refreshed.Verified {
+		t.Fatalf("canteen should be verified after approval: canteen=%+v err=%v", refreshed, err)
+	}
+
+	ratingAfterApproval := performCanteenRequest(
+		t,
+		handler.Rate,
+		http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/rate", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
+		2,
+		`{"star":5,"comment":"很好"}`,
+	)
+	if ratingAfterApproval.Code != http.StatusCreated {
+		t.Fatalf("verified canteen should accept ratings: %d %s", ratingAfterApproval.Code, ratingAfterApproval.Body.String())
 	}
 }
 

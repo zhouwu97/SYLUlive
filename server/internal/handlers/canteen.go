@@ -60,6 +60,10 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
 		return
 	}
+	if !canteen.Verified {
+		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		return
+	}
 
 	reviewSort := c.DefaultQuery("review_sort", "best")
 	reviewFilter := c.DefaultQuery("review_filter", "all")
@@ -317,23 +321,17 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 		return
 	}
 	canteen := models.Canteen{
-		Name:      name,
-		Image:     input.Image,
-		Verified:  false,
-		CreatedBy: userID.(uint),
+		Name:           name,
+		NormalizedName: normalizeCanteenName(name),
+		Image:          input.Image,
+		Verified:       false,
+		CreatedBy:      userID.(uint),
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		var count int64
-		if err := tx.Model(&models.Canteen{}).Where("LOWER(name) = LOWER(?)", name).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			return fmt.Errorf("duplicate_canteen")
-		}
 		return tx.Create(&canteen).Error
 	}); err != nil {
-		if err.Error() == "duplicate_canteen" {
+		if isUniqueConstraintError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "该食堂已存在"})
 			return
 		}
@@ -345,6 +343,18 @@ func (h *CanteenHandler) Create(c *gin.Context) {
 		"message": "已提交审核",
 		"canteen": canteen,
 	})
+}
+
+func normalizeCanteenName(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(name)), " "))
+}
+
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "unique constraint") || strings.Contains(lower, "duplicate key")
 }
 
 // Rate 评价食堂
@@ -368,6 +378,10 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 
 	var canteen models.Canteen
 	if err := h.db.First(&canteen, cid).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		return
+	}
+	if !canteen.Verified {
 		c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
 		return
 	}
@@ -438,6 +452,105 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// AdminListPending 返回等待审核的食堂提交，仅管理员可访问。
+func (h *CanteenHandler) AdminListPending(c *gin.Context) {
+	var canteens []models.Canteen
+	if err := h.db.Where("verified = ?", false).Order("created_at ASC").Find(&canteens).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待审核食堂失败"})
+		return
+	}
+	if canteens == nil {
+		canteens = []models.Canteen{}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": canteens})
+}
+
+// ApproveCanteen 审核通过食堂，使其出现在公开列表并允许用户评价。
+func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+	var canteen models.Canteen
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&canteen, id).Error; err != nil {
+			return err
+		}
+		if canteen.Verified {
+			return fmt.Errorf("canteen_already_verified")
+		}
+		if err := tx.Model(&canteen).Update("verified", true).Error; err != nil {
+			return err
+		}
+		var admin models.User
+		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID, AdminName: admin.Nickname, Action: "通过食堂审核", Target: canteen.Name,
+			Detail: fmt.Sprintf("通过食堂提交（ID: %d），创建者 %d", canteen.ID, canteen.CreatedBy),
+		}).Error
+	}); err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		case err.Error() == "canteen_already_verified":
+			c.JSON(http.StatusConflict, gin.H{"error": "食堂已通过审核"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "审核食堂失败"})
+		}
+		return
+	}
+	canteen.Verified = true
+	c.JSON(http.StatusOK, gin.H{"message": "审核已通过", "canteen": canteen})
+}
+
+// RejectCanteen 驳回待审核食堂；已公开食堂需使用常规删除接口处理。
+func (h *CanteenHandler) RejectCanteen(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	adminID := c.GetUint("user_id")
+	var canteen models.Canteen
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&canteen, id).Error; err != nil {
+			return err
+		}
+		if canteen.Verified {
+			return fmt.Errorf("canteen_already_verified")
+		}
+		if err := tx.Where("canteen_id = ?", canteen.ID).Delete(&models.CanteenRating{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&canteen).Error; err != nil {
+			return err
+		}
+		var admin models.User
+		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.AdminLog{
+			AdminID: adminID, AdminName: admin.Nickname, Action: "驳回食堂审核", Target: canteen.Name,
+			Detail: fmt.Sprintf("驳回食堂提交（ID: %d），创建者 %d", canteen.ID, canteen.CreatedBy),
+		}).Error
+	}); err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "食堂不存在"})
+		case err.Error() == "canteen_already_verified":
+			c.JSON(http.StatusConflict, gin.H{"error": "已公开食堂不能按待审核驳回"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "驳回食堂失败"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已驳回"})
 }
 
 // UpdateImage 管理员修改食堂图片

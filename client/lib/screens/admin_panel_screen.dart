@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import 'dart:io' show File;
-
 import 'admin_reports_screen.dart';
 import 'admin_candidates_screen.dart';
 import 'admin_review_tasks_screen.dart';
@@ -15,7 +14,7 @@ import 'admin_announcements_screen.dart';
 import 'admin_water_sections_screen.dart';
 import 'admin_water_icon_review_screen.dart';
 import 'exam_papers/admin_exam_papers_screen.dart';
-
+import 'shuitie_screen.dart';
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
 
@@ -283,6 +282,47 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                       builder: (_) =>
                                           const AdminAnnouncementsScreen()))
                               .then((_) => _loadCounts()),
+                        ),
+                        _AdminActionPill(
+                          icon: Icons.card_giftcard,
+                          iconColor: Colors.orange,
+                          title: '签到弹窗预览',
+                          subtitle: '预览用户签到成功的展示效果',
+                          isDark: isDark,
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            showGeneralDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              barrierLabel: '签到成功',
+                              barrierColor: Colors.black.withValues(alpha: 0.42),
+                              transitionDuration: const Duration(milliseconds: 220),
+                              pageBuilder: (_, __, ___) {
+                                return const CheckInSuccessDialog(
+                                  streakDays: 49,
+                                  earnedExp: 15,
+                                );
+                              },
+                              transitionBuilder: (_, animation, __, child) {
+                                final curved = CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutBack,
+                                  reverseCurve: Curves.easeIn,
+                                );
+
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: ScaleTransition(
+                                    scale: Tween<double>(
+                                      begin: 0.92,
+                                      end: 1,
+                                    ).animate(curved),
+                                    child: child,
+                                  ),
+                                );
+                              },
+                            );
+                          },
                         ),
                       ],
                     ),

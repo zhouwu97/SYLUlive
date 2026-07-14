@@ -83,7 +83,7 @@ void main() {
     expect(find.text('暂无管理人员'), findsNothing);
   });
 
-  testWidgets('候选人页面显示接口返回的学号', (tester) async {
+  testWidgets('候选人页面显示用户 ID 与接口返回的学号账号', (tester) async {
     tester.view.physicalSize = const Size(500, 1200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -112,7 +112,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('学号: 2026000007'), findsOneWidget);
-    expect(find.text('学号: 未知'), findsNothing);
+    expect(find.text('用户 ID：7\n学号/账号：2026000007'), findsOneWidget);
+    expect(find.text('学号/账号：未填写'), findsNothing);
   });
 }

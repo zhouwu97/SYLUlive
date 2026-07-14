@@ -68,6 +68,7 @@ type PublicUserResponse struct {
 	Avatar             string `json:"avatar"`
 	Background         string `json:"background"`
 	Exp                int    `json:"exp"`
+	CreditScore        int    `json:"credit_score"`
 	FollowersCount     int    `json:"followers_count"`
 	FollowingCount     int    `json:"following_count"`
 	TotalLikesReceived int    `json:"total_likes_received"`
@@ -82,6 +83,7 @@ func PublicUser(user User) PublicUserResponse {
 		Avatar:             user.Avatar,
 		Background:         user.Background,
 		Exp:                user.Exp,
+		CreditScore:        user.CreditScore,
 		FollowersCount:     user.FollowersCount,
 		FollowingCount:     user.FollowingCount,
 		TotalLikesReceived: user.TotalLikesReceived,

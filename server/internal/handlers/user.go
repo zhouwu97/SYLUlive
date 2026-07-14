@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"shenliyuan/internal/models"
 
@@ -92,8 +94,8 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 
 // UpdateProfileInput 更新资料输入
 type UpdateProfileInput struct {
-	Nickname string `json:"nickname"`
-	Gender   string `json:"gender"`
+	Nickname string  `json:"nickname"`
+	Gender   *string `json:"gender"`
 }
 
 // UpdateProfile 更新个人资料
@@ -105,15 +107,33 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	if input.Nickname == "" {
+	nickname := strings.TrimSpace(input.Nickname)
+	if nickname == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "昵称不能为空"})
 		return
 	}
 
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-		"nickname": input.Nickname,
-		"gender":   input.Gender,
-	}).Error; err != nil {
+	if utf8.RuneCountInString(nickname) > 20 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "昵称不能超过20个字符"})
+		return
+	}
+
+	updates := map[string]interface{}{
+		"nickname": nickname,
+	}
+
+	if input.Gender != nil {
+		gender := strings.TrimSpace(*input.Gender)
+
+		if gender != "" && gender != "male" && gender != "female" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别值"})
+			return
+		}
+
+		updates["gender"] = gender
+	}
+
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}

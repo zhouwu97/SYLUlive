@@ -57,7 +57,10 @@ func TestUserProfileResponsesEnforcePrivacyBoundary(t *testing.T) {
 	if public["id"] != float64(user.ID) {
 		t.Fatalf("public response missing correct id: %s", publicRecorder.Body.String())
 	}
-	for _, field := range []string{"student_id", "edu_student_id", "credit_score", "role"} {
+	if public["credit_score"] != float64(user.CreditScore) {
+		t.Fatalf("public response missing credit_score: %s", publicRecorder.Body.String())
+	}
+	for _, field := range []string{"student_id", "edu_student_id", "role"} {
 		if _, exists := public[field]; exists {
 			t.Fatalf("public response leaked %s: %s", field, publicRecorder.Body.String())
 		}

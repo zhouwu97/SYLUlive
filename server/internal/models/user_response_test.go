@@ -30,13 +30,16 @@ func TestPostAndReplySerializePublicAuthors(t *testing.T) {
 		if err := json.Unmarshal(body, &decoded); err != nil {
 			t.Fatalf("unmarshal payload: %v", err)
 		}
-		for _, privateField := range []string{"student_id", "role", "edu_student_id", "edu_bound", "credit_score"} {
+		for _, privateField := range []string{"student_id", "role", "edu_student_id", "edu_bound"} {
 			if _, exists := decoded.Author[privateField]; exists {
 				t.Fatalf("author leaked %s: %s", privateField, body)
 			}
 		}
 		if decoded.Author["nickname"] != author.Nickname {
 			t.Fatalf("public author missing nickname: %s", body)
+		}
+		if decoded.Author["credit_score"] != float64(author.CreditScore) {
+			t.Fatalf("public author missing credit_score: %s", body)
 		}
 	}
 }

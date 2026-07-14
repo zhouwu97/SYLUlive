@@ -318,16 +318,16 @@ void main() {
         jsonDecode(box.get('board_777_time__')!) as Map<String, dynamic>;
     final cachedAuthor = ((stored['posts'] as List).single
         as Map<String, dynamic>)['author'] as Map<String, dynamic>;
-    expect(stored['schema_version'], 3);
+    expect(stored['schema_version'], 4);
     expect(cachedAuthor.containsKey('student_id'), isFalse);
-    expect(cachedAuthor.containsKey('credit_score'), isFalse);
+    expect(cachedAuthor['credit_score'], 88);
     expect(cachedAuthor.containsKey('report_count'), isFalse);
     expect(cachedAuthor['id'], author.id);
 
     await box.put(
       'board_778_time__',
       jsonEncode({
-        'schema_version': 2,
+        'schema_version': 3,
         'algorithm_version': PostCacheService.expectedAlgorithmVersion(
           boardId: 778,
           sort: 'time',

@@ -33,10 +33,13 @@ func TestPublicAndSelfUserResponsesKeepTheirBoundaries(t *testing.T) {
 	if err := json.Unmarshal(publicBody, &public); err != nil {
 		t.Fatalf("unmarshal public response: %v", err)
 	}
-	for _, privateField := range []string{"student_id", "role", "edu_bound", "credit_score", "gender"} {
+	for _, privateField := range []string{"student_id", "role", "edu_bound", "gender"} {
 		if _, exists := public[privateField]; exists {
 			t.Fatalf("public response leaked %s: %s", privateField, publicBody)
 		}
+	}
+	if _, exists := public["credit_score"]; !exists {
+		t.Fatalf("public response missing credit_score: %s", publicBody)
 	}
 
 	selfBody, err := json.Marshal(selfUserResponse(user))

@@ -93,6 +93,9 @@ func TestSearchFindsUsersByIDAndNicknameButNotAccount(t *testing.T) {
 		if item["id"] != float64(testCase.wantUserID) {
 			t.Fatalf("query=%s returned wrong user: %s", testCase.query, response.Body.String())
 		}
+		if item["credit_score"] != float64(users[0].CreditScore) {
+			t.Fatalf("query=%s returned wrong credit score: %s", testCase.query, response.Body.String())
+		}
 		if _, exists := item["student_id"]; exists {
 			t.Fatalf("query=%s leaked student_id: %s", testCase.query, response.Body.String())
 		}

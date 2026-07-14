@@ -693,6 +693,12 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> applyProfileResponse(Map<String, dynamic> userJson) async {
+    _user = User.fromJson(userJson);
+    await _saveAuth();
+    notifyListeners();
+  }
+
   Future<AuthResult> updateAvatar(Uint8List avatarBytes) async {
     try {
       final uploadFormData = FormData.fromMap({
@@ -716,9 +722,7 @@ class AuthProvider extends ChangeNotifier {
         // 刷新用户信息以获取最新的avatar
         final profileResponse = await _dio.get('/user/profile');
         if (profileResponse.statusCode == 200) {
-          _user = User.fromJson(profileResponse.data);
-          await _saveAuth();
-          notifyListeners();
+          await applyProfileResponse(profileResponse.data);
           return AuthResult.success();
         }
       }

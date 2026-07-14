@@ -61,12 +61,24 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   Future<void> _loadData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-    final targetId = widget.userId ?? context.read<AuthProvider>().user?.id;
+    final auth = context.read<AuthProvider>();
+    final targetId = widget.userId ?? auth.user?.id;
     if (targetId != null) {
       final provider = context.read<SocialProvider>();
-      final user = await provider.getUserProfile(targetId);
-      final posts = await provider.getUserPosts(targetId);
-      final marketResult = await provider.getUserMarketPosts(targetId);
+      final isSelf = targetId == auth.user?.id;
+      final postsFuture = provider.getUserPosts(targetId);
+      final marketPostsFuture = provider.getUserMarketPosts(targetId);
+
+      User? user;
+      if (isSelf) {
+        await auth.refreshUser();
+        user = auth.user;
+      } else {
+        user = await provider.getUserProfile(targetId);
+      }
+
+      final posts = await postsFuture;
+      final marketResult = await marketPostsFuture;
 
       final normalPosts = posts.where((post) => !_isMarketPost(post)).toList();
 
@@ -677,14 +689,17 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         const SizedBox(height: 8),
         Row(
           children: [
-            Icon(
-              user.gender == 'female' ? Icons.female : Icons.male,
-              size: 15,
-              color: user.gender == 'female'
-                  ? Colors.pinkAccent
-                  : Colors.lightBlueAccent,
-            ),
-            const SizedBox(width: 5),
+            if (user.gender == 'female') ...[
+              const Icon(Icons.female, size: 15, color: Colors.pinkAccent),
+              const SizedBox(width: 5),
+            ] else if (user.gender == 'male') ...[
+              const Icon(
+                Icons.male,
+                size: 15,
+                color: Colors.lightBlueAccent,
+              ),
+              const SizedBox(width: 5),
+            ],
             Flexible(
               child: Text(
                 user.publicIdLabel,
@@ -894,7 +909,7 @@ class AnimatedCount extends StatelessWidget {
 
 class _EditProfileSheet extends StatefulWidget {
   final User user;
-  final VoidCallback onSaved;
+  final Future<void> Function() onSaved;
 
   const _EditProfileSheet({required this.user, required this.onSaved});
 
@@ -911,7 +926,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   void initState() {
     super.initState();
     _nicknameController = TextEditingController(text: widget.user.nickname);
-    _selectedGender = widget.user.gender.isEmpty ? 'male' : widget.user.gender;
+    _selectedGender = switch (widget.user.gender) {
+      'male' || 'female' => widget.user.gender,
+      _ => '',
+    };
   }
 
   @override
@@ -970,7 +988,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         await auth.dio.put('/user/background', data: {'background': url});
 
         await auth.refreshUser();
-        widget.onSaved();
+        await widget.onSaved();
         if (mounted) {
           ScaffoldMessenger.of(
             context,
@@ -1025,7 +1043,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       );
 
       await auth.refreshUser();
-      widget.onSaved();
+      await widget.onSaved();
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(

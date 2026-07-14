@@ -516,70 +516,39 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
   }
 
-  void _showCheckInSuccessDialog(int streak, int exp) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showDialog(
+  void _showCheckInSuccessDialog(int streakDays, int earnedExp) {
+    HapticFeedback.lightImpact();
+    showGeneralDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.celebration, color: Colors.orange[400]),
-            const SizedBox(width: 8),
-            const Text('签到成功！'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '🔥 连续签到 $streak 天',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.amber.withValues(alpha: 0.15)
-                    : Colors.amber.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '+$exp 经验',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.amber[700],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _nextRewardHint(streak),
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? Colors.white60 : Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('好的'),
-          ),
-        ],
-      ),
-    );
-  }
+      barrierDismissible: false,
+      barrierLabel: '签到成功',
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (_, __, ___) {
+        return CheckInSuccessDialog(
+          streakDays: streakDays,
+          earnedExp: earnedExp,
+        );
+      },
+      transitionBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutBack,
+          reverseCurve: Curves.easeIn,
+        );
 
-  String _nextRewardHint(int streak) {
-    if (streak < 3) return '连续签到3天可获得每日3经验';
-    if (streak < 10) return '连续签到10天可获得每日10经验';
-    if (streak < 30) return '连续签到30天可获得每日15经验';
-    return '已达最高等级，每日15经验！继续保持！';
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(
+              begin: 0.92,
+              end: 1,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   void _handleFeedSwipeStart(DragStartDetails details) {
@@ -1973,5 +1942,198 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(covariant _SliverSearchBarDelegate oldDelegate) {
     return oldDelegate.child != child;
+  }
+}
+
+class CheckInSuccessDialog extends StatelessWidget {
+  final int streakDays;
+  final int earnedExp;
+
+  const CheckInSuccessDialog({
+    super.key,
+    required this.streakDays,
+    required this.earnedExp,
+  });
+
+  String buildMilestoneText(int days) {
+    const milestones = [7, 14, 30, 50, 100, 180, 365];
+
+    final next = milestones.firstWhere(
+      (value) => value > days,
+      orElse: () => 0,
+    );
+
+    if (next == 0) {
+      return '已完成全部签到里程碑';
+    }
+
+    return '距离连续签到 $next 天还差 ${next - days} 天';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 304),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1D1F24) : Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: isDark ? 0.28 : 0.12,
+                ),
+                blurRadius: 28,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF3A3020)
+                      : const Color(0xFFFFF3DC),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.celebration_rounded,
+                  size: 24,
+                  color: Color(0xFFF59E0B),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '签到成功',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : const Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '已连续签到',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white54 : const Color(0xFF8B909A),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '$streakDays',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFF59E0B),
+                        height: 1.0,
+                      ),
+                    ),
+                    TextSpan(
+                      text: ' 天',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF4B5563),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF31291D)
+                      : const Color(0xFFFFF6E6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.bolt_rounded,
+                      size: 16,
+                      color: Color(0xFFF59E0B),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '+$earnedExp',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFF59E0B),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '经验已到账',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark
+                            ? Colors.white60
+                            : const Color(0xFF7B808A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                buildMilestoneText(streakDays),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : const Color(0xFF9AA0AA),
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF6366F1),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    '继续保持',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

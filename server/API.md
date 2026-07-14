@@ -157,7 +157,7 @@
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/search?type=posts&q=关键词&sort=relevance` | 按标题或正文搜索帖子，支持 relevance/latest/hot |
-| `GET` | `/api/search?type=users&q=账号或昵称&sort=relevance` | 按账号或昵称搜索用户，支持 relevance/newest |
+| `GET` | `/api/search?type=users&q=用户ID或昵称&sort=relevance` | 公开搜索仅支持精确用户 ID 或昵称，支持 relevance/newest |
 
 ## 7. 管理员与超级管理员 (Admin)
 
@@ -166,14 +166,14 @@
 **管理员管理 (Admin)**
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/admin/members` | 获取当前管理员列表 |
+| `GET` | `/api/admin/members` | 获取当前管理员列表，返回用户 ID 与学号/登录账号 |
 | `POST` | `/api/admin/invite/:id`| 邀请指定用户成为管理员 |
 | `POST` | `/api/teachers/admin/:id/vote-remove` | 投票罢免管理员 |
 
 **超级管理员 (Super Admin)**
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/super/users` | 全局用户风控管理列表 |
+| `GET` | `/api/super/users` | 全局用户风控管理列表，可按用户 ID、学号/登录账号或昵称搜索 |
 | `PUT` | `/api/super/users/:id/role`| 直接修改用户角色层级 |
 | `POST`| `/api/super/users/:id/reset_password`| 强制重置密码 |
 | `GET` | `/api/super/stats` | 获取系统整体统计大盘数据 |

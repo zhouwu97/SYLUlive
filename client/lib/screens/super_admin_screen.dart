@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../config/api_constants.dart';
+import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
 
 class SuperAdminScreen extends StatefulWidget {
@@ -14,7 +15,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     with SingleTickerProviderStateMixin {
   late Dio _dio;
   late TabController _tabController;
-  List<dynamic> _users = [];
+  List<AdminUserSummary> _users = [];
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _adminLogs = [];
   String _searchQuery = '';
@@ -53,7 +54,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         '/super/users',
         queryParameters: {if (_searchQuery.isNotEmpty) 'search': _searchQuery},
       );
-      _users = res.data as List;
+      _users = ((res.data as List?) ?? const [])
+          .whereType<Map>()
+          .map(
+            (value) => AdminUserSummary.fromJson(
+              Map<String, dynamic>.from(value),
+            ),
+          )
+          .toList();
     } catch (_) {}
   }
 
@@ -116,10 +124,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       );
       if (mounted) {
         // 本地移除该代办
-        if (mounted)
+        if (mounted) {
           setState(
             () => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']),
           );
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(approve ? '已提交同意审批' : '已驳回'),
@@ -152,7 +161,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       appBar: AppBar(
         title: const Text('超级管理员面板'),
         leading: const BackButton(),
-        actions: [],
+        actions: const [],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -182,7 +191,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           padding: const EdgeInsets.all(8),
           child: TextField(
             decoration: const InputDecoration(
-              hintText: '搜索学号/昵称...',
+              hintText: '搜索用户 ID、学号/账号或昵称',
               prefixIcon: Icon(Icons.search),
               border: OutlineInputBorder(),
             ),
@@ -204,19 +213,21 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     );
   }
 
-  Widget _buildUserItem(dynamic user) {
+  Widget _buildUserItem(AdminUserSummary user) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ListTile(
         leading: CircleAvatar(
-          child: Text((user['nickname'] ?? '?').toString().substring(0, 1)),
+          child:
+              Text(user.nickname.isEmpty ? '?' : user.nickname.substring(0, 1)),
         ),
-        title: Text(user['nickname'] ?? '未知'),
+        title: Text(user.nickname.isEmpty ? '未知' : user.nickname),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('学号: ${user['student_id']}'),
-            Text('角色: ${user['role']} | 诚信: ${user['credit_score']}%'),
+            Text(user.publicIdLabel),
+            Text(user.accountLabel),
+            Text('角色: ${user.role} | 诚信: ${user.creditScore}%'),
           ],
         ),
         isThreeLine: true,
@@ -225,7 +236,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'role', child: Text('修改角色')),
             const PopupMenuItem(value: 'reset', child: Text('重置密码')),
-            if (user['role'] != 'super_admin')
+            if (!user.isSuperAdmin)
               const PopupMenuItem(value: 'delete', child: Text('删除用户')),
           ],
         ),
@@ -233,17 +244,20 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     );
   }
 
-  void _handleUserAction(dynamic user, String action) {
-    if (action == 'role')
+  void _handleUserAction(AdminUserSummary user, String action) {
+    if (action == 'role') {
       _showChangeRoleDialog(user);
-    else if (action == 'reset')
-      _resetPassword(user['id']);
-    else if (action == 'delete') _deleteUser(user['id']);
+    } else if (action == 'reset') {
+      _resetPassword(user.id);
+    } else if (action == 'delete') {
+      _deleteUser(user.id);
+    }
   }
 
   Widget _buildApprovalsTab() {
-    if (_pendingInvitations.isEmpty)
+    if (_pendingInvitations.isEmpty) {
       return const Center(child: Text('暂无待审批的申请'));
+    }
     return RefreshIndicator(
       onRefresh: _loadAll,
       child: ListView.builder(
@@ -280,14 +294,21 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                               ),
                             ),
                             Text(
-                              '学号: ${user['student_id']} | 诚信: ${user['credit_score']}%',
+                              '用户 ID：${user['id']}',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey,
                               ),
                             ),
                             Text(
-                              '邀请人: ${inviter['nickname'] ?? '未知'}',
+                              '学号/账号：${user['student_id']} | 诚信：${user['credit_score']}%',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            Text(
+                              '邀请人：${inviter['nickname'] ?? '未知'}（ID：${inviter['id'] ?? '-'}）',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey,
@@ -336,24 +357,24 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   // --- 以下为原有用户管理逻辑 ---
-  void _showChangeRoleDialog(dynamic user) {
+  void _showChangeRoleDialog(AdminUserSummary user) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('修改角色'),
-        content: Text('用户: ${user['nickname']}'),
+        content: Text('用户: ${user.nickname}'),
         actions: [
-          if (user['role'] != 'super_admin')
+          if (!user.isSuperAdmin)
             TextButton(
               onPressed: () {
-                _changeRole(user['id'], 'user');
+                _changeRole(user.id, 'user');
                 Navigator.pop(ctx);
               },
               child: const Text('普通用户'),
             ),
           TextButton(
             onPressed: () {
-              _changeRole(user['id'], 'admin');
+              _changeRole(user.id, 'admin');
               Navigator.pop(ctx);
             },
             child: const Text('管理员'),
@@ -378,10 +399,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   Future<void> _resetPassword(int uid) async {
     try {
       await _dio.post('/super/users/$uid/reset_password');
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('密码已重置')));
+      }
     } catch (_) {}
   }
 
@@ -683,7 +705,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                           ),
                           title: Text(nickname),
                           subtitle: Text(
-                            '学号: ${user['student_id']} | 权重: ${p['weight']}',
+                            '用户 ID：${user['id']} | 权重: ${p['weight']}',
                           ),
                           trailing: IconButton(
                             icon: const Icon(

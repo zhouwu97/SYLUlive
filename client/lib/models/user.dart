@@ -116,6 +116,7 @@ class User {
 
   bool get isAdmin => role == 'admin' || role == 'super_admin';
   bool get isSuperAdmin => role == 'super_admin';
+  String get publicIdLabel => 'ID $id';
 
   /// 根据经验值计算用户等级
   /// Level 1: 0-49 exp

@@ -673,7 +673,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           ],
         ),
 
-        // 第三行：性别、ID、学院
+        // 第三行：性别和公开用户 ID
         const SizedBox(height: 8),
         Row(
           children: [
@@ -687,7 +687,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             const SizedBox(width: 5),
             Flexible(
               child: Text(
-                'ID ${user.studentId}  ${user.eduCollege.isNotEmpty ? user.eduCollege : '未知归属'}',
+                user.publicIdLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white70, fontSize: 12),

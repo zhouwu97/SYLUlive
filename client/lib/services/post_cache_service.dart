@@ -219,31 +219,34 @@ class PostCacheService {
   }
 
   /// 清理旧版或损坏的缓存数据
-  static Future<void> clearLegacyCache() async {
-    try {
-      final box = await _openBox();
-      final keys = box.keys.toList(growable: false);
+  static Future<int> clearLegacyCache() async {
+    final box = await _openBox();
+    final keys = box.keys.toList(growable: false);
+    int deletedCount = 0;
 
-      for (final key in keys) {
-        final raw = box.get(key);
+    for (final key in keys) {
+      final raw = box.get(key);
 
-        if (raw == null || raw.isEmpty) {
-          await box.delete(key);
-          continue;
-        }
-
-        try {
-          final decoded = jsonDecode(raw);
-
-          if (decoded is! Map<String, dynamic> ||
-              decoded['schema_version'] != cacheSchemaVersion) {
-            await box.delete(key);
-          }
-        } catch (_) {
-          await box.delete(key);
-        }
+      if (raw == null || raw.isEmpty) {
+        await box.delete(key);
+        deletedCount++;
+        continue;
       }
-    } catch (_) {}
+
+      try {
+        final decoded = jsonDecode(raw);
+
+        if (decoded is! Map<String, dynamic> ||
+            decoded['schema_version'] != cacheSchemaVersion) {
+          await box.delete(key);
+          deletedCount++;
+        }
+      } catch (_) {
+        await box.delete(key);
+        deletedCount++;
+      }
+    }
+    return deletedCount;
   }
 
   /// 清除指定板块缓存

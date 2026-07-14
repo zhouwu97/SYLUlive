@@ -78,12 +78,11 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       final postsFuture = provider.getUserPosts(targetId);
       final marketFuture = provider.getUserMarketPosts(targetId);
 
-      User? user;
+      User? loadedUser;
       if (isSelf) {
         await auth.refreshUser();
-        user = auth.user;
       } else {
-        user = await provider.getUserProfile(targetId);
+        loadedUser = await provider.getUserProfile(targetId);
       }
 
       final posts = await postsFuture;
@@ -92,7 +91,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       if (!mounted || generation != _loadGeneration) return;
 
       setState(() {
-        _user = user;
+        _user = isSelf ? context.read<AuthProvider>().user : loadedUser;
         _posts = posts.where((post) => !_isMarketPost(post)).toList();
         _marketPosts = marketResult.items;
         _marketTotal = marketResult.total;
@@ -105,14 +104,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
   }
 
-  Future<void> _refreshSelfProfileOnly() async {
-    final auth = context.read<AuthProvider>();
-    await auth.refreshUser();
-
+  void _onProfileSaved() {
     if (!mounted) return;
-
     setState(() {
-      _user = auth.user;
+      _user = context.read<AuthProvider>().user;
     });
   }
 
@@ -901,7 +896,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: _EditProfileSheet(user: user, onSaved: _refreshSelfProfileOnly),
+        child: _EditProfileSheet(user: user, onSaved: () async { _onProfileSaved(); }),
       ),
     );
   }
@@ -1055,9 +1050,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     setState(() => _isSaving = true);
     try {
       final auth = context.read<AuthProvider>();
-      await auth.dio.put(
+      final response = await auth.dio.put(
         '/user/profile',
         data: {'nickname': newNickname, 'gender': _selectedGender},
+      );
+
+      await auth.applyProfileResponse(
+        Map<String, dynamic>.from(response.data),
       );
 
       await widget.onSaved();

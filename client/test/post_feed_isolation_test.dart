@@ -939,4 +939,38 @@ void main() {
     expect(provider.error, isNull);
     expect(provider.postsFor(1, sort: 'all').first.id, 3);
   });
+
+  test('clearLegacyCache removes schema 3, empty string, and corrupt json but keeps schema 4', () async {
+    final box = await Hive.openBox<String>('post_cache');
+    
+    // Insert corrupt json
+    await box.put('corrupt', '{corrupt: true');
+    
+    // Insert empty string
+    await box.put('empty', '');
+    
+    // Insert schema 3 data
+    await box.put('schema3', jsonEncode({
+      'schema_version': 3,
+      'algorithm_version': 'home_all_v2',
+      'saved_at': DateTime.now().toUtc().toIso8601String(),
+      'posts': [],
+    }));
+    
+    // Insert valid schema 4 data
+    await box.put('schema4', jsonEncode({
+      'schema_version': 4,
+      'algorithm_version': 'home_time_v2',
+      'saved_at': DateTime.now().toUtc().toIso8601String(),
+      'posts': [],
+    }));
+
+    final deletedCount = await PostCacheService.clearLegacyCache();
+    
+    expect(deletedCount, 3);
+    expect(box.get('corrupt'), isNull);
+    expect(box.get('empty'), isNull);
+    expect(box.get('schema3'), isNull);
+    expect(box.get('schema4'), isNotNull);
+  });
 }

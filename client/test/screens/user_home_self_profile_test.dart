@@ -11,6 +11,7 @@ import 'package:shenliyuan/screens/user_home_screen.dart';
 
 class _ProfileRouteAdapter implements HttpClientAdapter {
   final requestedPaths = <String>[];
+  final requests = <RequestOptions>[];
   final Map<String, dynamic>? profileResponse;
 
   _ProfileRouteAdapter({this.profileResponse});
@@ -26,6 +27,7 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
   ) async {
     final route = options.uri.path;
     requestedPaths.add(route);
+    requests.add(options);
     final statusCode = route == '/user/2' ||
             route == '/user/2/posts' ||
             route == '/user/2/market-posts' ||
@@ -272,7 +274,16 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
 
-    // 验证请求没变成 male
-    expect(adapter.requestedPaths, contains('/user/profile'));
+    // 验证请求
+    final updateRequest = adapter.requests.singleWhere(
+      (request) =>
+          request.method == 'PUT' && request.uri.path == '/user/profile',
+    );
+
+    final body = Map<String, dynamic>.from(updateRequest.data as Map);
+
+    expect(body['nickname'], '新名字');
+    expect(body['gender'], '');
+    expect(body['gender'], isNot('male'));
   });
 }

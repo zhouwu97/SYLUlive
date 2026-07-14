@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -89,16 +90,16 @@ func TestUserProfileUpdate(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "Nickname length > 20 returns 400",
-			input:          UpdateProfileInput{Nickname: "这是一个超长的名字这真的非常长不可能合法超过二十个字符了"},
-			expectedStatus: http.StatusBadRequest,
+			name:           "Nickname length = 20 saves successfully",
+			input:          UpdateProfileInput{Nickname: strings.Repeat("名", 20)},
+			expectedStatus: http.StatusOK,
+			expectedName:   strings.Repeat("名", 20),
+			expectedGender: "", // Remains empty from the third test
 		},
 		{
-			name:           "Nickname length = 20 saves successfully",
-			input:          UpdateProfileInput{Nickname: "这是一二三四五六七八九十一二三四五六七八九十"},
-			expectedStatus: http.StatusOK,
-			expectedName:   "这是一二三四五六七八九十一二三四五六七八九十",
-			expectedGender: "", // Remains empty from the third test
+			name:           "Nickname length > 20 returns 400",
+			input:          UpdateProfileInput{Nickname: strings.Repeat("名", 21)},
+			expectedStatus: http.StatusBadRequest,
 		},
 	}
 

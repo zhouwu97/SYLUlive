@@ -44,6 +44,7 @@ import 'utils/private_message_notification.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/campus_calendar_service.dart';
+import 'services/post_cache_service.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -248,6 +249,14 @@ Future<void> main() async {
       );
 
       await Hive.initFlutter();
+
+      try {
+        await PostCacheService.clearLegacyCache();
+      } catch (e, stackTrace) {
+        debugPrint('清理旧帖子缓存失败: $e');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+
       runApp(const MyApp());
 
       WidgetsBinding.instance.addPostFrameCallback((_) {

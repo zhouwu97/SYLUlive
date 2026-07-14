@@ -217,7 +217,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 decoration: InputDecoration(
                   border: InputBorder.none,
                   isDense: true,
-                  hintText: '搜索账号、用户或帖子关键词',
+                  hintText: '搜索用户 ID、昵称或帖子关键词',
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.arrow_upward_rounded, size: 19),
@@ -422,7 +422,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '账号 ${user.studentId}',
+                  user.publicIdLabel,
                   style: TextStyle(
                     fontSize: 12,
                     color: isDark ? Colors.white60 : Colors.black54,

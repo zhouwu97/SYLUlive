@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -285,6 +286,62 @@ void main() {
         '/uploads/new-avatar.jpg');
   });
 
+  test('post cache excludes account identifiers and invalidates schema 2',
+      () async {
+    final author = User(
+      id: 7,
+      studentId: '20260007',
+      nickname: '缓存作者',
+      creditScore: 88,
+      role: 'admin',
+      reportCount: 3,
+      createdAt: DateTime.utc(2026, 6, 14),
+    );
+    await PostCacheService.savePosts(
+      777,
+      CachedPostFeed(
+        posts: [
+          Post(
+            id: 1,
+            content: 'cached',
+            boardId: 777,
+            authorId: author.id,
+            author: author,
+            createdAt: DateTime.utc(2026, 6, 14, 8),
+          ),
+        ],
+      ),
+    );
+
+    final box = await Hive.openBox<String>('post_cache');
+    final stored =
+        jsonDecode(box.get('board_777_time__')!) as Map<String, dynamic>;
+    final cachedAuthor = ((stored['posts'] as List).single
+        as Map<String, dynamic>)['author'] as Map<String, dynamic>;
+    expect(stored['schema_version'], 3);
+    expect(cachedAuthor.containsKey('student_id'), isFalse);
+    expect(cachedAuthor.containsKey('credit_score'), isFalse);
+    expect(cachedAuthor.containsKey('report_count'), isFalse);
+    expect(cachedAuthor['id'], author.id);
+
+    await box.put(
+      'board_778_time__',
+      jsonEncode({
+        'schema_version': 2,
+        'algorithm_version': PostCacheService.expectedAlgorithmVersion(
+          boardId: 778,
+          sort: 'time',
+        ),
+        'saved_at': DateTime.now().toUtc().toIso8601String(),
+        'pinned_posts': const [],
+        'posts': const [],
+      }),
+    );
+
+    expect(await PostCacheService.loadPosts(778), isNull);
+    expect(box.containsKey('board_778_time__'), isFalse);
+  });
+
   test('post pin fields parse active state and copyWith can clear pin times',
       () {
     final futureUntil = DateTime.now().add(const Duration(days: 1));
@@ -414,22 +471,25 @@ void main() {
     final pinnedUntil = DateTime.utc(2026, 6, 17);
     await PostCacheService.savePosts(
       88,
-      CachedPostFeed(posts: [
-        Post(
-          id: 8,
-          content: 'cached',
-          boardId: 88,
-          authorId: 1,
-          createdAt: DateTime.utc(2026, 6, 14, 8),
-          replyCount: 3,
-          likeCount: 4,
-          isPinned: true,
-          pinnedUntil: pinnedUntil,
-          pinnedWeight: 70,
-          isFeatured: true,
-          featuredBy: 2,
-        ),
-      ], algorithmVersion: PostCacheService.expectedAlgorithmVersion(boardId: 88, sort: 'all')),
+      CachedPostFeed(
+          posts: [
+            Post(
+              id: 8,
+              content: 'cached',
+              boardId: 88,
+              authorId: 1,
+              createdAt: DateTime.utc(2026, 6, 14, 8),
+              replyCount: 3,
+              likeCount: 4,
+              isPinned: true,
+              pinnedUntil: pinnedUntil,
+              pinnedWeight: 70,
+              isFeatured: true,
+              featuredBy: 2,
+            ),
+          ],
+          algorithmVersion: PostCacheService.expectedAlgorithmVersion(
+              boardId: 88, sort: 'all')),
       sort: 'all',
     );
 
@@ -462,17 +522,20 @@ void main() {
 
     await PostCacheService.savePosts(
       1,
-      CachedPostFeed(posts: [
-        Post(
-          id: 2,
-          title: 'campus_title',
-          content: 'campus',
-          boardId: 1,
-          authorId: 1,
-          postType: 'campus_life',
-          createdAt: DateTime.utc(2026, 6, 14, 8),
-        ),
-      ], algorithmVersion: PostCacheService.expectedAlgorithmVersion(boardId: 1, sort: 'all', type: 'campus_life', tagId: 3)),
+      CachedPostFeed(
+          posts: [
+            Post(
+              id: 2,
+              title: 'campus_title',
+              content: 'campus',
+              boardId: 1,
+              authorId: 1,
+              postType: 'campus_life',
+              createdAt: DateTime.utc(2026, 6, 14, 8),
+            ),
+          ],
+          algorithmVersion: PostCacheService.expectedAlgorithmVersion(
+              boardId: 1, sort: 'all', type: 'campus_life', tagId: 3)),
       sort: 'all',
       type: 'campus_life',
       tagId: 3,
@@ -500,12 +563,19 @@ void main() {
     expect(unrelated, isNull);
   });
 
-  test('post cache automatically populates missing algorithm version and applies strict version isolation', () async {
+  test(
+      'post cache automatically populates missing algorithm version and applies strict version isolation',
+      () async {
     // 1. 空 algorithmVersion 保存时自动补全 (首页 all -> home_all_v2)
     await PostCacheService.savePosts(
       1,
       CachedPostFeed(posts: [
-        Post(id: 1, content: 't1', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+        Post(
+            id: 1,
+            content: 't1',
+            boardId: 1,
+            authorId: 1,
+            createdAt: DateTime.now()),
       ], algorithmVersion: ''), // deliberately empty
       sort: 'all',
     );
@@ -516,42 +586,66 @@ void main() {
     await PostCacheService.savePosts(
       1,
       CachedPostFeed(posts: [
-        Post(id: 2, content: 't2', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+        Post(
+            id: 2,
+            content: 't2',
+            boardId: 1,
+            authorId: 1,
+            createdAt: DateTime.now()),
       ], algorithmVersion: ''), // deliberately empty
       sort: 'time',
     );
     final homeTime = await PostCacheService.loadPosts(1, sort: 'time');
-    expect(homeTime?.algorithmVersion, PostCacheService.homeTimeAlgorithmVersion);
+    expect(
+        homeTime?.algorithmVersion, PostCacheService.homeTimeAlgorithmVersion);
 
     // 3. 专题 all -> feed_v1
     await PostCacheService.savePosts(
       1,
       CachedPostFeed(posts: [
-        Post(id: 3, content: 't3', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+        Post(
+            id: 3,
+            content: 't3',
+            boardId: 1,
+            authorId: 1,
+            createdAt: DateTime.now()),
       ], algorithmVersion: ''), // deliberately empty
       sort: 'all',
       type: 'campus_life',
     );
-    final sectionAll = await PostCacheService.loadPosts(1, sort: 'all', type: 'campus_life');
-    expect(sectionAll?.algorithmVersion, PostCacheService.fallbackAlgorithmVersion);
+    final sectionAll =
+        await PostCacheService.loadPosts(1, sort: 'all', type: 'campus_life');
+    expect(sectionAll?.algorithmVersion,
+        PostCacheService.fallbackAlgorithmVersion);
 
     // 4. 集市 all -> feed_v1
     await PostCacheService.savePosts(
       2, // boardId 2 is market
       CachedPostFeed(posts: [
-        Post(id: 4, content: 't4', boardId: 2, authorId: 1, createdAt: DateTime.now()),
+        Post(
+            id: 4,
+            content: 't4',
+            boardId: 2,
+            authorId: 1,
+            createdAt: DateTime.now()),
       ], algorithmVersion: ''), // deliberately empty
       sort: 'all',
     );
     final marketAll = await PostCacheService.loadPosts(2, sort: 'all');
-    expect(marketAll?.algorithmVersion, PostCacheService.fallbackAlgorithmVersion);
+    expect(
+        marketAll?.algorithmVersion, PostCacheService.fallbackAlgorithmVersion);
 
     // 5. 算法版本不匹配时删除缓存
     // First, save a valid cache
     await PostCacheService.savePosts(
       1,
       CachedPostFeed(posts: [
-        Post(id: 5, content: 't5', boardId: 1, authorId: 1, createdAt: DateTime.now()),
+        Post(
+            id: 5,
+            content: 't5',
+            boardId: 1,
+            authorId: 1,
+            createdAt: DateTime.now()),
       ], algorithmVersion: 'some_malicious_version_or_v1_instead_of_v2'),
       sort: 'all',
     );
@@ -768,7 +862,8 @@ void main() {
     expect(post.expAwards.last.titleAfter, '常驻同学');
   });
 
-  test('feed_version=2 is sent and pinnedPosts are updated during V2 refresh', () async {
+  test('feed_version=2 is sent and pinnedPosts are updated during V2 refresh',
+      () async {
     final dio = Dio();
     final requests = <RequestOptions>[];
     dio.interceptors.add(

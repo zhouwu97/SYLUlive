@@ -123,27 +123,49 @@ func (h *SearchHandler) searchUsers(
 ) {
 	searchText := strings.ToLower(queryText)
 	searchLike := "%" + searchText + "%"
-	query := h.db.Model(&models.User{}).
-		Where("(LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?)", searchLike, searchLike)
+	query := h.db.Model(&models.User{})
+
+	parsedID, parseIDErr := strconv.ParseUint(queryText, 10, 64)
+	if parseIDErr == nil {
+		query = query.Where("id = ? OR LOWER(nickname) LIKE ?", parsedID, searchLike)
+	} else {
+		query = query.Where("LOWER(nickname) LIKE ?", searchLike)
+	}
 
 	if sort == "newest" {
 		query = query.Order("created_at DESC")
 	} else {
-		query = query.Order(clause.Expr{
-			SQL: `CASE
-				WHEN LOWER(student_id) = ? THEN 0
-				WHEN LOWER(nickname) = ? THEN 1
-				WHEN LOWER(student_id) LIKE ? THEN 2
-				WHEN LOWER(nickname) LIKE ? THEN 3
-				ELSE 4
-			END`,
-			Vars: []interface{}{
-				searchText,
-				searchText,
-				searchText + "%",
-				searchText + "%",
-			},
-		}).Order("created_at DESC")
+		if parseIDErr == nil {
+			query = query.Order(clause.Expr{
+				SQL: `CASE
+					WHEN id = ? THEN 0
+					WHEN LOWER(nickname) = ? THEN 1
+					WHEN LOWER(nickname) LIKE ? THEN 2
+					WHEN LOWER(nickname) LIKE ? THEN 3
+					ELSE 4
+				END`,
+				Vars: []interface{}{
+					parsedID,
+					searchText,
+					searchText + "%",
+					searchLike,
+				},
+			}).Order("created_at DESC")
+		} else {
+			query = query.Order(clause.Expr{
+				SQL: `CASE
+					WHEN LOWER(nickname) = ? THEN 0
+					WHEN LOWER(nickname) LIKE ? THEN 1
+					WHEN LOWER(nickname) LIKE ? THEN 2
+					ELSE 3
+				END`,
+				Vars: []interface{}{
+					searchText,
+					searchText + "%",
+					searchLike,
+				},
+			}).Order("created_at DESC")
+		}
 	}
 
 	var total int64
@@ -154,9 +176,7 @@ func (h *SearchHandler) searchUsers(
 
 	var users []models.User
 	if err := query.
-		Select("id", "student_id", "nickname", "gender", "avatar", "background",
-			"credit_score", "role", "admin_exp", "exp", "created_at",
-			"edu_bound", "edu_grade", "edu_college", "edu_major",
+		Select("id", "nickname", "avatar", "background", "exp",
 			"followers_count", "following_count", "total_likes_received").
 		Offset((page - 1) * limit).
 		Limit(limit).
@@ -165,8 +185,12 @@ func (h *SearchHandler) searchUsers(
 		return
 	}
 
+	items := make([]PublicUserResponse, 0, len(users))
+	for _, user := range users {
+		items = append(items, publicUserResponse(user))
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"items": users,
+		"items": items,
 		"total": total,
 		"page":  page,
 		"limit": limit,

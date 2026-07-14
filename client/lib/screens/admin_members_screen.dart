@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 
@@ -13,7 +14,7 @@ class AdminMembersScreen extends StatefulWidget {
 }
 
 class _AdminMembersScreenState extends State<AdminMembersScreen> {
-  late Future<List<dynamic>> _future;
+  late Future<List<AdminUserSummary>> _future;
 
   @override
   void initState() {
@@ -21,19 +22,29 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
     _future = _loadMembers();
   }
 
-  Future<List<dynamic>> _loadMembers() async {
+  Future<List<AdminUserSummary>> _loadMembers() async {
     final auth = context.read<AuthProvider>();
     try {
       final response = await auth.dio.get('/admin/members');
-      return (response.data as List?) ?? [];
+      return _decodeUsers(response.data);
     } on DioException catch (e) {
       final isMissingMembersRoute = e.response?.statusCode == 404;
       if (isMissingMembersRoute && auth.user?.isSuperAdmin == true) {
         final fallback = await auth.dio.get('/super/users');
-        return (fallback.data as List?) ?? [];
+        return _decodeUsers(fallback.data);
       }
       rethrow;
     }
+  }
+
+  List<AdminUserSummary> _decodeUsers(dynamic data) {
+    final values = data as List? ?? const [];
+    return values
+        .whereType<Map>()
+        .map((value) => AdminUserSummary.fromJson(
+              Map<String, dynamic>.from(value),
+            ))
+        .toList();
   }
 
   Future<void> _refresh() async {
@@ -55,7 +66,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: FutureBuilder<List<dynamic>>(
+      body: FutureBuilder<List<AdminUserSummary>>(
         future: _future,
         builder: (_, snap) {
           if (snap.connectionState != ConnectionState.done) {
@@ -84,18 +95,14 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
             );
           }
 
-          final members = (snap.data ?? const [])
-              .where(
-                (u) => u['role'] == 'admin' || u['role'] == 'super_admin',
-              )
+          final members = (snap.data ?? const <AdminUserSummary>[])
+              .where((user) => user.isAdmin)
               .toList()
             ..sort((a, b) {
-              final roleA = a['role'] == 'super_admin' ? 0 : 1;
-              final roleB = b['role'] == 'super_admin' ? 0 : 1;
+              final roleA = a.isSuperAdmin ? 0 : 1;
+              final roleB = b.isSuperAdmin ? 0 : 1;
               if (roleA != roleB) return roleA.compareTo(roleB);
-              return (a['nickname'] ?? '').toString().compareTo(
-                    (b['nickname'] ?? '').toString(),
-                  );
+              return a.nickname.compareTo(b.nickname);
             });
 
           if (members.isEmpty) {
@@ -167,8 +174,8 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                 ),
                 const SizedBox(height: 16),
                 ...members.map((member) {
-                  final isCurrentUser = member['id'] == auth.user?.id;
-                  final isSuperAdmin = member['role'] == 'super_admin';
+                  final isCurrentUser = member.id == auth.user?.id;
+                  final isSuperAdmin = member.isSuperAdmin;
                   final accent = isSuperAdmin
                       ? const Color(0xFF7C4DFF)
                       : const Color(0xFFFF8F00);
@@ -200,9 +207,8 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                           radius: 24,
                           backgroundColor: accent.withValues(alpha: 0.14),
                           child: Text(
-                            ((member['nickname'] as String?)?.isNotEmpty ??
-                                    false)
-                                ? (member['nickname'] as String).substring(0, 1)
+                            member.nickname.isNotEmpty
+                                ? member.nickname.substring(0, 1)
                                 : '?',
                             style: TextStyle(
                               color: accent,
@@ -219,7 +225,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                                 children: [
                                   Flexible(
                                     child: Text(
-                                      member['nickname'] ?? '',
+                                      member.nickname,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -254,10 +260,15 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                member['student_id']?.toString().isNotEmpty ==
-                                        true
-                                    ? member['student_id'].toString()
-                                    : '未填写学号',
+                                member.publicIdLabel,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color:
+                                      isDark ? Colors.white60 : Colors.black54,
+                                ),
+                              ),
+                              Text(
+                                member.accountLabel,
                                 style: TextStyle(
                                   fontSize: 13,
                                   color:

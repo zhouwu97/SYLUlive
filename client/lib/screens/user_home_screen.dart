@@ -58,16 +58,25 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     });
   }
 
+  int _loadGeneration = 0;
+
   Future<void> _loadData() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-    final auth = context.read<AuthProvider>();
-    final targetId = widget.userId ?? auth.user?.id;
-    if (targetId != null) {
+    final generation = ++_loadGeneration;
+
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      final auth = context.read<AuthProvider>();
+      final targetId = widget.userId ?? auth.user?.id;
+      if (targetId == null) return;
+
       final provider = context.read<SocialProvider>();
       final isSelf = targetId == auth.user?.id;
+
       final postsFuture = provider.getUserPosts(targetId);
-      final marketPostsFuture = provider.getUserMarketPosts(targetId);
+      final marketFuture = provider.getUserMarketPosts(targetId);
 
       User? user;
       if (isSelf) {
@@ -78,23 +87,33 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       }
 
       final posts = await postsFuture;
-      final marketResult = await marketPostsFuture;
+      final marketResult = await marketFuture;
 
-      final normalPosts = posts.where((post) => !_isMarketPost(post)).toList();
+      if (!mounted || generation != _loadGeneration) return;
 
-      if (mounted) {
-        setState(() {
-          _user = user;
-          _posts = normalPosts;
-          _marketPosts = marketResult.items;
-          _marketTotal = marketResult.total;
-          _marketSoldCount = marketResult.sold;
-        });
+      setState(() {
+        _user = user;
+        _posts = posts.where((post) => !_isMarketPost(post)).toList();
+        _marketPosts = marketResult.items;
+        _marketTotal = marketResult.total;
+        _marketSoldCount = marketResult.sold;
+      });
+    } finally {
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _isLoading = false);
       }
     }
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
+  }
+
+  Future<void> _refreshSelfProfileOnly() async {
+    final auth = context.read<AuthProvider>();
+    await auth.refreshUser();
+
+    if (!mounted) return;
+
+    setState(() {
+      _user = auth.user;
+    });
   }
 
   bool _isMarketPost(Post post) {
@@ -882,7 +901,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: _EditProfileSheet(user: user, onSaved: _loadData),
+        child: _EditProfileSheet(user: user, onSaved: _refreshSelfProfileOnly),
       ),
     );
   }
@@ -987,7 +1006,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         final url = uploadRes.data['url'] as String;
         await auth.dio.put('/user/background', data: {'background': url});
 
-        await auth.refreshUser();
         await widget.onSaved();
         if (mounted) {
           ScaffoldMessenger.of(
@@ -1042,7 +1060,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         data: {'nickname': newNickname, 'gender': _selectedGender},
       );
 
-      await auth.refreshUser();
       await widget.onSaved();
       if (mounted) {
         Navigator.pop(context);

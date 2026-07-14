@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/cached_avatar.dart';
+import '../config/api_constants.dart';
 
 class AdminCandidatesScreen extends StatefulWidget {
   const AdminCandidatesScreen({super.key});
@@ -287,13 +289,12 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12)),
                                 child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundImage: candidate.avatar.isNotEmpty
-                                        ? NetworkImage(candidate.avatar)
-                                        : null,
-                                    child: candidate.avatar.isEmpty
-                                        ? const Icon(Icons.person)
-                                        : null,
+                                  leading: CachedAvatar(
+                                    imageUrl: candidate.avatar.isEmpty
+                                        ? null
+                                        : ApiConstants.fullUrl(candidate.avatar),
+                                    fallbackText: candidate.nickname,
+                                    radius: 20,
                                   ),
                                   title: Text(
                                     candidate.nickname.isEmpty

@@ -24,7 +24,7 @@ class CachedPostFeed {
 
 /// 帖子本地缓存服务（基于 Hive，JSON 序列化，无需 code-gen）
 class PostCacheService {
-  static const int cacheSchemaVersion = 3;
+  static const int cacheSchemaVersion = 4;
   static const String homeAllAlgorithmVersion = 'home_all_v2';
   static const String homeTimeAlgorithmVersion = 'home_time_v2';
   static const String fallbackAlgorithmVersion = 'feed_v1';
@@ -218,6 +218,34 @@ class PostCacheService {
         tagId: tagId);
   }
 
+  /// 清理旧版或损坏的缓存数据
+  static Future<void> clearLegacyCache() async {
+    try {
+      final box = await _openBox();
+      final keys = box.keys.toList(growable: false);
+
+      for (final key in keys) {
+        final raw = box.get(key);
+
+        if (raw == null || raw.isEmpty) {
+          await box.delete(key);
+          continue;
+        }
+
+        try {
+          final decoded = jsonDecode(raw);
+
+          if (decoded is! Map<String, dynamic> ||
+              decoded['schema_version'] != cacheSchemaVersion) {
+            await box.delete(key);
+          }
+        } catch (_) {
+          await box.delete(key);
+        }
+      }
+    } catch (_) {}
+  }
+
   /// 清除指定板块缓存
   static Future<void> clearBoard(int boardId) async {
     final box = await _openBox();
@@ -295,6 +323,7 @@ class PostCacheService {
               'avatar': post.author!.avatar,
               'background': post.author!.background,
               'exp': post.author!.exp,
+              'credit_score': post.author!.creditScore,
             }
           : null,
       'created_at': post.createdAt.toUtc().toIso8601String(),

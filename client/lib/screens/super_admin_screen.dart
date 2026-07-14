@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
@@ -19,6 +20,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _adminLogs = [];
   String _searchQuery = '';
+  Timer? _searchDebounce;
   late Future<Response<dynamic>> _lotteryFuture;
 
   @override
@@ -32,6 +34,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -48,13 +51,19 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     } catch (_) {}
   }
 
+  int _userSearchGeneration = 0;
+
   Future<void> _loadUsers() async {
+    final generation = ++_userSearchGeneration;
+    final search = _searchQuery.trim();
+
     try {
       final res = await _dio.get(
         '/super/users',
-        queryParameters: {if (_searchQuery.isNotEmpty) 'search': _searchQuery},
+        queryParameters: {if (search.isNotEmpty) 'search': search},
       );
-      _users = ((res.data as List?) ?? const [])
+
+      final users = ((res.data as List?) ?? const [])
           .whereType<Map>()
           .map(
             (value) => AdminUserSummary.fromJson(
@@ -62,6 +71,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             ),
           )
           .toList();
+
+      if (!mounted || generation != _userSearchGeneration) return;
+
+      setState(() => _users = users);
     } catch (_) {}
   }
 
@@ -197,7 +210,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             ),
             onChanged: (v) {
               _searchQuery = v;
-              _loadUsers();
+              if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+              _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+                _loadUsers();
+              });
             },
           ),
         ),

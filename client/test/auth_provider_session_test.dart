@@ -86,6 +86,25 @@ class _FakeAuthCredentialStore implements AuthCredentialStore {
   }
 }
 
+class _BlockingAuthCredentialStore extends _FakeAuthCredentialStore {
+  final Completer<void> staleWriteStarted = Completer<void>();
+  final Completer<void> releaseStaleWrite = Completer<void>();
+  bool blockNextWrite = false;
+
+  @override
+  Future<void> write({required String token, required String userJson}) async {
+    operations.add('auth:write:$token');
+    if (failWrites) throw StateError('auth write failed');
+    writeCount++;
+    if (blockNextWrite) {
+      blockNextWrite = false;
+      staleWriteStarted.complete();
+      await releaseStaleWrite.future;
+    }
+    stored = StoredAuthCredentials(token: token, userJson: userJson);
+  }
+}
+
 class _FakePreferenceStore implements PreferenceStore {
   final Map<String, String> values = {};
   final Map<String, List<bool>> setResults = {};
@@ -509,6 +528,29 @@ void main() {
     await provider.applyAuthPayload('token', _userJson(1));
 
     expect(provider.sessionGeneration, 1);
+  });
+
+  test('旧资料刷新提交期间，旧编辑入口最终保留更新后的资料', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(200, _userJson(2))
+      ..enqueue(200, _userJson(3));
+    final store = _BlockingAuthCredentialStore();
+    final provider = _provider(adapter, store);
+    await provider.applyAuthPayload('token', _userJson(1));
+    store.blockNextWrite = true;
+
+    final staleRefresh = provider.refreshUser();
+    await store.staleWriteStarted.future;
+    final profileUpdate = provider.updateProfile('用户3');
+
+    // 让 PUT 响应进入资料提交路径，但保留旧刷新写入的阻塞。
+    await pumpEventQueue(times: 10);
+
+    store.releaseStaleWrite.complete();
+    await Future.wait([staleRefresh, profileUpdate]);
+
+    expect(provider.user?.id, 3);
+    expect(jsonDecode(store.stored.userJson!)['id'], 3);
   });
 
   test('本地认证用户数据畸形时不恢复部分会话', () async {

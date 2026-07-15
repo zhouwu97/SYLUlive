@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +12,6 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/social_provider.dart';
 import 'package:shenliyuan/screens/user_home_screen.dart';
-import 'package:shenliyuan/utils/post_image_cache.dart';
 
 class _ProfileRouteAdapter implements HttpClientAdapter {
   final requestedPaths = <String>[];
@@ -115,6 +116,18 @@ class _MemoryAuthCredentialStore implements AuthCredentialStore {
   Future<void> writeEduPassword(String studentId, String password) async {}
 }
 
+class _EmptyCacheManager extends Fake implements BaseCacheManager {
+  @override
+  Stream<FileResponse> getFileStream(
+    String url, {
+    String? key,
+    Map<String, String>? headers,
+    bool withProgress = false,
+  }) {
+    return const Stream.empty();
+  }
+}
+
 void main() {
   setUpAll(() {
     HttpOverrides.global = _MockHttpOverrides();
@@ -122,7 +135,6 @@ void main() {
 
   tearDownAll(() {
     HttpOverrides.global = null;
-    PostImageCache.manager.dispose();
   });
   testWidgets('自己的主页刷新后保留登录态中的女性性别', (tester) async {
     const keepAliveChannel = MethodChannel('shenliyuan/keep_alive');
@@ -336,7 +348,7 @@ void main() {
     expect(find.text('新名字'), findsOneWidget);
   });
 
-  testWidgets('更换主页背景后立即使用新背景且没有追加GET请求', (tester) async {
+  testWidgets('背景更新响应写入登录态且页面立即使用新背景', (tester) async {
     const keepAliveChannel = MethodChannel('shenliyuan/keep_alive');
     const gradeReminderChannel = MethodChannel('shenliyuan/grade_reminders');
     final messenger =
@@ -380,7 +392,11 @@ void main() {
             create: (_) => SocialProvider(dio),
           ),
         ],
-        child: const MaterialApp(home: UserHomeScreen()),
+        child: MaterialApp(
+          home: UserHomeScreen(
+            backgroundCacheManager: _EmptyCacheManager(),
+          ),
+        ),
       ),
     );
     await tester.pump();
@@ -389,19 +405,33 @@ void main() {
 
     adapter.requests.clear();
 
-    // 直接调用 auth_provider 的 applyProfileResponse 来模拟背景更改成功的服务端下发逻辑
-    final response = await dio.put('/user/background', data: {'background': 'http://example.com/new_bg.jpg'});
-    await auth.applyProfileResponse(Map<String, dynamic>.from(response.data as Map));
-    
-    // 渲染一帧以消耗掉 notifyListeners() 产生的 pending frame
+    // 模拟背景接口返回完整用户资料，由认证状态统一提交。
+    await auth.applyProfileResponse({
+      'id': 2,
+      'student_id': '20260002',
+      'nickname': '新名字',
+      'gender': '',
+      'created_at': '2026-07-15T00:00:00Z',
+      'background': 'http://example.com/new_bg.jpg',
+    });
     await tester.pump();
-    
+
     expect(auth.user?.background, 'http://example.com/new_bg.jpg');
-    
-    final getRequests = adapter.requests.where((r) => r.method == 'GET' && r.uri.path == '/user/profile');
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is CachedNetworkImage &&
+            widget.imageUrl == 'http://example.com/new_bg.jpg',
+      ),
+      findsOneWidget,
+    );
+
+    final getRequests = adapter.requests.where(
+      (request) =>
+          request.method == 'GET' && request.uri.path == '/user/profile',
+    );
     expect(getRequests, isEmpty);
-    await tester.pumpAndSettle();
-  });
+  }, timeout: const Timeout(Duration(seconds: 15)));
 }
 
 final Uint8List _transparentImage = base64Decode(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shenliyuan/utils/post_image_cache.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -23,7 +24,9 @@ import '../utils/app_navigation.dart';
 
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
-  const UserHomeScreen({super.key, this.userId});
+  final BaseCacheManager? backgroundCacheManager;
+
+  const UserHomeScreen({super.key, this.userId, this.backgroundCacheManager});
 
   @override
   State<UserHomeScreen> createState() => _UserHomeScreenState();
@@ -164,8 +167,12 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final authUser = context.watch<AuthProvider>().user;
+    final isSelfProfile =
+        widget.userId == null || widget.userId == authUser?.id;
+    final displayedUser = isSelfProfile ? authUser ?? _user : _user;
 
-    if (_user == null) {
+    if (displayedUser == null) {
       if (_isLoading) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
@@ -175,9 +182,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       );
     }
 
-    final user = _user!;
-    final isMe = widget.userId == null ||
-        widget.userId == context.read<AuthProvider>().user?.id;
+    final user = displayedUser;
+    final isMe = isSelfProfile;
 
     final pageBackground = isDark
         ? const Color(0xFF111214)
@@ -596,7 +602,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       child: ClipRect(
         child: CachedNetworkImage(
           imageUrl: ApiConstants.fullUrl(user.background),
-          cacheManager: PostImageCache.manager,
+          cacheManager: widget.backgroundCacheManager ?? PostImageCache.manager,
           width: double.infinity,
           height: double.infinity,
           fit: BoxFit.cover,

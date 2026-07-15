@@ -251,7 +251,10 @@ Future<void> main() async {
       await Hive.initFlutter();
 
       try {
-        await PostCacheService.clearLegacyCache();
+        final deletedCount = await PostCacheService.clearLegacyCache();
+        if (deletedCount > 0) {
+          debugPrint('已清理 $deletedCount 条旧版帖子缓存');
+        }
       } catch (e, stackTrace) {
         debugPrint('清理旧帖子缓存失败: $e');
         debugPrintStack(stackTrace: stackTrace);

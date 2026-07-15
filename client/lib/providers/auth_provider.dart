@@ -669,15 +669,19 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  int _profileGeneration = 0;
+
   /// 从服务器刷新当前用户信息（角色变更后调用）
   Future<void> refreshUser() async {
     if (_token == null) return;
+    final generation = ++_profileGeneration;
     try {
       final response = await _dio.get('/user/profile');
+      if (generation != _profileGeneration) return;
       if (response.statusCode == 200) {
-        _user = User.fromJson(response.data);
-        await _saveAuth();
-        notifyListeners();
+        await _commitProfileResponse(
+          Map<String, dynamic>.from(response.data),
+        );
       }
     } on DioException catch (e) {
       debugPrint('刷新用户信息失败: ${e.message}');
@@ -694,8 +698,23 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> applyProfileResponse(Map<String, dynamic> userJson) async {
-    _user = User.fromJson(userJson);
-    await _saveAuth();
+    ++_profileGeneration;
+    await _commitProfileResponse(userJson);
+  }
+
+  Future<void> _commitProfileResponse(
+    Map<String, dynamic> userJson,
+  ) async {
+    final token = _token;
+    if (token == null) {
+      throw StateError('当前登录状态无效');
+    }
+
+    final nextUser = User.fromJson(userJson);
+    final candidate = _AuthSessionCandidate(token, nextUser);
+
+    // 先完成持久化，成功后再更新内存
+    await _saveAndCommitAuthSession(candidate, prefetchWallpaper: false);
     notifyListeners();
   }
 

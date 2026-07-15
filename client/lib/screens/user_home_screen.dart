@@ -999,7 +999,11 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       final uploadRes = await auth.dio.post('/upload', data: formData);
       if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
         final url = uploadRes.data['url'] as String;
-        await auth.dio.put('/user/background', data: {'background': url});
+        final response = await auth.dio.put('/user/background', data: {'background': url});
+
+        await auth.applyProfileResponse(
+          Map<String, dynamic>.from(response.data),
+        );
 
         await widget.onSaved();
         if (mounted) {

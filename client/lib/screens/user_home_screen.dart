@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shenliyuan/utils/post_image_cache.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
@@ -595,6 +596,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       child: ClipRect(
         child: CachedNetworkImage(
           imageUrl: ApiConstants.fullUrl(user.background),
+          cacheManager: PostImageCache.manager,
           width: double.infinity,
           height: double.infinity,
           fit: BoxFit.cover,

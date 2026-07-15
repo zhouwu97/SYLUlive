@@ -198,7 +198,14 @@ func (h *UserHandler) UpdateBackground(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "背景图更新成功"})
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取用户资料失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, selfUserResponse(user))
 }
 
 // NightModeInput 夜间模式设置输入

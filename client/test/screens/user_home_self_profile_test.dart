@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/social_provider.dart';
 import 'package:shenliyuan/screens/user_home_screen.dart';
+import 'package:shenliyuan/utils/post_image_cache.dart';
 
 class _ProfileRouteAdapter implements HttpClientAdapter {
   final requestedPaths = <String>[];
@@ -121,6 +122,7 @@ void main() {
 
   tearDownAll(() {
     HttpOverrides.global = null;
+    PostImageCache.manager.dispose();
   });
   testWidgets('自己的主页刷新后保留登录态中的女性性别', (tester) async {
     const keepAliveChannel = MethodChannel('shenliyuan/keep_alive');

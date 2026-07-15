@@ -420,13 +420,6 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _saveAuth() async {
-    final token = _token;
-    final user = _user;
-    if (token == null || user == null) return;
-    await _saveAuthCandidate(_AuthSessionCandidate(token, user));
-  }
-
   Future<void> _saveAuthCandidate(_AuthSessionCandidate candidate) async {
     await _credentialStore.write(
       token: candidate.token,
@@ -656,9 +649,9 @@ class AuthProvider extends ChangeNotifier {
         data: {'nickname': nickname},
       );
       if (response.statusCode == 200) {
-        _user = User.fromJson(response.data);
-        await _saveAuth();
-        notifyListeners();
+        await applyProfileResponse(
+          Map<String, dynamic>.from(response.data),
+        );
         return AuthResult.success();
       }
       return AuthResult.failure('更新资料失败');
@@ -670,6 +663,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   int _profileGeneration = 0;
+  Future<void> _profileWriteTail = Future.value();
 
   /// 从服务器刷新当前用户信息（角色变更后调用）
   Future<void> refreshUser() async {
@@ -677,10 +671,10 @@ class AuthProvider extends ChangeNotifier {
     final generation = ++_profileGeneration;
     try {
       final response = await _dio.get('/user/profile');
-      if (generation != _profileGeneration) return;
       if (response.statusCode == 200) {
-        await _commitProfileResponse(
+        await _enqueueProfileCommit(
           Map<String, dynamic>.from(response.data),
+          generation,
         );
       }
     } on DioException catch (e) {
@@ -698,8 +692,25 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> applyProfileResponse(Map<String, dynamic> userJson) async {
-    ++_profileGeneration;
-    await _commitProfileResponse(userJson);
+    final generation = ++_profileGeneration;
+    await _enqueueProfileCommit(userJson, generation);
+  }
+
+  Future<void> _enqueueProfileCommit(
+    Map<String, dynamic> userJson,
+    int generation,
+  ) {
+    final commit = _profileWriteTail.then((_) async {
+      if (generation != _profileGeneration) return;
+      await _commitProfileResponse(userJson);
+    });
+
+    // 提交失败不能阻断后续资料响应进入队列。
+    _profileWriteTail = commit.then<void>(
+      (_) {},
+      onError: (_, __) {},
+    );
+    return commit;
   }
 
   Future<void> _commitProfileResponse(

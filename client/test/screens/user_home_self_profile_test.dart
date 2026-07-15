@@ -31,10 +31,13 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
     final statusCode = route == '/user/2' ||
             route == '/user/2/posts' ||
             route == '/user/2/market-posts' ||
-            route == '/user/profile'
+            route == '/user/profile' ||
+            route == '/user/background' ||
+            route == '/upload'
         ? 200
         : 404;
     final response = switch (route) {
+      '/upload' => {'url': 'http://example.com/new_bg.jpg'},
       '/user/2' => {
           'id': 2,
           'nickname': '女生用户',
@@ -46,13 +49,31 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
           'total_likes_received': 0,
           'is_following': false,
         },
-      '/user/profile' => profileResponse ?? {
+      '/user/profile' => options.method == 'PUT'
+          ? {
+              'id': 2,
+              'student_id': '20260002',
+              'nickname': '新名字',
+              'gender': '',
+              'created_at': '2026-07-15T00:00:00Z',
+              'background': 'http://example.com/bg.jpg',
+            }
+          : profileResponse ?? {
+              'id': 2,
+              'student_id': '20260002',
+              'nickname': '女生用户',
+              'gender': 'female',
+              'created_at': '2026-07-15T00:00:00Z',
+              'background': '',
+            },
+      '/user/background' => {
           'id': 2,
           'student_id': '20260002',
-          'nickname': '女生用户',
-          'gender': 'female',
+          'nickname': '新名字',
+          'gender': '',
           'created_at': '2026-07-15T00:00:00Z',
-        },
+          'background': 'http://example.com/new_bg.jpg',
+      },
       '/user/2/posts' => <Object>[],
       '/user/2/market-posts' => {
           'items': <Object>[],
@@ -269,21 +290,106 @@ void main() {
     await tester.enterText(find.byType(TextField).first, '新名字');
     await tester.pump();
 
+    // 清空初始化时的 requests 记录
+    adapter.requests.clear();
+
     // 点击保存
     await tester.tap(find.text('保存'));
     await tester.pump();
     await tester.pumpAndSettle();
 
     // 验证请求
-    final updateRequest = adapter.requests.singleWhere(
-      (request) =>
-          request.method == 'PUT' && request.uri.path == '/user/profile',
+    final profileRequests = adapter.requests
+        .where((request) => request.uri.path == '/user/profile')
+        .toList();
+
+    expect(
+      profileRequests.where((request) => request.method == 'PUT'),
+      hasLength(1),
     );
 
+    expect(
+      profileRequests.where((request) => request.method == 'GET'),
+      isEmpty,
+    );
+
+    final updateRequest = profileRequests.firstWhere((r) => r.method == 'PUT');
     final body = Map<String, dynamic>.from(updateRequest.data as Map);
 
     expect(body['nickname'], '新名字');
     expect(body['gender'], '');
     expect(body['gender'], isNot('male'));
+
+    expect(auth.user?.nickname, '新名字');
+    expect(auth.user?.gender, '');
+    expect(find.text('新名字'), findsOneWidget);
+  });
+
+  testWidgets('更换主页背景后立即使用新背景且没有追加GET请求', (tester) async {
+    const keepAliveChannel = MethodChannel('shenliyuan/keep_alive');
+    const gradeReminderChannel = MethodChannel('shenliyuan/grade_reminders');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(keepAliveChannel, (call) async => true);
+    messenger.setMockMethodCallHandler(
+      gradeReminderChannel,
+      (call) async => null,
+    );
+    addTearDown(() async {
+      messenger.setMockMethodCallHandler(keepAliveChannel, null);
+      messenger.setMockMethodCallHandler(gradeReminderChannel, null);
+    });
+
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
+    final adapter = _ProfileRouteAdapter();
+    dio.httpClientAdapter = adapter;
+    final auth = AuthProvider(
+      dio,
+      credentialStore: _MemoryAuthCredentialStore(),
+      loadStoredAuth: false,
+      onAuthenticated: () {},
+    );
+    await auth.applyAuthPayload('token', {
+      'id': 2,
+      'student_id': '20260002',
+      'nickname': '测试用户',
+      'gender': 'male',
+      'created_at': '2026-07-15T00:00:00Z',
+      'background': '',
+    });
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<SocialProvider>(
+            create: (_) => SocialProvider(dio),
+          ),
+        ],
+        child: const MaterialApp(home: UserHomeScreen()),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 打开编辑页
+    await tester.tap(find.text('编辑资料'));
+    await tester.pumpAndSettle();
+
+    adapter.requests.clear();
+
+    // 找到更改背景图按钮
+    final backgroundButton = find.text('更改主页背景图');
+    expect(backgroundButton, findsOneWidget);
+
+    // 直接调用 auth_provider 的 applyProfileResponse 来模拟背景更改成功的服务端下发逻辑
+    final response = await dio.put('/user/background', data: {'background': 'http://example.com/new_bg.jpg'});
+    await auth.applyProfileResponse(Map<String, dynamic>.from(response.data as Map));
+    
+    expect(auth.user?.background, 'http://example.com/new_bg.jpg');
+    
+    final getRequests = adapter.requests.where((r) => r.method == 'GET' && r.uri.path == '/user/profile');
+    expect(getRequests, isEmpty);
   });
 }

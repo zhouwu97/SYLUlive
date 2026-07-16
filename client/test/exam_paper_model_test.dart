@@ -90,6 +90,7 @@ void main() {
       'page': 2,
       'page_size': 20,
       'total': 45,
+      'academic_years': ['2025-2026', '2023-2024'],
     });
 
     expect(page.items, hasLength(1));
@@ -97,6 +98,7 @@ void main() {
     expect(page.pageSize, 20);
     expect(page.total, 45);
     expect(page.hasMore, isTrue);
+    expect(page.academicYears, ['2025-2026', '2023-2024']);
   });
 
   test('学年选项以九月为界并生成服务端同款标题预览', () {

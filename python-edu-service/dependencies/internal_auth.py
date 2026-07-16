@@ -22,7 +22,7 @@ def _load_token() -> str:
     """延迟加载 Token，避免模块导入时环境变量尚未设置。"""
     global _INTERNAL_SERVICE_TOKEN
     if _INTERNAL_SERVICE_TOKEN is None:
-        _INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "")
+        _INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "") or os.getenv("EDU_SERVICE_TOKEN", "")
     return _INTERNAL_SERVICE_TOKEN
 
 

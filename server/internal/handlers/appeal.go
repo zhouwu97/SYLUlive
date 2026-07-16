@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // AppealHandler 申诉处理器
@@ -71,45 +71,53 @@ func (h *AppealHandler) Create(c *gin.Context) {
 		return
 	}
 
+	deadline := time.Now().Add(72 * time.Hour)
 	appeal := models.Appeal{
-		PostID:      uint(postID),
-		AppellantID: userID.(uint),
-		AdminID:     *report.HandlerID,
-		AdminReason: report.DeleteReason,
-		Status:      models.AppealStatusPending,
+		PostID:         uint(postID),
+		AppellantID:    userID.(uint),
+		AdminID:        *report.HandlerID,
+		AdminReason:    report.DeleteReason,
+		Status:         models.AppealStatusPending,
+		VotingDeadline: &deadline,
 	}
 
-	if err := h.db.Create(&appeal).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&appeal).Error; err != nil {
+			return err
+		}
+		return NewAppealHandler(tx).selectJury(appeal.ID, post.AuthorID, appeal.AdminID)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建申诉失败"})
 		return
 	}
 
-	// 随机选择10名高诚信非当事人陪审员
-	h.selectJury(appeal.ID, post.AuthorID)
-
-	c.JSON(http.StatusCreated, appeal)
+	if err := h.db.Preload("Appellant").Preload("Admin").Preload("Post").First(&appeal, appeal.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取申诉失败"})
+		return
+	}
+	c.JSON(http.StatusCreated, appealResponse(appeal))
 }
 
 // selectJury 随机选择陪审员
-func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
+func (h *AppealHandler) selectJury(appealID, appellantID, adminID uint) error {
 	var candidates []models.User
 	// 近90天举报数为0且诚信度>90%的普通用户（排除管理员和超管）
-	if err := h.db.Where("id != ? AND report_count = 0 AND credit_score > 90 AND role = ?", excludeUserID, models.RoleUser).
+	if err := h.db.Where("id NOT IN ? AND report_count = 0 AND credit_score > 90 AND role = ?", []uint{appellantID, adminID}, models.RoleUser).
 		Find(&candidates).Error; err != nil {
-		log.Printf("[DB_ERROR] selectJury Find candidates failed: %v", err)
+		return err
 	}
 
 	if len(candidates) < 10 {
 		// 如果候选人不足，随机选择
-		if err := h.db.Where("id != ?", excludeUserID).Limit(10).Find(&candidates).Error; err != nil {
-			log.Printf("[DB_ERROR] selectJury Find fallback candidates failed: %v", err)
+		if err := h.db.Where("id NOT IN ? AND role = ?", []uint{appellantID, adminID}, models.RoleUser).Limit(10).Find(&candidates).Error; err != nil {
+			return err
 		}
 	}
 
 	// 如果还是没有候选人（系统里只有发帖人和超级管理员等情况），则自动分配超级管理员
 	if len(candidates) == 0 {
 		if err := h.db.Where("role = ?", models.RoleSuperAdmin).First(&candidates).Error; err != nil {
-			log.Printf("[DB_WARN] selectJury failed to find fallback super_admin: %v", err)
+			return err
 		}
 	}
 
@@ -129,21 +137,37 @@ func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
 			Vote:     "",
 		}
 		if err := h.db.Create(&vote).Error; err != nil {
-			log.Printf("[DB_ERROR] Failed to create appeal vote: %v", err)
-			return
+			return err
 		}
 	}
+	if count == 0 {
+		return fmt.Errorf("没有可用陪审员")
+	}
+	requiredVotes := count
+	if requiredVotes > 5 {
+		requiredVotes = 5
+	}
+	if requiredVotes > 1 && requiredVotes%2 == 0 {
+		requiredVotes--
+	}
+	return h.db.Model(&models.Appeal{}).Where("id = ?", appealID).Update("required_votes", requiredVotes).Error
 }
 
 // GetList 获取申诉列表
 func (h *AppealHandler) GetList(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	role, _ := c.Get("role")
 	status := c.Query("status")
 
 	query := h.db.Model(&models.Appeal{}).Preload("Appellant").Preload("Admin").Preload("Post")
+	if role != string(models.RoleSuperAdmin) {
+		query = query.Where("appellant_id = ? OR admin_id = ? OR id IN (?)", userID, userID,
+			h.db.Model(&models.AppealVote{}).Select("appeal_id").Where("voter_id = ?", userID))
+	}
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
-	query.Order("created_at DESC")
+	query = query.Order("created_at DESC")
 
 	var appeals []models.Appeal
 	if err := query.Find(&appeals).Error; err != nil {
@@ -151,7 +175,11 @@ func (h *AppealHandler) GetList(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, appeals)
+	responses := make([]models.AppealResponse, 0, len(appeals))
+	for _, appeal := range appeals {
+		responses = append(responses, appealResponse(appeal))
+	}
+	c.JSON(http.StatusOK, responses)
 }
 
 // GetOne 获取申诉详情
@@ -167,6 +195,20 @@ func (h *AppealHandler) GetOne(c *gin.Context) {
 	var appeal models.Appeal
 	if err := h.db.Preload("Appellant").Preload("Admin").Preload("Post").First(&appeal, appealID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "申诉不存在"})
+		return
+	}
+	role, _ := c.Get("role")
+	allowed := role == string(models.RoleSuperAdmin) || appeal.AppellantID == userID.(uint) || appeal.AdminID == userID.(uint)
+	if !allowed {
+		var assigned int64
+		if err := h.db.Model(&models.AppealVote{}).Where("appeal_id = ? AND voter_id = ?", appeal.ID, userID).Count(&assigned).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查申诉权限失败"})
+			return
+		}
+		allowed = assigned > 0
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权查看此申诉"})
 		return
 	}
 
@@ -186,9 +228,13 @@ func (h *AppealHandler) GetOne(c *gin.Context) {
 		}
 	}
 
+	voteResponses := make([]models.AppealVoteResponse, 0, len(votes))
+	for _, vote := range votes {
+		voteResponses = append(voteResponses, appealVoteResponse(vote))
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"appeal":    appeal,
-		"votes":     votes,
+		"appeal":    appealResponse(appeal),
+		"votes":     voteResponses,
 		"has_voted": hasVoted,
 	})
 }
@@ -223,7 +269,7 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// 检查申诉是否存在并锁定
 		var appeal models.Appeal
-		if err := tx.First(&appeal, appealID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&appeal, appealID).Error; err != nil {
 			return err
 		}
 
@@ -233,7 +279,7 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 
 		// 检查是否是有效的陪审员
 		var vote models.AppealVote
-		if err := tx.Where("appeal_id = ? AND voter_id = ?", appealID, userID).First(&vote).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("appeal_id = ? AND voter_id = ?", appealID, userID).First(&vote).Error; err != nil {
 			return fmt.Errorf("您不是此申诉的陪审员")
 		}
 
@@ -248,36 +294,44 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 			return err
 		}
 
-		// 检查是否所有陪审员都已投票
+		// 达到法定票数即可结案，不再永久等待所有陪审员。
 		var votes []models.AppealVote
 		if err := tx.Where("appeal_id = ?", appealID).Find(&votes).Error; err != nil {
 			return err
 		}
 
-		allVoted := true
+		castCount := 0
 		supportCount := 0
 		opposeCount := 0
 		for _, v := range votes {
-			if v.Vote == "" {
-				allVoted = false
-				break
-			}
 			if v.Vote == "support" {
 				supportCount++
+				castCount++
 			} else if v.Vote == "oppose" {
 				opposeCount++
+				castCount++
 			}
 		}
 
-		if !allVoted {
+		requiredVotes := appeal.RequiredVotes
+		if requiredVotes <= 0 {
+			requiredVotes = len(votes)
+		}
+		deadlineReached := appeal.VotingDeadline != nil && !time.Now().Before(*appeal.VotingDeadline)
+		if castCount < requiredVotes && !deadlineReached {
 			return nil
+		}
+		if supportCount == opposeCount {
+			return fmt.Errorf("投票平局，需超级管理员处理")
 		}
 
 		now := time.Now()
 		if supportCount > opposeCount {
 			appeal.Status = models.AppealStatusPass
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉成功", supportCount, opposeCount)
-			tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", models.PostStatusNormal)
+			if err := tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", models.PostStatusNormal).Error; err != nil {
+				return err
+			}
 
 			// 管理员经验-3（不低于0）
 			var admin models.User
@@ -286,17 +340,26 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 				if newExp < 0 {
 					newExp = 0
 				}
-				tx.Model(&admin).Update("admin_exp", newExp)
+				if err := tx.Model(&admin).Update("admin_exp", newExp).Error; err != nil {
+					return err
+				}
 			}
 		} else {
 			appeal.Status = models.AppealStatusReject
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉失败", supportCount, opposeCount)
 
 			// 管理员经验+5
-			tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).Update("admin_exp", gorm.Expr("admin_exp + 5"))
+			if err := tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).Update("admin_exp", gorm.Expr("admin_exp + 5")).Error; err != nil {
+				return err
+			}
 		}
 
 		appeal.ClosedAt = &now
+		if deadlineReached {
+			appeal.ClosedReason = "voting_deadline_reached"
+		} else {
+			appeal.ClosedReason = "required_votes_reached"
+		}
 		return tx.Save(&appeal).Error
 	})
 
@@ -306,4 +369,26 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "投票成功"})
+}
+
+func appealUserResponse(user models.User) models.PublicAppealUserResponse {
+	return models.PublicAppealUserResponse{ID: user.ID, Nickname: user.Nickname, Avatar: user.Avatar}
+}
+
+func appealResponse(appeal models.Appeal) models.AppealResponse {
+	return models.AppealResponse{
+		ID: appeal.ID, PostID: appeal.PostID, AdminReason: appeal.AdminReason,
+		Status: appeal.Status, Result: appeal.Result, VotingDeadline: appeal.VotingDeadline,
+		RequiredVotes: appeal.RequiredVotes, ClosedReason: appeal.ClosedReason,
+		CreatedAt: appeal.CreatedAt, ClosedAt: appeal.ClosedAt,
+		Appellant: appealUserResponse(appeal.Appellant), Admin: appealUserResponse(appeal.Admin),
+		Post: models.AppealPostResponse{ID: appeal.Post.ID, Title: appeal.Post.Title, Content: appeal.Post.Content, Status: appeal.Post.Status},
+	}
+}
+
+func appealVoteResponse(vote models.AppealVote) models.AppealVoteResponse {
+	return models.AppealVoteResponse{
+		ID: vote.ID, AppealID: vote.AppealID, Vote: vote.Vote, Comment: vote.Comment,
+		CreatedAt: vote.CreatedAt, Voter: appealUserResponse(vote.Voter),
+	}
 }

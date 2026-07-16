@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -226,6 +227,55 @@ func TestAdminRejectExamPaperRequiresReasonAndDeletesRecordAndFile(t *testing.T)
 	}
 }
 
+func TestAdminLocalRejectReportsPurgeFailureAfterCommit(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "reject-purge-owner", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "reject-purge-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPending)
+	env.handler.purgeLocalDelete = func(services.ExamPaperTrashMove) error { return errors.New("清理暂存文件失败") }
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminReject, http.MethodPost, "/api/admin/exam-papers/1/reject", params, admin.ID, map[string]any{"reason": "内容不符合要求"})
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "exam_paper_file_cleanup_pending") {
+		t.Fatalf("拒绝清理失败应可观察: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestAdminRejectRestoresStagedFileOnTransactionFailure(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "reject-rollback-owner", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "reject-rollback-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPending)
+	const callbackName = "test:fail_exam_paper_reject_delete"
+	require.NoError(t, env.db.Callback().Delete().Before("gorm:delete").Register(callbackName, func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Model.(*models.ExamPaper); ok {
+			tx.AddError(errors.New("注入拒绝删除失败"))
+		}
+	}))
+	t.Cleanup(func() { _ = env.db.Callback().Delete().Remove(callbackName) })
+
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	response := performExamPaperJSONRequest(env.handler.AdminReject, http.MethodPost, "/api/admin/exam-papers/1/reject", params, admin.ID, map[string]any{"reason": "内容不符合要求"})
+	require.Equal(t, http.StatusInternalServerError, response.Code)
+	require.NoError(t, env.db.First(&models.ExamPaper{}, paper.ID).Error)
+	_, err := os.Stat(filepath.Join(env.root, paper.FileKey))
+	require.NoError(t, err)
+}
+
+func TestAdminRemoteRejectEnqueuesTrash(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	configureRemoteExamPaperHandler(t, &env, examPaperStorageModeRemote)
+	contributor := createExamPaperTestUser(t, env.db, "remote-reject-owner", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "remote-reject-admin", models.RoleAdmin, false, 0)
+	paper := createRemoteExamPaper(t, env, contributor, models.ExamPaperStatusPending, "reject.pdf")
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminReject, http.MethodPost, "/api/admin/exam-papers/1/reject", params, admin.ID, map[string]any{"reason": "内容不符合要求"})
+	require.Equal(t, http.StatusOK, response.Code)
+	var job models.ExamPaperStorageJob
+	require.NoError(t, env.db.Where("file_key = ? AND operation = ?", paper.FileKey, services.ExamPaperStoragePurposeDelete).First(&job).Error)
+}
+
 func TestAdminRejectExamPaperDeletesRecordWhenStoredFileAlreadyMissing(t *testing.T) {
 	env := newExamPaperTestEnv(t)
 	contributor := createExamPaperTestUser(t, env.db, "reject-missing-contributor", models.RoleUser, true, 0)
@@ -293,6 +343,61 @@ func TestAdminUpdateAndUnpublishExamPaper(t *testing.T) {
 	if messages != 1 {
 		t.Fatalf("unpublish must create one system message: %d", messages)
 	}
+}
+
+func TestAdminLocalUnpublishReportsPurgeFailureAfterCommit(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "unpublish-purge-owner", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "unpublish-purge-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	env.handler.purgeLocalDelete = func(services.ExamPaperTrashMove) error { return errors.New("清理暂存文件失败") }
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, map[string]any{"reason": "版权要求"})
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "exam_paper_file_cleanup_pending") {
+		t.Fatalf("下架清理失败应可观察: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var updated models.ExamPaper
+	if err := env.db.First(&updated, paper.ID).Error; err != nil || updated.Status != models.ExamPaperStatusUnpublished {
+		t.Fatalf("数据库事务应已提交下架状态: %#v err=%v", updated, err)
+	}
+}
+
+func TestAdminUnpublishRestoresStagedFileOnTransactionFailure(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	contributor := createExamPaperTestUser(t, env.db, "unpublish-rollback-owner", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "unpublish-rollback-admin", models.RoleAdmin, false, 0)
+	paper := createStoredExamPaper(t, env, contributor, models.ExamPaperStatusPublished)
+	const callbackName = "test:fail_exam_paper_unpublish_update"
+	require.NoError(t, env.db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Model.(*models.ExamPaper); ok {
+			tx.AddError(errors.New("注入下架更新失败"))
+		}
+	}))
+	t.Cleanup(func() { _ = env.db.Callback().Update().Remove(callbackName) })
+
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+	response := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, map[string]any{"reason": "版权要求"})
+	require.Equal(t, http.StatusInternalServerError, response.Code)
+	var retained models.ExamPaper
+	require.NoError(t, env.db.First(&retained, paper.ID).Error)
+	require.Equal(t, models.ExamPaperStatusPublished, retained.Status)
+	_, err := os.Stat(filepath.Join(env.root, paper.FileKey))
+	require.NoError(t, err)
+}
+
+func TestAdminRemoteUnpublishEnqueuesTrash(t *testing.T) {
+	env := newExamPaperTestEnv(t)
+	configureRemoteExamPaperHandler(t, &env, examPaperStorageModeRemote)
+	contributor := createExamPaperTestUser(t, env.db, "remote-unpublish-owner", models.RoleUser, true, 0)
+	admin := createExamPaperTestUser(t, env.db, "remote-unpublish-admin", models.RoleAdmin, false, 0)
+	paper := createRemoteExamPaper(t, env, contributor, models.ExamPaperStatusPublished, "unpublish.pdf")
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(paper.ID)}}
+
+	response := performExamPaperJSONRequest(env.handler.AdminUnpublish, http.MethodPost, "/api/admin/exam-papers/1/unpublish", params, admin.ID, map[string]any{"reason": "版权要求"})
+	require.Equal(t, http.StatusOK, response.Code)
+	var job models.ExamPaperStorageJob
+	require.NoError(t, env.db.Where("file_key = ? AND operation = ?", paper.FileKey, services.ExamPaperStoragePurposeDelete).First(&job).Error)
 }
 
 func TestAdminUnpublishExamPaperRevokesRewardOnce(t *testing.T) {

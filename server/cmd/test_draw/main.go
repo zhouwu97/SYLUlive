@@ -31,9 +31,9 @@ func main() {
 	// 1. 创建一个测试用户
 	testUser := models.User{
 		StudentID: "test_lottery_user",
-		Nickname: "测试小明",
-		Role:     "user",
-		Exp:      500, // 给他一点经验增加权重
+		Nickname:  "测试小明",
+		Role:      "user",
+		Exp:       500, // 给他一点经验增加权重
 	}
 	// 避免重复运行报错，先尝试查找
 	if err := db.Where("student_id = ?", "test_lottery_user").FirstOrCreate(&testUser).Error; err != nil {

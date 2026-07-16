@@ -1,5 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
+import '../platform/app_platform.dart';
 
 class KeepAliveStatus {
   final bool supported;
@@ -50,8 +51,8 @@ class KeepAliveService {
   static final KeepAliveService instance = KeepAliveService._();
   static const MethodChannel _channel = MethodChannel('shenliyuan/keep_alive');
 
-  bool get _isAndroid =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  /// 使用构建目标而非 Flutter 运行时平台；OHOS Flutter 当前会报告 Android。
+  bool get _isAndroid => AppPlatforms.current.isAndroid;
 
   Future<KeepAliveStatus> status() async {
     if (!_isAndroid) return const KeepAliveStatus.unsupported();

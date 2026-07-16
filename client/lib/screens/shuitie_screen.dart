@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_constants.dart';
 import '../models/water_section.dart';
@@ -117,8 +116,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _autoRefreshTimer;
   List<model.Announcement> _announcements = [];
+  List<model.Announcement> _unreadAnnouncements = [];
   bool _wasLoggedIn = false;
   bool _checkinStatusLoaded = false;
+  bool _checkinStatusLoading = false;
   String _feedMode = kFeedModes[kDefaultFeedModeIndex].key; // 'all'
   String _searchQuery = '';
   List<Post> _searchResults = [];
@@ -198,6 +199,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         _refresh();
       }
       _loadAnnouncements();
+      unawaited(_ensureCheckinStatusLoaded(force: true));
       _startAutoRefresh();
     } else if (state == AppLifecycleState.paused) {
       _stopAutoRefresh();
@@ -239,43 +241,70 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
+    final sessionGeneration = authProvider.sessionGeneration;
+    final unreadFuture = _loadUnreadAnnouncements(authProvider);
     try {
-      Response<dynamic> response;
-      try {
-        response = await authProvider.dio.get(ApiConstants.noticesPath);
-      } on DioException catch (e) {
-        if (e.response?.statusCode == 404) {
-          response = await authProvider.dio.get('/announcements');
-        } else {
-          rethrow;
-        }
-      }
-
-      if (response.statusCode == 200) {
-        final all = (response.data as List)
-            .map((e) => model.Announcement.fromJson(e))
-            .toList()
-          ..sort((a, b) {
-            if (a.isPinned != b.isPinned) {
-              return a.isPinned ? -1 : 1;
-            }
-            return b.createdAt.compareTo(a.createdAt);
-          });
-        final dismissed = await _loadDismissedIds();
-        if (!mounted) return;
-        setState(() {
-          _announcements = all.where((a) => !dismissed.contains(a.id)).toList();
-        });
-      }
+      final response = await _getAnnouncements(
+        authProvider,
+        unreadOnly: false,
+      );
+      final all = _parseAnnouncements(response);
+      final loadedUnread = await unreadFuture;
+      final unread = authProvider.isLoggedIn &&
+              authProvider.sessionGeneration == sessionGeneration
+          ? loadedUnread
+          : <model.Announcement>[];
+      if (!mounted) return;
+      setState(() {
+        _announcements = all;
+        _unreadAnnouncements = unread;
+      });
     } catch (e) {
       debugPrint('加载公告失败: $e');
     }
   }
 
-  Future<Set<int>> _loadDismissedIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList('dismissed_announcements') ?? [];
-    return list.map((s) => int.tryParse(s) ?? 0).where((i) => i > 0).toSet();
+  Future<List<model.Announcement>> _loadUnreadAnnouncements(
+    AuthProvider authProvider,
+  ) async {
+    if (!authProvider.isLoggedIn) return [];
+    try {
+      final response = await _getAnnouncements(
+        authProvider,
+        unreadOnly: true,
+      );
+      return _parseAnnouncements(response);
+    } catch (e) {
+      debugPrint('加载未读公告失败: $e');
+      return [];
+    }
+  }
+
+  Future<Response<dynamic>> _getAnnouncements(
+    AuthProvider authProvider, {
+    required bool unreadOnly,
+  }) async {
+    final primaryPath = unreadOnly
+        ? '${ApiConstants.noticesPath}/unread'
+        : ApiConstants.noticesPath;
+    final fallbackPath =
+        unreadOnly ? '/announcements/unread' : '/announcements';
+    try {
+      return await authProvider.dio.get(primaryPath);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        return authProvider.dio.get(fallbackPath);
+      }
+      rethrow;
+    }
+  }
+
+  List<model.Announcement> _parseAnnouncements(Response<dynamic> response) {
+    if (response.statusCode != 200 || response.data is! List) return [];
+    return (response.data as List)
+        .map((item) => model.Announcement.fromJson(item))
+        .toList()
+      ..sort(model.Announcement.compareForDisplay);
   }
 
   Future<void> _runSearch(String raw) async {
@@ -420,11 +449,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
   }
 
-  Future<void> _ensureCheckinStatusLoaded() async {
-    if (_checkinStatusLoaded || _checkInLoading) return;
-    final succeeded = await _loadCheckinStatus();
-    if (mounted && succeeded) {
-      _checkinStatusLoaded = true;
+  Future<void> _ensureCheckinStatusLoaded({bool force = false}) async {
+    if (_checkinStatusLoading || _checkInLoading) return;
+    if (!force && _checkinStatusLoaded) return;
+
+    _checkinStatusLoading = true;
+    try {
+      final succeeded = await _loadCheckinStatus();
+      if (mounted && succeeded) {
+        _checkinStatusLoaded = true;
+      }
+    } finally {
+      _checkinStatusLoading = false;
     }
   }
 
@@ -452,107 +488,76 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       Navigator.pushNamed(context, '/login');
       return;
     }
-    if (_checkInLoading || _checkedIn) return;
+    if (_checkInLoading) return;
     if (mounted) setState(() => _checkInLoading = true);
     try {
       final resp = await auth.dio.post('/user/checkin');
-      if (resp.statusCode == 200 && mounted) {
-        final data = resp.data;
-        final already = data['already'] ?? false;
-        final streak = data['streak_days'] ?? 1;
-        final exp = data['exp_earned'] ?? 1;
-        if (mounted) {
-          setState(() {
-            _checkedIn = true;
-            _streakDays = streak;
-            _checkInLoading = false;
-          });
-        }
-        auth.refreshUser();
-        if (!already) {
-          _showCheckInSuccessDialog(streak, exp);
-        } else {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('今天已经签过到了')));
-        }
+      if (resp.statusCode != 200 || !mounted) return;
+
+      final data = resp.data;
+      final already = data['already'] ?? false;
+      final streak = data['streak_days'] ?? 1;
+      final exp = data['exp_earned'] ?? 1;
+      setState(() {
+        _checkedIn = true;
+        _streakDays = streak;
+      });
+      unawaited(auth.refreshUser());
+      if (!already) {
+        _showCheckInSuccessDialog(streak, exp);
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('今天已经签过到了')));
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _checkInLoading = false);
         String msg = '签到失败，请稍后再试';
         if (e is DioException) {
           msg = AppFeedback.dioErrorMessage(e, fallback: msg);
         }
         AppFeedback.showSnackBar(context, msg, isError: true);
       }
+    } finally {
+      if (mounted) {
+        setState(() => _checkInLoading = false);
+      }
     }
   }
 
-  void _showCheckInSuccessDialog(int streak, int exp) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showDialog(
+  void _showCheckInSuccessDialog(int streakDays, int earnedExp) {
+    HapticFeedback.lightImpact();
+    showGeneralDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.celebration, color: Colors.orange[400]),
-            const SizedBox(width: 8),
-            const Text('签到成功！'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '🔥 连续签到 $streak 天',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.amber.withValues(alpha: 0.15)
-                    : Colors.amber.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '+$exp 经验',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.amber[700],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _nextRewardHint(streak),
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? Colors.white60 : Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('好的'),
-          ),
-        ],
-      ),
-    );
-  }
+      barrierDismissible: false,
+      barrierLabel: '签到成功',
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (_, __, ___) {
+        return CheckInSuccessDialog(
+          streakDays: streakDays,
+          earnedExp: earnedExp,
+        );
+      },
+      transitionBuilder: (_, animation, __, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutBack,
+          reverseCurve: Curves.easeIn,
+        );
 
-  String _nextRewardHint(int streak) {
-    if (streak < 3) return '连续签到3天可获得每日3经验';
-    if (streak < 10) return '连续签到10天可获得每日10经验';
-    if (streak < 30) return '连续签到30天可获得每日15经验';
-    return '已达最高等级，每日15经验！继续保持！';
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(
+              begin: 0.92,
+              end: 1,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   void _handleFeedSwipeStart(DragStartDetails details) {
@@ -754,7 +759,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _openHomeServicePanel() async {
-    await _ensureCheckinStatusLoaded();
+    await _ensureCheckinStatusLoaded(force: true);
     if (!mounted) return;
 
     final themeProvider = context.read<ThemeProvider>();
@@ -783,6 +788,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 checkInLoading: _checkInLoading,
                 showCheckInDot: _showCheckInDot,
                 announcements: _announcements,
+                unreadAnnouncements: _unreadAnnouncements,
                 waterSections:
                     context.read<WaterSectionProvider>().activeSections,
                 onCheckIn: () {
@@ -791,9 +797,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 onOpenToolbox: () {
                   _openPageKeepingPanel(const ToolboxScreen());
                 },
-                onOpenAnnouncements: () {
-                  _openPageKeepingPanel(const AnnouncementScreen());
-                },
+                onOpenAnnouncements: _openAnnouncements,
                 onOpenCompetitions: () {
                   _openPageKeepingPanel(const CompetitionCenterScreen());
                 },
@@ -833,6 +837,24 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         );
       },
     );
+  }
+
+  Future<void> _openAnnouncements() async {
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => AnnouncementScreen(
+          onAnnouncementRead: _handleAnnouncementRead,
+        ),
+      ),
+    );
+    if (mounted) await _loadAnnouncements();
+  }
+
+  void _handleAnnouncementRead(int announcementId) {
+    if (!mounted) return;
+    setState(() {
+      _unreadAnnouncements.removeWhere((item) => item.id == announcementId);
+    });
   }
 
   void _closePanelThenOpen(BuildContext dialogContext, VoidCallback openPage) {
@@ -877,6 +899,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           _refresh();
         }
         _ensureCheckinStatusLoaded();
+        _loadAnnouncements();
       });
     }
 
@@ -1091,7 +1114,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     ),
                     padding: EdgeInsets.zero,
                   ),
-                  if (_showCheckInDot)
+                  if (_showCheckInDot || _unreadAnnouncements.isNotEmpty)
                     Positioned(
                       top: 9,
                       right: 8,
@@ -1928,5 +1951,196 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(covariant _SliverSearchBarDelegate oldDelegate) {
     return oldDelegate.child != child;
+  }
+}
+
+class CheckInSuccessDialog extends StatelessWidget {
+  final int streakDays;
+  final int earnedExp;
+
+  const CheckInSuccessDialog({
+    super.key,
+    required this.streakDays,
+    required this.earnedExp,
+  });
+
+  String buildMilestoneText(int days) {
+    const milestones = [7, 14, 30, 50, 100, 180, 365];
+
+    final next = milestones.firstWhere(
+      (value) => value > days,
+      orElse: () => 0,
+    );
+
+    if (next == 0) {
+      return '已完成全部签到里程碑';
+    }
+
+    return '距离连续签到 $next 天还差 ${next - days} 天';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 304),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1D1F24) : Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: isDark ? 0.28 : 0.12,
+                ),
+                blurRadius: 28,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF3A3020)
+                      : const Color(0xFFFFF3DC),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.celebration_rounded,
+                  size: 24,
+                  color: Color(0xFFF59E0B),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '签到成功',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : const Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '已连续签到',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white54 : const Color(0xFF8B909A),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '$streakDays',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFF59E0B),
+                        height: 1.0,
+                      ),
+                    ),
+                    TextSpan(
+                      text: ' 天',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF4B5563),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF31291D)
+                      : const Color(0xFFFFF6E6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.bolt_rounded,
+                      size: 16,
+                      color: Color(0xFFF59E0B),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '+$earnedExp',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFF59E0B),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '经验已到账',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color:
+                            isDark ? Colors.white60 : const Color(0xFF7B808A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                buildMilestoneText(streakDays),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : const Color(0xFF9AA0AA),
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF6366F1),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    '继续保持',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

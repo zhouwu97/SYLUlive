@@ -14,7 +14,9 @@ import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 
 class AnnouncementScreen extends StatefulWidget {
-  const AnnouncementScreen({super.key});
+  const AnnouncementScreen({super.key, this.onAnnouncementRead});
+
+  final ValueChanged<int>? onAnnouncementRead;
 
   @override
   State<AnnouncementScreen> createState() => _AnnouncementScreenState();
@@ -23,6 +25,7 @@ class AnnouncementScreen extends StatefulWidget {
 class _AnnouncementScreenState extends State<AnnouncementScreen>
     with SingleTickerProviderStateMixin {
   List<model.Announcement> _announcements = [];
+  Set<int> _unreadAnnouncementIds = {};
   bool _isLoading = true;
   late AnimationController _animationController;
 
@@ -45,35 +48,25 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
 
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
+    final sessionGeneration = authProvider.sessionGeneration;
+    final unreadFuture = _loadUnreadAnnouncements(authProvider);
     try {
-      Response response;
-      try {
-        response = await authProvider.dio.get(ApiConstants.noticesPath);
-      } on DioException catch (e) {
-        if (e.response?.statusCode == 404) {
-          response = await authProvider.dio.get('/announcements');
-        } else {
-          rethrow;
-        }
-      }
-
-      if (response.statusCode == 200) {
-        final list = (response.data as List)
-            .map((e) => model.Announcement.fromJson(e))
-            .toList()
-          ..sort((a, b) {
-            if (a.isPinned != b.isPinned) {
-              return a.isPinned ? -1 : 1;
-            }
-            return b.createdAt.compareTo(a.createdAt);
-          });
-        if (mounted) {
-          setState(() {
-            _announcements = list;
-            _isLoading = false;
-          });
-        }
-      }
+      final response = await _getAnnouncements(
+        authProvider,
+        unreadOnly: false,
+      );
+      final all = _parseAnnouncements(response);
+      final loadedUnread = await unreadFuture;
+      final unread = authProvider.isLoggedIn &&
+              authProvider.sessionGeneration == sessionGeneration
+          ? loadedUnread
+          : <model.Announcement>[];
+      if (!mounted) return;
+      setState(() {
+        _announcements = all;
+        _unreadAnnouncementIds = unread.map((item) => item.id).toSet();
+        _isLoading = false;
+      });
     } catch (e) {
       debugPrint('加载公告失败: $e');
       if (mounted) {
@@ -81,6 +74,74 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<List<model.Announcement>> _loadUnreadAnnouncements(
+    AuthProvider authProvider,
+  ) async {
+    if (!authProvider.isLoggedIn) return [];
+    try {
+      final response = await _getAnnouncements(
+        authProvider,
+        unreadOnly: true,
+      );
+      return _parseAnnouncements(response);
+    } catch (e) {
+      debugPrint('加载未读公告失败: $e');
+      return [];
+    }
+  }
+
+  Future<Response<dynamic>> _getAnnouncements(
+    AuthProvider authProvider, {
+    required bool unreadOnly,
+  }) async {
+    final primaryPath = unreadOnly
+        ? '${ApiConstants.noticesPath}/unread'
+        : ApiConstants.noticesPath;
+    final fallbackPath =
+        unreadOnly ? '/announcements/unread' : '/announcements';
+    try {
+      return await authProvider.dio.get(primaryPath);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        return authProvider.dio.get(fallbackPath);
+      }
+      rethrow;
+    }
+  }
+
+  List<model.Announcement> _parseAnnouncements(Response<dynamic> response) {
+    if (response.statusCode != 200 || response.data is! List) return [];
+    return (response.data as List)
+        .map((item) => model.Announcement.fromJson(item))
+        .toList()
+      ..sort(model.Announcement.compareForDisplay);
+  }
+
+  Future<void> _markAnnouncementRead(model.Announcement announcement) async {
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      try {
+        await dio.post('${ApiConstants.noticesPath}/${announcement.id}/read');
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404) {
+          await dio.post('/announcements/${announcement.id}/read');
+        } else {
+          rethrow;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _unreadAnnouncementIds.remove(announcement.id);
+      });
+      widget.onAnnouncementRead?.call(announcement.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('标记公告已读失败，请稍后重试')),
+      );
     }
   }
 
@@ -131,8 +192,14 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 12;
-    final pinned = _announcements.where((a) => a.isPinned).toList();
-    final regular = _announcements.where((a) => !a.isPinned).toList();
+    final unread = _announcements
+        .where((item) => _unreadAnnouncementIds.contains(item.id))
+        .toList()
+      ..sort(model.Announcement.compareForDisplay);
+    final history = _announcements
+        .where((item) => !_unreadAnnouncementIds.contains(item.id))
+        .toList()
+      ..sort(model.Announcement.compareForDisplay);
     final useCustomBackground = themeProvider.shouldShowCustomBackground;
     final cleanLightMode = !useCustomBackground && !isDark;
     final foregroundColor =
@@ -154,7 +221,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
           backgroundColor: Colors.transparent,
           elevation: 0,
           title: Text(
-            '公告',
+            '公告中心',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               color: foregroundColor,
@@ -180,46 +247,53 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                             physics: const BouncingScrollPhysics(),
                             padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
                             children: [
-                              if (pinned.isNotEmpty) ...[
+                              if (unread.isNotEmpty) ...[
                                 _buildSectionHeader(
                                   isDark,
-                                  icon: Icons.push_pin_rounded,
-                                  title: '置顶公告',
-                                  subtitle: '${pinned.length} 条需要优先查看',
+                                  icon: Icons.mark_email_unread_outlined,
+                                  title: '未读公告',
+                                  subtitle: '${unread.length} 条等待查看',
                                   accent: Colors.red,
                                 ),
                                 const SizedBox(height: 10),
                                 ...List.generate(
-                                  pinned.length,
+                                  unread.length,
                                   (index) => _AnnouncementCard(
-                                    announcement: pinned[index],
+                                    key: ValueKey(unread[index].id),
+                                    announcement: unread[index],
                                     isDark: isDark,
                                     index: index,
-                                    emphasized: true,
+                                    emphasized: unread[index].isPinned,
                                     timeText:
-                                        _formatTime(pinned[index].createdAt),
+                                        _formatTime(unread[index].createdAt),
+                                    onMarkRead: () =>
+                                        _markAnnouncementRead(unread[index]),
                                   ),
                                 ),
                                 const SizedBox(height: 6),
                               ],
-                              _buildSectionHeader(
-                                isDark,
-                                icon: Icons.history_rounded,
-                                title: pinned.isEmpty ? '全部公告' : '最新公告',
-                                subtitle: '${regular.length} 条按时间排序',
-                                accent: Theme.of(context).primaryColor,
-                              ),
-                              const SizedBox(height: 10),
-                              ...List.generate(
-                                regular.length,
-                                (index) => _AnnouncementCard(
-                                  announcement: regular[index],
-                                  isDark: isDark,
-                                  index: index + pinned.length,
-                                  timeText:
-                                      _formatTime(regular[index].createdAt),
+                              if (history.isNotEmpty) ...[
+                                _buildSectionHeader(
+                                  isDark,
+                                  icon: Icons.history_rounded,
+                                  title: '历史公告',
+                                  subtitle: '${history.length} 条，可随时查看',
+                                  accent: Theme.of(context).primaryColor,
                                 ),
-                              ),
+                                const SizedBox(height: 10),
+                                ...List.generate(
+                                  history.length,
+                                  (index) => _AnnouncementCard(
+                                    key: ValueKey(history[index].id),
+                                    announcement: history[index],
+                                    isDark: isDark,
+                                    index: index + unread.length,
+                                    emphasized: history[index].isPinned,
+                                    timeText:
+                                        _formatTime(history[index].createdAt),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -326,13 +400,16 @@ class _AnnouncementCard extends StatefulWidget {
   final int index;
   final bool emphasized;
   final String timeText;
+  final VoidCallback? onMarkRead;
 
   const _AnnouncementCard({
+    super.key,
     required this.announcement,
     required this.isDark,
     required this.index,
     this.emphasized = false,
     required this.timeText,
+    this.onMarkRead,
   });
 
   @override
@@ -486,6 +563,17 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                   ],
                 ],
               ),
+              if (widget.onMarkRead != null) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: widget.onMarkRead,
+                    icon: const Icon(Icons.done_rounded, size: 16),
+                    label: const Text('标为已读'),
+                  ),
+                ),
+              ],
             ],
           ],
         ),

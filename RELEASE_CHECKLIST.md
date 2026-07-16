@@ -136,13 +136,20 @@ systemctl status shenliyuan --no-pager
 
 ```bash
 GET /api/user/profile
+GET /api/user/:id
+GET /api/search?type=users&q=:user_id
 GET /api/posts?board=2
 GET /api/admin/members
+GET /api/admin/candidates
+GET /api/super/users
+GET /api/super/invitations/pending
 GET /api/admin/removals/pending
 GET /api/announcements
 GET /api/announcements/unread
 GET /api/teachers
 ```
+
+确认公开资料、公开搜索和帖子作者对象不包含 `student_id`；本人资料与管理员专用接口则应按权限返回账号标识。
 
 ## 11. 日志抽查
 

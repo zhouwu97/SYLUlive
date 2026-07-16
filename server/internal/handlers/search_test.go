@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -45,36 +46,58 @@ func performSearchRequest(
 	return recorder
 }
 
-func TestSearchFindsUsersByAccountAndNickname(t *testing.T) {
+func TestSearchFindsUsersByIDAndNicknameButNotAccount(t *testing.T) {
 	db := newSearchTestDB(t)
 	users := []models.User{
-		{StudentID: "20260001", PasswordHash: "x", Nickname: "纯盒子"},
-		{StudentID: "20260002", PasswordHash: "x", Nickname: "测试用户"},
+		{ID: 101, StudentID: "20260001", PasswordHash: "x", Nickname: "纯盒子"},
+		{ID: 102, StudentID: "20260002", PasswordHash: "x", Nickname: "测试用户"},
 	}
 	if err := db.Create(&users).Error; err != nil {
 		t.Fatalf("create users: %v", err)
 	}
 	handler := NewSearchHandler(db, NewPostHandler(db, "", ""))
 
-	for _, query := range []string{"20260001", "纯盒"} {
+	testCases := []struct {
+		query      string
+		wantUserID uint
+		wantTotal  int64
+	}{
+		{query: fmt.Sprint(users[0].ID), wantUserID: users[0].ID, wantTotal: 1},
+		{query: "纯盒", wantUserID: users[0].ID, wantTotal: 1},
+		{query: users[0].StudentID, wantTotal: 0},
+	}
+
+	for _, testCase := range testCases {
 		response := performSearchRequest(
 			t,
 			handler.Search,
-			"/api/search?type=users&q="+query,
+			"/api/search?type=users&q="+testCase.query,
 		)
 		if response.Code != http.StatusOK {
-			t.Fatalf("query=%s status=%d body=%s",
-				query, response.Code, response.Body.String())
+			t.Fatalf("query=%s status=%d body=%s", testCase.query, response.Code, response.Body.String())
 		}
 		var body struct {
-			Items []models.User `json:"items"`
-			Total int64         `json:"total"`
+			Items []map[string]interface{} `json:"items"`
+			Total int64                    `json:"total"`
 		}
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 			t.Fatalf("decode users: %v", err)
 		}
-		if body.Total != 1 || len(body.Items) != 1 || body.Items[0].ID != users[0].ID {
-			t.Fatalf("query=%s unexpected body=%s", query, response.Body.String())
+		if body.Total != testCase.wantTotal || len(body.Items) != int(testCase.wantTotal) {
+			t.Fatalf("query=%s unexpected body=%s", testCase.query, response.Body.String())
+		}
+		if testCase.wantTotal == 0 {
+			continue
+		}
+		item := body.Items[0]
+		if item["id"] != float64(testCase.wantUserID) {
+			t.Fatalf("query=%s returned wrong user: %s", testCase.query, response.Body.String())
+		}
+		if item["credit_score"] != float64(users[0].CreditScore) {
+			t.Fatalf("query=%s returned wrong credit score: %s", testCase.query, response.Body.String())
+		}
+		if _, exists := item["student_id"]; exists {
+			t.Fatalf("query=%s leaked student_id: %s", testCase.query, response.Body.String())
 		}
 	}
 }

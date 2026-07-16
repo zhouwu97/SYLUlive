@@ -23,10 +23,11 @@ services:
       context: ./python-edu-service
       dockerfile: Dockerfile
     environment:
-      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+      - INTERNAL_SERVICE_TOKEN=${EDU_SERVICE_TOKEN:-}
+      - EDU_CREDENTIAL_ENCRYPTION_KEY=${EDU_CREDENTIAL_ENCRYPTION_KEY:-}
       - JWC_CRAWLER_CONTACT=${JWC_CRAWLER_CONTACT:-}
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     restart: unless-stopped
     networks:
       - shenliyuan_network

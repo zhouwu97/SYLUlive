@@ -79,20 +79,129 @@ func nowTime() string {
 
 // EduServiceError Python 教务服务返回的错误结构
 type EduServiceError struct {
-	Detail string `json:"detail"`
-	Error  string `json:"error"`
-	Code   string `json:"code"`
+	Detail json.RawMessage `json:"detail"`
+	Error  string          `json:"error"`
+	Code   string          `json:"code"`
+}
+
+type eduServiceRequestError struct {
+	statusCode int
+	body       []byte
+	err        error
+}
+
+func (e *eduServiceRequestError) Error() string {
+	if e.err != nil {
+		return e.err.Error()
+	}
+	return "教务服务请求失败"
+}
+
+// pythonEduRequest 是 Go 到国内教务服务的唯一调用出口。
+// 用户身份只从已认证的 Gin 上下文推导，并通过内部请求头传递。
+func pythonEduRequest(method, path string, userID *uint, body interface{}) (*resty.Response, error) {
+	client := resty.New().SetTimeout(30 * time.Second)
+	req := client.R().SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token)
+	if userID != nil {
+		req.SetHeader("X-Internal-User-ID", strconv.FormatUint(uint64(*userID), 10))
+	}
+	if body != nil {
+		req.SetBody(body)
+	}
+	return req.Execute(method, strings.TrimRight(EduServiceConfig.BaseURL, "/")+path)
+}
+
+type eduBindResult struct {
+	Success   bool   `json:"success"`
+	Message   string `json:"message"`
+	Code      string `json:"code"`
+	StudentID string `json:"student_id"`
+	Name      string `json:"name"`
+	Grade     string `json:"grade"`
+	College   string `json:"college"`
+	Major     string `json:"major"`
+}
+
+type eduStatusResult struct {
+	Bound     bool   `json:"bound"`
+	StudentID string `json:"student_id"`
+	Name      string `json:"name"`
+	Grade     string `json:"grade"`
+	College   string `json:"college"`
+	Major     string `json:"major"`
+}
+
+func bindEduWithPython(userID uint, studentID, password string) (*eduBindResult, error) {
+	resp, err := pythonEduRequest(http.MethodPost, "/api/edu/bind", &userID, map[string]string{
+		"student_id": studentID,
+		"password":   password,
+	})
+	if err != nil {
+		return nil, &eduServiceRequestError{err: err}
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, &eduServiceRequestError{statusCode: resp.StatusCode(), body: resp.Body()}
+	}
+
+	var result eduBindResult
+	if err := json.Unmarshal(resp.Body(), &result); err != nil || !result.Success {
+		if err == nil {
+			err = errors.New("教务服务未确认绑定成功")
+		}
+		return nil, &eduServiceRequestError{statusCode: http.StatusBadGateway, body: resp.Body(), err: err}
+	}
+	return &result, nil
+}
+
+func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *eduBindResult) error {
+	return db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"edu_student_id": studentID,
+		"edu_password":   "",
+		"edu_cookie":     "",
+		"edu_bound":      true,
+		"edu_grade":      result.Grade,
+		"edu_college":    result.College,
+		"edu_major":      result.Major,
+	}).Error
+}
+
+func writeEduServiceError(c *gin.Context, err error) {
+	var requestErr *eduServiceRequestError
+	if errors.As(err, &requestErr) {
+		if requestErr.statusCode > 0 {
+			mapEduServiceError(c, requestErr.statusCode, requestErr.body)
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": "无法连接教务服务，请稍后再试"})
+		return
+	}
+	c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务请求失败"})
 }
 
 // mapEduServiceError 将 Python 教务服务的响应状态码和 body 映射为前端可用的响应。
 // 对非登录问题保留原始语义：503 → 503, 非 JSON → 502, 真正 Cookie 过期 → 409。
 func mapEduServiceError(c *gin.Context, statusCode int, body []byte) {
 	var svcErr EduServiceError
-	if err := json.Unmarshal(body, &svcErr); err != nil || (svcErr.Detail == "" && svcErr.Error == "") {
-		svcErr.Detail = string(body)
+	if err := json.Unmarshal(body, &svcErr); err != nil || (len(svcErr.Detail) == 0 && svcErr.Error == "") {
+		svcErr.Error = string(body)
 	}
 
-	msg := svcErr.Detail
+	msg := ""
+	if len(svcErr.Detail) > 0 {
+		if err := json.Unmarshal(svcErr.Detail, &msg); err != nil {
+			var detail struct {
+				Message string `json:"message"`
+				Code    string `json:"code"`
+			}
+			if json.Unmarshal(svcErr.Detail, &detail) == nil {
+				msg = detail.Message
+				if svcErr.Code == "" {
+					svcErr.Code = detail.Code
+				}
+			}
+		}
+	}
 	if msg == "" {
 		msg = svcErr.Error
 	}
@@ -102,9 +211,16 @@ func mapEduServiceError(c *gin.Context, statusCode int, body []byte) {
 
 	switch statusCode {
 	case http.StatusUnauthorized:
-		// Python 返回 401 = Cookie 过期且自动重登也失败
-		c.JSON(http.StatusConflict, gin.H{
-			"code":          "EDU_SESSION_EXPIRED",
+		// 只有明确的会话过期才提示客户端重绑；绑定密码错误仍应保持 401。
+		if svcErr.Code == "SESSION_EXPIRED" {
+			c.JSON(http.StatusConflict, gin.H{
+				"code":          "EDU_SESSION_EXPIRED",
+				"error":         msg,
+				"upstream_code": svcErr.Code,
+			})
+			return
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":         msg,
 			"upstream_code": svcErr.Code,
 		})
@@ -136,7 +252,7 @@ type BindEduInput struct {
 
 // BindEdu 绑定教务账号
 func (h *EduHandler) BindEdu(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID := c.GetUint("user_id")
 
 	var input BindEduInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -144,81 +260,40 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 		return
 	}
 
-	// 创建 resty 客户端
-	client := resty.New()
-
-	// 获取csrf token
-	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
+	result, err := bindEduWithPython(userID, input.StudentID, input.Password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统，请检查网络"})
+		writeEduServiceError(c, err)
 		return
 	}
-
-	// 获取公钥
-	publicKey, err := getPublicKey(client)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取加密密钥失败，教务系统可能正在维护"})
+	if err := updateUserEduBinding(h.db, userID, input.StudentID, result); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
 		return
 	}
-
-	// RSA加密密码
-	encryptedPassword, err := rsaByPublicKey(input.Password, publicKey)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
-		return
-	}
-
-	// 尝试登录
-	_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
-	if err != nil {
-		var loginErr *eduLoginError
-		if errors.As(err, &loginErr) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": loginErr.Message, "code": loginErr.Code})
-			return
-		}
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error(), "code": "UNKNOWN_LOGIN_STATE"})
-		return
-	}
-
-	// 构建cookie字符串（和学长项目一样，取 client.Cookies[1]）
-	var cookieStr string
-	if len(client.Cookies) > 1 {
-		cookieStr = buildCookieString(client.Cookies[1:2])
-	} else if len(client.Cookies) == 1 {
-		cookieStr = buildCookieString(client.Cookies)
-	}
-
-	// 获取学生基本信息（年级、学院、专业）
-	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
-
-	// 存储原始密码（需要明文密码用于后续Cookie刷新时的RSA加密）
-	// 注意：EduPassword字段的json标签为"-"，不会暴露给API响应
-
-	// 更新用户教务信息
-	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-		"edu_student_id": input.StudentID,
-		"edu_password":   input.Password, // 存储明文密码用于refreshCookie
-		"edu_cookie":     cookieStr,
-		"edu_bound":      true,
-		"edu_grade":      grade,
-		"edu_college":    college,
-		"edu_major":      major,
-	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "绑定成功",
 		"edu_student_id": input.StudentID,
-		"edu_grade":      grade,
-		"edu_college":    college,
-		"edu_major":      major,
+		"name":           result.Name,
+		"edu_grade":      result.Grade,
+		"edu_college":    result.College,
+		"edu_major":      result.Major,
 	})
 }
 
 // UnbindEdu 解绑教务账号
 func (h *EduHandler) UnbindEdu(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID := c.GetUint("user_id")
+	resp, err := pythonEduRequest(http.MethodDelete, "/api/edu/bind", &userID, nil)
+	if err != nil {
+		writeEduServiceError(c, &eduServiceRequestError{err: err})
+		return
+	}
+	if resp.StatusCode() != http.StatusOK {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
+		return
+	}
 
-	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"edu_student_id": "",
 		"edu_password":   "",
 		"edu_cookie":     "",
@@ -226,27 +301,57 @@ func (h *EduHandler) UnbindEdu(c *gin.Context) {
 		"edu_grade":      "",
 		"edu_college":    "",
 		"edu_major":      "",
-	})
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务解绑状态失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "解绑成功"})
 }
 
 // GetEduStatus 获取教务绑定状态
 func (h *EduHandler) GetEduStatus(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+	userID := c.GetUint("user_id")
+	resp, err := pythonEduRequest(http.MethodGet, "/api/edu/status", &userID, nil)
+	if err != nil {
+		writeEduServiceError(c, &eduServiceRequestError{err: err})
+		return
+	}
+	if resp.StatusCode() != http.StatusOK {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
+		return
+	}
+	var status eduStatusResult
+	if err := json.Unmarshal(resp.Body(), &status); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
+		return
+	}
+	updates := map[string]interface{}{"edu_bound": status.Bound}
+	if status.Bound {
+		updates["edu_student_id"] = status.StudentID
+		updates["edu_grade"] = status.Grade
+		updates["edu_college"] = status.College
+		updates["edu_major"] = status.Major
+	} else {
+		updates["edu_student_id"] = ""
+		updates["edu_password"] = ""
+		updates["edu_cookie"] = ""
+		updates["edu_grade"] = ""
+		updates["edu_college"] = ""
+		updates["edu_major"] = ""
+	}
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务状态失败"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"edu_bound":      user.EduBound,
-		"edu_student_id": user.EduStudentID,
-		"edu_grade":      user.EduGrade,
-		"edu_college":    user.EduCollege,
-		"edu_major":      user.EduMajor,
+		"edu_bound":      status.Bound,
+		"edu_student_id": status.StudentID,
+		"name":           status.Name,
+		"edu_grade":      status.Grade,
+		"edu_college":    status.College,
+		"edu_major":      status.Major,
 	})
 }
 
@@ -272,43 +377,19 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 		return
 	}
 
-	// 尝试验证教务密码
-	client := resty.New()
-	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统", "success": false})
-		return
-	}
-
-	publicKey, err := getPublicKey(client)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取加密密钥失败", "success": false})
-		return
-	}
-
-	encryptedPassword, err := rsaByPublicKey(input.Password, publicKey)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败", "success": false})
-		return
-	}
-
-	_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
-	if err != nil {
-		var loginErr *eduLoginError
-		if errors.As(err, &loginErr) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": loginErr.Message, "code": loginErr.Code, "success": false})
-			return
-		}
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error(), "code": "UNKNOWN_LOGIN_STATE", "success": false})
-		return
-	}
-
-	// 验证成功
-	c.JSON(http.StatusOK, gin.H{
-		"success":        true,
-		"message":        "验证通过",
-		"edu_student_id": input.StudentID,
+	resp, err := pythonEduRequest(http.MethodPost, "/api/edu/pre_verify", nil, map[string]string{
+		"student_id": input.StudentID,
+		"password":   input.Password,
 	})
+	if err != nil {
+		writeEduServiceError(c, &eduServiceRequestError{err: err})
+		return
+	}
+	if !json.Valid(resp.Body()) {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常", "success": false})
+		return
+	}
+	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
 }
 
 // CourseInput 课表查询输入
@@ -321,14 +402,8 @@ type CourseInput struct {
 func (h *EduHandler) GetCourses(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
+	if err := h.db.First(&models.User{}, userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-
-	if !user.EduBound {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
 		return
 	}
 
@@ -344,6 +419,8 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":  fmt.Sprintf("%d", userID),
 			"year":     input.Year,
@@ -378,6 +455,60 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json", resp.Body())
 }
 
+// GetLocalCourses 通过 Go 代理读取 Python 中按内部用户 ID 隔离的课表缓存。
+func (h *EduHandler) GetLocalCourses(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	year := strings.TrimSpace(c.Query("year"))
+	semester := strings.TrimSpace(c.Query("semester"))
+	if year == "" || semester == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少学年或学期"})
+		return
+	}
+	query := url.Values{}
+	query.Set("year", year)
+	query.Set("semester", semester)
+	resp, err := pythonEduRequest(http.MethodGet, "/api/edu/courses/local?"+query.Encode(), &userID, nil)
+	if err != nil {
+		writeEduServiceError(c, &eduServiceRequestError{err: err})
+		return
+	}
+	if !json.Valid(resp.Body()) {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
+		return
+	}
+	if resp.StatusCode() != http.StatusOK {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", resp.Body())
+}
+
+// SyncCourses 通过 Go 代理写入 Python 课表缓存，忽略客户端传入的 user_id。
+func (h *EduHandler) SyncCourses(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var input map[string]interface{}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "课表同步参数错误"})
+		return
+	}
+	delete(input, "user_id")
+	input["user_id"] = strconv.FormatUint(uint64(userID), 10)
+	resp, err := pythonEduRequest(http.MethodPost, "/api/edu/courses/sync", &userID, input)
+	if err != nil {
+		writeEduServiceError(c, &eduServiceRequestError{err: err})
+		return
+	}
+	if !json.Valid(resp.Body()) {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
+		return
+	}
+	if resp.StatusCode() != http.StatusOK {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", resp.Body())
+}
+
 // GradesInput 成绩查询输入
 type GradesInput struct {
 	Year     string `json:"year" binding:"required"`
@@ -403,14 +534,8 @@ type AcademicSituationInput struct {
 func (h *EduHandler) GetGrades(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
+	if err := h.db.First(&models.User{}, userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-
-	if !user.EduBound {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
 		return
 	}
 
@@ -426,6 +551,8 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":  fmt.Sprintf("%d", userID),
 			"year":     input.Year,
@@ -463,14 +590,8 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
+	if err := h.db.First(&models.User{}, userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-
-	if !user.EduBound {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
 		return
 	}
 
@@ -485,6 +606,8 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":       fmt.Sprintf("%d", userID),
 			"force_refresh": input.ForceRefresh,
@@ -520,14 +643,8 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 func (h *EduHandler) GetGradeDetail(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
+	if err := h.db.First(&models.User{}, userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-
-	if !user.EduBound {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
 		return
 	}
 
@@ -542,6 +659,8 @@ func (h *EduHandler) GetGradeDetail(c *gin.Context) {
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
 			"user_id":          fmt.Sprintf("%d", userID),
 			"year":             input.Year,

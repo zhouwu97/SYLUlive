@@ -21,6 +21,8 @@ const (
 	ApplicationStatusAccepted  = "accepted"
 	ApplicationStatusRejected  = "rejected"
 	ApplicationStatusCancelled = "cancelled"
+	ApplicationStatusWithdrawn = "withdrawn"
+	ApplicationStatusRemoved   = "removed"
 )
 
 // Team Recruitment Category
@@ -113,7 +115,64 @@ func EnsureWaterTeamSchema(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_business_dedup
+		ON notifications(user_id, type, dedup_key)
+		WHERE dedup_key <> '';
+	`).Error; err != nil {
+		return err
+	}
+	// 申请记录是成员关系真值；一次性同步计数和总名额，兼容已有容量约束。
+	if err := db.Exec(`
+		UPDATE water_team_recruitments AS recruitment
+		SET accepted_count = (
+				SELECT COUNT(*)
+				FROM water_team_applications AS application
+				WHERE application.recruitment_id = recruitment.id
+					AND application.status = 'accepted'
+			),
+			needed_count = CASE
+				WHEN needed_count < (
+					SELECT COUNT(*)
+					FROM water_team_applications AS application
+					WHERE application.recruitment_id = recruitment.id
+						AND application.status = 'accepted'
+				) THEN (
+					SELECT COUNT(*)
+					FROM water_team_applications AS application
+					WHERE application.recruitment_id = recruitment.id
+						AND application.status = 'accepted'
+				)
+				WHEN needed_count < 1 THEN 1
+				ELSE needed_count
+			END;
+	`).Error; err != nil {
+		return err
+	}
+	// 原始状态参与 SQL 筛选；人数重算后同步 full/recruiting，但保留人工关闭状态。
+	if err := db.Exec(`
+		UPDATE water_team_recruitments
+		SET status = CASE
+			WHEN accepted_count >= needed_count THEN 'full'
+			ELSE 'recruiting'
+		END
+		WHERE status <> 'closed';
+	`).Error; err != nil {
+		return err
+	}
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	constraints := []string{
+		`DO $$ BEGIN ALTER TABLE water_team_recruitments ADD CONSTRAINT chk_water_team_needed_count CHECK (needed_count >= 1); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+		`DO $$ BEGIN ALTER TABLE water_team_recruitments ADD CONSTRAINT chk_water_team_accepted_count CHECK (accepted_count >= 0); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+		`DO $$ BEGIN ALTER TABLE water_team_recruitments ADD CONSTRAINT chk_water_team_capacity CHECK (accepted_count <= needed_count); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+	}
+	for _, statement := range constraints {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

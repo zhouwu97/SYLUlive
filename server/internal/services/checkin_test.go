@@ -74,6 +74,158 @@ func TestCheckInStatusUsesFactsAndResetsAfterGap(t *testing.T) {
 	require.Equal(t, 1, status.NextExp)
 }
 
+func TestCheckInAwardsMakeupCardEveryThirtyConsecutiveDays(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-makeup-card-award")
+	service := NewCheckInService(db)
+	loc := time.FixedZone("CST", 8*3600)
+	start := time.Date(2026, 5, 1, 9, 0, 0, 0, loc)
+
+	for day := 0; day < 30; day++ {
+		result, err := service.CheckIn(user.ID, start.AddDate(0, 0, day))
+		require.NoError(t, err)
+		if day < 29 {
+			require.Zero(t, result.MakeupCards)
+			require.Zero(t, result.MakeupCardsAwarded)
+			continue
+		}
+		require.Equal(t, 1, result.MakeupCards)
+		require.Equal(t, 1, result.MakeupCardsAwarded)
+	}
+
+	status, err := service.Status(user.ID, start.AddDate(0, 0, 29))
+	require.NoError(t, err)
+	require.Equal(t, 1, status.MakeupCards)
+}
+
+func TestMakeupCheckInConsumesCardAndRecalculatesLaterExperience(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-makeup-recalculate")
+	service := NewCheckInService(db)
+	loc := time.FixedZone("CST", 8*3600)
+	mayStart := time.Date(2026, 5, 1, 9, 0, 0, 0, loc)
+	for day := 0; day < 30; day++ {
+		_, err := service.CheckIn(user.ID, mayStart.AddDate(0, 0, day))
+		require.NoError(t, err)
+	}
+	_, err := service.CheckIn(user.ID, time.Date(2026, 7, 1, 9, 0, 0, 0, loc))
+	require.NoError(t, err)
+	_, err = service.CheckIn(user.ID, time.Date(2026, 7, 3, 9, 0, 0, 0, loc))
+	require.NoError(t, err)
+
+	result, err := service.Makeup(
+		user.ID,
+		time.Date(2026, 7, 2, 0, 0, 0, 0, loc),
+		time.Date(2026, 7, 4, 9, 0, 0, 0, loc),
+	)
+	require.NoError(t, err)
+	require.False(t, result.Already)
+	require.Equal(t, 2, result.StreakDays)
+	require.Equal(t, 2, result.CheckInExp)
+	require.Equal(t, 4, result.ExpEarned)
+	require.Zero(t, result.MakeupCards)
+
+	var julyThird models.CheckIn
+	require.NoError(t, db.Where("user_id = ? AND check_in_date = ?", user.ID, time.Date(2026, 7, 3, 0, 0, 0, 0, time.UTC)).First(&julyThird).Error)
+	require.Equal(t, 3, julyThird.StreakDays)
+	require.Equal(t, 3, julyThird.ExpEarned)
+	require.False(t, julyThird.IsMakeup)
+
+	var makeupRecord models.CheckIn
+	require.NoError(t, db.Where("user_id = ? AND check_in_date = ?", user.ID, time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC)).First(&makeupRecord).Error)
+	require.True(t, makeupRecord.IsMakeup)
+
+	retry, err := service.Makeup(
+		user.ID,
+		time.Date(2026, 7, 2, 0, 0, 0, 0, loc),
+		time.Date(2026, 7, 4, 9, 0, 0, 0, loc),
+	)
+	require.NoError(t, err)
+	require.True(t, retry.Already)
+	require.Zero(t, retry.ExpEarned)
+	require.Zero(t, retry.MakeupCards)
+
+	var stat models.UserCheckInStat
+	require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
+	require.Equal(t, 1, stat.MakeupCardsEarned)
+	require.Equal(t, 1, stat.MakeupCardsUsed)
+	require.Equal(t, 3, stat.CurrentStreak)
+}
+
+func TestMakeupCheckInRequiresCardAndCurrentMonthPastDate(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-makeup-validation")
+	service := NewCheckInService(db)
+	loc := time.FixedZone("CST", 8*3600)
+	now := time.Date(2026, 7, 17, 9, 0, 0, 0, loc)
+
+	_, err := service.Makeup(user.ID, time.Date(2026, 7, 16, 0, 0, 0, 0, loc), now)
+	require.ErrorIs(t, err, ErrNoMakeupCards)
+	_, err = service.Makeup(user.ID, time.Date(2026, 6, 30, 0, 0, 0, 0, loc), now)
+	require.ErrorIs(t, err, ErrMakeupDateNotAllowed)
+	_, err = service.Makeup(user.ID, now, now)
+	require.ErrorIs(t, err, ErrMakeupDateNotAllowed)
+}
+
+func TestMakeupCheckInConsumesGrantedCard(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-granted-makeup-card")
+	require.NoError(t, db.Create(&models.UserCheckInStat{
+		UserID: user.ID, MakeupCardsGranted: 2,
+	}).Error)
+	service := NewCheckInService(db)
+	loc := time.FixedZone("CST", 8*3600)
+
+	result, err := service.Makeup(
+		user.ID,
+		time.Date(2026, 7, 16, 0, 0, 0, 0, loc),
+		time.Date(2026, 7, 17, 9, 0, 0, 0, loc),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.MakeupCards)
+
+	var stat models.UserCheckInStat
+	require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
+	require.Zero(t, stat.MakeupCardsEarned)
+	require.Equal(t, 2, stat.MakeupCardsGranted)
+	require.Equal(t, 1, stat.MakeupCardsUsed)
+}
+
+func TestMakeupCompletingThirtyDaysAwardsReplacementCard(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-makeup-replacement-card")
+	service := NewCheckInService(db)
+	loc := time.FixedZone("CST", 8*3600)
+	mayStart := time.Date(2026, 5, 1, 9, 0, 0, 0, loc)
+	for day := 0; day < 30; day++ {
+		_, err := service.CheckIn(user.ID, mayStart.AddDate(0, 0, day))
+		require.NoError(t, err)
+	}
+	augustStart := time.Date(2026, 8, 1, 9, 0, 0, 0, loc)
+	for day := 0; day < 30; day++ {
+		if day == 14 {
+			continue
+		}
+		_, err := service.CheckIn(user.ID, augustStart.AddDate(0, 0, day))
+		require.NoError(t, err)
+	}
+
+	result, err := service.Makeup(
+		user.ID,
+		time.Date(2026, 8, 15, 0, 0, 0, 0, loc),
+		time.Date(2026, 8, 31, 9, 0, 0, 0, loc),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.MakeupCardsAwarded)
+	require.Equal(t, 1, result.MakeupCards)
+
+	var stat models.UserCheckInStat
+	require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
+	require.Equal(t, 2, stat.MakeupCardsEarned)
+	require.Equal(t, 1, stat.MakeupCardsUsed)
+	require.Equal(t, 30, stat.CurrentStreak)
+}
+
 func TestCheckInExpRewardThresholds(t *testing.T) {
 	tests := []struct {
 		streak int
@@ -139,11 +291,15 @@ func TestRebuildUserCheckInStatsDoesNotChangeExperience(t *testing.T) {
 	for _, date := range dates {
 		require.NoError(t, db.Create(&models.CheckIn{UserID: user.ID, CheckInDate: date, StreakDays: 99, ExpEarned: 7}).Error)
 	}
+	require.NoError(t, db.Create(&models.UserCheckInStat{
+		UserID: user.ID, MakeupCardsGranted: 2,
+	}).Error)
 
 	rebuilt, err := models.RebuildUserCheckInStats(db, user.ID)
 	require.NoError(t, err)
 	require.Equal(t, 3, rebuilt.CurrentStreak)
 	require.Equal(t, 3, rebuilt.LongestStreak)
+	require.Equal(t, 2, rebuilt.MakeupCardsGranted)
 
 	var refreshed models.User
 	require.NoError(t, db.First(&refreshed, user.ID).Error)
@@ -153,6 +309,23 @@ func TestRebuildUserCheckInStatsDoesNotChangeExperience(t *testing.T) {
 	var records []models.CheckIn
 	require.NoError(t, db.Where("user_id = ?", user.ID).Order("check_in_date ASC").Find(&records).Error)
 	require.Equal(t, []int{1, 2, 1, 2, 3}, []int{records[0].StreakDays, records[1].StreakDays, records[2].StreakDays, records[3].StreakDays, records[4].StreakDays})
+}
+
+func TestRebuildUserCheckInStatsPreservesGrantedCardsWithoutRecords(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-rebuild-granted-cards")
+	require.NoError(t, db.Create(&models.UserCheckInStat{
+		UserID: user.ID, MakeupCardsGranted: 2,
+	}).Error)
+
+	rebuilt, err := models.RebuildUserCheckInStats(db, user.ID)
+	require.NoError(t, err)
+	require.Equal(t, user.ID, rebuilt.UserID)
+	require.Equal(t, 2, rebuilt.MakeupCardsGranted)
+
+	var stat models.UserCheckInStat
+	require.NoError(t, db.First(&stat, "user_id = ?", user.ID).Error)
+	require.Equal(t, 2, stat.MakeupCardsGranted)
 }
 
 func TestCheckInCompensationClaimIsIdempotent(t *testing.T) {

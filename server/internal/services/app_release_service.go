@@ -29,7 +29,7 @@ const (
 // AppReleaseService 负责读取最新发布版本并推导更新决策；它不负责 APK 文件
 // 写入和管理员操作（那是后续阶段的发布接口的职责）。
 type AppReleaseService struct {
-	db        *gorm.DB
+	db         *gorm.DB
 	releaseDir string
 }
 
@@ -38,6 +38,13 @@ type AppReleaseService struct {
 func NewAppReleaseService(db *gorm.DB, releaseDir string) *AppReleaseService {
 	return &AppReleaseService{db: db, releaseDir: releaseDir}
 }
+
+// DB 暴露内部 *gorm.DB 给同包 handler 使用，避免重复构造和散落的 db 句柄。
+// 调用方不应跨包使用此方法。
+func (s *AppReleaseService) DB() *gorm.DB { return s.db }
+
+// ReleaseDir 返回配置的 APK 发布根目录，用于 X-Accel-Redirect 路径计算。
+func (s *AppReleaseService) ReleaseDir() string { return s.releaseDir }
 
 // DecideUpdate 根据客户端当前版本、最新版本与最低支持版本号推导更新决策。
 //

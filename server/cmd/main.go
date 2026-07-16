@@ -447,7 +447,11 @@ func main() {
 
 	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
 	appReleaseService := services.NewAppReleaseService(db, cfg.AppReleaseDir)
-	appUpdateHandler := handlers.NewAppUpdateHandler(appReleaseService)
+	appUpdateHandler := handlers.NewAppUpdateHandler(
+		appReleaseService,
+		cfg.AppReleaseUseAccelRedirect,
+		cfg.AppReleaseAccelPrefix,
+	)
 
 	eduHandler := handlers.NewEduHandler(db)
 
@@ -544,6 +548,8 @@ func main() {
 	appPublic := r.Group("/api/app")
 	{
 		appPublic.GET("/update", appUpdateHandler.CheckUpdate)
+		appPublic.GET("/releases/:id/download", appUpdateHandler.Download)
+		appPublic.HEAD("/releases/:id/download", appUpdateHandler.Download)
 	}
 
 	// 健康检查接口

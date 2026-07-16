@@ -681,6 +681,7 @@ func main() {
 		user.GET("/revision-proposals/received", postHandler.GetMyRevisionProposalsReceived)
 
 		user.POST("/checkin", checkinHandler.DoCheckIn)
+		user.POST("/checkin/makeup", checkinHandler.DoMakeup)
 
 		user.GET("/checkin/status", checkinHandler.GetStatus)
 		user.GET("/checkin/calendar", checkinHandler.GetCalendar)

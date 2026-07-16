@@ -43,13 +43,59 @@ func (h *CheckInHandler) DoCheckIn(c *gin.Context) {
 		message = "今天已经签过到了"
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"success":       true,
-		"already":       result.Already,
-		"message":       message,
-		"check_in_date": services.FormatCheckInDate(result.CheckInDate),
-		"streak_days":   result.StreakDays,
-		"exp_earned":    result.ExpEarned,
-		"total_exp":     result.TotalExp,
+		"success":              true,
+		"already":              result.Already,
+		"message":              message,
+		"check_in_date":        services.FormatCheckInDate(result.CheckInDate),
+		"streak_days":          result.StreakDays,
+		"exp_earned":           result.ExpEarned,
+		"total_exp":            result.TotalExp,
+		"makeup_cards":         result.MakeupCards,
+		"makeup_cards_awarded": result.MakeupCardsAwarded,
+	})
+}
+
+type makeupCheckInInput struct {
+	CheckInDate string `json:"check_in_date" binding:"required"`
+}
+
+// DoMakeup 使用补签卡补录本月过去的未签到日期。
+func (h *CheckInHandler) DoMakeup(c *gin.Context) {
+	var input makeupCheckInInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "补签参数无效"})
+		return
+	}
+	date, err := time.Parse("2006-01-02", input.CheckInDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "补签日期必须为 YYYY-MM-DD"})
+		return
+	}
+	now, err := shanghaiNow()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统时区配置错误"})
+		return
+	}
+	result, err := h.service.Makeup(c.GetUint("user_id"), date, now)
+	if err != nil {
+		writeCheckInError(c, err, "补签失败")
+		return
+	}
+	message := fmt.Sprintf("补签成功！经验+%d", result.ExpEarned)
+	if result.Already {
+		message = "该日期已经签到"
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":              true,
+		"already":              result.Already,
+		"message":              message,
+		"check_in_date":        services.FormatCheckInDate(result.CheckInDate),
+		"streak_days":          result.StreakDays,
+		"check_in_exp":         result.CheckInExp,
+		"exp_earned":           result.ExpEarned,
+		"total_exp":            result.TotalExp,
+		"makeup_cards":         result.MakeupCards,
+		"makeup_cards_awarded": result.MakeupCardsAwarded,
 	})
 }
 
@@ -72,6 +118,7 @@ func (h *CheckInHandler) GetStatus(c *gin.Context) {
 		"streak_days":   status.StreakDays,
 		"total_exp":     status.TotalExp,
 		"next_exp":      status.NextExp,
+		"makeup_cards":  status.MakeupCards,
 	})
 }
 
@@ -105,6 +152,7 @@ func (h *CheckInHandler) GetCalendar(c *gin.Context) {
 			"check_in_date": services.FormatCheckInDate(record.CheckInDate),
 			"streak_days":   record.StreakDays,
 			"exp_earned":    record.ExpEarned,
+			"is_makeup":     record.IsMakeup,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -164,6 +212,14 @@ func shanghaiNow() (time.Time, error) {
 }
 
 func writeCheckInError(c *gin.Context, err error, fallback string) {
+	if errors.Is(err, services.ErrMakeupDateNotAllowed) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if errors.Is(err, services.ErrNoMakeupCards) {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return

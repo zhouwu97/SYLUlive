@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,6 +11,7 @@ import (
 )
 
 const CheckInSchemaMigrationVersion = "20260716_01_checkin_facts_and_stats"
+const CheckInMakeupCardMigrationVersion = "20260717_02_checkin_makeup_cards"
 
 // EnsureCheckInSchema 将旧的字符串日期迁移为 DATE，并在建立唯一约束前显式校验历史数据。
 func EnsureCheckInSchema(db *gorm.DB) error {
@@ -42,6 +44,10 @@ func EnsureCheckInSchema(db *gorm.DB) error {
 			return err
 		}
 	}
+	var makeupCardAppliedCount int64
+	if err := db.Model(&AppSchemaMigration{}).Where("version = ?", CheckInMakeupCardMigrationVersion).Count(&makeupCardAppliedCount).Error; err != nil {
+		return err
+	}
 	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_check_ins_user_date ON check_ins (user_id, check_in_date)").Error; err != nil {
 		return fmt.Errorf("创建签到唯一约束: %w", err)
 	}
@@ -59,6 +65,16 @@ func EnsureCheckInSchema(db *gorm.DB) error {
 			return err
 		}
 		if err := db.Create(&AppSchemaMigration{Version: CheckInSchemaMigrationVersion, AppliedAt: time.Now()}).Error; err != nil {
+			return err
+		}
+	}
+	if makeupCardAppliedCount == 0 {
+		if appliedCount != 0 {
+			if err := RebuildAllUserCheckInStats(db); err != nil {
+				return err
+			}
+		}
+		if err := db.Create(&AppSchemaMigration{Version: CheckInMakeupCardMigrationVersion, AppliedAt: time.Now()}).Error; err != nil {
 			return err
 		}
 	}
@@ -176,15 +192,26 @@ func RebuildAllUserCheckInStats(db *gorm.DB) error {
 func RebuildUserCheckInStats(db *gorm.DB, userID uint) (UserCheckInStat, error) {
 	var rebuilt UserCheckInStat
 	err := db.Transaction(func(tx *gorm.DB) error {
+		var existing UserCheckInStat
+		existingErr := tx.Select("user_id", "makeup_cards_granted").Where("user_id = ?", userID).First(&existing).Error
+		if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
+			return existingErr
+		}
+
 		var records []CheckIn
 		if err := tx.Where("user_id = ?", userID).Order("check_in_date ASC, id ASC").Find(&records).Error; err != nil {
 			return err
 		}
 		if len(records) == 0 {
-			return tx.Where("user_id = ?", userID).Delete(&UserCheckInStat{}).Error
+			if existing.MakeupCardsGranted == 0 {
+				return tx.Where("user_id = ?", userID).Delete(&UserCheckInStat{}).Error
+			}
+			rebuilt = UserCheckInStat{UserID: userID, MakeupCardsGranted: existing.MakeupCardsGranted}
+			return tx.Save(&rebuilt).Error
 		}
 		sort.SliceStable(records, func(i, j int) bool { return records[i].CheckInDate.Before(records[j].CheckInDate) })
 		current, longest := 0, 0
+		makeupCardsEarned, makeupCardsUsed := 0, 0
 		var previous time.Time
 		for index := range records {
 			if index == 0 || !sameCheckInDate(records[index].CheckInDate, previous.AddDate(0, 0, 1)) {
@@ -195,6 +222,12 @@ func RebuildUserCheckInStats(db *gorm.DB, userID uint) (UserCheckInStat, error) 
 			if current > longest {
 				longest = current
 			}
+			if current%30 == 0 {
+				makeupCardsEarned++
+			}
+			if records[index].IsMakeup {
+				makeupCardsUsed++
+			}
 			if records[index].StreakDays != current {
 				if err := tx.Model(&CheckIn{}).Where("id = ?", records[index].ID).Update("streak_days", current).Error; err != nil {
 					return err
@@ -203,7 +236,11 @@ func RebuildUserCheckInStats(db *gorm.DB, userID uint) (UserCheckInStat, error) 
 			previous = records[index].CheckInDate
 		}
 		last := dateOnly(previous)
-		rebuilt = UserCheckInStat{UserID: userID, LastCheckInDate: &last, CurrentStreak: current, LongestStreak: longest}
+		rebuilt = UserCheckInStat{
+			UserID: userID, LastCheckInDate: &last, CurrentStreak: current, LongestStreak: longest,
+			MakeupCardsEarned: makeupCardsEarned, MakeupCardsGranted: existing.MakeupCardsGranted,
+			MakeupCardsUsed: makeupCardsUsed,
+		}
 		if err := tx.Save(&rebuilt).Error; err != nil {
 			return err
 		}

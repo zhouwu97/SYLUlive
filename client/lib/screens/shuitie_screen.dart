@@ -11,7 +11,6 @@ import '../models/water_section.dart';
 import '../config/water_post_taxonomy.dart';
 import '../widgets/water_section/section_avatar.dart';
 import '../utils/app_motion.dart';
-import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
 import '../utils/screen_swipe.dart';
 import '../utils/search_focus_gate.dart';
@@ -30,6 +29,7 @@ import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/post_card.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
+import 'check_in_calendar_screen.dart';
 import 'competition_center_screen.dart';
 import 'edu_grade_screen.dart';
 import 'exam_schedule_screen.dart';
@@ -126,7 +126,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _checkedIn = false;
   int _streakDays = 0;
   bool _followingExpanded = false;
-  bool _checkInLoading = false;
   Post? _selectedPost;
   int? _selectedUserId;
 
@@ -450,7 +449,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _ensureCheckinStatusLoaded({bool force = false}) async {
-    if (_checkinStatusLoading || _checkInLoading) return;
+    if (_checkinStatusLoading) return;
     if (!force && _checkinStatusLoaded) return;
 
     _checkinStatusLoading = true;
@@ -480,84 +479,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     } catch (_) {
       return false;
     }
-  }
-
-  Future<void> _doCheckIn() async {
-    final auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) {
-      Navigator.pushNamed(context, '/login');
-      return;
-    }
-    if (_checkInLoading) return;
-    if (mounted) setState(() => _checkInLoading = true);
-    try {
-      final resp = await auth.dio.post('/user/checkin');
-      if (resp.statusCode != 200 || !mounted) return;
-
-      final data = resp.data;
-      final already = data['already'] ?? false;
-      final streak = data['streak_days'] ?? 1;
-      final exp = data['exp_earned'] ?? 1;
-      setState(() {
-        _checkedIn = true;
-        _streakDays = streak;
-      });
-      unawaited(auth.refreshUser());
-      if (!already) {
-        _showCheckInSuccessDialog(streak, exp);
-      } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('今天已经签过到了')));
-      }
-    } catch (e) {
-      if (mounted) {
-        String msg = '签到失败，请稍后再试';
-        if (e is DioException) {
-          msg = AppFeedback.dioErrorMessage(e, fallback: msg);
-        }
-        AppFeedback.showSnackBar(context, msg, isError: true);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _checkInLoading = false);
-      }
-    }
-  }
-
-  void _showCheckInSuccessDialog(int streakDays, int earnedExp) {
-    HapticFeedback.lightImpact();
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: false,
-      barrierLabel: '签到成功',
-      barrierColor: Colors.black.withValues(alpha: 0.42),
-      transitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (_, __, ___) {
-        return CheckInSuccessDialog(
-          streakDays: streakDays,
-          earnedExp: earnedExp,
-        );
-      },
-      transitionBuilder: (_, animation, __, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutBack,
-          reverseCurve: Curves.easeIn,
-        );
-
-        return FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(
-            scale: Tween<double>(
-              begin: 0.92,
-              end: 1,
-            ).animate(curved),
-            child: child,
-          ),
-        );
-      },
-    );
   }
 
   void _handleFeedSwipeStart(DragStartDetails details) {
@@ -718,6 +639,19 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
+  void _openCheckInCalendar() {
+    final auth = context.read<AuthProvider>();
+    final page =
+        auth.isLoggedIn ? const CheckInCalendarScreen() : const LoginScreen();
+    Navigator.of(context, rootNavigator: true)
+        .push(MaterialPageRoute(builder: (_) => page))
+        .then((_) {
+      if (mounted && auth.isLoggedIn) {
+        unawaited(_ensureCheckinStatusLoaded(force: true));
+      }
+    });
+  }
+
   /// 打开成绩页（保留侧边栏），保留原有的渐入+轻位移+缩放动画与登录判断。
   void _openGradeKeepingPanel() {
     final auth = context.read<AuthProvider>();
@@ -785,14 +719,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               child: HomeServiceDrawer(
                 checkedIn: _checkedIn,
                 streakDays: _streakDays,
-                checkInLoading: _checkInLoading,
+                checkInLoading: false,
                 showCheckInDot: _showCheckInDot,
                 announcements: _announcements,
                 unreadAnnouncements: _unreadAnnouncements,
                 waterSections:
                     context.read<WaterSectionProvider>().activeSections,
                 onCheckIn: () {
-                  _closePanelThenOpen(dialogContext, _doCheckIn);
+                  _closePanelThenOpen(dialogContext, _openCheckInCalendar);
                 },
                 onOpenToolbox: () {
                   _openPageKeepingPanel(const ToolboxScreen());

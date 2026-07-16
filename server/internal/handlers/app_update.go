@@ -3,7 +3,10 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,17 +22,41 @@ import (
 // 直接打服务端。6 小时为常用 APK 更新的发布窗口节奏。
 const defaultCheckAfterSeconds = 21600
 
+// apkContentType 是 Android 安装包的标准 MIME，避免依赖 Gin 的内容协商。
+const apkContentType = "application/vnd.android.package-archive"
+
 // AppUpdateHandler 处理公开的应用更新检查与 APK 下载接口。
 //
-// 阶段 A 只暴露 CheckUpdate；Download、HEAD 等子路由在阶段 A5-A6 加入，
-// 二者共用同一个 Handler 结构以便后续阶段在前面加统一的日志或限流中间件。
+// Download 支持 http.ServeContent 默认实现（处理 Range / 206 / If-Range /
+// Last-Modified）以及 Nginx X-Accel-Redirect 模式。X-Accel 模式通过独立开关
+// 启用，开关默认 false；只有当服务器明确配置了 Nginx 内部 location 后才应
+// 切到 true。
 type AppUpdateHandler struct {
-	svc *services.AppReleaseService
+	svc               *services.AppReleaseService
+	useAccelRedirect  bool
+	accelPrefix       string
 }
 
 // NewAppUpdateHandler 构造 AppUpdateHandler。
-func NewAppUpdateHandler(svc *services.AppReleaseService) *AppUpdateHandler {
-	return &AppUpdateHandler{svc: svc}
+//
+//   useAccelRedirect: 来自 cfg.AppReleaseUseAccelRedirect
+//   accelPrefix:      来自 cfg.AppReleaseAccelPrefix，例如 "/_internal/app-releases/"
+func NewAppUpdateHandler(svc *services.AppReleaseService, useAccelRedirect bool, accelPrefix string) *AppUpdateHandler {
+	prefix := strings.TrimSpace(accelPrefix)
+	if prefix == "" {
+		prefix = "/_internal/app-releases/"
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	if !strings.HasSuffix(prefix, "/") {
+		prefix = prefix + "/"
+	}
+	return &AppUpdateHandler{
+		svc:              svc,
+		useAccelRedirect: useAccelRedirect,
+		accelPrefix:       prefix,
+	}
 }
 
 // updateCheckResponse 是给客户端的统一响应。无更新时 file 等字段为空，
@@ -171,4 +198,142 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// Download 处理 GET/HEAD /api/app/releases/:id/download。
+//
+// 仅允许 published 状态的 release 被下载；withdrawn 一律拒绝新下载。dev 模式
+// 默认通过 http.ServeContent 推送字节流并自动支持 Range / 206 / ETag。
+// prod 模式启用 APP_RELEASE_USE_ACCEL_REDIRECT=true 时改返回 X-Accel-Redirect，
+// 让 Nginx 通过 internal location 投递大文件，Go 进程不必持有句柄太久。
+//
+// “客户端永远不应该决定可信状态”：所有路径来自 DB 的受控 StorageKey，
+// 并通过 services.LocateAPK 拒绝穿越，然后再做磁盘存在与大小校验。
+func (h *AppUpdateHandler) Download(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid release id",
+			"code":  "invalid_release_id",
+		})
+		return
+	}
+
+	var release models.AppRelease
+	if err := h.svc.DB().First(&release, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "release not found",
+				"code":  "release_not_found",
+			})
+			return
+		}
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "release lookup failed",
+			"code":  "release_lookup_failed",
+		})
+		return
+	}
+	if release.Status != models.AppReleaseStatusPublished {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "release not available for download",
+			"code":  "release_not_downloadable",
+		})
+		return
+	}
+
+	apkPath, err := h.svc.LocateAPK(&release)
+	if err != nil {
+		// 路径穿越属于服务端配置错误或数据破坏，不把细节回给客户端。
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "release storage misconfigured",
+			"code":  "storage_misconfigured",
+		})
+		return
+	}
+	info, err := os.Stat(apkPath)
+	if err != nil {
+		// 文件不在磁盘上但 DB 状态是 published —— 视为 404，让客户端重新
+		// /api/app/update 拉取策略。
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "release file missing",
+			"code":  "release_file_missing",
+		})
+		return
+	}
+	if info.IsDir() {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "release storage misconfigured",
+			"code":  "storage_misconfigured",
+		})
+		return
+	}
+	if release.FileSize > 0 && info.Size() != release.FileSize {
+		// 与数据库记录的预期大小不符 —— 不要给客户端可能损坏的包。
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "release file size mismatch",
+			"code":  "release_size_mismatch",
+		})
+		return
+	}
+
+	// 文件名：客户端习惯看到 .apk 扩展，且应取 DB 中的 FileName 而不是磁盘
+	// 文件名，避免泄露内部存储结构。
+	filename := strings.TrimSpace(release.FileName)
+	if filename == "" {
+		filename = "release-" + strconv.FormatUint(id, 10) + ".apk"
+	}
+
+	// 主体安全/缓存头。
+	c.Header("Content-Type", apkContentType)
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeDispositionFilename(filename)))
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Cache-Control", "public, max-age=86400, immutable")
+	c.Header("ETag", `"`+release.SHA256+`"`)
+
+	if release.PublishedAt != nil {
+		c.Header("Last-Modified", release.PublishedAt.UTC().Format(http.TimeFormat))
+	}
+
+	if h.useAccelRedirect {
+		// X-Accel-Redirect：让 Nginx 通过 internal location 投递文件。Nginx
+		// 反代需要把 accelPrefix 的 alias 指向 cfg.AppReleaseDir。
+		// 路径用 filepath.ToSlash 还原为 UNIX 风格，Nginx 期望正斜杠。
+		relative := strings.TrimPrefix(filepath.ToSlash(apkPath), filepath.ToSlash(h.svc.ReleaseDir()))
+		relative = strings.TrimPrefix(relative, "/")
+		c.Header("X-Accel-Redirect", h.accelPrefix+relative)
+		c.Status(http.StatusOK)
+		return
+	}
+
+	// 默认分支：让 Go 自己读文件。http.ServeContent 自动处理 HEAD、Range、
+	// 206、If-Range、If-Modified-Since。我们已显式写了 ETag / Last-Modified
+	// 会让部分客户端受益，ServeContent 不会重写它们。
+	f, err := os.Open(apkPath)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "release file unreadable",
+			"code":  "release_file_unreadable",
+		})
+		return
+	}
+	defer f.Close()
+	http.ServeContent(c.Writer, c.Request, apkContentType, info.ModTime(), f)
+}
+
+// sanitizeDispositionFilename 把文件名中可能破坏 Content-Disposition 解析
+// 的字符替换成下划线。release.FileName 来自数据库，按计划只允许普通文件名，
+// 但再加一层防御不会让客户端更脆弱。
+func sanitizeDispositionFilename(name string) string {
+	// 去掉任何路径分隔符与控制字符，避免 Content-Disposition 注入。
+	name = strings.ReplaceAll(name, "\\", "_")
+	name = strings.ReplaceAll(name, "\"", "_")
+	name = strings.ReplaceAll(name, "\r", "_")
+	name = strings.ReplaceAll(name, "\n", "_")
+	// 限制长度，避免 header 超长。
+	if len(name) > 120 {
+		name = name[:120]
+	}
+	return name
 }

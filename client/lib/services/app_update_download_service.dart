@@ -88,7 +88,8 @@ class AppUpdateDownloadService {
               responseType: ResponseType.stream,
               // 接受 200/206/416 都是正常流程，由业务逻辑分支处理。
               validateStatus: (status) =>
-                  status != null && (status == 200 || status == 206 || status == 416),
+                  status != null &&
+                  (status == 200 || status == 206 || status == 416),
             ));
 
   /// 下载 APK 到 App 私有目录，校验 SHA-256 后返回最终文件路径。
@@ -102,10 +103,12 @@ class AppUpdateDownloadService {
     CancelToken? cancelToken,
   }) async {
     if (url.isEmpty) {
-      throw const AppDownloadError(AppDownloadErrorKind.unknown, 'download_url 为空');
+      throw const AppDownloadError(
+          AppDownloadErrorKind.unknown, 'download_url 为空');
     }
     if (expectedSize <= 0) {
-      throw const AppDownloadError(AppDownloadErrorKind.unknown, 'file_size 非正');
+      throw const AppDownloadError(
+          AppDownloadErrorKind.unknown, 'file_size 非正');
     }
     _validateSha256Hex(expectedSha256);
 
@@ -153,8 +156,15 @@ class AppUpdateDownloadService {
         },
       );
 
-      await sink!.flush();
-      await sink.close();
+      final activeSink = sink;
+      if (activeSink == null) {
+        throw const AppDownloadError(
+          AppDownloadErrorKind.storage,
+          '下载文件写入流未创建',
+        );
+      }
+      await activeSink.flush();
+      await activeSink.close();
       sink = null;
 
       if (received != expectedSize) {
@@ -183,8 +193,9 @@ class AppUpdateDownloadService {
       return finalFile;
     } catch (e) {
       try {
-        if (sink != null && !sink!.isClosed) {
-          await sink!.close();
+        final activeSink = sink;
+        if (activeSink != null) {
+          await activeSink.close();
         }
       } catch (_) {
         // 忽略 sink 关闭错误，保留原始异常。
@@ -196,7 +207,7 @@ class AppUpdateDownloadService {
       if (e is FileSystemException) {
         throw AppDownloadError(
           AppDownloadErrorKind.storage,
-          '存储读写失败: ${e.message ?? e.toString()}',
+          '存储读写失败: ${e.message}',
         );
       }
       if (e is FormatException) {
@@ -338,8 +349,7 @@ class AppUpdateDownloadService {
         received += chunk.length;
         final snapshot = speedTracker.tick(received);
         if (onProgress != null) {
-          final remaining =
-              expectedSize > 0 ? (expectedSize - received) : 0;
+          final remaining = expectedSize > 0 ? (expectedSize - received) : 0;
           final eta = snapshot.bytesPerSecond > 0
               ? (remaining ~/ snapshot.bytesPerSecond)
               : 0;

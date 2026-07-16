@@ -17,17 +17,30 @@ class CheckInCalendarScreen extends StatefulWidget {
   State<CheckInCalendarScreen> createState() => _CheckInCalendarScreenState();
 }
 
+enum _CalendarDaySelection {
+  signed,
+  makeup,
+  noMakeupCard,
+  outsideMonth,
+  future,
+  today,
+}
+
 class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   late DateTime _visibleMonth;
   Map<DateTime, CheckInDayRecord> _records = const {};
   bool _loading = true;
   bool _checkingIn = false;
+  bool _makingUp = false;
   bool _checkedInToday = false;
   int _streakDays = 0;
   int _longestStreak = 0;
   int _nextExp = 1;
+  int _makeupCards = 0;
   String? _errorMessage;
   DateTime? _serverToday;
+  DateTime? _selectedDate;
+  _CalendarDaySelection? _selectedDaySelection;
 
   DateTime get _deviceToday {
     final now = widget.now?.call() ?? DateTime.now();
@@ -36,14 +49,18 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
 
   DateTime get _today => _serverToday ?? _deviceToday;
 
+  DateTime? get _selectedMakeupDate =>
+      _selectedDaySelection == _CalendarDaySelection.makeup
+          ? _selectedDate
+          : null;
+
   bool get _isCurrentMonth =>
       _visibleMonth.year == _today.year && _visibleMonth.month == _today.month;
 
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _visibleMonth = DateTime(now.year, now.month);
+    _visibleMonth = DateTime(_deviceToday.year, _deviceToday.month);
     _loadData();
   }
 
@@ -79,6 +96,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
           _checkedInToday = status['checked_in'] == true;
           _streakDays = _readInt(status['streak_days']);
           _nextExp = _readInt(status['next_exp'], fallback: 1);
+          _makeupCards = _readInt(status['makeup_cards']);
           _records = const {};
         });
         await _loadData();
@@ -98,8 +116,14 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         _checkedInToday = status['checked_in'] == true;
         _streakDays = _readInt(status['streak_days']);
         _nextExp = _readInt(status['next_exp'], fallback: 1);
+        _makeupCards = _readInt(status['makeup_cards']);
         _longestStreak = _readInt(calendar['longest_streak']);
         _records = records;
+        if (_selectedMakeupDate != null &&
+            records.containsKey(_selectedMakeupDate)) {
+          _selectedDate = null;
+          _selectedDaySelection = null;
+        }
         _loading = false;
         _errorMessage = null;
       });
@@ -130,8 +154,130 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
     setState(() {
       _visibleMonth = next;
       _records = const {};
+      _selectedDate = null;
+      _selectedDaySelection = null;
     });
     await _loadData();
+  }
+
+  void _selectCalendarDay(
+    DateTime date,
+    _CalendarDaySelection selection,
+  ) {
+    setState(() {
+      if (_selectedDate == date) {
+        _selectedDate = null;
+        _selectedDaySelection = null;
+      } else {
+        _selectedDate = date;
+        _selectedDaySelection = selection;
+      }
+    });
+  }
+
+  void _handleCalendarDayTap(
+    DateTime date,
+    CheckInDayRecord? record,
+  ) {
+    if (record != null) {
+      _selectCalendarDay(date, _CalendarDaySelection.signed);
+      return;
+    }
+    if (!_sameMonth(date, _today)) {
+      _selectCalendarDay(date, _CalendarDaySelection.outsideMonth);
+      return;
+    }
+    if (date == _today) {
+      _selectCalendarDay(date, _CalendarDaySelection.today);
+      return;
+    }
+    if (date.isAfter(_today)) {
+      _selectCalendarDay(date, _CalendarDaySelection.future);
+      return;
+    }
+    _selectCalendarDay(
+      date,
+      _makeupCards > 0
+          ? _CalendarDaySelection.makeup
+          : _CalendarDaySelection.noMakeupCard,
+    );
+  }
+
+  Future<void> _doMakeup() async {
+    final date = _selectedMakeupDate;
+    if (date == null || _makingUp || _makeupCards <= 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+        return AlertDialog(
+          title: const Text('使用补签卡'),
+          content: Text(
+            '确定补签 ${date.month} 月 ${date.day} 日吗？\n将消耗 1 张补签卡，并按连续签到规则补发经验。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    isDark ? const Color(0xFF707070) : const Color(0xFF363636),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('确认补签'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _makingUp = true);
+    try {
+      final auth = context.read<AuthProvider>();
+      final response = await auth.dio.post(
+        '/user/checkin/makeup',
+        data: {'check_in_date': _formatDate(date)},
+      );
+      if (!mounted || response.statusCode != 200) return;
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final already = data['already'] == true;
+      final earnedExp = _readInt(data['exp_earned']);
+      final cardsAwarded = _readInt(data['makeup_cards_awarded']);
+      setState(() {
+        _makeupCards = _readInt(data['makeup_cards']);
+        _selectedDate = null;
+        _selectedDaySelection = null;
+      });
+      await _loadData(showLoading: false);
+      unawaited(auth.refreshUser());
+      if (!mounted) return;
+      if (already) {
+        AppFeedback.showSnackBar(context, '该日期已经签到');
+      } else {
+        HapticFeedback.lightImpact();
+        final cardMessage = cardsAwarded > 0 ? '，获得补签卡 +$cardsAwarded' : '';
+        AppFeedback.showSnackBar(
+          context,
+          '补签成功，经验 +$earnedExp$cardMessage',
+        );
+      }
+    } on DioException catch (error) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(error, fallback: '补签失败，请稍后再试'),
+        isError: true,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '补签失败，请稍后再试', isError: true);
+    } finally {
+      if (mounted) setState(() => _makingUp = false);
+    }
   }
 
   Future<void> _doCheckIn() async {
@@ -235,6 +381,47 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final selection = _selectedDaySelection;
+    final selectedDateText = _selectedDate == null
+        ? ''
+        : '${_selectedDate!.month} 月 ${_selectedDate!.day} 日';
+    final blocksAction = selection == _CalendarDaySelection.signed ||
+        selection == _CalendarDaySelection.noMakeupCard ||
+        selection == _CalendarDaySelection.outsideMonth ||
+        selection == _CalendarDaySelection.future;
+    final VoidCallback? actionOnPressed;
+    if (selection == _CalendarDaySelection.makeup) {
+      actionOnPressed = _makingUp || _makeupCards <= 0 ? null : _doMakeup;
+    } else if (blocksAction) {
+      actionOnPressed = null;
+    } else {
+      actionOnPressed = _checkedInToday || _checkingIn ? null : _doCheckIn;
+    }
+    final actionIcon = switch (selection) {
+      _CalendarDaySelection.makeup => Icons.event_repeat_rounded,
+      _CalendarDaySelection.signed => Icons.check_circle_rounded,
+      _CalendarDaySelection.noMakeupCard => Icons.confirmation_number_outlined,
+      _CalendarDaySelection.outsideMonth ||
+      _CalendarDaySelection.future =>
+        Icons.event_busy_rounded,
+      _CalendarDaySelection.today ||
+      null =>
+        _checkedInToday ? Icons.check_circle_rounded : Icons.task_alt_rounded,
+    };
+    final actionLabel = _makingUp
+        ? '补签中'
+        : _checkingIn
+            ? '签到中'
+            : switch (selection) {
+                _CalendarDaySelection.makeup => '使用补签卡补签 $selectedDateText',
+                _CalendarDaySelection.signed => '$selectedDateText已签到',
+                _CalendarDaySelection.noMakeupCard => '暂无补签卡',
+                _CalendarDaySelection.outsideMonth => '非本月日期不可补签',
+                _CalendarDaySelection.future => '未来日期不可补签',
+                _CalendarDaySelection.today ||
+                null =>
+                  _checkedInToday ? '今日已签到' : '签到领取 $_nextExp 经验',
+              };
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -262,6 +449,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                           longestStreak: _longestStreak,
                           monthCount: _records.length,
                           nextExp: _nextExp,
+                          makeupCards: _makeupCards,
                         ),
                         const SizedBox(height: 20),
                         _MonthHeader(
@@ -286,6 +474,8 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                             month: _visibleMonth,
                             today: _today,
                             records: _records,
+                            selectedDate: _selectedDate,
+                            onDayTap: _handleCalendarDayTap,
                           ),
                         const SizedBox(height: 16),
                         _CalendarLegend(theme: theme),
@@ -315,9 +505,9 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
               child: SizedBox(
                 width: double.infinity,
                 height: 48,
-                child: FilledButton.icon(
-                  onPressed: _checkedInToday || _checkingIn ? null : _doCheckIn,
-                  icon: _checkingIn
+                child: _CheckInActionButton(
+                  onPressed: actionOnPressed,
+                  icon: _checkingIn || _makingUp
                       ? const SizedBox(
                           width: 18,
                           height: 18,
@@ -326,22 +516,70 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                             color: Colors.white,
                           ),
                         )
-                      : Icon(
-                          _checkedInToday
-                              ? Icons.check_circle_rounded
-                              : Icons.task_alt_rounded,
-                        ),
-                  label: Text(
-                    _checkingIn
-                        ? '签到中'
-                        : _checkedInToday
-                            ? '今日已签到'
-                            : '签到领取 $_nextExp 经验',
-                  ),
+                      : Icon(actionIcon),
+                  label: actionLabel,
                 ),
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CheckInActionButton extends StatelessWidget {
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final String label;
+
+  const _CheckInActionButton({
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = enabled
+        ? (isDark
+            ? const [Color(0xFF747474), Color(0xFF383838)]
+            : const [Color(0xFF666666), Color(0xFF292929)])
+        : (isDark
+            ? const [Color(0xFF333333), Color(0xFF292929)]
+            : const [Color(0xFFE2E2E2), Color(0xFFD5D5D5)]);
+    final disabledForeground =
+        isDark ? const Color(0xFF898989) : const Color(0xFF8E8E8E);
+
+    return DecoratedBox(
+      key: const ValueKey('check-in-primary-action-gradient'),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: colors,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          disabledBackgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          disabledForegroundColor: disabledForeground,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          shape: const StadiumBorder(),
+        ),
+        onPressed: onPressed,
+        icon: icon,
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ),
     );
@@ -354,6 +592,7 @@ class _CheckInSummary extends StatelessWidget {
   final int longestStreak;
   final int monthCount;
   final int nextExp;
+  final int makeupCards;
 
   const _CheckInSummary({
     required this.checkedInToday,
@@ -361,6 +600,7 @@ class _CheckInSummary extends StatelessWidget {
     required this.longestStreak,
     required this.monthCount,
     required this.nextExp,
+    required this.makeupCards,
   });
 
   @override
@@ -418,6 +658,42 @@ class _CheckInSummary extends StatelessWidget {
                       style: TextStyle(
                         color: foreground.withValues(alpha: 0.68),
                         fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Semantics(
+                label: '补签卡 $makeupCards 张',
+                excludeSemantics: true,
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.confirmation_number_outlined,
+                          size: 18,
+                          color: foreground.withValues(alpha: 0.72),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '$makeupCards',
+                          style: TextStyle(
+                            color: foreground,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      '补签卡',
+                      style: TextStyle(
+                        color: foreground.withValues(alpha: 0.58),
+                        fontSize: 10.5,
                       ),
                     ),
                   ],
@@ -537,16 +813,25 @@ class _MonthHeader extends StatelessWidget {
   }
 }
 
+typedef CheckInCalendarDayTap = void Function(
+  DateTime date,
+  CheckInDayRecord? record,
+);
+
 class CheckInMonthCalendar extends StatelessWidget {
   final DateTime month;
   final DateTime today;
   final Map<DateTime, CheckInDayRecord> records;
+  final DateTime? selectedDate;
+  final CheckInCalendarDayTap? onDayTap;
 
   const CheckInMonthCalendar({
     super.key,
     required this.month,
     required this.today,
     required this.records,
+    this.selectedDate,
+    this.onDayTap,
   });
 
   @override
@@ -593,10 +878,15 @@ class CheckInMonthCalendar extends StatelessWidget {
                 return const SizedBox.shrink();
               }
               final date = DateTime(month.year, month.month, dayNumber);
+              final record = records[date];
               return _CalendarDay(
                 date: date,
                 today: today,
-                record: records[date],
+                record: record,
+                selected: date == selectedDate,
+                onTap: onDayTap == null
+                    ? null
+                    : (tappedDate) => onDayTap!(tappedDate, record),
               );
             },
           ),
@@ -610,11 +900,15 @@ class _CalendarDay extends StatelessWidget {
   final DateTime date;
   final DateTime today;
   final CheckInDayRecord? record;
+  final bool selected;
+  final ValueChanged<DateTime>? onTap;
 
   const _CalendarDay({
     required this.date,
     required this.today,
     required this.record,
+    required this.selected,
+    required this.onTap,
   });
 
   @override
@@ -637,60 +931,69 @@ class _CalendarDay extends StatelessWidget {
             : isFuture
                 ? scheme.onSurface.withValues(alpha: 0.25)
                 : scheme.onSurface;
-    final semanticsState = isToday
+    final dateState = isToday
         ? (isSigned ? '，今天，已签到' : '，今天')
         : isSigned
-            ? '，已签到'
+            ? (record!.isMakeup ? '，已补签' : '，已签到')
             : isMissed
                 ? '，未签到'
                 : '';
+    final semanticsState = '$dateState${selected ? '，已选择' : ''}';
 
     return Semantics(
       label: '${date.month}月${date.day}日$semanticsState',
+      button: onTap != null,
       excludeSemantics: true,
       child: Center(
-        child: Container(
-          width: 40,
-          height: 40,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: fillColor,
-            shape: BoxShape.circle,
-            border: isToday
-                ? Border.all(color: const Color(0xFF607568), width: 1.5)
-                : null,
-          ),
-          child: isSigned || isMissed
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '${date.day}',
-                      style: TextStyle(
-                        color: textColor,
-                        fontSize: 13,
-                        height: 1,
-                        fontWeight: FontWeight.w700,
+        child: InkResponse(
+          radius: 24,
+          onTap: onTap == null ? null : () => onTap!(date),
+          child: Container(
+            key: ValueKey('check-in-day-${_formatDate(date)}'),
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: fillColor,
+              shape: BoxShape.circle,
+              border: selected
+                  ? Border.all(color: const Color(0xFF8F665F), width: 1.5)
+                  : isToday
+                      ? Border.all(color: const Color(0xFF607568), width: 1.5)
+                      : null,
+            ),
+            child: isSigned || isMissed
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '${date.day}',
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 13,
+                          height: 1,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
+                      const SizedBox(height: 1),
+                      Icon(
+                        isSigned ? Icons.check_rounded : Icons.close_rounded,
+                        size: 10,
+                        color: isSigned
+                            ? const Color(0xFF758D7D)
+                            : const Color(0xFFB8867F),
+                      ),
+                    ],
+                  )
+                : Text(
+                    '${date.day}',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 14,
+                      fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
                     ),
-                    const SizedBox(height: 1),
-                    Icon(
-                      isSigned ? Icons.check_rounded : Icons.close_rounded,
-                      size: 10,
-                      color: isSigned
-                          ? const Color(0xFF758D7D)
-                          : const Color(0xFFB8867F),
-                    ),
-                  ],
-                )
-              : Text(
-                  '${date.day}',
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 14,
-                    fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
                   ),
-                ),
+          ),
         ),
       ),
     );
@@ -823,11 +1126,13 @@ class CheckInDayRecord {
   final DateTime date;
   final int streakDays;
   final int expEarned;
+  final bool isMakeup;
 
   const CheckInDayRecord({
     required this.date,
     required this.streakDays,
     required this.expEarned,
+    this.isMakeup = false,
   });
 
   factory CheckInDayRecord.fromJson(Map<String, dynamic> json) {
@@ -836,6 +1141,7 @@ class CheckInDayRecord {
       date: DateTime(date.year, date.month, date.day),
       streakDays: _readInt(json['streak_days']),
       expEarned: _readInt(json['exp_earned']),
+      isMakeup: json['is_makeup'] == true,
     );
   }
 }
@@ -859,4 +1165,10 @@ bool _sameMonth(DateTime left, DateTime right) {
 String _formatMonth(DateTime value) {
   final month = value.month.toString().padLeft(2, '0');
   return '${value.year}-$month';
+}
+
+String _formatDate(DateTime value) {
+  final month = value.month.toString().padLeft(2, '0');
+  final day = value.day.toString().padLeft(2, '0');
+  return '${value.year}-$month-$day';
 }

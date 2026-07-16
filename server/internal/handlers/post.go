@@ -142,8 +142,6 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	postType := c.Query("type")
 	searchQuery := strings.TrimSpace(strings.ToLower(c.Query("q")))
 	sort := c.DefaultQuery("sort", "time")
-	pageStr := c.DefaultQuery("page", "1")
-	limitStr := c.DefaultQuery("limit", "20")
 	sinceStr := c.Query("since")
 	feedVersion, _ := strconv.Atoi(c.Query("feed_version"))
 
@@ -151,19 +149,12 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	offsetStr := c.Query("offset")
 
-	page, _ := strconv.Atoi(pageStr)
-	limit, _ := strconv.Atoi(limitStr)
+	page, limit, paginationOffset := ParsePagination(c, 20, 50)
 	offset, _ := strconv.Atoi(offsetStr)
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 || limit > 50 {
-		limit = 20
-	}
 
 	// 如果是常规分页（没有传入scene或者只是普通请求），默认使用 offset
 	if scene == "" && offset == 0 {
-		offset = (page - 1) * limit
+		offset = paginationOffset
 	}
 
 	var posts []models.Post
@@ -1062,6 +1053,23 @@ func (h *PostHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	fileIDsRaw := c.PostForm("file_ids")
+	if fileIDsRaw == "" {
+		fileIDsRaw = c.PostForm("file_ids[]")
+	}
+	if fileIDsRaw == "" && c.Request.MultipartForm != nil {
+		for key, values := range c.Request.MultipartForm.Value {
+			if strings.Contains(key, "file_ids") && len(values) > 0 {
+				fileIDsRaw = values[0]
+				break
+			}
+		}
+	}
+	fileIDs, err := services.ParseImageFileIDs(fileIDsRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	var user models.User
 	if err := h.db.Select("id", "edu_bound").First(&user, userID).Error; err != nil {
@@ -1149,6 +1157,9 @@ func (h *PostHandler) Create(c *gin.Context) {
 	}
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if _, err := services.ValidateImageFileIDs(tx, fileIDs, 9, userID.(uint)); err != nil {
+			return err
+		}
 		if err := tx.Create(&post).Error; err != nil {
 			return err
 		}
@@ -1168,28 +1179,11 @@ func (h *PostHandler) Create(c *gin.Context) {
 			}
 		}
 
-		fileIDs := c.PostForm("file_ids")
-		if fileIDs == "" {
-			fileIDs = c.PostForm("file_ids[]")
-		}
-		if fileIDs == "" && c.Request.MultipartForm != nil {
-			for k, vals := range c.Request.MultipartForm.Value {
-				if strings.Contains(k, "file_ids") && len(vals) > 0 {
-					fileIDs = vals[0]
-					break
-				}
-			}
-		}
-		if fileIDs != "" {
-			ids := strings.Split(fileIDs, ",")
-			for i, idStr := range ids {
-				fileID, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
-				if err != nil {
-					continue
-				}
+		if len(fileIDs) > 0 {
+			for i, fileID := range fileIDs {
 				postImage := models.PostImage{
 					PostID:    post.ID,
-					FileID:    uint(fileID),
+					FileID:    fileID,
 					SortOrder: i,
 				}
 				if err := tx.Create(&postImage).Error; err != nil {
@@ -1201,6 +1195,10 @@ func (h *PostHandler) Create(c *gin.Context) {
 	})
 
 	if err != nil {
+		if errors.Is(err, services.ErrInvalidImageFileReference) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		log.Printf("创建帖子失败: %v (user_id=%v, board_id=%v)", err, userID, input.BoardID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建帖子失败: %v", err)})
 		return
@@ -1267,6 +1265,14 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
+	if post.Status == models.PostStatusDeleted {
+		userID, loggedIn := c.Get("user_id")
+		role, _ := c.Get("role")
+		if !loggedIn || (userID.(uint) != post.AuthorID && role != "admin" && role != "super_admin") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+			return
+		}
+	}
 
 	// 增加观看次数
 	h.db.Model(&post).UpdateColumn("view_count", gorm.Expr("view_count + 1"))
@@ -1308,6 +1314,15 @@ func (h *PostHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	fileIDsRaw, replaceImages := c.GetPostForm("file_ids")
+	var fileIDs []uint
+	if replaceImages {
+		fileIDs, err = services.ParseImageFileIDs(fileIDsRaw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	var post models.Post
 	err = h.db.Transaction(func(tx *gorm.DB) error {
@@ -1318,6 +1333,11 @@ func (h *PostHandler) Update(c *gin.Context) {
 		// 只有作者或管理员可以更新
 		if post.AuthorID != userID.(uint) && role != "admin" && role != "super_admin" {
 			return fmt.Errorf("unauthorized")
+		}
+		if replaceImages {
+			if _, err := services.ValidateImageFileIDs(tx, fileIDs, 9, userID.(uint)); err != nil {
+				return err
+			}
 		}
 
 		var user models.User
@@ -1447,20 +1467,15 @@ func (h *PostHandler) Update(c *gin.Context) {
 			return fmt.Errorf("update_post_failed")
 		}
 
-		if fileIDs, exists := c.GetPostForm("file_ids"); exists {
+		if replaceImages {
 			if err := tx.Where("post_id = ?", post.ID).Delete(&models.PostImage{}).Error; err != nil {
 				return fmt.Errorf("update_images_failed")
 			}
-			if strings.TrimSpace(fileIDs) != "" {
-				ids := strings.Split(fileIDs, ",")
-				for i, idStr := range ids {
-					fileID, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
-					if err != nil {
-						continue
-					}
+			if len(fileIDs) > 0 {
+				for i, fileID := range fileIDs {
 					postImage := models.PostImage{
 						PostID:    post.ID,
-						FileID:    uint(fileID),
+						FileID:    fileID,
 						SortOrder: i,
 					}
 					if err := tx.Create(&postImage).Error; err != nil {
@@ -1475,6 +1490,10 @@ func (h *PostHandler) Update(c *gin.Context) {
 	})
 
 	if err != nil {
+		if errors.Is(err, services.ErrInvalidImageFileReference) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		switch err.Error() {
 		case "post_not_found":
 			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})

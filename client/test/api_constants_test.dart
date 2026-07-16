@@ -39,13 +39,13 @@ void main() {
   test('legacy http upload URLs can be normalized to same-origin paths', () {
     expect(
       ApiConstants.normalizeSameOriginResourceUrl(
-        'http://156.233.229.232:8080/uploads/a/a.png',
+        'http://legacy.example.com:8080/uploads/a/a.png',
       ),
       '/uploads/a/a.png',
     );
     expect(
       ApiConstants.normalizeSameOriginResourceUrl(
-        'http://156.233.229.232:8080/uploads/a/a.png?v=1#preview',
+        'http://legacy.example.com:8080/uploads/a/a.png?v=1#preview',
       ),
       '/uploads/a/a.png?v=1#preview',
     );

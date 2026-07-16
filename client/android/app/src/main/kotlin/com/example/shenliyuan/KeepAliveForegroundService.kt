@@ -361,7 +361,7 @@ class KeepAliveForegroundService : Service() {
         private const val ACTION_STOP =
             "com.example.shenliyuan.action.STOP_KEEP_ALIVE"
         private const val HEARTBEAT_URL =
-            "http://156.233.229.232:8080/api/user/notifications/unread_count"
+            "https://sylulive.online/api/user/notifications/unread_count"
         private const val INITIAL_HEARTBEAT_DELAY_MS = 5_000L
         private const val HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000L
 

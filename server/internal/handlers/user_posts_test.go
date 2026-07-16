@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -98,5 +99,8 @@ func TestGetUserMarketPostsIncludesMarketTagsAndImagesForEditEntry(t *testing.T)
 	}
 	if posts[0].Images[0].File.Path != "/uploads/market.jpg" {
 		t.Fatalf("image file path=%q, want /uploads/market.jpg", posts[0].Images[0].File.Path)
+	}
+	if strings.Contains(recorder.Body.String(), user.StudentID) {
+		t.Fatalf("公开帖子响应泄露作者学号: %s", recorder.Body.String())
 	}
 }

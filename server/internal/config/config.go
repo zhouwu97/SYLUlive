@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,26 +11,44 @@ import (
 
 // Config 应用配置
 type Config struct {
-	JWTSecret         string // JWT密钥
-	DSN               string // 数据库连接字符串
-	UploadDir         string // 文件上传目录
-	ExamPaperDir      string // 试卷私有文件目录
-	MaxFileSize       int64  // 最大文件大小(字节)
-	EduServiceURL     string // Python教务服务地址
-	SMTPHost          string // SMTP 地址
-	SMTPPort          string // SMTP 端口
-	SMTPUser          string // SMTP 用户名
-	SMTPPass          string // SMTP 密码/授权码
-	SMTPFrom          string // 发件人邮箱
-	JPushAppKey       string // 极光推送 AppKey
-	JPushMasterSecret string // 极光推送 MasterSecret
-	SuperAdminID      string // 超级管理员账号
-	SuperAdminPass    string // 超级管理员密码
+	JWTSecret                     string // JWT密钥
+	DSN                           string // 数据库连接字符串
+	UploadDir                     string // 文件上传目录
+	ExamPaperDir                  string // 试卷私有文件目录
+	ExamPaperStorageMode          string // 试卷文件存储模式
+	ExamPaperStorageBaseURL       string // 试卷文件服务地址
+	ExamPaperStorageSigningSecret string // 试卷文件签名密钥
+	ExamPaperStorageReceiptSecret string // 试卷上传回执密钥
+	MaxFileSize                   int64  // 最大文件大小(字节)
+	EduServiceURL                 string // Python教务服务地址
+	SMTPHost                      string // SMTP 地址
+	SMTPPort                      string // SMTP 端口
+	SMTPUser                      string // SMTP 用户名
+	SMTPPass                      string // SMTP 密码/授权码
+	SMTPFrom                      string // 发件人邮箱
+	JPushAppKey                   string // 极光推送 AppKey
+	JPushMasterSecret             string // 极光推送 MasterSecret
+	SuperAdminID                  string // 超级管理员账号
+	SuperAdminPass                string // 超级管理员密码
 
 	EduServiceToken        string // Python 教务服务共享密钥
 	JWCSyncEnabled         bool   // 校园资讯同步开关
 	JWCSyncIntervalMinutes int    // 校园资讯同步间隔(分钟)
+
+	// 应用内更新相关配置
+	AppReleaseDir               string // APK 发布根目录
+	AppReleaseMaxSize           int64  // 单个 APK 最大字节数
+	AppUpdateEnforcementEnabled bool   // 是否启用 426 最低版本拦截（阶段 D 使用）
+	AllowMissingVersionHeaders  bool   // 缺失 X-App-Version-* 头时是否放行（阶段 D 使用）
+	AppReleaseUseAccelRedirect  bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
+	AppReleaseAccelPrefix       string // X-Accel-Redirect 路径前缀
 }
+
+const (
+	ExamPaperStorageModeLocal          = "local"
+	ExamPaperStorageModeRemote         = "remote"
+	ExamPaperStorageModeReadonlyRemote = "readonly-remote"
+)
 
 // Load 从环境变量加载配置
 func Load() *Config {
@@ -79,6 +98,17 @@ func Load() *Config {
 	}
 
 	releaseMode := os.Getenv("GIN_MODE") == "release"
+
+	examPaperStorageMode := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_MODE"))
+	if examPaperStorageMode == "" {
+		examPaperStorageMode = ExamPaperStorageModeLocal
+	}
+	examPaperStorageBaseURL := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_BASE_URL"))
+	examPaperStorageSigningSecret := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_SIGNING_SECRET"))
+	examPaperStorageReceiptSecret := strings.TrimSpace(os.Getenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET"))
+	if err := validateExamPaperStorageConfig(examPaperStorageMode, examPaperStorageBaseURL, examPaperStorageSigningSecret, examPaperStorageReceiptSecret, releaseMode); err != nil {
+		panic(err)
+	}
 
 	eduServiceURL := os.Getenv("EDU_SERVICE_URL")
 	if eduServiceURL == "" {
@@ -153,33 +183,100 @@ func Load() *Config {
 		}
 	}
 
-	// 生产环境 + 启用校园资讯同步时，必须配置服务间 Token
-	if os.Getenv("GIN_MODE") == "release" && jwcSyncEnabled {
+	// 生产环境中 Python 教务服务只接受服务间调用，令牌不能为空。
+	if os.Getenv("GIN_MODE") == "release" {
 		if eduServiceToken == "" {
-			panic(fmt.Errorf("生产环境启用 JWC_SYNC 必须设置 EDU_SERVICE_TOKEN 环境变量"))
+			panic(fmt.Errorf("生产环境必须设置 EDU_SERVICE_TOKEN 环境变量"))
 		}
 	}
 
+	// 应用内更新相关配置
+	appReleaseDir := os.Getenv("APP_RELEASE_DIR")
+	if appReleaseDir == "" {
+		appReleaseDir = "/opt/shenliyuan/releases"
+		if os.Getenv("GIN_MODE") != "release" {
+			appReleaseDir = "./releases"
+		}
+	}
+	appReleaseMaxSizeMB := 200
+	if v := os.Getenv("APP_RELEASE_MAX_SIZE_MB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			appReleaseMaxSizeMB = n
+		}
+	}
+	appUpdateEnforcementEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_UPDATE_ENFORCEMENT_ENABLED")), "true")
+	allowMissingVersionHeaders := true
+	if v := strings.TrimSpace(os.Getenv("APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS")); v != "" {
+		allowMissingVersionHeaders = strings.EqualFold(v, "true")
+	}
+	appReleaseUseAccelRedirect := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_RELEASE_USE_ACCEL_REDIRECT")), "true")
+	appReleaseAccelPrefix := strings.TrimSpace(os.Getenv("APP_RELEASE_ACCEL_PREFIX"))
+	if appReleaseAccelPrefix == "" {
+		appReleaseAccelPrefix = "/_internal/app-releases/"
+	}
+
 	return &Config{
-		JWTSecret:         jwtSecret,
-		DSN:               dsn,
-		UploadDir:         uploadDir,
-		ExamPaperDir:      examPaperDir,
-		MaxFileSize:       10 * 1024 * 1024, // 10MB
-		EduServiceURL:     eduServiceURL,
-		SMTPHost:          smtpHost,
-		SMTPPort:          smtpPort,
-		SMTPUser:          smtpUser,
-		SMTPPass:          smtpPass,
-		SMTPFrom:          smtpFrom,
-		JPushAppKey:       jpushAppKey,
-		JPushMasterSecret: jpushMasterSecret,
-		SuperAdminID:      superAdminID,
-		SuperAdminPass:    superAdminPass,
+		JWTSecret:                     jwtSecret,
+		DSN:                           dsn,
+		UploadDir:                     uploadDir,
+		ExamPaperDir:                  examPaperDir,
+		ExamPaperStorageMode:          examPaperStorageMode,
+		ExamPaperStorageBaseURL:       examPaperStorageBaseURL,
+		ExamPaperStorageSigningSecret: examPaperStorageSigningSecret,
+		ExamPaperStorageReceiptSecret: examPaperStorageReceiptSecret,
+		MaxFileSize:                   10 * 1024 * 1024, // 10MB
+		EduServiceURL:                 eduServiceURL,
+		SMTPHost:                      smtpHost,
+		SMTPPort:                      smtpPort,
+		SMTPUser:                      smtpUser,
+		SMTPPass:                      smtpPass,
+		SMTPFrom:                      smtpFrom,
+		JPushAppKey:                   jpushAppKey,
+		JPushMasterSecret:             jpushMasterSecret,
+		SuperAdminID:                  superAdminID,
+		SuperAdminPass:                superAdminPass,
 
 		EduServiceToken:        eduServiceToken,
 		JWCSyncEnabled:         jwcSyncEnabled,
 		JWCSyncIntervalMinutes: jwcSyncIntervalMinutes,
+
+		AppReleaseDir:               appReleaseDir,
+		AppReleaseMaxSize:           int64(appReleaseMaxSizeMB) * 1024 * 1024,
+		AppUpdateEnforcementEnabled: appUpdateEnforcementEnabled,
+		AllowMissingVersionHeaders:  allowMissingVersionHeaders,
+		AppReleaseUseAccelRedirect:  appReleaseUseAccelRedirect,
+		AppReleaseAccelPrefix:       appReleaseAccelPrefix,
+	}
+}
+
+func validateExamPaperStorageConfig(mode, baseURL, signingSecret, receiptSecret string, releaseMode bool) error {
+	switch mode {
+	case ExamPaperStorageModeLocal:
+		return nil
+	case ExamPaperStorageModeRemote, ExamPaperStorageModeReadonlyRemote:
+		if !releaseMode {
+			return nil
+		}
+		if baseURL == "" || signingSecret == "" || receiptSecret == "" {
+			return fmt.Errorf("生产环境远端试卷存储必须完整设置 EXAM_PAPER_STORAGE_BASE_URL、EXAM_PAPER_STORAGE_SIGNING_SECRET 和 EXAM_PAPER_STORAGE_RECEIPT_SECRET")
+		}
+		if strings.TrimSpace(signingSecret) == strings.TrimSpace(receiptSecret) {
+			return fmt.Errorf("EXAM_PAPER_STORAGE_SIGNING_SECRET 与 EXAM_PAPER_STORAGE_RECEIPT_SECRET 不能相同")
+		}
+		parsed, err := url.Parse(baseURL)
+		if err != nil ||
+			!strings.EqualFold(parsed.Scheme, "https") ||
+			parsed.Hostname() != "139.196.148.174" ||
+			(parsed.Port() != "" && parsed.Port() != "443") ||
+			parsed.User != nil ||
+			(parsed.Path != "" && parsed.Path != "/") ||
+			parsed.RawQuery != "" ||
+			parsed.Fragment != "" {
+			return fmt.Errorf("生产环境 EXAM_PAPER_STORAGE_BASE_URL 必须是 https://139.196.148.174")
+		}
+		return nil
+	default:
+		return fmt.Errorf("EXAM_PAPER_STORAGE_MODE 无效: %q", mode)
 	}
 }
 

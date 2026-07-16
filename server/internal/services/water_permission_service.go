@@ -9,16 +9,16 @@ import (
 
 // WaterSectionPermission 当前用户对某版块的权限摘要（返回给客户端）
 type WaterSectionPermission struct {
-	IsGlobalAdmin      bool   `json:"is_global_admin"`
-	IsModerator        bool   `json:"is_moderator"`
-	Role               string `json:"role"`
+	IsGlobalAdmin bool   `json:"is_global_admin"`
+	IsModerator   bool   `json:"is_moderator"`
+	Role          string `json:"role"`
 
-	CanEditSection     bool   `json:"can_edit_section"`
-	CanManageTags      bool   `json:"can_manage_tags"`
-	CanPinPost         bool   `json:"can_pin_post"`
-	CanDeletePost      bool   `json:"can_delete_post"`
-	CanMuteUser        bool   `json:"can_mute_user"`
-	CanManageModerators bool  `json:"can_manage_moderators"`
+	CanEditSection      bool `json:"can_edit_section"`
+	CanManageTags       bool `json:"can_manage_tags"`
+	CanPinPost          bool `json:"can_pin_post"`
+	CanDeletePost       bool `json:"can_delete_post"`
+	CanMuteUser         bool `json:"can_mute_user"`
+	CanManageModerators bool `json:"can_manage_moderators"`
 }
 
 // WaterPermissionService 版块权限服务

@@ -14,18 +14,20 @@ from models.schemas import (
 )
 from services.crawler import CookieLapseError, GradesNotOpenError, NetworkError, LoginFailedError
 from services.session import execute_with_session_refresh
+from services.security import require_internal_service, require_internal_user
 
-router = APIRouter(prefix="/api/edu/grades", tags=["成绩"])
+router = APIRouter(prefix="/api/edu/grades", tags=["成绩"], dependencies=[Depends(require_internal_service)])
 
 
 @router.post("/", response_model=GradesResponse)
 async def get_grades(
     input: GradesInput,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db),
 ):
     """获取成绩"""
     result = await db.execute(
-        select(EduUser).where(EduUser.user_id == input.user_id)
+        select(EduUser).where(EduUser.user_id == user_id)
     )
     edu_user = result.scalar_one_or_none()
 
@@ -92,11 +94,12 @@ async def get_grades(
 @router.post("/detail", response_model=GradeDetailResponse)
 async def get_grade_detail(
     input: GradeDetailInput,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db),
 ):
     """获取单门课程成绩构成"""
     result = await db.execute(
-        select(EduUser).where(EduUser.user_id == input.user_id)
+        select(EduUser).where(EduUser.user_id == user_id)
     )
     edu_user = result.scalar_one_or_none()
 

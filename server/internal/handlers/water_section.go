@@ -462,21 +462,21 @@ func (h *WaterSectionHandler) fillSectionStats(resps []waterSectionResponse) []w
 		followerMap[fc.SectionID] = fc.Count
 	}
 
-	// 批量查询帖子数（按 type 匹配 section slug，board_id=1 为水帖版块）
+	// 批量查询帖子数（按 post_type 匹配 section slug，board_id=1 为水帖版块）
 	type postCountResult struct {
-		Type  string `gorm:"column:type"`
-		Count int64  `gorm:"column:count"`
+		PostType string `gorm:"column:post_type"`
+		Count    int64  `gorm:"column:count"`
 	}
 	var postCounts []postCountResult
 	h.db.Model(&models.Post{}).
-		Select("type, COUNT(*) as count").
-		Where("board_id = ? AND type IN ? AND status = ?", 1, slugs, "normal").
-		Group("type").
+		Select("post_type, COUNT(*) as count").
+		Where("board_id = ? AND post_type IN ? AND status = ?", models.BoardShuitie, slugs, models.PostStatusNormal).
+		Group("post_type").
 		Scan(&postCounts)
 
 	postCountMap := make(map[string]int64)
 	for _, pc := range postCounts {
-		postCountMap[pc.Type] = pc.Count
+		postCountMap[pc.PostType] = pc.Count
 	}
 
 	for i := range resps {

@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"shenliyuan/internal/models"
 
@@ -15,6 +17,53 @@ import (
 // UserHandler 用户处理器
 type UserHandler struct {
 	db *gorm.DB
+}
+
+// PublicUserResponse 是公开资料接口的最小响应模型。
+type PublicUserResponse = models.PublicUserResponse
+
+func publicUserResponse(user models.User) PublicUserResponse {
+	return models.PublicUser(user)
+}
+
+// SelfUserResponse 仅用于当前登录用户，保留客户端刷新会话所需的账号和教务状态。
+type SelfUserResponse struct {
+	ID                 uint        `json:"id"`
+	StudentID          string      `json:"student_id"`
+	Nickname           string      `json:"nickname"`
+	Gender             string      `json:"gender"`
+	Avatar             string      `json:"avatar"`
+	Background         string      `json:"background"`
+	NightMode          bool        `json:"night_mode"`
+	CreditScore        int         `json:"credit_score"`
+	Role               models.Role `json:"role"`
+	AdminExp           int         `json:"admin_exp"`
+	Exp                int         `json:"exp"`
+	ReportCount        int         `json:"report_count"`
+	CreatedAt          time.Time   `json:"created_at"`
+	EduStudentID       string      `json:"edu_student_id"`
+	EduBound           bool        `json:"edu_bound"`
+	EduGrade           string      `json:"edu_grade"`
+	EduCollege         string      `json:"edu_college"`
+	EduMajor           string      `json:"edu_major"`
+	IsCheckedInToday   bool        `json:"is_checked_in_today"`
+	FollowersCount     int         `json:"followers_count"`
+	FollowingCount     int         `json:"following_count"`
+	TotalLikesReceived int         `json:"total_likes_received"`
+	IsFollowing        bool        `json:"is_following"`
+}
+
+func selfUserResponse(user models.User) SelfUserResponse {
+	return SelfUserResponse{
+		ID: user.ID, StudentID: user.StudentID, Nickname: user.Nickname, Gender: user.Gender,
+		Avatar: user.Avatar, Background: user.Background, NightMode: user.NightMode,
+		CreditScore: user.CreditScore, Role: user.Role, AdminExp: user.AdminExp, Exp: user.Exp,
+		ReportCount: user.ReportCount, CreatedAt: user.CreatedAt, EduStudentID: user.EduStudentID,
+		EduBound: user.EduBound, EduGrade: user.EduGrade, EduCollege: user.EduCollege,
+		EduMajor: user.EduMajor, IsCheckedInToday: user.IsCheckedInToday,
+		FollowersCount: user.FollowersCount, FollowingCount: user.FollowingCount,
+		TotalLikesReceived: user.TotalLikesReceived, IsFollowing: user.IsFollowing,
+	}
 }
 
 // NewUserHandler 创建用户处理器
@@ -31,22 +80,24 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	// 动态计算今天是否已经签到（统一 Asia/Shanghai 时区）
+	// 是否已签到以当天事实记录为准，users.last_check_in_date 仅保留给旧接口兼容。
 	loc, _ := time.LoadLocation("Asia/Shanghai")
-	todayStr := time.Now().In(loc).Format("2006-01-02")
-	if user.LastCheckInDate == todayStr {
-		user.IsCheckedInToday = true
-	} else {
-		user.IsCheckedInToday = false
+	now := time.Now().In(loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	var checkInCount int64
+	if err := h.db.Model(&models.CheckIn{}).Where("user_id = ? AND check_in_date = ?", user.ID, today).Count(&checkInCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取签到状态失败"})
+		return
 	}
+	user.IsCheckedInToday = checkInCount > 0
 
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, selfUserResponse(user))
 }
 
 // UpdateProfileInput 更新资料输入
 type UpdateProfileInput struct {
-	Nickname string `json:"nickname"`
-	Gender   string `json:"gender"`
+	Nickname string  `json:"nickname"`
+	Gender   *string `json:"gender"`
 }
 
 // UpdateProfile 更新个人资料
@@ -58,15 +109,33 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	if input.Nickname == "" {
+	nickname := strings.TrimSpace(input.Nickname)
+	if nickname == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "昵称不能为空"})
 		return
 	}
 
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-		"nickname": input.Nickname,
-		"gender":   input.Gender,
-	}).Error; err != nil {
+	if utf8.RuneCountInString(nickname) > 20 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "昵称不能超过20个字符"})
+		return
+	}
+
+	updates := map[string]interface{}{
+		"nickname": nickname,
+	}
+
+	if input.Gender != nil {
+		gender := strings.TrimSpace(*input.Gender)
+
+		if gender != "" && gender != "male" && gender != "female" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的性别值"})
+			return
+		}
+
+		updates["gender"] = gender
+	}
+
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
@@ -76,7 +145,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, selfUserResponse(user))
 }
 
 // UpdateAvatarInput 更新头像输入
@@ -131,7 +200,14 @@ func (h *UserHandler) UpdateBackground(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "背景图更新成功"})
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取用户资料失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, selfUserResponse(user))
 }
 
 // NightModeInput 夜间模式设置输入
@@ -180,7 +256,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	}
 	user.IsFollowing = isFollowing
 
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, publicUserResponse(user))
 }
 
 // GetFollowing 获取关注列表
@@ -192,9 +268,7 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset := (page - 1) * limit
+	page, limit, offset := ParsePagination(c, 20, 50)
 
 	var follows []models.UserFollow
 	var total int64
@@ -209,6 +283,7 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 	users := make([]models.User, 0)
 	if len(userIDs) > 0 {
 		h.db.Where("id IN ?", userIDs).Find(&users)
+		users = orderUsersByIDs(users, userIDs)
 
 		// 填充 IsFollowing
 		currentUserIDAny, exists := c.Get("user_id")
@@ -228,8 +303,12 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 		}
 	}
 
+	items := make([]PublicUserResponse, 0, len(users))
+	for _, user := range users {
+		items = append(items, publicUserResponse(user))
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"items": users,
+		"items": items,
 		"total": total,
 		"page":  page,
 		"limit": limit,
@@ -245,9 +324,7 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset := (page - 1) * limit
+	page, limit, offset := ParsePagination(c, 20, 50)
 
 	var follows []models.UserFollow
 	var total int64
@@ -262,6 +339,7 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 	users := make([]models.User, 0)
 	if len(userIDs) > 0 {
 		h.db.Where("id IN ?", userIDs).Find(&users)
+		users = orderUsersByIDs(users, userIDs)
 
 		// 填充 IsFollowing
 		currentUserIDAny, exists := c.Get("user_id")
@@ -281,12 +359,30 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 		}
 	}
 
+	items := make([]PublicUserResponse, 0, len(users))
+	for _, user := range users {
+		items = append(items, publicUserResponse(user))
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"items": users,
+		"items": items,
 		"total": total,
 		"page":  page,
 		"limit": limit,
 	})
+}
+
+func orderUsersByIDs(users []models.User, ids []uint) []models.User {
+	byID := make(map[uint]models.User, len(users))
+	for _, user := range users {
+		byID[user.ID] = user
+	}
+	ordered := make([]models.User, 0, len(users))
+	for _, id := range ids {
+		if user, exists := byID[id]; exists {
+			ordered = append(ordered, user)
+		}
+	}
+	return ordered
 }
 
 // Follow 关注用户
@@ -319,9 +415,16 @@ func (h *UserHandler) Follow(c *gin.Context) {
 			FollowingID: uint(followingID),
 		})
 
+		if result.Error != nil {
+			return result.Error
+		}
 		if result.RowsAffected > 0 {
-			tx.Model(&models.User{}).Where("id = ?", followerID).UpdateColumn("following_count", gorm.Expr("following_count + 1"))
-			tx.Model(&models.User{}).Where("id = ?", followingID).UpdateColumn("followers_count", gorm.Expr("followers_count + 1"))
+			if err := tx.Model(&models.User{}).Where("id = ?", followerID).UpdateColumn("following_count", gorm.Expr("following_count + 1")).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&models.User{}).Where("id = ?", followingID).UpdateColumn("followers_count", gorm.Expr("followers_count + 1")).Error; err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -352,8 +455,12 @@ func (h *UserHandler) Unfollow(c *gin.Context) {
 			return result.Error
 		}
 		if result.RowsAffected > 0 {
-			tx.Model(&models.User{}).Where("id = ?", followerID).UpdateColumn("following_count", gorm.Expr("GREATEST(following_count - 1, 0)"))
-			tx.Model(&models.User{}).Where("id = ?", followingID).UpdateColumn("followers_count", gorm.Expr("GREATEST(followers_count - 1, 0)"))
+			if err := tx.Model(&models.User{}).Where("id = ?", followerID).UpdateColumn("following_count", gorm.Expr("GREATEST(following_count - 1, 0)")).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&models.User{}).Where("id = ?", followingID).UpdateColumn("followers_count", gorm.Expr("GREATEST(followers_count - 1, 0)")).Error; err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -393,9 +500,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset := (page - 1) * limit
+	_, limit, offset := ParsePagination(c, 20, 50)
 
 	var posts []models.Post
 	if err := h.db.
@@ -423,15 +528,7 @@ func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 || limit > 50 {
-		limit = 20
-	}
-	offset := (page - 1) * limit
+	page, limit, offset := ParsePagination(c, 20, 50)
 	postType := c.DefaultQuery("post_type", "sell")
 
 	buildQuery := func() *gorm.DB {
@@ -503,7 +600,7 @@ func (h *UserHandler) GetUserPostCount(c *gin.Context) {
 
 // UpdateDeviceTokenInput 更新设备Token输入
 type UpdateDeviceTokenInput struct {
-	DeviceToken string `json:"device_token" binding:"required"`
+	DeviceToken string `json:"device_token"`
 }
 
 // UpdateDeviceToken 更新极光设备Token（用户登录时前端调用）
@@ -515,7 +612,15 @@ func (h *UserHandler) UpdateDeviceToken(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("device_token", input.DeviceToken).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		// 同一 RegistrationID 只能归属一个账号，切换账号时先解除旧绑定。
+		if input.DeviceToken != "" {
+			if err := tx.Model(&models.User{}).Where("device_token = ? AND id <> ?", input.DeviceToken, userID).Update("device_token", "").Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&models.User{}).Where("id = ?", userID).Update("device_token", input.DeviceToken).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}

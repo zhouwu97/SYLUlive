@@ -417,7 +417,7 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 
 	snapshot, _ := json.Marshal(featured)
 	h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
-	
+
 	// 自动生成首页精华审核记录
 	h.createHomeFeaturedApplication(uint(postID), operator.ID, section.ID, featured.ID, reason)
 

@@ -50,6 +50,7 @@
 | `PUT` | `/api/user/background`| 更新个人主页背景 |
 | `GET` | `/api/user/:id` | 获取指定用户信息 |
 | `POST`| `/api/user/checkin` | 用户每日签到 |
+| `POST`| `/api/user/checkin/makeup` | 使用补签卡补签本月过去的未签到日期 |
 | `GET` | `/api/user/checkin/status` | 获取签到状态 |
 | `GET` | `/api/user/checkin/calendar?month=YYYY-MM` | 获取指定月份的签到记录 |
 | `POST`| `/api/user/:id/follow` | 关注指定用户 |

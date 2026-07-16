@@ -227,8 +227,6 @@ func main() {
 
 		&models.Notification{},
 
-		&models.CheckIn{},
-
 		&models.ExpLog{},
 
 		&models.LotteryEvent{},
@@ -264,6 +262,9 @@ func main() {
 
 	if err := models.EnsureExamPaperIndexes(db); err != nil {
 		log.Fatal("试卷索引迁移失败:", err)
+	}
+	if err := models.EnsureCheckInSchema(db); err != nil {
+		log.Fatal("签到系统迁移失败:", err)
 	}
 	if err := models.EnsureCampusCalendarIndexes(db); err != nil {
 		log.Fatal("校历索引迁移失败:", err)
@@ -352,7 +353,7 @@ func main() {
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
 
 		if c.Request.Method == "OPTIONS" {
 
@@ -365,6 +366,14 @@ func main() {
 		c.Next()
 
 	})
+
+	// 最低支持版本拦截位于 CORS 之后、业务路由之前。公开更新接口和迁移期
+	// 登录接口由中间件内部放行，避免用户在被拦截后无法获得新安装包。
+	r.Use(middleware.AppVersionMiddleware(
+		db,
+		cfg.AppUpdateEnforcementEnabled,
+		cfg.AllowMissingVersionHeaders,
+	))
 
 	// 初始化处理器
 
@@ -446,7 +455,7 @@ func main() {
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
 
 	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
-	appReleaseService := services.NewAppReleaseService(db, cfg.AppReleaseDir)
+	appReleaseService := services.NewAppReleaseService(db, cfg.AppReleaseDir, cfg.AppReleaseMaxSize)
 	appUpdateHandler := handlers.NewAppUpdateHandler(
 		appReleaseService,
 		cfg.AppReleaseUseAccelRedirect,
@@ -464,6 +473,7 @@ func main() {
 	feedbackHandler := handlers.NewFeedbackHandler(db)
 
 	checkinHandler := handlers.NewCheckInHandler(db)
+	checkinCompensationHandler := handlers.NewCheckInCompensationHandler(db)
 
 	notificationHandler := handlers.NewNotificationHandler(db)
 
@@ -673,6 +683,8 @@ func main() {
 		user.POST("/checkin", checkinHandler.DoCheckIn)
 
 		user.GET("/checkin/status", checkinHandler.GetStatus)
+		user.GET("/checkin/compensations", checkinCompensationHandler.ListMine)
+		user.POST("/checkin/compensations/:id/claims", checkinCompensationHandler.Claim)
 
 		user.POST("/:id/follow", userHandler.Follow)
 		user.DELETE("/:id/follow", userHandler.Unfollow)
@@ -1185,6 +1197,17 @@ func main() {
 		superAdmin.GET("/admin_logs", superAdminHandler.GetAdminLogs)
 
 		superAdmin.POST("/admin_logs/revoke_exp", superAdminHandler.RevokeAdminExp)
+		superAdmin.GET("/app-releases", appUpdateHandler.AdminList)
+		superAdmin.GET("/app-releases/:id", appUpdateHandler.AdminGet)
+		superAdmin.POST("/app-releases", appUpdateHandler.AdminCreate)
+		superAdmin.PATCH("/app-releases/:id", appUpdateHandler.AdminUpdate)
+		superAdmin.POST("/app-releases/:id/publish", appUpdateHandler.AdminPublish)
+		superAdmin.POST("/app-releases/:id/withdraw", appUpdateHandler.AdminWithdraw)
+		superAdmin.DELETE("/app-releases/:id", appUpdateHandler.AdminDeleteDraft)
+		superAdmin.POST("/checkin/users/:id/rebuild", checkinHandler.RebuildUserStats)
+		superAdmin.GET("/checkin/compensations", checkinCompensationHandler.ListCampaigns)
+		superAdmin.POST("/checkin/compensations", checkinCompensationHandler.Publish)
+		superAdmin.POST("/checkin/compensations/:id/close", checkinCompensationHandler.Close)
 
 		superAdmin.GET("/invitations/pending", invitationHandler.GetApprovalList)
 
@@ -1575,11 +1598,9 @@ func ensurePostMarketTagsColumn(db *gorm.DB) error {
 	return db.Exec(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS market_tags VARCHAR(200) NOT NULL DEFAULT ''`).Error
 }
 
-// ensureAppReleaseIndexes builds the lookup indexes used by the app update
-// flow. A partial unique index on (platform, channel, version_code) keeps
-// each effective version immutable while letting withdrawn rows coexist for
-// historical download audits. The other indexes serve the latest-published
-// lookup and the admin listing queries.
+// ensureAppReleaseIndexes 建立版本检查与超管列表所需的索引和数据约束。
+// 版本号在同一平台和渠道下不可复用；PostgreSQL 约束以 NOT VALID 方式新增，
+// 避免历史脏数据阻塞上线，同时仍会约束之后的任何新写入。
 func ensureAppReleaseIndexes(db *gorm.DB) error {
 	statements := []string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_app_release_platform_channel_version
@@ -1593,6 +1614,30 @@ func ensureAppReleaseIndexes(db *gorm.DB) error {
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {
 			return err
+		}
+	}
+	if db.Dialector.Name() == "postgres" {
+		constraints := []string{
+			`DO $$ BEGIN
+				IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_app_release_version_code_positive') THEN
+					ALTER TABLE app_releases ADD CONSTRAINT chk_app_release_version_code_positive CHECK (version_code > 0) NOT VALID;
+				END IF;
+			END $$`,
+			`DO $$ BEGIN
+				IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_app_release_minimum_supported') THEN
+					ALTER TABLE app_releases ADD CONSTRAINT chk_app_release_minimum_supported CHECK (minimum_supported_version_code > 0 AND minimum_supported_version_code <= version_code) NOT VALID;
+				END IF;
+			END $$`,
+			`DO $$ BEGIN
+				IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_app_release_status') THEN
+					ALTER TABLE app_releases ADD CONSTRAINT chk_app_release_status CHECK (status IN ('draft', 'published', 'withdrawn')) NOT VALID;
+				END IF;
+			END $$`,
+		}
+		for _, statement := range constraints {
+			if err := db.Exec(statement).Error; err != nil {
+				return err
+			}
 		}
 	}
 	return nil

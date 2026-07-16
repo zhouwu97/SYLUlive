@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 仅向系统安装器公开应用私有更新目录，禁止暴露整个缓存目录。 -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="app_updates" path="app_updates/" />
+</paths>

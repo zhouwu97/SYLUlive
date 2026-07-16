@@ -17,7 +17,6 @@ import '../utils/app_motion.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
 import '../utils/screen_swipe.dart';
-import '../utils/update_checker.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_tab_reveal.dart';
@@ -185,12 +184,6 @@ class _HomeScreenState extends State<HomeScreen>
       if (auth.isLoggedIn && auth.user?.isAdmin == true) {
         _checkAdminTasks(auth);
       }
-    });
-
-    // 4. Check for app updates even later
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      UpdateChecker.check(context);
     });
   }
 

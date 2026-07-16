@@ -45,6 +45,8 @@ import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
+import 'services/app_update_coordinator.dart';
+import 'widgets/app_update_gate.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -889,6 +891,34 @@ Dio getSharedDio() {
       ),
     );
 
+    // 每个业务请求都带版本头；服务端开启最低支持版本限制后，426 会由根级
+    // 更新门禁接管，而不是在任意业务页面弹出分散提示。
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          if (options.extra['skip_app_version_interceptor'] == true) {
+            handler.next(options);
+            return;
+          }
+          try {
+            options.headers
+                .addAll((await AppVersionHeaders.load()).toHeaders());
+          } catch (error) {
+            debugPrint('附加应用版本请求头失败: $error');
+          }
+          handler.next(options);
+        },
+        onError: (error, handler) {
+          if (error.response?.statusCode == 426 &&
+              error.requestOptions.extra['skip_app_version_interceptor'] !=
+                  true) {
+            appUpdateCoordinator.requireUpdateFromApi();
+          }
+          handler.next(error);
+        },
+      ),
+    );
+
     if (kDebugMode) {
       dio.interceptors.add(SafeLogInterceptor());
     }
@@ -908,6 +938,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider.value(value: appUpdateCoordinator),
         ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
         ChangeNotifierProvider(create: (_) => PostProvider(dio)),
         ChangeNotifierProxyProvider<AuthProvider, TeamRecruitmentProvider>(
@@ -942,7 +973,9 @@ class MyApp extends StatelessWidget {
               provider!..syncSessionUser(auth.user?.id),
         ),
       ],
-      child: const _WidgetDeepLinkHandler(child: _AppContent()),
+      child: const AppUpdateGate(
+        child: _WidgetDeepLinkHandler(child: _AppContent()),
+      ),
     );
   }
 }

@@ -12,6 +12,7 @@ const (
 // 首版的平台和渠道常量。保留为数据字段，未来增加渠道时无需修改表结构。
 const (
 	AppReleasePlatformAndroid = "android"
+	AppReleasePlatformOhos    = "ohos"
 	AppReleaseChannelStable   = "stable"
 )
 

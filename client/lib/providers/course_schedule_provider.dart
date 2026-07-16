@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_constants.dart';
 import '../services/home_widget_service.dart';
+import '../platform/platform_capabilities.dart';
 import '../models/course_term.dart';
 
 /// 单个课程块，用于课表网格展示
@@ -688,6 +689,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 同步课程数据到桌面小部件（非阻塞）
   void _syncWidget() {
     if (_userId == null) return;
+    if (!PlatformCapabilities.current.supportsNativeWidget) return;
     // 使用 microtask 避免阻塞 UI
     Future.microtask(() => HomeWidgetService.syncCourseData(this));
   }

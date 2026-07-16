@@ -47,6 +47,8 @@ import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'widgets/app_update_gate.dart';
+import 'platform/platform_bootstrap.dart';
+import 'platform/platform_capabilities.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -265,8 +267,12 @@ Future<void> main() async {
       runApp(const MyApp());
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        CourseReminderService.instance.initialize();
-        _initializePrivateMessageNotifications();
+        PlatformBootstrap().initializeAfterFirstFrame(
+          initializeAndroidServices: () async {
+            await CourseReminderService.instance.initialize();
+            await _initializePrivateMessageNotifications();
+          },
+        );
       });
     },
     (error, stack) {
@@ -973,9 +979,7 @@ class MyApp extends StatelessWidget {
               provider!..syncSessionUser(auth.user?.id),
         ),
       ],
-      child: const AppUpdateGate(
-        child: _WidgetDeepLinkHandler(child: _AppContent()),
-      ),
+      child: const _WidgetDeepLinkHandler(child: _AppContent()),
     );
   }
 }
@@ -1086,6 +1090,10 @@ class _AppContent extends StatelessWidget {
     return MaterialApp(
       title: '沈理校园',
       debugShowCheckedModeBanner: false,
+      // 更新门禁依赖 Directionality、主题和本地化，必须位于 MaterialApp 内部。
+      builder: (context, child) => AppUpdateGate(
+        child: child ?? const SizedBox.shrink(),
+      ),
       locale: const Locale('zh', 'CN'),
       supportedLocales: const [
         Locale('zh', 'CN'),
@@ -1324,7 +1332,8 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       final authProvider = context.read<AuthProvider>();
-      if (authProvider.isLoggedIn) {
+      if (authProvider.isLoggedIn &&
+          PlatformCapabilities.current.supportsJPush) {
         _ensureJPush(authProvider);
         _checkNativePrivateMessage();
       }
@@ -1388,13 +1397,17 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
         if (authProvider.isLoggedIn) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!_jpushSetup && !_jpushSettingUp) {
+            if (PlatformCapabilities.current.supportsJPush &&
+                !_jpushSetup &&
+                !_jpushSettingUp) {
               _ensureJPush(authProvider);
               _requestNotificationPermissionIfNeeded();
             }
             _processPendingPrivateMessageOpen();
             _schedulePendingNotificationProcessing();
-            _checkNativePrivateMessage();
+            if (PlatformCapabilities.current.supportsJPush) {
+              _checkNativePrivateMessage();
+            }
           });
         }
 

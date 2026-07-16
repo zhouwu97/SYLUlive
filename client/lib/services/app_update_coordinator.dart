@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../models/app_update_info.dart';
 import '../platform/app_installer.dart';
+import '../platform/app_platform.dart';
 import 'app_update_api.dart';
 import 'app_update_cache.dart';
 import 'app_update_download_service.dart';
@@ -29,6 +30,17 @@ enum AppUpdatePhase {
 class AppVersionHeaders {
   static Future<AppVersionHeaders>? _loading;
 
+  // 鸿蒙插件未接入 package_info_plus 时，仍须放行业务网络请求。
+  // 正式接入后构建脚本可用 dart-define 覆盖这两个兜底值。
+  static const _fallbackVersionName = String.fromEnvironment(
+    'APP_VERSION_NAME',
+    defaultValue: '1.6.2',
+  );
+  static const _fallbackVersionCode = int.fromEnvironment(
+    'APP_VERSION_CODE',
+    defaultValue: 1602,
+  );
+
   final String versionName;
   final int versionCode;
 
@@ -39,18 +51,35 @@ class AppVersionHeaders {
   }
 
   static Future<AppVersionHeaders> _load() async {
-    final info = await PackageInfo.fromPlatform();
-    final versionCode = int.tryParse(info.buildNumber.trim());
-    if (versionCode == null ||
-        versionCode <= 0 ||
-        info.version.trim().isEmpty) {
-      throw StateError('应用版本信息无效: ${info.version}+${info.buildNumber}');
+    // package_info_plus 尚无 OHOS 注册器时，MethodChannel 的空回复不会完成。
+    // 鸿蒙构建版本由 dart-define 注入，因此无需等待该插件即可安全放行业务请求。
+    if (AppPlatforms.current.isOhos) {
+      return const AppVersionHeaders._(
+        _fallbackVersionName,
+        _fallbackVersionCode,
+      );
     }
-    return AppVersionHeaders._(info.version.trim(), versionCode);
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final versionCode = int.tryParse(info.buildNumber.trim());
+      if (versionCode == null ||
+          versionCode <= 0 ||
+          info.version.trim().isEmpty) {
+        throw StateError('应用版本信息无效: ${info.version}+${info.buildNumber}');
+      }
+      return AppVersionHeaders._(info.version.trim(), versionCode);
+    } catch (error) {
+      // 非鸿蒙平台读取异常时使用构建兜底版本，避免版本检查阻断业务请求。
+      debugPrint('读取应用版本失败，使用构建兜底版本: $error');
+      return const AppVersionHeaders._(
+        _fallbackVersionName,
+        _fallbackVersionCode,
+      );
+    }
   }
 
   Map<String, String> toHeaders() => {
-        'X-App-Platform': 'android',
+        'X-App-Platform': AppPlatforms.current.wireName,
         'X-App-Channel': 'stable',
         'X-App-Version-Name': versionName,
         'X-App-Version-Code': versionCode.toString(),
@@ -89,15 +118,20 @@ class AppUpdateCoordinator extends ChangeNotifier {
   AppUpdateInfo? get info => _info;
   AppDownloadProgress? get downloadProgress => _downloadProgress;
   String? get errorMessage => _errorMessage;
+
+  /// 冷启动和回前台检查均在后台完成，不能遮挡原有开屏或当前页面。
+  /// 仅在已确认强制更新，或用户已进入安装流程后启用全屏门禁。
   bool get isBlocking => switch (_phase) {
-        AppUpdatePhase.initializing ||
-        AppUpdatePhase.checking ||
         AppUpdatePhase.required ||
         AppUpdatePhase.downloading ||
         AppUpdatePhase.readyToInstall ||
         AppUpdatePhase.installing =>
           true,
-        AppUpdatePhase.allowed || AppUpdatePhase.optional => false,
+        AppUpdatePhase.initializing ||
+        AppUpdatePhase.checking ||
+        AppUpdatePhase.allowed ||
+        AppUpdatePhase.optional =>
+          false,
       };
   bool get isRequired =>
       _info?.updateType == AppUpdateType.required ||
@@ -152,7 +186,7 @@ class AppUpdateCoordinator extends ChangeNotifier {
     try {
       final headers = await AppVersionHeaders.load();
       final info = await _api.checkUpdate(
-        platform: 'android',
+        platform: AppPlatforms.current.wireName,
         channel: 'stable',
         versionName: headers.versionName,
         versionCode: headers.versionCode,
@@ -220,6 +254,14 @@ class AppUpdateCoordinator extends ChangeNotifier {
   /// 下载完成后立即尝试交给系统安装器；若缺少未知来源授权，先跳转系统设置，
   /// 用户返回后可点击“继续安装”，无需重下 APK。
   Future<void> downloadOrInstall() async {
+    if (!AppPlatforms.current.isAndroid) {
+      // 鸿蒙不支持 APK 的下载与安装流程。后续接入应用市场或官方分发页前，
+      // 保持当前应用可用，避免更新门禁引导用户下载错误格式的安装包。
+      _errorMessage = '鸿蒙版请从官方发布渠道获取最新版本';
+      _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
+      notifyListeners();
+      return;
+    }
     if (_phase == AppUpdatePhase.readyToInstall && _downloadedApk != null) {
       await installReadyPackage();
       return;

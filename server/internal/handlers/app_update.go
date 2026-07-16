@@ -32,15 +32,15 @@ const apkContentType = "application/vnd.android.package-archive"
 // 启用，开关默认 false；只有当服务器明确配置了 Nginx 内部 location 后才应
 // 切到 true。
 type AppUpdateHandler struct {
-	svc               *services.AppReleaseService
-	useAccelRedirect  bool
-	accelPrefix       string
+	svc              *services.AppReleaseService
+	useAccelRedirect bool
+	accelPrefix      string
 }
 
 // NewAppUpdateHandler 构造 AppUpdateHandler。
 //
-//   useAccelRedirect: 来自 cfg.AppReleaseUseAccelRedirect
-//   accelPrefix:      来自 cfg.AppReleaseAccelPrefix，例如 "/_internal/app-releases/"
+//	useAccelRedirect: 来自 cfg.AppReleaseUseAccelRedirect
+//	accelPrefix:      来自 cfg.AppReleaseAccelPrefix，例如 "/_internal/app-releases/"
 func NewAppUpdateHandler(svc *services.AppReleaseService, useAccelRedirect bool, accelPrefix string) *AppUpdateHandler {
 	prefix := strings.TrimSpace(accelPrefix)
 	if prefix == "" {
@@ -55,27 +55,27 @@ func NewAppUpdateHandler(svc *services.AppReleaseService, useAccelRedirect bool,
 	return &AppUpdateHandler{
 		svc:              svc,
 		useAccelRedirect: useAccelRedirect,
-		accelPrefix:       prefix,
+		accelPrefix:      prefix,
 	}
 }
 
 // updateCheckResponse 是给客户端的统一响应。无更新时 file 等字段为空，
 // 客户端必须能容忍这一情况。
 type updateCheckResponse struct {
-	UpdateAvailable              bool   `json:"update_available"`
-	UpdateType                   string `json:"update_type"`
-	CurrentVersionName           string `json:"current_version_name,omitempty"`
-	CurrentVersionCode           int64  `json:"current_version_code,omitempty"`
-	LatestVersionName            string `json:"latest_version_name"`
-	LatestVersionCode            int64  `json:"latest_version_code"`
+	UpdateAvailable             bool   `json:"update_available"`
+	UpdateType                  string `json:"update_type"`
+	CurrentVersionName          string `json:"current_version_name,omitempty"`
+	CurrentVersionCode          int64  `json:"current_version_code,omitempty"`
+	LatestVersionName           string `json:"latest_version_name"`
+	LatestVersionCode           int64  `json:"latest_version_code"`
 	MinimumSupportedVersionCode int64  `json:"minimum_supported_version_code"`
-	Title                        string `json:"title,omitempty"`
-	Changelog                    string `json:"changelog,omitempty"`
-	FileSize                     int64  `json:"file_size,omitempty"`
-	SHA256                       string `json:"sha256,omitempty"`
-	DownloadURL                  string `json:"download_url,omitempty"`
-	PublishedAt                  string `json:"published_at,omitempty"`
-	CheckAfterSeconds            int    `json:"check_after_seconds"`
+	Title                       string `json:"title,omitempty"`
+	Changelog                   string `json:"changelog,omitempty"`
+	FileSize                    int64  `json:"file_size,omitempty"`
+	SHA256                      string `json:"sha256,omitempty"`
+	DownloadURL                 string `json:"download_url,omitempty"`
+	PublishedAt                 string `json:"published_at,omitempty"`
+	CheckAfterSeconds           int    `json:"check_after_seconds"`
 }
 
 // CheckUpdate 处理 GET /api/app/update。
@@ -88,9 +88,9 @@ func (h *AppUpdateHandler) CheckUpdate(c *gin.Context) {
 	versionName := firstNonEmpty(c.Query("version_name"), c.GetHeader("X-App-Version-Name"))
 	versionCodeRaw := firstNonEmpty(c.Query("version_code"), c.GetHeader("X-App-Version-Code"))
 
-	// 首版只接受 android/stable。其他平台按"不支持"返回 400，避免客户端误读
-	// 强制状态。
-	if platform != models.AppReleasePlatformAndroid {
+	// 鸿蒙已具备独立的 HAP 构建链路；尚未发布鸿蒙版本时按无更新放行，
+	// 不能因为更新检查本身阻断首次启动。
+	if platform != models.AppReleasePlatformAndroid && platform != models.AppReleasePlatformOhos {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "unsupported platform",
 			"code":  "unsupported_platform",
@@ -136,14 +136,14 @@ func (h *AppUpdateHandler) CheckUpdate(c *gin.Context) {
 			// 任何"尚未发布版本"的情况一律放行，避免 App 启动失败。客户端
 			// 看到响应后应按 check_after_seconds 等再检查。
 			c.JSON(http.StatusOK, updateCheckResponse{
-				UpdateAvailable:              false,
-				UpdateType:                   string(services.UpdateNone),
-				CurrentVersionName:           versionName,
-				CurrentVersionCode:           currentVersionCode,
-				LatestVersionName:            versionName,
-				LatestVersionCode:            currentVersionCode,
-				MinimumSupportedVersionCode:  0,
-				CheckAfterSeconds:            defaultCheckAfterSeconds,
+				UpdateAvailable:             false,
+				UpdateType:                  string(services.UpdateNone),
+				CurrentVersionName:          versionName,
+				CurrentVersionCode:          currentVersionCode,
+				LatestVersionName:           versionName,
+				LatestVersionCode:           currentVersionCode,
+				MinimumSupportedVersionCode: 0,
+				CheckAfterSeconds:           defaultCheckAfterSeconds,
 			})
 			return
 		}
@@ -159,14 +159,14 @@ func (h *AppUpdateHandler) CheckUpdate(c *gin.Context) {
 
 	// 构造统一响应：无更新时 file/title/changelog 为空，让客户端直接进入 App。
 	resp := updateCheckResponse{
-		UpdateAvailable:              decision != services.UpdateNone,
-		UpdateType:                   string(decision),
-		CurrentVersionName:           versionName,
-		CurrentVersionCode:           currentVersionCode,
-		LatestVersionName:            latest.VersionName,
-		LatestVersionCode:            latest.VersionCode,
-		MinimumSupportedVersionCode:  latest.MinimumSupportedVersionCode,
-		CheckAfterSeconds:            defaultCheckAfterSeconds,
+		UpdateAvailable:             decision != services.UpdateNone,
+		UpdateType:                  string(decision),
+		CurrentVersionName:          versionName,
+		CurrentVersionCode:          currentVersionCode,
+		LatestVersionName:           latest.VersionName,
+		LatestVersionCode:           latest.VersionCode,
+		MinimumSupportedVersionCode: latest.MinimumSupportedVersionCode,
+		CheckAfterSeconds:           defaultCheckAfterSeconds,
 	}
 	if decision != services.UpdateNone {
 		resp.Title = latest.Title

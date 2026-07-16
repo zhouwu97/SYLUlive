@@ -180,24 +180,30 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<void> _loadTheme() async {
-    final prefs = await SharedPreferences.getInstance();
-    _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
-    _backgroundImage = prefs.getString(_backgroundImageKey);
-    _landscapeBackgroundImage = prefs.getString(_landscapeBackgroundImageKey);
-    _backgroundFillScreen = prefs.getBool(_backgroundFillScreenKey) ?? false;
-    _landscapeBackgroundFillScreen =
-        prefs.getBool(_landscapeBackgroundFillScreenKey) ?? false;
-    _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
-    _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
-    _liquidGlass = prefs.getBool(_liquidGlassKey) ?? false;
-    _floatingNavBar = prefs.getBool(_floatingNavBarKey) ?? false;
-    _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
-    _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
-    _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
-    _backgroundMode =
-        _backgroundModeFromString(prefs.getString(_backgroundModeKey));
-    _isLoaded = true;
-    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
+      _backgroundImage = prefs.getString(_backgroundImageKey);
+      _landscapeBackgroundImage = prefs.getString(_landscapeBackgroundImageKey);
+      _backgroundFillScreen = prefs.getBool(_backgroundFillScreenKey) ?? false;
+      _landscapeBackgroundFillScreen =
+          prefs.getBool(_landscapeBackgroundFillScreenKey) ?? false;
+      _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
+      _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
+      _liquidGlass = prefs.getBool(_liquidGlassKey) ?? false;
+      _floatingNavBar = prefs.getBool(_floatingNavBarKey) ?? false;
+      _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
+      _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
+      _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
+      _backgroundMode =
+          _backgroundModeFromString(prefs.getString(_backgroundModeKey));
+    } catch (error) {
+      // 本地存储插件尚未接入的平台使用内存默认主题，不能阻断登录首屏。
+      debugPrint('读取主题本地配置失败，使用默认主题: $error');
+    } finally {
+      _isLoaded = true;
+      notifyListeners();
+    }
   }
 
   Future<void> _setBackgroundMode(AppBackgroundMode mode) async {

@@ -154,7 +154,7 @@ class AppUpdateDownloadService {
       );
 
       await sink!.flush();
-      await sink.close();
+      await sink!.close();
       sink = null;
 
       if (received != expectedSize) {
@@ -183,8 +183,9 @@ class AppUpdateDownloadService {
       return finalFile;
     } catch (e) {
       try {
-        if (sink != null && !sink!.isClosed) {
-          await sink!.close();
+        final openedSink = sink;
+        if (openedSink != null) {
+          await openedSink.close();
         }
       } catch (_) {
         // 忽略 sink 关闭错误，保留原始异常。
@@ -196,7 +197,7 @@ class AppUpdateDownloadService {
       if (e is FileSystemException) {
         throw AppDownloadError(
           AppDownloadErrorKind.storage,
-          '存储读写失败: ${e.message ?? e.toString()}',
+          '存储读写失败: ${e.message}',
         );
       }
       if (e is FormatException) {

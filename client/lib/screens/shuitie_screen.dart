@@ -119,6 +119,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   List<model.Announcement> _unreadAnnouncements = [];
   bool _wasLoggedIn = false;
   bool _checkinStatusLoaded = false;
+  bool _checkinStatusLoading = false;
   String _feedMode = kFeedModes[kDefaultFeedModeIndex].key; // 'all'
   String _searchQuery = '';
   List<Post> _searchResults = [];
@@ -198,6 +199,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         _refresh();
       }
       _loadAnnouncements();
+      unawaited(_ensureCheckinStatusLoaded(force: true));
       _startAutoRefresh();
     } else if (state == AppLifecycleState.paused) {
       _stopAutoRefresh();
@@ -447,11 +449,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
   }
 
-  Future<void> _ensureCheckinStatusLoaded() async {
-    if (_checkinStatusLoaded || _checkInLoading) return;
-    final succeeded = await _loadCheckinStatus();
-    if (mounted && succeeded) {
-      _checkinStatusLoaded = true;
+  Future<void> _ensureCheckinStatusLoaded({bool force = false}) async {
+    if (_checkinStatusLoading || _checkInLoading) return;
+    if (!force && _checkinStatusLoaded) return;
+
+    _checkinStatusLoading = true;
+    try {
+      final succeeded = await _loadCheckinStatus();
+      if (mounted && succeeded) {
+        _checkinStatusLoaded = true;
+      }
+    } finally {
+      _checkinStatusLoading = false;
     }
   }
 
@@ -479,39 +488,39 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       Navigator.pushNamed(context, '/login');
       return;
     }
-    if (_checkInLoading || _checkedIn) return;
+    if (_checkInLoading) return;
     if (mounted) setState(() => _checkInLoading = true);
     try {
       final resp = await auth.dio.post('/user/checkin');
-      if (resp.statusCode == 200 && mounted) {
-        final data = resp.data;
-        final already = data['already'] ?? false;
-        final streak = data['streak_days'] ?? 1;
-        final exp = data['exp_earned'] ?? 1;
-        if (mounted) {
-          setState(() {
-            _checkedIn = true;
-            _streakDays = streak;
-            _checkInLoading = false;
-          });
-        }
-        auth.refreshUser();
-        if (!already) {
-          _showCheckInSuccessDialog(streak, exp);
-        } else {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('今天已经签过到了')));
-        }
+      if (resp.statusCode != 200 || !mounted) return;
+
+      final data = resp.data;
+      final already = data['already'] ?? false;
+      final streak = data['streak_days'] ?? 1;
+      final exp = data['exp_earned'] ?? 1;
+      setState(() {
+        _checkedIn = true;
+        _streakDays = streak;
+      });
+      unawaited(auth.refreshUser());
+      if (!already) {
+        _showCheckInSuccessDialog(streak, exp);
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('今天已经签过到了')));
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _checkInLoading = false);
         String msg = '签到失败，请稍后再试';
         if (e is DioException) {
           msg = AppFeedback.dioErrorMessage(e, fallback: msg);
         }
         AppFeedback.showSnackBar(context, msg, isError: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _checkInLoading = false);
       }
     }
   }
@@ -750,7 +759,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _openHomeServicePanel() async {
-    await _ensureCheckinStatusLoaded();
+    await _ensureCheckinStatusLoaded(force: true);
     if (!mounted) return;
 
     final themeProvider = context.read<ThemeProvider>();
@@ -2049,9 +2058,8 @@ class CheckInSuccessDialog extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? Colors.white70
-                            : const Color(0xFF4B5563),
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF4B5563),
                       ),
                     ),
                   ],
@@ -2089,9 +2097,8 @@ class CheckInSuccessDialog extends StatelessWidget {
                       '经验已到账',
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark
-                            ? Colors.white60
-                            : const Color(0xFF7B808A),
+                        color:
+                            isDark ? Colors.white60 : const Color(0xFF7B808A),
                       ),
                     ),
                   ],

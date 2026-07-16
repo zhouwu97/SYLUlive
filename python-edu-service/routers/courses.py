@@ -18,8 +18,9 @@ from services.crawler import (
     LoginFailedError, NetworkError, parse_weeks, parse_time_sections
 )
 from services.session import execute_with_session_refresh
+from services.security import require_internal_service, require_internal_user
 
-router = APIRouter(prefix="/api/edu/courses", tags=["课程"])
+router = APIRouter(prefix="/api/edu/courses", tags=["课程"], dependencies=[Depends(require_internal_service)])
 
 
 def _generate_course_code(name: str, weekday: str, time: str) -> str:
@@ -32,11 +33,12 @@ def _generate_course_code(name: str, weekday: str, time: str) -> str:
 @router.post("/fetch", response_model=CourseFetchResponse)
 async def fetch_courses(
     input: CourseFetchInput,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db)
 ):
     """从教务系统提取课表（返回原始数据供预览）"""
     result = await db.execute(
-        select(EduUser).where(EduUser.user_id == input.user_id)
+        select(EduUser).where(EduUser.user_id == user_id)
     )
     edu_user = result.scalar_one_or_none()
 
@@ -99,12 +101,13 @@ async def fetch_courses(
 @router.post("/sync", response_model=CourseSyncResponse)
 async def sync_courses(
     input: CourseSyncInput,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db)
 ):
     """同步课表到本地（用户确认后）"""
     # 验证用户绑定
     result = await db.execute(
-        select(EduUser).where(EduUser.user_id == input.user_id)
+        select(EduUser).where(EduUser.user_id == user_id)
     )
     edu_user = result.scalar_one_or_none()
 
@@ -118,7 +121,7 @@ async def sync_courses(
         # 删除旧原始数据（如果有）
         await db.execute(
             delete(CourseRaw).where(
-                CourseRaw.user_id == input.user_id,
+                CourseRaw.user_id == user_id,
                 CourseRaw.year == input.year,
                 CourseRaw.semester == input.semester
             )
@@ -127,7 +130,7 @@ async def sync_courses(
         # 删除旧自定义数据（如果有）
         await db.execute(
             delete(CourseCustom).where(
-                CourseCustom.user_id == input.user_id,
+                CourseCustom.user_id == user_id,
                 CourseCustom.year == input.year,
                 CourseCustom.semester == input.semester
             )
@@ -135,7 +138,7 @@ async def sync_courses(
 
         # 存储原始数据
         course_raw = CourseRaw(
-            user_id=input.user_id,
+            user_id=user_id,
             year=input.year,
             semester=input.semester,
             raw_json=input.raw_json
@@ -171,7 +174,7 @@ async def sync_courses(
             weeks = parse_weeks(week_str)
 
             course_custom = CourseCustom(
-                user_id=input.user_id,
+                user_id=user_id,
                 course_code=course_code,
                 raw_id=course_raw.id,
                 custom_name=custom.custom_name if custom else None,
@@ -210,10 +213,10 @@ async def sync_courses(
 
 @router.get("/local", response_model=LocalCoursesResponse)
 async def get_local_courses(
-    user_id: str,
     year: str,
     semester: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_internal_user),
 ):
     """获取本地已美化课表"""
     result = await db.execute(
@@ -256,11 +259,12 @@ async def get_local_courses(
 async def update_course(
     course_id: int,
     input: CourseCustomInput,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db)
 ):
     """手动调整课程"""
     result = await db.execute(
-        select(CourseCustom).where(CourseCustom.id == course_id)
+        select(CourseCustom).where(CourseCustom.id == course_id, CourseCustom.user_id == user_id)
     )
     course = result.scalar_one_or_none()
 
@@ -309,11 +313,12 @@ async def update_course(
 @router.delete("/{course_id}")
 async def delete_course(
     course_id: int,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db)
 ):
     """删除课程"""
     result = await db.execute(
-        select(CourseCustom).where(CourseCustom.id == course_id)
+        select(CourseCustom).where(CourseCustom.id == course_id, CourseCustom.user_id == user_id)
     )
     course = result.scalar_one_or_none()
 
@@ -332,12 +337,13 @@ async def customize_course(
     year: str,
     semester: int,
     input: CourseCustomInput,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_internal_user),
 ):
     """为特定课程添加/更新自定义设置"""
     result = await db.execute(
         select(CourseCustom).where(
-            CourseCustom.user_id == input.user_id,
+            CourseCustom.user_id == user_id,
             CourseCustom.year == year,
             CourseCustom.semester == semester,
             CourseCustom.course_code == course_code
@@ -348,7 +354,7 @@ async def customize_course(
     if not course:
         # 创建新的自定义课程
         course = CourseCustom(
-            user_id=input.user_id,
+            user_id=user_id,
             course_code=course_code,
             year=year,
             semester=semester,
@@ -386,16 +392,17 @@ async def customize_course(
 @router.post("/manual")
 async def add_manual_course(
     input: ManualCourseInput,
+    user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db)
 ):
     """手动添加课程（不从教务抓取，直接写入本地）"""
     # 生成唯一 course_code
     import hashlib
-    raw = f"manual_{input.user_id}_{input.course_code}_{input.weekday}_{input.start_section}"
+    raw = f"manual_{user_id}_{input.custom_name}_{input.weekday}_{input.start_section}"
     course_code = hashlib.md5(raw.encode()).hexdigest()[:12]
 
     course = CourseCustom(
-        user_id=input.user_id,
+        user_id=user_id,
         course_code=course_code,
         raw_id=None,  # 无原始数据关联
         custom_name=input.custom_name,

@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
@@ -37,16 +38,28 @@ func NewSuperAdminHandler(db *gorm.DB) *SuperAdminHandler {
 
 func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 
-	search := c.Query("search")
+	search := strings.TrimSpace(c.Query("search"))
 
 	role := c.Query("role")
 
 	query := h.db.Model(&models.User{})
 
 	if search != "" {
-
-		query = query.Where("student_id LIKE ? OR nickname LIKE ?", "%"+search+"%", "%"+search+"%")
-
+		like := "%" + strings.ToLower(search) + "%"
+		if userID, err := strconv.ParseUint(search, 10, 64); err == nil {
+			query = query.Where(
+				"id = ? OR LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?",
+				userID,
+				like,
+				like,
+			)
+		} else {
+			query = query.Where(
+				"LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?",
+				like,
+				like,
+			)
+		}
 	}
 
 	if role != "" {
@@ -56,12 +69,19 @@ func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 	}
 
 	var users []models.User
-	if err := query.Order("created_at DESC").Find(&users).Error; err != nil {
+	if err := query.
+		Select("id", "student_id", "nickname", "avatar", "role", "credit_score", "report_count", "edu_bound", "created_at").
+		Order("created_at DESC").
+		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户列表失败"})
 		return
 	}
 
-	c.JSON(http.StatusOK, users)
+	response := make([]AdminUserResponse, 0, len(users))
+	for _, user := range users {
+		response = append(response, adminUserResponse(user))
+	}
+	c.JSON(http.StatusOK, response)
 
 }
 
@@ -215,7 +235,11 @@ func (h *SuperAdminHandler) ResetUserPassword(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{"password_hash": string(hashedPassword), "token_version": gorm.Expr("token_version + 1")})
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{"password_hash": string(hashedPassword), "token_version": gorm.Expr("token_version + 1")}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置密码失败"})
+		return
+	}
+	middleware.InvalidateTokenVersionCache(uint(userID))
 
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置为系统默认密码"})
 
@@ -501,8 +525,6 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 	})
 
 }
-
-
 
 type CreateLotteryEventInput struct {
 	Title       string `json:"title" binding:"required"`

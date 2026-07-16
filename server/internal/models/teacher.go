@@ -21,8 +21,8 @@ type TeacherRating struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	TeacherID uint      `gorm:"index;not null" json:"teacher_id"`
 	UserID    uint      `gorm:"index;not null" json:"user_id"`
-	Star      int       `gorm:"not null" json:"star"`                    // 1-5星
-	Comment   string    `gorm:"size:500" json:"comment"`                  // 评价内容
+	Star      int       `gorm:"not null" json:"star"`    // 1-5星
+	Comment   string    `gorm:"size:500" json:"comment"` // 评价内容
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

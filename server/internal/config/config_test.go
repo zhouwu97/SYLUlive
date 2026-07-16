@@ -1,11 +1,16 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret")
 	t.Setenv("SUPER_ADMIN_ID", "root-admin")
 	t.Setenv("SUPER_ADMIN_PASSWORD", "test-password")
+	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("EXAM_PAPER_DIR", "")
 	production := Load()
@@ -38,6 +43,149 @@ func TestLoadReleaseRejectsExamPaperDirInsidePublicUploads(t *testing.T) {
 	t.Setenv("EXAM_PAPER_DIR", "/opt/shenliyuan/uploads/exam-papers")
 
 	assertLoadPanics(t)
+}
+
+func TestLoadReadsRemoteExamPaperStorageConfig(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "remote")
+	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://paper.example.com")
+	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "signing-secret")
+	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "receipt-secret")
+
+	cfg := Load()
+	require.Equal(t, "remote", cfg.ExamPaperStorageMode)
+	require.Equal(t, "https://paper.example.com", cfg.ExamPaperStorageBaseURL)
+	require.Equal(t, "signing-secret", cfg.ExamPaperStorageSigningSecret)
+	require.Equal(t, "receipt-secret", cfg.ExamPaperStorageReceiptSecret)
+}
+
+func TestLoadReadsReadonlyRemoteExamPaperStorageConfig(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "readonly-remote")
+	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://paper.example.com")
+	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "signing-secret")
+	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "receipt-secret")
+
+	cfg := Load()
+	require.Equal(t, "readonly-remote", cfg.ExamPaperStorageMode)
+}
+
+func TestLoadRejectsInvalidExamPaperStorageMode(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "hybrid")
+
+	require.Panics(t, func() { Load() })
+}
+
+func TestLoadReleaseRejectsIncompleteOrInsecureRemoteStorageConfig(t *testing.T) {
+	tests := []struct {
+		name          string
+		mode          string
+		baseURL       string
+		signingSecret string
+		receiptSecret string
+	}{
+		{
+			name:          "缺少签名密钥",
+			mode:          "remote",
+			baseURL:       "https://139.196.148.174",
+			receiptSecret: "receipt-secret",
+		},
+		{
+			name:          "缺少回执密钥",
+			mode:          "readonly-remote",
+			baseURL:       "https://139.196.148.174",
+			signingSecret: "signing-secret",
+		},
+		{
+			name:          "远端地址不是固定文件服务器IP",
+			mode:          "remote",
+			baseURL:       "https://paper.example.com",
+			signingSecret: "signing-secret",
+			receiptSecret: "receipt-secret",
+		},
+		{
+			name:          "远端地址不是HTTPS",
+			mode:          "remote",
+			baseURL:       "http://paper.example.com",
+			signingSecret: "signing-secret",
+			receiptSecret: "receipt-secret",
+		},
+		{
+			name:          "远端地址缺少主机名",
+			mode:          "remote",
+			baseURL:       "https://@",
+			signingSecret: "signing-secret",
+			receiptSecret: "receipt-secret",
+		},
+		{
+			name:          "远端地址包含用户信息",
+			mode:          "remote",
+			baseURL:       "https://user:password@paper.example.com",
+			signingSecret: "signing-secret",
+			receiptSecret: "receipt-secret",
+		},
+		{
+			name:          "远端地址包含fragment",
+			mode:          "readonly-remote",
+			baseURL:       "https://paper.example.com/download#private",
+			signingSecret: "signing-secret",
+			receiptSecret: "receipt-secret",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setBaseConfigEnv(t, "release")
+			t.Setenv("EXAM_PAPER_STORAGE_MODE", tt.mode)
+			t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", tt.baseURL)
+			t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", tt.signingSecret)
+			t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", tt.receiptSecret)
+
+			require.Panics(t, func() { Load() })
+		})
+	}
+}
+
+func TestLoadReleaseRejectsSharedExamPaperStorageSecret(t *testing.T) {
+	setBaseConfigEnv(t, "release")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "remote")
+	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://139.196.148.174")
+	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "  shared-storage-secret  ")
+	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "shared-storage-secret")
+
+	require.PanicsWithError(
+		t,
+		"EXAM_PAPER_STORAGE_SIGNING_SECRET 与 EXAM_PAPER_STORAGE_RECEIPT_SECRET 不能相同",
+		func() { Load() },
+	)
+}
+
+func TestLoadReleaseAcceptsDistinctExamPaperStorageSecrets(t *testing.T) {
+	setBaseConfigEnv(t, "release")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "remote")
+	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "https://139.196.148.174")
+	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "signing-secret-0123456789abcdef")
+	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "receipt-secret-fedcba9876543210")
+
+	cfg := Load()
+	require.Equal(t, "signing-secret-0123456789abcdef", cfg.ExamPaperStorageSigningSecret)
+	require.Equal(t, "receipt-secret-fedcba9876543210", cfg.ExamPaperStorageReceiptSecret)
+}
+
+func setBaseConfigEnv(t *testing.T, ginMode string) {
+	t.Helper()
+	t.Setenv("GIN_MODE", ginMode)
+	t.Setenv("JWT_SECRET", "realistic-release-secret")
+	t.Setenv("SUPER_ADMIN_ID", "admin")
+	t.Setenv("SUPER_ADMIN_PASSWORD", "realistic-admin-password")
+	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
+	t.Setenv("UPLOAD_DIR", "/opt/shenliyuan/uploads")
+	t.Setenv("EXAM_PAPER_DIR", "/opt/shenliyuan/private/exam-papers")
+	t.Setenv("EXAM_PAPER_STORAGE_MODE", "")
+	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "")
+	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")
+	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "")
 }
 
 func assertLoadPanics(t *testing.T) {

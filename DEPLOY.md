@@ -257,22 +257,44 @@ curl -fsS --max-time 8 http://127.0.0.1:8000/health
 
 如果 Go 主服务在另一台服务器上通过公网或内网访问教务服务，还要确认 `EDU_SERVICE_URL` 指向当前可访问的地址。
 
-## 客户端 (APK) 更新
+## 客户端 (APK) 发布与强制更新
 
-如果修改了 Flutter 客户端代码，需要重新打包 Android 安装包并上传到服务器，用户即可下载更新：
+不要再把 APK 复制到公开的 `/uploads/app-release.apk`。正式安装包由服务端的
+应用版本记录管理，只有超级管理员显式发布后的版本才能被客户端下载。
 
 ```bash
-# 1. 在本地机器（需有 Flutter 环境）进行编译
+# 1. 在本地机器（需有 Flutter 环境）产出已签名的 release APK
 cd client
 flutter build apk --release
 
-# 2. 将编译好的 APK 上传至服务器的 uploads 静态资源目录
-# 本地生成的包路径：client/build/app/outputs/flutter-apk/app-release.apk
-scp client/build/app/outputs/flutter-apk/app-release.apk root@<你的服务器IP>:/opt/shenliyuan/uploads/app-release.apk
+# 2. 部署服务端代码并确认运行目录可写；不要把 APK 放入 /uploads
+mkdir -p /opt/shenliyuan/releases/android/stable/.tmp
+chown -R <运行服务用户>:<运行服务组> /opt/shenliyuan/releases
+chmod -R 750 /opt/shenliyuan/releases
+```
 
-# 3. 用户更新
-# 上传完毕后，用户可以直接通过浏览器访问下载最新版：
-# http://<你的服务器IP>/uploads/app-release.apk
+随后使用新版客户端的“超级管理员面板 -> 应用版本”：选择 APK，填写
+`version_name`、递增的 `version_code`、更新说明和
+`minimum_supported_version_code`，先创建草稿并核对 SHA-256，再执行“发布”。
+
+上线顺序必须分两阶段：
+
+1. 先发布携带版本请求头与应用内更新能力的桥接版本，保持：
+
+   ```env
+   APP_UPDATE_ENFORCEMENT_ENABLED=true
+   APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS=true
+   ```
+
+2. 覆盖率足够后，将 `APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS=false`。此时未
+   上报版本头或低于当前 `minimum_supported_version_code` 的业务请求会返回
+   `426 APP_UPDATE_REQUIRED`；`/api/app/update` 与 APK 下载接口仍然可访问。
+
+验证版本策略时，可用实际发布版本号替换下列参数：
+
+```bash
+curl -sS 'http://127.0.0.1:8080/api/app/update?platform=android&channel=stable&version_name=1.6.2&version_code=1602'
+curl -I 'http://127.0.0.1:8080/api/app/releases/<release_id>/download'
 ```
 
 ## 开发阶段重建
@@ -314,6 +336,35 @@ EXAM_PAPER_DIR=/opt/shenliyuan/private/exam-papers
 SUPER_ADMIN_ID=admin
 SUPER_ADMIN_PASSWORD=your_random_admin_password
 GIN_MODE=release
+
+# 应用内更新：APK 发布与下载
+APP_RELEASE_DIR=/opt/shenliyuan/releases
+APP_RELEASE_MAX_SIZE_MB=200
+APP_UPDATE_ENFORCEMENT_ENABLED=false
+APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS=true
+APP_RELEASE_USE_ACCEL_REDIRECT=false
+APP_RELEASE_ACCEL_PREFIX=/_internal/app-releases/
+```
+
+应用内更新目录权限：
+
+```bash
+mkdir -p /opt/shenliyuan/releases/android/stable/.tmp
+chown -R <运行服务用户>:<运行服务组> /opt/shenliyuan/releases
+chmod -R 750 /opt/shenliyuan/releases
+```
+
+`APP_RELEASE_USE_ACCEL_REDIRECT` 默认 `false`，此时 Go 直接通过
+`http.ServeContent` 输出 APK。等 Nginx 配置好下面的内部 location 后再改成
+`true`。Nginx 示例：
+
+```nginx
+location /_internal/app-releases/ {
+    internal;
+    alias /opt/shenliyuan/releases/;
+    sendfile on;
+    aio threads;
+}
 ```
 `
 注意：
@@ -582,3 +633,178 @@ echo "=== 最近错误 ===" && journalctl -u shenliyuan -n 10 --no-pager -p err
 mkdir -p /opt/shenliyuan/private/exam-papers
 chmod 0700 /opt/shenliyuan/private /opt/shenliyuan/private/exam-papers
 ```
+
+## 独立试卷文件服务器
+
+试卷文件服务直接使用公网 IP `139.196.148.174`，不配置或复用 `sylulive.online` 业务域名。生产 TLS 证书的 SAN 必须包含 `IP Address:139.196.148.174`，客户端上传、预览和下载均直连该 IP。不得记录服务器密码到仓库、部署日志或切换报告中；聊天中曾共享过的密码应在上线前轮换。
+
+### 构建与首次安装
+
+在可信构建机生成 Ubuntu 24.04 可执行文件：
+
+```bash
+cd server
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/paper-storage ./cmd/paper_storage
+```
+
+把仓库和二进制放到文件服务器后，以 root 执行安装。`auto` 模式要求 Certbot 5.4 或更高版本；脚本会在需要时通过 Snap 安装新版 Certbot，先加载仅开放 80 端口 challenge 的 bootstrap 配置，完成 staging 验证和正式 IP 证书签发后才开放 443：
+
+```bash
+cd deploy/paper-storage
+PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
+```
+
+脚本创建非登录用户 `paper-storage`、`0700` 数据目录、`0600` 环境文件，安装 Nginx、UFW、Certbot 和 systemd 单元，并在现有 Swap 小于 2 GiB 时新增 Swap。活动 Swap 不会被停用或重建；非活动文件会同时通过 `blkid` 与 `file` 校验签名，损坏文件使用 `.new` 完整创建并同步后原子替换。符号链接和非普通文件会被拒绝。生产证书不存在、私钥不匹配、有效期不足、SAN 错误或证书链不受系统信任时，脚本会拒绝渲染正式 Nginx 配置，不会回退 snakeoil 或自签证书。
+
+生成两把不同的密钥，只写入 `/etc/sylg-paper-storage.env`：
+
+```bash
+openssl rand -hex 32
+openssl rand -hex 32
+```
+
+第一把同时配置为主服务器的 `EXAM_PAPER_STORAGE_SIGNING_SECRET` 和文件服务器的 `PAPER_STORAGE_SIGNING_SECRET`；第二把同时配置为主服务器的 `EXAM_PAPER_STORAGE_RECEIPT_SECRET` 和文件服务器的 `PAPER_STORAGE_RECEIPT_SECRET`。两把密钥不得相同，也不得提交到 Git。
+
+156 主服务器切换远端存储时使用以下配置；两个密钥值分别与 139 对应配置一致，但彼此必须不同：
+
+```env
+EXAM_PAPER_STORAGE_MODE=remote
+EXAM_PAPER_STORAGE_BASE_URL=https://139.196.148.174
+EXAM_PAPER_STORAGE_SIGNING_SECRET=<高强度随机密钥A>
+EXAM_PAPER_STORAGE_RECEIPT_SECRET=<高强度随机密钥B>
+```
+
+写入真实密钥、确认公网 80/443 已放行后，首次签发正式证书时提供联系人邮箱；Certbot 会申请受系统信任的短期 IP 证书并启用自动续期 timer，deploy hook 只会在 `nginx -t` 成功后 reload：
+
+```bash
+LETSENCRYPT_EMAIL=管理员邮箱 PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
+certbot renew --dry-run
+openssl s_client -connect 139.196.148.174:443 -servername 139.196.148.174 -showcerts
+curl -fsS https://139.196.148.174/healthz
+```
+
+证书由外部系统管理时，必须同时显式指定证书和私钥；脚本仍会执行全部证书校验：
+
+```bash
+PAPER_STORAGE_ACME_MODE=external \
+PAPER_STORAGE_TLS_CERT_PATH=/受控路径/fullchain.pem \
+PAPER_STORAGE_TLS_KEY_PATH=/受控路径/privkey.pem \
+PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
+```
+
+### 历史试卷文件迁移
+
+迁移命令只处理仍有效的 `pending`、`published` 本地试卷记录。它会流式读取主服务器上的原文件，重新计算实际大小和 SHA-256，再通过带 `metadata` scope 的短时授权读取文件服务器元数据；数据库记录、本地文件和远端文件的 key、大小、SHA-256 全部一致时，才允许把 `storage_backend` 条件更新为 `remote`。命令不会重新解析或解密 PDF，不会删除源文件，也不会输出密钥或授权 token。
+
+先在文件服务器准备目标目录，再从主服务器复制。SSH 用户、端口和密钥路径按生产实际值填写，不要把密码写入脚本或命令历史：
+
+```bash
+# 文件服务器：目标目录必须归 paper-storage 用户管理
+install -d -o paper-storage -g paper-storage -m 0700 \
+  /opt/sylg-paper-storage/data/exam-papers
+
+# 主服务器：保持 file_key 原文件名，不复制内部状态和临时文件
+rsync -a --checksum --itemize-changes \
+  --exclude='/.trash/' --exclude='/.pending/' --exclude='/.sessions/' --exclude='/.upload-*' \
+  -e "ssh -p <SSH端口> -i <SSH私钥路径>" \
+  /opt/shenliyuan/private/exam-papers/ \
+  <文件服务器SSH用户>@139.196.148.174:/opt/sylg-paper-storage/data/exam-papers/
+
+# 文件服务器：复制完成后恢复服务属主和私有权限
+chown -R paper-storage:paper-storage /opt/sylg-paper-storage/data/exam-papers
+find /opt/sylg-paper-storage/data/exam-papers -type d -exec chmod 0700 {} +
+find /opt/sylg-paper-storage/data/exam-papers -type f -exec chmod 0600 {} +
+```
+
+`--checksum` 会按内容核对源和目标。不得复制 `.trash`、`.pending`、`.sessions` 或迁移期间产生的临时文件；目标端权限修复命令必须在文件服务器本机执行。
+
+复制后先运行默认 dry-run。命令从主服务器 `.env` 读取 `DSN`、`EXAM_PAPER_DIR`、`EXAM_PAPER_STORAGE_BASE_URL` 和签名密钥；生产环境应已配置文件服务地址 `https://139.196.148.174`。可用 `--id` 单独演练，也可用 `--page-size` 调整批量分页：
+
+```bash
+cd /opt/shenliyuan-src/server
+
+# 默认即 dry-run；显式写出便于操作审计
+go run ./cmd/migrate_exam_papers_remote --dry-run
+go run ./cmd/migrate_exam_papers_remote --dry-run --id <试卷ID>
+```
+
+确认报告中 `failed=0`，并人工核对待迁移数量、源文件、目标文件两份副本后，再显式执行正式更新：
+
+```bash
+go run ./cmd/migrate_exam_papers_remote --apply
+# 或逐条切换
+go run ./cmd/migrate_exam_papers_remote --apply --id <试卷ID>
+```
+
+任意单条文件缺失、符号链接、路径非法、远端 metadata 缺失或不一致都会保留该记录为 `local`；批量任务会继续检查其余记录，最终以非零状态退出并汇总 `failed`。并发修改过的记录也不会被误标为远端。修正文件后可安全重跑；已是 `remote` 的记录会被跳过。
+
+迁移完成后主服务器源文件以只读方式保留至少 7 天，在备份和线上下载核验稳定前不得删除。发生异常时，把主服务器 `EXAM_PAPER_STORAGE_MODE` 设为 `readonly-remote` 并重启，可停止新远端上传；已标记为 `remote` 的记录仍从文件服务器读取，未迁移的 `local` 记录仍使用主服务器副本。该开关不会自动把数据库标记改回 `local`，因此不要依赖它将已迁移记录切回旧副本。
+
+后续升级只需传入新二进制，不需要再次提供邮箱。安装脚本检测到并验证 `/etc/letsencrypt/live/139.196.148.174/fullchain.pem` 和 `privkey.pem` 后，会从模板重新渲染正式证书路径；验证失败时保持原 Nginx 配置不变：
+
+```bash
+PAPER_STORAGE_BINARY=/实际路径/新版本-paper-storage ./install.sh
+```
+
+健康检查应返回 `status=ok`；磁盘使用率达到 70% 时返回 `warning`，达到 95% 时返回 `readonly`。上线前同时检查：
+
+```bash
+systemctl status paper-storage --no-pager
+journalctl -u paper-storage -n 100 --no-pager
+nginx -t
+curl -fsS http://127.0.0.1:8081/healthz
+curl -fsS https://139.196.148.174/healthz
+```
+
+### 网络与 SSH 加固
+
+`SSH_PORT` 默认为 `22`，只接受 `1` 到 `65535` 的十进制端口。如果生产 SSH 端口不是 22，每次首次安装和后续升级都必须显式传入，例如：
+
+```bash
+SSH_PORT=2222 PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
+```
+
+脚本先审计 `ufw show added`，默认只接受 `${SSH_PORT}/tcp`、`80/tcp` 和 `443/tcp` 三类 ALLOW 规则；发现其他放行规则会在修改防火墙前中止。确认额外规则确属必要时，可显式执行：
+
+```bash
+ALLOW_EXISTING_UFW_RULES=1 SSH_PORT=2222 \
+  PAPER_STORAGE_BINARY=/实际路径/paper-storage ./install.sh
+```
+
+该开关会保留全部既有放行规则，可能扩大攻击面，必须先逐条人工核对。脚本不会执行 `ufw reset`，会先放行 SSH，再设置 `ufw default deny incoming`、`default allow outgoing`，最后放行 80/443 并启用 UFW。安装脚本不会直接关闭 SSH 密码登录。
+
+先配置普通运维账号和 SSH 公钥，确认 SSH 公钥登录成功后，再设置：
+
+```text
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+```
+
+修改后先执行 `sshd -t`，保持当前会话不退出，从第二个终端验证公钥登录成功后再关闭旧会话。
+
+### 缓存与备份
+
+139 不接入业务域名或 Cloudflare。源站必须保留 `Cache-Control: private, no-store` 与 `Referrer-Policy: no-referrer`，不得为 `/v1/files/*`、`/v1/uploads/*` 或 `/_paper_files/*` 配置缓存；下载位置关闭访问日志，避免短时 token 落盘。
+
+在云厂商控制台启用每日磁盘快照，至少保留 7 天。快照是灾难恢复手段，不替代每天核对数据库引用、文件数量、大小和 SHA-256。journald 日志保留 14 天；下载位置关闭访问日志，其他日志也不记录查询参数，避免短时 token 泄露。
+
+### 更新、回滚与故障处理
+
+安装脚本先校验输入是 Linux ELF，把新版本写入同目录 `paper-storage.new`；所有 Nginx、UFW、Swap 和 systemd 前置检查完成后，才把当前版本备份为 `paper-storage.bak` 并原子切换。重启或本机 `/healthz` 检查失败时会自动恢复旧版本、再次重启并返回失败。升级命令不需要手工创建备份：
+
+```bash
+PAPER_STORAGE_BINARY=/实际路径/新版本-paper-storage ./deploy/paper-storage/install.sh
+```
+
+正常成功后 `.bak` 会删除；健康检查失败并自动恢复后也不会残留 `.bak`。如果安装进程被断电或强制终止并留下 `.bak`，下一次安装会拒绝覆盖恢复点。先核对当前二进制和日志，再手工恢复：
+
+```bash
+mv -f /opt/sylg-paper-storage/bin/paper-storage.bak \
+  /opt/sylg-paper-storage/bin/paper-storage
+chown root:paper-storage /opt/sylg-paper-storage/bin/paper-storage
+chmod 0755 /opt/sylg-paper-storage/bin/paper-storage
+systemctl restart paper-storage
+curl -fsS http://127.0.0.1:8081/healthz
+```
+
+若新版本异常，先在主服务器把 `EXAM_PAPER_STORAGE_MODE` 切为 `readonly-remote`，停止新的远端上传。已标记为 `remote` 的试卷继续从文件服务器下载，本地记录继续走主服务器。不要在回滚时删除 `/opt/sylg-paper-storage/data`、远端业务记录或 `.trash`。如果 Nginx 配置导致启动失败，使用安装脚本首次保存的 `/etc/nginx/nginx.conf.pre-sylg-paper-storage` 恢复，执行 `nginx -t` 后再 reload。

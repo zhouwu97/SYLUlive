@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +10,75 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
+
+type examPaperStorageJobProcessorStub struct {
+	called chan int
+}
+
+func (s *examPaperStorageJobProcessorStub) ProcessDue(_ context.Context, limit int) (services.ExamPaperStorageJobProcessReport, error) {
+	s.called <- limit
+	return services.ExamPaperStorageJobProcessReport{Processed: 2, Completed: 2}, nil
+}
+
+type examPaperStorageMaintenanceStub struct {
+	called chan context.Context
+}
+
+func (s *examPaperStorageMaintenanceStub) Run(ctx context.Context) (services.ExamPaperStorageMaintenanceReport, error) {
+	s.called <- ctx
+	return services.ExamPaperStorageMaintenanceReport{Referenced: 3}, nil
+}
+
+func TestStartExamPaperStorageCronRunsJobsAndMaintenanceImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	jobs := &examPaperStorageJobProcessorStub{called: make(chan int, 1)}
+	maintenance := &examPaperStorageMaintenanceStub{called: make(chan context.Context, 1)}
+
+	cron := StartExamPaperStorageCron(ctx, jobs, maintenance)
+
+	select {
+	case limit := <-jobs.called:
+		if limit != 50 {
+			t.Fatalf("后台任务批量大小错误: %d", limit)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("后台任务未在启动后立即消费 outbox")
+	}
+	select {
+	case maintenanceCtx := <-maintenance.called:
+		deadline, ok := maintenanceCtx.Deadline()
+		if !ok {
+			t.Fatal("完整性维护每轮必须设置截止时间")
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 29*time.Minute || remaining > examPaperStorageMaintenanceTimeout {
+			t.Fatalf("完整性维护截止时间错误: %v", remaining)
+		}
+		select {
+		case <-maintenanceCtx.Done():
+		case <-time.After(time.Second):
+			t.Fatal("维护返回后应释放子 context")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("后台任务未在启动后立即执行完整性维护")
+	}
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		cron.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("取消后存储后台任务未退出")
+	}
+	if len(jobs.called) != 0 || len(maintenance.called) != 0 {
+		t.Fatal("取消后存储后台任务发生重入")
+	}
+}
 
 func newLotteryTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

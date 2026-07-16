@@ -6,7 +6,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	_ "time/tzdata"
 
@@ -32,15 +36,72 @@ import (
 	"shenliyuan/internal/tasks"
 )
 
+const examPaperStorageJobAttemptTimeout = 15 * time.Second
+
+type examPaperStorageJobAttemptProcessor interface {
+	ProcessJob(context.Context, uint) error
+}
+
+type gracefulHTTPServer interface {
+	ListenAndServe() error
+	Shutdown(context.Context) error
+}
+
+// newExamPaperStorageJobAttempt 创建上传事务提交后的即时认领回调。
+func newExamPaperStorageJobAttempt(processor examPaperStorageJobAttemptProcessor) services.ExamPaperStorageJobAttempt {
+	return func(jobID uint) error {
+		ctx, cancel := context.WithTimeout(context.Background(), examPaperStorageJobAttemptTimeout)
+		defer cancel()
+		return processor.ProcessJob(ctx, jobID)
+	}
+}
+
+func serveUntilShutdown(ctx context.Context, server gracefulHTTPServer, shutdownTimeout time.Duration) error {
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ListenAndServe() }()
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	shutdownErr := server.Shutdown(shutdownCtx)
+	select {
+	case err := <-serveErr:
+		if shutdownErr != nil {
+			return shutdownErr
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	case <-shutdownCtx.Done():
+		if shutdownErr != nil {
+			return shutdownErr
+		}
+		return shutdownCtx.Err()
+	}
+}
+
 func main() {
 	// 强制设置时区为东八区（北京时间），使用 FixedZone 确保在任何没有 tzdata 的系统上也能生效
 	time.Local = time.FixedZone("CST", 8*3600)
 
 	cfg := config.Load()
+	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopApp()
 
 	// 确保上传目录存在
 
 	os.MkdirAll(cfg.UploadDir, 0755)
+
+	// 确保 APK 发布根目录与 .tmp 已就绪，避免后续上传 Handler 在缺目录时报错。
+	os.MkdirAll(filepath.Join(cfg.AppReleaseDir, "android", "stable", ".tmp"), 0755)
 
 	var db *gorm.DB
 
@@ -118,8 +179,13 @@ func main() {
 		&models.Like{},
 
 		&models.File{},
+		&models.FileUploadGrant{},
 
 		&models.ExamPaper{},
+
+		&models.ExamPaperUploadSession{},
+
+		&models.ExamPaperStorageJob{},
 
 		&models.Conversation{},
 
@@ -161,8 +227,6 @@ func main() {
 
 		&models.Notification{},
 
-		&models.CheckIn{},
-
 		&models.ExpLog{},
 
 		&models.LotteryEvent{},
@@ -187,6 +251,9 @@ func main() {
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
 		&models.CampusCalendar{},
+
+		// 应用内更新：APK 发布记录
+		&models.AppRelease{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -196,8 +263,17 @@ func main() {
 	if err := models.EnsureExamPaperIndexes(db); err != nil {
 		log.Fatal("试卷索引迁移失败:", err)
 	}
+	if err := models.EnsureCheckInSchema(db); err != nil {
+		log.Fatal("签到系统迁移失败:", err)
+	}
 	if err := models.EnsureCampusCalendarIndexes(db); err != nil {
 		log.Fatal("校历索引迁移失败:", err)
+	}
+	if err := ensureCanteenNormalizedNameIndex(db); err != nil {
+		log.Fatal("食堂名称唯一索引迁移失败:", err)
+	}
+	if err := ensureAppReleaseIndexes(db); err != nil {
+		log.Fatal("应用发布索引迁移失败:", err)
 	}
 
 	if err := models.EnsureConversationIndexes(db); err != nil {
@@ -240,12 +316,8 @@ func main() {
 	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
 	db.Exec(`UPDATE posts SET post_type = 'campus_life' WHERE board_id = ? AND (post_type IS NULL OR post_type = '')`, int(models.BoardShuitie))
 
-	// 启动时自动修复可能不同步的评论数和点赞数
-	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
-	db.Exec(`UPDATE posts SET reply_count = (SELECT COUNT(*) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal')`)
-	db.Exec(`UPDATE posts SET like_count = (SELECT COUNT(*) FROM likes WHERE likes.target_id = posts.id AND likes.target_type = 'post')`)
-	db.Exec(`UPDATE users SET total_likes_received = (SELECT COUNT(*) FROM likes WHERE target_type = 'post' AND target_id IN (SELECT id FROM posts WHERE author_id = users.id))`)
-	log.Println("同步完成")
+	// 全表统计回算不应阻塞服务启动；需要修复历史数据时使用独立运维任务执行。
+	log.Println("跳过启动期全表统计回算")
 
 	// 确保默认超级管理员
 
@@ -253,21 +325,35 @@ func main() {
 
 	r := gin.Default()
 
-	// CORS中间件
-
+	// CORS 仅允许显式配置的可信来源，生产环境不能反射任意 Origin。
+	allowedOrigins := make(map[string]struct{})
+	for _, origin := range strings.Split(os.Getenv("CORS_ALLOW_ORIGINS"), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			allowedOrigins[origin] = struct{}{}
+		}
+	}
+	if len(allowedOrigins) == 0 && os.Getenv("GIN_MODE") != "release" {
+		allowedOrigins["http://localhost:3000"] = struct{}{}
+		allowedOrigins["http://localhost:8080"] = struct{}{}
+	}
 	r.Use(func(c *gin.Context) {
-
 		origin := c.GetHeader("Origin")
 		if origin != "" {
+			if _, allowed := allowedOrigins[origin]; !allowed {
+				if c.Request.Method == "OPTIONS" {
+					c.AbortWithStatus(http.StatusForbidden)
+					return
+				}
+				c.Next()
+				return
+			}
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
-		} else {
-			c.Header("Access-Control-Allow-Origin", "*")
 		}
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-App-Platform, X-App-Channel, X-App-Version-Name, X-App-Version-Code")
 
 		if c.Request.Method == "OPTIONS" {
 
@@ -280,6 +366,14 @@ func main() {
 		c.Next()
 
 	})
+
+	// 最低支持版本拦截位于 CORS 之后、业务路由之前。公开更新接口和迁移期
+	// 登录接口由中间件内部放行，避免用户在被拦截后无法获得新安装包。
+	r.Use(middleware.AppVersionMiddleware(
+		db,
+		cfg.AppUpdateEnforcementEnabled,
+		cfg.AllowMissingVersionHeaders,
+	))
 
 	// 初始化处理器
 
@@ -327,9 +421,46 @@ func main() {
 	if examPaperFileErr = examPaperFiles.RecoverTrash(db); examPaperFileErr != nil {
 		log.Fatal("恢复试卷私有文件失败:", examPaperFileErr)
 	}
-	examPaperHandler := handlers.NewExamPaperHandler(db, examPaperFiles)
+	var examPaperUploads *services.ExamPaperUploadService
+	var examPaperRemote *services.ExamPaperRemoteClient
+	var examPaperStorageJobs *services.ExamPaperStorageJobService
+	var examPaperStorageMaintenance *services.ExamPaperStorageMaintenance
+	if cfg.ExamPaperStorageMode != config.ExamPaperStorageModeLocal {
+		grantSigner, signerErr := services.NewExamPaperStorageSigner(cfg.ExamPaperStorageSigningSecret, time.Now)
+		if signerErr != nil {
+			log.Fatal("初始化试卷存储授权签名器失败:", signerErr)
+		}
+		receiptSigner, receiptErr := services.NewExamPaperStorageSigner(cfg.ExamPaperStorageReceiptSecret, time.Now)
+		if receiptErr != nil {
+			log.Fatal("初始化试卷上传回执签名器失败:", receiptErr)
+		}
+		examPaperRemote, signerErr = services.NewExamPaperRemoteClient(cfg.ExamPaperStorageBaseURL, grantSigner, nil, time.Now)
+		if signerErr != nil {
+			log.Fatal("初始化试卷远端存储客户端失败:", signerErr)
+		}
+		examPaperStorageJobs = services.NewExamPaperStorageJobService(db, examPaperRemote, time.Now)
+		examPaperStorageMaintenance = services.NewExamPaperStorageMaintenance(db, examPaperRemote, nil)
+		examPaperUploads = services.NewExamPaperUploadService(db, grantSigner, receiptSigner, time.Now, newExamPaperStorageJobAttempt(examPaperStorageJobs))
+	}
+	examPaperHandler := handlers.NewExamPaperHandlerWithStorage(
+		db,
+		examPaperFiles,
+		cfg.ExamPaperStorageMode,
+		cfg.ExamPaperStorageBaseURL,
+		examPaperUploads,
+		examPaperRemote,
+		examPaperStorageJobs,
+	)
 
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
+
+	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
+	appReleaseService := services.NewAppReleaseService(db, cfg.AppReleaseDir, cfg.AppReleaseMaxSize)
+	appUpdateHandler := handlers.NewAppUpdateHandler(
+		appReleaseService,
+		cfg.AppReleaseUseAccelRedirect,
+		cfg.AppReleaseAccelPrefix,
+	)
 
 	eduHandler := handlers.NewEduHandler(db)
 
@@ -342,6 +473,7 @@ func main() {
 	feedbackHandler := handlers.NewFeedbackHandler(db)
 
 	checkinHandler := handlers.NewCheckInHandler(db)
+	checkinCompensationHandler := handlers.NewCheckInCompensationHandler(db)
 
 	notificationHandler := handlers.NewNotificationHandler(db)
 
@@ -352,6 +484,7 @@ func main() {
 	// 初始化教务服务配置
 
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+	handlers.EduServiceConfig.Token = cfg.EduServiceToken
 
 	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
 
@@ -404,7 +537,7 @@ func main() {
 		}
 		campusSyncServices = append(campusSyncServices, services.NewCampusSyncService(db, competitionSpec))
 
-		go tasks.StartCampusSyncTask(context.Background(), campusSyncServices, cfg)
+		go tasks.StartCampusSyncTask(appCtx, campusSyncServices, cfg)
 		log.Println("校园资讯同步已启用 (JWC + Competition)")
 	} else {
 		log.Println("校园资讯同步未启用 (JWC_SYNC_ENABLED=false)")
@@ -416,6 +549,18 @@ func main() {
 	// 启动后台定时任务
 
 	tasks.StartLotteryCron(db)
+	var examPaperStorageCron *tasks.ExamPaperStorageCron
+	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
+		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
+	}
+
+	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。
+	appPublic := r.Group("/api/app")
+	{
+		appPublic.GET("/update", appUpdateHandler.CheckUpdate)
+		appPublic.GET("/releases/:id/download", appUpdateHandler.Download)
+		appPublic.HEAD("/releases/:id/download", appUpdateHandler.Download)
+	}
 
 	// 健康检查接口
 	r.GET("/health", func(c *gin.Context) {
@@ -470,6 +615,8 @@ func main() {
 		auth.POST("/forgot_password", authHandler.ForgotPassword)
 
 		auth.POST("/change_password", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.ChangePassword)
+
+		auth.POST("/logout", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.Logout)
 
 	}
 
@@ -536,6 +683,8 @@ func main() {
 		user.POST("/checkin", checkinHandler.DoCheckIn)
 
 		user.GET("/checkin/status", checkinHandler.GetStatus)
+		user.GET("/checkin/compensations", checkinCompensationHandler.ListMine)
+		user.POST("/checkin/compensations/:id/claims", checkinCompensationHandler.Claim)
 
 		user.POST("/:id/follow", userHandler.Follow)
 		user.DELETE("/:id/follow", userHandler.Unfollow)
@@ -656,6 +805,8 @@ func main() {
 		waterTeam.POST("/applications/:id/accept", waterTeamHandler.Accept)
 		waterTeam.POST("/applications/:id/reject", waterTeamHandler.Reject)
 		waterTeam.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+		waterTeam.POST("/applications/:id/leave", waterTeamHandler.Leave)
+		waterTeam.POST("/applications/:id/remove", waterTeamHandler.Remove)
 		waterTeam.GET("/my_applications", waterTeamHandler.GetMyApplications)
 		waterTeam.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)
 	}
@@ -674,6 +825,8 @@ func main() {
 		teamAuth.POST("/applications/:id/accept", waterTeamHandler.Accept)
 		teamAuth.POST("/applications/:id/reject", waterTeamHandler.Reject)
 		teamAuth.POST("/applications/:id/cancel", waterTeamHandler.Cancel)
+		teamAuth.POST("/applications/:id/leave", waterTeamHandler.Leave)
+		teamAuth.POST("/applications/:id/remove", waterTeamHandler.Remove)
 
 		teamAuth.GET("/my_applications", waterTeamHandler.GetMyApplications)
 		teamAuth.PATCH("/recruitments/:id/status", waterTeamHandler.UpdateRecruitmentStatus)
@@ -891,6 +1044,8 @@ func main() {
 
 	{
 
+		appeals.POST("/post/:id", appealHandler.Create)
+
 		appeals.GET("", appealHandler.GetList)
 
 		appeals.GET("/:id", appealHandler.GetOne)
@@ -906,6 +1061,8 @@ func main() {
 		examPapers.GET("", examPaperHandler.List)
 		examPapers.GET("/my-submissions", examPaperHandler.MySubmissions)
 		examPapers.DELETE("/my-submissions/:id", examPaperHandler.Withdraw)
+		examPapers.POST("/upload-sessions", examPaperHandler.CreateUploadSession)
+		examPapers.POST("/upload-sessions/:id/complete", examPaperHandler.CompleteUploadSession)
 		examPapers.GET("/:id", examPaperHandler.Get)
 		examPapers.POST("", examPaperHandler.Upload)
 		examPapers.GET("/:id/preview", examPaperHandler.Preview)
@@ -1000,6 +1157,10 @@ func main() {
 
 		edu.POST("/courses", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCourses)
 
+		edu.GET("/courses/local", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetLocalCourses)
+
+		edu.POST("/courses/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.SyncCourses)
+
 		edu.POST("/grades", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGrades)
 
 		edu.POST("/grades/detail", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGradeDetail)
@@ -1036,6 +1197,17 @@ func main() {
 		superAdmin.GET("/admin_logs", superAdminHandler.GetAdminLogs)
 
 		superAdmin.POST("/admin_logs/revoke_exp", superAdminHandler.RevokeAdminExp)
+		superAdmin.GET("/app-releases", appUpdateHandler.AdminList)
+		superAdmin.GET("/app-releases/:id", appUpdateHandler.AdminGet)
+		superAdmin.POST("/app-releases", appUpdateHandler.AdminCreate)
+		superAdmin.PATCH("/app-releases/:id", appUpdateHandler.AdminUpdate)
+		superAdmin.POST("/app-releases/:id/publish", appUpdateHandler.AdminPublish)
+		superAdmin.POST("/app-releases/:id/withdraw", appUpdateHandler.AdminWithdraw)
+		superAdmin.DELETE("/app-releases/:id", appUpdateHandler.AdminDeleteDraft)
+		superAdmin.POST("/checkin/users/:id/rebuild", checkinHandler.RebuildUserStats)
+		superAdmin.GET("/checkin/compensations", checkinCompensationHandler.ListCampaigns)
+		superAdmin.POST("/checkin/compensations", checkinCompensationHandler.Publish)
+		superAdmin.POST("/checkin/compensations/:id/close", checkinCompensationHandler.Close)
 
 		superAdmin.GET("/invitations/pending", invitationHandler.GetApprovalList)
 
@@ -1171,6 +1343,12 @@ func main() {
 
 	{
 
+		canteenAdmin.GET("/pending", canteenHandler.AdminListPending)
+
+		canteenAdmin.POST("/:id/approve", canteenHandler.ApproveCanteen)
+
+		canteenAdmin.DELETE("/:id/pending", canteenHandler.RejectCanteen)
+
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
@@ -1277,7 +1455,7 @@ func main() {
 
 			"force_update": false, // 保留兼容旧版逻辑
 
-			"download_url": "http://156.233.229.232:8080/uploads/app-release.apk",
+			"download_url": "https://sylulive.online/uploads/app-release.apk",
 
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
 
@@ -1289,11 +1467,12 @@ func main() {
 	})
 
 	log.Println("服务器启动在 :8080")
-
-	if err := r.Run(":8080"); err != nil {
-
-		log.Fatal("服务器启动失败:", err)
-
+	server := &http.Server{Addr: ":8080", Handler: r, ReadHeaderTimeout: 10 * time.Second}
+	serveErr := serveUntilShutdown(appCtx, server, 10*time.Second)
+	stopApp()
+	examPaperStorageCron.Wait()
+	if serveErr != nil {
+		log.Fatal("服务器运行失败:", serveErr)
 	}
 
 }
@@ -1358,6 +1537,28 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 }
 
+// ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。
+func ensureCanteenNormalizedNameIndex(db *gorm.DB) error {
+	var canteens []models.Canteen
+	if err := db.Select("id", "name", "normalized_name").Find(&canteens).Error; err != nil {
+		return err
+	}
+	seen := make(map[string]uint, len(canteens))
+	for _, canteen := range canteens {
+		normalized := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(canteen.Name)), " "))
+		if previousID, exists := seen[normalized]; exists {
+			return errors.New("食堂名称规范化后重复: id=" + strconv.FormatUint(uint64(previousID), 10) + ", id=" + strconv.FormatUint(uint64(canteen.ID), 10))
+		}
+		seen[normalized] = canteen.ID
+		if canteen.NormalizedName != normalized {
+			if err := db.Model(&models.Canteen{}).Where("id = ?", canteen.ID).Update("normalized_name", normalized).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_canteens_normalized_name ON canteens (normalized_name)").Error
+}
+
 func ensureFeatureCollaborationIndexes(db *gorm.DB) error {
 	statements := []string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_featured_application_pending_post
@@ -1395,6 +1596,51 @@ func ensurePostPinColumns(db *gorm.DB) error {
 
 func ensurePostMarketTagsColumn(db *gorm.DB) error {
 	return db.Exec(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS market_tags VARCHAR(200) NOT NULL DEFAULT ''`).Error
+}
+
+// ensureAppReleaseIndexes 建立版本检查与超管列表所需的索引和数据约束。
+// 版本号在同一平台和渠道下不可复用；PostgreSQL 约束以 NOT VALID 方式新增，
+// 避免历史脏数据阻塞上线，同时仍会约束之后的任何新写入。
+func ensureAppReleaseIndexes(db *gorm.DB) error {
+	statements := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_app_release_platform_channel_version
+		 ON app_releases (platform, channel, version_code)
+		 WHERE status IN ('draft','published','withdrawn')`,
+		`CREATE INDEX IF NOT EXISTS idx_app_release_lookup
+		 ON app_releases (platform, channel, status, version_code DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_app_release_published_at
+		 ON app_releases (published_at)`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	if db.Dialector.Name() == "postgres" {
+		constraints := []string{
+			`DO $$ BEGIN
+				IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_app_release_version_code_positive') THEN
+					ALTER TABLE app_releases ADD CONSTRAINT chk_app_release_version_code_positive CHECK (version_code > 0) NOT VALID;
+				END IF;
+			END $$`,
+			`DO $$ BEGIN
+				IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_app_release_minimum_supported') THEN
+					ALTER TABLE app_releases ADD CONSTRAINT chk_app_release_minimum_supported CHECK (minimum_supported_version_code > 0 AND minimum_supported_version_code <= version_code) NOT VALID;
+				END IF;
+			END $$`,
+			`DO $$ BEGIN
+				IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_app_release_status') THEN
+					ALTER TABLE app_releases ADD CONSTRAINT chk_app_release_status CHECK (status IN ('draft', 'published', 'withdrawn')) NOT VALID;
+				END IF;
+			END $$`,
+		}
+		for _, statement := range constraints {
+			if err := db.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // ensurePostActivitySchema 回填历史讨论时间并建立首页候选查询索引。

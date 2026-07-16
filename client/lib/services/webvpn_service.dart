@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -35,11 +34,7 @@ class WebVpnService {
         },
       ),
     );
-    (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
-        (client) {
-      client.badCertificateCallback = (cert, host, port) => true; // 忽略证书校验
-      return client;
-    };
+
     _dio.interceptors.add(CookieManager(_jar));
   }
 
@@ -61,7 +56,7 @@ class WebVpnService {
         ).firstMatch(html);
         if (casLinkMatch != null) {
           final casLink = casLinkMatch.group(1)!.replaceAll('&amp;', '&');
-          debugPrint('[VPN] 首页无重定向，从HTML提取CAS链接: $casLink');
+          debugPrint('[VPN] 首页无重定向，已提取 CAS 链接');
           nextUrl = _resolveUrl(casLink);
         } else {
           debugPrint('[VPN] VPN首页未重定向且无CAS链接');
@@ -73,11 +68,9 @@ class WebVpnService {
       bool reachedCas = false;
       for (int i = 0; i < 8 && nextUrl != null; i++) {
         final url = _resolveUrl(nextUrl);
-        debugPrint('[VPN] 请求: $url');
+        debugPrint('[VPN] 请求: ${_redactUrl(url)}');
         resp = await _dio.get(url);
-        debugPrint(
-          '[VPN] 状态: ${resp.statusCode}, Location: ${resp.headers.value('location') ?? '无'}',
-        );
+        debugPrint('[VPN] 响应状态: ${resp.statusCode}');
         final html = resp.data.toString();
 
         // 打印页面摘要
@@ -126,9 +119,8 @@ class WebVpnService {
       }
 
       debugPrint('[VPN] 未到达 CAS 登录页');
-    } catch (e, st) {
-      debugPrint('[VPN] 异常: $e');
-      debugPrint('$st');
+    } catch (e) {
+      debugPrint('[VPN] 登录异常: ${e.runtimeType}');
     }
     return false;
   }
@@ -148,10 +140,11 @@ class WebVpnService {
     if (setCookies != null) {
       for (final c in setCookies) {
         final name = c.split('=')[0].split(';')[0].trim();
-        if (name.isNotEmpty)
+        if (name.isNotEmpty) {
           casCookiesRaw.add(
             '$name=${c.split(';')[0].split('=').skip(1).join('=')}',
           );
+        }
       }
     }
     debugPrint('[CAS] CAS页面Set-Cookie数量: ${setCookies?.length ?? 0}');
@@ -173,8 +166,8 @@ class WebVpnService {
     final salt = _extractValue(doc, 'pwdEncryptSalt') ?? '';
     final execution = _extractValue(doc, 'execution') ?? '';
     final eventId = _extractValue(doc, '_eventId') ?? 'submit';
-    final cllt = 'userNameLogin'; // 抓包确认，不用页面提取的值(fidoLogin 是另一个表)
-    final dllt = 'generalLogin';
+    const cllt = 'userNameLogin'; // 抓包确认，不用页面提取的值(fidoLogin 是另一个表)
+    const dllt = 'generalLogin';
     final lt = _extractValue(doc, 'lt') ?? '';
 
     debugPrint('[CAS] salt=<redacted> executionLength=${execution.length}');
@@ -221,10 +214,8 @@ class WebVpnService {
         }
       }
     }
-    debugPrint('[CAS] form action: ${form?.attributes['action']}');
-    debugPrint(
-      '[CAS] POST URL: ${action.substring(0, min(100, action.length))}...',
-    );
+    debugPrint('[CAS] 已解析登录表单 action');
+    debugPrint('[CAS] POST 地址: ${_redactUrl(action)}');
 
     // POST — 拼上 VPN cookie + CAS session cookies
     final allCookies = <String>{};
@@ -306,7 +297,7 @@ class WebVpnService {
     // 提前返回会导致后续访问内网资源时依然被重定向回门户登录页。
     for (int i = 0; i < 10 && nextUrl != null; i++) {
       debugPrint(
-        '[VPN] 重定向 $i: ${nextUrl.substring(0, min(100, nextUrl.length))}',
+        '[VPN] 重定向 $i: ${_redactUrl(nextUrl)}',
       );
       final resp = await _dio.get(nextUrl);
 
@@ -357,6 +348,15 @@ class WebVpnService {
   String _extractOrigin(String url) {
     final uri = Uri.parse(url);
     return '${uri.scheme}://${uri.host}';
+  }
+
+  String _redactUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return '${uri.scheme}://${uri.host}${uri.path}';
+    } catch (_) {
+      return '<invalid-url>';
+    }
   }
 
   String? _extractValue(dynamic doc, String name) {

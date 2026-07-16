@@ -8,7 +8,6 @@ from datetime import datetime
 
 class BindInput(BaseModel):
     """�󶨽����˺�����"""
-    user_id: str = Field(..., description="App�û�ID")
     student_id: str = Field(..., min_length=10, max_length=10, description="ѧ��")
     password: str = Field(..., description="��������")
 

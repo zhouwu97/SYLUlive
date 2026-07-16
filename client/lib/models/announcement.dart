@@ -81,4 +81,26 @@ class Announcement {
   bool get isModalUrgent =>
       (priority == 'urgent' || priority == 'important') &&
       (displayMode == 'modal' || displayMode.isEmpty);
+
+  /// 公告展示顺序：置顶优先，其次按优先级，最后按发布时间倒序。
+  static int compareForDisplay(Announcement a, Announcement b) {
+    if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+
+    final priorityComparison =
+        _priorityRank(a.priority).compareTo(_priorityRank(b.priority));
+    if (priorityComparison != 0) return priorityComparison;
+
+    return b.createdAt.compareTo(a.createdAt);
+  }
+
+  static int _priorityRank(String priority) {
+    switch (priority) {
+      case 'urgent':
+        return 0;
+      case 'important':
+        return 1;
+      default:
+        return 2;
+    }
+  }
 }

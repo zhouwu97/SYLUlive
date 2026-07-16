@@ -77,15 +77,15 @@ type CompetitionEvent struct {
 	SourceNote      string `gorm:"size:1000" json:"source_note"`
 	SourceArticleID string `gorm:"size:80;index" json:"source_article_id"`
 
-	Status     string     `gorm:"size:20;default:'active';index" json:"status"`
-	Version    int        `gorm:"default:1" json:"version"`
-	VerifiedBy uint       `gorm:"index" json:"verified_by"`
-	VerifiedAt *time.Time `json:"verified_at"`
-	CreatedBy  uint       `gorm:"index" json:"created_by"`
-	UpdatedBy  uint       `gorm:"index" json:"updated_by"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
-	ArchivedAt *time.Time `json:"archived_at"`
+	Status     string         `gorm:"size:20;default:'active';index" json:"status"`
+	Version    int            `gorm:"default:1" json:"version"`
+	VerifiedBy uint           `gorm:"index" json:"verified_by"`
+	VerifiedAt *time.Time     `json:"verified_at"`
+	CreatedBy  uint           `gorm:"index" json:"created_by"`
+	UpdatedBy  uint           `gorm:"index" json:"updated_by"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	ArchivedAt *time.Time     `json:"archived_at"`
 	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 
 	FitLevel   string   `gorm:"-" json:"fit_level,omitempty"`

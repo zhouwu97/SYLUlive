@@ -101,11 +101,22 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
+	if post.Status != models.PostStatusNormal {
+		c.JSON(http.StatusConflict, gin.H{"error": "该帖子当前不允许回复"})
+		return
+	}
 
 	// 如果有父回复，检查是否是一层嵌套
 	if input.ParentReplyID != nil {
 		var parentReply models.Reply
-		if err := h.db.First(&parentReply, input.ParentReplyID).Error; err == nil {
+		if err := h.db.First(&parentReply, input.ParentReplyID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "父回复不存在"})
+			return
+		} else {
+			if parentReply.PostID != uint(postID) || parentReply.Status != models.ReplyStatusNormal {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "父回复不属于当前帖子或已不可回复"})
+				return
+			}
 			if parentReply.ParentReplyID != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "不支持多层嵌套"})
 				return
@@ -124,17 +135,21 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 
 	// 回复、回复图片和帖子活跃统计必须原子提交，避免列表出现已显示回复却没有刷新活跃时间的状态。
 	fileIDs := c.PostForm("file_ids")
+	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if _, err := services.ValidateImageFileIDs(tx, parsedFileIDs, 9, userID.(uint)); err != nil {
+			return err
+		}
 		if err := tx.Create(&reply).Error; err != nil {
 			return err
 		}
-		if fileIDs != "" {
-			for i, idStr := range strings.Split(fileIDs, ",") {
-				fileID, parseErr := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
-				if parseErr != nil || fileID == 0 {
-					continue
-				}
-				if err := tx.Create(&models.ReplyImage{ReplyID: reply.ID, FileID: uint(fileID), SortOrder: i}).Error; err != nil {
+		if len(parsedFileIDs) > 0 {
+			for i, fileID := range parsedFileIDs {
+				if err := tx.Create(&models.ReplyImage{ReplyID: reply.ID, FileID: fileID, SortOrder: i}).Error; err != nil {
 					return err
 				}
 			}
@@ -144,6 +159,10 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 			"last_activity_at": reply.CreatedAt,
 		}).Error
 	}); err != nil {
+		if errors.Is(err, services.ErrInvalidImageFileReference) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建回复失败"})
 		return
 	}
@@ -180,24 +199,22 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 
 	// 发送通知（数据库 + 极光推送）
-	contentPreview := input.Content
-	if len(contentPreview) > 80 {
-		contentPreview = contentPreview[:80] + "..."
-	}
+	contentPreview := truncateRunes(input.Content, 80)
 	if input.ParentReplyID != nil {
 		// 回复别人的评论 → 通知被回复的评论作者
 		var parentReply models.Reply
 		if err := h.db.First(&parentReply, *input.ParentReplyID).Error; err == nil {
 			notifyUserID := parentReply.AuthorID
-			if input.ReplyToUserID != nil {
-				notifyUserID = *input.ReplyToUserID
+			if err := CreateReplyNotification(h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview); err != nil {
+				log.Printf("[DB_ERROR] 创建回复通知失败: reply_id=%d user_id=%d err=%v", reply.ID, notifyUserID, err)
 			}
-			CreateReplyNotification(h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
 			SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
 		}
 	} else {
 		// 直接回复帖子 → 通知帖子作者
-		CreateReplyNotification(h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
+		if err := CreateReplyNotification(h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview); err != nil {
+			log.Printf("[DB_ERROR] 创建帖子回复通知失败: reply_id=%d user_id=%d err=%v", reply.ID, post.AuthorID, err)
+		}
 		SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
 	}
 
@@ -263,6 +280,14 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit]) + "..."
 }
 
 // recalculatePostReplyStats 从有效回复重建帖子回复数及最后活跃时间；调用方必须提供事务。

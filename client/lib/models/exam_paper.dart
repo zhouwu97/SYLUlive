@@ -133,6 +133,7 @@ class ExamPaperPage {
   final int page;
   final int pageSize;
   final int total;
+  final List<String> academicYears;
 
   /// 各状态的全量计数；普通列表接口未返回时为空。
   final Map<String, int> statusCounts;
@@ -143,6 +144,7 @@ class ExamPaperPage {
     required this.pageSize,
     required this.total,
     this.statusCounts = const {},
+    this.academicYears = const [],
   });
 
   factory ExamPaperPage.fromJson(Map<String, dynamic> json) {
@@ -160,6 +162,7 @@ class ExamPaperPage {
       pageSize: (json['page_size'] as num?)?.toInt() ?? 20,
       total: (json['total'] as num?)?.toInt() ?? 0,
       statusCounts: _parseStatusCounts(json['status_counts']),
+      academicYears: _parseAcademicYears(json['academic_years']),
     );
   }
 
@@ -169,6 +172,14 @@ class ExamPaperPage {
       for (final entry in value.entries)
         entry.key.toString(): (entry.value as num?)?.toInt() ?? 0,
     };
+  }
+
+  static List<String> _parseAcademicYears(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .map((year) => year.toString().trim())
+        .where((year) => year.isNotEmpty)
+        .toList(growable: false);
   }
 
   bool get hasMore => page * pageSize < total;

@@ -1,10 +1,12 @@
 package tasks
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"log"
 	"math/big"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -12,6 +14,91 @@ import (
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
+
+const (
+	examPaperStorageJobInterval         = time.Minute
+	examPaperStorageMaintenanceInterval = 24 * time.Hour
+	examPaperStorageMaintenanceTimeout  = 30 * time.Minute
+	examPaperStorageJobBatchSize        = 50
+)
+
+type examPaperStorageJobProcessor interface {
+	ProcessDue(context.Context, int) (services.ExamPaperStorageJobProcessReport, error)
+}
+
+type examPaperStorageMaintainer interface {
+	Run(context.Context) (services.ExamPaperStorageMaintenanceReport, error)
+}
+
+// ExamPaperStorageCron 持有存储后台任务的退出同步状态。
+type ExamPaperStorageCron struct {
+	wg sync.WaitGroup
+}
+
+// Wait 等待所有存储后台任务在 context 取消后退出。
+func (c *ExamPaperStorageCron) Wait() {
+	if c != nil {
+		c.wg.Wait()
+	}
+}
+
+// StartExamPaperStorageCron 启动远端文件 outbox 消费与每日完整性维护。
+func StartExamPaperStorageCron(ctx context.Context, jobs examPaperStorageJobProcessor, maintenance examPaperStorageMaintainer) *ExamPaperStorageCron {
+	cron := &ExamPaperStorageCron{}
+	cron.wg.Add(2)
+	go func() {
+		defer cron.wg.Done()
+		ticker := time.NewTicker(examPaperStorageJobInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			report, err := jobs.ProcessDue(ctx, examPaperStorageJobBatchSize)
+			if err != nil {
+				log.Printf("处理试卷存储任务失败: %v", err)
+			} else if report.Processed > 0 {
+				log.Printf("试卷存储任务处理完成: processed=%d completed=%d failed=%d", report.Processed, report.Completed, report.Failed)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	go func() {
+		defer cron.wg.Done()
+		ticker := time.NewTicker(examPaperStorageMaintenanceInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			maintenanceCtx, cancel := context.WithTimeout(ctx, examPaperStorageMaintenanceTimeout)
+			report, err := maintenance.Run(maintenanceCtx)
+			cancel()
+			if err != nil {
+				log.Printf("执行试卷存储完整性维护失败: %v", err)
+			} else {
+				log.Printf("试卷存储完整性维护完成: referenced=%d missing=%d mismatched=%d metadata_errors=%d orphan_removed=%d trash_removed=%d disk_usage=%.2f%%",
+					report.Referenced, report.Missing, report.Mismatched, report.MetadataErrors,
+					report.OrphanFilesRemoved, report.TrashFilesRemoved, report.DiskUsagePercent)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	log.Println("试卷远端存储后台任务已启动")
+	return cron
+}
 
 // StartLotteryCron 启动抽奖自动开奖轮询任务
 func StartLotteryCron(db *gorm.DB) {

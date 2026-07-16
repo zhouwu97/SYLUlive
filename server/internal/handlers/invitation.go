@@ -51,8 +51,21 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 		Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser)
 
 	if keyword != "" {
-		like := "%" + keyword + "%"
-		query = query.Where("student_id LIKE ? OR nickname LIKE ?", like, like)
+		like := "%" + strings.ToLower(keyword) + "%"
+		if userID, err := strconv.ParseUint(keyword, 10, 64); err == nil {
+			query = query.Where(
+				"id = ? OR LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?",
+				userID,
+				like,
+				like,
+			)
+		} else {
+			query = query.Where(
+				"LOWER(student_id) LIKE ? OR LOWER(nickname) LIKE ?",
+				like,
+				like,
+			)
+		}
 	}
 
 	var candidates []models.User
@@ -61,7 +74,11 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, candidates)
+	response := make([]AdminUserBriefResponse, 0, len(candidates))
+	for _, candidate := range candidates {
+		response = append(response, adminUserBriefResponse(candidate))
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // GetCandidatesStats 获取用户分布统计
@@ -92,7 +109,7 @@ func (h *InvitationHandler) GetMembers(c *gin.Context) {
 
 	var members []models.User
 
-	if err := h.db.Where("role IN ?", []string{"admin", "super_admin"}).Select("id, nickname, student_id, role").Find(&members).Error; err != nil {
+	if err := h.db.Where("role IN ?", []string{"admin", "super_admin"}).Select("id, nickname, student_id, role, avatar").Find(&members).Error; err != nil {
 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取管理员列表失败"})
 
@@ -100,7 +117,11 @@ func (h *InvitationHandler) GetMembers(c *gin.Context) {
 
 	}
 
-	c.JSON(http.StatusOK, members)
+	response := make([]AdminUserBriefResponse, 0, len(members))
+	for _, member := range members {
+		response = append(response, adminUserBriefResponse(member))
+	}
+	c.JSON(http.StatusOK, response)
 
 }
 
@@ -391,7 +412,7 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 
 			"token": token,
 
-			"user": updatedUser,
+			"user": selfUserResponse(updatedUser),
 		})
 
 		return
@@ -519,9 +540,9 @@ func (h *InvitationHandler) GetApprovalList(c *gin.Context) {
 
 			"accepted_at": invitation.AcceptedAt,
 
-			"user": invitation.User,
+			"user": adminUserResponse(invitation.User),
 
-			"inviter": invitation.Inviter,
+			"inviter": adminUserBriefResponse(invitation.Inviter),
 
 			"votes": votes,
 

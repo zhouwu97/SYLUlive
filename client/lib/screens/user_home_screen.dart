@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shenliyuan/utils/post_image_cache.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -22,7 +24,9 @@ import '../utils/app_navigation.dart';
 
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
-  const UserHomeScreen({super.key, this.userId});
+  final BaseCacheManager? backgroundCacheManager;
+
+  const UserHomeScreen({super.key, this.userId, this.backgroundCacheManager});
 
   @override
   State<UserHomeScreen> createState() => _UserHomeScreenState();
@@ -58,31 +62,57 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     });
   }
 
+  int _loadGeneration = 0;
+
   Future<void> _loadData() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-    final targetId = widget.userId ?? context.read<AuthProvider>().user?.id;
-    if (targetId != null) {
+    final generation = ++_loadGeneration;
+
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      final auth = context.read<AuthProvider>();
+      final targetId = widget.userId ?? auth.user?.id;
+      if (targetId == null) return;
+
       final provider = context.read<SocialProvider>();
-      final user = await provider.getUserProfile(targetId);
-      final posts = await provider.getUserPosts(targetId);
-      final marketResult = await provider.getUserMarketPosts(targetId);
+      final isSelf = targetId == auth.user?.id;
 
-      final normalPosts = posts.where((post) => !_isMarketPost(post)).toList();
+      final postsFuture = provider.getUserPosts(targetId);
+      final marketFuture = provider.getUserMarketPosts(targetId);
 
-      if (mounted) {
-        setState(() {
-          _user = user;
-          _posts = normalPosts;
-          _marketPosts = marketResult.items;
-          _marketTotal = marketResult.total;
-          _marketSoldCount = marketResult.sold;
-        });
+      User? loadedUser;
+      if (isSelf) {
+        await auth.refreshUser();
+      } else {
+        loadedUser = await provider.getUserProfile(targetId);
+      }
+
+      final posts = await postsFuture;
+      final marketResult = await marketFuture;
+
+      if (!mounted || generation != _loadGeneration) return;
+
+      setState(() {
+        _user = isSelf ? context.read<AuthProvider>().user : loadedUser;
+        _posts = posts.where((post) => !_isMarketPost(post)).toList();
+        _marketPosts = marketResult.items;
+        _marketTotal = marketResult.total;
+        _marketSoldCount = marketResult.sold;
+      });
+    } finally {
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _isLoading = false);
       }
     }
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
+  }
+
+  void _onProfileSaved() {
+    if (!mounted) return;
+    setState(() {
+      _user = context.read<AuthProvider>().user;
+    });
   }
 
   bool _isMarketPost(Post post) {
@@ -137,8 +167,12 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final authUser = context.watch<AuthProvider>().user;
+    final isSelfProfile =
+        widget.userId == null || widget.userId == authUser?.id;
+    final displayedUser = isSelfProfile ? authUser ?? _user : _user;
 
-    if (_user == null) {
+    if (displayedUser == null) {
       if (_isLoading) {
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
@@ -148,9 +182,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       );
     }
 
-    final user = _user!;
-    final isMe = widget.userId == null ||
-        widget.userId == context.read<AuthProvider>().user?.id;
+    final user = displayedUser;
+    final isMe = isSelfProfile;
 
     final pageBackground = isDark
         ? const Color(0xFF111214)
@@ -569,6 +602,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       child: ClipRect(
         child: CachedNetworkImage(
           imageUrl: ApiConstants.fullUrl(user.background),
+          cacheManager: widget.backgroundCacheManager ?? PostImageCache.manager,
           width: double.infinity,
           height: double.infinity,
           fit: BoxFit.cover,
@@ -673,21 +707,24 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           ],
         ),
 
-        // 第三行：性别、ID、学院
+        // 第三行：性别和公开用户 ID
         const SizedBox(height: 8),
         Row(
           children: [
-            Icon(
-              user.gender == 'female' ? Icons.female : Icons.male,
-              size: 15,
-              color: user.gender == 'female'
-                  ? Colors.pinkAccent
-                  : Colors.lightBlueAccent,
-            ),
-            const SizedBox(width: 5),
+            if (user.gender == 'female') ...[
+              const Icon(Icons.female, size: 15, color: Colors.pinkAccent),
+              const SizedBox(width: 5),
+            ] else if (user.gender == 'male') ...[
+              const Icon(
+                Icons.male,
+                size: 15,
+                color: Colors.lightBlueAccent,
+              ),
+              const SizedBox(width: 5),
+            ],
             Flexible(
               child: Text(
-                'ID ${user.studentId}  ${user.eduCollege.isNotEmpty ? user.eduCollege : '未知归属'}',
+                user.publicIdLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -867,7 +904,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: _EditProfileSheet(user: user, onSaved: _loadData),
+        child: _EditProfileSheet(user: user, onSaved: () async { _onProfileSaved(); }),
       ),
     );
   }
@@ -894,7 +931,7 @@ class AnimatedCount extends StatelessWidget {
 
 class _EditProfileSheet extends StatefulWidget {
   final User user;
-  final VoidCallback onSaved;
+  final Future<void> Function() onSaved;
 
   const _EditProfileSheet({required this.user, required this.onSaved});
 
@@ -911,7 +948,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   void initState() {
     super.initState();
     _nicknameController = TextEditingController(text: widget.user.nickname);
-    _selectedGender = widget.user.gender.isEmpty ? 'male' : widget.user.gender;
+    _selectedGender = switch (widget.user.gender) {
+      'male' || 'female' => widget.user.gender,
+      _ => '',
+    };
   }
 
   @override
@@ -967,10 +1007,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       final uploadRes = await auth.dio.post('/upload', data: formData);
       if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
         final url = uploadRes.data['url'] as String;
-        await auth.dio.put('/user/background', data: {'background': url});
+        final response = await auth.dio.put('/user/background', data: {'background': url});
 
-        await auth.refreshUser();
-        widget.onSaved();
+        await auth.applyProfileResponse(
+          Map<String, dynamic>.from(response.data),
+        );
+
+        await widget.onSaved();
         if (mounted) {
           ScaffoldMessenger.of(
             context,
@@ -1019,13 +1062,16 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     setState(() => _isSaving = true);
     try {
       final auth = context.read<AuthProvider>();
-      await auth.dio.put(
+      final response = await auth.dio.put(
         '/user/profile',
         data: {'nickname': newNickname, 'gender': _selectedGender},
       );
 
-      await auth.refreshUser();
-      widget.onSaved();
+      await auth.applyProfileResponse(
+        Map<String, dynamic>.from(response.data),
+      );
+
+      await widget.onSaved();
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(

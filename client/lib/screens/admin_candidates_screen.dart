@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+
+import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/cached_avatar.dart';
+import '../config/api_constants.dart';
 
 class AdminCandidatesScreen extends StatefulWidget {
   const AdminCandidatesScreen({super.key});
@@ -12,7 +16,7 @@ class AdminCandidatesScreen extends StatefulWidget {
 }
 
 class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
-  List<dynamic> _candidates = [];
+  List<AdminUserSummary> _candidates = [];
   bool _isLoading = false;
   bool _hasSearched = false;
   String? _errorMessage;
@@ -71,7 +75,14 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
 
       if (mounted) {
         setState(() {
-          _candidates = (res.data as List?) ?? [];
+          _candidates = ((res.data as List?) ?? const [])
+              .whereType<Map>()
+              .map(
+                (value) => AdminUserSummary.fromJson(
+                  Map<String, dynamic>.from(value),
+                ),
+              )
+              .toList();
           _isLoading = false;
         });
       }
@@ -89,11 +100,11 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     await _loadCandidates(keyword: _searchController.text.trim());
   }
 
-  Future<void> _inviteAdmin(dynamic candidate) async {
+  Future<void> _inviteAdmin(AdminUserSummary candidate) async {
     final dio = context.read<AuthProvider>().dio;
     final messenger = ScaffoldMessenger.of(context);
     final reason = await _showReasonDialog(
-      title: '邀请 ${candidate['nickname'] ?? ''} 成为管理员',
+      title: '邀请 ${candidate.nickname} 成为管理员',
       label: '给候选人的邀请理由',
       hint: '例如：社区贡献活跃、处理问题客观，希望邀请你参与管理',
       helperText: '该用户会看到这段文字，并决定是否接受邀请。',
@@ -103,7 +114,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
 
     try {
       await dio.post(
-        '/admin/invite/${candidate['id']}',
+        '/admin/invite/${candidate.id}',
         data: {'reason': reason},
       );
       if (!mounted) return;
@@ -114,7 +125,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
         ),
       );
       setState(
-          () => _candidates.removeWhere((c) => c['id'] == candidate['id']));
+          () => _candidates.removeWhere((item) => item.id == candidate.id));
     } on DioException catch (e) {
       if (!mounted) return;
       String msg = '邀请失败';
@@ -228,7 +239,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                 onSubmitted: (_) => _searchCandidates(),
                 decoration: InputDecoration(
                   icon: const Icon(Icons.search, color: Colors.grey),
-                  hintText: '输入学号或昵称搜索可邀请为管理员的普通用户',
+                  hintText: '输入用户 ID、学号/账号或昵称搜索候选人',
                   hintStyle: const TextStyle(fontSize: 13),
                   border: InputBorder.none,
                   suffixIcon: _searchController.text.trim().isNotEmpty
@@ -278,18 +289,22 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12)),
                                 child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundImage: candidate['avatar_url'] !=
-                                            null
-                                        ? NetworkImage(candidate['avatar_url'])
-                                        : null,
-                                    child: candidate['avatar_url'] == null
-                                        ? const Icon(Icons.person)
-                                        : null,
+                                  leading: CachedAvatar(
+                                    imageUrl: candidate.avatar.isEmpty
+                                        ? null
+                                        : ApiConstants.fullUrl(candidate.avatar),
+                                    fallbackText: candidate.nickname,
+                                    radius: 20,
                                   ),
-                                  title: Text(candidate['nickname'] ?? '未知用户'),
+                                  title: Text(
+                                    candidate.nickname.isEmpty
+                                        ? '未知用户'
+                                        : candidate.nickname,
+                                  ),
                                   subtitle: Text(
-                                      '学号: ${candidate['student_id'] ?? '未知'}'),
+                                    '${candidate.publicIdLabel}\n${candidate.accountLabel}',
+                                  ),
+                                  isThreeLine: true,
                                   trailing: FilledButton.tonal(
                                     onPressed: () => _inviteAdmin(candidate),
                                     child: const Text('邀请'),

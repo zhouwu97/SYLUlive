@@ -9,8 +9,13 @@ import '../services/app_update_download_service.dart';
 /// 页面或未登录路径绕过；普通更新仅在首次发现时提示一次，仍可继续使用 App。
 class AppUpdateGate extends StatefulWidget {
   final Widget child;
+  final GlobalKey<NavigatorState> navigatorKey;
 
-  const AppUpdateGate({super.key, required this.child});
+  const AppUpdateGate({
+    super.key,
+    required this.child,
+    required this.navigatorKey,
+  });
 
   @override
   State<AppUpdateGate> createState() => _AppUpdateGateState();
@@ -79,9 +84,11 @@ class _AppUpdateGateState extends State<AppUpdateGate>
         coordinator.info == null) {
       return;
     }
+    final dialogContext = widget.navigatorKey.currentState?.overlay?.context;
+    if (dialogContext == null) return;
     _optionalDialogVisible = true;
     final action = await showDialog<_OptionalUpdateAction>(
-      context: context,
+      context: dialogContext,
       barrierDismissible: true,
       builder: (dialogContext) => _OptionalUpdateDialog(
         info: coordinator.info!,

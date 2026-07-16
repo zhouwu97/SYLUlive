@@ -191,29 +191,82 @@ class _SharedPreferencesStore implements PreferenceStore {
   Future<bool> remove(String key) => _preferences.remove(key);
 }
 
-/// 鸿蒙安全存储原生桥接尚未接入时的会话级凭据仓库。
+/// 通过鸿蒙 Asset Store Kit 持久化登录令牌和教务密码。
 ///
-/// 不把令牌或教务密码降级写入明文文件；应用结束后需要重新登录。
-class _EphemeralOhosCredentialStore implements AuthCredentialStore {
-  const _EphemeralOhosCredentialStore();
+/// 原生端不设置“卸载后保留”标记，删除应用会一并清除这些凭据。
+class _OhosAuthCredentialStore implements AuthCredentialStore {
+  static const _channel = MethodChannel('shenliyuan/secure_storage');
+  static const _tokenKey = 'auth_token';
+  static const _userKey = 'auth_user';
+
+  const _OhosAuthCredentialStore();
 
   @override
-  Future<StoredAuthCredentials> read() async => const StoredAuthCredentials();
+  Future<StoredAuthCredentials> read() async {
+    return StoredAuthCredentials(
+      token: await _read(_tokenKey),
+      userJson: await _read(_userKey),
+    );
+  }
 
   @override
-  Future<void> write({required String token, required String userJson}) async {}
+  Future<void> write({required String token, required String userJson}) async {
+    final oldToken = await _read(_tokenKey);
+    final oldUserJson = await _read(_userKey);
+    try {
+      await _write(_tokenKey, token);
+      await _write(_userKey, userJson);
+    } catch (error, stackTrace) {
+      try {
+        await _restore(_tokenKey, oldToken);
+        await _restore(_userKey, oldUserJson);
+      } catch (rollbackError) {
+        throw AuthCredentialConsistencyException(
+          message: '回滚鸿蒙认证信息失败，持久化凭据可能不一致',
+          operationError: error,
+          rollbackError: rollbackError,
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
 
   @override
-  Future<void> clear() async {}
+  Future<void> clear() async {
+    await _delete(_tokenKey);
+    await _delete(_userKey);
+  }
 
   @override
-  Future<void> writeEduPassword(String studentId, String password) async {}
+  Future<void> writeEduPassword(String studentId, String password) {
+    return _write('edu_pwd_$studentId', password);
+  }
 
   @override
-  Future<String?> readEduPassword(String studentId) async => null;
+  Future<String?> readEduPassword(String studentId) {
+    return _read('edu_pwd_$studentId');
+  }
 
   @override
-  Future<void> deleteEduPassword(String studentId) async {}
+  Future<void> deleteEduPassword(String studentId) {
+    return _delete('edu_pwd_$studentId');
+  }
+
+  Future<String?> _read(String key) {
+    return _channel.invokeMethod<String>('read', {'key': key});
+  }
+
+  Future<void> _write(String key, String value) {
+    return _channel.invokeMethod<void>('write', {'key': key, 'value': value});
+  }
+
+  Future<void> _delete(String key) {
+    return _channel.invokeMethod<void>('delete', {'key': key});
+  }
+
+  Future<void> _restore(String key, String? value) {
+    return value == null ? _delete(key) : _write(key, value);
+  }
 }
 
 class _PlatformAuthCredentialStore implements AuthCredentialStore {
@@ -347,7 +400,7 @@ class AuthProvider extends ChangeNotifier {
     VoidCallback? onAuthenticated,
   })  : _credentialStore = credentialStore ??
             (AppPlatforms.current.isOhos
-                ? const _EphemeralOhosCredentialStore()
+                ? const _OhosAuthCredentialStore()
                 : _PlatformAuthCredentialStore()),
         _usesPlatformCredentialStore =
             credentialStore == null && !AppPlatforms.current.isOhos,

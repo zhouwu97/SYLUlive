@@ -35,7 +35,7 @@ func TestCheckInIsIdempotentAndBuildsStreak(t *testing.T) {
 	secondDay, err := service.CheckIn(user.ID, time.Date(2026, 7, 17, 10, 0, 0, 0, loc))
 	require.NoError(t, err)
 	require.Equal(t, 2, secondDay.StreakDays)
-	require.Equal(t, 1, secondDay.ExpEarned)
+	require.Equal(t, 2, secondDay.ExpEarned)
 
 	thirdDay, err := service.CheckIn(user.ID, time.Date(2026, 7, 18, 10, 0, 0, 0, loc))
 	require.NoError(t, err)
@@ -72,6 +72,58 @@ func TestCheckInStatusUsesFactsAndResetsAfterGap(t *testing.T) {
 	require.False(t, status.CheckedIn)
 	require.Zero(t, status.StreakDays)
 	require.Equal(t, 1, status.NextExp)
+}
+
+func TestCheckInExpRewardThresholds(t *testing.T) {
+	tests := []struct {
+		streak int
+		reward int
+	}{
+		{streak: 1, reward: 1},
+		{streak: 2, reward: 2},
+		{streak: 3, reward: 3},
+		{streak: 10, reward: 10},
+		{streak: 15, reward: 15},
+		{streak: 16, reward: 15},
+		{streak: 18, reward: 16},
+		{streak: 30, reward: 21},
+		{streak: 49, reward: 29},
+		{streak: 50, reward: 30},
+		{streak: 365, reward: 30},
+	}
+	for _, tt := range tests {
+		require.Equal(t, tt.reward, CheckInExpReward(tt.streak))
+	}
+	for day := 2; day <= 50; day++ {
+		previous := CheckInExpReward(day - 1)
+		current := CheckInExpReward(day)
+		require.GreaterOrEqual(t, current, previous)
+		require.LessOrEqual(t, current-previous, 1)
+	}
+	for day := 2; day <= 15; day++ {
+		require.Equal(t, 1, CheckInExpReward(day)-CheckInExpReward(day-1))
+	}
+}
+
+func TestCheckInCalendarReturnsOnlyRequestedMonth(t *testing.T) {
+	db := newCheckInTestDB(t)
+	user := createCheckInTestUser(t, db, "checkin-calendar")
+	records := []models.CheckIn{
+		{UserID: user.ID, CheckInDate: time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC), StreakDays: 1, ExpEarned: 1},
+		{UserID: user.ID, CheckInDate: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), StreakDays: 2, ExpEarned: 1},
+		{UserID: user.ID, CheckInDate: time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC), StreakDays: 1, ExpEarned: 1},
+		{UserID: user.ID, CheckInDate: time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), StreakDays: 2, ExpEarned: 1},
+	}
+	require.NoError(t, db.Create(&records).Error)
+	require.NoError(t, db.Create(&models.UserCheckInStat{UserID: user.ID, LongestStreak: 12}).Error)
+
+	calendar, err := NewCheckInService(db).Calendar(user.ID, time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Equal(t, "2026-07", calendar.Month.Format("2006-01"))
+	require.Equal(t, 12, calendar.LongestStreak)
+	require.Len(t, calendar.Records, 2)
+	require.Equal(t, "2026-07-01", FormatCheckInDate(calendar.Records[0].CheckInDate))
+	require.Equal(t, "2026-07-16", FormatCheckInDate(calendar.Records[1].CheckInDate))
 }
 
 func TestRebuildUserCheckInStatsDoesNotChangeExperience(t *testing.T) {

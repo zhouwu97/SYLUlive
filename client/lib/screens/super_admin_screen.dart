@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../config/api_constants.dart';
 import '../models/admin_user_summary.dart';
 import '../providers/auth_provider.dart';
+import 'admin/app_release_admin_tab.dart';
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
@@ -26,7 +27,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _dio = context.read<AuthProvider>().dio;
     _lotteryFuture = _loadLotteryParticipants();
     _loadAll();
@@ -182,6 +183,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             Tab(text: '管理员审批'),
             Tab(text: '管理日志'),
             Tab(text: '抽奖管理'),
+            Tab(text: '应用版本'),
           ],
         ),
       ),
@@ -192,6 +194,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           _buildApprovalsTab(),
           _buildAdminLogsTab(),
           _buildLotteryTab(),
+          AppReleaseAdminTab(dio: _dio),
         ],
       ),
     );

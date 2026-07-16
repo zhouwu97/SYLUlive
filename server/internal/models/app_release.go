@@ -2,26 +2,23 @@ package models
 
 import "time"
 
-// App release status constants.
+// 应用版本状态常量。
 const (
 	AppReleaseStatusDraft     = "draft"
 	AppReleaseStatusPublished = "published"
-	AppReleaseStatusWithdrawn  = "withdrawn"
+	AppReleaseStatusWithdrawn = "withdrawn"
 )
 
-// Platform and channel constants for the first version. Kept as fields so that
-// future channels can be added without altering the schema.
+// 首版的平台和渠道常量。保留为数据字段，未来增加渠道时无需修改表结构。
 const (
 	AppReleasePlatformAndroid = "android"
 	AppReleaseChannelStable   = "stable"
 )
 
-// AppRelease represents a single APK artifact published through the server.
-//
-// A published row is the only source of truth for whether a specific
-// (platform, channel, version_code) can be downloaded. The latest published
-// row (highest version_code) in the channel drives the update decision, while
-// MinimumSupportedVersionCode drives the 426 fallback handled in a later phase.
+// AppRelease 表示由服务器托管的单个 APK 版本。
+// 已发布记录是对应 platform/channel/versionCode 是否可下载的唯一依据；渠道中
+// versionCode 最高的已发布版本决定更新目标，MinimumSupportedVersionCode 决定
+// 426 最低版本拦截策略。
 type AppRelease struct {
 	ID uint `gorm:"primaryKey" json:"id"`
 
@@ -43,8 +40,8 @@ type AppRelease struct {
 
 	Status string `gorm:"type:varchar(16);not null;index" json:"status"`
 
-	CreatedBy    uint       `json:"created_by"`
-	PublishedAt  *time.Time `json:"published_at"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	CreatedBy   uint       `json:"created_by"`
+	PublishedAt *time.Time `json:"published_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }

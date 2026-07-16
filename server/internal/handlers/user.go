@@ -80,14 +80,16 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	// 动态计算今天是否已经签到（统一 Asia/Shanghai 时区）
+	// 是否已签到以当天事实记录为准，users.last_check_in_date 仅保留给旧接口兼容。
 	loc, _ := time.LoadLocation("Asia/Shanghai")
-	todayStr := time.Now().In(loc).Format("2006-01-02")
-	if user.LastCheckInDate == todayStr {
-		user.IsCheckedInToday = true
-	} else {
-		user.IsCheckedInToday = false
+	now := time.Now().In(loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	var checkInCount int64
+	if err := h.db.Model(&models.CheckIn{}).Where("user_id = ? AND check_in_date = ?", user.ID, today).Count(&checkInCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取签到状态失败"})
+		return
 	}
+	user.IsCheckedInToday = checkInCount > 0
 
 	c.JSON(http.StatusOK, selfUserResponse(user))
 }

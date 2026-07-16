@@ -257,22 +257,44 @@ curl -fsS --max-time 8 http://127.0.0.1:8000/health
 
 如果 Go 主服务在另一台服务器上通过公网或内网访问教务服务，还要确认 `EDU_SERVICE_URL` 指向当前可访问的地址。
 
-## 客户端 (APK) 更新
+## 客户端 (APK) 发布与强制更新
 
-如果修改了 Flutter 客户端代码，需要重新打包 Android 安装包并上传到服务器，用户即可下载更新：
+不要再把 APK 复制到公开的 `/uploads/app-release.apk`。正式安装包由服务端的
+应用版本记录管理，只有超级管理员显式发布后的版本才能被客户端下载。
 
 ```bash
-# 1. 在本地机器（需有 Flutter 环境）进行编译
+# 1. 在本地机器（需有 Flutter 环境）产出已签名的 release APK
 cd client
 flutter build apk --release
 
-# 2. 将编译好的 APK 上传至服务器的 uploads 静态资源目录
-# 本地生成的包路径：client/build/app/outputs/flutter-apk/app-release.apk
-scp client/build/app/outputs/flutter-apk/app-release.apk root@<你的服务器IP>:/opt/shenliyuan/uploads/app-release.apk
+# 2. 部署服务端代码并确认运行目录可写；不要把 APK 放入 /uploads
+mkdir -p /opt/shenliyuan/releases/android/stable/.tmp
+chown -R <运行服务用户>:<运行服务组> /opt/shenliyuan/releases
+chmod -R 750 /opt/shenliyuan/releases
+```
 
-# 3. 用户更新
-# 上传完毕后，用户可以直接通过浏览器访问下载最新版：
-# http://<你的服务器IP>/uploads/app-release.apk
+随后使用新版客户端的“超级管理员面板 -> 应用版本”：选择 APK，填写
+`version_name`、递增的 `version_code`、更新说明和
+`minimum_supported_version_code`，先创建草稿并核对 SHA-256，再执行“发布”。
+
+上线顺序必须分两阶段：
+
+1. 先发布携带版本请求头与应用内更新能力的桥接版本，保持：
+
+   ```env
+   APP_UPDATE_ENFORCEMENT_ENABLED=true
+   APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS=true
+   ```
+
+2. 覆盖率足够后，将 `APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS=false`。此时未
+   上报版本头或低于当前 `minimum_supported_version_code` 的业务请求会返回
+   `426 APP_UPDATE_REQUIRED`；`/api/app/update` 与 APK 下载接口仍然可访问。
+
+验证版本策略时，可用实际发布版本号替换下列参数：
+
+```bash
+curl -sS 'http://127.0.0.1:8080/api/app/update?platform=android&channel=stable&version_name=1.6.2&version_code=1602'
+curl -I 'http://127.0.0.1:8080/api/app/releases/<release_id>/download'
 ```
 
 ## 开发阶段重建

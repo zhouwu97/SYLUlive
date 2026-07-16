@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -98,6 +99,9 @@ func main() {
 	// 确保上传目录存在
 
 	os.MkdirAll(cfg.UploadDir, 0755)
+
+	// 确保 APK 发布根目录与 .tmp 已就绪，避免后续上传 Handler 在缺目录时报错。
+	os.MkdirAll(filepath.Join(cfg.AppReleaseDir, "android", "stable", ".tmp"), 0755)
 
 	var db *gorm.DB
 
@@ -249,6 +253,9 @@ func main() {
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
 		&models.CampusCalendar{},
+
+		// 应用内更新：APK 发布记录
+		&models.AppRelease{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -263,6 +270,9 @@ func main() {
 	}
 	if err := ensureCanteenNormalizedNameIndex(db); err != nil {
 		log.Fatal("食堂名称唯一索引迁移失败:", err)
+	}
+	if err := ensureAppReleaseIndexes(db); err != nil {
+		log.Fatal("应用发布索引迁移失败:", err)
 	}
 
 	if err := models.EnsureConversationIndexes(db); err != nil {
@@ -435,6 +445,10 @@ func main() {
 
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
 
+	// 应用内更新：阶段 A 暴露公开版本检查接口。APK 下载路由在阶段 A5 追加。
+	appReleaseService := services.NewAppReleaseService(db, cfg.AppReleaseDir)
+	appUpdateHandler := handlers.NewAppUpdateHandler(appReleaseService)
+
 	eduHandler := handlers.NewEduHandler(db)
 
 	teacherHandler := handlers.NewTeacherHandler(db)
@@ -524,6 +538,12 @@ func main() {
 	var examPaperStorageCron *tasks.ExamPaperStorageCron
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
 		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
+	}
+
+	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。
+	appPublic := r.Group("/api/app")
+	{
+		appPublic.GET("/update", appUpdateHandler.CheckUpdate)
 	}
 
 	// 健康检查接口
@@ -1400,7 +1420,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.6.1",
+			"version": "1.6.2",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -1547,6 +1567,29 @@ func ensurePostPinColumns(db *gorm.DB) error {
 
 func ensurePostMarketTagsColumn(db *gorm.DB) error {
 	return db.Exec(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS market_tags VARCHAR(200) NOT NULL DEFAULT ''`).Error
+}
+
+// ensureAppReleaseIndexes builds the lookup indexes used by the app update
+// flow. A partial unique index on (platform, channel, version_code) keeps
+// each effective version immutable while letting withdrawn rows coexist for
+// historical download audits. The other indexes serve the latest-published
+// lookup and the admin listing queries.
+func ensureAppReleaseIndexes(db *gorm.DB) error {
+	statements := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_app_release_platform_channel_version
+		 ON app_releases (platform, channel, version_code)
+		 WHERE status IN ('draft','published','withdrawn')`,
+		`CREATE INDEX IF NOT EXISTS idx_app_release_lookup
+		 ON app_releases (platform, channel, status, version_code DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_app_release_published_at
+		 ON app_releases (published_at)`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ensurePostActivitySchema 回填历史讨论时间并建立首页候选查询索引。

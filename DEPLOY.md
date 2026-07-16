@@ -314,6 +314,35 @@ EXAM_PAPER_DIR=/opt/shenliyuan/private/exam-papers
 SUPER_ADMIN_ID=admin
 SUPER_ADMIN_PASSWORD=your_random_admin_password
 GIN_MODE=release
+
+# 应用内更新：APK 发布与下载
+APP_RELEASE_DIR=/opt/shenliyuan/releases
+APP_RELEASE_MAX_SIZE_MB=200
+APP_UPDATE_ENFORCEMENT_ENABLED=false
+APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS=true
+APP_RELEASE_USE_ACCEL_REDIRECT=false
+APP_RELEASE_ACCEL_PREFIX=/_internal/app-releases/
+```
+
+应用内更新目录权限：
+
+```bash
+mkdir -p /opt/shenliyuan/releases/android/stable/.tmp
+chown -R <运行服务用户>:<运行服务组> /opt/shenliyuan/releases
+chmod -R 750 /opt/shenliyuan/releases
+```
+
+`APP_RELEASE_USE_ACCEL_REDIRECT` 默认 `false`，此时 Go 直接通过
+`http.ServeContent` 输出 APK。等 Nginx 配置好下面的内部 location 后再改成
+`true`。Nginx 示例：
+
+```nginx
+location /_internal/app-releases/ {
+    internal;
+    alias /opt/shenliyuan/releases/;
+    sendfile on;
+    aio threads;
+}
 ```
 `
 注意：

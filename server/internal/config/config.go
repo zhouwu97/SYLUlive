@@ -34,6 +34,14 @@ type Config struct {
 	EduServiceToken        string // Python 教务服务共享密钥
 	JWCSyncEnabled         bool   // 校园资讯同步开关
 	JWCSyncIntervalMinutes int    // 校园资讯同步间隔(分钟)
+
+	// 应用内更新相关配置
+	AppReleaseDir                string // APK 发布根目录
+	AppReleaseMaxSize            int64  // 单个 APK 最大字节数
+	AppUpdateEnforcementEnabled bool   // 是否启用 426 最低版本拦截（阶段 D 使用）
+	AllowMissingVersionHeaders   bool   // 缺失 X-App-Version-* 头时是否放行（阶段 D 使用）
+	AppReleaseUseAccelRedirect    bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
+	AppReleaseAccelPrefix        string // X-Accel-Redirect 路径前缀
 }
 
 const (
@@ -182,6 +190,31 @@ func Load() *Config {
 		}
 	}
 
+	// 应用内更新相关配置
+	appReleaseDir := os.Getenv("APP_RELEASE_DIR")
+	if appReleaseDir == "" {
+		appReleaseDir = "/opt/shenliyuan/releases"
+		if os.Getenv("GIN_MODE") != "release" {
+			appReleaseDir = "./releases"
+		}
+	}
+	appReleaseMaxSizeMB := 200
+	if v := os.Getenv("APP_RELEASE_MAX_SIZE_MB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			appReleaseMaxSizeMB = n
+		}
+	}
+	appUpdateEnforcementEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_UPDATE_ENFORCEMENT_ENABLED")), "true")
+	allowMissingVersionHeaders := true
+	if v := strings.TrimSpace(os.Getenv("APP_UPDATE_ALLOW_MISSING_VERSION_HEADERS")); v != "" {
+		allowMissingVersionHeaders = strings.EqualFold(v, "true")
+	}
+	appReleaseUseAccelRedirect := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_RELEASE_USE_ACCEL_REDIRECT")), "true")
+	appReleaseAccelPrefix := strings.TrimSpace(os.Getenv("APP_RELEASE_ACCEL_PREFIX"))
+	if appReleaseAccelPrefix == "" {
+		appReleaseAccelPrefix = "/_internal/app-releases/"
+	}
+
 	return &Config{
 		JWTSecret:                     jwtSecret,
 		DSN:                           dsn,
@@ -206,6 +239,13 @@ func Load() *Config {
 		EduServiceToken:        eduServiceToken,
 		JWCSyncEnabled:         jwcSyncEnabled,
 		JWCSyncIntervalMinutes: jwcSyncIntervalMinutes,
+
+		AppReleaseDir:                appReleaseDir,
+		AppReleaseMaxSize:            int64(appReleaseMaxSizeMB) * 1024 * 1024,
+		AppUpdateEnforcementEnabled: appUpdateEnforcementEnabled,
+		AllowMissingVersionHeaders:   allowMissingVersionHeaders,
+		AppReleaseUseAccelRedirect:    appReleaseUseAccelRedirect,
+		AppReleaseAccelPrefix:        appReleaseAccelPrefix,
 	}
 }
 

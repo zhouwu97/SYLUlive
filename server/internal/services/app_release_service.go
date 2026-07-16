@@ -31,12 +31,17 @@ const (
 type AppReleaseService struct {
 	db         *gorm.DB
 	releaseDir string
+	maxSize    int64
 }
 
 // NewAppReleaseService 构造一个 AppReleaseService。releaseDir 是配置中的
 // APP_RELEASE_DIR，唯一用途是 LocateAPK 的路径解析。
-func NewAppReleaseService(db *gorm.DB, releaseDir string) *AppReleaseService {
-	return &AppReleaseService{db: db, releaseDir: releaseDir}
+func NewAppReleaseService(db *gorm.DB, releaseDir string, maxSizes ...int64) *AppReleaseService {
+	maxSize := defaultAppReleaseMaxSize
+	if len(maxSizes) > 0 && maxSizes[0] > 0 {
+		maxSize = maxSizes[0]
+	}
+	return &AppReleaseService{db: db, releaseDir: releaseDir, maxSize: maxSize}
 }
 
 // DB 暴露内部 *gorm.DB 给同包 handler 使用，避免重复构造和散落的 db 句柄。
@@ -46,11 +51,14 @@ func (s *AppReleaseService) DB() *gorm.DB { return s.db }
 // ReleaseDir 返回配置的 APK 发布根目录，用于 X-Accel-Redirect 路径计算。
 func (s *AppReleaseService) ReleaseDir() string { return s.releaseDir }
 
+// MaxSize 返回管理员上传 APK 的字节上限。
+func (s *AppReleaseService) MaxSize() int64 { return s.maxSize }
+
 // DecideUpdate 根据客户端当前版本、最新版本与最低支持版本号推导更新决策。
 //
-//   current >= latest                            → none
-//   minimumSupported <= current < latest         → optional
-//   current < minimumSupported                   → required
+//	current >= latest                            → none
+//	minimumSupported <= current < latest         → optional
+//	current < minimumSupported                   → required
 //
 // 任何 versionCode <= 0 都视为非法输入并返回 UpdateNone，调用方应在更外层
 // 拒绝非法请求而不是依赖此函数的回退。

@@ -1,183 +1,133 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
-	"shenliyuan/internal/models"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+
+	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
-// CheckInHandler 签到处理器
+// CheckInHandler 签到接口处理器。
 type CheckInHandler struct {
-	db *gorm.DB
+	db      *gorm.DB
+	service *services.CheckInService
 }
 
-// NewCheckInHandler 创建签到处理器
+// NewCheckInHandler 创建签到处理器。
 func NewCheckInHandler(db *gorm.DB) *CheckInHandler {
-	return &CheckInHandler{db: db}
+	return &CheckInHandler{db: db, service: services.NewCheckInService(db)}
 }
 
-// calcExpReward 根据连续签到天数计算经验奖励
-func calcExpReward(streak int) int {
-	if streak >= 30 {
-		return 15
-	}
-	if streak >= 10 {
-		return 10
-	}
-	if streak >= 3 {
-		return 3
-	}
-	return 1
-}
-
-// DoCheckIn 执行签到 (事务 + 行锁，高并发原子化防御)
+// DoCheckIn 执行签到。重复请求返回 200，使客户端重试和双击天然幂等。
 func (h *CheckInHandler) DoCheckIn(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-	uid := userID.(uint)
-
-	// 统一时区锚点：强制使用 Asia/Shanghai
-	loc, err := time.LoadLocation("Asia/Shanghai")
+	uid := c.GetUint("user_id")
+	now, err := shanghaiNow()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统时区配置错误"})
 		return
 	}
-	now := time.Now().In(loc)
-	todayStr := now.Format("2006-01-02")
-	yesterdayStr := now.AddDate(0, 0, -1).Format("2006-01-02")
-
-	// 开启事务
-	tx := h.db.Begin()
-	if tx.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "开启事务失败"})
+	result, err := h.service.CheckIn(uid, now)
+	if err != nil {
+		writeCheckInError(c, err, "签到失败")
 		return
 	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// 查用户并加行锁 (FOR UPDATE)，防止极限并发下同一用户多个请求进入计算逻辑
-	var user models.User
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", uid).First(&user).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户状态失败"})
-		return
+	message := fmt.Sprintf("签到成功！经验+%d", result.ExpEarned)
+	if result.Already {
+		message = "今天已经签过到了"
 	}
-
-	// 校验今天是否已签到
-	if user.LastCheckInDate == todayStr {
-		tx.Rollback()
-		c.JSON(http.StatusBadRequest, gin.H{"error": "您今天已经签过到了，明天再来吧！"})
-		return
-	}
-
-	// 计算连续签到天数 (Streak)
-	streak := 1
-	var yesterdayRecord models.CheckIn
-	if err := tx.Where("user_id = ? AND check_in_date = ?", uid, yesterdayStr).First(&yesterdayRecord).Error; err == nil {
-		streak = yesterdayRecord.StreakDays + 1
-	} else if user.LastCheckInDate == yesterdayStr {
-		// 兼容旧系统：昨天签到了但没在 check_ins 留档，算是连续第二天
-		streak = 2
-	}
-
-	// 调用之前被闲置的函数，动态计算经验值奖励
-	expEarned := calcExpReward(streak)
-
-	// 写入 check_ins 历史表
-	newCheckIn := models.CheckIn{
-		UserID:      uid,
-		CheckInDate: todayStr,
-		StreakDays:  streak,
-		ExpEarned:   expEarned,
-	}
-	if err := tx.Create(&newCheckIn).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "记录签到详情失败"})
-		return
-	}
-
-	// 同步更新 users 表的主状态
-	if err := tx.Model(&user).Updates(map[string]interface{}{
-		"exp":                gorm.Expr("exp + ?", expEarned),
-		"last_check_in_date": todayStr,
-	}).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新用户资产失败"})
-		return
-	}
-
-	// 提交事务
-	if err := tx.Commit().Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交事务失败"})
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{
-		"success":     true,
-		"message":     fmt.Sprintf("签到成功！经验+%d", expEarned),
-		"streak_days": streak,
-		"exp_earned":  expEarned,
+		"success":       true,
+		"already":       result.Already,
+		"message":       message,
+		"check_in_date": services.FormatCheckInDate(result.CheckInDate),
+		"streak_days":   result.StreakDays,
+		"exp_earned":    result.ExpEarned,
+		"total_exp":     result.TotalExp,
 	})
 }
 
-// GetStatus 获取签到状态
+// GetStatus 获取签到状态。是否已签到只查询当天事实记录。
 func (h *CheckInHandler) GetStatus(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-	uid := userID.(uint)
+	uid := c.GetUint("user_id")
+	now, err := shanghaiNow()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统时区配置错误"})
+		return
+	}
+	status, err := h.service.Status(uid, now)
+	if err != nil {
+		writeCheckInError(c, err, "获取签到状态失败")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"checked_in":    status.CheckedIn,
+		"check_in_date": services.FormatCheckInDate(status.CheckInDate),
+		"streak_days":   status.StreakDays,
+		"total_exp":     status.TotalExp,
+		"next_exp":      status.NextExp,
+	})
+}
 
-	loc, _ := time.LoadLocation("Asia/Shanghai")
-	now := time.Now().In(loc)
-	today := now.Format("2006-01-02")
-
+// RebuildUserStats 根据签到事实重建指定用户的汇总，只允许超级管理员调用。
+func (h *CheckInHandler) RebuildUserStats(c *gin.Context) {
+	userID64, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || userID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
+		return
+	}
+	userID := uint(userID64)
 	var user models.User
-	if err := h.db.Select("exp, last_check_in_date").First(&user, uid).Error; err != nil {
+	if err := h.db.Select("id").First(&user, userID).Error; err != nil {
+		writeCheckInError(c, err, "读取用户失败")
+		return
+	}
+	var previous models.UserCheckInStat
+	_ = h.db.Where("user_id = ?", userID).First(&previous).Error
+	rebuilt, err := h.service.RebuildUserStats(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重建签到汇总失败"})
+		return
+	}
+	operatorID := c.GetUint("user_id")
+	if err := h.db.Create(&models.CheckInRepairLog{
+		UserID: userID, OperatorID: operatorID, Action: "rebuild_stats", Reason: "管理员发起签到汇总回算",
+		PreviousStreak: previous.CurrentStreak, NewStreak: rebuilt.CurrentStreak,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "写入签到修复审计日志失败"})
+		return
+	}
+	lastDate := ""
+	if rebuilt.LastCheckInDate != nil {
+		lastDate = services.FormatCheckInDate(*rebuilt.LastCheckInDate)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":            true,
+		"user_id":            userID,
+		"last_check_in_date": lastDate,
+		"current_streak":     rebuilt.CurrentStreak,
+		"longest_streak":     rebuilt.LongestStreak,
+	})
+}
+
+func shanghaiNow() (time.Time, error) {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Now().In(loc), nil
+}
+
+func writeCheckInError(c *gin.Context, err error, fallback string) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-
-	checkedIn := user.LastCheckInDate == today
-	streakDays := 0
-
-	var todayRecord models.CheckIn
-	if err := h.db.Where("user_id = ? AND check_in_date = ?", uid, today).First(&todayRecord).Error; err == nil {
-		streakDays = todayRecord.StreakDays
-	} else {
-		if checkedIn {
-			// 旧系统今天签过到，但新表里没有，默认按 1 算
-			streakDays = 1
-		} else {
-			// 没签到，查昨天记录看连续天数
-			yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
-			var yesterdayRecord models.CheckIn
-			if err := h.db.Where("user_id = ? AND check_in_date = ?", uid, yesterday).First(&yesterdayRecord).Error; err == nil {
-				streakDays = yesterdayRecord.StreakDays
-			} else if user.LastCheckInDate == yesterday {
-				// 兼容旧系统，如果没在新表查到但最后一次签到是昨天，说明昨天签了，连签天数是 1
-				streakDays = 1
-			}
-		}
-	}
-
-	// 计算下次签到可获得的经验
-	nextStreak := streakDays + 1
-	if checkedIn {
-		nextStreak = streakDays + 1
-	}
-	_ = strconv.Itoa(nextStreak) // suppress unused
-
-	c.JSON(http.StatusOK, gin.H{
-		"checked_in":  checkedIn,
-		"streak_days": streakDays,
-		"total_exp":   user.Exp,
-		"next_exp":    calcExpReward(nextStreak),
-	})
+	c.JSON(http.StatusInternalServerError, gin.H{"error": fallback})
 }

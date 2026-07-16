@@ -36,12 +36,12 @@ type Config struct {
 	JWCSyncIntervalMinutes int    // 校园资讯同步间隔(分钟)
 
 	// 应用内更新相关配置
-	AppReleaseDir                string // APK 发布根目录
-	AppReleaseMaxSize            int64  // 单个 APK 最大字节数
+	AppReleaseDir               string // APK 发布根目录
+	AppReleaseMaxSize           int64  // 单个 APK 最大字节数
 	AppUpdateEnforcementEnabled bool   // 是否启用 426 最低版本拦截（阶段 D 使用）
-	AllowMissingVersionHeaders   bool   // 缺失 X-App-Version-* 头时是否放行（阶段 D 使用）
-	AppReleaseUseAccelRedirect    bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
-	AppReleaseAccelPrefix        string // X-Accel-Redirect 路径前缀
+	AllowMissingVersionHeaders  bool   // 缺失 X-App-Version-* 头时是否放行（阶段 D 使用）
+	AppReleaseUseAccelRedirect  bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
+	AppReleaseAccelPrefix       string // X-Accel-Redirect 路径前缀
 }
 
 const (
@@ -240,12 +240,12 @@ func Load() *Config {
 		JWCSyncEnabled:         jwcSyncEnabled,
 		JWCSyncIntervalMinutes: jwcSyncIntervalMinutes,
 
-		AppReleaseDir:                appReleaseDir,
-		AppReleaseMaxSize:            int64(appReleaseMaxSizeMB) * 1024 * 1024,
+		AppReleaseDir:               appReleaseDir,
+		AppReleaseMaxSize:           int64(appReleaseMaxSizeMB) * 1024 * 1024,
 		AppUpdateEnforcementEnabled: appUpdateEnforcementEnabled,
-		AllowMissingVersionHeaders:   allowMissingVersionHeaders,
-		AppReleaseUseAccelRedirect:    appReleaseUseAccelRedirect,
-		AppReleaseAccelPrefix:        appReleaseAccelPrefix,
+		AllowMissingVersionHeaders:  allowMissingVersionHeaders,
+		AppReleaseUseAccelRedirect:  appReleaseUseAccelRedirect,
+		AppReleaseAccelPrefix:       appReleaseAccelPrefix,
 	}
 }
 

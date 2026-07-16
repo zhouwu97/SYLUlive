@@ -51,6 +51,7 @@
 | `GET` | `/api/user/:id` | 获取指定用户信息 |
 | `POST`| `/api/user/checkin` | 用户每日签到 |
 | `GET` | `/api/user/checkin/status` | 获取签到状态 |
+| `GET` | `/api/user/checkin/calendar?month=YYYY-MM` | 获取指定月份的签到记录 |
 | `POST`| `/api/user/:id/follow` | 关注指定用户 |
 | `DELETE`| `/api/user/:id/follow`| 取消关注指定用户 |
 | `GET` | `/api/user/:id/posts` | 获取指定用户发布的帖子 |

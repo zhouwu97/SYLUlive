@@ -91,6 +91,17 @@ func TestCheckUpdate_RejectsUnsupportedPlatform(t *testing.T) {
 	require.Contains(t, w.Body.String(), "unsupported_platform")
 }
 
+func TestCheckUpdate_OhosWithoutPublishedReleaseReturnsNoUpdate(t *testing.T) {
+	r := newAppUpdateRouter(t, newAppUpdateTestDB(t))
+	w := mustDoUpdateRequest(t, r, "/api/app/update?platform=ohos&channel=stable&version_name=1.6.2&version_code=1602", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	resp := decodeUpdateResponse(t, w)
+	require.False(t, resp.UpdateAvailable)
+	require.Equal(t, "none", resp.UpdateType)
+	require.Equal(t, int64(1602), resp.LatestVersionCode)
+}
+
 func TestCheckUpdate_RejectsUnsupportedChannel(t *testing.T) {
 	r := newAppUpdateRouter(t, newAppUpdateTestDB(t))
 	w := mustDoUpdateRequest(t, r, "/api/app/update?platform=android&channel=beta&version_name=1.6.1&version_code=1601", nil)
@@ -111,10 +122,10 @@ func TestCheckUpdate_NoPublishedReleaseReturnsNoUpdate(t *testing.T) {
 func TestCheckUpdate_HeadersFallback(t *testing.T) {
 	r := newAppUpdateRouter(t, newAppUpdateTestDB(t))
 	w := mustDoUpdateRequest(t, r, "/api/app/update", map[string]string{
-		"X-App-Platform":      "android",
-		"X-App-Channel":        "stable",
-		"X-App-Version-Name":   "1.6.1",
-		"X-App-Version-Code":   "1601",
+		"X-App-Platform":     "android",
+		"X-App-Channel":      "stable",
+		"X-App-Version-Name": "1.6.1",
+		"X-App-Version-Code": "1601",
 	})
 	resp := decodeUpdateResponse(t, w)
 	require.False(t, resp.UpdateAvailable)
@@ -188,18 +199,18 @@ func TestCheckUpdate_RequiresVersionName(t *testing.T) {
 // 形如 "1.6.x"，SHA256 为 64 位 0 占位串。
 func buildReleasePtrForUpdate(versionCode int64, status string, minimum int64) *models.AppRelease {
 	r := models.AppRelease{
-		Platform:                     models.AppReleasePlatformAndroid,
-		Channel:                      models.AppReleaseChannelStable,
-		VersionName:                  "1.6.x",
-		VersionCode:                  versionCode,
-		Title:                        "test",
-		Changelog:                    "changelog",
-		MinimumSupportedVersionCode:  minimum,
-		FileName:                     "shenliyuan.apk",
-		StorageKey:                   "android/stable/" + strconv.FormatInt(versionCode, 10) + "/shenliyuan.apk",
-		FileSize:                     68,
-		SHA256:                       "0000000000000000000000000000000000000000000000000000000000000000",
-		Status:                       status,
+		Platform:                    models.AppReleasePlatformAndroid,
+		Channel:                     models.AppReleaseChannelStable,
+		VersionName:                 "1.6.x",
+		VersionCode:                 versionCode,
+		Title:                       "test",
+		Changelog:                   "changelog",
+		MinimumSupportedVersionCode: minimum,
+		FileName:                    "shenliyuan.apk",
+		StorageKey:                  "android/stable/" + strconv.FormatInt(versionCode, 10) + "/shenliyuan.apk",
+		FileSize:                    68,
+		SHA256:                      "0000000000000000000000000000000000000000000000000000000000000000",
+		Status:                      status,
 	}
 	return &r
 }
@@ -217,18 +228,18 @@ func seedRealAPK(t *testing.T, db *gorm.DB, releaseDir string, versionCode int64
 	sum := sha256.Sum256(content)
 	sumHex := hex.EncodeToString(sum[:])
 	r := &models.AppRelease{
-		Platform:                     models.AppReleasePlatformAndroid,
-		Channel:                      models.AppReleaseChannelStable,
-		VersionName:                  "1.6.x",
-		VersionCode:                  versionCode,
-		Title:                        "test",
-		Changelog:                    "changelog",
-		MinimumSupportedVersionCode:  1601,
-		FileName:                     "shenliyuan-" + strconv.FormatInt(versionCode, 10) + ".apk",
-		StorageKey:                   storageKey,
-		FileSize:                     int64(len(content)),
-		SHA256:                       sumHex,
-		Status:                       status,
+		Platform:                    models.AppReleasePlatformAndroid,
+		Channel:                     models.AppReleaseChannelStable,
+		VersionName:                 "1.6.x",
+		VersionCode:                 versionCode,
+		Title:                       "test",
+		Changelog:                   "changelog",
+		MinimumSupportedVersionCode: 1601,
+		FileName:                    "shenliyuan-" + strconv.FormatInt(versionCode, 10) + ".apk",
+		StorageKey:                  storageKey,
+		FileSize:                    int64(len(content)),
+		SHA256:                      sumHex,
+		Status:                      status,
 	}
 	require.NoError(t, db.Create(r).Error)
 	require.NotZero(t, r.ID)
@@ -365,18 +376,18 @@ func TestDownload_RejectsTraversalStorageKey(t *testing.T) {
 	releaseDir := t.TempDir()
 	// 手动插入一条 status=published 但 storage_key 是穿越攻击中常见的形状。
 	rel := &models.AppRelease{
-		Platform:                     models.AppReleasePlatformAndroid,
-		Channel:                      models.AppReleaseChannelStable,
-		VersionName:                  "1.6.x",
-		VersionCode:                  1602,
-		Title:                        "test",
-		Changelog:                    "changelog",
-		MinimumSupportedVersionCode:  1601,
-		FileName:                     "evil.apk",
-		StorageKey:                   "android/stable/../../../../etc/passwd",
-		FileSize:                     10,
-		SHA256:                       strings.Repeat("0", 64),
-		Status:                       models.AppReleaseStatusPublished,
+		Platform:                    models.AppReleasePlatformAndroid,
+		Channel:                     models.AppReleaseChannelStable,
+		VersionName:                 "1.6.x",
+		VersionCode:                 1602,
+		Title:                       "test",
+		Changelog:                   "changelog",
+		MinimumSupportedVersionCode: 1601,
+		FileName:                    "evil.apk",
+		StorageKey:                  "android/stable/../../../../etc/passwd",
+		FileSize:                    10,
+		SHA256:                      strings.Repeat("0", 64),
+		Status:                      models.AppReleaseStatusPublished,
 	}
 	require.NoError(t, db.Create(rel).Error)
 

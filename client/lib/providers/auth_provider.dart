@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
+import '../platform/app_platform.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -190,6 +191,31 @@ class _SharedPreferencesStore implements PreferenceStore {
   Future<bool> remove(String key) => _preferences.remove(key);
 }
 
+/// 鸿蒙安全存储原生桥接尚未接入时的会话级凭据仓库。
+///
+/// 不把令牌或教务密码降级写入明文文件；应用结束后需要重新登录。
+class _EphemeralOhosCredentialStore implements AuthCredentialStore {
+  const _EphemeralOhosCredentialStore();
+
+  @override
+  Future<StoredAuthCredentials> read() async => const StoredAuthCredentials();
+
+  @override
+  Future<void> write({required String token, required String userJson}) async {}
+
+  @override
+  Future<void> clear() async {}
+
+  @override
+  Future<void> writeEduPassword(String studentId, String password) async {}
+
+  @override
+  Future<String?> readEduPassword(String studentId) async => null;
+
+  @override
+  Future<void> deleteEduPassword(String studentId) async {}
+}
+
 class _PlatformAuthCredentialStore implements AuthCredentialStore {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
@@ -319,8 +345,12 @@ class AuthProvider extends ChangeNotifier {
     AuthCredentialStore? credentialStore,
     bool loadStoredAuth = true,
     VoidCallback? onAuthenticated,
-  })  : _credentialStore = credentialStore ?? _PlatformAuthCredentialStore(),
-        _usesPlatformCredentialStore = credentialStore == null,
+  })  : _credentialStore = credentialStore ??
+            (AppPlatforms.current.isOhos
+                ? const _EphemeralOhosCredentialStore()
+                : _PlatformAuthCredentialStore()),
+        _usesPlatformCredentialStore =
+            credentialStore == null && !AppPlatforms.current.isOhos,
         _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start {
     // 添加 401 拦截器：自动登出并提示重新登录
     _dio.interceptors.add(

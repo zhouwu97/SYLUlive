@@ -28,6 +28,20 @@ type CheckInStatus struct {
 	CheckInDate time.Time
 }
 
+// CheckInCalendarRecord 是月历中的一条签到事实。
+type CheckInCalendarRecord struct {
+	CheckInDate time.Time
+	StreakDays  int
+	ExpEarned   int
+}
+
+// CheckInCalendar 是指定月份的签到记录和历史汇总。
+type CheckInCalendar struct {
+	Month         time.Time
+	LongestStreak int
+	Records       []CheckInCalendarRecord
+}
+
 // CheckInService 统一封装签到事实、汇总和经验入账，避免多个 Handler 各自维护状态。
 type CheckInService struct {
 	db *gorm.DB
@@ -124,6 +138,43 @@ func (s *CheckInService) Status(userID uint, now time.Time) (CheckInStatus, erro
 	return status, nil
 }
 
+// Calendar 查询指定自然月的签到事实，查询范围始终限制在一个月内。
+func (s *CheckInService) Calendar(userID uint, month time.Time) (CheckInCalendar, error) {
+	monthStart := time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.UTC)
+	result := CheckInCalendar{
+		Month:   monthStart,
+		Records: make([]CheckInCalendarRecord, 0),
+	}
+
+	var user models.User
+	if err := s.db.Select("id").First(&user, userID).Error; err != nil {
+		return result, err
+	}
+
+	var records []models.CheckIn
+	if err := s.db.
+		Where("user_id = ? AND check_in_date >= ? AND check_in_date < ?", userID, monthStart, monthStart.AddDate(0, 1, 0)).
+		Order("check_in_date ASC").
+		Find(&records).Error; err != nil {
+		return result, err
+	}
+	for _, record := range records {
+		result.Records = append(result.Records, CheckInCalendarRecord{
+			CheckInDate: record.CheckInDate,
+			StreakDays:  record.StreakDays,
+			ExpEarned:   record.ExpEarned,
+		})
+	}
+
+	var stat models.UserCheckInStat
+	if err := s.db.Select("longest_streak").Where("user_id = ?", userID).First(&stat).Error; err == nil {
+		result.LongestStreak = stat.LongestStreak
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return result, err
+	}
+	return result, nil
+}
+
 // RebuildUserStats 从事实表重建单个用户的汇总，供修复任务和运维接口调用。
 func (s *CheckInService) RebuildUserStats(userID uint) (models.UserCheckInStat, error) {
 	return models.RebuildUserCheckInStats(s.db, userID)
@@ -131,16 +182,17 @@ func (s *CheckInService) RebuildUserStats(userID uint) (models.UserCheckInStat, 
 
 // CheckInExpReward 根据连续签到天数计算经验奖励。
 func CheckInExpReward(streak int) int {
-	if streak >= 30 {
-		return 15
+	if streak >= 50 {
+		return 30
 	}
-	if streak >= 10 {
-		return 10
+	if streak <= 1 {
+		return 1
 	}
-	if streak >= 3 {
-		return 3
+	if streak <= 15 {
+		return streak
 	}
-	return 1
+	// 第 16 天到第 50 天从 15 平缓增长到 30，每次最多增加 1 点。
+	return 15 + (streak-15)*15/35
 }
 
 func upsertCheckInStat(tx *gorm.DB, userID uint, date time.Time, currentStreak int) error {

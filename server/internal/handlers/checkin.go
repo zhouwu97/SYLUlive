@@ -75,6 +75,45 @@ func (h *CheckInHandler) GetStatus(c *gin.Context) {
 	})
 }
 
+// GetCalendar 获取指定月份的签到记录，month 参数格式为 YYYY-MM。
+func (h *CheckInHandler) GetCalendar(c *gin.Context) {
+	uid := c.GetUint("user_id")
+	now, err := shanghaiNow()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统时区配置错误"})
+		return
+	}
+
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	if rawMonth := c.Query("month"); rawMonth != "" {
+		parsed, parseErr := time.Parse("2006-01", rawMonth)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "月份格式必须为 YYYY-MM"})
+			return
+		}
+		month = parsed
+	}
+
+	calendar, err := h.service.Calendar(uid, month)
+	if err != nil {
+		writeCheckInError(c, err, "获取签到月历失败")
+		return
+	}
+	records := make([]gin.H, 0, len(calendar.Records))
+	for _, record := range calendar.Records {
+		records = append(records, gin.H{
+			"check_in_date": services.FormatCheckInDate(record.CheckInDate),
+			"streak_days":   record.StreakDays,
+			"exp_earned":    record.ExpEarned,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"month":          calendar.Month.Format("2006-01"),
+		"longest_streak": calendar.LongestStreak,
+		"records":        records,
+	})
+}
+
 // RebuildUserStats 根据签到事实重建指定用户的汇总，只允许超级管理员调用。
 func (h *CheckInHandler) RebuildUserStats(c *gin.Context) {
 	userID64, err := strconv.ParseUint(c.Param("id"), 10, 64)

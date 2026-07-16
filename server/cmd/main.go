@@ -697,6 +697,7 @@ func main() {
 		user.POST("/checkin", checkinHandler.DoCheckIn)
 
 		user.GET("/checkin/status", checkinHandler.GetStatus)
+		user.GET("/checkin/calendar", checkinHandler.GetCalendar)
 		user.GET("/checkin/compensations", checkinCompensationHandler.ListMine)
 		user.POST("/checkin/compensations/:id/claims", checkinCompensationHandler.Claim)
 

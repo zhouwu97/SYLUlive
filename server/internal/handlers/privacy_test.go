@@ -1,0 +1,125 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+
+	"shenliyuan/internal/models"
+)
+
+func newPrivacyTestHandler(t *testing.T) (*PrivacyHandler, *gorm.DB, models.User) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.UserFollow{}, &models.UserLegalConsent{}, &models.PersonalDataRequest{}, &models.AdminActionLog{}); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	user := models.User{
+		StudentID: "2026000001", PasswordHash: string(passwordHash), Nickname: "测试用户",
+		QQ: "12345678", DeviceToken: "device-token", EduStudentID: "2026000001",
+		EduPassword: "", EduCookie: "cookie", EduBound: false, EduCollege: "测试学院",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	return NewPrivacyHandler(db), db, user
+}
+
+func privacyContext(method, target, body string, userID uint) (*gin.Context, *httptest.ResponseRecorder) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(method, target, strings.NewReader(body))
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Set("user_id", userID)
+	return context, recorder
+}
+
+func TestPrivacyRequestLifecycle(t *testing.T) {
+	handler, db, user := newPrivacyTestHandler(t)
+	createContext, createRecorder := privacyContext(http.MethodPost, "/api/user/privacy/requests", `{"request_type":"export","detail":"请导出账户资料"}`, user.ID)
+	handler.CreateRequest(createContext)
+	if createRecorder.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", createRecorder.Code, createRecorder.Body.String())
+	}
+	var request models.PersonalDataRequest
+	if err := db.First(&request).Error; err != nil {
+		t.Fatalf("load request: %v", err)
+	}
+
+	admin := models.User{StudentID: "admin", PasswordHash: "hash", Nickname: "管理员", Role: models.RoleAdmin}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	handleContext, handleRecorder := privacyContext(http.MethodPut, "/api/admin/privacy/requests/1", `{"status":"completed","result":"导出文件已生成"}`, admin.ID)
+	handleContext.Params = gin.Params{{Key: "id", Value: "1"}}
+	handler.HandleRequest(handleContext)
+	if handleRecorder.Code != http.StatusOK {
+		t.Fatalf("handle status=%d body=%s", handleRecorder.Code, handleRecorder.Body.String())
+	}
+
+	listContext, listRecorder := privacyContext(http.MethodGet, "/api/user/privacy/requests", "", user.ID)
+	handler.ListMyRequests(listContext)
+	if listRecorder.Code != http.StatusOK || !strings.Contains(listRecorder.Body.String(), `"completed"`) {
+		t.Fatalf("list status=%d body=%s", listRecorder.Code, listRecorder.Body.String())
+	}
+}
+
+func TestPrivacyExportExcludesCredentials(t *testing.T) {
+	handler, _, user := newPrivacyTestHandler(t)
+	context, recorder := privacyContext(http.MethodGet, "/api/user/privacy/export", "", user.ID)
+	handler.ExportMyData(context)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	for _, forbidden := range []string{"password_hash", "edu_password", "edu_cookie", "cookie"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("export leaked %q: %s", forbidden, body)
+		}
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode export: %v", err)
+	}
+	if payload["account"] == nil {
+		t.Fatalf("missing account export: %s", body)
+	}
+}
+
+func TestCancelAccountAnonymizesIdentityAndInvalidatesSession(t *testing.T) {
+	handler, db, user := newPrivacyTestHandler(t)
+	context, recorder := privacyContext(http.MethodDelete, "/api/user/account", `{"password":"password123","confirmed":true}`, user.ID)
+	handler.CancelAccount(context)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var cancelled models.User
+	if err := db.First(&cancelled, user.ID).Error; err != nil {
+		t.Fatalf("load cancelled user: %v", err)
+	}
+	if cancelled.StudentID == user.StudentID || cancelled.QQ != "" || cancelled.DeviceToken != "" || cancelled.EduBound || cancelled.EduCookie != "" || cancelled.EduStudentID != "" {
+		t.Fatalf("user was not fully anonymized: %#v", cancelled)
+	}
+	if cancelled.TokenVersion != user.TokenVersion+1 {
+		t.Fatalf("token version=%d want %d", cancelled.TokenVersion, user.TokenVersion+1)
+	}
+	var request models.PersonalDataRequest
+	if err := db.Where("user_id = ? AND request_type = ?", user.ID, models.PersonalDataRequestAccountCancelled).First(&request).Error; err != nil {
+		t.Fatalf("missing cancellation audit: %v", err)
+	}
+}

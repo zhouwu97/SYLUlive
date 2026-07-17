@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fbfaf6">
+  <meta name="description" content="在沈理校园查看组队详情并加入队伍。">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="沈理校园">
+  <meta property="og:title" content="沈理校园组队邀请">
+  <meta property="og:description" content="打开沈理校园，查看组队详情。">
+  <meta property="og:image" content="https://sylulive.online/app-icon.png">
+  <link rel="icon" type="image/png" href="/app-icon.png">
+  <link rel="apple-touch-icon" href="/app-icon.png">
+  <title>组队邀请 - 沈理校园</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #fbfaf6;
+      --surface: #ffffff;
+      --ink: #191a18;
+      --muted: #696d67;
+      --line: #dedfd9;
+      --brand: #28796c;
+      --brand-strong: #1e6258;
+      --tag: #e7f2ed;
+      --warning: #a33b32;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .topbar {
+      border-bottom: 1px solid var(--line);
+      background: rgba(251, 250, 246, 0.96);
+    }
+
+    .topbar-inner,
+    main,
+    footer {
+      width: min(100% - 40px, 720px);
+      margin-inline: auto;
+    }
+
+    .topbar-inner {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .app-icon {
+      width: 38px;
+      height: 38px;
+      padding: 2px;
+      border-radius: 8px;
+      background: #ffffff;
+      object-fit: contain;
+      box-shadow: 0 2px 8px rgba(25, 26, 24, 0.12);
+    }
+
+    .brand {
+      font-size: 17px;
+      font-weight: 750;
+    }
+
+    main {
+      padding: 64px 0 48px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      margin: 0 0 18px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: var(--tag);
+      color: var(--brand-strong);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 680px;
+      font-size: 46px;
+      line-height: 1.18;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .description {
+      margin: 22px 0 0;
+      max-width: 620px;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 22px;
+      margin: 28px 0 0;
+      padding: 20px 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .meta span { min-width: 140px; }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    .button {
+      min-height: 50px;
+      padding: 0 22px;
+      border: 1px solid var(--brand);
+      border-radius: 7px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--brand-strong);
+      font-size: 16px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: background-color 160ms ease, border-color 160ms ease;
+    }
+
+    .button.primary {
+      background: var(--brand);
+      color: #ffffff;
+    }
+
+    .button.primary:hover { background: var(--brand-strong); }
+    .button.secondary:hover { background: var(--tag); }
+
+    .browser-notice {
+      margin-top: 24px;
+      padding: 14px 16px;
+      border: 1px solid #d7ded8;
+      border-left: 4px solid var(--brand);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .browser-notice strong {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--ink);
+      font-size: 15px;
+    }
+
+    .status {
+      min-height: 24px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .status.error { color: var(--warning); }
+
+    .dialog-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(25, 26, 24, 0.46);
+    }
+
+    .dialog-backdrop[hidden] { display: none; }
+
+    .fallback-dialog {
+      position: relative;
+      width: min(100%, 420px);
+      padding: 28px;
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 18px 54px rgba(25, 26, 24, 0.24);
+    }
+
+    .dialog-icon {
+      width: 64px;
+      height: 64px;
+      padding: 3px;
+      border-radius: 8px;
+      background: #ffffff;
+      object-fit: contain;
+      box-shadow: 0 2px 10px rgba(25, 26, 24, 0.14);
+    }
+
+    .fallback-dialog h2 {
+      margin: 20px 40px 8px 0;
+      font-size: 23px;
+      line-height: 1.35;
+    }
+
+    .fallback-dialog p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .dialog-actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .dialog-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--muted);
+      font-size: 28px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .dialog-close:hover { background: #f0f1ed; }
+
+    footer {
+      padding: 22px 0 calc(22px + env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 540px) {
+      .topbar-inner,
+      main,
+      footer { width: min(100% - 32px, 720px); }
+      main { padding-top: 44px; }
+      h1 { font-size: 34px; }
+      .actions { flex-direction: column; }
+      .button { width: 100%; }
+      .meta { display: grid; grid-template-columns: 1fr; }
+      .meta span { min-width: 0; }
+      .fallback-dialog { padding: 24px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .button { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <img class="app-icon" src="/app-icon.png" alt="沈理校园图标">
+      <span class="brand">沈理校园</span>
+    </div>
+  </header>
+
+  <main>
+    <span class="eyebrow">组队邀请</span>
+    <h1 id="team-title">正在读取组队信息</h1>
+    <p id="team-description" class="description">请稍候，正在获取这支队伍的公开信息。</p>
+    <div class="meta" aria-live="polite">
+      <span id="team-author">发起人：读取中</span>
+      <span id="team-progress">招募进度：读取中</span>
+      <span id="team-deadline">截止时间：读取中</span>
+    </div>
+    <div class="actions">
+      <a id="open-app" class="button primary" href="#">打开 App 查看详情</a>
+      <a id="download-app" class="button secondary" href="/uploads/app-release.apk">下载 Android 版</a>
+    </div>
+    <div id="browser-notice" class="browser-notice" hidden>
+      <strong id="browser-notice-title"></strong>
+      <span id="browser-notice-message"></span>
+    </div>
+    <p id="page-status" class="status" aria-live="polite">已安装沈理校园时，分享链接会直接打开 App。</p>
+  </main>
+
+  <footer>sylulive.online · 沈理校园</footer>
+
+  <div id="app-fallback" class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="fallback-title" hidden>
+    <section class="fallback-dialog">
+      <button id="close-fallback" class="dialog-close" type="button" aria-label="关闭">×</button>
+      <img class="dialog-icon" src="/app-icon.png" alt="">
+      <h2 id="fallback-title">未能打开沈理校园</h2>
+      <p id="fallback-message">可能尚未安装 App，或当前浏览器阻止了应用跳转。</p>
+      <div class="dialog-actions">
+        <a class="button primary" href="/uploads/app-release.apk">下载 Android 版</a>
+        <button id="retry-open-app" class="button secondary" type="button">再次尝试打开</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      const match = window.location.pathname.match(/^\/team\/([1-9]\d*)\/?$/);
+      const queryId = new URLSearchParams(window.location.search).get('team');
+      const teamId = match?.[1] || (/^[1-9]\d*$/.test(queryId || '') ? queryId : null);
+      const title = document.getElementById('team-title');
+      const description = document.getElementById('team-description');
+      const author = document.getElementById('team-author');
+      const progress = document.getElementById('team-progress');
+      const deadline = document.getElementById('team-deadline');
+      const status = document.getElementById('page-status');
+      const openApp = document.getElementById('open-app');
+      const browserNotice = document.getElementById('browser-notice');
+      const browserNoticeTitle = document.getElementById('browser-notice-title');
+      const browserNoticeMessage = document.getElementById('browser-notice-message');
+      const fallbackDialog = document.getElementById('app-fallback');
+      const fallbackMessage = document.getElementById('fallback-message');
+      const closeFallback = document.getElementById('close-fallback');
+      const retryOpenApp = document.getElementById('retry-open-app');
+      const userAgent = navigator.userAgent;
+      const isAndroid = /Android/i.test(userAgent);
+      const isWechat = /MicroMessenger/i.test(userAgent);
+      const isQQ = /MQQBrowser|\bQQ\//i.test(userAgent);
+      let fallbackTimer = null;
+
+      const cancelFallbackTimer = () => {
+        if (fallbackTimer !== null) {
+          window.clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
+      };
+
+      const showFallback = () => {
+        cancelFallbackTimer();
+        if (isWechat) {
+          fallbackMessage.textContent = '微信可能阻止了应用跳转。请点击右上角菜单，选择“在浏览器打开”；未安装时可直接下载 Android 版。';
+        } else if (isQQ) {
+          fallbackMessage.textContent = 'QQ 可能阻止了应用跳转。请点击右上角菜单，选择“浏览器打开”；未安装时可直接下载 Android 版。';
+        } else {
+          fallbackMessage.textContent = '可能尚未安装 App，或当前浏览器阻止了应用跳转。你可以下载安装后，再返回这个链接。';
+        }
+        fallbackDialog.hidden = false;
+        closeFallback.focus();
+      };
+
+      const scheduleFallback = () => {
+        cancelFallbackTimer();
+        fallbackTimer = window.setTimeout(() => {
+          if (document.visibilityState === 'visible') showFallback();
+        }, 1600);
+      };
+
+      const hideFallback = () => {
+        fallbackDialog.hidden = true;
+        openApp.focus();
+      };
+
+      const markAppOpened = () => {
+        if (document.visibilityState === 'hidden') cancelFallbackTimer();
+      };
+
+      document.addEventListener('visibilitychange', markAppOpened);
+      window.addEventListener('pagehide', cancelFallbackTimer);
+      closeFallback.addEventListener('click', hideFallback);
+      fallbackDialog.addEventListener('click', (event) => {
+        if (event.target === fallbackDialog) hideFallback();
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !fallbackDialog.hidden) hideFallback();
+      });
+
+      if (isWechat || isQQ) {
+        browserNotice.hidden = false;
+        browserNoticeTitle.textContent = isWechat ? '当前在微信内打开' : '当前在 QQ 内打开';
+        browserNoticeMessage.textContent = '如果点击后没有跳转，请使用右上角菜单在系统浏览器中打开。';
+      }
+
+      if (!teamId) {
+        title.textContent = '分享链接无效';
+        description.textContent = '链接中缺少有效的组队编号，请向分享者重新获取链接。';
+        status.textContent = '';
+        openApp.hidden = true;
+        return;
+      }
+
+      const appLink = `sylulive://team/${teamId}`;
+      openApp.href = appLink;
+      const openNativeApp = (event) => {
+        event?.preventDefault();
+        fallbackDialog.hidden = true;
+        status.classList.remove('error');
+        status.textContent = '正在尝试打开沈理校园…';
+        scheduleFallback();
+
+        if (!isAndroid || isWechat || isQQ) {
+          window.location.href = appLink;
+          return;
+        }
+
+        const fallbackUrl = new URL(window.location.href);
+        fallbackUrl.searchParams.set('open_app', 'failed');
+        const fallback = encodeURIComponent(fallbackUrl.href);
+        window.location.href = `intent://team/${teamId}#Intent;scheme=sylulive;package=com.example.shenliyuan;S.browser_fallback_url=${fallback};end`;
+      };
+
+      openApp.addEventListener('click', openNativeApp);
+      retryOpenApp.addEventListener('click', openNativeApp);
+
+      const pageUrl = new URL(window.location.href);
+      if (pageUrl.searchParams.get('open_app') === 'failed') {
+        pageUrl.searchParams.delete('open_app');
+        window.history.replaceState(null, '', `${pageUrl.pathname}${pageUrl.search}${pageUrl.hash}`);
+        window.setTimeout(showFallback, 150);
+      }
+
+      fetch(`/api/team/recruitments/${teamId}`, {
+        headers: { Accept: 'application/json' },
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        })
+        .then((team) => {
+          title.textContent = team.title || '沈理校园组队邀请';
+          document.title = `${title.textContent} - 沈理校园`;
+          description.textContent = team.description || '打开 App 查看完整组队信息。';
+          author.textContent = `发起人：${team.author?.name || '校园用户'}`;
+          const accepted = Number(team.accepted_count) || 0;
+          const needed = Number(team.needed_count) || 0;
+          progress.textContent = `招募进度：已加入 ${accepted} / 计划招募 ${needed}`;
+          deadline.textContent = team.deadline
+            ? `截止时间：${new Date(team.deadline).toLocaleDateString('zh-CN')}`
+            : '截止时间：长期有效';
+        })
+        .catch(() => {
+          title.textContent = '打开沈理校园查看组队';
+          description.textContent = '暂时无法读取公开组队信息，仍可在 App 中查看。';
+          author.textContent = `组队编号：${teamId}`;
+          progress.textContent = '招募进度：请在 App 中查看';
+          deadline.textContent = '截止时间：请在 App 中查看';
+          status.textContent = '组队信息加载失败，请直接打开 App 重试。';
+          status.classList.add('error');
+        });
+    })();
+  </script>
+</body>
+</html>

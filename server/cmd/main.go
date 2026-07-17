@@ -635,6 +635,7 @@ func main() {
 	{
 
 		user.GET("/profile", userHandler.GetProfile)
+		user.POST("/legal-consents", authHandler.AcceptLegalConsents)
 
 		user.PUT("/profile", userHandler.UpdateProfile)
 
@@ -646,9 +647,10 @@ func main() {
 
 		user.PUT("/device_token", userHandler.UpdateDeviceToken)
 
-		user.POST("/privacy/requests", privacyHandler.CreateRequest)
-		user.GET("/privacy/requests", privacyHandler.ListMyRequests)
+		user.GET("/privacy/data", privacyHandler.ExportMyData)
+		// 保留旧导出路径，兼容已发布客户端。
 		user.GET("/privacy/export", privacyHandler.ExportMyData)
+		user.DELETE("/privacy/consents", privacyHandler.WithdrawConsent)
 		user.DELETE("/account", privacyHandler.CancelAccount)
 
 		user.GET("/invitations", invitationHandler.GetPending)
@@ -702,13 +704,6 @@ func main() {
 		user.POST("/:id/follow", userHandler.Follow)
 		user.DELETE("/:id/follow", userHandler.Unfollow)
 		user.GET("/:id/is-following", userHandler.IsFollowing)
-	}
-
-	privacyAdmin := r.Group("/api/admin/privacy")
-	privacyAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-	{
-		privacyAdmin.GET("/requests", privacyHandler.ListRequestsForAdmin)
-		privacyAdmin.PUT("/requests/:id", privacyHandler.HandleRequest)
 	}
 
 	userOptional := r.Group("/api/user")

@@ -14,16 +14,17 @@ import (
 
 const tokenVersionCacheTTL = 60 * time.Second
 
-type cachedTokenVersion struct {
-	version   int
-	expiresAt time.Time
+type cachedSessionState struct {
+	tokenVersion      int
+	legalConsentState models.LegalConsentState
+	expiresAt         time.Time
 }
 
-var tokenVersionCache = struct {
+var sessionStateCache = struct {
 	sync.Mutex
-	values map[uint]cachedTokenVersion
+	values map[uint]cachedSessionState
 }{
-	values: make(map[uint]cachedTokenVersion),
+	values: make(map[uint]cachedSessionState),
 }
 
 // Claims JWT声明
@@ -56,14 +57,14 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		// 检查数据库中用户的 TokenVersion 是否一致
-		tokenVersion, err := getCachedTokenVersion(db, claims.UserID)
+		// 会话状态同时承载令牌版本和授权撤销状态，避免业务接口各自遗漏校验。
+		state, err := getCachedSessionState(db, claims.UserID)
 		if err != nil {
 			writeAPIError(c, http.StatusUnauthorized, "authentication_required", "用户不存在")
 			c.Abort()
 			return
 		}
-		if tokenVersion != claims.TokenVersion {
+		if state.tokenVersion != claims.TokenVersion {
 			writeAPIError(c, http.StatusUnauthorized, "token_version_expired", "账号状态已更新，请重新登录")
 			c.Abort()
 			return
@@ -71,6 +72,15 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 
 		c.Set("user_id", claims.UserID)
 		c.Set("role", claims.Role)
+		if state.legalConsentState != models.LegalConsentStateActive && !isLegalConsentExemptRequest(c) {
+			if state.legalConsentState == models.LegalConsentStateRequired {
+				writeAPIError(c, http.StatusForbidden, "legal_consent_required", "请先阅读并同意协议与隐私政策")
+			} else {
+				writeAPIError(c, http.StatusForbidden, "legal_consent_withdrawn", "你已撤销同意，当前功能不可用")
+			}
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }
@@ -86,9 +96,9 @@ func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 				return []byte(jwtSecret), nil
 			})
 			if err == nil && token.Valid {
-				// 检查 TokenVersion
-				if tokenVersion, err := getCachedTokenVersion(db, claims.UserID); err == nil {
-					if tokenVersion == claims.TokenVersion {
+				// 撤销同意的账号访问公开接口时按匿名用户处理。
+				if state, err := getCachedSessionState(db, claims.UserID); err == nil {
+					if state.tokenVersion == claims.TokenVersion && state.legalConsentState == models.LegalConsentStateActive {
 						c.Set("user_id", claims.UserID)
 						c.Set("role", claims.Role)
 					}
@@ -100,26 +110,37 @@ func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 }
 
 func getCachedTokenVersion(db *gorm.DB, userID uint) (int, error) {
+	state, err := getCachedSessionState(db, userID)
+	return state.tokenVersion, err
+}
+
+func getCachedSessionState(db *gorm.DB, userID uint) (cachedSessionState, error) {
 	now := time.Now()
-	tokenVersionCache.Lock()
-	if cached, ok := tokenVersionCache.values[userID]; ok && now.Before(cached.expiresAt) {
-		tokenVersionCache.Unlock()
-		return cached.version, nil
+	sessionStateCache.Lock()
+	if cached, ok := sessionStateCache.values[userID]; ok && now.Before(cached.expiresAt) {
+		sessionStateCache.Unlock()
+		return cached, nil
 	}
-	tokenVersionCache.Unlock()
+	sessionStateCache.Unlock()
 
 	var user models.User
-	if err := db.Select("token_version").First(&user, userID).Error; err != nil {
-		return 0, err
+	if err := db.Select("id", "token_version", "legal_consent_revoked_at", "edu_bound").First(&user, userID).Error; err != nil {
+		return cachedSessionState{}, err
+	}
+	legalConsentState, err := models.LegalConsentStateForUser(db, user)
+	if err != nil {
+		return cachedSessionState{}, err
 	}
 
-	tokenVersionCache.Lock()
-	tokenVersionCache.values[userID] = cachedTokenVersion{
-		version:   user.TokenVersion,
-		expiresAt: now.Add(tokenVersionCacheTTL),
+	state := cachedSessionState{
+		tokenVersion:      user.TokenVersion,
+		legalConsentState: legalConsentState,
+		expiresAt:         now.Add(tokenVersionCacheTTL),
 	}
-	tokenVersionCache.Unlock()
-	return user.TokenVersion, nil
+	sessionStateCache.Lock()
+	sessionStateCache.values[userID] = state
+	sessionStateCache.Unlock()
+	return state, nil
 }
 
 func clearTokenVersionCacheForTest() {
@@ -128,13 +149,23 @@ func clearTokenVersionCacheForTest() {
 
 // InvalidateTokenVersionCache 清除指定用户的令牌版本缓存。
 func InvalidateTokenVersionCache(userID uint) {
-	tokenVersionCache.Lock()
+	sessionStateCache.Lock()
 	if userID == 0 {
-		tokenVersionCache.values = make(map[uint]cachedTokenVersion)
+		sessionStateCache.values = make(map[uint]cachedSessionState)
 	} else {
-		delete(tokenVersionCache.values, userID)
+		delete(sessionStateCache.values, userID)
 	}
-	tokenVersionCache.Unlock()
+	sessionStateCache.Unlock()
+}
+
+// 授权受限账号仍可查阅数据、完成协议确认、注销账号或退出登录。
+func isLegalConsentExemptRequest(c *gin.Context) bool {
+	path := c.Request.URL.Path
+	return strings.HasPrefix(path, "/api/user/privacy/") ||
+		path == "/api/user/profile" ||
+		path == "/api/user/legal-consents" ||
+		path == "/api/user/account" ||
+		path == "/api/logout"
 }
 
 func tokenFromRequest(c *gin.Context) string {

@@ -405,6 +405,11 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 			return
 
 		}
+		consentState, err := models.LegalConsentStateForUser(h.db, updatedUser)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 
@@ -412,7 +417,7 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 
 			"token": token,
 
-			"user": selfUserResponse(updatedUser),
+			"user": selfUserResponse(updatedUser, consentState),
 		})
 
 		return

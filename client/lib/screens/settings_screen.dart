@@ -27,7 +27,6 @@ import '../widgets/glass_container.dart';
 
 import '../widgets/about_app_sheet.dart';
 import 'diagnostic_log_screen.dart';
-import 'privacy_center_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -469,21 +468,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: '修改密码',
             isDark: isDark,
             onTap: () => _showChangePasswordDialog(context, authProvider),
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.privacy_tip_outlined,
-            iconColor: Colors.teal,
-            title: '隐私与数据权利',
-            subtitle: '查看协议、导出数据、提交请求或注销账号',
-            isDark: isDark,
-            onTap: authProvider.isLoggedIn
-                ? () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const PrivacyCenterScreen()),
-                    )
-                : null,
           ),
         ),
         _buildSettingsRow(

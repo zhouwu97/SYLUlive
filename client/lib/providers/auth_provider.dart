@@ -32,37 +32,6 @@ class AuthResult {
       AuthResult(success: false, errorMessage: message, statusCode: statusCode);
 }
 
-/// 注册时提交的法律文件确认。服务端会校验并持久化每份文件的同意记录。
-class RegistrationConsents {
-  final bool userAgreementAccepted;
-  final bool privacyPolicyAccepted;
-  final bool communityRulesAccepted;
-  final bool minorProtectionAccepted;
-  final bool contentComplaintAccepted;
-  final bool sdkDisclosureAccepted;
-  final bool eduDataConsentAccepted;
-
-  const RegistrationConsents({
-    required this.userAgreementAccepted,
-    required this.privacyPolicyAccepted,
-    required this.communityRulesAccepted,
-    required this.minorProtectionAccepted,
-    required this.contentComplaintAccepted,
-    required this.sdkDisclosureAccepted,
-    this.eduDataConsentAccepted = false,
-  });
-
-  Map<String, bool> toJson() => {
-        'user_agreement_accepted': userAgreementAccepted,
-        'privacy_policy_accepted': privacyPolicyAccepted,
-        'community_rules_accepted': communityRulesAccepted,
-        'minor_protection_accepted': minorProtectionAccepted,
-        'content_complaint_accepted': contentComplaintAccepted,
-        'sdk_disclosure_accepted': sdkDisclosureAccepted,
-        'edu_data_consent_accepted': eduDataConsentAccepted,
-      };
-}
-
 class StoredAuthCredentials {
   final String? token;
   final String? userJson;
@@ -540,7 +509,6 @@ class AuthProvider extends ChangeNotifier {
     String password, {
     String? nickname,
     String? qq,
-    RegistrationConsents? consents,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -556,7 +524,6 @@ class AuthProvider extends ChangeNotifier {
       if (qq != null && qq.isNotEmpty) {
         data['qq'] = qq;
       }
-      if (consents != null) data.addAll(consents.toJson());
       final response = await _dio.post('/register', data: data);
 
       _isLoading = false;
@@ -621,35 +588,6 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('服务端登出异常: $e');
     }
     await _clearLocalSession(clearPushAlias: true);
-  }
-
-  Future<AuthResult> deleteAccount(String password) async {
-    final studentId = _user?.studentId;
-    if (!isLoggedIn || studentId == null || studentId.isEmpty) {
-      return AuthResult.failure('当前未登录');
-    }
-    _isLoading = true;
-    notifyListeners();
-    try {
-      await _dio.delete(
-        '/user/account',
-        data: {'password': password, 'confirmed': true},
-      );
-      await _clearLocalSession(clearPushAlias: true);
-      await _credentialStore.deleteEduPassword(studentId);
-      _isLoading = false;
-      notifyListeners();
-      return AuthResult.success();
-    } on DioException catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      return AuthResult.failure(_parseDioError(e),
-          statusCode: e.response?.statusCode);
-    } catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      return AuthResult.failure('账号注销失败: $e');
-    }
   }
 
   /// 统一的本地会话清理
@@ -999,7 +937,6 @@ class AuthProvider extends ChangeNotifier {
     String appPassword, {
     String? nickname,
     required String eduPassword,
-    required RegistrationConsents consents,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -1011,7 +948,6 @@ class AuthProvider extends ChangeNotifier {
           'student_id': studentId,
           'password': appPassword,
           'edu_password': eduPassword,
-          ...consents.toJson(),
           if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
         },
       );
@@ -1060,7 +996,6 @@ class AuthProvider extends ChangeNotifier {
     String code,
     String password, {
     String? nickname,
-    required RegistrationConsents consents,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -1071,7 +1006,6 @@ class AuthProvider extends ChangeNotifier {
           'qq': qq,
           'code': code,
           'password': password,
-          ...consents.toJson(),
           if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
         },
       );

@@ -31,6 +31,7 @@ import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/privacy_center_screen.dart';
 import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
@@ -49,6 +50,7 @@ import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'widgets/app_update_gate.dart';
+import 'widgets/required_legal_consent_dialog.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -1054,7 +1056,8 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         );
         return;
       }
-      if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
+      if (uri.startsWith('sylulive://grades') ||
+          uri.startsWith('grade_update')) {
         await _openGradeDeepLink(uri);
       }
     } finally {
@@ -1342,6 +1345,7 @@ class HomeInitialTabResolver {
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
   bool _jpushSettingUp = false;
+  bool _legalConsentDialogVisible = false;
   final HomeInitialTabResolver _homeInitialTabResolver =
       HomeInitialTabResolver();
 
@@ -1413,6 +1417,34 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
+  void _presentRequiredLegalConsentDialog(AuthProvider authProvider) {
+    if (_legalConsentDialogVisible) return;
+    final user = authProvider.user;
+    if (user == null ||
+        user.legalConsentsActive ||
+        !user.legalConsentsRequired) {
+      return;
+    }
+    _legalConsentDialogVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final currentUser = authProvider.user;
+      if (!authProvider.isLoggedIn ||
+          currentUser == null ||
+          currentUser.legalConsentsActive ||
+          !currentUser.legalConsentsRequired) {
+        _legalConsentDialogVisible = false;
+        return;
+      }
+      await showRequiredLegalConsentDialog(
+        context,
+        requiresEduDataConsent: currentUser.eduBound,
+      );
+      _legalConsentDialogVisible = false;
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
@@ -1423,7 +1455,19 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           );
         }
 
-        if (authProvider.isLoggedIn) {
+        final user = authProvider.user;
+        if (authProvider.isLoggedIn &&
+            user != null &&
+            !user.legalConsentsActive &&
+            user.legalConsentsRequired) {
+          _presentRequiredLegalConsentDialog(authProvider);
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (authProvider.isLoggedIn &&
+            (authProvider.user?.legalConsentsActive ?? true)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!_jpushSetup && !_jpushSettingUp) {
               _ensureJPush(authProvider);
@@ -1440,6 +1484,11 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
+        }
+
+        if (authProvider.isLoggedIn &&
+            !(authProvider.user?.legalConsentsActive ?? true)) {
+          return const PrivacyCenterScreen(restricted: true);
         }
 
         return HomeScreen(initialTab: _homeInitialTabResolver.resolve(tp));

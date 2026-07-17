@@ -28,32 +28,34 @@ func publicUserResponse(user models.User) PublicUserResponse {
 
 // SelfUserResponse 仅用于当前登录用户，保留客户端刷新会话所需的账号和教务状态。
 type SelfUserResponse struct {
-	ID                 uint        `json:"id"`
-	StudentID          string      `json:"student_id"`
-	Nickname           string      `json:"nickname"`
-	Gender             string      `json:"gender"`
-	Avatar             string      `json:"avatar"`
-	Background         string      `json:"background"`
-	NightMode          bool        `json:"night_mode"`
-	CreditScore        int         `json:"credit_score"`
-	Role               models.Role `json:"role"`
-	AdminExp           int         `json:"admin_exp"`
-	Exp                int         `json:"exp"`
-	ReportCount        int         `json:"report_count"`
-	CreatedAt          time.Time   `json:"created_at"`
-	EduStudentID       string      `json:"edu_student_id"`
-	EduBound           bool        `json:"edu_bound"`
-	EduGrade           string      `json:"edu_grade"`
-	EduCollege         string      `json:"edu_college"`
-	EduMajor           string      `json:"edu_major"`
-	IsCheckedInToday   bool        `json:"is_checked_in_today"`
-	FollowersCount     int         `json:"followers_count"`
-	FollowingCount     int         `json:"following_count"`
-	TotalLikesReceived int         `json:"total_likes_received"`
-	IsFollowing        bool        `json:"is_following"`
+	ID                    uint        `json:"id"`
+	StudentID             string      `json:"student_id"`
+	Nickname              string      `json:"nickname"`
+	Gender                string      `json:"gender"`
+	Avatar                string      `json:"avatar"`
+	Background            string      `json:"background"`
+	NightMode             bool        `json:"night_mode"`
+	CreditScore           int         `json:"credit_score"`
+	Role                  models.Role `json:"role"`
+	AdminExp              int         `json:"admin_exp"`
+	Exp                   int         `json:"exp"`
+	ReportCount           int         `json:"report_count"`
+	CreatedAt             time.Time   `json:"created_at"`
+	EduStudentID          string      `json:"edu_student_id"`
+	EduBound              bool        `json:"edu_bound"`
+	EduGrade              string      `json:"edu_grade"`
+	EduCollege            string      `json:"edu_college"`
+	EduMajor              string      `json:"edu_major"`
+	IsCheckedInToday      bool        `json:"is_checked_in_today"`
+	FollowersCount        int         `json:"followers_count"`
+	FollowingCount        int         `json:"following_count"`
+	TotalLikesReceived    int         `json:"total_likes_received"`
+	IsFollowing           bool        `json:"is_following"`
+	LegalConsentsActive   bool        `json:"legal_consents_active"`
+	LegalConsentsRequired bool        `json:"legal_consents_required"`
 }
 
-func selfUserResponse(user models.User) SelfUserResponse {
+func selfUserResponse(user models.User, consentState models.LegalConsentState) SelfUserResponse {
 	return SelfUserResponse{
 		ID: user.ID, StudentID: user.StudentID, Nickname: user.Nickname, Gender: user.Gender,
 		Avatar: user.Avatar, Background: user.Background, NightMode: user.NightMode,
@@ -63,7 +65,17 @@ func selfUserResponse(user models.User) SelfUserResponse {
 		EduMajor: user.EduMajor, IsCheckedInToday: user.IsCheckedInToday,
 		FollowersCount: user.FollowersCount, FollowingCount: user.FollowingCount,
 		TotalLikesReceived: user.TotalLikesReceived, IsFollowing: user.IsFollowing,
+		LegalConsentsActive:   consentState == models.LegalConsentStateActive,
+		LegalConsentsRequired: consentState == models.LegalConsentStateRequired,
 	}
+}
+
+func (h *UserHandler) selfUserResponse(user models.User) (SelfUserResponse, error) {
+	consentState, err := models.LegalConsentStateForUser(h.db, user)
+	if err != nil {
+		return SelfUserResponse{}, err
+	}
+	return selfUserResponse(user, consentState), nil
 }
 
 // NewUserHandler 创建用户处理器
@@ -91,7 +103,12 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	}
 	user.IsCheckedInToday = checkInCount > 0
 
-	c.JSON(http.StatusOK, selfUserResponse(user))
+	response, err := h.selfUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // UpdateProfileInput 更新资料输入
@@ -145,7 +162,12 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, selfUserResponse(user))
+	response, err := h.selfUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // UpdateAvatarInput 更新头像输入
@@ -207,7 +229,12 @@ func (h *UserHandler) UpdateBackground(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, selfUserResponse(user))
+	response, err := h.selfUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // NightModeInput 夜间模式设置输入

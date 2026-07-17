@@ -335,6 +335,7 @@ class AuthProvider extends ChangeNotifier {
   bool _initialized = false;
   Future<void>? _initializationFuture;
   int _sessionGeneration = 0;
+  bool _applyingConsentRestriction = false;
 
   User? get user => _user;
   String? get token => _token;
@@ -362,6 +363,8 @@ class AuthProvider extends ChangeNotifier {
         },
         onError: (error, handler) {
           final status = error.response?.statusCode;
+          final responseBody = error.response?.data;
+          final errorCode = responseBody is Map ? responseBody['code'] : null;
           final rawPath = error.requestOptions.path;
           final uriPath = error.requestOptions.uri.path;
 
@@ -387,6 +390,15 @@ class AuthProvider extends ChangeNotifier {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _showAuthExpiredOverlay();
             });
+          }
+          if (status == 403 &&
+              (errorCode == 'legal_consent_withdrawn' ||
+                  errorCode == 'legal_consent_required') &&
+              _token != null) {
+            // 服务端状态优先，旧的本地会话会立即切换到对应的授权门禁。
+            _applyLegalConsentRestriction(
+              required: errorCode == 'legal_consent_required',
+            );
           }
           handler.next(error);
         },
@@ -437,7 +449,11 @@ class AuthProvider extends ChangeNotifier {
           Map<String, dynamic>.from(decoded),
         );
         _commitAuthSession(candidate);
-        _onAuthenticated();
+        if (candidate.user.legalConsentsActive) {
+          _onAuthenticated();
+        } else {
+          await _clearConsentDependentLocalData(candidate.user);
+        }
       }
     } catch (e) {
       debugPrint('解析本地认证信息失败: $e');
@@ -456,11 +472,13 @@ class AuthProvider extends ChangeNotifier {
       token: candidate.token,
       userJson: jsonEncode(candidate.user.toJson()),
     );
-    await KeepAliveService.instance.syncAuthToken(candidate.token);
-    await GradeReminderService.instance.syncRuntimeConfig(
-      userId: candidate.user.id.toString(),
-    );
-    await GradeReminderService.instance.ensureScheduledIfEnabled();
+    if (candidate.user.legalConsentsActive) {
+      await KeepAliveService.instance.syncAuthToken(candidate.token);
+      await GradeReminderService.instance.syncRuntimeConfig(
+        userId: candidate.user.id.toString(),
+      );
+      await GradeReminderService.instance.ensureScheduledIfEnabled();
+    }
   }
 
   Future<void> _saveEduPassword(String studentId, String password) async {
@@ -472,6 +490,12 @@ class AuthProvider extends ChangeNotifier {
     required String studentId,
     required String eduPassword,
   }) async {
+    if (!candidate.user.legalConsentsActive) {
+      await _saveAuthCandidate(candidate);
+      _commitAuthSession(candidate);
+      await _clearConsentDependentLocalData(candidate.user);
+      return;
+    }
     final oldEduPassword = await _credentialStore.readEduPassword(studentId);
     await _saveEduPassword(studentId, eduPassword);
     try {
@@ -520,7 +544,11 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     await _saveAuthCandidate(candidate);
     _commitAuthSession(candidate);
-    if (prefetchWallpaper) _onAuthenticated();
+    if (!candidate.user.legalConsentsActive) {
+      await _clearConsentDependentLocalData(candidate.user);
+    } else if (prefetchWallpaper) {
+      _onAuthenticated();
+    }
   }
 
   /// 解析Dio异常并返回友好的错误信息（附带技术细节方便排查）
@@ -650,6 +678,123 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return AuthResult.failure('账号注销失败: $e');
     }
+  }
+
+  /// 立即撤销全部法律文件授权，并保留当前会话用于查阅本人数据。
+  Future<AuthResult> withdrawLegalConsents(String password) async {
+    if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _dio.delete(
+        '/user/privacy/consents',
+        data: {'password': password, 'confirmed': true},
+      );
+      await _applyLegalConsentRestriction(required: false);
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.success();
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure(
+        _parseDioError(e),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure('撤销同意失败: $e');
+    }
+  }
+
+  Future<AuthResult> acceptRequiredLegalConsents({
+    required bool includeEduDataConsent,
+  }) async {
+    if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await _dio.post(
+        '/user/legal-consents',
+        data: {
+          'user_agreement_accepted': true,
+          'privacy_policy_accepted': true,
+          'community_rules_accepted': true,
+          'minor_protection_accepted': true,
+          'content_complaint_accepted': true,
+          'sdk_disclosure_accepted': true,
+          'edu_data_consent_accepted': includeEduDataConsent,
+        },
+      );
+      final payload = response.data;
+      if (response.statusCode != 200 ||
+          payload is! Map ||
+          payload['user'] is! Map) {
+        return AuthResult.failure('协议确认失败，请稍后重试');
+      }
+      await applyProfileResponse(
+        Map<String, dynamic>.from(payload['user'] as Map),
+      );
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.success();
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure(
+        _parseDioError(e),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure('协议确认失败: $e');
+    }
+  }
+
+  Future<void> _applyLegalConsentRestriction({required bool required}) async {
+    if (_applyingConsentRestriction || _user == null || _token == null) return;
+    if (!_user!.legalConsentsActive &&
+        _user!.legalConsentsRequired == required) {
+      return;
+    }
+    _applyingConsentRestriction = true;
+    final currentUser = _user!;
+    try {
+      final userJson = Map<String, dynamic>.from(currentUser.toJson())
+        ..['legal_consents_active'] = false
+        ..['legal_consents_required'] = required
+        ..['edu_student_id'] = ''
+        ..['edu_bound'] = false
+        ..['edu_grade'] = ''
+        ..['edu_college'] = ''
+        ..['edu_major'] = '';
+      final nextUser = User.fromJson(userJson);
+      await _credentialStore.write(
+        token: _token!,
+        userJson: jsonEncode(nextUser.toJson()),
+      );
+      _user = nextUser;
+      _sessionGeneration++;
+      await _clearConsentDependentLocalData(nextUser);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('同步授权受限状态失败: $e');
+    } finally {
+      _applyingConsentRestriction = false;
+    }
+  }
+
+  Future<void> _clearConsentDependentLocalData(User user) async {
+    await _credentialStore.deleteEduPassword(user.studentId);
+    if (user.eduStudentId.isNotEmpty && user.eduStudentId != user.studentId) {
+      await _credentialStore.deleteEduPassword(user.eduStudentId);
+    }
+    await KeepAliveService.instance.syncAuthToken(null);
+    await GradeReminderService.instance.clearForUser(user.id.toString());
+    await GradeReminderService.instance.syncRuntimeConfig(userId: null);
+    await _clearPushAlias();
   }
 
   /// 统一的本地会话清理

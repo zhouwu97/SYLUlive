@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -49,38 +50,79 @@ func privacyContext(method, target, body string, userID uint) (*gin.Context, *ht
 	return context, recorder
 }
 
-func TestPrivacyRequestLifecycle(t *testing.T) {
+func TestWithdrawConsentTakesEffectImmediately(t *testing.T) {
 	handler, db, user := newPrivacyTestHandler(t)
-	createContext, createRecorder := privacyContext(http.MethodPost, "/api/user/privacy/requests", `{"request_type":"export","detail":"请导出账户资料"}`, user.ID)
-	handler.CreateRequest(createContext)
-	if createRecorder.Code != http.StatusCreated {
-		t.Fatalf("create status=%d body=%s", createRecorder.Code, createRecorder.Body.String())
+	consent := models.UserLegalConsent{
+		UserID: user.ID, Document: models.LegalDocumentPrivacyPolicy,
+		Version: models.LegalDocumentVersion, AcceptedAt: user.CreatedAt,
 	}
-	var request models.PersonalDataRequest
-	if err := db.First(&request).Error; err != nil {
-		t.Fatalf("load request: %v", err)
+	if err := db.Create(&consent).Error; err != nil {
+		t.Fatalf("create consent: %v", err)
 	}
 
-	admin := models.User{StudentID: "admin", PasswordHash: "hash", Nickname: "管理员", Role: models.RoleAdmin}
-	if err := db.Create(&admin).Error; err != nil {
-		t.Fatalf("create admin: %v", err)
-	}
-	handleContext, handleRecorder := privacyContext(http.MethodPut, "/api/admin/privacy/requests/1", `{"status":"completed","result":"导出文件已生成"}`, admin.ID)
-	handleContext.Params = gin.Params{{Key: "id", Value: "1"}}
-	handler.HandleRequest(handleContext)
-	if handleRecorder.Code != http.StatusOK {
-		t.Fatalf("handle status=%d body=%s", handleRecorder.Code, handleRecorder.Body.String())
+	context, recorder := privacyContext(http.MethodDelete, "/api/user/privacy/consents", `{"password":"password123","confirmed":true}`, user.ID)
+	handler.WithdrawConsent(context)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("withdraw status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 
-	listContext, listRecorder := privacyContext(http.MethodGet, "/api/user/privacy/requests", "", user.ID)
-	handler.ListMyRequests(listContext)
-	if listRecorder.Code != http.StatusOK || !strings.Contains(listRecorder.Body.String(), `"completed"`) {
-		t.Fatalf("list status=%d body=%s", listRecorder.Code, listRecorder.Body.String())
+	var updatedUser models.User
+	if err := db.First(&updatedUser, user.ID).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if updatedUser.LegalConsentRevokedAt == nil || updatedUser.DeviceToken != "" || updatedUser.EduCookie != "" {
+		t.Fatalf("withdrawal did not clear consent-dependent data: %#v", updatedUser)
+	}
+	var updatedConsent models.UserLegalConsent
+	if err := db.First(&updatedConsent, consent.ID).Error; err != nil {
+		t.Fatalf("load consent: %v", err)
+	}
+	if updatedConsent.RevokedAt == nil {
+		t.Fatal("consent record was not marked as revoked")
+	}
+}
+
+func TestWithdrawnConsentBlocksEduAuthenticationFlows(t *testing.T) {
+	_, db, user := newPrivacyTestHandler(t)
+	now := time.Now()
+	if err := db.Model(&models.User{}).Where("id = ?", user.ID).
+		Update("legal_consent_revoked_at", &now).Error; err != nil {
+		t.Fatalf("mark consent withdrawn: %v", err)
+	}
+	handler := NewAuthHandler(db, "test-secret")
+
+	loginContext, loginRecorder := privacyContext(
+		http.MethodPost,
+		"/api/login_edu",
+		`{"student_id":"2026000001","edu_password":"edu-password","password":"password123"}`,
+		0,
+	)
+	handler.LoginEdu(loginContext)
+	if loginRecorder.Code != http.StatusForbidden || !strings.Contains(loginRecorder.Body.String(), "legal_consent_withdrawn") {
+		t.Fatalf("login_edu status=%d body=%s", loginRecorder.Code, loginRecorder.Body.String())
+	}
+
+	forgotContext, forgotRecorder := privacyContext(
+		http.MethodPost,
+		"/api/forgot_password",
+		`{"student_id":"2026000001","edu_password":"edu-password","new_password":"new-password123"}`,
+		0,
+	)
+	handler.ForgotPassword(forgotContext)
+	if forgotRecorder.Code != http.StatusForbidden || !strings.Contains(forgotRecorder.Body.String(), "legal_consent_withdrawn") {
+		t.Fatalf("forgot_password status=%d body=%s", forgotRecorder.Code, forgotRecorder.Body.String())
 	}
 }
 
 func TestPrivacyExportExcludesCredentials(t *testing.T) {
-	handler, _, user := newPrivacyTestHandler(t)
+	handler, db, user := newPrivacyTestHandler(t)
+	if err := recordLegalConsents(db, user.ID, LegalConsentInput{
+		UserAgreementAccepted: true, PrivacyPolicyAccepted: true,
+		CommunityRulesAccepted: true, MinorProtectionAccepted: true,
+		ContentComplaintAccepted: true, SDKDisclosureAccepted: true,
+	}, false); err != nil {
+		t.Fatalf("record legal consents: %v", err)
+	}
 	context, recorder := privacyContext(http.MethodGet, "/api/user/privacy/export", "", user.ID)
 	handler.ExportMyData(context)
 	if recorder.Code != http.StatusOK {
@@ -98,6 +140,9 @@ func TestPrivacyExportExcludesCredentials(t *testing.T) {
 	}
 	if payload["account"] == nil {
 		t.Fatalf("missing account export: %s", body)
+	}
+	if payload["legal_consents_active"] != true {
+		t.Fatalf("missing active consent status: %s", body)
 	}
 }
 

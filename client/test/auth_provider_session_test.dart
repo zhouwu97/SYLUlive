@@ -136,16 +136,6 @@ class _FakePreferenceStore implements PreferenceStore {
 
 typedef _AuthInvocation = Future<AuthResult> Function(AuthProvider provider);
 
-const _registrationConsents = RegistrationConsents(
-  userAgreementAccepted: true,
-  privacyPolicyAccepted: true,
-  communityRulesAccepted: true,
-  minorProtectionAccepted: true,
-  contentComplaintAccepted: true,
-  sdkDisclosureAccepted: true,
-  eduDataConsentAccepted: true,
-);
-
 class _AuthCase {
   final String name;
   final int statusCode;
@@ -158,11 +148,7 @@ final _authCases = <_AuthCase>[
   _AuthCase(
     'register',
     201,
-    (provider) => provider.register(
-      '20260001',
-      'password',
-      consents: _registrationConsents,
-    ),
+    (provider) => provider.register('20260001', 'password'),
   ),
   _AuthCase(
     'login',
@@ -181,7 +167,6 @@ final _authCases = <_AuthCase>[
       '20260001',
       'password',
       eduPassword: 'edu-pass',
-      consents: _registrationConsents,
     ),
   ),
   _AuthCase(
@@ -191,7 +176,6 @@ final _authCases = <_AuthCase>[
       '10000',
       '123456',
       'password',
-      consents: _registrationConsents,
     ),
   ),
 ];
@@ -352,7 +336,6 @@ void main() {
       '20260001',
       'password',
       eduPassword: 'edu-pass',
-      consents: _registrationConsents,
     );
 
     expect(result.success, isFalse);

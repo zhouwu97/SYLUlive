@@ -140,10 +140,6 @@ func main() {
 
 		&models.User{},
 
-		&models.UserLegalConsent{},
-
-		&models.PersonalDataRequest{},
-
 		&models.Post{},
 
 		&models.WaterSection{},
@@ -384,8 +380,6 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
 
 	userHandler := handlers.NewUserHandler(db)
-
-	privacyHandler := handlers.NewPrivacyHandler(db)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
@@ -646,11 +640,6 @@ func main() {
 
 		user.PUT("/device_token", userHandler.UpdateDeviceToken)
 
-		user.POST("/privacy/requests", privacyHandler.CreateRequest)
-		user.GET("/privacy/requests", privacyHandler.ListMyRequests)
-		user.GET("/privacy/export", privacyHandler.ExportMyData)
-		user.DELETE("/account", privacyHandler.CancelAccount)
-
 		user.GET("/invitations", invitationHandler.GetPending)
 
 		user.POST("/invitations/:id/accept", invitationHandler.Accept)
@@ -700,13 +689,6 @@ func main() {
 		user.POST("/:id/follow", userHandler.Follow)
 		user.DELETE("/:id/follow", userHandler.Unfollow)
 		user.GET("/:id/is-following", userHandler.IsFollowing)
-	}
-
-	privacyAdmin := r.Group("/api/admin/privacy")
-	privacyAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-	{
-		privacyAdmin.GET("/requests", privacyHandler.ListRequestsForAdmin)
-		privacyAdmin.PUT("/requests/:id", privacyHandler.HandleRequest)
 	}
 
 	userOptional := r.Group("/api/user")

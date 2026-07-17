@@ -35,6 +35,7 @@ import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
@@ -42,6 +43,7 @@ import 'utils/app_navigator.dart';
 import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
 import 'utils/notification_open_target.dart';
+import 'utils/team_share_link.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
@@ -978,10 +980,9 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// 小组件深度链接处理器
+/// 应用深度链接处理器
 ///
-/// 点击 widget → MainActivity → MethodChannel → 通知 HomeScreen 切到课表 tab
-/// 不 push 新路由，不盖住现有页面。
+/// 原生入口统一经 MethodChannel 传入；小组件切换主页状态，业务分享链接进入详情页。
 class _WidgetDeepLinkHandler extends StatefulWidget {
   final Widget child;
   const _WidgetDeepLinkHandler({required this.child});
@@ -1033,6 +1034,11 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
 
   Future<void> _handleDeepLinkUri(String? uri) async {
     if (uri == null || !mounted) return;
+    final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
+    if (recruitmentId != null) {
+      _openTeamRecruitment(recruitmentId);
+      return;
+    }
     if (uri == 'widget_timetable' || uri == 'campus://timetable') {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
@@ -1048,6 +1054,24 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
       await _openGradeDeepLink(uri);
     }
+  }
+
+  void _openTeamRecruitment(int recruitmentId) {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openTeamRecruitment(recruitmentId);
+      });
+      return;
+    }
+    navigator.push(
+      MaterialPageRoute(
+        settings: RouteSettings(name: '/team/$recruitmentId'),
+        builder: (_) => TeamRecruitmentDetailScreen(
+          recruitmentId: recruitmentId,
+        ),
+      ),
+    );
   }
 
   Future<void> _openGradeDeepLink(String raw) async {

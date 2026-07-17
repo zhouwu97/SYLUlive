@@ -687,6 +687,8 @@ class MainActivity : FlutterActivity() {
             data?.scheme == "sylulive" &&
             data.host == "grades") {
             pendingDeepLink = data.toString()
+        } else if (intent?.action == Intent.ACTION_VIEW && isTeamShareLink(data)) {
+            pendingDeepLink = data.toString()
         } else if (intent?.action == "com.example.shenliyuan.ACTION_WIDGET_EXAM") {
             val examName = intent.getStringExtra("exam_name") ?: ""
             val examDate = intent.getStringExtra("exam_date") ?: ""
@@ -695,6 +697,22 @@ class MainActivity : FlutterActivity() {
             } else {
                 pendingDeepLink = "widget_exam"
             }
+        }
+    }
+
+    /** 只转发清单中声明的组队链接，具体 ID 合法性由 Dart 侧统一校验。 */
+    private fun isTeamShareLink(data: Uri?): Boolean {
+        if (data == null) return false
+        val segments = data.pathSegments.filter { it.isNotBlank() }
+        return when {
+            data.scheme == "https" &&
+                data.host == "sylulive.online" &&
+                segments.size == 2 &&
+                segments.first() == "team" -> true
+            data.scheme == "sylulive" &&
+                data.host == "team" &&
+                segments.size == 1 -> true
+            else -> false
         }
     }
 

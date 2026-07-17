@@ -165,14 +165,15 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         
         handlePrivateMessageIntent(intent)
-        handleDeepLink(intent)
-        
-        pendingDeepLink?.let { link ->
-            flutterEngine?.let { engine ->
-                MethodChannel(engine.dartExecutor.binaryMessenger, DEEPLINK_CHANNEL)
-                    .invokeMethod("onDeepLink", link)
-                pendingDeepLink = null
-            }
+        if (handleDeepLink(intent)) dispatchPendingDeepLink()
+    }
+
+    /** 将链接推送给 Flutter，但保留原生队列，避免热启动时通道尚未就绪导致丢链。 */
+    private fun dispatchPendingDeepLink() {
+        val link = pendingDeepLink ?: return
+        flutterEngine?.let { engine ->
+            MethodChannel(engine.dartExecutor.binaryMessenger, DEEPLINK_CHANNEL)
+                .invokeMethod("onDeepLink", link)
         }
     }
 
@@ -350,9 +351,14 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getPendingDeepLink" -> {
-                    val link = pendingDeepLink
-                    pendingDeepLink = null
-                    result.success(link)
+                    result.success(pendingDeepLink)
+                }
+                "ackPendingDeepLink" -> {
+                    val link = call.argument<String>("link")
+                    if (link != null && pendingDeepLink == link) {
+                        pendingDeepLink = null
+                    }
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }
@@ -677,18 +683,22 @@ class MainActivity : FlutterActivity() {
         return apk
     }
 
-    private fun handleDeepLink(intent: Intent?) {
+    private fun handleDeepLink(intent: Intent?): Boolean {
         val data = intent?.data
         if (intent?.action == "com.example.shenliyuan.ACTION_WIDGET_TIMETABLE") {
             pendingDeepLink = "widget_timetable"
+            return true
         } else if (intent?.action == Intent.ACTION_VIEW && data?.toString() == "campus://timetable") {
             pendingDeepLink = "campus://timetable"
+            return true
         } else if (intent?.action == Intent.ACTION_VIEW &&
             data?.scheme == "sylulive" &&
             data.host == "grades") {
             pendingDeepLink = data.toString()
+            return true
         } else if (intent?.action == Intent.ACTION_VIEW && isTeamShareLink(data)) {
             pendingDeepLink = data.toString()
+            return true
         } else if (intent?.action == "com.example.shenliyuan.ACTION_WIDGET_EXAM") {
             val examName = intent.getStringExtra("exam_name") ?: ""
             val examDate = intent.getStringExtra("exam_date") ?: ""
@@ -697,7 +707,9 @@ class MainActivity : FlutterActivity() {
             } else {
                 pendingDeepLink = "widget_exam"
             }
+            return true
         }
+        return false
     }
 
     /** 只转发清单中声明的组队链接，具体 ID 合法性由 Dart 侧统一校验。 */

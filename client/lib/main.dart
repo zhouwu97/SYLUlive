@@ -994,6 +994,7 @@ class _WidgetDeepLinkHandler extends StatefulWidget {
 class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     with WidgetsBindingObserver {
   static const _channel = MethodChannel('shenliyuan/deeplink');
+  final Set<String> _handlingDeepLinks = <String>{};
 
   @override
   void initState() {
@@ -1034,25 +1035,35 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
 
   Future<void> _handleDeepLinkUri(String? uri) async {
     if (uri == null || !mounted) return;
-    final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
-    if (recruitmentId != null) {
-      _openTeamRecruitment(recruitmentId);
-      return;
-    }
-    if (uri == 'widget_timetable' || uri == 'campus://timetable') {
-      appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-      widgetTabSwitch.value++;
-      return;
-    }
-    if (uri.startsWith('widget_exam')) {
-      appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-      appNavigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
-      );
-      return;
-    }
-    if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
-      await _openGradeDeepLink(uri);
+    if (!_handlingDeepLinks.add(uri)) return;
+    try {
+      final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
+      if (recruitmentId != null) {
+        _openTeamRecruitment(recruitmentId);
+        return;
+      }
+      if (uri == 'widget_timetable' || uri == 'campus://timetable') {
+        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+        widgetTabSwitch.value++;
+        return;
+      }
+      if (uri.startsWith('widget_exam')) {
+        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+        appNavigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+        );
+        return;
+      }
+      if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
+        await _openGradeDeepLink(uri);
+      }
+    } finally {
+      try {
+        await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': uri});
+      } catch (e) {
+        debugPrint('深度链接确认失败: $e');
+      }
+      _handlingDeepLinks.remove(uri);
     }
   }
 

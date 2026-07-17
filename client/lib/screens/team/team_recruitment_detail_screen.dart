@@ -280,7 +280,8 @@ class _TeamRecruitmentDetailScreenState
                   CircleAvatar(
                       backgroundImage: item.author.avatar.isEmpty
                           ? null
-                          : NetworkImage(item.author.avatar),
+                          : NetworkImage(
+                              ApiConstants.fullUrl(item.author.avatar)),
                       child: item.author.avatar.isEmpty
                           ? Text(item.author.name.isEmpty
                               ? '?'

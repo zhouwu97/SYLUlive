@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../config/api_constants.dart';
 import '../../models/team_recruitment.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/team/team_ui_tokens.dart';
@@ -116,7 +117,8 @@ class TeamRecruitmentCard extends StatelessWidget {
                   radius: 12,
                   backgroundImage: recruitment.author.avatar.isEmpty
                       ? null
-                      : NetworkImage(recruitment.author.avatar),
+                      : NetworkImage(
+                          ApiConstants.fullUrl(recruitment.author.avatar)),
                   child: recruitment.author.avatar.isEmpty
                       ? Text(recruitment.author.name.isEmpty
                           ? '?'

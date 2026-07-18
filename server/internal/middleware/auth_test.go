@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -100,7 +102,7 @@ func TestTokenVersionCacheUsesTTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
 		t.Fatalf("migrate user: %v", err)
 	}
 	user := models.User{
@@ -129,5 +131,79 @@ func TestTokenVersionCacheUsesTTL(t *testing.T) {
 	version, err = getCachedTokenVersion(db, user.ID)
 	if err != nil || version != 2 {
 		t.Fatalf("refreshed version=%d err=%v", version, err)
+	}
+}
+
+func TestAuthMiddlewareHardModeBlocksRevokedConsentButKeepsPrivacyAccess(t *testing.T) {
+	clearTokenVersionCacheForTest()
+	previousMode := legalConsentEnforcement
+	SetLegalConsentEnforcement(LegalConsentEnforcementHard)
+	defer SetLegalConsentEnforcement(previousMode)
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	now := time.Now()
+	user := models.User{StudentID: "withdrawn-user", PasswordHash: "hash", LegalConsentRevokedAt: &now}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	token, err := GenerateToken(user.ID, string(models.RoleUser), user.TokenVersion, "secret")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	router := gin.New()
+	router.GET("/api/private", AuthMiddleware(db, "secret"), func(c *gin.Context) { c.Status(http.StatusOK) })
+	router.GET("/api/user/privacy/data", AuthMiddleware(db, "secret"), func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	privateRequest := httptest.NewRequest(http.MethodGet, "/api/private", nil)
+	privateRequest.Header.Set("Authorization", "Bearer "+token)
+	privateResponse := httptest.NewRecorder()
+	router.ServeHTTP(privateResponse, privateRequest)
+	if privateResponse.Code != http.StatusForbidden || !strings.Contains(privateResponse.Body.String(), "legal_consent_withdrawn") {
+		t.Fatalf("private status=%d body=%s", privateResponse.Code, privateResponse.Body.String())
+	}
+	privacyRequest := httptest.NewRequest(http.MethodGet, "/api/user/privacy/data", nil)
+	privacyRequest.Header.Set("Authorization", "Bearer "+token)
+	privacyResponse := httptest.NewRecorder()
+	router.ServeHTTP(privacyResponse, privacyRequest)
+	if privacyResponse.Code != http.StatusOK {
+		t.Fatalf("privacy status=%d body=%s", privacyResponse.Code, privacyResponse.Body.String())
+	}
+}
+
+func TestAuthMiddlewareSoftModeAllowsLegacyUser(t *testing.T) {
+	clearTokenVersionCacheForTest()
+	previousMode := legalConsentEnforcement
+	SetLegalConsentEnforcement(LegalConsentEnforcementSoft)
+	defer SetLegalConsentEnforcement(previousMode)
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	user := models.User{StudentID: "legacy-user", PasswordHash: "hash"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	token, err := GenerateToken(user.ID, string(models.RoleUser), user.TokenVersion, "secret")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	router := gin.New()
+	router.GET("/api/private", AuthMiddleware(db, "secret"), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	request := httptest.NewRequest(http.MethodGet, "/api/private", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("soft mode status=%d body=%s", response.Code, response.Body.String())
 	}
 }

@@ -93,6 +93,7 @@ func main() {
 	time.Local = time.FixedZone("CST", 8*3600)
 
 	cfg := config.Load()
+	middleware.SetLegalConsentEnforcement(cfg.LegalConsentEnforcement)
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()
 

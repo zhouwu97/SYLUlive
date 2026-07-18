@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/team_recruitment.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/team_recruitment_provider.dart';
+import '../../utils/team_share_link.dart';
 import '../../widgets/team/team_application_sheet.dart';
 import '../../widgets/team/team_recruitment_card.dart';
 import '../chat_detail_screen.dart';
@@ -106,6 +108,26 @@ class _TeamRecruitmentDetailScreenState
     }
   }
 
+  Future<void> _share(TeamRecruitment item) async {
+    final link = TeamShareLink.webUri(item.id).toString();
+    final renderObject = context.findRenderObject();
+    final origin = renderObject is RenderBox
+        ? renderObject.localToGlobal(Offset.zero) & renderObject.size
+        : null;
+    try {
+      await Share.share(
+        '我在沈理校园发起了组队：${item.title}\n$link',
+        subject: '${item.title} - 沈理校园组队',
+        sharePositionOrigin: origin,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂时无法调起分享，请稍后重试')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -143,9 +165,7 @@ class _TeamRecruitmentDetailScreenState
           IconButton(
             tooltip: '分享',
             icon: const Icon(Icons.ios_share_outlined),
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('分享链接功能即将支持')),
-            ),
+            onPressed: () => _share(item),
           ),
         ],
       ),

@@ -125,6 +125,7 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         
         handlePrivateMessageIntent(intent)
+        handleDeepLink(intent)
         
         createHighPriorityNotificationChannels()
         applyExcludeFromRecents(KeepAliveForegroundService.isHideRecentsEnabled(this))
@@ -165,14 +166,15 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         
         handlePrivateMessageIntent(intent)
-        handleDeepLink(intent)
-        
-        pendingDeepLink?.let { link ->
-            flutterEngine?.let { engine ->
-                MethodChannel(engine.dartExecutor.binaryMessenger, DEEPLINK_CHANNEL)
-                    .invokeMethod("onDeepLink", link)
-                pendingDeepLink = null
-            }
+        if (handleDeepLink(intent)) dispatchPendingDeepLink()
+    }
+
+    /** Flutter 通道就绪后转发链接；由 Dart 明确确认后再清除队列。 */
+    private fun dispatchPendingDeepLink() {
+        val link = pendingDeepLink ?: return
+        flutterEngine?.let { engine ->
+            MethodChannel(engine.dartExecutor.binaryMessenger, DEEPLINK_CHANNEL)
+                .invokeMethod("onDeepLink", link)
         }
     }
 
@@ -350,9 +352,14 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getPendingDeepLink" -> {
-                    val link = pendingDeepLink
-                    pendingDeepLink = null
-                    result.success(link)
+                    result.success(pendingDeepLink)
+                }
+                "ackPendingDeepLink" -> {
+                    val link = call.argument<String>("link")
+                    if (link != null && pendingDeepLink == link) {
+                        pendingDeepLink = null
+                    }
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }
@@ -677,16 +684,22 @@ class MainActivity : FlutterActivity() {
         return apk
     }
 
-    private fun handleDeepLink(intent: Intent?) {
+    private fun handleDeepLink(intent: Intent?): Boolean {
         val data = intent?.data
         if (intent?.action == "com.example.shenliyuan.ACTION_WIDGET_TIMETABLE") {
             pendingDeepLink = "widget_timetable"
+            return true
         } else if (intent?.action == Intent.ACTION_VIEW && data?.toString() == "campus://timetable") {
             pendingDeepLink = "campus://timetable"
+            return true
         } else if (intent?.action == Intent.ACTION_VIEW &&
             data?.scheme == "sylulive" &&
             data.host == "grades") {
             pendingDeepLink = data.toString()
+            return true
+        } else if (intent?.action == Intent.ACTION_VIEW && isTeamShareLink(data)) {
+            pendingDeepLink = data.toString()
+            return true
         } else if (intent?.action == "com.example.shenliyuan.ACTION_WIDGET_EXAM") {
             val examName = intent.getStringExtra("exam_name") ?: ""
             val examDate = intent.getStringExtra("exam_date") ?: ""
@@ -695,6 +708,26 @@ class MainActivity : FlutterActivity() {
             } else {
                 pendingDeepLink = "widget_exam"
             }
+            return true
+        }
+        return false
+    }
+
+    /** 仅转发受清单约束且携带正整数编号的组队链接。 */
+    private fun isTeamShareLink(data: Uri?): Boolean {
+        if (data == null) return false
+        return when {
+            data.scheme == "https" &&
+                data.host == "sylulive.online" &&
+                data.pathSegments.size == 2 &&
+                data.pathSegments.firstOrNull() == "team" ->
+                data.queryParameterNames.isEmpty() &&
+                    data.pathSegments[1].toLongOrNull()?.let { it > 0L } == true
+            data.scheme == "sylulive" &&
+                data.host == "team" &&
+                data.pathSegments.size == 1 ->
+                data.pathSegments.single().toLongOrNull()?.let { it > 0L } == true
+            else -> false
         }
     }
 

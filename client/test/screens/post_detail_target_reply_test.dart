@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
@@ -185,6 +186,39 @@ class FakeDio extends Fake implements Dio {
     CancelToken? cancelToken,
     void Function(int, int)? onReceiveProgress,
   }) async {
+    if (path.startsWith('/posts/104/replies') ||
+        path.startsWith('/posts/105/replies')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: [] as dynamic,
+      );
+    } else if (path.startsWith('/posts/104') || path.startsWith('/posts/105')) {
+      final hasContact = path.startsWith('/posts/104');
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'id': hasContact ? 104 : 105,
+          'title': '集市商品',
+          'content': '商品描述',
+          'board_id': 2,
+          'author_id': 2,
+          'post_type': 'sell',
+          'contact_type': hasContact ? 'wechat' : '',
+          'contact': hasContact ? 'secret_wx_123' : '',
+          'view_count': 5,
+          'author': {
+            'id': 2,
+            'nickname': '卖家昵称很长用于窄屏测试',
+            'avatar': '',
+            'student_id': 'seller',
+            'credit_score': 100,
+            'created_at': '2026-01-01T00:00:00.000Z',
+          },
+          'created_at': '2026-07-18T00:00:00.000Z',
+          'images': <dynamic>[],
+        } as dynamic,
+      );
+    }
     if (path.startsWith('/posts/102/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
@@ -390,7 +424,11 @@ class FakeThemeProvider extends Fake
   bool get isDarkMode => false;
 }
 
-Widget _postDetailTestApp(Post post) {
+Widget _postDetailTestApp(
+  Post post, {
+  bool isMarket = false,
+  bool isDesktopSplitMode = false,
+}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<AuthProvider>(create: (_) => FakeAuthProvider()),
@@ -401,6 +439,8 @@ Widget _postDetailTestApp(Post post) {
       home: PostDetailScreen(
         postId: post.id,
         initialPost: post,
+        isMarket: isMarket,
+        isDesktopSplitMode: isDesktopSplitMode,
       ),
     ),
   );
@@ -608,5 +648,112 @@ void main() {
       ),
       findsNWidgets(2),
     );
+  });
+
+  testWidgets('集市详情隐藏真实账号并按类型复制', (tester) async {
+    String? copiedText;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copiedText =
+              (call.arguments as Map<dynamic, dynamic>)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
+    final post = Post.fromJson({
+      'id': 104,
+      'title': '集市商品',
+      'content': '商品描述',
+      'board_id': 2,
+      'author_id': 2,
+      'contact_type': 'wechat',
+      'contact': 'secret_wx_123',
+      'created_at': '2026-07-18T00:00:00.000Z',
+    });
+    await tester.pumpWidget(_postDetailTestApp(post, isMarket: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('secret_wx_123'), findsNothing);
+    expect(find.text('微信 · 复制'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('market-contact-copy')),
+    );
+    await tester.tap(find.byKey(const ValueKey('market-contact-copy')));
+    await tester.pumpAndSettle();
+
+    expect(copiedText, 'secret_wx_123');
+    expect(find.text('微信号已复制'), findsOneWidget);
+  });
+
+  testWidgets('无联系方式时只显示卖家信息', (tester) async {
+    final post = Post.fromJson({
+      'id': 105,
+      'title': '集市商品',
+      'content': '商品描述',
+      'board_id': 2,
+      'author_id': 2,
+      'created_at': '2026-07-18T00:00:00.000Z',
+    });
+    await tester.pumpWidget(_postDetailTestApp(post, isMarket: true));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('market-seller-row')), findsOneWidget);
+    expect(find.byKey(const ValueKey('market-contact-copy')), findsNothing);
+  });
+
+  testWidgets('窄屏集市卖家行不溢出', (tester) async {
+    tester.view.physicalSize = const Size(280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = Post.fromJson({
+      'id': 104,
+      'title': '集市商品',
+      'content': '商品描述',
+      'board_id': 2,
+      'author_id': 2,
+      'contact_type': 'wechat',
+      'contact': 'secret_wx_123',
+      'created_at': '2026-07-18T00:00:00.000Z',
+    });
+    await tester.pumpWidget(_postDetailTestApp(post, isMarket: true));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('market-seller-row')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('桌面分栏只渲染一条集市卖家信息', (tester) async {
+    final post = Post.fromJson({
+      'id': 104,
+      'title': '集市商品',
+      'content': '商品描述',
+      'board_id': 2,
+      'author_id': 2,
+      'contact_type': 'wechat',
+      'contact': 'secret_wx_123',
+      'created_at': '2026-07-18T00:00:00.000Z',
+    });
+    await tester.pumpWidget(
+      _postDetailTestApp(
+        post,
+        isMarket: true,
+        isDesktopSplitMode: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('market-seller-row')), findsOneWidget);
+    expect(find.text('secret_wx_123'), findsNothing);
   });
 }

@@ -1464,7 +1464,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.6.2",
+			"version": "1.6.3",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -1476,7 +1476,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1. 优化校园地图首次加载、复位与横屏查看\n2. 校历升级为可点击的结构化月历，支持教学周、假期和日期详情\n3. 校历支持离线回退、后台更新与官方原图核验",
+			"update_msg": "1. 新增签到日历与补签卡功能\n2. 完善隐私授权、数据权利与账号注销流程\n3. 组队大厅支持分享链接与更完整的注册流程",
 		})
 
 	})

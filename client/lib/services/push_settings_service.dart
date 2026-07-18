@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/auth_provider.dart';
@@ -15,6 +16,8 @@ class PushSettingsService {
   static const _aliasChannel = MethodChannel(
     'shenliyuan/private_message_notifications',
   );
+  static final FlutterLocalNotificationsPlugin _permissionPlugin =
+      FlutterLocalNotificationsPlugin();
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -36,6 +39,29 @@ class PushSettingsService {
   static Future<void> enable() async {
     final prefs = await _prefs();
     await prefs.setBool(enabledKey, true);
+  }
+
+  /// 仅在用户主动开启远程推送时请求系统权限，冷启动初始化不弹权限框。
+  static Future<bool> requestSystemNotificationPermission() async {
+    const settings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      ),
+    );
+    await _permissionPlugin.initialize(settings);
+    final android = _permissionPlugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) {
+      return await android.requestNotificationsPermission() ?? false;
+    }
+    final ios = _permissionPlugin.resolvePlatformSpecificImplementation<
+        IOSFlutterLocalNotificationsPlugin>();
+    return await ios?.requestPermissions(
+            alert: true, badge: true, sound: true) ??
+        true;
   }
 
   static Future<AuthResult> disable(AuthProvider auth) async {

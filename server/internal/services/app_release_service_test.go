@@ -122,18 +122,18 @@ func TestLocateAPK_BuildsValidPath(t *testing.T) {
 // gorm 需要可寻址的指针才能在 Create 回填主键，函数返回值本身不可寻址。
 func buildReleasePtr(versionCode int64, status string) *models.AppRelease {
 	r := models.AppRelease{
-		Platform:                     models.AppReleasePlatformAndroid,
-		Channel:                      models.AppReleaseChannelStable,
-		VersionName:                  "1.6.x",
-		VersionCode:                  versionCode,
-		Title:                        "test",
-		Changelog:                    "test",
-		MinimumSupportedVersionCode:  1601,
-		FileName:                     "shenliyuan.apk",
-		StorageKey:                   "android/stable/" + strconv.FormatInt(versionCode, 10) + "/shenliyuan.apk",
-		FileSize:                     1,
-		SHA256:                       "0000000000000000000000000000000000000000000000000000000000000000",
-		Status:                       status,
+		Platform:                    models.AppReleasePlatformAndroid,
+		Channel:                     models.AppReleaseChannelStable,
+		VersionName:                 "1.6.x",
+		VersionCode:                 versionCode,
+		Title:                       "test",
+		Changelog:                   "test",
+		MinimumSupportedVersionCode: 1601,
+		FileName:                    "shenliyuan.apk",
+		StorageKey:                  "android/stable/" + strconv.FormatInt(versionCode, 10) + "/shenliyuan.apk",
+		FileSize:                    1,
+		SHA256:                      "0000000000000000000000000000000000000000000000000000000000000000",
+		Status:                      status,
 	}
 	return &r
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -110,6 +111,24 @@ func pythonEduRequest(method, path string, userID *uint, body interface{}) (*res
 		req.SetBody(body)
 	}
 	return req.Execute(method, strings.TrimRight(EduServiceConfig.BaseURL, "/")+path)
+}
+
+// PythonEduCredentialCleanupRemote 将本地已提交的撤销授权补偿到教务服务。
+type PythonEduCredentialCleanupRemote struct{}
+
+// Unbind 删除教务服务保存的凭证副本；接口失败由 outbox 记录后重试。
+func (PythonEduCredentialCleanupRemote) Unbind(ctx context.Context, userID uint) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	response, err := pythonEduRequest(http.MethodDelete, "/api/edu/bind", &userID, nil)
+	if err != nil {
+		return err
+	}
+	if response.StatusCode() != http.StatusOK {
+		return fmt.Errorf("教务服务解绑失败，状态码: %d", response.StatusCode())
+	}
+	return ctx.Err()
 }
 
 type eduBindResult struct {

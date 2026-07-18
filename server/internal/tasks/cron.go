@@ -20,6 +20,8 @@ const (
 	examPaperStorageMaintenanceInterval = 24 * time.Hour
 	examPaperStorageMaintenanceTimeout  = 30 * time.Minute
 	examPaperStorageJobBatchSize        = 50
+	eduCredentialCleanupJobInterval     = time.Minute
+	eduCredentialCleanupJobBatchSize    = 50
 )
 
 type examPaperStorageJobProcessor interface {
@@ -30,9 +32,25 @@ type examPaperStorageMaintainer interface {
 	Run(context.Context) (services.ExamPaperStorageMaintenanceReport, error)
 }
 
+type eduCredentialCleanupJobProcessor interface {
+	ProcessDue(context.Context, int) (services.EduCredentialCleanupJobProcessReport, error)
+}
+
 // ExamPaperStorageCron 持有存储后台任务的退出同步状态。
 type ExamPaperStorageCron struct {
 	wg sync.WaitGroup
+}
+
+// EduCredentialCleanupCron 持有教务凭证清理任务的退出同步状态。
+type EduCredentialCleanupCron struct {
+	wg sync.WaitGroup
+}
+
+// Wait 等待教务凭证清理任务在 context 取消后退出。
+func (c *EduCredentialCleanupCron) Wait() {
+	if c != nil {
+		c.wg.Wait()
+	}
 }
 
 // Wait 等待所有存储后台任务在 context 取消后退出。
@@ -97,6 +115,37 @@ func StartExamPaperStorageCron(ctx context.Context, jobs examPaperStorageJobProc
 		}
 	}()
 	log.Println("试卷远端存储后台任务已启动")
+	return cron
+}
+
+// StartEduCredentialCleanupCron 启动撤销授权后的教务凭证清理任务。
+func StartEduCredentialCleanupCron(ctx context.Context, jobs eduCredentialCleanupJobProcessor) *EduCredentialCleanupCron {
+	cron := &EduCredentialCleanupCron{}
+	cron.wg.Add(1)
+	go func() {
+		defer cron.wg.Done()
+		ticker := time.NewTicker(eduCredentialCleanupJobInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			report, err := jobs.ProcessDue(ctx, eduCredentialCleanupJobBatchSize)
+			if err != nil {
+				log.Printf("处理教务凭证清理任务失败: %v", err)
+			} else if report.Processed > 0 {
+				log.Printf("教务凭证清理任务处理完成: processed=%d completed=%d failed=%d", report.Processed, report.Completed, report.Failed)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	log.Println("教务凭证清理后台任务已启动")
 	return cron
 }
 

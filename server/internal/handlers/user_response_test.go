@@ -42,7 +42,7 @@ func TestPublicAndSelfUserResponsesKeepTheirBoundaries(t *testing.T) {
 		t.Fatalf("public response missing credit_score: %s", publicBody)
 	}
 
-	selfBody, err := json.Marshal(selfUserResponse(user))
+	selfBody, err := json.Marshal(selfUserResponse(user, models.LegalConsentStateActive))
 	if err != nil {
 		t.Fatalf("marshal self response: %v", err)
 	}

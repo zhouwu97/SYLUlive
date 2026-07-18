@@ -1,10 +1,14 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 const (
 	// LegalDocumentVersion 在每次调整告知内容时递增，避免将不同版本的同意混在一起。
-	LegalDocumentVersion = "2026-07-18"
+	LegalDocumentVersion = "2026-07-18-r2"
 
 	LegalDocumentUserAgreement    = "user_agreement"
 	LegalDocumentPrivacyPolicy    = "privacy_policy"
@@ -17,11 +21,57 @@ const (
 
 // UserLegalConsent 保存用户对每一份法律文件版本的明确同意，不保存密码或设备标识。
 type UserLegalConsent struct {
-	ID         uint      `gorm:"primaryKey" json:"id"`
-	UserID     uint      `gorm:"not null;uniqueIndex:idx_user_legal_document_version" json:"user_id"`
-	Document   string    `gorm:"size:64;not null;uniqueIndex:idx_user_legal_document_version" json:"document"`
-	Version    string    `gorm:"size:32;not null;uniqueIndex:idx_user_legal_document_version" json:"version"`
-	AcceptedAt time.Time `gorm:"not null" json:"accepted_at"`
+	ID         uint       `gorm:"primaryKey" json:"id"`
+	UserID     uint       `gorm:"not null;uniqueIndex:idx_user_legal_document_version" json:"user_id"`
+	Document   string     `gorm:"size:64;not null;uniqueIndex:idx_user_legal_document_version" json:"document"`
+	Version    string     `gorm:"size:32;not null;uniqueIndex:idx_user_legal_document_version" json:"version"`
+	AcceptedAt time.Time  `gorm:"not null" json:"accepted_at"`
+	RevokedAt  *time.Time `gorm:"index" json:"revoked_at,omitempty"`
+}
+
+// LegalConsentState 区分正常授权、需确认新版协议和主动撤销，避免客户端猜测状态。
+type LegalConsentState string
+
+const (
+	LegalConsentStateActive   LegalConsentState = "active"
+	LegalConsentStateRequired LegalConsentState = "required"
+	LegalConsentStateRevoked  LegalConsentState = "revoked"
+)
+
+// RequiredLegalDocuments 返回当前账号类型必须确认的法律文件。
+func RequiredLegalDocuments(includeEduConsent bool) []string {
+	documents := []string{
+		LegalDocumentUserAgreement,
+		LegalDocumentPrivacyPolicy,
+		LegalDocumentCommunityRules,
+		LegalDocumentMinorProtection,
+		LegalDocumentContentComplaint,
+		LegalDocumentSDKDisclosure,
+	}
+	if includeEduConsent {
+		documents = append(documents, LegalDocumentEduDataConsent)
+	}
+	return documents
+}
+
+// LegalConsentStateForUser 以当前版本的有效授权记录作为服务端唯一真值。
+func LegalConsentStateForUser(db *gorm.DB, user User) (LegalConsentState, error) {
+	if user.LegalConsentRevokedAt != nil {
+		return LegalConsentStateRevoked, nil
+	}
+
+	documents := RequiredLegalDocuments(user.EduBound)
+	var acceptedCount int64
+	if err := db.Model(&UserLegalConsent{}).
+		Where("user_id = ? AND version = ? AND revoked_at IS NULL AND document IN ?", user.ID, LegalDocumentVersion, documents).
+		Distinct("document").
+		Count(&acceptedCount).Error; err != nil {
+		return "", err
+	}
+	if acceptedCount != int64(len(documents)) {
+		return LegalConsentStateRequired, nil
+	}
+	return LegalConsentStateActive, nil
 }
 
 type PersonalDataRequestType string

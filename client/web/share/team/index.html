@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7faf8">
+  <meta name="description" content="在沈理校园查看组队详情并加入队伍。">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="沈理校园">
+  <meta property="og:title" content="沈理校园组队邀请">
+  <meta property="og:description" content="打开沈理校园，查看组队详情。">
+  <title>组队邀请 - 沈理校园</title>
+  <style>
+    :root { --page:#f7faf8; --surface:#fff; --ink:#18211e; --muted:#64716b; --line:#d9e1dc; --brand:#1d7765; --brand-dark:#155b4d; --notice:#e6f3ee; --danger:#a13f37; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--page); color:var(--ink); font-family:"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif; letter-spacing:0; }
+    header { min-height:64px; border-bottom:1px solid var(--line); background:var(--surface); }
+    header div, main, footer { width:min(100% - 40px,720px); margin:auto; }
+    header div { display:flex; align-items:center; min-height:64px; font-size:17px; font-weight:700; }
+    main { padding:52px 0 44px; }
+    .tag { display:inline-block; margin-bottom:18px; padding:6px 10px; border-radius:6px; background:var(--notice); color:var(--brand-dark); font-size:14px; font-weight:700; }
+    h1 { margin:0; font-size:40px; line-height:1.28; overflow-wrap:anywhere; }
+    .description { margin:20px 0 0; color:var(--muted); font-size:17px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .meta { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 20px; margin-top:28px; padding:20px 0; border-block:1px solid var(--line); color:var(--muted); font-size:15px; }
+    .actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:28px; }
+    .button { min-height:48px; padding:0 20px; border:1px solid var(--brand); border-radius:7px; display:inline-flex; align-items:center; justify-content:center; color:var(--brand-dark); background:transparent; font:inherit; font-weight:700; text-decoration:none; cursor:pointer; }
+    .button.primary { background:var(--brand); color:#fff; }
+    .button.primary:hover { background:var(--brand-dark); }
+    .status { min-height:22px; margin:18px 0 0; color:var(--muted); font-size:14px; }
+    .status.error { color:var(--danger); }
+    .notice { margin-top:20px; padding:13px 15px; border-left:4px solid var(--brand); background:var(--surface); color:var(--muted); font-size:14px; line-height:1.65; }
+    footer { padding:22px 0 calc(22px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+    @media (max-width:540px) { header div, main, footer { width:min(100% - 32px,720px); } main { padding-top:40px; } h1 { font-size:32px; } .meta { grid-template-columns:1fr; } .actions { flex-direction:column; } .button { width:100%; } }
+  </style>
+</head>
+<body>
+  <header><div>沈理校园</div></header>
+  <main>
+    <span class="tag">组队邀请</span>
+    <h1 id="team-title">正在读取组队信息</h1>
+    <p id="team-description" class="description">请稍候，正在获取这支队伍的公开信息。</p>
+    <div class="meta" aria-live="polite">
+      <span id="team-author">发起人：读取中</span>
+      <span id="team-progress">招募进度：读取中</span>
+      <span id="team-deadline">截止时间：读取中</span>
+      <span id="team-category">分类：读取中</span>
+    </div>
+    <div class="actions">
+      <a id="open-app" class="button primary" href="#">打开 App 查看详情</a>
+      <a id="copy-link" class="button" href="#">复制招募链接</a>
+      <a class="button" href="/uploads/app-release.apk">下载 Android 版</a>
+    </div>
+    <p id="page-status" class="status" aria-live="polite">已安装沈理校园时，可直接打开 App 查看完整信息。</p>
+    <p id="browser-notice" class="notice" hidden>当前应用内浏览器可能阻止打开 App。请使用右上角菜单在系统浏览器中打开。</p>
+  </main>
+  <footer>sylulive.online · 沈理校园</footer>
+  <script>
+    (() => {
+      const match = location.pathname.match(/^\/team\/([1-9]\d*)\/?$/);
+      const teamId = match ? match[1] : null;
+      const title = document.getElementById('team-title');
+      const description = document.getElementById('team-description');
+      const author = document.getElementById('team-author');
+      const progress = document.getElementById('team-progress');
+      const deadline = document.getElementById('team-deadline');
+      const category = document.getElementById('team-category');
+      const status = document.getElementById('page-status');
+      const openApp = document.getElementById('open-app');
+      const copyLink = document.getElementById('copy-link');
+      const isEmbedded = /MicroMessenger|MQQBrowser|\bQQ\//i.test(navigator.userAgent);
+
+      if (isEmbedded) document.getElementById('browser-notice').hidden = false;
+      if (!teamId) {
+        title.textContent = '分享链接无效';
+        description.textContent = '链接中缺少有效的组队编号，请向分享者重新获取链接。';
+        status.textContent = '';
+        openApp.hidden = true;
+        copyLink.hidden = true;
+        return;
+      }
+
+      const appLink = `sylulive://team/${teamId}`;
+      openApp.href = appLink;
+      openApp.addEventListener('click', (event) => {
+        event.preventDefault();
+        status.classList.remove('error');
+        status.textContent = '正在尝试打开沈理校园…';
+        location.href = appLink;
+        window.setTimeout(() => {
+          if (document.visibilityState === 'visible') {
+            status.classList.add('error');
+            status.textContent = '未能打开 App，可下载 Android 版后重试。';
+          }
+        }, 1500);
+      });
+      copyLink.addEventListener('click', async (event) => {
+        event.preventDefault();
+        try {
+          await navigator.clipboard.writeText(location.href);
+          status.classList.remove('error');
+          status.textContent = '招募链接已复制。';
+        } catch (_) {
+          status.classList.add('error');
+          status.textContent = '复制失败，请手动复制地址栏链接。';
+        }
+      });
+
+      fetch(`/api/team/recruitments/${teamId}`, { headers: { Accept: 'application/json' } })
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        })
+        .then((team) => {
+          title.textContent = team.title || '沈理校园组队邀请';
+          document.title = `${title.textContent} - 沈理校园`;
+          description.textContent = team.description || '打开 App 查看完整组队信息。';
+          author.textContent = `发起人：${team.author?.name || '校园用户'}`;
+          const accepted = Number(team.accepted_count) || 0;
+          const needed = Number(team.needed_count) || 0;
+          progress.textContent = `招募进度：已加入 ${accepted} / 计划招募 ${needed}`;
+          deadline.textContent = team.deadline ? `截止时间：${new Date(team.deadline).toLocaleDateString('zh-CN')}` : '截止时间：长期有效';
+          category.textContent = `分类：${team.category || '其他'}`;
+        })
+        .catch(() => {
+          title.textContent = '打开沈理校园查看组队';
+          description.textContent = '暂时无法读取公开组队信息，仍可在 App 中查看。';
+          author.textContent = `组队编号：${teamId}`;
+          progress.textContent = '招募进度：请在 App 中查看';
+          deadline.textContent = '截止时间：请在 App 中查看';
+          category.textContent = '分类：请在 App 中查看';
+          status.classList.add('error');
+          status.textContent = '组队信息加载失败，请直接打开 App 重试。';
+        });
+    })();
+  </script>
+</body>
+</html>

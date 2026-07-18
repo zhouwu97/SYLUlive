@@ -45,6 +45,8 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
       '/user/2' => {
           'id': 2,
           'nickname': '女生用户',
+          'legal_consents_active': true,
+          'legal_consents_required': false,
           'avatar': '',
           'background': '',
           'exp': 0,
@@ -59,25 +61,32 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
               'student_id': '20260002',
               'nickname': '新名字',
               'gender': '',
+              'legal_consents_active': true,
+              'legal_consents_required': false,
               'created_at': '2026-07-15T00:00:00Z',
               'background': 'http://example.com/bg.jpg',
             }
-          : profileResponse ?? {
-              'id': 2,
-              'student_id': '20260002',
-              'nickname': '女生用户',
-              'gender': 'female',
-              'created_at': '2026-07-15T00:00:00Z',
-              'background': '',
-            },
+          : profileResponse ??
+              {
+                'id': 2,
+                'student_id': '20260002',
+                'nickname': '女生用户',
+                'gender': 'female',
+                'legal_consents_active': true,
+                'legal_consents_required': false,
+                'created_at': '2026-07-15T00:00:00Z',
+                'background': '',
+              },
       '/user/background' => {
           'id': 2,
           'student_id': '20260002',
           'nickname': '新名字',
           'gender': '',
+          'legal_consents_active': true,
+          'legal_consents_required': false,
           'created_at': '2026-07-15T00:00:00Z',
           'background': 'http://example.com/new_bg.jpg',
-      },
+        },
       '/user/2/posts' => <Object>[],
       '/user/2/market-posts' => {
           'items': <Object>[],
@@ -165,6 +174,8 @@ void main() {
       'student_id': '20260002',
       'nickname': '女生用户',
       'gender': 'female',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
       'created_at': '2026-07-15T00:00:00Z',
     });
 
@@ -218,6 +229,8 @@ void main() {
       'student_id': '20260002',
       'nickname': '女生用户',
       'gender': 'female',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
       'created_at': '2026-07-15T00:00:00Z',
     });
 
@@ -262,6 +275,8 @@ void main() {
         'student_id': '20260002',
         'nickname': '未知性别用户',
         'gender': '',
+        'legal_consents_active': true,
+        'legal_consents_required': false,
         'created_at': '2026-07-15T00:00:00Z',
       },
     );
@@ -277,6 +292,8 @@ void main() {
       'student_id': '20260002',
       'nickname': '未知性别用户',
       'gender': '',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
       'created_at': '2026-07-15T00:00:00Z',
     });
 
@@ -380,6 +397,8 @@ void main() {
       'student_id': '20260002',
       'nickname': '测试用户',
       'gender': 'male',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
       'created_at': '2026-07-15T00:00:00Z',
       'background': '',
     });
@@ -411,6 +430,8 @@ void main() {
       'student_id': '20260002',
       'nickname': '新名字',
       'gender': '',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
       'created_at': '2026-07-15T00:00:00Z',
       'background': 'http://example.com/new_bg.jpg',
     });

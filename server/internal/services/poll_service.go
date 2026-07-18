@@ -175,7 +175,7 @@ func (s *PollService) Create(userID uint, role string, input CreatePollInput) (m
 }
 
 func (s *PollService) Update(pollID, userID uint, role string, input CreatePollInput) (models.Post, error) {
-	unlock := acquirePollWriteLock(pollID)
+	unlock := s.acquirePollWriteLock()
 	defer unlock()
 
 	now := s.now()
@@ -260,7 +260,7 @@ func (s *PollService) PutBallot(pollID, userID uint, optionIDs []uint) (models.P
 	if userID == 0 {
 		return models.Post{}, newPollError(PollCodePermissionDenied, "请先登录")
 	}
-	unlock := acquirePollWriteLock(pollID)
+	unlock := s.acquirePollWriteLock()
 	defer unlock()
 
 	var postID uint
@@ -360,7 +360,7 @@ func (s *PollService) PutBallot(pollID, userID uint, optionIDs []uint) (models.P
 }
 
 func (s *PollService) Close(pollID, userID uint, role string) (models.Post, error) {
-	unlock := acquirePollWriteLock(pollID)
+	unlock := s.acquirePollWriteLock()
 	defer unlock()
 	var postID uint
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -392,7 +392,7 @@ func (s *PollService) Close(pollID, userID uint, role string) (models.Post, erro
 }
 
 func (s *PollService) Delete(pollID, userID uint, role string) error {
-	unlock := acquirePollWriteLock(pollID)
+	unlock := s.acquirePollWriteLock()
 	defer unlock()
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var poll models.Poll
@@ -747,7 +747,10 @@ func replacePostImages(tx *gorm.DB, postID uint, fileIDs []uint) error {
 	return nil
 }
 
-func acquirePollWriteLock(pollID uint) func() {
+func (s *PollService) acquirePollWriteLock() func() {
+	if s.db.Dialector.Name() != "sqlite" {
+		return func() {}
+	}
 	pollWriteLock.Lock()
 	return pollWriteLock.Unlock
 }

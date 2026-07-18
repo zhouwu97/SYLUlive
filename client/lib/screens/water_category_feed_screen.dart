@@ -14,10 +14,11 @@ import '../widgets/water_section/section_filter_header.dart';
 import '../widgets/water_section/section_hero_header.dart';
 import '../widgets/water_section/section_post_card.dart';
 import 'create_post_screen.dart';
-import 'post_detail_screen.dart';
 import 'water_section_manage_screen.dart';
 import 'chat_list_screen.dart';
 import '../widgets/water_section/section_floating_dock.dart';
+import '../widgets/community_post_card.dart';
+import '../utils/post_route.dart';
 
 class WaterCategoryFeedScreen extends StatefulWidget {
   final WaterPostCategory category;
@@ -402,14 +403,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 
   Future<void> _openPost(Post post) async {
-    final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => PostDetailScreen(
-          postId: post.id,
-          initialPost: post,
-        ),
-      ),
-    );
+    final changed = await Navigator.of(context).push<dynamic>(buildPostDetailRoute(post));
     if (changed == true && mounted) {
       await _refresh();
     }
@@ -789,12 +783,14 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 0),
                 itemBuilder: (context, index) {
                   final post = normalPosts[index];
+                  if (post.isPoll) {
+                    return CommunityPostCard(post: post, onTap: () => _openPost(post));
+                  }
                   return SectionPostCard(
-                    post: post,
-                    section: section,
-                    accentColor: categoryColor,
-                    onTap: () => _openPost(post),
-                  );
+                      post: post,
+                      section: section,
+                      accentColor: categoryColor,
+                      onTap: () => _openPost(post));
                 },
               ),
             ),

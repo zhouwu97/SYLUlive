@@ -26,7 +26,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../widgets/pinned_post_summary_bar.dart';
-import '../widgets/post_card.dart';
+import '../widgets/community_post_card.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
 import 'check_in_calendar_screen.dart';
@@ -36,6 +36,7 @@ import 'exam_schedule_screen.dart';
 import 'feedback_screen.dart';
 import 'login_screen.dart';
 import 'post_detail_screen.dart';
+import 'poll/poll_detail_screen.dart';
 import 'search_results_screen.dart';
 import 'water_section_directory_screen.dart';
 import 'toolbox_screen.dart';
@@ -897,15 +898,24 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     final content = ClipRect(
-      child: PostDetailScreen(
-        key: ValueKey(_selectedPost!.id),
-        postId: _selectedPost!.id,
-        isMarket: false,
-        initialPost: _selectedPost,
-        isDesktopSplitMode: true,
-        hideBackButton: true,
-        onAuthorTap: _openUserInSplit,
-      ),
+      child: _selectedPost!.isPoll
+          ? PollDetailScreen(
+              key: ValueKey(_selectedPost!.id),
+              pollId: _selectedPost!.pollMeta!.id,
+              initialPost: _selectedPost,
+              isDesktopSplitMode: true,
+              hideBackButton: true,
+              onAuthorTap: _openUserInSplit,
+            )
+          : PostDetailScreen(
+              key: ValueKey(_selectedPost!.id),
+              postId: _selectedPost!.id,
+              isMarket: false,
+              initialPost: _selectedPost,
+              isDesktopSplitMode: true,
+              hideBackButton: true,
+              onAuthorTap: _openUserInSplit,
+            ),
     );
 
     return ColoredBox(
@@ -1203,7 +1213,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           else if (posts.isNotEmpty)
             ...posts.take(2).map((post) => Padding(
                   padding: const EdgeInsets.only(bottom: 8.0),
-                  child: PostCard(
+                  child: CommunityPostCard(
                     post: post,
                     onAuthorTap: _openUserInSplit,
                     onTap: () {
@@ -1213,11 +1223,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => PostDetailScreen(
-                              postId: post.id,
-                              isMarket: false,
-                              initialPost: post,
-                            ),
+                            builder: (_) => post.isPoll
+                                ? PollDetailScreen(
+                                    pollId: post.pollMeta!.id,
+                                    initialPost: post,
+                                  )
+                                : PostDetailScreen(
+                                    postId: post.id,
+                                    isMarket: false,
+                                    initialPost: post,
+                                  ),
                           ),
                         );
                       }
@@ -1688,7 +1703,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           child: HomeTabRevealItem(
                             index: index,
                             revealOrder: index,
-                            child: PostCard(
+                            child: CommunityPostCard(
                               post: post,
                               onAuthorTap: _openUserInSplit,
                               onTap: () {
@@ -1701,11 +1716,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => PostDetailScreen(
-                                        postId: post.id,
-                                        isMarket: false,
-                                        initialPost: post,
-                                      ),
+                                      builder: (_) => post.isPoll
+                                          ? PollDetailScreen(
+                                              pollId: post.pollMeta!.id,
+                                              initialPost: post,
+                                            )
+                                          : PostDetailScreen(
+                                              postId: post.id,
+                                              isMarket: false,
+                                              initialPost: post,
+                                            ),
                                     ),
                                   );
                                 }

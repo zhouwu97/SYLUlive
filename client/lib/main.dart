@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/post_provider.dart';
+import 'providers/poll_provider.dart';
 import 'providers/team_recruitment_provider.dart';
 import 'providers/message_provider.dart';
 import 'providers/edu_provider.dart';
@@ -48,6 +49,7 @@ import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
+import 'services/poll_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
 import 'widgets/app_update_gate.dart';
@@ -995,6 +997,10 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
         ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
         ChangeNotifierProvider(create: (_) => PostProvider(dio)),
+        ChangeNotifierProxyProvider<PostProvider, PollProvider>(
+          create: (_) => PollProvider(PollService(dio)),
+          update: (_, posts, polls) => polls!..bindPostProvider(posts),
+        ),
         ChangeNotifierProxyProvider<AuthProvider, TeamRecruitmentProvider>(
           create: (_) => TeamRecruitmentProvider(dio),
           update: (_, auth, provider) =>

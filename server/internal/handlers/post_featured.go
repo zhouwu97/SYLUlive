@@ -110,6 +110,10 @@ func (h *PostHandler) CreateFeaturedApplication(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该帖子已经是精华"})
 		return
 	}
+	if post.ContentKind == models.PostContentKindPoll {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "poll_featured_application_unsupported", "error": "投票暂不支持申请精华"})
+		return
+	}
 
 	app := models.FeaturedApplication{
 		PostID: post.ID, ApplicantID: userID, Reason: input.Reason, Status: "pending",

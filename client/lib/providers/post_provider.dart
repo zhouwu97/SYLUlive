@@ -76,8 +76,9 @@ Map<String, dynamic> buildPostListParams({
     'limit': limit,
   };
   if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
-    params['feed_version'] = 2;
+    params['feed_version'] = 3;
   }
+  params['capabilities'] = 'poll_v1';
   if (tagId != null) {
     params['tag_id'] = tagId;
   }
@@ -322,8 +323,9 @@ class PostProvider extends ChangeNotifier {
       };
       if (usesHomeFeedV2(
           boardId: boardId, sort: sort, type: type, tagId: tagId)) {
-        params['feed_version'] = 2;
+        params['feed_version'] = 3;
       }
+      params['capabilities'] = 'poll_v1';
       if (tagId != null) {
         params['tag_id'] = tagId;
       }
@@ -638,8 +640,9 @@ class PostProvider extends ChangeNotifier {
         'scene': 'refresh',
       };
       if (useHomeFeedV2) {
-        params['feed_version'] = 2;
+        params['feed_version'] = 3;
       }
+      params['capabilities'] = 'poll_v1';
       if (tagId != null) {
         params['tag_id'] = tagId;
       }
@@ -717,6 +720,7 @@ class PostProvider extends ChangeNotifier {
           'page': 1,
           'limit': limit,
           'q': trimmed,
+          'capabilities': 'poll_v1',
         },
       );
 
@@ -1086,8 +1090,40 @@ class PostProvider extends ChangeNotifier {
 
   /// 供外部在获取到最新帖子数据（如浏览量增加）时更新本地缓存，保持内外一致
   void updatePostInCache(Post updated) {
+    applyExternalPostUpdate(updated);
+  }
+
+  /// 接收投票等独立业务返回的最新 Post，只替换已有项而不改变列表排序。
+  void applyExternalPostUpdate(Post updated) {
     _replacePostInBoards(updated);
     notifyListeners();
+  }
+
+  /// 从全部已加载列表和置顶区移除帖子，并同步持久化缓存。
+  void removeExternalPost(int postId) {
+    var changed = false;
+    for (final entry in _boards.entries) {
+      final keyParts = entry.key.split('|');
+      final boardId = int.tryParse(keyParts.first) ?? 0;
+      final sort = keyParts.length > 1 ? keyParts[1] : 'time';
+      final type =
+          keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
+      final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
+          ? int.tryParse(keyParts[3])
+          : null;
+      final board = entry.value;
+      final beforePosts = board.posts.length;
+      final beforePinned = board.pinnedPosts.length;
+      board.posts.removeWhere((post) => post.id == postId);
+      board.pinnedPosts.removeWhere((post) => post.id == postId);
+      if (beforePosts != board.posts.length ||
+          beforePinned != board.pinnedPosts.length) {
+        board.revision++;
+        changed = true;
+        _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+      }
+    }
+    if (changed) notifyListeners();
   }
 
   void _replacePostInBoards(Post updated) {
@@ -1106,6 +1142,13 @@ class PostProvider extends ChangeNotifier {
         board.posts[index] = updated;
         board.revision++;
         // 同步持久化到本地缓存，防止杀后台后数据(如浏览量)倒退
+        _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+      }
+      final pinnedIndex =
+          board.pinnedPosts.indexWhere((p) => p.id == updated.id);
+      if (pinnedIndex >= 0) {
+        board.pinnedPosts[pinnedIndex] = updated;
+        board.revision++;
         _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
       }
     }

@@ -14,15 +14,25 @@ import (
 
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 // PrivacyHandler 处理个人信息权利请求和账号注销。
 type PrivacyHandler struct {
-	db *gorm.DB
+	db                       *gorm.DB
+	eduCredentialCleanupJobs *services.EduCredentialCleanupJobService
 }
 
 func NewPrivacyHandler(db *gorm.DB) *PrivacyHandler {
-	return &PrivacyHandler{db: db}
+	return NewPrivacyHandlerWithEduCredentialCleanup(db, services.NewEduCredentialCleanupJobService(db, nil, time.Now))
+}
+
+// NewPrivacyHandlerWithEduCredentialCleanup 创建带教务凭证补偿任务的隐私处理器。
+func NewPrivacyHandlerWithEduCredentialCleanup(db *gorm.DB, jobs *services.EduCredentialCleanupJobService) *PrivacyHandler {
+	if jobs == nil {
+		jobs = services.NewEduCredentialCleanupJobService(db, nil, time.Now)
+	}
+	return &PrivacyHandler{db: db, eduCredentialCleanupJobs: jobs}
 }
 
 type CreatePersonalDataRequestInput struct {
@@ -208,17 +218,7 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
 		return
 	}
-	if user.EduBound {
-		response, err := pythonEduRequest(http.MethodDelete, "/api/edu/bind", &userID, nil)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": "教务凭证清除失败，请稍后重试"})
-			return
-		}
-		if response.StatusCode() != http.StatusOK {
-			mapEduServiceError(c, response.StatusCode(), response.Body())
-			return
-		}
-	}
+	needsEduCredentialCleanup := user.EduBound
 	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
@@ -234,9 +234,15 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&models.UserLegalConsent{}).
+		if err := tx.Model(&models.UserLegalConsent{}).
 			Where("user_id = ? AND revoked_at IS NULL", userID).
-			Update("revoked_at", &now).Error
+			Update("revoked_at", &now).Error; err != nil {
+			return err
+		}
+		if needsEduCredentialCleanup {
+			return h.eduCredentialCleanupJobs.Enqueue(tx, userID)
+		}
+		return nil
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤销同意失败"})
 		return

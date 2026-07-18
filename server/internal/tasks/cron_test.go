@@ -26,6 +26,15 @@ type examPaperStorageMaintenanceStub struct {
 	called chan context.Context
 }
 
+type eduCredentialCleanupJobProcessorStub struct {
+	called chan int
+}
+
+func (s *eduCredentialCleanupJobProcessorStub) ProcessDue(_ context.Context, limit int) (services.EduCredentialCleanupJobProcessReport, error) {
+	s.called <- limit
+	return services.EduCredentialCleanupJobProcessReport{Processed: 1, Completed: 1}, nil
+}
+
 func (s *examPaperStorageMaintenanceStub) Run(ctx context.Context) (services.ExamPaperStorageMaintenanceReport, error) {
 	s.called <- ctx
 	return services.ExamPaperStorageMaintenanceReport{Referenced: 3}, nil
@@ -77,6 +86,32 @@ func TestStartExamPaperStorageCronRunsJobsAndMaintenanceImmediately(t *testing.T
 	}
 	if len(jobs.called) != 0 || len(maintenance.called) != 0 {
 		t.Fatal("取消后存储后台任务发生重入")
+	}
+}
+
+func TestStartEduCredentialCleanupCronRunsJobsImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	jobs := &eduCredentialCleanupJobProcessorStub{called: make(chan int, 1)}
+	cron := StartEduCredentialCleanupCron(ctx, jobs)
+
+	select {
+	case limit := <-jobs.called:
+		if limit != 50 {
+			t.Fatalf("后台任务批量大小错误: %d", limit)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("后台任务未在启动后立即消费教务凭证清理任务")
+	}
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		cron.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("取消后教务凭证清理任务未退出")
 	}
 }
 

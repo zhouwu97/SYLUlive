@@ -144,6 +144,7 @@ func main() {
 		&models.UserLegalConsent{},
 
 		&models.PersonalDataRequest{},
+		&models.EduCredentialCleanupJob{},
 
 		&models.Post{},
 
@@ -389,7 +390,8 @@ func main() {
 
 	userHandler := handlers.NewUserHandler(db)
 
-	privacyHandler := handlers.NewPrivacyHandler(db)
+	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
+	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
@@ -563,6 +565,7 @@ func main() {
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
 		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
 	}
+	eduCredentialCleanupCron := tasks.StartEduCredentialCleanupCron(appCtx, eduCredentialCleanupJobs)
 
 	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。
 	appPublic := r.Group("/api/app")
@@ -1498,6 +1501,7 @@ func main() {
 	serveErr := serveUntilShutdown(appCtx, server, 10*time.Second)
 	stopApp()
 	examPaperStorageCron.Wait()
+	eduCredentialCleanupCron.Wait()
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
 	}

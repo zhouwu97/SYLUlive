@@ -12,6 +12,10 @@ import (
 type HomeFeedCandidate struct {
 	Post               models.Post
 	UniqueReplierCount int64
+	IsPoll             bool
+	PollLastVoteAt     *time.Time
+	ParticipantCount   int
+	PollEnded          bool
 	Quality            float64
 	HotScore           float64
 	ActivityScore      float64
@@ -30,6 +34,20 @@ func ScoreHomeFeedCandidate(candidate *HomeFeedCandidate, now time.Time) {
 	activityAge := math.Max(now.Sub(activityAt).Hours(), 0)
 	candidate.HotScore = (6 + candidate.Quality) / math.Pow(publishedAge+6, 0.9)
 	candidate.ActivityScore = (4 + candidate.Quality) / math.Pow(activityAge+4, 0.8)
+	if candidate.IsPoll {
+		participantBonus := math.Min(3.5, math.Log1p(float64(candidate.ParticipantCount)))
+		voteActivityBonus := 0.0
+		if candidate.PollLastVoteAt != nil {
+			voteAge := math.Max(now.Sub(*candidate.PollLastVoteAt).Hours(), 0)
+			voteActivityBonus = math.Min(3, 3/(1+voteAge/12))
+		}
+		candidate.HotScore += participantBonus + voteActivityBonus
+		candidate.ActivityScore += participantBonus*0.5 + voteActivityBonus
+		if candidate.PollEnded {
+			candidate.HotScore *= 0.35
+			candidate.ActivityScore *= 0.35
+		}
+	}
 }
 
 type PlacementPolicy struct {

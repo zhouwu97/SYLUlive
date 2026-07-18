@@ -147,6 +147,10 @@ func main() {
 		&models.EduCredentialCleanupJob{},
 
 		&models.Post{},
+		&models.Poll{},
+		&models.PollOption{},
+		&models.PollBallot{},
+		&models.PollBallotChoice{},
 
 		&models.WaterSection{},
 
@@ -344,12 +348,14 @@ func main() {
 	if err := ensurePostActivitySchema(db); err != nil {
 		log.Fatal("帖子活跃时间迁移失败:", err)
 	}
+	if err := models.EnsurePollSchema(db); err != nil {
+		log.Fatal("投票系统数据库约束未就绪:", err)
+	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
 	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
 	db.Exec(`UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`)
 	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
-	db.Exec(`UPDATE posts SET post_type = 'campus_life' WHERE board_id = ? AND (post_type IS NULL OR post_type = '')`, int(models.BoardShuitie))
 
 	// 全表统计回算不应阻塞服务启动；需要修复历史数据时使用独立运维任务执行。
 	log.Println("跳过启动期全表统计回算")
@@ -424,6 +430,7 @@ func main() {
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
+	pollHandler := handlers.NewPollHandler(db)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
 	competitionHandler := handlers.NewCompetitionHandler(db)
 
@@ -909,6 +916,25 @@ func main() {
 		competitions.GET("/events", competitionHandler.ListEvents)
 		competitions.GET("/events/:id", competitionHandler.GetEvent)
 	}
+
+	// 投票公开读取使用可选鉴权，以返回当前用户的选择和结果权限。
+	pollsPublic := r.Group("/api/polls")
+	pollsPublic.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret))
+	{
+		pollsPublic.GET("", pollHandler.List)
+		pollsPublic.GET("/:id", pollHandler.Get)
+	}
+
+	pollsAuth := r.Group("/api/polls")
+	pollsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		pollsAuth.POST("", pollHandler.Create)
+		pollsAuth.PUT("/:id", pollHandler.Update)
+		pollsAuth.DELETE("/:id", pollHandler.Delete)
+		pollsAuth.PUT("/:id/ballot", pollHandler.PutBallot)
+		pollsAuth.POST("/:id/close", pollHandler.Close)
+	}
+	r.GET("/api/me/polls", middleware.AuthMiddleware(db, cfg.JWTSecret), pollHandler.ListMine)
 
 	postsAuth := r.Group("/api/posts")
 

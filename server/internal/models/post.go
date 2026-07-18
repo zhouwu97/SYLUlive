@@ -36,6 +36,14 @@ const (
 	PostStatusDeleted PostStatus = "deleted" // 已删除
 )
 
+// PostContentKind 区分普通帖子与复用帖子能力的特殊内容。
+type PostContentKind string
+
+const (
+	PostContentKindNormal PostContentKind = "normal"
+	PostContentKindPoll   PostContentKind = "poll"
+)
+
 // Post 帖子模型
 type Post struct {
 	ID       uint    `gorm:"primaryKey" json:"id"`
@@ -47,6 +55,7 @@ type Post struct {
 	//   board_id = BoardShuitie 时，post_type 表示 WaterSection.Slug（如 course_study）。
 	//   board_id = BoardMarket 时，post_type 仍为 marketplace_buy / marketplace_sell 等旧语义。
 	PostType    string            `gorm:"size:50;index" json:"post_type"`
+	ContentKind PostContentKind   `gorm:"size:20;not null;default:'normal';index" json:"content_kind"`
 	Price       float64           `gorm:"default:0" json:"price"`                       // 价格（校园集市用）
 	ContactType MarketContactType `gorm:"size:20;default:'';index" json:"contact_type"` // 联系方式类型
 	Contact     string            `gorm:"size:500" json:"contact"`                      // 联系账号
@@ -81,6 +90,7 @@ type Post struct {
 	ExpAwards              []ExpAward              `gorm:"-" json:"exp_awards,omitempty"`
 	WaterSectionAuthorMeta *WaterSectionAuthorMeta `gorm:"-" json:"water_section_author_meta,omitempty"`
 	TeamRecruitmentMeta    *TeamRecruitmentMeta    `gorm:"-" json:"team_recruitment_meta,omitempty"`
+	PollMeta               *PollSummaryDTO         `gorm:"-" json:"poll_meta,omitempty"`
 	Images                 []PostImage             `gorm:"foreignKey:PostID" json:"images"`
 	Author                 User                    `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt              time.Time               `json:"created_at"`

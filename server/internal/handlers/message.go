@@ -13,6 +13,7 @@ import (
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
+	"shenliyuan/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -562,11 +563,7 @@ func privateMessagePreview(message models.Message) string {
 	if content == "" && message.FileID != nil {
 		return "[图片]"
 	}
-	runes := []rune(content)
-	if len(runes) > 50 {
-		return string(runes[:50]) + "..."
-	}
-	return content
+	return utils.TruncateGraphemes(content, 50)
 }
 
 // MarkRead marks all incoming messages in a conversation as read.

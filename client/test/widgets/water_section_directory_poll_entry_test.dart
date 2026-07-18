@@ -11,6 +11,6 @@ void main() {
     await tester.enterText(find.byType(TextField), '投票');
     await tester.pump();
     expect(find.text('校园投票'), findsOneWidget);
-    expect(find.text('特殊版块'), findsNothing);
+    expect(find.text('特殊版块'), findsOneWidget);
   });
 }

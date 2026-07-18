@@ -7,6 +7,7 @@ import '../../widgets/community_post_card.dart';
 import '../../widgets/poll/poll_post_card.dart';
 import 'my_polls_screen.dart';
 import 'poll_detail_screen.dart';
+import '../user_home_screen.dart';
 
 class PollCenterScreen extends StatefulWidget {
   final String initialSort;
@@ -121,7 +122,7 @@ class _PollCenterScreenState extends State<PollCenterScreen>
                             itemBuilder: (context, index) {
                               if (index >= state.items.length) return const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator()));
                               final post = state.items[index];
-                              return CommunityPostCard(post: post, pollVariant: PollCardVariant.centerFull, onTap: () => _openPost(post), onAuthorTap: (_) {});
+                              return CommunityPostCard(post: post, pollVariant: PollCardVariant.centerFull, onTap: () => _openPost(post), onAuthorTap: (userId) => Navigator.push(context, MaterialPageRoute(builder: (_) => UserHomeScreen(userId: userId))));
                             },
                           ),
                         ),

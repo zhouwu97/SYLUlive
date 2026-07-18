@@ -17,7 +17,7 @@ class MyPollsScreen extends StatefulWidget {
 
 class _MyPollsScreenState extends State<MyPollsScreen> with SingleTickerProviderStateMixin {
   late final TabController _tabs;
-  String get _scope => _tabs.index == 0 ? 'created' : 'participated';
+  String get _scope => _tabs.index == 0 ? 'created' : 'voted';
 
   @override
   void initState() {
@@ -34,7 +34,9 @@ class _MyPollsScreenState extends State<MyPollsScreen> with SingleTickerProvider
 
   Future<void> _edit(Post post) async {
     final updated = await Navigator.push(context, MaterialPageRoute(builder: (_) => PollComposerScreen(editingPost: post)));
-    if (updated == true && mounted) _load(refresh: true);
+    if (updated is Post && mounted) {
+      context.read<PollProvider>().applyExternalPostUpdate(updated);
+    }
   }
 
   Future<void> _delete(Post post) async {
@@ -53,7 +55,14 @@ class _MyPollsScreenState extends State<MyPollsScreen> with SingleTickerProvider
         onRefresh: () => _load(refresh: true),
         child: state.isLoading && !state.hasLoaded
             ? const Center(child: CircularProgressIndicator())
-            : ListView.builder(
+          : NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification.metrics.extentAfter < 400 && state.hasMore && !state.isLoadingMore) {
+                  provider.loadMine(_scope);
+                }
+                return false;
+              },
+              child: ListView.builder(
                 key: PageStorageKey('my-polls-$_scope'),
                 padding: const EdgeInsets.all(12),
                 itemCount: state.items.length + (state.isLoadingMore ? 1 : 0),
@@ -66,6 +75,7 @@ class _MyPollsScreenState extends State<MyPollsScreen> with SingleTickerProvider
                   ]);
                 },
               ),
+            ),
       ),
     );
   }

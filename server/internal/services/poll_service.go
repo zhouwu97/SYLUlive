@@ -75,7 +75,9 @@ type PollService struct {
 	now func() time.Time
 }
 
-var pollWriteLocks sync.Map
+// 投票写入在 SQLite 测试环境需要串行化；生产 PostgreSQL 仍由行锁保证并发安全。
+// 使用单一锁避免按投票 ID 累积永久存活的 sync.Map。
+var pollWriteLock sync.Mutex
 
 func NewPollService(db *gorm.DB) *PollService {
 	return &PollService{db: db, now: time.Now}
@@ -193,8 +195,14 @@ func (s *PollService) Update(pollID, userID uint, role string, input CreatePollI
 		if post.AuthorID != userID && !isAdminRole(role) {
 			return newPollError(PollCodePermissionDenied, "无权编辑该投票")
 		}
+		if err := validatePollMutableInput(&input); err != nil {
+			return err
+		}
 		if _, err := ValidateImageFileIDs(tx, input.FileIDs, 3, userID); err != nil {
 			return newPollError(PollCodeInvalidInput, err.Error())
+		}
+		if effectivePollStatus(poll, post.Status, now) != models.PollStatusActive {
+			return newPollError(PollCodeEnded, "投票已结束，不能编辑")
 		}
 
 		if poll.ParticipantCount > 0 {
@@ -567,11 +575,8 @@ func (s *PollService) validateInput(input CreatePollInput, now time.Time) (Creat
 	if countRunes(input.Title) < 1 || countRunes(input.Title) > 80 {
 		return input, newPollError(PollCodeInvalidInput, "标题长度需为 1 至 80 字")
 	}
-	if countRunes(input.Description) > 1000 {
-		return input, newPollError(PollCodeInvalidInput, "补充说明不能超过 1000 字")
-	}
-	if len(input.FileIDs) > 3 {
-		return input, newPollError(PollCodeInvalidInput, "图片不能超过 3 张")
+	if err := validatePollMutableInput(&input); err != nil {
+		return input, err
 	}
 	if len(input.Options) < 2 || len(input.Options) > 10 {
 		return input, newPollError(PollCodeInvalidInput, "投票选项需为 2 至 10 项")
@@ -611,6 +616,17 @@ func (s *PollService) validateInput(input CreatePollInput, now time.Time) (Creat
 		return input, newPollError(PollCodeInvalidInput, "投票选择模式无效")
 	}
 	return input, nil
+}
+
+func validatePollMutableInput(input *CreatePollInput) error {
+	input.Description = strings.TrimSpace(input.Description)
+	if countRunes(input.Description) > 1000 {
+		return newPollError(PollCodeInvalidInput, "补充说明不能超过 1000 字")
+	}
+	if len(input.FileIDs) > 3 {
+		return newPollError(PollCodeInvalidInput, "图片不能超过 3 张")
+	}
+	return nil
 }
 
 func (s *PollService) checkCreationLimit(userID uint) error {
@@ -732,10 +748,8 @@ func replacePostImages(tx *gorm.DB, postID uint, fileIDs []uint) error {
 }
 
 func acquirePollWriteLock(pollID uint) func() {
-	value, _ := pollWriteLocks.LoadOrStore(pollID, &sync.Mutex{})
-	mutex := value.(*sync.Mutex)
-	mutex.Lock()
-	return mutex.Unlock
+	pollWriteLock.Lock()
+	return pollWriteLock.Unlock
 }
 
 func isAdminRole(role string) bool {

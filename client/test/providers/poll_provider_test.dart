@@ -51,6 +51,7 @@ class FakePollService extends PollService {
   int ballotCalls = 0;
   Completer<Post>? ballotCompleter;
   bool failBallot = false;
+  String? lastMineScope;
 
   @override
   Future<PollListResponse> listPolls({
@@ -76,6 +77,12 @@ class FakePollService extends PollService {
     }
     if (ballotCompleter != null) return ballotCompleter!.future;
     return pollPost(participants: 1);
+  }
+
+  @override
+  Future<PollListResponse> listMyPolls({required String scope, int page = 1, int limit = 20}) async {
+    lastMineScope = scope;
+    return PollListResponse(items: [pollPost()], page: page, limit: limit, total: 1);
   }
 
   @override
@@ -168,5 +175,12 @@ void main() {
     expect(
         provider.stateFor(sort: 'recommend', category: 'other').items, isEmpty);
     expect(posts.removed, 1);
+  });
+
+  test('我的投票参与范围使用服务端约定的 voted', () async {
+    final service = FakePollService();
+    final provider = PollProvider(service);
+    await provider.loadMine('voted');
+    expect(service.lastMineScope, 'voted');
   });
 }

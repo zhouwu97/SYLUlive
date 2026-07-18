@@ -8,6 +8,7 @@ class CommunityPostCard extends StatelessWidget {
   final Post post;
   final VoidCallback? onTap;
   final ValueChanged<int>? onAuthorTap;
+  final ValueChanged<Post>? onPostUpdated;
   final bool disableAuthorNavigation;
   final PollCardVariant pollVariant;
 
@@ -16,6 +17,7 @@ class CommunityPostCard extends StatelessWidget {
     required this.post,
     this.onTap,
     this.onAuthorTap,
+    this.onPostUpdated,
     this.disableAuthorNavigation = false,
     this.pollVariant = PollCardVariant.homeCompact,
   });
@@ -27,6 +29,7 @@ class CommunityPostCard extends StatelessWidget {
         post: post,
         onTap: onTap,
         onAuthorTap: disableAuthorNavigation ? null : onAuthorTap,
+        onPostUpdated: onPostUpdated,
         variant: pollVariant,
       );
     }

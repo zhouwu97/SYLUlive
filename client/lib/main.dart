@@ -499,6 +499,17 @@ Future<RemotePushEnableResult> setupJPush(AuthProvider authProvider) async {
 
   _ensureJPushHandlersRegistered();
 
+  try {
+    await PushSettingsService.setNativePushOptIn(true);
+  } catch (e) {
+    debugPrint('同步原生推送开关失败: $e');
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: false,
+      message: '推送设置已保存，原生推送初始化失败，请稍后重试',
+    );
+  }
+
   jpush.setup(
     appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
@@ -544,10 +555,19 @@ Future<RemotePushEnableResult> setupJPush(AuthProvider authProvider) async {
   // 将 userId 同步给原生层，后续的 Alias 绑定与退避重试完全由原生层
   // KeepAliveForegroundService 的 reconcileAliasState 机制接管
   try {
-    await _privateMessageNotificationChannel.invokeMethod(
-      'syncAlias',
-      {'userId': userIdStr},
-    );
+    final aliasSynced =
+        await _privateMessageNotificationChannel.invokeMethod<bool>(
+              'syncAlias',
+              {'userId': userIdStr},
+            ) ??
+            false;
+    if (!aliasSynced) {
+      return const RemotePushEnableResult(
+        permissionGranted: true,
+        registrationSucceeded: false,
+        message: '推送设置已保存，设备绑定失败，请稍后重试',
+      );
+    }
   } catch (e) {
     debugPrint('同步 Alias 到原生层失败: $e');
     return const RemotePushEnableResult(
@@ -1432,7 +1452,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
     _jpushSettingUp = true;
     try {
-      final result = await setupJPush(authProvider);
+      final result = await PushSettingsService.registerOnce(authProvider);
       _jpushSetup = result.registrationSucceeded;
       debugPrint(
         result.registrationSucceeded ? '✅ JPush 初始化成功' : result.message,

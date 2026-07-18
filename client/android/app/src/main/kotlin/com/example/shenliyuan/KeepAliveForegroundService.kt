@@ -498,12 +498,12 @@ class KeepAliveForegroundService : Service() {
             editor.apply()
         }
 
-        fun syncAlias(context: Context, alias: String?) {
+        fun syncAlias(context: Context, alias: String?): Boolean {
             val p = prefs(context.applicationContext)
-			if (!alias.isNullOrBlank() && !isPushEnabled(context)) {
-				Log.d(TAG, "JPush alias sync skipped: push opt-in disabled")
-				return
-			}
+            if (!alias.isNullOrBlank() && !isPushEnabled(context)) {
+                Log.d(TAG, "JPush alias sync skipped: push opt-in disabled")
+                return false
+            }
             
             // 如果 alias 没有变化，且已经是 active 或 pending_bind，跳过自增
             if (alias != null) {
@@ -511,7 +511,7 @@ class KeepAliveForegroundService : Service() {
                 val currentState = p.getString(KEY_JPUSH_ALIAS_STATE, null)
                 if (currentAlias == alias && (currentState == "active" || currentState == "pending_bind")) {
                     Log.d(TAG, "JPush alias sync skipped: already $currentState for ***${alias.takeLast(4)}")
-                    return
+                    return true
                 }
             }
             
@@ -528,6 +528,7 @@ class KeepAliveForegroundService : Service() {
                 Log.d(TAG, "JPush alias synced: ***${alias.takeLast(4)} state=pending_bind gen=$gen")
             }
             editor.apply()
+            return true
         }
 
 		fun isPushEnabled(context: Context): Boolean =

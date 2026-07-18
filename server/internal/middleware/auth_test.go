@@ -207,3 +207,85 @@ func TestAuthMiddlewareSoftModeAllowsLegacyUser(t *testing.T) {
 		t.Fatalf("soft mode status=%d body=%s", response.Code, response.Body.String())
 	}
 }
+
+func TestOptionalAuthMiddlewareOffModePreservesIdentity(t *testing.T) {
+	assertOptionalAuthIdentity(t, LegalConsentEnforcementOff, models.LegalConsentStateRequired, true)
+}
+
+func TestOptionalAuthMiddlewareSoftModePreservesLegacyIdentity(t *testing.T) {
+	assertOptionalAuthIdentity(t, LegalConsentEnforcementSoft, models.LegalConsentStateRequired, true)
+}
+
+func TestOptionalAuthMiddlewareHardModeTreatsRevokedUserAsAnonymous(t *testing.T) {
+	assertOptionalAuthIdentity(t, LegalConsentEnforcementHard, models.LegalConsentStateRevoked, false)
+}
+
+func TestOptionalAuthMiddlewareHardModeKeepsActiveUserIdentity(t *testing.T) {
+	assertOptionalAuthIdentity(t, LegalConsentEnforcementHard, models.LegalConsentStateActive, true)
+}
+
+func assertOptionalAuthIdentity(t *testing.T, enforcement string, consentState models.LegalConsentState, wantIdentity bool) {
+	t.Helper()
+	clearTokenVersionCacheForTest()
+	previousMode := legalConsentEnforcement
+	SetLegalConsentEnforcement(enforcement)
+	defer SetLegalConsentEnforcement(previousMode)
+
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+
+	user := models.User{StudentID: "optional-auth-user", PasswordHash: "hash"}
+	if consentState == models.LegalConsentStateRevoked {
+		now := time.Now()
+		user.LegalConsentRevokedAt = &now
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if consentState == models.LegalConsentStateActive {
+		for _, document := range models.RequiredLegalDocuments(false) {
+			consent := models.UserLegalConsent{
+				UserID:     user.ID,
+				Document:   document,
+				Version:    models.LegalDocumentVersion,
+				AcceptedAt: time.Now(),
+			}
+			if err := db.Create(&consent).Error; err != nil {
+				t.Fatalf("create consent %s: %v", document, err)
+			}
+		}
+	}
+
+	token, err := GenerateToken(user.ID, string(models.RoleUser), user.TokenVersion, "secret")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	router := gin.New()
+	router.GET("/public", OptionalAuthMiddleware(db, "secret"), func(c *gin.Context) {
+		_, exists := c.Get("user_id")
+		c.JSON(http.StatusOK, gin.H{"has_identity": exists})
+	})
+	request := httptest.NewRequest(http.MethodGet, "/public", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	var body struct {
+		HasIdentity bool `json:"has_identity"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.HasIdentity != wantIdentity {
+		t.Fatalf("mode=%s consent=%s has_identity=%t want=%t", enforcement, consentState, body.HasIdentity, wantIdentity)
+	}
+}

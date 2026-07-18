@@ -1,0 +1,236 @@
+project:
+  name: "SYLUlive Flutter HarmonyOS"
+  source: "E:\\AI\\xynewui\\client"
+  target: "E:\\AI\\xynewui\\client\\ohos"
+
+iteration:
+  current: 1
+  phase: "module_migration"
+
+overall_progress:
+  total_modules: 13
+  completed_modules: 7
+  in_progress: "阶段 5 存储与认证 / 阶段 6 登录首页课表链路 / 阶段 7 成绩考试竞赛中心 / 阶段 8 互动卡片 / 阶段 9 实况窗 / 阶段 10 Scan Kit"
+  completion_percentage: 53.8
+
+modules:
+  - name: "阶段 0 现有功能基线"
+    status: "completed"
+    evidence:
+      - "docs/harmony/00-baseline.md"
+
+  - name: "阶段 1 独立鸿蒙 Flutter 环境"
+    status: "completed"
+    evidence:
+      - "Flutter 3.41.10-0.0.pre-7307"
+      - "HarmonyOS SDK API 24"
+      - "ohpm、Node、hvigorw 检查通过"
+
+  - name: "阶段 2 最小 HAP 与 ohos 骨架"
+    status: "completed"
+    evidence:
+      - "2026-07-17 重新生成 arm64 signed HAP"
+      - "SHA-256 82C7FB766CD14EEFB562FE5485AE9A7F445D9EC3EC1A9C40A3488C7E4D67DD43"
+
+  - name: "阶段 3 插件兼容性审计"
+    status: "completed"
+    evidence:
+      - "docs/harmony/01-plugin-audit.md"
+
+  - name: "阶段 4 平台能力边界"
+    status: "completed"
+    completed:
+      - "平台识别和能力开关"
+      - "main.dart 仅依赖中性 NotificationService，不再引用 Android 通知实现或 JPush"
+      - "供应商 SDK、MethodChannel 和 Android 本地通知类型下沉到标准平台桥接包"
+      - "未接入鸿蒙能力使用 Noop 服务"
+      - "平台边界回归测试和构建前静态扫描通过"
+      - "推送与私信通知通过双实现门面完成编译期隔离"
+      - "OHOS Pub、注册器、OHPM 与 HAP 产物均无 JPush 残留"
+      - "Android 标准依赖恢复 JPush 3.4.6 并重新构建 Debug APK"
+
+  - name: "阶段 5 存储与认证"
+    status: "in_progress"
+    completed:
+      - "Asset Store Kit 安全存储桥接"
+      - "认证与教务密码统一凭据抽象"
+      - "认证一致性回滚测试通过"
+      - "ArkData Preferences 补齐 shared_preferences OHOS 通道"
+      - "x64 模拟器登录恢复和教务绑定状态恢复通过"
+      - "普通 API 401 串行清理完整 App 会话，并发请求复用同一清理任务"
+      - "教务 API 401 仅使教务会话失效，不清除 App 登录"
+      - "教务绑定使用单条原子缓存，安全存储失败时回滚本地绑定状态"
+      - "教务绑定输入校验和失败弹窗保留已完成，可直接修改后重试"
+    issues:
+      - type: "device_validation"
+        description: "真实设备手动退出后的会话清理，以及重新输入教务凭据后的绑定提交仍待验收；当前无可恢复凭据，为保留账号未执行登出或解绑"
+        priority: "medium"
+
+  - name: "阶段 6 登录首页课表链路"
+    status: "in_progress"
+    completed:
+      - "x64 模拟器首帧和首页真实数据加载通过"
+      - "进程重启后 App 登录状态恢复通过"
+      - "教务已绑定状态和学生信息恢复通过"
+      - "课表学期选择与拉取入口正常打开"
+      - "第 20 周无课状态与第 16 周真实课程卡片渲染通过"
+      - "横向周次切换通过"
+      - "课程详情中的教师、教室、节次和周次展示通过"
+      - "强停并重启进程后课表缓存恢复通过"
+      - "深链冷启动进入成绩页、热启动切换课表通过"
+      - "深链消费后普通重启不重放"
+    issues:
+      - type: "device_validation"
+        description: "Word 计划的完整业务链包含退出登录；当前没有可恢复凭据，该验收与阶段 5 的退出清理一并保留"
+        priority: "medium"
+
+  - name: "阶段 7 成绩考试竞赛中心"
+    status: "in_progress"
+    completed:
+      - "成绩列表、学期汇总、GPA、未通过与学位课状态已在 x64 模拟器验收"
+      - "成绩详情接口与成绩构成、学分、绩点、考试性质已在 x64 模拟器验收"
+      - "竞赛分类、总览、列表和用户状态接口均返回 200，筛选页面无运行时异常"
+      - "考试页按平台能力隐藏鸿蒙未接入的桌面小组件、文件导入导出和系统日历入口"
+      - "竞赛 JSON 导入在鸿蒙使用文本粘贴预览，非鸿蒙平台保留文件选择"
+      - "JSON 空值、格式、顶层结构和 2 MB 大小限制已本地校验；新预览失败时不会保留旧提交数据"
+      - "分享码预览与提交已补齐输入校验和网络异常反馈"
+      - "认证、教务、平台边界、私信通知、考试缓存和竞赛导入共 71 项定向测试通过"
+      - "最新 x64 HAP 已使用 hdc install -r 保留数据覆盖安装，登录态和教务绑定保持不变"
+      - "考试页已在 x64 模拟器验收：鸿蒙未接入入口保持隐藏，当前学期空状态正确；手工添加表单仅检查后取消，未保存考试数据"
+      - "竞赛 JSON 文本导入已在 x64 模拟器验收：非法 JSON 本地拒绝，合法空 events 返回 200 并生成 0 条预览；未执行合并或覆盖"
+    issues:
+      - type: "test_data"
+        description: "当前服务端推荐、学校认定等竞赛筛选均为 0 条，详情和加入计划同步暂时无法用真实数据验收"
+        priority: "medium"
+
+  - name: "阶段 8 互动卡片"
+    status: "in_progress"
+    completed:
+      - "Flutter HomeCardService、ArkTS MethodChannel、Preferences 和 FormExtensionAbility 已接入"
+      - "已实现 2x2 下一节课、4x2 今日课程和 4x2 学业提醒三张服务卡片"
+      - "课程、考试和竞赛数据刷新入口已接入，考试空状态不会创建考试数据"
+      - "三张动态卡片按华为官方指南改为根容器 onClick + postCardAction(router)，只传递 abilityName 和 homeCardRoute"
+      - "OhosDeepLinkPlugin 同时兼容直接 homeCardRoute 与 parameters.params.homeCardRoute 参数包装"
+      - "考试空列表改为可修改列表，手动添加不再触发 Unsupported operation"
+      - "考试弹窗控制器由路由内 StatefulWidget 管理，退场动画期间不再提前释放"
+      - "手动添加考试持久化和三张动态卡片 router 结构共 6 项定向测试通过"
+      - "上一版本 x64 HAP 已使用 hdc install -r 保留数据覆盖安装，首次安装时间保持不变；最新参数兼容性 HAP 等待设备恢复后部署"
+    issues:
+      - type: "device_validation"
+        description: "考试手动添加保存和退出桌面编辑模式后的三张卡片点击跳转，等待用户复验"
+        priority: "high"
+
+  - name: "阶段 9 实况窗"
+    status: "in_progress"
+    completed:
+      - "Flutter LiveViewService 与 com.sylulive.harmony/live_view MethodChannel 已接入"
+      - "ArkTS OhosLiveViewPlugin 使用 API 24 Live View Kit 实现创建、更新、结束和系统开关检查"
+      - "下一节课已接入课表缓存、网络刷新、课程编辑和学期切换后的同步入口"
+      - "超过 60 分钟不创建，60 分钟内创建，到达开始时间更新为上课中，到达结束时间自动结束"
+      - "平台服务按平台复用实例；业务发生键、系统稳定 ID、getActiveLiveView 恢复与 ArkData 注册表共同保证重复同步去重"
+      - "实况窗点击 WantAgent 复用深链通道进入课表；退出账号同时清理持久化注册表和活动实况窗"
+      - "阶段 9 相关静态检查无告警，状态机与既有认证/卡片回归共 55 项定向测试通过"
+      - "API 24 x64 signed HAP 编译通过"
+    issues:
+      - type: "device_validation"
+        description: "最新 HAP 已部署并启动；实况窗创建、开始状态更新、点击跳转、结束、重复同步去重和退出账号清理仍需用户现场验收"
+        priority: "high"
+
+  - name: "阶段 10 Scan Kit"
+    status: "in_progress"
+    completed:
+      - "Flutter OhosScanService 与 com.sylulive.harmony/scan MethodChannel 已接入"
+      - "ArkTS OhosScanPlugin 使用 API 24 Scan Kit 默认扫码界面，只识别二维码并区分用户取消和真实错误"
+      - "扫码结果严格解析 sylulive://competition/<id> 与 sylulive://schedule/share/<code>，拒绝错误协议、额外路径、查询参数和非法编号"
+      - "竞赛二维码先显示编号预览并要求用户确认，确认后才打开竞赛详情"
+      - "课表分享码仅显示只读预览和未导入提示，不会在缺少后端接口时伪造或覆盖课表数据"
+      - "扫码解析、MethodChannel 行为与平台边界共 12 项定向测试通过，定向静态分析无告警"
+      - "API 24 x64 signed HAP 编译通过"
+    issues:
+      - type: "backend_capability"
+        description: "仓库和现有后端没有课表分享码预览、确认导入接口；sylulive://schedule/share/<code> 当前只能安全预览，不能完成导入"
+        priority: "high"
+      - type: "device_validation"
+        description: "supportsScanKit 仍保持关闭；需用户在当前在线模拟器验收系统扫码界面、取消、错误二维码和竞赛详情确认跳转，再开放入口"
+        priority: "high"
+
+  - name: "阶段 11 第四个鸿蒙特性（应用接续或 Push Kit）"
+    status: "completed"
+    completed:
+      - "选择应用接续方案，不引入未验收的 Push Kit 依赖"
+      - "竞赛详情保存脱敏页面状态，EntryAbility.onContinue 通过 ArkData Preferences 提供接续状态"
+      - "冷启动、热启动和接续状态均复用深链通道，单次消费并校验 schemaVersion"
+      - "接续状态不包含 Token、教务密码或其他隐私凭据"
+      - "OhosContinuationPlugin 已注册，API 24 x64 HAP 编译并在模拟器启动验证通过"
+    issues:
+      - type: "device_validation"
+        description: "当前只有单台模拟器，未完成两台 HarmonyOS 设备之间的真实接续验收"
+        priority: "medium"
+
+  - name: "阶段 12 手机、平板和 PC 自适应"
+    status: "completed"
+    completed:
+      - "鸿蒙模块 deviceTypes 覆盖 phone、tablet、2in1"
+      - "竞赛中心 840dp 以上使用列表加详情预览双栏，窄屏保持单列"
+      - "首页已有 NavigationRail 和 ResponsiveUtil 宽屏导航策略"
+      - "Flutter 定向静态分析通过，API 24 x64 HAP 编译通过"
+    issues:
+      - type: "device_validation"
+        description: "尚未取得实体平板或 2in1 设备完成横竖屏和触控验收"
+        priority: "low"
+
+global_comparison:
+  status: "pending"
+  missing_features: []
+  ui_differences: []
+
+verification:
+  static_analysis: "targeted passed"
+  targeted_tests: "既有迁移定向 71 passed；新增平台定向 26 passed"
+  android_debug_apk: "passed"
+  android_debug_apk_sha256: "4229B43A046AB918BB64945391B529338DD0B41E0AA312AE94F7D6C7D30965D6"
+  android_release_apk: "build/release/sylulive-android-release.apk"
+  android_release_apk_sha256: "7098CA516A82DE9EF79DEF432AFE6A746D5D714821639944046EFADD7A57F468"
+  harmony_signed_hap: "passed"
+  harmony_x64_debug_hap_sha256: "9CECB8F6BE5B745ED36A637B12F45749AFBEB44EFFA9C90E5E82C60A9580D4E2"
+  harmony_release_arm64_hap: "build/release/sylulive-harmony-release-arm64.hap"
+  harmony_release_arm64_hap_sha256: "00F7C7B7885627E8DD4CEE2D1E7D8EFEEB552B12CB08507A6266E3EDFC4E217E"
+  harmony_release_x64_hap: "build/release/sylulive-harmony-release-x64.hap"
+  harmony_release_x64_hap_sha256: "DD288AE884B98409F51B5657B9EF829AE598A578A3186961DCABB6645C8861E9"
+  connected_device: "127.0.0.1:5555_ohos-x64_API24_online"
+  first_frame: "passed"
+  auth_restart: "passed"
+  edu_binding_restore: "passed"
+  edu_status_200: "passed"
+  course_fetch_entry: "passed"
+  course_week_switch: "passed"
+  course_detail: "passed"
+  course_cache_restart: "passed"
+  deeplink_cold_start: "passed"
+  deeplink_hot_start: "passed"
+  deeplink_single_consumption: "passed"
+  jpush_ohos_compile_isolation: "passed"
+  notification_platform_boundary: "passed"
+  harmony_foreground_smoke: "passed"
+  stage7_exam_empty_state: "passed_without_creating_exam"
+  stage7_competition_json_preview: "passed_without_import_commit"
+  stage8_fix_tests: "6 passed"
+  stage8_preserve_install: "passed_firstInstallTime_1784194602353_previous_hap"
+  stage8_latest_hap_install: "passed_hdc_install_r_preserve_data"
+  stage8_exam_manual_add: "pending_user_retest"
+  stage8_card_navigation: "pending_user_retest"
+  stage9_targeted_regression: "55 passed"
+  stage9_hap_build: "passed_api24_x64"
+  stage9_latest_hap_install: "passed_hdc_install_r_preserve_data"
+  stage9_live_view_lifecycle: "pending_device_validation"
+  stage10_scan_parser_and_boundary: "12 passed"
+  stage10_hap_build: "passed_api24_x64"
+  stage10_scan_kit_entry: "disabled_pending_device_validation"
+  stage10_schedule_share_import: "blocked_missing_backend_api"
+  stage11_continuation_tests: "4 passed"
+  stage11_cross_device: "pending_second_harmony_device"
+  stage12_responsive_static: "passed"
+  full_flutter_test: "failed_existing_security_regression_webvpn_tls_assertion"
+
+last_update: "2026-07-17T21:03:00+08:00"
+next_step: "由用户在当前在线模拟器复验阶段 8 考试添加与卡片跳转、阶段 9 实况窗生命周期；具备扫码权限后再开放 Scan Kit 入口验收；阶段 10 课表分享码导入等待后端 API，阶段 11 跨设备接续等待第二台 HarmonyOS 设备"

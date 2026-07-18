@@ -12,6 +12,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../platform/app_platform.dart';
+import '../platform/platform_services.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -75,6 +76,20 @@ abstract interface class AuthCredentialStore {
   Future<String?> readEduPassword(String studentId);
 
   Future<void> deleteEduPassword(String studentId);
+}
+
+/// 按 [AppPlatforms.current] 返回对应平台的认证凭据存储实现。
+///
+/// 计划 7.2：让 EduProvider 也通过同一抽象读写教务密码，
+/// 防止鸿蒙端写入 flutter_secure_storage fallback 而绕开 Asset Store Kit。
+/// 任一上层（AuthProvider / EduProvider）默认调用此工厂，
+/// 保证 Android 走 `flutter_secure_storage`、OHOS 走 `shenliyuan/secure_storage` 原生桥接。
+AuthCredentialStore defaultAuthCredentialStoreFor({
+  AppPlatform? platform,
+}) {
+  final p = platform ?? AppPlatforms.current;
+  if (p.isOhos) return const _OhosAuthCredentialStore();
+  return PlatformAuthCredentialStore();
 }
 
 class PreferenceAuthCredentialStore implements AuthCredentialStore {
@@ -269,19 +284,54 @@ class _OhosAuthCredentialStore implements AuthCredentialStore {
   }
 }
 
-class _PlatformAuthCredentialStore implements AuthCredentialStore {
+/// 可注入的安全键值存储抽象。
+///
+/// 计划 7.2 一致性保障：让 PlatformAuthCredentialStore 在测试里能够
+/// 模拟第二次写入/删除失败以及回滚失败，从而验证 AuthCredentialConsistencyException 路径。
+abstract interface class SecureValueStore {
+  Future<String?> read(String key);
+  Future<void> write(String key, String value);
+  Future<void> delete(String key);
+}
+
+/// 默认实现，包住 [FlutterSecureStorage]。
+class FlutterSecureValueStore implements SecureValueStore {
+  const FlutterSecureValueStore([this._storage = const FlutterSecureStorage()]);
+  final FlutterSecureStorage _storage;
+  @override
+  Future<String?> read(String key) => _storage.read(key: key);
+  @override
+  Future<void> write(String key, String value) =>
+      _storage.write(key: key, value: value);
+  @override
+  Future<void> delete(String key) => _storage.delete(key: key);
+}
+
+/// 走 lutter_secure_storage 的认证凭据存储（Android / iOS / 桌面平台）。
+///
+/// 计划 7.2：write 与 clear 在部分写入/删除失败时主动回滚已变更的 key，
+/// 一旦回滚本身也失败，抛出 [AuthCredentialConsistencyException]，
+/// 提示调用方持久化凭据可能不一致，需要清除会话并要求用户重新登录，
+/// 不能继续以半套凭据工作。
+///
+/// 公开为 PlatformAuthCredentialStore 便于单元测试注入 [SecureValueStore]。
+class PlatformAuthCredentialStore implements AuthCredentialStore {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
+
+  PlatformAuthCredentialStore({SecureValueStore? storage})
+      : _storage = storage ?? const FlutterSecureValueStore();
+
+  final SecureValueStore _storage;
 
   @override
   Future<StoredAuthCredentials> read() async {
     if (kIsWeb) {
       return (await _preferenceStore()).read();
     }
-    const storage = FlutterSecureStorage();
     return StoredAuthCredentials(
-      token: await storage.read(key: _tokenKey),
-      userJson: await storage.read(key: _userKey),
+      token: await _storage.read(_tokenKey),
+      userJson: await _storage.read(_userKey),
     );
   }
 
@@ -293,15 +343,25 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
         userJson: userJson,
       );
     }
-    const storage = FlutterSecureStorage();
-    final oldToken = await storage.read(key: _tokenKey);
-    final oldUserJson = await storage.read(key: _userKey);
+    final oldToken = await _storage.read(_tokenKey);
+    final oldUserJson = await _storage.read(_userKey);
     try {
-      await storage.write(key: _tokenKey, value: token);
-      await storage.write(key: _userKey, value: userJson);
+      await _storage.write(_tokenKey, token);
+      await _storage.write(_userKey, userJson);
     } catch (error, stackTrace) {
-      await _restoreSecureValue(storage, _tokenKey, oldToken);
-      await _restoreSecureValue(storage, _userKey, oldUserJson);
+      try {
+        await _restoreSecureValue(_tokenKey, oldToken);
+        await _restoreSecureValue(_userKey, oldUserJson);
+      } catch (rollbackError) {
+        Error.throwWithStackTrace(
+          AuthCredentialConsistencyException(
+            message: '回滚平台认证信息失败，持久化凭据可能不一致',
+            operationError: error,
+            rollbackError: rollbackError,
+          ),
+          stackTrace,
+        );
+      }
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
@@ -311,9 +371,27 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
     if (kIsWeb) {
       return (await _preferenceStore()).clear();
     }
-    const storage = FlutterSecureStorage();
-    await storage.delete(key: _tokenKey);
-    await storage.delete(key: _userKey);
+    final oldToken = await _storage.read(_tokenKey);
+    final oldUserJson = await _storage.read(_userKey);
+    try {
+      await _storage.delete(_tokenKey);
+      await _storage.delete(_userKey);
+    } catch (error, stackTrace) {
+      try {
+        await _restoreSecureValue(_tokenKey, oldToken);
+        await _restoreSecureValue(_userKey, oldUserJson);
+      } catch (rollbackError) {
+        Error.throwWithStackTrace(
+          AuthCredentialConsistencyException(
+            message: '回滚平台认证清理失败，持久化凭据可能不一致',
+            operationError: error,
+            rollbackError: rollbackError,
+          ),
+          stackTrace,
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   @override
@@ -321,8 +399,7 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
     if (kIsWeb) {
       return (await _preferenceStore()).writeEduPassword(studentId, password);
     }
-    const storage = FlutterSecureStorage();
-    await storage.write(key: 'edu_pwd_$studentId', value: password);
+    await _storage.write('edu_pwd_$studentId', password);
   }
 
   @override
@@ -331,8 +408,7 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
     if (kIsWeb) {
       return (await _preferenceStore()).readEduPassword(studentId);
     }
-    const storage = FlutterSecureStorage();
-    return storage.read(key: key);
+    return _storage.read(key);
   }
 
   @override
@@ -341,19 +417,17 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
     if (kIsWeb) {
       return (await _preferenceStore()).deleteEduPassword(studentId);
     }
-    const storage = FlutterSecureStorage();
-    await storage.delete(key: key);
+    await _storage.delete(key);
   }
 
   Future<void> _restoreSecureValue(
-    FlutterSecureStorage storage,
     String key,
     String? value,
   ) async {
     if (value == null) {
-      await storage.delete(key: key);
+      await _storage.delete(key);
     } else {
-      await storage.write(key: key, value: value);
+      await _storage.write(key, value);
     }
   }
 
@@ -382,6 +456,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _initialized = false;
   Future<void>? _initializationFuture;
+  Future<void>? _sessionClearFuture;
   int _sessionGeneration = 0;
 
   User? get user => _user;
@@ -398,10 +473,7 @@ class AuthProvider extends ChangeNotifier {
     AuthCredentialStore? credentialStore,
     bool loadStoredAuth = true,
     VoidCallback? onAuthenticated,
-  })  : _credentialStore = credentialStore ??
-            (AppPlatforms.current.isOhos
-                ? const _OhosAuthCredentialStore()
-                : _PlatformAuthCredentialStore()),
+  })  : _credentialStore = credentialStore ?? defaultAuthCredentialStoreFor(),
         _usesPlatformCredentialStore =
             credentialStore == null && !AppPlatforms.current.isOhos,
         _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start {
@@ -412,7 +484,7 @@ class AuthProvider extends ChangeNotifier {
           _applyAuthHeader();
           handler.next(options);
         },
-        onError: (error, handler) {
+        onError: (error, handler) async {
           final status = error.response?.statusCode;
           final rawPath = error.requestOptions.path;
           final uriPath = error.requestOptions.uri.path;
@@ -428,17 +500,23 @@ class AuthProvider extends ChangeNotifier {
               return;
             }
 
-            // 无效令牌，自动登出
+            // 无效令牌，自动登出。Dio 支持异步拦截器，等待清理完成后再把
+            // 401 交回业务层，避免页面收到错误时仍短暂处于已登录状态。
             debugPrint('检测到 App 401，自动登出');
-            // 统一走 _clearLocalSession，与手动退出相同路径
-            // 不 await — 拦截器内部不能阻塞
-            _clearLocalSession(clearPushAlias: true);
+            final shouldShowOverlay = _sessionClearFuture == null;
+            try {
+              await _clearLocalSession(clearPushAlias: true);
+            } catch (clearError) {
+              debugPrint('App 401 本地会话清理失败: $clearError');
+            }
             // 重置 overlay 标记，允许再次弹出
-            AuthExpiredManager.resetSessionFlag();
-            // 延迟一帧弹出重新登录提示
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _showAuthExpiredOverlay();
-            });
+            if (shouldShowOverlay) {
+              AuthExpiredManager.resetSessionFlag();
+              // 延迟一帧弹出重新登录提示
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _showAuthExpiredOverlay();
+              });
+            }
           }
           handler.next(error);
         },
@@ -676,7 +754,24 @@ class AuthProvider extends ChangeNotifier {
   /// 统一的本地会话清理
   ///
   /// [clearPushAlias] 为 true 时同时清除极光 Alias（手动退出 / 401）。
-  Future<void> _clearLocalSession({required bool clearPushAlias}) async {
+  Future<void> _clearLocalSession({required bool clearPushAlias}) {
+    final inFlight = _sessionClearFuture;
+    if (inFlight != null) return inFlight;
+
+    final operation = _performLocalSessionClear(
+      clearPushAlias: clearPushAlias,
+    );
+    _sessionClearFuture = operation;
+    return operation.whenComplete(() {
+      if (identical(_sessionClearFuture, operation)) {
+        _sessionClearFuture = null;
+      }
+    });
+  }
+
+  Future<void> _performLocalSessionClear({
+    required bool clearPushAlias,
+  }) async {
     final hadSession = _token != null || _user != null;
     final oldUserId = _user?.id.toString();
     if (oldUserId != null) {
@@ -686,6 +781,16 @@ class AuthProvider extends ChangeNotifier {
       await _cookieJar!.deleteAll();
     }
     await _clearStoredAuth();
+    try {
+      await PlatformServices.current.homeCards.clearAllCards();
+    } catch (error) {
+      debugPrint('清理鸿蒙互动卡片数据失败: $error');
+    }
+    try {
+      await PlatformServices.current.liveView.clearAll();
+    } catch (error) {
+      debugPrint('清理鸿蒙实况窗失败: $error');
+    }
     if (clearPushAlias) {
       await _clearPushAlias();
     }

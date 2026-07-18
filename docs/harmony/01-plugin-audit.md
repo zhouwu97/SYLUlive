@@ -6,7 +6,6 @@
 
 | 插件 | 当前锁定版本 | 结论 | 后续动作 |
 | --- | ---: | --- | --- |
-| `jpush_flutter` | 3.4.6 | 当前 Ohos 构建已注册，但不作为鸿蒙首版推送方案 | 迁移后仅 Android 初始化；鸿蒙端关闭私信推送入口 |
 | `photo_manager` | 3.9.0 | 当前 Ohos 构建已注册 | 仅保留图片选择最小真机验证，复杂相册能力首版隐藏 |
 
 ## 需优先真机验证的跨平台插件
@@ -26,7 +25,13 @@
 
 ## Android 专属或必须隔离的能力
 
-- `jpush_flutter` 私信通知与 Alias 状态机。
+- `jpush_flutter` 私信通知与 Alias 状态机。主工程依赖中性
+  `sylulive_push_bridge` 门面：标准依赖指向 Android 转发实现，继续使用官方
+  `jpush_flutter` 3.4.6，并封装私信本地通知和原生通道；OHOS 依赖模板覆盖为
+  无原生平台声明的空实现。`main.dart` 只依赖中性 `NotificationService`。
+- OHOS 验收必须同时确认 `.flutter-plugins-dependencies`、自动插件注册器、
+  OHPM 锁文件和最终 HAP 均不含 `jpush_flutter`、`@jg/push`、
+  `jg_md5_push` 或 JPush 注入权限，不能只依赖运行时能力开关。
 - Android `MainActivity` 的 APK 安装、课程提醒、小组件、前台保活和通知渠道。
 - `HomeWidgetService`、`CourseReminderService`、`KeepAliveService` 中的 Android MethodChannel。
 - APK 自更新：Ohos 仅执行版本检查与应用市场/官方分发页跳转。

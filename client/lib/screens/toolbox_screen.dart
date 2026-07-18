@@ -1,4 +1,3 @@
-import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../main.dart';
+import '../platform/app_platform.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
@@ -447,10 +447,10 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     if (kIsWeb) {
       url = 'https://ys.mihoyo.com/cloud/';
       mode = LaunchMode.platformDefault;
-    } else if (Platform.isAndroid) {
+    } else if (AppPlatforms.current.isAndroid) {
       url = 'https://ys.mihoyo.com/cloud/';
       mode = LaunchMode.externalApplication;
-    } else if (Platform.isIOS) {
+    } else if (AppPlatforms.current.isIos) {
       url = 'https://apps.apple.com/cn/app/id1569029742';
       mode = LaunchMode.externalApplication;
     } else {

@@ -1,0 +1,55 @@
+{
+  "forms": [
+    {
+      "name": "next_course",
+      "displayName": "$string:next_course_card_name",
+      "description": "$string:next_course_card_desc",
+      "src": "./ets/widget/pages/NextCourseCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDynamic": true,
+      "isDefault": true,
+      "updateEnabled": false,
+      "defaultDimension": "2*2",
+      "supportDimensions": ["2*2"]
+    },
+    {
+      "name": "today_courses",
+      "displayName": "$string:today_courses_card_name",
+      "description": "$string:today_courses_card_desc",
+      "src": "./ets/widget/pages/TodayCoursesCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDynamic": true,
+      "isDefault": false,
+      "updateEnabled": false,
+      "defaultDimension": "2*4",
+      "supportDimensions": ["2*4"]
+    },
+    {
+      "name": "academic_reminders",
+      "displayName": "$string:academic_reminders_card_name",
+      "description": "$string:academic_reminders_card_desc",
+      "src": "./ets/widget/pages/AcademicRemindersCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDynamic": true,
+      "isDefault": false,
+      "updateEnabled": false,
+      "defaultDimension": "2*4",
+      "supportDimensions": ["2*4"]
+    }
+  ]
+}

@@ -1,4 +1,6 @@
 # 此文件是鸿蒙依赖切换的唯一模板。
 # 新增覆盖前必须先在 docs/harmony/01-plugin-audit.md 记录版本、API 差异和
 # Android 回归结果；不要在 pubspec.yaml 中长期写死鸿蒙 fork。
-dependency_overrides: {}
+dependency_overrides:
+  sylulive_push_bridge:
+    path: packages/sylulive_push_bridge_ohos

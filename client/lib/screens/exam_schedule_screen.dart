@@ -3,6 +3,10 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../platform/app_platform.dart';
+import '../platform/platform_capabilities.dart';
+import '../platform/home_card/home_card_payload.dart';
+import '../platform/platform_services.dart';
 import '../providers/edu_provider.dart';
 import '../providers/theme_provider.dart';
 import '../models/exam_schedule.dart';
@@ -21,6 +25,58 @@ class ExamScheduleScreen extends StatefulWidget {
 
   @override
   State<ExamScheduleScreen> createState() => _ExamScheduleScreenState();
+}
+
+typedef _ExamDialogBuilder = Widget Function(
+  BuildContext context,
+  TextEditingController nameController,
+  TextEditingController locationController,
+  TextEditingController jsonController,
+);
+
+class _ExamDialogControllerScope extends StatefulWidget {
+  const _ExamDialogControllerScope({required this.exam, required this.builder});
+
+  final ExamModel? exam;
+  final _ExamDialogBuilder builder;
+
+  @override
+  State<_ExamDialogControllerScope> createState() =>
+      _ExamDialogControllerScopeState();
+}
+
+class _ExamDialogControllerScopeState
+    extends State<_ExamDialogControllerScope> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _locationController;
+  final TextEditingController _jsonController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.exam?.name ?? '');
+    _locationController = TextEditingController(
+      text: widget.exam?.location ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _locationController.dispose();
+    _jsonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.builder(
+      context,
+      _nameController,
+      _locationController,
+      _jsonController,
+    );
+  }
 }
 
 class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
@@ -131,7 +187,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
 
     try {
       Directory? backupDir;
-      if (Platform.isAndroid) {
+      if (AppPlatforms.current.isAndroid) {
         backupDir = await getExternalStorageDirectory();
         // 如果想要存到 Download/沈理考试/，这里应该拿到外部存储根目录
         // 但 getExternalStorageDirectory() 给的是 Android/data/...
@@ -240,6 +296,26 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   void _syncWidget() {
     _syncTimer?.cancel();
     _syncTimer = Timer(const Duration(milliseconds: 500), () async {
+      if (AppPlatforms.current.isOhos) {
+        try {
+          final payload = HomeCardPayloadFactory.exam(
+            _exams.map(
+              (exam) => HomeCardExamData(
+                name: exam.name,
+                startTime: exam.startTime,
+                endTime: exam.endTime,
+                location: exam.location,
+              ),
+            ),
+          );
+          await PlatformServices.current.homeCards.syncExamCard(
+            payload.toJson(),
+          );
+        } catch (error) {
+          debugPrint('鸿蒙考试卡片同步失败: $error');
+        }
+        return;
+      }
       await HomeWidgetService.syncExamData(
         _exams.map(
           (exam) => HomeWidgetExamEntry(
@@ -301,8 +377,6 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   }
 
   void _showEditDialog([ExamModel? exam, int? index]) {
-    final nameCtrl = TextEditingController(text: exam?.name ?? '');
-    final locCtrl = TextEditingController(text: exam?.location ?? '');
     String selectedSemester = exam?.semester ?? _currentSemester;
 
     DateTime examDate = exam?.startTime ?? DateTime.now();
@@ -313,307 +387,379 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       exam?.endTime ?? DateTime.now().add(const Duration(hours: 2)),
     );
 
-    final jsonController = TextEditingController();
     bool isAiMode = exam == null;
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) {
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          return AlertDialog(
-            backgroundColor: isDark ? const Color(0xFF1E2235) : Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            contentPadding: const EdgeInsets.all(24),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    exam == null ? '添加考试' : '编辑考试',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (exam == null) ...[
-                    SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment(value: false, label: Text('手动添加')),
-                        ButtonSegment(value: true, label: Text('AI 导入')),
-                      ],
-                      selected: {isAiMode},
-                      onSelectionChanged: (Set<bool> newSelection) {
-                        setModalState(() {
-                          isAiMode = newSelection.first;
-                        });
-                      },
+      builder: (ctx) => _ExamDialogControllerScope(
+        exam: exam,
+        builder: (ctx, nameCtrl, locCtrl, jsonController) => StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            return AlertDialog(
+              backgroundColor: isDark ? const Color(0xFF1E2235) : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              contentPadding: const EdgeInsets.all(24),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      exam == null ? '添加考试' : '编辑考试',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 16),
-                  ],
-                  if (isAiMode) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.secondaryContainer.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(12),
+                    if (exam == null) ...[
+                      SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment(value: false, label: Text('手动添加')),
+                          ButtonSegment(value: true, label: Text('AI 导入')),
+                        ],
+                        selected: {isAiMode},
+                        onSelectionChanged: (Set<bool> newSelection) {
+                          setModalState(() {
+                            isAiMode = newSelection.first;
+                          });
+                        },
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.lightbulb_outline,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.secondary,
+                      const SizedBox(height: 16),
+                    ],
+                    if (isAiMode) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondaryContainer.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.lightbulb_outline,
+                                  size: 16,
+                                  color:
+                                      Theme.of(context).colorScheme.secondary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '使用步骤',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.secondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '1. 点击下方按钮复制提示词；',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '使用步骤',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
+                            ),
+                            Text(
+                              '2. 将提示词与考试安排发给AI；',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            Text(
+                              '3. 在下方粘贴 AI 回复的 JSON 代码。',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.copy, size: 18),
+                        label: const Text('一键复制 AI 提示词'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
+                        ),
+                        onPressed: () {
+                          Clipboard.setData(
+                            ClipboardData(text: generateExamPrompt()),
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('提示词已复制！请前往 AI 助手处粘贴。')),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: jsonController,
+                        maxLines: 8,
+                        minLines: 5,
+                        decoration: InputDecoration(
+                          hintText: '在此粘贴 AI 生成的 JSON 代码...',
+                          border: const OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Theme.of(
+                            context,
+                          )
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withOpacity(0.3),
+                        ),
+                      ),
+                    ] else ...[
+                      TextField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: '科目名称',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedSemester,
+                        decoration: const InputDecoration(
+                          labelText: '归属学期',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _availableSemesters
+                            .map(
+                              (s) => DropdownMenuItem(value: s, child: Text(s)),
+                            )
+                            .toList(),
+                        onChanged: (val) {
+                          if (val != null)
+                            setModalState(() => selectedSemester = val);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      InkWell(
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: ctx,
+                            initialDate: examDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (date != null) {
+                            setModalState(() {
+                              examDate = date;
+                            });
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: '考试日期',
+                            border: OutlineInputBorder(),
+                          ),
+                          child: Text(
+                            '${examDate.year}年${examDate.month}月${examDate.day}日',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () async {
+                                final time = await showTimePicker(
+                                  context: ctx,
+                                  initialTime: startTime,
+                                );
+                                if (time != null) {
+                                  setModalState(() {
+                                    startTime = time;
+                                    // auto correct endTime if needed
+                                    final startMins =
+                                        startTime.hour * 60 + startTime.minute;
+                                    final endMins =
+                                        endTime.hour * 60 + endTime.minute;
+                                    if (endMins <= startMins) {
+                                      final newEndMins = startMins +
+                                          120; // 2 hours duration default
+                                      endTime = TimeOfDay(
+                                        hour: (newEndMins ~/ 60) % 24,
+                                        minute: newEndMins % 60,
+                                      );
+                                    }
+                                  });
+                                }
+                              },
+                              child: InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: '开始时间',
+                                  border: OutlineInputBorder(),
+                                ),
+                                child: Text(
+                                  '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '1. 点击下方按钮复制提示词；',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          Text(
-                            '2. 将提示词与考试安排发给AI；',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          Text(
-                            '3. 在下方粘贴 AI 回复的 JSON 代码。',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () async {
+                                final time = await showTimePicker(
+                                  context: ctx,
+                                  initialTime: endTime,
+                                );
+                                if (time != null) {
+                                  setModalState(() {
+                                    endTime = time;
+                                  });
+                                }
+                              },
+                              child: InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: '结束时间',
+                                  border: OutlineInputBorder(),
+                                ),
+                                child: Text(
+                                  '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('一键复制 AI 提示词'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.primaryContainer,
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.onPrimaryContainer,
-                      ),
-                      onPressed: () {
-                        Clipboard.setData(
-                          ClipboardData(text: generateExamPrompt()),
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('提示词已复制！请前往 AI 助手处粘贴。')),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: jsonController,
-                      maxLines: 8,
-                      minLines: 5,
-                      decoration: InputDecoration(
-                        hintText: '在此粘贴 AI 生成的 JSON 代码...',
-                        border: const OutlineInputBorder(),
-                        filled: true,
-                        fillColor: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                      ),
-                    ),
-                  ] else ...[
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '科目名称',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: selectedSemester,
-                      decoration: const InputDecoration(
-                        labelText: '归属学期',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: _availableSemesters
-                          .map(
-                            (s) => DropdownMenuItem(value: s, child: Text(s)),
-                          )
-                          .toList(),
-                      onChanged: (val) {
-                        if (val != null)
-                          setModalState(() => selectedSemester = val);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    InkWell(
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: ctx,
-                          initialDate: examDate,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2100),
-                        );
-                        if (date != null) {
-                          setModalState(() {
-                            examDate = date;
-                          });
-                        }
-                      },
-                      child: InputDecorator(
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: locCtrl,
                         decoration: const InputDecoration(
-                          labelText: '考试日期',
+                          labelText: '考试地点',
                           border: OutlineInputBorder(),
                         ),
-                        child: Text(
-                          '${examDate.year}年${examDate.month}月${examDate.day}日',
-                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
+                    ],
+                    const SizedBox(height: 24),
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () async {
-                              final time = await showTimePicker(
-                                context: ctx,
-                                initialTime: startTime,
-                              );
-                              if (time != null) {
-                                setModalState(() {
-                                  startTime = time;
-                                  // auto correct endTime if needed
-                                  final startMins =
-                                      startTime.hour * 60 + startTime.minute;
-                                  final endMins =
-                                      endTime.hour * 60 + endTime.minute;
-                                  if (endMins <= startMins) {
-                                    final newEndMins = startMins +
-                                        120; // 2 hours duration default
-                                    endTime = TimeOfDay(
-                                      hour: (newEndMins ~/ 60) % 24,
-                                      minute: newEndMins % 60,
-                                    );
-                                  }
-                                });
-                              }
-                            },
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: '开始时间',
-                                border: OutlineInputBorder(),
-                              ),
-                              child: Text(
-                                '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
-                              ),
-                            ),
-                          ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('取消'),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () async {
-                              final time = await showTimePicker(
-                                context: ctx,
-                                initialTime: endTime,
-                              );
-                              if (time != null) {
-                                setModalState(() {
-                                  endTime = time;
-                                });
-                              }
-                            },
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: '结束时间',
-                                border: OutlineInputBorder(),
-                              ),
-                              child: Text(
-                                '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: locCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '考试地点',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('取消'),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: () {
-                          if (isAiMode) {
-                            final code = jsonController.text.trim();
-                            if (code.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('请粘贴 JSON 代码！')),
-                              );
-                              return;
-                            }
-                            try {
-                              final List dynamicList = jsonDecode(code);
-                              final List<ExamModel> newExams = dynamicList.map((
-                                e,
-                              ) {
-                                return ExamModel(
-                                  name: e['name'],
-                                  startTime: DateTime.parse(e['startTime']),
-                                  endTime: DateTime.parse(e['endTime']),
-                                  location: e['location'],
-                                  semester: _currentSemester,
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () {
+                            if (isAiMode) {
+                              final code = jsonController.text.trim();
+                              if (code.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('请粘贴 JSON 代码！')),
                                 );
-                              }).toList();
+                                return;
+                              }
+                              try {
+                                final List dynamicList = jsonDecode(code);
+                                final List<ExamModel> newExams =
+                                    dynamicList.map((
+                                  e,
+                                ) {
+                                  return ExamModel(
+                                    name: e['name'],
+                                    startTime: DateTime.parse(e['startTime']),
+                                    endTime: DateTime.parse(e['endTime']),
+                                    location: e['location'],
+                                    semester: _currentSemester,
+                                  );
+                                }).toList();
+                                if (mounted)
+                                  setState(() {
+                                    _exams.addAll(newExams);
+                                    _exams.sort(
+                                      (a, b) =>
+                                          a.startTime.compareTo(b.startTime),
+                                    );
+                                  });
+                                _saveToLocal();
+                                Navigator.pop(ctx);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content:
+                                        Text('成功导入 ${newExams.length} 场考试！'),
+                                  ),
+                                );
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '解析失败: ${e.toString().split('\n').first}',
+                                    ),
+                                  ),
+                                );
+                              }
+                            } else {
+                              if (nameCtrl.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('科目名称不能为空')),
+                                );
+                                return;
+                              }
+
+                              final startDateTime = DateTime(
+                                examDate.year,
+                                examDate.month,
+                                examDate.day,
+                                startTime.hour,
+                                startTime.minute,
+                              );
+                              final endDateTime = DateTime(
+                                examDate.year,
+                                examDate.month,
+                                examDate.day,
+                                endTime.hour,
+                                endTime.minute,
+                              );
+
+                              if (endDateTime.isBefore(startDateTime)) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('结束时间不能早于开始时间')),
+                                );
+                                return;
+                              }
+                              final newExam = ExamModel(
+                                name: nameCtrl.text.trim(),
+                                startTime: startDateTime,
+                                endTime: endDateTime,
+                                location: locCtrl.text.trim(),
+                                semester: selectedSemester,
+                              );
                               if (mounted)
                                 setState(() {
-                                  _exams.addAll(newExams);
+                                  if (index != null && exam != null) {
+                                    _exams[index] = newExam;
+                                  } else {
+                                    _exams.add(newExam);
+                                  }
                                   _exams.sort(
                                     (a, b) =>
                                         a.startTime.compareTo(b.startTime),
@@ -621,93 +767,28 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                 });
                               _saveToLocal();
                               Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('成功导入 ${newExams.length} 场考试！'),
-                                ),
-                              );
-                            } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    '解析失败: ${e.toString().split('\n').first}',
-                                  ),
-                                ),
-                              );
                             }
-                          } else {
-                            if (nameCtrl.text.trim().isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('科目名称不能为空')),
-                              );
-                              return;
-                            }
-
-                            final startDateTime = DateTime(
-                              examDate.year,
-                              examDate.month,
-                              examDate.day,
-                              startTime.hour,
-                              startTime.minute,
-                            );
-                            final endDateTime = DateTime(
-                              examDate.year,
-                              examDate.month,
-                              examDate.day,
-                              endTime.hour,
-                              endTime.minute,
-                            );
-
-                            if (endDateTime.isBefore(startDateTime)) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('结束时间不能早于开始时间')),
-                              );
-                              return;
-                            }
-                            final newExam = ExamModel(
-                              name: nameCtrl.text.trim(),
-                              startTime: startDateTime,
-                              endTime: endDateTime,
-                              location: locCtrl.text.trim(),
-                              semester: selectedSemester,
-                            );
-                            if (mounted)
-                              setState(() {
-                                if (index != null && exam != null) {
-                                  _exams[index] = newExam;
-                                } else {
-                                  _exams.add(newExam);
-                                }
-                                _exams.sort(
-                                  (a, b) => a.startTime.compareTo(b.startTime),
-                                );
-                              });
-                            _saveToLocal();
-                            Navigator.pop(ctx);
-                          }
-                        },
-                        child: Text(
-                          exam == null ? (isAiMode ? '导入' : '添加') : '保存修改',
+                          },
+                          child: Text(
+                            exam == null ? (isAiMode ? '导入' : '添加') : '保存修改',
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
-    ).then((_) {
-      nameCtrl.dispose();
-      locCtrl.dispose();
-      jsonController.dispose();
-    });
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final capabilities = PlatformCapabilities.current;
 
     final displayExams =
         _exams.where((e) => e.semester == _currentSemester).toList();
@@ -777,39 +858,43 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.widgets_outlined),
-            tooltip: '桌面小组件',
-            onPressed: () async {
-              _syncTimer?.cancel();
-              await HomeWidgetService.syncExamData(
-                _exams.map(
-                  (exam) => HomeWidgetExamEntry(
-                    name: exam.name,
-                    startTime: exam.startTime,
-                    endTime: exam.endTime,
-                    location: exam.location,
+          if (capabilities.supportsNativeWidget &&
+              AppPlatforms.current.isAndroid)
+            IconButton(
+              icon: const Icon(Icons.widgets_outlined),
+              tooltip: '桌面小组件',
+              onPressed: () async {
+                _syncTimer?.cancel();
+                await HomeWidgetService.syncExamData(
+                  _exams.map(
+                    (exam) => HomeWidgetExamEntry(
+                      name: exam.name,
+                      startTime: exam.startTime,
+                      endTime: exam.endTime,
+                      location: exam.location,
+                    ),
                   ),
-                ),
-              );
-              if (!context.mounted) return;
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const HomeWidgetSettingsScreen(),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.file_upload_outlined),
-            tooltip: '导入存档',
-            onPressed: _importExams,
-          ),
-          IconButton(
-            icon: const Icon(Icons.file_download_outlined),
-            tooltip: '导出存档',
-            onPressed: _exportExams,
-          ),
+                );
+                if (!context.mounted) return;
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const HomeWidgetSettingsScreen(),
+                  ),
+                );
+              },
+            ),
+          if (capabilities.supportsFileImportExport) ...[
+            IconButton(
+              icon: const Icon(Icons.file_upload_outlined),
+              tooltip: '导入存档',
+              onPressed: _importExams,
+            ),
+            IconButton(
+              icon: const Icon(Icons.file_download_outlined),
+              tooltip: '导出存档',
+              onPressed: _exportExams,
+            ),
+          ],
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: '添加考试',
@@ -992,16 +1077,17 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.edit_calendar,
-                                  color: isDark
-                                      ? Colors.white70
-                                      : Colors.grey[600],
+                              if (capabilities.supportsSystemCalendar)
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.edit_calendar,
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.grey[600],
+                                  ),
+                                  tooltip: '添加到系统日历',
+                                  onPressed: () => _addToCalendar(exam),
                                 ),
-                                tooltip: '添加到系统日历',
-                                onPressed: () => _addToCalendar(exam),
-                              ),
                             ],
                           ),
                         ),

@@ -9,9 +9,16 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/competition.dart';
+import '../../platform/platform_capabilities.dart';
+import '../../platform/continuation/continuation_service.dart';
+import '../../platform/home_card/home_card_payload.dart';
+import '../../platform/platform_services.dart';
+import '../../platform/scan/scan_result_parser.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
+import '../../utils/responsive_util.dart';
 import '../../utils/competition_batch_action_payload.dart';
+import '../../utils/competition_import_payload.dart';
 import '../../widgets/competition/competition_empty_state.dart';
 import '../../widgets/competition/competition_status_helper.dart';
 import '../../widgets/competition/competition_student_event_card.dart';
@@ -70,6 +77,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   final Set<String> _recognitions = {};
   final Set<String> _sources = {};
   int? _calendarCount;
+  CompetitionEvent? _selectedEvent;
 
   String _studentFocusFilter = 'recommended';
 
@@ -364,6 +372,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
         actions: [
+          if (PlatformServices.current.capabilities.supportsScanKit)
+            IconButton(
+              tooltip: '扫码',
+              onPressed: _scanCode,
+              icon: const Icon(Icons.qr_code_scanner_rounded),
+            ),
           if (isAdmin)
             TextButton.icon(
               onPressed: _openAdminCenter,
@@ -375,14 +389,177 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadAll,
-        child: ListView(
-          controller: _scrollController,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 32),
-          children: _buildStudentHome(isDark),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >= ResponsiveUtil.tabletMaxWidth) {
+            return _buildDesktopHome(isDark);
+          }
+          return RefreshIndicator(
+            onRefresh: _loadAll,
+            child: ListView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 32),
+              children: _buildStudentHome(isDark),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDesktopHome(bool isDark) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1280),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 5,
+                child: RefreshIndicator(
+                  onRefresh: _loadAll,
+                  child: ListView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.only(right: 14, bottom: 32),
+                    children: _buildStudentHome(isDark),
+                  ),
+                ),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                flex: 4,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 14),
+                  child: _buildDesktopEventPreview(isDark),
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopEventPreview(bool isDark) {
+    final event = _selectedEvent;
+    if (event == null) {
+      return Center(
+        child: Text(
+          '选择左侧比赛查看详情',
+          style: TextStyle(
+            color: CompetitionUiTokens.subColor(isDark),
+            fontSize: 14,
+          ),
+        ),
+      );
+    }
+
+    final textColor = CompetitionUiTokens.titleColor(isDark);
+    final subColor = CompetitionUiTokens.subColor(isDark);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 32),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: CompetitionUiTokens.cardDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              event.title,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (event.competitionLevel.isNotEmpty)
+                  _buildPreviewPill(event.competitionLevel, isDark),
+                _buildPreviewPill(event.timeStatusLabel, isDark),
+                if (event.primaryCategory != null)
+                  _buildPreviewPill(event.primaryCategory!.name, isDark),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Text(
+              event.summary.isEmpty ? '暂无摘要' : event.summary,
+              style: TextStyle(color: subColor, height: 1.5),
+            ),
+            const SizedBox(height: 18),
+            _buildPreviewRow('报名时间', event.registrationTimeText, subColor),
+            _buildPreviewRow('比赛时间', event.eventTimeText, subColor),
+            _buildPreviewRow(
+              '举办地点',
+              event.isOnline ? '线上比赛' : event.location,
+              subColor,
+            ),
+            if (event.recommendationReason.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text('推荐理由',
+                  style:
+                      TextStyle(color: textColor, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text(event.recommendationReason,
+                  style: TextStyle(color: subColor, height: 1.5)),
+            ],
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () => _openDetail(event),
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: const Text('打开完整详情'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _copyToCalendar(event.id),
+              icon: const Icon(Icons.add_task_rounded, size: 18),
+              label: const Text('加入我的计划'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreviewPill(String text, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: CompetitionUiTokens.accent(isDark).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: CompetitionUiTokens.accent(isDark),
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreviewRow(String label, String value, Color subColor) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+              width: 76,
+              child:
+                  Text(label, style: TextStyle(color: subColor, fontSize: 13))),
+          Expanded(
+              child: Text(value.isEmpty ? '暂无' : value,
+                  style: TextStyle(color: subColor, fontSize: 13))),
+        ],
       ),
     );
   }
@@ -767,7 +944,11 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     return CompetitionStudentEventCard(
       event: event,
       onTap: () {
-        _openDetail(event);
+        if (ResponsiveUtil.isDesktop(context)) {
+          setState(() => _selectedEvent = event);
+        } else {
+          _openDetail(event);
+        }
       },
       joined: _joinedEventIds.contains(event.id),
       isAdding: _addingEventIds.contains(event.id),
@@ -928,6 +1109,61 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     );
   }
 
+  Future<void> _scanCode() async {
+    final raw = await PlatformServices.current.scan.scan();
+    if (!mounted || raw == null) return;
+    final payload = ScanResultParser.parse(raw);
+    if (payload == null) {
+      AppFeedback.showSnackBar(context, '二维码格式不受支持', isError: true);
+      return;
+    }
+
+    if (payload is ScheduleShareScanPayload) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('课表分享码'),
+          content: Text(
+            '分享码：${payload.code}\n\n当前版本尚未接入课表分享码服务，未导入任何数据。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final competition = payload as CompetitionScanPayload;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('确认打开竞赛'),
+        content: Text('竞赛编号：${competition.eventId}\n是否打开竞赛详情？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('打开'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CompetitionDetailScreen(eventId: competition.eventId),
+      ),
+    );
+  }
+
   Future<void> _openAdminCenter() async {
     await Navigator.push(
       context,
@@ -953,7 +1189,21 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(
+      PlatformServices.current.continuation.save(
+        ContinuationState(
+          route: 'competition_detail',
+          competitionId: widget.eventId,
+        ),
+      ),
+    );
     _load();
+  }
+
+  @override
+  void dispose() {
+    unawaited(PlatformServices.current.continuation.clear());
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -1485,6 +1735,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
             .toList();
         _loading = false;
       });
+      await _syncHomeCard();
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -1493,6 +1744,20 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
         AppFeedback.dioErrorMessage(e, fallback: '加载我的竞赛计划失败'),
         isError: true,
       );
+    }
+  }
+
+  Future<void> _syncHomeCard() async {
+    final service = PlatformServices.current.homeCards;
+    if (!service.isSupported) return;
+    try {
+      final items = _items
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item));
+      final payload = HomeCardPayloadFactory.competition(items);
+      await service.syncCompetitionCard(payload.toJson());
+    } catch (error) {
+      debugPrint('鸿蒙竞赛卡片同步失败: $error');
     }
   }
 
@@ -2530,41 +2795,80 @@ class _CompetitionShareImportScreenState
   _ImportMode _mode = _ImportMode.shareCode;
 
   final _controller = TextEditingController();
+  final _jsonController = TextEditingController();
   Map<String, dynamic>? _preview;
-  bool _readingJsonFile = false;
+  bool _shareBusy = false;
+  bool _jsonBusy = false;
   String? _jsonFileName;
   Map<String, dynamic>? _jsonPayload;
 
   @override
   void dispose() {
     _controller.dispose();
+    _jsonController.dispose();
     super.dispose();
   }
 
   Future<void> _previewShare() async {
-    if (!mounted) return;
-    final resp = await context.read<AuthProvider>().dio.post(
-      '/user/competition-calendar/import-share/preview',
-      data: {'share_code': _controller.text.trim()},
-    );
-    if (!mounted) return;
-    setState(() => _preview = Map<String, dynamic>.from(resp.data));
+    final shareCode = _controller.text.trim();
+    if (shareCode.isEmpty) {
+      AppFeedback.showSnackBar(context, '请输入分享码', isError: true);
+      return;
+    }
+
+    setState(() {
+      _shareBusy = true;
+      _preview = null;
+    });
+    try {
+      final resp = await context.read<AuthProvider>().dio.post(
+        '/user/competition-calendar/import-share/preview',
+        data: {'share_code': shareCode},
+      );
+      if (!mounted) return;
+      setState(() => _preview = Map<String, dynamic>.from(resp.data as Map));
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '分享码预览失败'),
+        isError: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '分享码预览失败：$e', isError: true);
+    } finally {
+      if (mounted) setState(() => _shareBusy = false);
+    }
   }
 
   Future<void> _commitShare(String strategy) async {
-    await context.read<AuthProvider>().dio.post(
-      '/user/competition-calendar/import-share/commit',
-      data: {'share_code': _controller.text.trim(), 'strategy': strategy},
-    );
-    if (!mounted) return;
-    AppFeedback.showSnackBar(context, '导入完成');
-    Navigator.pop(context);
+    setState(() => _shareBusy = true);
+    try {
+      await context.read<AuthProvider>().dio.post(
+        '/user/competition-calendar/import-share/commit',
+        data: {'share_code': _controller.text.trim(), 'strategy': strategy},
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '导入完成');
+      Navigator.pop(context);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '分享码导入失败'),
+        isError: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '分享码导入失败：$e', isError: true);
+    } finally {
+      if (mounted) setState(() => _shareBusy = false);
+    }
   }
 
   Future<void> _pickJsonFile() async {
     try {
-      setState(() => _readingJsonFile = true);
-
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
@@ -2574,6 +2878,12 @@ class _CompetitionShareImportScreenState
 
       if (result == null || result.files.isEmpty) return;
 
+      setState(() {
+        _jsonBusy = true;
+        _preview = null;
+        _jsonPayload = null;
+        _jsonFileName = null;
+      });
       final file = result.files.single;
 
       String? text;
@@ -2594,62 +2904,87 @@ class _CompetitionShareImportScreenState
         return;
       }
 
-      final decoded = jsonDecode(text);
-
-      if (decoded is! Map<String, dynamic> || decoded['events'] is! List) {
-        if (!mounted) return;
-        AppFeedback.showSnackBar(
-          context,
-          'JSON 顶层必须是 {"events": [...]}',
-          isError: true,
-        );
-        return;
-      }
-
+      await _previewJsonText(text, sourceName: file.name);
+    } catch (e) {
       if (!mounted) return;
-      final resp = await context.read<AuthProvider>().dio.post(
-            '/user/competition-calendar/import-json/preview',
-            data: decoded,
-          );
-
-      if (!mounted) return;
-
-      setState(() {
-        _jsonFileName = file.name;
-        _jsonPayload = decoded;
-        _preview = Map<String, dynamic>.from(resp.data['preview']);
-      });
-
-      AppFeedback.showSnackBar(context, '已读取 ${file.name}');
-    } on FormatException {
       AppFeedback.showSnackBar(
         context,
-        'JSON 格式不正确，请检查逗号、引号和括号',
+        '读取 JSON 文件失败：$e',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _jsonBusy = false);
+      }
+    }
+  }
+
+  Future<void> _previewJsonText(
+    String source, {
+    String? sourceName,
+  }) async {
+    if (!mounted) return;
+    setState(() {
+      _jsonBusy = true;
+      _preview = null;
+      _jsonPayload = null;
+      _jsonFileName = null;
+    });
+
+    try {
+      final payload = decodeCompetitionImportPayload(source);
+      final resp = await context.read<AuthProvider>().dio.post(
+            '/user/competition-calendar/import-json/preview',
+            data: payload,
+          );
+      if (!mounted) return;
+
+      final responseData = Map<String, dynamic>.from(resp.data as Map);
+      final previewData = responseData['preview'];
+      if (previewData is! Map) {
+        throw const FormatException('预览响应缺少 preview 字段');
+      }
+
+      setState(() {
+        _jsonFileName = sourceName;
+        _jsonPayload = payload;
+        _preview = Map<String, dynamic>.from(previewData);
+      });
+      AppFeedback.showSnackBar(
+        context,
+        sourceName == null ? 'JSON 预览已生成' : '已读取 $sourceName',
+      );
+    } on FormatException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        e.message,
         isError: true,
       );
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
-        AppFeedback.dioErrorMessage(e, fallback: '读取 JSON 文件或预览失败'),
+        AppFeedback.dioErrorMessage(e, fallback: 'JSON 预览失败'),
         isError: true,
       );
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
-        '读取 JSON 文件或预览失败：$e',
+        'JSON 预览失败：$e',
         isError: true,
       );
     } finally {
       if (mounted) {
-        setState(() => _readingJsonFile = false);
+        setState(() => _jsonBusy = false);
       }
     }
   }
 
   Future<void> _commitJson(String strategy) async {
     if (_jsonPayload == null) return;
+    setState(() => _jsonBusy = true);
     try {
       await context.read<AuthProvider>().dio.post(
         '/user/competition-calendar/import-json/commit',
@@ -2675,26 +3010,32 @@ class _CompetitionShareImportScreenState
         '导入失败：$e',
         isError: true,
       );
+    } finally {
+      if (mounted) setState(() => _jsonBusy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final items = (_preview?['items'] as List?) ?? [];
+    final supportsFileImportExport =
+        PlatformCapabilities.current.supportsFileImportExport;
     return Scaffold(
       appBar: AppBar(title: const Text('导入计划')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           SegmentedButton<_ImportMode>(
-            segments: const [
-              ButtonSegment(
+            segments: [
+              const ButtonSegment(
                 value: _ImportMode.shareCode,
                 label: Text('分享码导入'),
               ),
               ButtonSegment(
                 value: _ImportMode.jsonFile,
-                label: Text('JSON 文件导入'),
+                label: Text(
+                  supportsFileImportExport ? 'JSON 文件导入' : 'JSON 文本导入',
+                ),
               ),
             ],
             selected: {_mode},
@@ -2702,6 +3043,8 @@ class _CompetitionShareImportScreenState
               setState(() {
                 _mode = newSelection.first;
                 _preview = null;
+                _jsonPayload = null;
+                _jsonFileName = null;
               });
             },
           ),
@@ -2709,11 +3052,15 @@ class _CompetitionShareImportScreenState
           if (_mode == _ImportMode.shareCode) ...[
             TextField(
               controller: _controller,
+              enabled: !_shareBusy,
               decoration: const InputDecoration(labelText: '分享码'),
             ),
             const SizedBox(height: 12),
-            FilledButton(onPressed: _previewShare, child: const Text('预览')),
-          ] else ...[
+            FilledButton(
+              onPressed: _shareBusy ? null : _previewShare,
+              child: Text(_shareBusy ? '处理中...' : '预览'),
+            ),
+          ] else if (supportsFileImportExport) ...[
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -2730,34 +3077,65 @@ class _CompetitionShareImportScreenState
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
-                    onPressed: _readingJsonFile ? null : _pickJsonFile,
+                    onPressed: _jsonBusy ? null : _pickJsonFile,
                     icon: const Icon(Icons.upload_file_rounded, size: 18),
-                    label: Text(_readingJsonFile ? '读取中...' : '选择 JSON 文件'),
+                    label: Text(_jsonBusy ? '读取中...' : '选择 JSON 文件'),
                   ),
                 ],
               ),
+            ),
+          ] else ...[
+            TextField(
+              controller: _jsonController,
+              enabled: !_jsonBusy,
+              minLines: 8,
+              maxLines: 16,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                labelText: 'JSON 内容',
+                hintText: '{"events": [...]}',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _jsonBusy
+                  ? null
+                  : () => _previewJsonText(_jsonController.text),
+              icon: const Icon(Icons.preview_rounded, size: 18),
+              label: Text(_jsonBusy ? '预览中...' : '预览 JSON'),
             ),
           ],
           if (_preview != null) ...[
             const SizedBox(height: 16),
             Text('预览 ${items.length} 个比赛',
                 style: const TextStyle(fontWeight: FontWeight.w800)),
-            ...items.map((e) => ListTile(title: Text(e['title'] ?? ''))),
+            ...items.map((e) {
+              final item = e is Map ? e : const <String, dynamic>{};
+              return ListTile(title: Text('${item['title'] ?? ''}'));
+            }),
             Row(children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => _mode == _ImportMode.shareCode
-                      ? _commitShare('merge')
-                      : _commitJson('merge'),
+                  onPressed: (_mode == _ImportMode.shareCode && _shareBusy) ||
+                          (_mode == _ImportMode.jsonFile && _jsonBusy)
+                      ? null
+                      : () => _mode == _ImportMode.shareCode
+                          ? _commitShare('merge')
+                          : _commitJson('merge'),
                   child: const Text('合并'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: FilledButton(
-                  onPressed: () => _mode == _ImportMode.shareCode
-                      ? _commitShare('replace')
-                      : _commitJson('replace'),
+                  onPressed: (_mode == _ImportMode.shareCode && _shareBusy) ||
+                          (_mode == _ImportMode.jsonFile && _jsonBusy)
+                      ? null
+                      : () => _mode == _ImportMode.shareCode
+                          ? _commitShare('replace')
+                          : _commitJson('replace'),
                   child: const Text('覆盖'),
                 ),
               ),

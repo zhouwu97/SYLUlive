@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../platform/app_platform.dart';
 import '../providers/course_schedule_provider.dart';
 
 class CourseReminderResult {
@@ -270,7 +270,8 @@ class CourseReminderService {
   }
 
   Future<bool> requestPermissions() async {
-    if (Platform.isAndroid) {
+    // 平台路由走 AppPlatforms.current，避免 OHOS Flutter 引擎被误判为 Android。
+    if (AppPlatforms.current.isAndroid) {
       final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
 
@@ -288,7 +289,7 @@ class CourseReminderService {
 
       // 两者都为 true (或 null 代表该版本不需要) 才算成功
       return (notiGranted ?? false) && (alarmGranted ?? false);
-    } else if (Platform.isIOS) {
+    } else if (AppPlatforms.current.isIos) {
       final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin>();
 

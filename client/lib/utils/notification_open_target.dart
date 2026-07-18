@@ -37,7 +37,7 @@ class NotificationOpenTarget {
   }) {
     final stringMessage =
         message.map((key, value) => MapEntry(key.toString(), value));
-    final extras = extractJPushExtras(stringMessage);
+    final extras = extractPushExtras(stringMessage);
     final type = extras['type']?.toString().trim().toLowerCase();
 
     final postId = _positiveId(

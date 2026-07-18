@@ -16,6 +16,14 @@ $nativeLibraryDirectory = switch ($TargetPlatform) {
     'ohos-x64' { 'x86_64' }
 }
 
+# 当前 Flutter OHOS 嵌入层默认就是 libs/arm64。实体机 arm64 构建无需修改
+# 任何依赖产物，而且 flutter pub get 也不会预先展开 flutter_ohos HAR。
+# 仅在目标 ABI 与默认值不一致时才定位并修补展开后的嵌入层。
+if ($nativeLibraryDirectory -eq 'arm64') {
+    Write-Host 'Flutter OHOS 嵌入层默认使用 libs/arm64，无需修补。'
+    return
+}
+
 $embeddingRoots = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'ohos\oh_modules\.ohpm') `
     -Directory -Filter '@ohos+flutter_ohos*' -ErrorAction SilentlyContinue
 

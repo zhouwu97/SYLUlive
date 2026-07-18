@@ -72,10 +72,10 @@ class PendingPrivateMessageOpen {
   }
 }
 
-PrivateMessageTarget? privateMessageTargetFromJPushMessage(
+PrivateMessageTarget? privateMessageTargetFromPushMessage(
   Map<String, dynamic> message,
 ) {
-  final extras = extractJPushExtras(message);
+  final extras = extractPushExtras(message);
   if (extras['type']?.toString() != 'private_message') return null;
 
   final conversationId = intFromNotificationExtra(extras['conversation_id']);
@@ -159,7 +159,7 @@ String? _androidNotificationValue(Map<String, dynamic> message, String key) {
   return null;
 }
 
-Map<String, dynamic> extractJPushExtras(Map<String, dynamic> message) {
+Map<String, dynamic> extractPushExtras(Map<String, dynamic> message) {
   final extras = message['extras'];
   if (extras is Map) {
     final inner = extras['cn.jpush.android.EXTRA'];

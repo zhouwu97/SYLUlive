@@ -396,6 +396,7 @@ class _EduScreenState extends State<EduScreen> {
     _studentIdController.clear();
     _passwordController.clear();
     bool isBinding = false; // 本地加载状态
+    String? bindError;
 
     showDialog(
       context: context,
@@ -421,6 +422,16 @@ class _EduScreenState extends State<EduScreen> {
                 obscureText: true,
                 enabled: !isBinding,
               ),
+              if (bindError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    bindError!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
               if (isBinding) ...[
                 const SizedBox(height: 20),
                 const Row(
@@ -447,23 +458,33 @@ class _EduScreenState extends State<EduScreen> {
               onPressed: isBinding
                   ? null
                   : () async {
-                      setDialogState(() => isBinding = true);
+                      final studentId = _studentIdController.text.trim();
+                      final password = _passwordController.text;
+                      if (studentId.isEmpty || password.isEmpty) {
+                        setDialogState(() {
+                          bindError = studentId.isEmpty ? '请输入教务学号' : '请输入教务密码';
+                        });
+                        return;
+                      }
+                      setDialogState(() {
+                        isBinding = true;
+                        bindError = null;
+                      });
                       final success = await eduProvider.bind(
-                        _studentIdController.text,
-                        _passwordController.text,
+                        studentId,
+                        password,
                       );
                       if (context.mounted) {
-                        Navigator.pop(context);
                         if (success) {
+                          Navigator.pop(context);
                           ScaffoldMessenger.of(
                             context,
                           ).showSnackBar(const SnackBar(content: Text('绑定成功')));
                         } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(eduProvider.errorMessage ?? '绑定失败'),
-                            ),
-                          );
+                          setDialogState(() {
+                            isBinding = false;
+                            bindError = eduProvider.errorMessage ?? '绑定失败';
+                          });
                         }
                       }
                     },

@@ -4,9 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/utils/private_message_notification.dart';
 
 void main() {
-  group('privateMessageTargetFromJPushMessage', () {
+  group('privateMessageTargetFromPushMessage', () {
     test('parses nested JPush extras json string', () {
-      final target = privateMessageTargetFromJPushMessage({
+      final target = privateMessageTargetFromPushMessage({
         'title': 'Alice fallback',
         'extras': {
           'cn.jpush.android.EXTRA': jsonEncode({
@@ -29,7 +29,7 @@ void main() {
     });
 
     test('parses top-level JPush extras json string', () {
-      final target = privateMessageTargetFromJPushMessage({
+      final target = privateMessageTargetFromPushMessage({
         'cn.jpush.android.EXTRA': jsonEncode({
           'type': 'private_message',
           'conversation_id': 23,
@@ -44,7 +44,7 @@ void main() {
     });
 
     test('falls back to generated user name when sender name is missing', () {
-      final target = privateMessageTargetFromJPushMessage({
+      final target = privateMessageTargetFromPushMessage({
         'extras': {
           'type': 'private_message',
           'conversation_id': '5',

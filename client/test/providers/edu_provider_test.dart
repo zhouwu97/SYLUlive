@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
-import 'package:shenliyuan/models/edu_grade.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -443,5 +444,140 @@ void main() {
       expect(p.studentId, isEmpty);
       expect(p.isStatusLoaded, false);
     });
+
+    test('bind 规范化学号并在全部持久化成功后提交绑定状态', () async {
+      Map<String, dynamic>? bindRequest;
+      final dio = _bindingDio(onBind: (data) => bindRequest = data);
+      final store = _FakeEduCredentialStore();
+      final p = EduProvider(dio, credentialStore: store);
+      p.setUserId('user_a');
+      await pumpEventQueue(times: 10);
+
+      final success = await p.bind(' 2403130233 ', 'edu-password');
+
+      expect(success, isTrue);
+      expect(bindRequest?['student_id'], '2403130233');
+      expect(p.isBound, isTrue);
+      expect(p.studentId, '2403130233');
+      expect(p.name, '测试用户');
+      expect(store.eduPasswords['2403130233'], 'edu-password');
+
+      final prefs = await SharedPreferences.getInstance();
+      final cached = jsonDecode(prefs.getString('edu_binding_user_a')!) as Map;
+      expect(cached['is_bound'], isTrue);
+      expect(cached['student_id'], '2403130233');
+      expect(cached['major'], '软件工程');
+    });
+
+    test('bind 安全存储写入失败时不留下本地已绑定状态', () async {
+      final dio = _bindingDio();
+      final store = _FakeEduCredentialStore()..failEduWrite = true;
+      final p = EduProvider(dio, credentialStore: store);
+      p.setUserId('user_a');
+      await pumpEventQueue(times: 10);
+
+      final success = await p.bind('2403130233', 'edu-password');
+
+      expect(success, isFalse);
+      expect(p.isBound, isFalse);
+      expect(p.studentId, isEmpty);
+      expect(p.errorMessage, '绑定信息保存失败，请重试');
+      expect(store.eduPasswords, isEmpty);
+
+      final prefs = await SharedPreferences.getInstance();
+      final cached = jsonDecode(prefs.getString('edu_binding_user_a')!) as Map;
+      expect(cached['is_bound'], isFalse);
+    });
+
+    test('bind 空凭据直接返回校验错误且不请求服务端', () async {
+      var bindCalls = 0;
+      final dio = _bindingDio(onBind: (_) => bindCalls++);
+      final p = EduProvider(dio, credentialStore: _FakeEduCredentialStore());
+      p.setUserId('user_a');
+      await pumpEventQueue(times: 10);
+
+      expect(await p.bind('   ', 'password'), isFalse);
+      expect(p.errorMessage, '请输入教务学号');
+      expect(await p.bind('2403130233', ''), isFalse);
+      expect(p.errorMessage, '请输入教务密码');
+      expect(bindCalls, 0);
+    });
   });
+}
+
+Dio _bindingDio({void Function(Map<String, dynamic> data)? onBind}) {
+  final dio = Dio();
+  dio.interceptors.add(
+    InterceptorsWrapper(
+      onRequest: (options, handler) {
+        if (options.path == '/edu/status') {
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {'edu_bound': false},
+            ),
+          );
+          return;
+        }
+        if (options.path == '/edu/bind') {
+          final data = Map<String, dynamic>.from(options.data as Map);
+          onBind?.call(data);
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'edu_student_id': data['student_id'],
+                'name': '测试用户',
+                'edu_grade': '2024',
+                'edu_college': '信息科学与工程学院',
+                'edu_major': '软件工程',
+              },
+            ),
+          );
+          return;
+        }
+        handler.reject(
+          DioException(
+            requestOptions: options,
+            error: '未处理的测试请求: ${options.path}',
+          ),
+        );
+      },
+    ),
+  );
+  return dio;
+}
+
+class _FakeEduCredentialStore implements AuthCredentialStore {
+  final Map<String, String> eduPasswords = {};
+  bool failEduWrite = false;
+
+  @override
+  Future<void> clear() async {}
+
+  @override
+  Future<void> deleteEduPassword(String studentId) async {
+    eduPasswords.remove(studentId);
+  }
+
+  @override
+  Future<StoredAuthCredentials> read() async => const StoredAuthCredentials();
+
+  @override
+  Future<String?> readEduPassword(String studentId) async =>
+      eduPasswords[studentId];
+
+  @override
+  Future<void> write({
+    required String token,
+    required String userJson,
+  }) async {}
+
+  @override
+  Future<void> writeEduPassword(String studentId, String password) async {
+    if (failEduWrite) throw StateError('edu password write failed');
+    eduPasswords[studentId] = password;
+  }
 }

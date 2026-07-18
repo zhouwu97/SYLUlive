@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -210,7 +208,7 @@ class GradeReminderService {
   }
 
   Future<bool> requestNotificationPermission() async {
-    if (!Platform.isAndroid) return true;
+    if (!AppPlatforms.current.isAndroid) return true;
     await _ensureNotificationsInitialized();
     final androidPlugin = _notifications.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();

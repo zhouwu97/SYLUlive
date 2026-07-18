@@ -11,6 +11,30 @@
     {
       "name": "EntryAbility_label",
       "value": "shenliyuan"
+    },
+    {
+      "name": "next_course_card_name",
+      "value": "下一节课"
+    },
+    {
+      "name": "next_course_card_desc",
+      "value": "显示今天的下一节课程"
+    },
+    {
+      "name": "today_courses_card_name",
+      "value": "今日课程"
+    },
+    {
+      "name": "today_courses_card_desc",
+      "value": "显示今天的课程安排"
+    },
+    {
+      "name": "academic_reminders_card_name",
+      "value": "学业提醒"
+    },
+    {
+      "name": "academic_reminders_card_desc",
+      "value": "显示考试与竞赛计划提醒"
     }
   ]
 }

@@ -1,0 +1,13 @@
+name: sylulive_push_bridge
+description: SYLUlive 标准平台推送门面，转发到官方 JPush Flutter 插件。
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_local_notifications: 17.2.4
+  jpush_flutter: 3.4.6

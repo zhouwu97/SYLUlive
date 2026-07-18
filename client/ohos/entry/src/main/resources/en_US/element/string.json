@@ -11,6 +11,30 @@
     {
       "name": "EntryAbility_label",
       "value": "shenliyuan"
+    },
+    {
+      "name": "next_course_card_name",
+      "value": "Next class"
+    },
+    {
+      "name": "next_course_card_desc",
+      "value": "Shows the next class today"
+    },
+    {
+      "name": "today_courses_card_name",
+      "value": "Today's classes"
+    },
+    {
+      "name": "today_courses_card_desc",
+      "value": "Shows today's class schedule"
+    },
+    {
+      "name": "academic_reminders_card_name",
+      "value": "Academic reminders"
+    },
+    {
+      "name": "academic_reminders_card_desc",
+      "value": "Shows exam and competition reminders"
     }
   ]
 }

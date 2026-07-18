@@ -37,7 +37,8 @@ dependencies:
   pdfrx: 2.4.7
   path: ^1.9.0
   package_info_plus: ^8.0.0
-  jpush_flutter: ^3.4.5
+  sylulive_push_bridge:
+    path: packages/sylulive_push_bridge_android
   qr_flutter: ^4.1.0
   crypto: ^3.0.3
   dio_cookie_manager: ^3.4.0

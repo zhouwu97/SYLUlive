@@ -620,6 +620,64 @@ void main() {
     expect(provider.user, isNull);
     expect(provider.sessionGeneration, generation + 1);
   });
+
+  test('普通 API 返回 401 时在错误交回前清除完整 App 会话', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(401, {'error': 'token expired'});
+    final store = _FakeAuthCredentialStore();
+    final provider = _provider(adapter, store);
+    await provider.applyAuthPayload('expired-token', _userJson(1));
+    final generation = provider.sessionGeneration;
+
+    await expectLater(
+      provider.dio.get('/profile'),
+      throwsA(
+        isA<DioException>().having(
+          (error) => error.response?.statusCode,
+          'statusCode',
+          401,
+        ),
+      ),
+    );
+
+    expect(provider.token, isNull);
+    expect(provider.user, isNull);
+    expect(provider.sessionGeneration, generation + 1);
+    expect(provider.dio.options.headers.containsKey('Authorization'), isFalse);
+    expect(store.stored.token, isNull);
+    expect(store.stored.userJson, isNull);
+    expect(store.clearCount, 1);
+  });
+
+  test('教务 API 返回 401 时保留 App 登录会话', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(401, {'code': 'EDU_SESSION_EXPIRED'});
+    final store = _FakeAuthCredentialStore();
+    final provider = _provider(adapter, store);
+    await provider.applyAuthPayload('valid-app-token', _userJson(1));
+    final generation = provider.sessionGeneration;
+
+    await expectLater(
+      provider.dio.get('/edu/status'),
+      throwsA(
+        isA<DioException>().having(
+          (error) => error.response?.statusCode,
+          'statusCode',
+          401,
+        ),
+      ),
+    );
+
+    expect(provider.token, 'valid-app-token');
+    expect(provider.user?.id, 1);
+    expect(provider.sessionGeneration, generation);
+    expect(
+      provider.dio.options.headers['Authorization'],
+      'Bearer valid-app-token',
+    );
+    expect(store.clearCount, 0);
+  });
+  registerPlatformCredentialConsistencyTests();
 }
 
 AuthProvider _provider(
@@ -670,4 +728,142 @@ void _expectOldPreferenceSession(
   expect(provider.dio.options.headers['Authorization'], 'Bearer old-token');
   expect(preferences.values['auth_token'], 'old-token');
   expect(jsonDecode(preferences.values['auth_user']!)['id'], 1);
+}
+
+void registerPlatformCredentialConsistencyTests() {
+  group('PlatformAuthCredentialStore 一致性', () {
+    const tokenKey = 'auth_token';
+    const userKey = 'auth_user';
+
+    test('write user_json 失败，token 回滚成功 → 抛原写入错误', () async {
+      final store = _FakeSecureValueStore()
+        ..values[tokenKey] = 'old-token'
+        ..values[userKey] = 'placeholder'
+        ..writeOutcomes[tokenKey] = [true, true]
+        ..writeOutcomes[userKey] = [false];
+      final credentialStore = PlatformAuthCredentialStore(storage: store);
+
+      await expectLater(
+        credentialStore.write(token: 'next-token', userJson: 'next-user'),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(store.values[tokenKey], 'old-token');
+      expect(store.values[userKey], 'placeholder');
+      expect(store.operations,
+          containsAll(<String>['write:auth_token', 'write:auth_user']));
+    });
+
+    test(
+        'write user_json 失败，token 回滚也失败 → 抛 AuthCredentialConsistencyException',
+        () async {
+      final store = _FakeSecureValueStore()
+        ..values[tokenKey] = 'old-token'
+        ..values[userKey] = 'placeholder'
+        ..writeOutcomes[tokenKey] = [true, false]
+        ..writeOutcomes[userKey] = [false];
+      final credentialStore = PlatformAuthCredentialStore(storage: store);
+
+      await expectLater(
+        credentialStore.write(token: 'next-token', userJson: 'next-user'),
+        throwsA(
+          isA<AuthCredentialConsistencyException>().having(
+            (error) => error.message,
+            'message',
+            contains('回滚平台认证信息失败'),
+          ),
+        ),
+      );
+
+      expect(store.values[tokenKey], 'next-token');
+      expect(store.values[userKey], 'placeholder');
+    });
+
+    test('clear user_json 删除失败，token 回滚成功 → 抛原删除错误', () async {
+      // 删除 token 成功、删除 user 失败；回滚 token 时 _restoreSecureValue 走 write 路径
+      // 因为 oldToken 不为 null，所以写默认返回 true → 回滚成功。
+      final store = _FakeSecureValueStore()
+        ..values[tokenKey] = 'old-token'
+        ..values[userKey] = 'placeholder'
+        ..deleteOutcomes[tokenKey] = [true]
+        ..deleteOutcomes[userKey] = [false];
+      final credentialStore = PlatformAuthCredentialStore(storage: store);
+
+      await expectLater(
+        credentialStore.clear(),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(store.values[tokenKey], 'old-token');
+      expect(store.values[userKey], 'placeholder');
+    });
+
+    test(
+        'clear user_json 删除失败，token 回滚也失败 → 抛 AuthCredentialConsistencyException',
+        () async {
+      // 第一次 delete(token) 成功；delete(user) 失败；
+      // 回滚 _restoreSecureValue(token, 'old-token') 走 write 路径，writeOutcomes 注入 false
+      // 让回滚 write 失败 → 整体抛 AuthCredentialConsistencyException。
+      final store = _FakeSecureValueStore()
+        ..values[tokenKey] = 'old-token'
+        ..values[userKey] = 'placeholder'
+        ..deleteOutcomes[tokenKey] = [true]
+        ..deleteOutcomes[userKey] = [false]
+        ..writeOutcomes[tokenKey] = [false];
+      final credentialStore = PlatformAuthCredentialStore(storage: store);
+
+      await expectLater(
+        credentialStore.clear(),
+        throwsA(
+          isA<AuthCredentialConsistencyException>().having(
+            (error) => error.message,
+            'message',
+            contains('回滚平台认证清理失败'),
+          ),
+        ),
+      );
+
+      expect(store.values.containsKey(tokenKey), isFalse);
+      expect(store.values[userKey], 'placeholder');
+    });
+  });
+}
+
+class _FakeSecureValueStore implements SecureValueStore {
+  final Map<String, String> values = {};
+  final Map<String, List<bool>> writeOutcomes = {};
+  final Map<String, List<bool>> deleteOutcomes = {};
+  final List<String> operations = [];
+
+  @override
+  Future<String?> read(String key) async {
+    operations.add('read:$key');
+    // read 在测试场景中始终承诺成功（不消费任何失败回执）；
+    // 回滚路径对 read 失败的容忍不属于本组测试目标。
+    return values[key];
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    operations.add('write:$key');
+    if (_consume(writeOutcomes, key) == false) {
+      throw StateError('write fail: $key');
+    }
+    values[key] = value;
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    operations.add('delete:$key');
+    if (_consume(deleteOutcomes, key) == false) {
+      throw StateError('delete fail: $key');
+    }
+    values.remove(key);
+  }
+
+  bool _consume(Map<String, List<bool>> source, String key) {
+    final list = source[key];
+    if (list == null || list.isEmpty) return true;
+    return list.removeAt(0);
+  }
 }

@@ -919,8 +919,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final sidCtrl = TextEditingController();
     final pwdCtrl = TextEditingController();
     bool isLoading = false;
+    String? bindError;
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
@@ -944,6 +945,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 obscureText: true,
                 enabled: !isLoading,
               ),
+              if (bindError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    bindError!,
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+                  ),
+                ),
               if (isLoading)
                 const Padding(
                   padding: EdgeInsets.only(top: 20),
@@ -971,10 +980,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               onPressed: isLoading
                   ? null
                   : () async {
-                      setDialogState(() => isLoading = true);
-                      final ok = await edu.bind(sidCtrl.text, pwdCtrl.text);
-                      if (ctx.mounted) Navigator.pop(ctx);
+                      final studentId = sidCtrl.text.trim();
+                      final password = pwdCtrl.text;
+                      if (studentId.isEmpty || password.isEmpty) {
+                        setDialogState(() {
+                          bindError = studentId.isEmpty ? '请输入教务学号' : '请输入教务密码';
+                        });
+                        return;
+                      }
+                      setDialogState(() {
+                        isLoading = true;
+                        bindError = null;
+                      });
+                      final ok = await edu.bind(studentId, password);
                       if (ok && context.mounted) {
+                        if (ctx.mounted) Navigator.pop(ctx);
                         ScaffoldMessenger.of(
                           context,
                         ).showSnackBar(const SnackBar(content: Text('绑定成功')));
@@ -985,10 +1005,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                             _hasCache = sc.courses.isNotEmpty;
                           });
                         }
-                      } else if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(edu.errorMessage ?? '绑定失败')),
-                        );
+                      } else if (ctx.mounted) {
+                        setDialogState(() {
+                          isLoading = false;
+                          bindError = edu.errorMessage ?? '绑定失败';
+                        });
                       }
                     },
               child: isLoading
@@ -1005,7 +1026,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           ],
         ),
       ),
-    );
+    ).whenComplete(() {
+      sidCtrl.dispose();
+      pwdCtrl.dispose();
+    });
   }
 
   // ====== 空状态视图 ======

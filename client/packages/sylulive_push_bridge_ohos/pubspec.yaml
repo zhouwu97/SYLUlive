@@ -1,0 +1,7 @@
+name: sylulive_push_bridge
+description: SYLUlive OHOS 推送空实现，不引入 Android JPush 原生依赖。
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'

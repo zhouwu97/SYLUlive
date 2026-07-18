@@ -11,11 +11,12 @@ class ExamScheduleRepository {
   Future<List<ExamModel>> load() async {
     final preferences = await SharedPreferences.getInstance();
     final encoded = preferences.getString(localExamsKey);
-    if (encoded == null || encoded.isEmpty) return const [];
+    // 页面会在返回列表上直接执行添加、编辑和删除，空状态也必须可修改。
+    if (encoded == null || encoded.isEmpty) return <ExamModel>[];
 
     try {
       final decoded = jsonDecode(encoded);
-      if (decoded is! List) return const [];
+      if (decoded is! List) return <ExamModel>[];
 
       final exams = <ExamModel>[];
       for (final item in decoded) {
@@ -29,7 +30,7 @@ class ExamScheduleRepository {
       exams.sort((left, right) => left.startTime.compareTo(right.startTime));
       return exams;
     } on FormatException {
-      return const [];
+      return <ExamModel>[];
     }
   }
 

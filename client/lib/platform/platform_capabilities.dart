@@ -14,6 +14,8 @@ class PlatformCapabilities {
     required this.supportsPdfPreview,
     required this.supportsBackgroundReminder,
     required this.supportsInAppPackageInstall,
+    required this.supportsFileImportExport,
+    required this.supportsSystemCalendar,
   });
 
   final AppPlatform platform;
@@ -24,6 +26,8 @@ class PlatformCapabilities {
   final bool supportsPdfPreview;
   final bool supportsBackgroundReminder;
   final bool supportsInAppPackageInstall;
+  final bool supportsFileImportExport;
+  final bool supportsSystemCalendar;
 
   static PlatformCapabilities get current => forPlatform(AppPlatforms.current);
 
@@ -38,6 +42,8 @@ class PlatformCapabilities {
             supportsPdfPreview: true,
             supportsBackgroundReminder: true,
             supportsInAppPackageInstall: true,
+            supportsFileImportExport: true,
+            supportsSystemCalendar: true,
           ),
         AppPlatform.ohos => const PlatformCapabilities._(
             platform: AppPlatform.ohos,
@@ -48,6 +54,20 @@ class PlatformCapabilities {
             supportsPdfPreview: false,
             supportsBackgroundReminder: false,
             supportsInAppPackageInstall: false,
+            supportsFileImportExport: false,
+            supportsSystemCalendar: false,
+          ),
+        AppPlatform.ios => const PlatformCapabilities._(
+            platform: AppPlatform.ios,
+            supportsJPush: false,
+            supportsNativeWidget: false,
+            supportsLiveView: false,
+            supportsScanKit: false,
+            supportsPdfPreview: true,
+            supportsBackgroundReminder: false,
+            supportsInAppPackageInstall: false,
+            supportsFileImportExport: true,
+            supportsSystemCalendar: true,
           ),
         AppPlatform.web || AppPlatform.other => PlatformCapabilities._(
             platform: platform,
@@ -58,6 +78,8 @@ class PlatformCapabilities {
             supportsPdfPreview: false,
             supportsBackgroundReminder: false,
             supportsInAppPackageInstall: false,
+            supportsFileImportExport: false,
+            supportsSystemCalendar: false,
           ),
       };
 }

@@ -6,11 +6,8 @@ import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:jpush_flutter/jpush_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/post_provider.dart';
@@ -34,6 +31,7 @@ import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
+import 'screens/competition/competition_center_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
@@ -48,7 +46,8 @@ import 'services/post_cache_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'widgets/app_update_gate.dart';
 import 'platform/platform_bootstrap.dart';
-import 'platform/platform_capabilities.dart';
+import 'platform/platform_services.dart';
+import 'platform/continuation/continuation_service.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -179,6 +178,10 @@ Future<void> main() async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
+      // 在启动阶段注入依赖 navigator 的通知打开动作，避免首条事件漏接。
+      // 早于任何 Provider / 启动后回调以避免首条事件漏接。
+      _wireNotificationHandlers();
+
       FlutterError.onError = (FlutterErrorDetails details) {
         FlutterError.presentError(details);
 
@@ -270,7 +273,7 @@ Future<void> main() async {
         PlatformBootstrap().initializeAfterFirstFrame(
           initializeAndroidServices: () async {
             await CourseReminderService.instance.initialize();
-            await _initializePrivateMessageNotifications();
+            await PlatformServices.current.notifications.init();
           },
         );
       });
@@ -297,16 +300,11 @@ Future<void> main() async {
   );
 }
 
-/// 极光推送初始化
-var jpush = JPush.newJPush();
-final FlutterLocalNotificationsPlugin _privateMessageNotifications =
-    FlutterLocalNotificationsPlugin();
-bool _privateMessageNotificationsReady = false;
-const MethodChannel _privateMessageNotificationChannel = MethodChannel(
-  'shenliyuan/private_message_notifications',
-);
-
-// ── 移除 Flutter 侧 Alias 绑定状态追踪（统一由原生状态机管理） ──
+/// 阶段 4：通知插件状态与初始化逻辑已外提到平台通知协调器。本文件只保留：
+///   - navigator 相关的“打开跳转”分发（_openPrivateMessage / _storeOrOpenNotificationTarget 等）
+///   - 仍需访问 MessageProvider / navigator 的 `_handlePrivateMessageNotification`
+///   - 与推送事件分发解耦的 pending notification 缓存
+/// 服务通过 `configureHandlers` 注入这些应用层动作。
 
 /// 冷启动时通知数据临时存放（navigator 未就绪前）
 final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
@@ -316,48 +314,15 @@ final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
 final PendingNotificationOpen _pendingNotificationOpen =
     PendingNotificationOpen();
 
-bool _jpushHandlersRegistered = false;
 bool _pendingNotificationProcessScheduled = false;
 
-void _ensureJPushHandlersRegistered() {
-  if (_jpushHandlersRegistered) return;
-  _jpushHandlersRegistered = true;
-
-  jpush.addEventHandler(
-    onReceiveNotification: (Map<String, dynamic> message) async {
-      // 极光 SDK 已展示通知，不弹本地兜底，避免双通知
-      await _handlePrivateMessageNotification(
-        message,
-        opened: false,
-        showLocalFallback: false,
-      );
-    },
-    onNotifyMessageUnShow: (Map<String, dynamic> message) async {
-      // 极光 SDK 未展示通知，需要 Flutter 本地兜底
-      await _handlePrivateMessageNotification(
-        message,
-        opened: false,
-        showLocalFallback: true,
-      );
-    },
-    onOpenNotification: (Map<String, dynamic> message) async {
-      debugPrint('点击通知原始数据: $message');
-
-      if (await _handleUpdateNotification(message)) return;
-      if (await _handlePrivateMessageNotification(message, opened: true)) {
-        return;
-      }
-
-      final target = NotificationOpenTarget.parse(message);
-
-      if (target == null) {
-        final extras = extractJPushExtras(message);
-        debugPrint('忽略未知或无效通知: type=${extras['type']}');
-        return;
-      }
-
-      _storeOrOpenNotificationTarget(target);
-    },
+/// 在 `runApp` 之前完成通知服务与 navigator 依赖函数的接线。
+/// 仅写一次，运行时行为与拆分前等价。
+void _wireNotificationHandlers() {
+  PlatformServices.current.notifications.configureHandlers(
+    onPrivateMessageNotification: _handlePrivateMessageNotification,
+    onNotificationOpenTarget: _storeOrOpenNotificationTarget,
+    onOpenPrivateMessage: _openPrivateMessage,
   );
 }
 
@@ -472,140 +437,25 @@ void _processPendingNotificationOpen() {
   }
 }
 
-Future<void> setupJPush(AuthProvider authProvider) async {
-  if (ApiConstants.jpushAppKey.isEmpty) {
-    DiagnosticLogService.instance.record(
-      level: 'error',
-      source: '推送',
-      type: 'JPush 配置缺失',
-      summary: 'JPUSH_APP_KEY 为空，已跳过初始化',
-      detail: '请通过 --dart-define=JPUSH_APP_KEY 注入或设置默认值',
-    );
-    return;
-  }
-
-  _ensureJPushHandlersRegistered();
-
-  jpush.setup(
-    appKey: ApiConstants.jpushAppKey,
-    channel: 'developer-default',
-    production: false,
-    debug: true,
-  );
-
-  final rid = await jpush.getRegistrationID();
-
-  if (rid.isNotEmpty) {
-    await authProvider.updateDeviceToken(rid);
-  }
-
-  final userId = authProvider.user?.id;
-  if (userId == null) return;
-
-  final userIdStr = userId.toString();
-
-  // 将 userId 同步给原生层，后续的 Alias 绑定与退避重试完全由原生层
-  // KeepAliveForegroundService 的 reconcileAliasState 机制接管
-  try {
-    await _privateMessageNotificationChannel.invokeMethod(
-      'syncAlias',
-      {'userId': userIdStr},
-    );
-  } catch (e) {
-    debugPrint('同步 Alias 到原生层失败: $e');
-  }
-}
-
-Future<void> _initializePrivateMessageNotifications() async {
-  if (_privateMessageNotificationsReady) return;
-  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-  const darwin = DarwinInitializationSettings(
-    requestAlertPermission: false,
-    requestBadgePermission: false,
-    requestSoundPermission: false,
-  );
-  const settings = InitializationSettings(android: android, iOS: darwin);
-  await _privateMessageNotifications.initialize(
-    settings,
-    onDidReceiveNotificationResponse: (response) {
-      final payload = response.payload;
-      if (payload == null || payload.isEmpty) return;
-      try {
-        final target = privateMessageTargetFromLocalPayload(payload);
-        if (target != null) {
-          _clearPrivateMessageNotifications(target.conversationId).ignore();
-          _openPrivateMessage(target);
-        }
-      } catch (e) {
-        debugPrint('解析私信本地通知 payload 失败: $e');
-      }
-    },
-  );
-  await _privateMessageNotifications
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(
-        const AndroidNotificationChannel(
-          'developer-default',
-          '系统通知',
-          description: '评论、系统通知等',
-          importance: Importance.low,
-        ),
-      );
-  await _privateMessageNotifications
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(
-        const AndroidNotificationChannel(
-          'private_messages',
-          '私信通知',
-          description: '收到新私信时悬浮提醒',
-          importance: Importance.high,
-        ),
-      );
-  // Android 13+ 运行时通知权限
-  await _privateMessageNotifications
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.requestNotificationsPermission();
-  _privateMessageNotificationsReady = true;
-}
-
-/// 首帧后请求通知权限（需要 Activity 已创建）
-Future<void> _requestNotificationPermissionIfNeeded() async {
-  try {
-    final plugin =
-        _privateMessageNotifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    if (plugin == null) return;
-    final granted = await plugin.requestNotificationsPermission();
-    debugPrint('通知权限请求结果: $granted');
-  } catch (e) {
-    debugPrint('请求通知权限失败: $e');
-  }
-}
-
-/// 已通过本地通知展示过的极光 msg_id，用于去重
-final Set<String> _shownLocalMessageIds = {};
-
 Future<bool> _handlePrivateMessageNotification(
   Map<String, dynamic> message, {
   required bool opened,
   bool showLocalFallback = false,
 }) async {
-  final extras = extractJPushExtras(message);
+  final extras = extractPushExtras(message);
   if (extras['type']?.toString() != 'private_message') {
     return false;
   }
 
-  final target = privateMessageTargetFromJPushMessage(message);
+  final target = privateMessageTargetFromPushMessage(message);
   if (target == null) {
     debugPrint('私信推送缺少 conversation_id 或 sender_id');
     return true;
   }
 
   if (opened) {
-    await _clearPrivateMessageNotifications(target.conversationId);
+    await PlatformServices.current.notifications
+        .clearConversationNotifications(target.conversationId);
     _openPrivateMessage(target);
     return true;
   }
@@ -635,7 +485,7 @@ Future<bool> _handlePrivateMessageNotification(
 
   DiagnosticLogService.instance.record(
     level: 'info',
-    source: 'JPush',
+    source: '推送通知',
     type: '私信处理',
     summary: '判断是否拦截系统通知',
     detail: 'lifecycle=${lifecycleState?.name ?? "unknown"}\n'
@@ -646,7 +496,8 @@ Future<bool> _handlePrivateMessageNotification(
 
   if (isViewingTargetConversation) {
     // 只有应用真正处于前台，并且用户正在看这个会话时才清理。
-    await _clearPrivateMessageNotifications(target.conversationId);
+    await PlatformServices.current.notifications
+        .clearConversationNotifications(target.conversationId);
     await provider?.refreshMessages();
     await provider?.markRead(target.conversationId);
     return true;
@@ -654,77 +505,13 @@ Future<bool> _handlePrivateMessageNotification(
 
   // 极光未显示通知 → Flutter 本地兜底弹窗
   if (showLocalFallback) {
-    await _showPrivateMessageLocalNotification(target, message);
+    await PlatformServices.current.notifications
+        .showLocalPrivateMessage(target, message);
   }
 
   // 刷新会话列表
   await provider?.loadConversations(silent: true);
   return true;
-}
-
-/// 当极光 SDK 未展示通知时（onNotifyMessageUnShow），由 Flutter 弹本地通知兜底
-Future<void> _showPrivateMessageLocalNotification(
-  PrivateMessageTarget target,
-  Map<String, dynamic> message,
-) async {
-  if (!_privateMessageNotificationsReady) return;
-
-  final msgId = extractJPushExtras(message)['msg_id']?.toString() ?? '';
-  if (msgId.isNotEmpty && _shownLocalMessageIds.contains(msgId)) {
-    debugPrint('跳过重复本地私信通知: msg_id=$msgId');
-    return;
-  }
-  if (msgId.isNotEmpty) {
-    _shownLocalMessageIds.add(msgId);
-    // 防止 Set 无限增长
-    if (_shownLocalMessageIds.length > 200) {
-      _shownLocalMessageIds.clear();
-    }
-  }
-
-  final title = target.displayName;
-  final body = notificationContent(message);
-  if (body.isEmpty) return;
-
-  final payload = jsonEncode({
-    'conversation_id': target.conversationId,
-    'sender_id': target.senderId,
-    'sender_name': target.displayName,
-    'sender_avatar': target.senderAvatar,
-    'message_id': target.messageId,
-  });
-
-  try {
-    await _privateMessageNotifications.show(
-      target.conversationId, // 同会话的通知会互相替换
-      title,
-      body,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'private_messages',
-          '私信通知',
-          channelDescription: '收到新私信时悬浮提醒',
-          importance: Importance.high,
-          priority: Priority.high,
-        ),
-      ),
-      payload: payload,
-    );
-    debugPrint('✅ 本地私信通知已弹出: ${target.displayName}');
-  } catch (e) {
-    debugPrint('本地私信通知弹出失败: $e');
-  }
-}
-
-Future<void> _clearPrivateMessageNotifications(int conversationId) async {
-  try {
-    await _privateMessageNotificationChannel.invokeMethod(
-      'clearConversationNotifications',
-      {'conversationId': conversationId},
-    );
-  } catch (e) {
-    debugPrint('清理私信通知失败: $e');
-  }
 }
 
 void _openPrivateMessage(PrivateMessageTarget target) {
@@ -812,33 +599,6 @@ void _processPendingPrivateMessageOpen() {
     );
     _navigateToPrivateMessage(target);
   }
-}
-
-Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
-  final extras = extractJPushExtras(message);
-  if (extras['type']?.toString() != 'app_update') {
-    return false;
-  }
-
-  final downloadUrl = extras['download_url']?.toString() ?? '';
-  final uri = Uri.tryParse(downloadUrl);
-  if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
-    debugPrint('更新推送缺少有效下载地址');
-    return true;
-  }
-
-  try {
-    var launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched) {
-      launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
-    }
-    if (!launched) {
-      debugPrint('无法打开更新下载地址: $downloadUrl');
-    }
-  } catch (e) {
-    debugPrint('打开更新下载地址失败: $e');
-  }
-  return true;
 }
 
 class SafeLogInterceptor extends Interceptor {
@@ -1011,6 +771,8 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       if (call.method == 'onDeepLink') {
         final uri = call.arguments as String?;
         await _handleDeepLinkUri(uri);
+      } else if (call.method == 'onContinuation') {
+        await _handleContinuation(call.arguments as String?);
       }
     });
   }
@@ -1032,6 +794,9 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
       await _handleDeepLinkUri(uri);
+      final continuation =
+          await _channel.invokeMethod<String>('getPendingContinuation');
+      await _handleContinuation(continuation);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
     }
@@ -1051,9 +816,36 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       );
       return;
     }
+    if (uri == 'sylulive://exams') {
+      appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+      appNavigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+      );
+      return;
+    }
+    if (uri == 'sylulive://competition/calendar') {
+      appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+      appNavigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const CompetitionCalendarScreen()),
+      );
+      return;
+    }
     if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
       await _openGradeDeepLink(uri);
     }
+  }
+
+  Future<void> _handleContinuation(String? raw) async {
+    final state = raw == null ? null : ContinuationState.tryParse(raw);
+    if (!mounted || state == null) return;
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) return;
+    navigator.popUntil((route) => route.isFirst);
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => CompetitionDetailScreen(eventId: state.competitionId),
+      ),
+    );
   }
 
   Future<void> _openGradeDeepLink(String raw) async {
@@ -1311,8 +1103,8 @@ class HomeInitialTabResolver {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
-  bool _jpushSetup = false;
-  bool _jpushSettingUp = false;
+  bool _pushSetup = false;
+  bool _pushSettingUp = false;
   final HomeInitialTabResolver _homeInitialTabResolver =
       HomeInitialTabResolver();
 
@@ -1333,8 +1125,8 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final authProvider = context.read<AuthProvider>();
       if (authProvider.isLoggedIn &&
-          PlatformCapabilities.current.supportsJPush) {
-        _ensureJPush(authProvider);
+          PlatformServices.current.notifications.isSupported) {
+        _ensurePushNotifications(authProvider);
         _checkNativePrivateMessage();
       }
       _processPendingPrivateMessageOpen();
@@ -1349,18 +1141,19 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     _checkingNativePrivateMessage = true;
 
     try {
-      final payload = await _privateMessageNotificationChannel
-          .invokeMethod<String>('getPendingPrivateMessage');
+      final payload = await PlatformServices.current.notifications
+          .getPendingPrivateMessage();
 
       if (payload == null || payload.isEmpty) return;
 
       final target = privateMessageTargetFromLocalPayload(payload);
       if (target == null) {
-        debugPrint('原生私信通知参数解析失败: $payload');
+        debugPrint('原生私信通知载荷解析失败: $payload');
         return;
       }
 
-      await _clearPrivateMessageNotifications(target.conversationId);
+      await PlatformServices.current.notifications
+          .clearConversationNotifications(target.conversationId);
       _openPrivateMessage(target);
     } catch (e) {
       debugPrint('读取原生待处理私信失败: $e');
@@ -1369,19 +1162,19 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _ensureJPush(AuthProvider authProvider) async {
-    if (_jpushSetup || _jpushSettingUp) return;
+  Future<void> _ensurePushNotifications(AuthProvider authProvider) async {
+    if (_pushSetup || _pushSettingUp) return;
 
-    _jpushSettingUp = true;
+    _pushSettingUp = true;
     try {
-      await setupJPush(authProvider);
-      _jpushSetup = true;
-      debugPrint('✅ JPush 初始化成功');
+      await PlatformServices.current.notifications.setupPush(authProvider);
+      _pushSetup = true;
+      debugPrint('推送通知初始化成功');
     } catch (e, stack) {
-      debugPrint('JPush 初始化失败，将在下次恢复时重试: $e');
+      debugPrint('推送通知初始化失败，将在下次恢复时重试: $e');
       debugPrintStack(stackTrace: stack);
     } finally {
-      _jpushSettingUp = false;
+      _pushSettingUp = false;
     }
   }
 
@@ -1397,15 +1190,15 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
         if (authProvider.isLoggedIn) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (PlatformCapabilities.current.supportsJPush &&
-                !_jpushSetup &&
-                !_jpushSettingUp) {
-              _ensureJPush(authProvider);
-              _requestNotificationPermissionIfNeeded();
+            if (PlatformServices.current.notifications.isSupported &&
+                !_pushSetup &&
+                !_pushSettingUp) {
+              _ensurePushNotifications(authProvider);
+              PlatformServices.current.notifications.requestPermissions();
             }
             _processPendingPrivateMessageOpen();
             _schedulePendingNotificationProcessing();
-            if (PlatformCapabilities.current.supportsJPush) {
+            if (PlatformServices.current.notifications.isSupported) {
               _checkNativePrivateMessage();
             }
           });

@@ -5,8 +5,13 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_constants.dart';
 import '../services/home_widget_service.dart';
+import '../platform/app_platform.dart';
+import '../platform/home_card/home_card_payload.dart';
+import '../platform/live_view/live_view_service.dart';
 import '../platform/platform_capabilities.dart';
+import '../platform/platform_services.dart';
 import '../models/course_term.dart';
+import '../utils/course_section_times.dart';
 
 /// 单个课程块，用于课表网格展示
 class CourseBlock {
@@ -689,9 +694,63 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 同步课程数据到桌面小部件（非阻塞）
   void _syncWidget() {
     if (_userId == null) return;
+    if (AppPlatforms.current.isOhos) {
+      Future.microtask(() async {
+        final now = DateTime.now();
+        try {
+          final payload = HomeCardPayloadFactory.course(this, now: now);
+          await PlatformServices.current.homeCards.syncCourseCard(
+            payload.toJson(),
+          );
+        } catch (error) {
+          debugPrint('鸿蒙课程卡片同步失败: $error');
+        }
+        try {
+          await PlatformServices.current.liveView.syncCourse(
+            resolveCourseLiveView(now),
+            now: now,
+          );
+        } catch (error) {
+          debugPrint('鸿蒙课程实况窗同步失败: $error');
+        }
+      });
+      return;
+    }
     if (!PlatformCapabilities.current.supportsNativeWidget) return;
     // 使用 microtask 避免阻塞 UI
     Future.microtask(() => HomeWidgetService.syncCourseData(this));
+  }
+
+  /// 计算当前应展示的课程实况窗；仅返回正在进行或 60 分钟内开始的课程。
+  @visibleForTesting
+  CourseLiveViewData? resolveCourseLiveView(DateTime now) {
+    final academicWeek = getAcademicWeek(now);
+    final candidates = _courses.where((course) {
+      if (course.weekday != now.weekday) return false;
+      return academicWeek == null || isCourseActive(course, academicWeek);
+    }).toList()
+      ..sort((left, right) => left.startSection.compareTo(right.startSection));
+
+    for (final course in candidates) {
+      final startTime = CourseSectionTimes.startAt(now, course.startSection);
+      final endTime = CourseSectionTimes.endAt(now, course.endSection);
+      if (!endTime.isAfter(now)) continue;
+      if (startTime.difference(now) > const Duration(minutes: 60)) continue;
+      final dateKey = '${now.year.toString().padLeft(4, '0')}'
+          '${now.month.toString().padLeft(2, '0')}'
+          '${now.day.toString().padLeft(2, '0')}';
+      return CourseLiveViewData(
+        businessId:
+            '${currentTerm.id}_${course.id}_${dateKey}_${course.startSection}',
+        title: course.name,
+        location: course.location?.trim().isNotEmpty == true
+            ? course.location!.trim()
+            : '地点待定',
+        startTime: startTime,
+        endTime: endTime,
+      );
+    }
+    return null;
   }
 
   /// 保存课程到 SharedPreferences
@@ -806,6 +865,7 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_semesterStartKey, start.toIso8601String());
+    _syncWidget();
     notifyListeners();
   }
 

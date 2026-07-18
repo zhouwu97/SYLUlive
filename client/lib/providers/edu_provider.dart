@@ -6,6 +6,8 @@ import 'dart:convert';
 import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_grade.dart';
+import 'auth_provider.dart'
+    show AuthCredentialStore, defaultAuthCredentialStoreFor;
 
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {
@@ -39,6 +41,33 @@ class AcademicSituationCacheEntry {
     required this.data,
     required this.updatedAt,
   });
+}
+
+class _EduBindingCandidate {
+  final bool isBound;
+  final String studentId;
+  final String name;
+  final String grade;
+  final String college;
+  final String major;
+
+  const _EduBindingCandidate({
+    required this.isBound,
+    required this.studentId,
+    required this.name,
+    required this.grade,
+    required this.college,
+    required this.major,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'is_bound': isBound,
+        'student_id': studentId,
+        'name': name,
+        'grade': grade,
+        'college': college,
+        'major': major,
+      };
 }
 
 class EduProvider extends ChangeNotifier {
@@ -89,6 +118,8 @@ class EduProvider extends ChangeNotifier {
     return 'edu_academic_situation_$userId';
   }
 
+  String _bindingCacheKey(String userId) => 'edu_binding_$userId';
+
   /// 读取内存缓存（同步方法，直接使用当前 _userId，安全）
   GradeCacheEntry? getCachedGrades(String year, int semester) {
     if (_userId == null) return null;
@@ -138,21 +169,39 @@ class EduProvider extends ChangeNotifier {
 
   String _eduPasswordKey(String studentId) => 'edu_pwd_${studentId.trim()}';
 
-  /// 删除教务密码（解绑后）
+  /// 兼容旧版本 / Web 平台清理路径：仅用于离开 _credentialStore 体系时的兜底。
+  static const FlutterSecureStorage _legacySecureStorage =
+      FlutterSecureStorage();
+
+  /// 删除教务密码（退出）
   Future<void> _deleteEduPassword(String studentId) async {
     final key = _eduPasswordKey(studentId);
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(key);
     } else {
-      const storage = FlutterSecureStorage();
-      await storage.delete(key: key);
+      // 计划 7.2 鸿蒙一致性保障：教务密码统一走 AuthCredentialStore，
+      // 避免 OHOS 上落到 flutter_secure_storage fallback 而绕开 Asset Store Kit。
+      final trimmedId = studentId.trim();
+      await _credentialStore.deleteEduPassword(trimmedId);
+      // 兼容旧版本迁移：清理一次可能遗留的 secure storage slot，
+      // 同时确保 Android 链路在没有遗留数据时也无副作用。
+      try {
+        await _legacySecureStorage.delete(key: key);
+      } catch (e) {
+        debugPrint('清理遗留 secure_storage 教务密码失败（可忽略）: $e');
+      }
     }
   }
 
-  EduProvider(Dio authDio) {
+  EduProvider(
+    Dio authDio, {
+    AuthCredentialStore? credentialStore,
+  }) : _credentialStore = credentialStore ?? defaultAuthCredentialStoreFor() {
     _authDio = authDio;
   }
+
+  final AuthCredentialStore _credentialStore;
 
   void setUserId(String userId) {
     if (_userId == userId) return;
@@ -251,17 +300,22 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        _isBound = data['edu_bound'] ?? false;
-        _studentId = data['edu_student_id'] ?? '';
-        _name = data['name'] ?? '';
-        _grade = data['edu_grade'] ?? '';
-        _college = data['edu_college'] ?? '';
-        _major = data['edu_major'] ?? '';
+        final candidate = _bindingCandidateFromData(
+          data,
+          fallbackStudentId: '',
+          isBound: data['edu_bound'] == true,
+        );
+        _commitBinding(candidate);
         _errorMessage = null;
         _statusLoaded = true;
 
-        // _saveBoundStatusFor 使用捕获的 userId
-        await _saveBoundStatusFor(expectedUserId);
+        // 服务端状态是权威来源；本地缓存失败只影响下次冷启动加速，
+        // 不能让当前已取得的真实状态失效。
+        try {
+          await _saveBoundStatusFor(expectedUserId, candidate);
+        } catch (e) {
+          debugPrint('保存教务绑定缓存失败: $e');
+        }
         notifyListeners();
       }
     } on DioException catch (e) {
@@ -277,18 +331,36 @@ class EduProvider extends ChangeNotifier {
   }
 
   /// 保存绑定状态 — 使用显式 userId，不从可变字段读取
-  Future<void> _saveBoundStatusFor(String userId) async {
+  Future<void> _saveBoundStatusFor(
+    String userId, [
+    _EduBindingCandidate? candidate,
+  ]) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('edu_bound_$userId', _isBound);
-    await prefs.setString('edu_student_id_$userId', _studentId);
-    await prefs.setString('edu_grade_$userId', _grade);
-    await prefs.setString('edu_college_$userId', _college);
-    await prefs.setString('edu_major_$userId', _major);
+    final value = candidate ?? _currentBindingCandidate();
+    final saved = await prefs.setString(
+      _bindingCacheKey(userId),
+      jsonEncode(value.toJson()),
+    );
+    if (!saved) throw StateError('教务绑定缓存写入失败');
   }
 
   /// 读取绑定状态 — 使用显式 userId
   Future<bool> _loadBoundStatusFor(String userId) async {
     final prefs = await SharedPreferences.getInstance();
+    final encoded = prefs.getString(_bindingCacheKey(userId));
+    if (encoded != null && encoded.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(encoded);
+        if (decoded is! Map) throw const FormatException('绑定缓存不是对象');
+        final candidate = _bindingCandidateFromCache(decoded);
+        _commitBinding(candidate);
+        return candidate.isBound;
+      } catch (e) {
+        debugPrint('解析教务绑定缓存失败，回退旧版缓存: $e');
+      }
+    }
+
+    // 兼容迁移前按字段保存的旧版缓存。
     _studentId = prefs.getString('edu_student_id_$userId') ?? '';
     _grade = prefs.getString('edu_grade_$userId') ?? '';
     _college = prefs.getString('edu_college_$userId') ?? '';
@@ -298,6 +370,7 @@ class EduProvider extends ChangeNotifier {
 
   Future<void> _clearBoundStatusFor(String userId) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_bindingCacheKey(userId));
     await prefs.remove('edu_bound_$userId');
     await prefs.remove('edu_student_id_$userId');
     await prefs.remove('edu_grade_$userId');
@@ -336,24 +409,35 @@ class EduProvider extends ChangeNotifier {
   }
 
   Future<void> _saveEduPassword(String studentId, String password) async {
-    final key = _eduPasswordKey(studentId);
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(key, password);
-    } else {
-      const storage = FlutterSecureStorage();
-      await storage.write(key: key, value: password);
+      await prefs.setString(_eduPasswordKey(studentId), password);
+      return;
+    }
+    // 计划 7.2 鸿蒙一致性保障：教务密码统一走 AuthCredentialStore，
+    // 保证 OHOS 上写入 Asset Store Kit、Android / iOS 写入 flutter_secure_storage。
+    await _credentialStore.writeEduPassword(studentId.trim(), password);
+    // 兼容旧版本：旧 impl 写入 legacy secure_storage，迁移时清理一次。
+    try {
+      await _legacySecureStorage.delete(key: _eduPasswordKey(studentId));
+    } catch (e) {
+      debugPrint('清理遗留 secure_storage 教务密码失败（可忽略）: $e');
     }
   }
 
   Future<String?> _loadEduPassword(String studentId) async {
-    final key = _eduPasswordKey(studentId);
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(key);
-    } else {
-      const storage = FlutterSecureStorage();
-      return await storage.read(key: key);
+      return prefs.getString(_eduPasswordKey(studentId));
+    }
+    // 优先从 AuthCredentialStore 读，未命中再退一次 legacy secure_storage 兼容旧版本。
+    final v = await _credentialStore.readEduPassword(studentId.trim());
+    if (v != null && v.isNotEmpty) return v;
+    try {
+      return await _legacySecureStorage.read(key: _eduPasswordKey(studentId));
+    } catch (e) {
+      debugPrint('读取遗留 secure_storage 教务密码失败（可忽略）: $e');
+      return null;
     }
   }
 
@@ -363,9 +447,17 @@ class EduProvider extends ChangeNotifier {
     String password, {
     bool isSilent = false,
   }) async {
+    final normalizedStudentId = studentId.trim();
     if (_userId == null) {
       if (!isSilent) {
         _errorMessage = '用户未登录';
+        notifyListeners();
+      }
+      return false;
+    }
+    if (normalizedStudentId.isEmpty || password.isEmpty) {
+      if (!isSilent) {
+        _errorMessage = normalizedStudentId.isEmpty ? '请输入教务学号' : '请输入教务密码';
         notifyListeners();
       }
       return false;
@@ -381,7 +473,7 @@ class EduProvider extends ChangeNotifier {
       final response = await _authDio.post(
         '/edu/bind',
         data: {
-          'student_id': studentId,
+          'student_id': normalizedStudentId,
           'password': password,
         },
       );
@@ -390,19 +482,42 @@ class EduProvider extends ChangeNotifier {
         _isLoading = false;
       }
       if (response.statusCode == 200) {
-        final data = response.data;
-        _isBound = true;
-        _studentId = data['edu_student_id'] ?? studentId;
-        _name = data['name'] ?? '';
-        _grade = data['edu_grade'] ?? '';
-        _college = data['edu_college'] ?? '';
-        _major = data['edu_major'] ?? '';
+        final candidate = _bindingCandidateFromData(
+          response.data,
+          fallbackStudentId: normalizedStudentId,
+          isBound: true,
+        );
+        final boundUserId = _userId!;
+        final oldPassword =
+            await _credentialStore.readEduPassword(candidate.studentId);
+        await _saveEduPassword(candidate.studentId, password);
+        try {
+          await _saveBoundStatusFor(boundUserId, candidate);
+        } catch (error, stackTrace) {
+          if (oldPassword == null) {
+            await _credentialStore.deleteEduPassword(candidate.studentId);
+          } else {
+            await _credentialStore.writeEduPassword(
+              candidate.studentId,
+              oldPassword,
+            );
+          }
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+
+        final previousStudentId = _studentId.trim();
+        _commitBinding(candidate);
         _errorMessage = null;
         _statusLoaded = true;
-        final boundUserId = _userId!;
-        await _saveBoundStatusFor(boundUserId);
-        await _saveEduPassword(_studentId, password);
         notifyListeners();
+        if (previousStudentId.isNotEmpty &&
+            previousStudentId != candidate.studentId) {
+          try {
+            await _deleteEduPassword(previousStudentId);
+          } catch (e) {
+            debugPrint('清理旧教务账号密码失败: $e');
+          }
+        }
         return true;
       }
     } on DioException catch (e) {
@@ -413,6 +528,14 @@ class EduProvider extends ChangeNotifier {
       }
       debugPrint('绑定教务失败: $_errorMessage');
       return false;
+    } catch (e) {
+      if (!isSilent) {
+        _isLoading = false;
+        _errorMessage = '绑定信息保存失败，请重试';
+        notifyListeners();
+      }
+      debugPrint('保存教务绑定信息失败: $e');
+      return false;
     }
     if (!isSilent) {
       _isLoading = false;
@@ -420,6 +543,57 @@ class EduProvider extends ChangeNotifier {
       notifyListeners();
     }
     return false;
+  }
+
+  _EduBindingCandidate _bindingCandidateFromData(
+    Object? data, {
+    required String fallbackStudentId,
+    required bool isBound,
+  }) {
+    if (data is! Map) throw const FormatException('教务绑定响应不是对象');
+    String value(String key, [String fallback = '']) {
+      final raw = data[key];
+      return raw == null ? fallback : raw.toString().trim();
+    }
+
+    return _EduBindingCandidate(
+      isBound: isBound,
+      studentId: value('edu_student_id', fallbackStudentId),
+      name: value('name'),
+      grade: value('edu_grade'),
+      college: value('edu_college'),
+      major: value('edu_major'),
+    );
+  }
+
+  _EduBindingCandidate _bindingCandidateFromCache(Map data) {
+    String value(String key) => data[key]?.toString() ?? '';
+    return _EduBindingCandidate(
+      isBound: data['is_bound'] == true,
+      studentId: value('student_id'),
+      name: value('name'),
+      grade: value('grade'),
+      college: value('college'),
+      major: value('major'),
+    );
+  }
+
+  _EduBindingCandidate _currentBindingCandidate() => _EduBindingCandidate(
+        isBound: _isBound,
+        studentId: _studentId,
+        name: _name,
+        grade: _grade,
+        college: _college,
+        major: _major,
+      );
+
+  void _commitBinding(_EduBindingCandidate candidate) {
+    _isBound = candidate.isBound;
+    _studentId = candidate.studentId;
+    _name = candidate.name;
+    _grade = candidate.grade;
+    _college = candidate.college;
+    _major = candidate.major;
   }
 
   // 解绑教务账号
@@ -445,14 +619,8 @@ class EduProvider extends ChangeNotifier {
         _errorMessage = null;
         _statusLoaded = true;
 
-        // 清除 SharedPreferences 中该用户的教务信息
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('edu_bound_$currentUserId', false);
-        await prefs.remove('edu_student_id_$currentUserId');
-        await prefs.remove('edu_grade_$currentUserId');
-        await prefs.remove('edu_college_$currentUserId');
-        await prefs.remove('edu_major_$currentUserId');
-        await prefs.remove('edu_last_semester_$currentUserId');
+        // 同时清除新版单记录缓存和迁移前的分字段缓存。
+        await _clearBoundStatusFor(currentUserId);
 
         // 删除安全存储中的密码
         if (currentStudentId.isNotEmpty) {

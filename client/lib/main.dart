@@ -973,9 +973,7 @@ class MyApp extends StatelessWidget {
               provider!..syncSessionUser(auth.user?.id),
         ),
       ],
-      child: const AppUpdateGate(
-        child: _WidgetDeepLinkHandler(child: _AppContent()),
-      ),
+      child: const _WidgetDeepLinkHandler(child: _AppContent()),
     );
   }
 }
@@ -1122,6 +1120,10 @@ class _AppContent extends StatelessWidget {
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       navigatorKey: appNavigatorKey,
       scaffoldMessengerKey: scaffoldMessengerKey,
+      builder: (context, child) => AppUpdateGate(
+        navigatorKey: appNavigatorKey,
+        child: child ?? const SizedBox.shrink(),
+      ),
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => const PredictiveBackGate(

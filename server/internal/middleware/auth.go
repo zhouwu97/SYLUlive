@@ -109,7 +109,7 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	}
 }
 
-// OptionalAuthMiddleware 可选JWT认证中间件（解析用户信息但不拦截）
+// OptionalAuthMiddleware 可选JWT认证中间件。hard 模式下未授权用户访问公开接口时按匿名处理。
 func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString := tokenFromRequest(c)
@@ -120,9 +120,15 @@ func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 				return []byte(jwtSecret), nil
 			})
 			if err == nil && token.Valid {
-				// 撤销或未确认协议的账号访问公开接口时按匿名用户处理。
 				if state, err := getCachedSessionState(db, claims.UserID); err == nil {
-					if state.tokenVersion == claims.TokenVersion && state.legalConsentState == models.LegalConsentStateActive {
+					if state.tokenVersion != claims.TokenVersion {
+						c.Next()
+						return
+					}
+					if state.legalConsentState != models.LegalConsentStateActive && legalConsentEnforcement == LegalConsentEnforcementSoft {
+						log.Printf("[LEGAL_CONSENT_SOFT] optional user_id=%d method=%s route=%s state=%s client_version=%q", claims.UserID, c.Request.Method, c.Request.URL.Path, state.legalConsentState, clientVersion(c))
+					}
+					if legalConsentEnforcement != LegalConsentEnforcementHard || state.legalConsentState == models.LegalConsentStateActive {
 						c.Set("user_id", claims.UserID)
 						c.Set("role", claims.Role)
 					}

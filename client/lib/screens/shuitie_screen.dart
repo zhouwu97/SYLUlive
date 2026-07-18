@@ -641,8 +641,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   void _openCheckInCalendar() {
     final auth = context.read<AuthProvider>();
-    final page =
-        auth.isLoggedIn ? const CheckInCalendarScreen() : const LoginScreen();
+    final page = auth.isLoggedIn
+        ? CheckInCalendarScreen(autoCheckIn: !_checkedIn)
+        : const LoginScreen();
     Navigator.of(context, rootNavigator: true)
         .push(MaterialPageRoute(builder: (_) => page))
         .then((_) {

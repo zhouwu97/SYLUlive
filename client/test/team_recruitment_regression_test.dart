@@ -8,8 +8,24 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/team_recruitment_provider.dart';
 import 'package:shenliyuan/screens/team/team_recruitment_center_screen.dart';
 import 'package:shenliyuan/services/team_recruitment_service.dart';
+import 'package:shenliyuan/widgets/team/team_application_sheet.dart';
 
 void main() {
+  testWidgets('申请说明不足五个字时显示校验原因', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(body: TeamRecruitmentApplicationSheet()),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).first, '我不会');
+    await tester.tap(find.text('提交申请'));
+    await tester.pump();
+
+    expect(find.text('申请说明至少 5 个字'), findsOneWidget);
+    expect(find.text('申请加入'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('状态筛选切换过程中始终只有一个选中底色', (tester) async {
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {

@@ -10,8 +10,13 @@ import '../utils/app_feedback.dart';
 
 class CheckInCalendarScreen extends StatefulWidget {
   final DateTime Function()? now;
+  final bool autoCheckIn;
 
-  const CheckInCalendarScreen({super.key, this.now});
+  const CheckInCalendarScreen({
+    super.key,
+    this.now,
+    this.autoCheckIn = false,
+  });
 
   @override
   State<CheckInCalendarScreen> createState() => _CheckInCalendarScreenState();
@@ -41,6 +46,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   DateTime? _serverToday;
   DateTime? _selectedDate;
   _CalendarDaySelection? _selectedDaySelection;
+  bool _autoCheckInAttempted = false;
 
   DateTime get _deviceToday {
     final now = widget.now?.call() ?? DateTime.now();
@@ -127,6 +133,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         _loading = false;
         _errorMessage = null;
       });
+      _maybeAutoCheckIn();
     } on DioException catch (error) {
       if (!mounted || requestedMonth != _visibleMonth) return;
       setState(() {
@@ -145,8 +152,19 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
     }
   }
 
+  void _maybeAutoCheckIn() {
+    if (!widget.autoCheckIn ||
+        _autoCheckInAttempted ||
+        _checkedInToday ||
+        _loading) {
+      return;
+    }
+    _autoCheckInAttempted = true;
+    unawaited(_doCheckIn());
+  }
+
   Future<void> _changeMonth(int offset) async {
-    if (offset > 0 && _isCurrentMonth) return;
+    if (_loading || (offset > 0 && _isCurrentMonth)) return;
     final next = DateTime(
       _visibleMonth.year,
       _visibleMonth.month + offset,
@@ -158,6 +176,12 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
       _selectedDaySelection = null;
     });
     await _loadData();
+  }
+
+  void _handleMonthSwipe(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity.abs() < 250) return;
+    _changeMonth(velocity > 0 ? -1 : 1);
   }
 
   void _selectCalendarDay(
@@ -452,33 +476,44 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                           makeupCards: _makeupCards,
                         ),
                         const SizedBox(height: 20),
-                        _MonthHeader(
-                          month: _visibleMonth,
-                          canGoNext: !_isCurrentMonth,
-                          onPrevious: () => _changeMonth(-1),
-                          onNext: () => _changeMonth(1),
-                        ),
-                        const SizedBox(height: 10),
-                        if (_loading)
-                          const SizedBox(
-                            height: 360,
-                            child: Center(child: CircularProgressIndicator()),
-                          )
-                        else if (_errorMessage != null)
-                          _CalendarError(
-                            message: _errorMessage!,
-                            onRetry: _loadData,
-                          )
-                        else
-                          CheckInMonthCalendar(
-                            month: _visibleMonth,
-                            today: _today,
-                            records: _records,
-                            selectedDate: _selectedDate,
-                            onDayTap: _handleCalendarDayTap,
+                        GestureDetector(
+                          key: const ValueKey('check-in-month-swipe-area'),
+                          behavior: HitTestBehavior.opaque,
+                          onHorizontalDragEnd: _handleMonthSwipe,
+                          child: Column(
+                            children: [
+                              _MonthHeader(
+                                month: _visibleMonth,
+                                canGoNext: !_isCurrentMonth,
+                                onPrevious: () => _changeMonth(-1),
+                                onNext: () => _changeMonth(1),
+                              ),
+                              const SizedBox(height: 10),
+                              if (_loading)
+                                const SizedBox(
+                                  height: 360,
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                )
+                              else if (_errorMessage != null)
+                                _CalendarError(
+                                  message: _errorMessage!,
+                                  onRetry: _loadData,
+                                )
+                              else
+                                CheckInMonthCalendar(
+                                  month: _visibleMonth,
+                                  today: _today,
+                                  records: _records,
+                                  selectedDate: _selectedDate,
+                                  onDayTap: _handleCalendarDayTap,
+                                ),
+                              const SizedBox(height: 16),
+                              _CalendarLegend(theme: theme),
+                            ],
                           ),
-                        const SizedBox(height: 16),
-                        _CalendarLegend(theme: theme),
+                        ),
                       ],
                     ),
                   ),

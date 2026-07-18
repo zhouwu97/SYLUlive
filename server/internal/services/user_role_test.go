@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -22,8 +23,8 @@ func TestUpdateUserRoleAndInvalidateTokenExpiresOldJWT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}); err != nil {
-		t.Fatalf("migrate user: %v", err)
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+		t.Fatalf("migrate user authentication dependencies: %v", err)
 	}
 
 	user := models.User{
@@ -35,6 +36,7 @@ func TestUpdateUserRoleAndInvalidateTokenExpiresOldJWT(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	seedActiveLegalConsents(t, db, user)
 
 	const secret = "test-secret"
 	oldToken, err := middleware.GenerateToken(user.ID, string(models.RoleUser), user.TokenVersion, secret)
@@ -100,8 +102,8 @@ func TestUpdateUserRoleAndInvalidateTokenDowngradeExpiresAdminJWT(t *testing.T) 
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}); err != nil {
-		t.Fatalf("migrate user: %v", err)
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+		t.Fatalf("migrate user authentication dependencies: %v", err)
 	}
 
 	user := models.User{
@@ -113,6 +115,7 @@ func TestUpdateUserRoleAndInvalidateTokenDowngradeExpiresAdminJWT(t *testing.T) 
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	seedActiveLegalConsents(t, db, user)
 
 	const secret = "test-secret"
 	oldAdminToken, err := middleware.GenerateToken(user.ID, string(models.RoleAdmin), user.TokenVersion, secret)
@@ -143,5 +146,22 @@ func TestUpdateUserRoleAndInvalidateTokenDowngradeExpiresAdminJWT(t *testing.T) 
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("old admin token after downgrade status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func seedActiveLegalConsents(t *testing.T, db *gorm.DB, user models.User) {
+	t.Helper()
+	now := time.Now().UTC()
+	consents := make([]models.UserLegalConsent, 0)
+	for _, document := range models.RequiredLegalDocuments(user.EduBound) {
+		consents = append(consents, models.UserLegalConsent{
+			UserID:     user.ID,
+			Document:   document,
+			Version:    models.LegalDocumentVersion,
+			AcceptedAt: now,
+		})
+	}
+	if err := db.Create(&consents).Error; err != nil {
+		t.Fatalf("seed legal consents: %v", err)
 	}
 }

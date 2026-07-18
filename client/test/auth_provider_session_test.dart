@@ -8,6 +8,7 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 
 class _QueuedAuthAdapter implements HttpClientAdapter {
   final List<({int statusCode, Object? data})> _responses = [];
+  final List<RequestOptions> requests = [];
 
   void enqueue(int statusCode, Object? data) {
     _responses.add((statusCode: statusCode, data: data));
@@ -22,6 +23,7 @@ class _QueuedAuthAdapter implements HttpClientAdapter {
     Stream<List<int>>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    requests.add(options);
     await requestStream?.drain<void>();
     if (_responses.isEmpty) throw StateError('缺少认证响应: ${options.path}');
     final response = _responses.removeAt(0);
@@ -136,6 +138,16 @@ class _FakePreferenceStore implements PreferenceStore {
 
 typedef _AuthInvocation = Future<AuthResult> Function(AuthProvider provider);
 
+const _registrationConsents = RegistrationConsents(
+  userAgreementAccepted: true,
+  privacyPolicyAccepted: true,
+  communityRulesAccepted: true,
+  minorProtectionAccepted: true,
+  contentComplaintAccepted: true,
+  sdkDisclosureAccepted: true,
+  eduDataConsentAccepted: true,
+);
+
 class _AuthCase {
   final String name;
   final int statusCode;
@@ -150,11 +162,7 @@ final _authCases = <_AuthCase>[
     201,
     (provider) => provider.register('20260001', 'password'),
   ),
-  _AuthCase(
-    'login',
-    200,
-    (provider) => provider.login('20260001', 'password'),
-  ),
+  _AuthCase('login', 200, (provider) => provider.login('20260001', 'password')),
   _AuthCase(
     'loginEdu',
     200,
@@ -167,6 +175,7 @@ final _authCases = <_AuthCase>[
       '20260001',
       'password',
       eduPassword: 'edu-pass',
+      consents: _registrationConsents,
     ),
   ),
   _AuthCase(
@@ -176,6 +185,7 @@ final _authCases = <_AuthCase>[
       '10000',
       '123456',
       'password',
+      consents: _registrationConsents,
     ),
   ),
 ];
@@ -237,7 +247,9 @@ void main() {
       expect(provider.user?.id, 2);
       expect(provider.sessionGeneration, generation + 1);
       expect(
-          provider.dio.options.headers['Authorization'], 'Bearer next-token');
+        provider.dio.options.headers['Authorization'],
+        'Bearer next-token',
+      );
     });
   }
 
@@ -283,15 +295,12 @@ void main() {
       expect(result.success, isFalse);
       _expectOldSession(provider, store, generation);
       expect(store.eduPasswords['20260001'], 'old-edu-pass');
-      expect(
-        store.operations,
-        [
-          'edu:read',
-          'edu:write:edu-pass',
-          'auth:write:next-token',
-          'edu:write:old-edu-pass',
-        ],
-      );
+      expect(store.operations, [
+        'edu:read',
+        'edu:write:edu-pass',
+        'auth:write:next-token',
+        'edu:write:old-edu-pass',
+      ]);
     });
 
     test('${authCase.name} 合法成功只提交一次会话并持久化新教务密码', () async {
@@ -312,19 +321,17 @@ void main() {
       expect(result.success, isTrue);
       expect(provider.sessionGeneration, generation + 1);
       expect(store.eduPasswords['20260001'], 'edu-pass');
-      expect(
-        store.operations,
-        ['edu:read', 'edu:write:edu-pass', 'auth:write:next-token'],
-      );
+      expect(store.operations, [
+        'edu:read',
+        'edu:write:edu-pass',
+        'auth:write:next-token',
+      ]);
     });
   }
 
   test('registerWithEdu 认证写入失败且无旧密码时删除新教务密码', () async {
     final adapter = _QueuedAuthAdapter()
-      ..enqueue(201, {
-        'token': 'next-token',
-        'user': _userJson(2),
-      });
+      ..enqueue(201, {'token': 'next-token', 'user': _userJson(2)});
     final store = _FakeAuthCredentialStore();
     final provider = _provider(adapter, store);
     await provider.applyAuthPayload('old-token', _userJson(1));
@@ -336,30 +343,25 @@ void main() {
       '20260001',
       'password',
       eduPassword: 'edu-pass',
+      consents: _registrationConsents,
     );
 
     expect(result.success, isFalse);
     _expectOldSession(provider, store, generation);
     expect(store.eduPasswords['20260001'], isNull);
-    expect(
-      store.operations,
-      [
-        'edu:read',
-        'edu:write:edu-pass',
-        'auth:write:next-token',
-        'edu:delete',
-      ],
-    );
+    expect(store.operations, [
+      'edu:read',
+      'edu:write:edu-pass',
+      'auth:write:next-token',
+      'edu:delete',
+    ]);
   });
 
   test('Web 教务密码 setString 返回 false 时不改变持久或内存会话', () async {
     final preferences = _FakePreferenceStore();
     final store = PreferenceAuthCredentialStore(preferences);
     final adapter = _QueuedAuthAdapter()
-      ..enqueue(200, {
-        'token': 'next-token',
-        'user': _userJson(2),
-      });
+      ..enqueue(200, {'token': 'next-token', 'user': _userJson(2)});
     final provider = _provider(adapter, store);
     await provider.applyAuthPayload('old-token', _userJson(1));
     preferences.values['edu_pwd_20260001'] = 'old-edu-pass';
@@ -470,10 +472,7 @@ void main() {
     final preferences = _FakePreferenceStore();
     final store = PreferenceAuthCredentialStore(preferences);
 
-    await store.write(
-      token: 'token',
-      userJson: jsonEncode(_userJson(1)),
-    );
+    await store.write(token: 'token', userJson: jsonEncode(_userJson(1)));
     await store.writeEduPassword('20260001', 'edu-pass');
     await store.deleteEduPassword('20260001');
 
@@ -621,6 +620,58 @@ void main() {
     expect(provider.sessionGeneration, generation + 1);
   });
 
+  test('即时撤销同意后保留查阅会话并清除本机教务密码', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(200, {'message': '已撤销全部授权', 'legal_consents_active': false});
+    final store = _FakeAuthCredentialStore();
+    final provider = _provider(adapter, store);
+    await provider.applyAuthPayload('token', _userJson(1));
+    store.eduPasswords['20260001'] = 'edu-password';
+
+    final result = await provider.withdrawLegalConsents('password123');
+
+    expect(result.success, isTrue);
+    expect(provider.isLoggedIn, isTrue);
+    expect(provider.user?.legalConsentsActive, isFalse);
+    expect(store.eduPasswords, isEmpty);
+    expect(adapter.requests.last.method, 'DELETE');
+    expect(adapter.requests.last.path, '/user/privacy/consents');
+    expect(adapter.requests.last.data, {
+      'password': 'password123',
+      'confirmed': true,
+    });
+  });
+
+  test('待确认协议的账号确认后立即恢复完整会话', () async {
+    final pendingUser = _userJson(1)
+      ..['legal_consents_active'] = false
+      ..['legal_consents_required'] = true;
+    final acceptedUser = _userJson(1)
+      ..['legal_consents_active'] = true
+      ..['legal_consents_required'] = false;
+    final adapter = _QueuedAuthAdapter()..enqueue(200, {'user': acceptedUser});
+    final provider = _provider(adapter, _FakeAuthCredentialStore());
+    await provider.applyAuthPayload('token', pendingUser);
+
+    final result = await provider.acceptRequiredLegalConsents(
+      includeEduDataConsent: false,
+    );
+
+    expect(result.success, isTrue);
+    expect(provider.user?.legalConsentsActive, isTrue);
+    expect(provider.user?.legalConsentsRequired, isFalse);
+    expect(adapter.requests.single.path, '/user/legal-consents');
+    expect(adapter.requests.single.data, {
+      'user_agreement_accepted': true,
+      'privacy_policy_accepted': true,
+      'community_rules_accepted': true,
+      'minor_protection_accepted': true,
+      'content_complaint_accepted': true,
+      'sdk_disclosure_accepted': true,
+      'edu_data_consent_accepted': false,
+    });
+  });
+
   test('普通 API 返回 401 时在错误交回前清除完整 App 会话', () async {
     final adapter = _QueuedAuthAdapter()
       ..enqueue(401, {'error': 'token expired'});
@@ -701,6 +752,8 @@ Map<String, dynamic> _userJson(int id) {
     'student_id': '2026000$id',
     'nickname': '用户$id',
     'created_at': '2026-07-13T10:00:00Z',
+    'legal_consents_active': true,
+    'legal_consents_required': false,
   };
 }
 
@@ -750,34 +803,37 @@ void registerPlatformCredentialConsistencyTests() {
 
       expect(store.values[tokenKey], 'old-token');
       expect(store.values[userKey], 'placeholder');
-      expect(store.operations,
-          containsAll(<String>['write:auth_token', 'write:auth_user']));
+      expect(
+        store.operations,
+        containsAll(<String>['write:auth_token', 'write:auth_user']),
+      );
     });
 
     test(
-        'write user_json 失败，token 回滚也失败 → 抛 AuthCredentialConsistencyException',
-        () async {
-      final store = _FakeSecureValueStore()
-        ..values[tokenKey] = 'old-token'
-        ..values[userKey] = 'placeholder'
-        ..writeOutcomes[tokenKey] = [true, false]
-        ..writeOutcomes[userKey] = [false];
-      final credentialStore = PlatformAuthCredentialStore(storage: store);
+      'write user_json 失败，token 回滚也失败 → 抛 AuthCredentialConsistencyException',
+      () async {
+        final store = _FakeSecureValueStore()
+          ..values[tokenKey] = 'old-token'
+          ..values[userKey] = 'placeholder'
+          ..writeOutcomes[tokenKey] = [true, false]
+          ..writeOutcomes[userKey] = [false];
+        final credentialStore = PlatformAuthCredentialStore(storage: store);
 
-      await expectLater(
-        credentialStore.write(token: 'next-token', userJson: 'next-user'),
-        throwsA(
-          isA<AuthCredentialConsistencyException>().having(
-            (error) => error.message,
-            'message',
-            contains('回滚平台认证信息失败'),
+        await expectLater(
+          credentialStore.write(token: 'next-token', userJson: 'next-user'),
+          throwsA(
+            isA<AuthCredentialConsistencyException>().having(
+              (error) => error.message,
+              'message',
+              contains('回滚平台认证信息失败'),
+            ),
           ),
-        ),
-      );
+        );
 
-      expect(store.values[tokenKey], 'next-token');
-      expect(store.values[userKey], 'placeholder');
-    });
+        expect(store.values[tokenKey], 'next-token');
+        expect(store.values[userKey], 'placeholder');
+      },
+    );
 
     test('clear user_json 删除失败，token 回滚成功 → 抛原删除错误', () async {
       // 删除 token 成功、删除 user 失败；回滚 token 时 _restoreSecureValue 走 write 路径
@@ -789,43 +845,41 @@ void registerPlatformCredentialConsistencyTests() {
         ..deleteOutcomes[userKey] = [false];
       final credentialStore = PlatformAuthCredentialStore(storage: store);
 
-      await expectLater(
-        credentialStore.clear(),
-        throwsA(isA<StateError>()),
-      );
+      await expectLater(credentialStore.clear(), throwsA(isA<StateError>()));
 
       expect(store.values[tokenKey], 'old-token');
       expect(store.values[userKey], 'placeholder');
     });
 
     test(
-        'clear user_json 删除失败，token 回滚也失败 → 抛 AuthCredentialConsistencyException',
-        () async {
-      // 第一次 delete(token) 成功；delete(user) 失败；
-      // 回滚 _restoreSecureValue(token, 'old-token') 走 write 路径，writeOutcomes 注入 false
-      // 让回滚 write 失败 → 整体抛 AuthCredentialConsistencyException。
-      final store = _FakeSecureValueStore()
-        ..values[tokenKey] = 'old-token'
-        ..values[userKey] = 'placeholder'
-        ..deleteOutcomes[tokenKey] = [true]
-        ..deleteOutcomes[userKey] = [false]
-        ..writeOutcomes[tokenKey] = [false];
-      final credentialStore = PlatformAuthCredentialStore(storage: store);
+      'clear user_json 删除失败，token 回滚也失败 → 抛 AuthCredentialConsistencyException',
+      () async {
+        // 第一次 delete(token) 成功；delete(user) 失败；
+        // 回滚 _restoreSecureValue(token, 'old-token') 走 write 路径，writeOutcomes 注入 false
+        // 让回滚 write 失败 → 整体抛 AuthCredentialConsistencyException。
+        final store = _FakeSecureValueStore()
+          ..values[tokenKey] = 'old-token'
+          ..values[userKey] = 'placeholder'
+          ..deleteOutcomes[tokenKey] = [true]
+          ..deleteOutcomes[userKey] = [false]
+          ..writeOutcomes[tokenKey] = [false];
+        final credentialStore = PlatformAuthCredentialStore(storage: store);
 
-      await expectLater(
-        credentialStore.clear(),
-        throwsA(
-          isA<AuthCredentialConsistencyException>().having(
-            (error) => error.message,
-            'message',
-            contains('回滚平台认证清理失败'),
+        await expectLater(
+          credentialStore.clear(),
+          throwsA(
+            isA<AuthCredentialConsistencyException>().having(
+              (error) => error.message,
+              'message',
+              contains('回滚平台认证清理失败'),
+            ),
           ),
-        ),
-      );
+        );
 
-      expect(store.values.containsKey(tokenKey), isFalse);
-      expect(store.values[userKey], 'placeholder');
-    });
+        expect(store.values.containsKey(tokenKey), isFalse);
+        expect(store.values[userKey], 'placeholder');
+      },
+    );
   });
 }
 

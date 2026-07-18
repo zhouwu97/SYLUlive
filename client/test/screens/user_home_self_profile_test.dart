@@ -61,15 +61,18 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
               'gender': '',
               'created_at': '2026-07-15T00:00:00Z',
               'background': 'http://example.com/bg.jpg',
+              'legal_consents_active': true,
             }
-          : profileResponse ?? {
-              'id': 2,
-              'student_id': '20260002',
-              'nickname': '女生用户',
-              'gender': 'female',
-              'created_at': '2026-07-15T00:00:00Z',
-              'background': '',
-            },
+          : profileResponse ??
+              {
+                'id': 2,
+                'student_id': '20260002',
+                'nickname': '女生用户',
+                'gender': 'female',
+                'created_at': '2026-07-15T00:00:00Z',
+                'background': '',
+                'legal_consents_active': true,
+              },
       '/user/background' => {
           'id': 2,
           'student_id': '20260002',
@@ -77,7 +80,8 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
           'gender': '',
           'created_at': '2026-07-15T00:00:00Z',
           'background': 'http://example.com/new_bg.jpg',
-      },
+          'legal_consents_active': true,
+        },
       '/user/2/posts' => <Object>[],
       '/user/2/market-posts' => {
           'items': <Object>[],
@@ -166,6 +170,7 @@ void main() {
       'nickname': '女生用户',
       'gender': 'female',
       'created_at': '2026-07-15T00:00:00Z',
+      'legal_consents_active': true,
     });
 
     await tester.pumpWidget(
@@ -176,7 +181,12 @@ void main() {
             create: (_) => SocialProvider(dio),
           ),
         ],
-        child: const MaterialApp(home: UserHomeScreen(userId: 2)),
+        child: MaterialApp(
+          home: UserHomeScreen(
+            userId: 2,
+            backgroundCacheManager: _EmptyCacheManager(),
+          ),
+        ),
       ),
     );
     await tester.pump();
@@ -219,6 +229,7 @@ void main() {
       'nickname': '女生用户',
       'gender': 'female',
       'created_at': '2026-07-15T00:00:00Z',
+      'legal_consents_active': true,
     });
 
     await tester.pumpWidget(
@@ -229,7 +240,9 @@ void main() {
             create: (_) => SocialProvider(dio),
           ),
         ],
-        child: const MaterialApp(home: UserHomeScreen()),
+        child: MaterialApp(
+          home: UserHomeScreen(backgroundCacheManager: _EmptyCacheManager()),
+        ),
       ),
     );
     await tester.pump();
@@ -263,6 +276,7 @@ void main() {
         'nickname': '未知性别用户',
         'gender': '',
         'created_at': '2026-07-15T00:00:00Z',
+        'legal_consents_active': true,
       },
     );
     dio.httpClientAdapter = adapter;
@@ -278,6 +292,7 @@ void main() {
       'nickname': '未知性别用户',
       'gender': '',
       'created_at': '2026-07-15T00:00:00Z',
+      'legal_consents_active': true,
     });
 
     await tester.pumpWidget(
@@ -288,7 +303,9 @@ void main() {
             create: (_) => SocialProvider(dio),
           ),
         ],
-        child: const MaterialApp(home: UserHomeScreen()),
+        child: MaterialApp(
+          home: UserHomeScreen(backgroundCacheManager: _EmptyCacheManager()),
+        ),
       ),
     );
     await tester.pump();
@@ -382,6 +399,7 @@ void main() {
       'gender': 'male',
       'created_at': '2026-07-15T00:00:00Z',
       'background': '',
+      'legal_consents_active': true,
     });
 
     await tester.pumpWidget(
@@ -413,6 +431,7 @@ void main() {
       'gender': '',
       'created_at': '2026-07-15T00:00:00Z',
       'background': 'http://example.com/new_bg.jpg',
+      'legal_consents_active': true,
     });
     await tester.pump();
 

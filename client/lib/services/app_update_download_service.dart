@@ -79,8 +79,10 @@ class AppUpdateDownloadService {
   final Dio _dio;
 
   AppUpdateDownloadService({Dio? dio})
-      : _dio = dio ??
-            Dio(BaseOptions(
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
               connectTimeout: const Duration(seconds: 30),
               receiveTimeout: const Duration(minutes: 60),
               sendTimeout: const Duration(seconds: 30),
@@ -88,8 +90,10 @@ class AppUpdateDownloadService {
               responseType: ResponseType.stream,
               // 接受 200/206/416 都是正常流程，由业务逻辑分支处理。
               validateStatus: (status) =>
-                  status != null && (status == 200 || status == 206 || status == 416),
-            ));
+                  status != null &&
+                  (status == 200 || status == 206 || status == 416),
+            ),
+          );
 
   /// 下载 APK 到 App 私有目录，校验 SHA-256 后返回最终文件路径。
   ///
@@ -102,10 +106,16 @@ class AppUpdateDownloadService {
     CancelToken? cancelToken,
   }) async {
     if (url.isEmpty) {
-      throw const AppDownloadError(AppDownloadErrorKind.unknown, 'download_url 为空');
+      throw const AppDownloadError(
+        AppDownloadErrorKind.unknown,
+        'download_url 为空',
+      );
     }
     if (expectedSize <= 0) {
-      throw const AppDownloadError(AppDownloadErrorKind.unknown, 'file_size 非正');
+      throw const AppDownloadError(
+        AppDownloadErrorKind.unknown,
+        'file_size 非正',
+      );
     }
     _validateSha256Hex(expectedSha256);
 
@@ -206,10 +216,7 @@ class AppUpdateDownloadService {
           '数据格式异常: ${e.message}',
         );
       }
-      throw AppDownloadError(
-        AppDownloadErrorKind.unknown,
-        e.toString(),
-      );
+      throw AppDownloadError(AppDownloadErrorKind.unknown, e.toString());
     }
   }
 
@@ -279,10 +286,7 @@ class AppUpdateDownloadService {
       // 服务器忽略 Range 返回完整文件：必须截断 `.part` 从 0 字节重写。
       serverHonoredRange = false;
     } else {
-      throw AppDownloadError(
-        AppDownloadErrorKind.server,
-        '非预期状态码: $status',
-      );
+      throw AppDownloadError(AppDownloadErrorKind.server, '非预期状态码: $status');
     }
 
     final effectiveStart = serverHonoredRange ? startByte : 0;
@@ -310,10 +314,7 @@ class AppUpdateDownloadService {
     final sink = await openSink(truncate);
     final stream = response.data;
     if (stream == null) {
-      throw const AppDownloadError(
-        AppDownloadErrorKind.server,
-        '响应体为空',
-      );
+      throw const AppDownloadError(AppDownloadErrorKind.server, '响应体为空');
     }
 
     var received = startByte;
@@ -327,10 +328,7 @@ class AppUpdateDownloadService {
           subscription.cancel();
           if (!completer.isCompleted) {
             completer.completeError(
-              const AppDownloadError(
-                AppDownloadErrorKind.cancelled,
-                '下载已被取消',
-              ),
+              const AppDownloadError(AppDownloadErrorKind.cancelled, '下载已被取消'),
             );
           }
           return;
@@ -339,17 +337,18 @@ class AppUpdateDownloadService {
         received += chunk.length;
         final snapshot = speedTracker.tick(received);
         if (onProgress != null) {
-          final remaining =
-              expectedSize > 0 ? (expectedSize - received) : 0;
+          final remaining = expectedSize > 0 ? (expectedSize - received) : 0;
           final eta = snapshot.bytesPerSecond > 0
               ? (remaining ~/ snapshot.bytesPerSecond)
               : 0;
-          onProgress(AppDownloadProgress(
-            receivedBytes: received,
-            totalBytes: expectedSize,
-            bytesPerSecond: snapshot.bytesPerSecond,
-            estimatedSecondsRemaining: eta,
-          ));
+          onProgress(
+            AppDownloadProgress(
+              receivedBytes: received,
+              totalBytes: expectedSize,
+              bytesPerSecond: snapshot.bytesPerSecond,
+              estimatedSecondsRemaining: eta,
+            ),
+          );
         }
       },
       onError: (Object error) {
@@ -358,10 +357,9 @@ class AppUpdateDownloadService {
             completer.completeError(_wrapDioException(error));
           }
         } else if (!completer.isCompleted) {
-          completer.completeError(AppDownloadError(
-            AppDownloadErrorKind.network,
-            error.toString(),
-          ));
+          completer.completeError(
+            AppDownloadError(AppDownloadErrorKind.network, error.toString()),
+          );
         }
       },
       onDone: () {
@@ -374,10 +372,9 @@ class AppUpdateDownloadService {
       cancelToken.whenCancel.whenComplete(() {
         if (!completer.isCompleted) {
           subscription.cancel();
-          completer.completeError(const AppDownloadError(
-            AppDownloadErrorKind.cancelled,
-            '下载已被取消',
-          ));
+          completer.completeError(
+            const AppDownloadError(AppDownloadErrorKind.cancelled, '下载已被取消'),
+          );
         }
       });
     }
@@ -459,10 +456,7 @@ class AppUpdateDownloadService {
           '服务端返回 HTTP $status',
         );
       case DioExceptionType.cancel:
-        return const AppDownloadError(
-          AppDownloadErrorKind.cancelled,
-          '下载已被取消',
-        );
+        return const AppDownloadError(AppDownloadErrorKind.cancelled, '下载已被取消');
       case DioExceptionType.badCertificate:
       case DioExceptionType.unknown:
       case DioExceptionType.transformTimeout:

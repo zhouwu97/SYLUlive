@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
+import 'legal_documents_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,6 +30,13 @@ class _LoginScreenState extends State<LoginScreen> {
   int _codeCooldown = 0;
   bool _obscureAppPassword = true;
   bool _obscureEduPassword = true;
+  bool _userAgreementAccepted = false;
+  bool _privacyPolicyAccepted = false;
+  bool _communityRulesAccepted = false;
+  bool _minorProtectionAccepted = false;
+  bool _contentComplaintAccepted = false;
+  bool _sdkDisclosureAccepted = false;
+  bool _eduDataConsentAccepted = false;
 
   @override
   void dispose() {
@@ -52,6 +60,39 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   bool get _isGraduateRegister => _isRegister && _registerMode == 'graduate';
+
+  bool get _generalConsentsAccepted =>
+      _userAgreementAccepted &&
+      _privacyPolicyAccepted &&
+      _communityRulesAccepted &&
+      _minorProtectionAccepted &&
+      _contentComplaintAccepted &&
+      _sdkDisclosureAccepted;
+
+  bool get _hasRequiredRegistrationConsents =>
+      _generalConsentsAccepted &&
+      (_isGraduateRegister || _eduDataConsentAccepted);
+
+  void _setGeneralConsents(bool value) {
+    setState(() {
+      _userAgreementAccepted = value;
+      _privacyPolicyAccepted = value;
+      _communityRulesAccepted = value;
+      _minorProtectionAccepted = value;
+      _contentComplaintAccepted = value;
+      _sdkDisclosureAccepted = value;
+    });
+  }
+
+  RegistrationConsents get _registrationConsents => RegistrationConsents(
+        userAgreementAccepted: _userAgreementAccepted,
+        privacyPolicyAccepted: _privacyPolicyAccepted,
+        communityRulesAccepted: _communityRulesAccepted,
+        minorProtectionAccepted: _minorProtectionAccepted,
+        contentComplaintAccepted: _contentComplaintAccepted,
+        sdkDisclosureAccepted: _sdkDisclosureAccepted,
+        eduDataConsentAccepted: _eduDataConsentAccepted,
+      );
 
   InputDecoration _inputDecoration(
     BuildContext context, {
@@ -122,6 +163,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isRegister && !_hasRequiredRegistrationConsents) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先阅读并确认全部必选协议与授权')),
+      );
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
 
     final authProvider = context.read<AuthProvider>();
@@ -138,6 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
           nickname: _nicknameController.text.trim().isNotEmpty
               ? _nicknameController.text.trim()
               : null,
+          consents: _registrationConsents,
         );
       } else {
         result = await authProvider.registerWithEdu(
@@ -147,6 +195,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ? _nicknameController.text.trim()
               : null,
           eduPassword: _eduPasswordController.text,
+          consents: _registrationConsents,
         );
       }
     } else {
@@ -171,13 +220,14 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (!_isRegister && result.errorMessage!.contains('尚未注册')) {
         FocusManager.instance.primaryFocus?.unfocus();
-        if (mounted)
+        if (mounted) {
           setState(() {
             _isRegister = true;
             _eduPasswordController.clear();
             _appPasswordController.clear();
             _nicknameController.clear();
           });
+        }
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             _eduPasswordFocus.requestFocus();
@@ -397,7 +447,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (dialogContext.mounted) {
                               Navigator.pop(dialogContext);
                             }
-                            if (mounted)
+                            if (mounted) {
                               setState(() {
                                 _isRegister = false;
                                 _studentIdController.text =
@@ -405,6 +455,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 _appPasswordController.clear();
                                 _eduPasswordController.clear();
                               });
+                            }
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('密码已重置，请使用新密码登录'),
@@ -642,11 +693,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ? (_isGraduateRegister ? 'QQ号' : '学号')
                                     : '学号 / QQ',
                                 icon: Icons.person_outline,
-                                helperText: _isRegister
-                                    ? (_isGraduateRegister
-                                        ? '仅毕业人员使用 QQ 注册'
-                                        : '仅在校生使用学号注册')
-                                    : '在校生用学号登录，毕业人员用 QQ 登录',
+                                helperText:
+                                    _isRegister ? null : '在校生用学号登录，毕业人员用 QQ 登录',
                               ).copyWith(counterText: ''),
                               validator: (v) {
                                 if (v == null || v.isEmpty) {
@@ -662,7 +710,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
 
                             if (_isRegister) ...[
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
                               TextFormField(
                                 controller: _nicknameController,
                                 decoration: _inputDecoration(
@@ -672,7 +720,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   helperText: '将显示在帖子和评论中',
                                 ),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
                               if (_registerMode == 'campus')
                                 TextFormField(
                                   controller: _eduPasswordController,
@@ -743,7 +791,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                             ],
 
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 12),
                             TextFormField(
                               controller: _appPasswordController,
                               obscureText: _obscureAppPassword,
@@ -784,7 +832,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                             ] else ...[
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 12),
+                              _buildConsentSection(context, subText),
+                              const SizedBox(height: 20),
                             ],
 
                             // Submit Button
@@ -826,7 +876,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextButton(
                               onPressed: () {
                                 FocusManager.instance.primaryFocus?.unfocus();
-                                if (mounted)
+                                if (mounted) {
                                   setState(() {
                                     _isRegister = !_isRegister;
                                     _eduPasswordController.clear();
@@ -834,6 +884,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     _appPasswordController.clear();
                                     _verifyCodeController.clear();
                                   });
+                                }
                               },
                               style: TextButton.styleFrom(
                                   foregroundColor: subText),
@@ -861,6 +912,134 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildConsentSection(BuildContext context, Color subText) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = Theme.of(context).colorScheme.primary;
+    final border =
+        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFECE4DA);
+    final panelColor = isDark
+        ? Colors.white.withValues(alpha: 0.035)
+        : const Color(0xFFFFFCF8);
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: panelColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Checkbox(
+                key: const ValueKey('registration-general-consents'),
+                value: _generalConsentsAccepted,
+                onChanged: (checked) => _setGeneralConsents(checked ?? false),
+                visualDensity: VisualDensity.compact,
+              ),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      '阅读并同意注册服务协议',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '含用户协议、隐私政策等 6 项',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        height: 1.3,
+                        color: subText,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                key: const ValueKey('registration-general-consents-details'),
+                tooltip: '查看全部注册服务协议',
+                onPressed: () => LegalDocumentsScreen.open(context),
+                icon: const Icon(Icons.chevron_right),
+                color: subText,
+              ),
+            ],
+          ),
+          if (!_isGraduateRegister) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Divider(height: 1, color: border),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: isDark ? 0.09 : 0.07),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Checkbox(
+                    key: const ValueKey('registration-edu-consent'),
+                    value: _eduDataConsentAccepted,
+                    onChanged: (checked) => setState(
+                        () => _eduDataConsentAccepted = checked ?? false),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(width: 2),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '同意教务数据专项授权',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: accent,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '用于身份核验及教务功能，可随时撤回',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              height: 1.35,
+                              color: subText,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('registration-edu-consent-details'),
+                    tooltip: '查看教务数据专项授权',
+                    onPressed: () => LegalDocumentsScreen.open(
+                      context,
+                      documentId: 'edu_data_consent',
+                    ),
+                    icon: const Icon(Icons.chevron_right),
+                    color: accent,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

@@ -28,11 +28,13 @@ import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/privacy_center_screen.dart';
 import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
 import 'screens/competition/competition_center_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
@@ -40,11 +42,13 @@ import 'utils/app_navigator.dart';
 import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
 import 'utils/notification_open_target.dart';
+import 'utils/team_share_link.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'widgets/app_update_gate.dart';
+import 'widgets/required_legal_consent_dialog.dart';
 import 'platform/platform_bootstrap.dart';
 import 'platform/platform_services.dart';
 import 'platform/continuation/continuation_service.dart';
@@ -329,10 +333,7 @@ void _wireNotificationHandlers() {
 NotificationOpenTarget? _lastOpenedNotificationTarget;
 DateTime? _lastOpenedNotificationAt;
 
-bool _isDuplicateNotificationOpen(
-  NotificationOpenTarget target,
-  DateTime now,
-) {
+bool _isDuplicateNotificationOpen(NotificationOpenTarget target, DateTime now) {
   final previous = _lastOpenedNotificationTarget;
   final previousAt = _lastOpenedNotificationAt;
 
@@ -371,19 +372,15 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
 
       if (postId == null) {
         navigator.push(
-          MaterialPageRoute(
-            builder: (_) => const NotificationsScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const NotificationsScreen()),
         );
         return;
       }
 
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => PostDetailScreen(
-            postId: postId,
-            targetReplyId: target.replyId,
-          ),
+          builder: (_) =>
+              PostDetailScreen(postId: postId, targetReplyId: target.replyId),
         ),
       );
       return;
@@ -394,10 +391,7 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
 
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => PostDetailScreen(
-            postId: postId,
-            isMarket: true,
-          ),
+          builder: (_) => PostDetailScreen(postId: postId, isMarket: true),
         ),
       );
       return;
@@ -454,8 +448,9 @@ Future<bool> _handlePrivateMessageNotification(
   }
 
   if (opened) {
-    await PlatformServices.current.notifications
-        .clearConversationNotifications(target.conversationId);
+    await PlatformServices.current.notifications.clearConversationNotifications(
+      target.conversationId,
+    );
     _openPrivateMessage(target);
     return true;
   }
@@ -496,8 +491,9 @@ Future<bool> _handlePrivateMessageNotification(
 
   if (isViewingTargetConversation) {
     // 只有应用真正处于前台，并且用户正在看这个会话时才清理。
-    await PlatformServices.current.notifications
-        .clearConversationNotifications(target.conversationId);
+    await PlatformServices.current.notifications.clearConversationNotifications(
+      target.conversationId,
+    );
     await provider?.refreshMessages();
     await provider?.markRead(target.conversationId);
     return true;
@@ -505,8 +501,10 @@ Future<bool> _handlePrivateMessageNotification(
 
   // 极光未显示通知 → Flutter 本地兜底弹窗
   if (showLocalFallback) {
-    await PlatformServices.current.notifications
-        .showLocalPrivateMessage(target, message);
+    await PlatformServices.current.notifications.showLocalPrivateMessage(
+      target,
+      message,
+    );
   }
 
   // 刷新会话列表
@@ -667,8 +665,9 @@ Dio getSharedDio() {
             return;
           }
           try {
-            options.headers
-                .addAll((await AppVersionHeaders.load()).toHeaders());
+            options.headers.addAll(
+              (await AppVersionHeaders.load()).toHeaders(),
+            );
           } catch (error) {
             debugPrint('附加应用版本请求头失败: $error');
           }
@@ -794,8 +793,9 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
       await _handleDeepLinkUri(uri);
-      final continuation =
-          await _channel.invokeMethod<String>('getPendingContinuation');
+      final continuation = await _channel.invokeMethod<String>(
+        'getPendingContinuation',
+      );
       await _handleContinuation(continuation);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
@@ -804,6 +804,11 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
 
   Future<void> _handleDeepLinkUri(String? uri) async {
     if (uri == null || !mounted) return;
+    final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
+    if (recruitmentId != null) {
+      _openTeamRecruitment(recruitmentId);
+      return;
+    }
     if (uri == 'widget_timetable' || uri == 'campus://timetable') {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
@@ -835,6 +840,23 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     }
   }
 
+  void _openTeamRecruitment(int recruitmentId) {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openTeamRecruitment(recruitmentId);
+      });
+      return;
+    }
+    navigator.push(
+      MaterialPageRoute(
+        settings: RouteSettings(name: '/team/$recruitmentId'),
+        builder: (_) =>
+            TeamRecruitmentDetailScreen(recruitmentId: recruitmentId),
+      ),
+    );
+  }
+
   Future<void> _handleContinuation(String? raw) async {
     final state = raw == null ? null : ContinuationState.tryParse(raw);
     if (!mounted || state == null) return;
@@ -860,10 +882,8 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
 
     appNavigatorKey.currentState?.push(
       MaterialPageRoute(
-        builder: (_) => EduGradeScreen(
-          initialYear: year,
-          initialSemester: semester,
-        ),
+        builder: (_) =>
+            EduGradeScreen(initialYear: year, initialSemester: semester),
       ),
     );
   }
@@ -884,13 +904,11 @@ class _AppContent extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       // 更新门禁依赖 Directionality、主题和本地化，必须位于 MaterialApp 内部。
       builder: (context, child) => AppUpdateGate(
+        navigatorKey: appNavigatorKey,
         child: child ?? const SizedBox.shrink(),
       ),
       locale: const Locale('zh', 'CN'),
-      supportedLocales: const [
-        Locale('zh', 'CN'),
-        Locale('en', 'US'),
-      ],
+      supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -1105,6 +1123,7 @@ class HomeInitialTabResolver {
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _pushSetup = false;
   bool _pushSettingUp = false;
+  bool _legalConsentDialogVisible = false;
   final HomeInitialTabResolver _homeInitialTabResolver =
       HomeInitialTabResolver();
 
@@ -1125,6 +1144,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final authProvider = context.read<AuthProvider>();
       if (authProvider.isLoggedIn &&
+          (authProvider.user?.legalConsentsActive ?? true) &&
           PlatformServices.current.notifications.isSupported) {
         _ensurePushNotifications(authProvider);
         _checkNativePrivateMessage();
@@ -1178,6 +1198,34 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
+  void _presentRequiredLegalConsentDialog(AuthProvider authProvider) {
+    if (_legalConsentDialogVisible) return;
+    final user = authProvider.user;
+    if (user == null ||
+        user.legalConsentsActive ||
+        !user.legalConsentsRequired) {
+      return;
+    }
+    _legalConsentDialogVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final currentUser = authProvider.user;
+      if (!authProvider.isLoggedIn ||
+          currentUser == null ||
+          currentUser.legalConsentsActive ||
+          !currentUser.legalConsentsRequired) {
+        _legalConsentDialogVisible = false;
+        return;
+      }
+      await showRequiredLegalConsentDialog(
+        context,
+        requiresEduDataConsent: currentUser.eduBound,
+      );
+      _legalConsentDialogVisible = false;
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
@@ -1188,7 +1236,19 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           );
         }
 
-        if (authProvider.isLoggedIn) {
+        final user = authProvider.user;
+        if (authProvider.isLoggedIn &&
+            user != null &&
+            !user.legalConsentsActive &&
+            user.legalConsentsRequired) {
+          _presentRequiredLegalConsentDialog(authProvider);
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (authProvider.isLoggedIn &&
+            (authProvider.user?.legalConsentsActive ?? true)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (PlatformServices.current.notifications.isSupported &&
                 !_pushSetup &&
@@ -1209,6 +1269,11 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
+        }
+
+        if (authProvider.isLoggedIn &&
+            !(authProvider.user?.legalConsentsActive ?? true)) {
+          return const PrivacyCenterScreen(restricted: true);
         }
 
         return HomeScreen(initialTab: _homeInitialTabResolver.resolve(tp));

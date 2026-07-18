@@ -118,6 +118,14 @@ func NewAuthHandler(db *gorm.DB, jwtSecret string) *AuthHandler {
 
 }
 
+func (h *AuthHandler) selfUserResponse(user models.User) (SelfUserResponse, error) {
+	consentState, err := models.LegalConsentStateForUser(h.db, user)
+	if err != nil {
+		return SelfUserResponse{}, err
+	}
+	return selfUserResponse(user, consentState), nil
+}
+
 type GraduateRegisterInput struct {
 	QQ string `json:"qq" binding:"required"`
 
@@ -126,6 +134,100 @@ type GraduateRegisterInput struct {
 	Password string `json:"password" binding:"required,min=8,max=32"`
 
 	Nickname string `json:"nickname"`
+
+	LegalConsentInput
+}
+
+// LegalConsentInput 是注册时必填的法律文件确认。教务专项授权只在在校生注册时要求。
+type LegalConsentInput struct {
+	UserAgreementAccepted    bool `json:"user_agreement_accepted"`
+	PrivacyPolicyAccepted    bool `json:"privacy_policy_accepted"`
+	CommunityRulesAccepted   bool `json:"community_rules_accepted"`
+	MinorProtectionAccepted  bool `json:"minor_protection_accepted"`
+	ContentComplaintAccepted bool `json:"content_complaint_accepted"`
+	SDKDisclosureAccepted    bool `json:"sdk_disclosure_accepted"`
+	EduDataConsentAccepted   bool `json:"edu_data_consent_accepted"`
+}
+
+func (input LegalConsentInput) validate(requireEduConsent bool) error {
+	if !input.UserAgreementAccepted || !input.PrivacyPolicyAccepted ||
+		!input.CommunityRulesAccepted || !input.MinorProtectionAccepted ||
+		!input.ContentComplaintAccepted || !input.SDKDisclosureAccepted {
+		return errors.New("请先阅读并同意用户协议、隐私政策、社区规则、未成年人保护规则、投诉举报规则和第三方服务说明")
+	}
+	if requireEduConsent && !input.EduDataConsentAccepted {
+		return errors.New("使用教务认证前请阅读并同意教务数据专项授权")
+	}
+	return nil
+}
+
+func recordLegalConsents(tx *gorm.DB, userID uint, input LegalConsentInput, includeEduConsent bool) error {
+	now := time.Now()
+	for _, document := range models.RequiredLegalDocuments(includeEduConsent) {
+		consent := models.UserLegalConsent{
+			UserID: userID, Document: document, Version: models.LegalDocumentVersion,
+		}
+		if err := tx.Where("user_id = ? AND document = ? AND version = ?", userID, document, models.LegalDocumentVersion).
+			FirstOrCreate(&consent, models.UserLegalConsent{AcceptedAt: now}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AcceptLegalConsents records the current legal-document version for an
+// authenticated legacy account before it is allowed to use business features.
+func (h *AuthHandler) AcceptLegalConsents(c *gin.Context) {
+	var input LegalConsentInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		return
+	}
+
+	userID := c.GetUint("user_id")
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	if user.LegalConsentRevokedAt != nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "你已撤销同意，不能重新启用依赖授权的功能",
+			"code":  "legal_consent_withdrawn",
+		})
+		return
+	}
+	if err := input.validate(user.EduBound); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		return recordLegalConsents(tx, user.ID, input, user.EduBound)
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存协议确认失败"})
+		return
+	}
+
+	middleware.InvalidateTokenVersionCache(user.ID)
+	response, err := h.selfUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "已确认协议与隐私政策",
+		"user":    response,
+	})
+}
+
+// deleteIncompleteRegistrationUser 清理注册链路中未完成的账号及其授权留痕。
+func deleteIncompleteRegistrationUser(db *gorm.DB, userID uint) {
+	_ = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.UserLegalConsent{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&models.User{}, userID).Error
+	})
 }
 
 type verifyCodeInput struct {
@@ -558,6 +660,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 
 	}
+	if err := input.LegalConsentInput.validate(false); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	qq := normalizeQQ(input.QQ)
 
@@ -637,7 +743,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		EduBound: false,
 	}
 
-	if err := h.db.Create(&user).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		return recordLegalConsents(tx, user.ID, input.LegalConsentInput, false)
+	}); err != nil {
 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 
@@ -668,11 +779,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
+	response, responseErr := h.selfUserResponse(user)
+	if responseErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{
 
 		"token": token,
 
-		"user": selfUserResponse(user),
+		"user": response,
 	})
 
 }
@@ -687,6 +803,8 @@ type EduRegisterInput struct {
 	Password string `json:"password" binding:"required,min=8,max=32"`
 
 	Nickname string `json:"nickname"`
+
+	LegalConsentInput
 }
 
 // RegisterWithEdu 鏁欏姟楠岃瘉鍚庢敞鍐岋紙瀛﹀彿蹇呴』鍏堥氳繃鏁欏姟楠岃瘉锛
@@ -701,6 +819,10 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 		return
 
+	}
+	if err := input.LegalConsentInput.validate(true); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	// 妫鏌ュ﹀彿鏄鍚﹀凡瀛樺湪
@@ -786,7 +908,12 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		EduBound: false,
 	}
 
-	if err := h.db.Create(&user).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		return recordLegalConsents(tx, user.ID, input.LegalConsentInput, true)
+	}); err != nil {
 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 
@@ -799,7 +926,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	if input.Nickname == "" {
 
 		if err := h.db.Model(&user).Update("nickname", "校园用户"+strconv.FormatUint(uint64(user.ID), 10)).Error; err != nil {
-			_ = h.db.Delete(&models.User{}, user.ID).Error
+			deleteIncompleteRegistrationUser(h.db, user.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 			return
 		}
@@ -811,12 +938,12 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	// 创建本地账号后，必须由同一条 Go -> Python 绑定链路完成凭据落库。
 	bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
 	if err != nil {
-		_ = h.db.Delete(&models.User{}, user.ID).Error
+		deleteIncompleteRegistrationUser(h.db, user.ID)
 		writeEduServiceError(c, err)
 		return
 	}
 	if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
-		_ = h.db.Delete(&models.User{}, user.ID).Error
+		deleteIncompleteRegistrationUser(h.db, user.ID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
 		return
 	}
@@ -836,11 +963,16 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
+	response, responseErr := h.selfUserResponse(user)
+	if responseErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{
 
 		"token": token,
 
-		"user": selfUserResponse(user),
+		"user": response,
 	})
 
 }
@@ -861,6 +993,8 @@ type LoginEduInput struct {
 	EduPassword string `json:"edu_password" binding:"required"`
 
 	Password string `json:"password" binding:"required,min=8,max=32"`
+
+	LegalConsentInput
 }
 
 type eduVerifyResult struct {
@@ -902,8 +1036,19 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 	err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error
 
 	isNewUser := err == gorm.ErrRecordNotFound
+	if !isNewUser && user.LegalConsentRevokedAt != nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "你已撤销同意，不能使用教务快捷登录",
+			"code":  "legal_consent_withdrawn",
+		})
+		return
+	}
 
 	if isNewUser {
+		if err := input.LegalConsentInput.validate(true); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 
 		// 新用户先预验证，再在创建本地账号后调用统一绑定链路持久化凭据。
 		result, err := verifyEduWithPython(input.StudentID, input.EduPassword, input.Password)
@@ -949,7 +1094,12 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 			EduBound: false,
 		}
 
-		if err := h.db.Create(&user).Error; err != nil {
+		if err := h.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&user).Error; err != nil {
+				return err
+			}
+			return recordLegalConsents(tx, user.ID, input.LegalConsentInput, true)
+		}); err != nil {
 
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 
@@ -959,12 +1109,12 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 		bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
 		if err != nil {
-			_ = h.db.Delete(&models.User{}, user.ID).Error
+			deleteIncompleteRegistrationUser(h.db, user.ID)
 			writeEduServiceError(c, err)
 			return
 		}
 		if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
-			_ = h.db.Delete(&models.User{}, user.ID).Error
+			deleteIncompleteRegistrationUser(h.db, user.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
 			return
 		}
@@ -1013,11 +1163,16 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
+	response, responseErr := h.selfUserResponse(user)
+	if responseErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 
 		"token": token,
 
-		"user": selfUserResponse(user),
+		"user": response,
 	})
 
 }
@@ -1054,6 +1209,13 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 		return
 
+	}
+	if user.LegalConsentRevokedAt != nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "你已撤销同意，不能使用教务信息找回密码",
+			"code":  "legal_consent_withdrawn",
+		})
+		return
 	}
 
 	result, err := verifyEduWithPython(input.StudentID, input.EduPassword, input.NewPassword)
@@ -1295,11 +1457,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
+	response, responseErr := h.selfUserResponse(user)
+	if responseErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 
 		"token": token,
 
-		"user": selfUserResponse(user),
+		"user": response,
 	})
 
 }

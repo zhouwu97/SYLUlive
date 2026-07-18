@@ -17,8 +17,9 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: coordinator,
-        child: const MaterialApp(
+        child: MaterialApp(
           home: AppUpdateGate(
+            navigatorKey: GlobalKey<NavigatorState>(),
             child: Scaffold(body: Center(child: Text('原有开屏内容'))),
           ),
         ),

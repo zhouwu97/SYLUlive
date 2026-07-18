@@ -140,6 +140,10 @@ func main() {
 
 		&models.User{},
 
+		&models.UserLegalConsent{},
+
+		&models.PersonalDataRequest{},
+
 		&models.Post{},
 
 		&models.WaterSection{},
@@ -380,6 +384,8 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
 
 	userHandler := handlers.NewUserHandler(db)
+
+	privacyHandler := handlers.NewPrivacyHandler(db)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
@@ -629,6 +635,7 @@ func main() {
 	{
 
 		user.GET("/profile", userHandler.GetProfile)
+		user.POST("/legal-consents", authHandler.AcceptLegalConsents)
 
 		user.PUT("/profile", userHandler.UpdateProfile)
 
@@ -639,6 +646,12 @@ func main() {
 		user.PUT("/nightmode", userHandler.UpdateNightMode)
 
 		user.PUT("/device_token", userHandler.UpdateDeviceToken)
+
+		user.GET("/privacy/data", privacyHandler.ExportMyData)
+		// 保留旧导出路径，兼容已发布客户端。
+		user.GET("/privacy/export", privacyHandler.ExportMyData)
+		user.DELETE("/privacy/consents", privacyHandler.WithdrawConsent)
+		user.DELETE("/account", privacyHandler.CancelAccount)
 
 		user.GET("/invitations", invitationHandler.GetPending)
 
@@ -681,8 +694,10 @@ func main() {
 		user.GET("/revision-proposals/received", postHandler.GetMyRevisionProposalsReceived)
 
 		user.POST("/checkin", checkinHandler.DoCheckIn)
+		user.POST("/checkin/makeup", checkinHandler.DoMakeup)
 
 		user.GET("/checkin/status", checkinHandler.GetStatus)
+		user.GET("/checkin/calendar", checkinHandler.GetCalendar)
 		user.GET("/checkin/compensations", checkinCompensationHandler.ListMine)
 		user.POST("/checkin/compensations/:id/claims", checkinCompensationHandler.Claim)
 

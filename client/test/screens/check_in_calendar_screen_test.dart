@@ -13,6 +13,7 @@ class _CheckInAdapter implements HttpClientAdapter {
   String? makeupDate;
   bool checkedIn;
   int checkInRequestCount = 0;
+  final Map<String, int> calendarRequestCounts = {};
 
   @override
   void close({bool force = false}) {}
@@ -49,6 +50,13 @@ class _CheckInAdapter implements HttpClientAdapter {
     }
     final requestedMonth =
         options.queryParameters['month']?.toString() ?? '2026-07';
+    if (options.path == '/user/checkin/calendar') {
+      calendarRequestCounts.update(
+        requestedMonth,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+    }
     final body = switch (options.path) {
       '/user/checkin/status' => {
           'checked_in': checkedIn,
@@ -190,7 +198,9 @@ void main() {
         ),
       ),
     );
-    await tester.pump(const Duration(seconds: 1));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
 
     expect(adapter.checkInRequestCount, 1);
     expect(find.text('签到成功'), findsOneWidget);
@@ -226,7 +236,8 @@ void main() {
   });
 
   testWidgets('签到日历支持左右滑动切换月份', (tester) async {
-    final dio = Dio()..httpClientAdapter = _CheckInAdapter();
+    final adapter = _CheckInAdapter();
+    final dio = Dio()..httpClientAdapter = adapter;
     final auth = AuthProvider(dio, loadStoredAuth: false);
 
     await tester.pumpWidget(
@@ -240,6 +251,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(adapter.calendarRequestCounts['2026-07'], 1);
+    expect(adapter.calendarRequestCounts['2026-06'], 1);
 
     await tester.fling(
       find.text('2026年7月'),
@@ -248,6 +261,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('2026年6月'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
 
     await tester.fling(
       find.text('2026年6月'),
@@ -256,6 +270,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('2026年7月'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(adapter.calendarRequestCounts['2026-07'], 1);
+    expect(adapter.calendarRequestCounts['2026-06'], 1);
     expect(tester.takeException(), isNull);
     auth.dispose();
   });

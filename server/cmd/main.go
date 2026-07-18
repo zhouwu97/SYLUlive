@@ -263,6 +263,9 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := models.BackfillLegacyMarketContacts(db); err != nil {
+		log.Fatal("历史集市联系方式回填失败:", err)
+	}
 
 	if err := models.EnsureExamPaperIndexes(db); err != nil {
 		log.Fatal("试卷索引迁移失败:", err)

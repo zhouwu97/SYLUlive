@@ -24,7 +24,7 @@ class CachedPostFeed {
 
 /// 帖子本地缓存服务（基于 Hive，JSON 序列化，无需 code-gen）
 class PostCacheService {
-  static const int cacheSchemaVersion = 4;
+  static const int cacheSchemaVersion = 5;
   static const String homeAllAlgorithmVersion = 'home_all_v2';
   static const String homeTimeAlgorithmVersion = 'home_time_v2';
   static const String fallbackAlgorithmVersion = 'feed_v1';
@@ -266,6 +266,7 @@ class PostCacheService {
       'author_id': post.authorId,
       'post_type': post.postType,
       'price': post.price,
+      'contact_type': post.contactType,
       'contact': post.contact,
       'market_tags': post.marketTags,
       'water_tag_id': post.waterTagId,

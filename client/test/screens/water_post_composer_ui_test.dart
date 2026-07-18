@@ -36,6 +36,7 @@ class FakePostProvider extends Fake
     String? postType,
     int? waterTagId,
     double? price,
+    String? contactType,
     String? contact,
     List<int>? fileIds,
     List<String>? marketTags,

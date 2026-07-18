@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +59,73 @@ var allowedMarketTags = map[string]struct{}{
 	"可送宿舍楼下": {},
 	"可小刀":    {},
 	"急出":     {},
+}
+
+var (
+	marketWeChatPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+	marketQQPattern     = regexp.MustCompile(`^[0-9]+$`)
+	marketPhonePattern  = regexp.MustCompile(`^[0-9 +\-]+$`)
+)
+
+func normalizeMarketContact(
+	boardID models.BoardID,
+	contactType string,
+	contact string,
+) (models.MarketContactType, string, error) {
+	if boardID != models.BoardMarket {
+		return "", "", nil
+	}
+
+	contactType = strings.TrimSpace(strings.ToLower(contactType))
+	contact = strings.TrimSpace(contact)
+	if contactType == "" && contact == "" {
+		return "", "", nil
+	}
+	if contactType == "" {
+		return "", "", fmt.Errorf("请选择联系方式类型")
+	}
+
+	var normalizedType models.MarketContactType
+	var emptyMessage string
+	var pattern *regexp.Regexp
+	switch models.MarketContactType(contactType) {
+	case models.MarketContactTypeWeChat:
+		normalizedType = models.MarketContactTypeWeChat
+		emptyMessage = "请输入微信号"
+		pattern = marketWeChatPattern
+	case models.MarketContactTypeQQ:
+		normalizedType = models.MarketContactTypeQQ
+		emptyMessage = "请输入QQ号"
+		pattern = marketQQPattern
+	case models.MarketContactTypePhone:
+		normalizedType = models.MarketContactTypePhone
+		emptyMessage = "请输入电话号码"
+		pattern = marketPhonePattern
+	default:
+		return "", "", fmt.Errorf("不支持的联系方式类型")
+	}
+
+	if contact == "" {
+		return "", "", fmt.Errorf("%s", emptyMessage)
+	}
+	if utf8.RuneCountInString(contact) > 100 {
+		return "", "", fmt.Errorf("联系方式不能超过100个字符")
+	}
+	if !pattern.MatchString(contact) {
+		return "", "", fmt.Errorf("%s格式不正确", marketContactTypeName(normalizedType))
+	}
+	return normalizedType, contact, nil
+}
+
+func marketContactTypeName(contactType models.MarketContactType) string {
+	switch contactType {
+	case models.MarketContactTypeWeChat:
+		return "微信号"
+	case models.MarketContactTypeQQ:
+		return "QQ号"
+	default:
+		return "电话号码"
+	}
 }
 
 func normalizeWaterPostType(boardID models.BoardID, postType string) (string, error) {
@@ -1037,6 +1105,7 @@ type CreatePostInput struct {
 	PostType        string  `form:"post_type"`
 	Price           float64 `form:"price"`
 	Contact         string  `form:"contact"`
+	ContactType     string  `form:"contact_type"`
 	MarketTags      string  `form:"market_tags"`
 	WaterTagID      *uint   `form:"water_tag_id"`
 	TeamNeededCount int     `form:"team_needed_count"`
@@ -1086,6 +1155,15 @@ func (h *PostHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的水帖分类"})
 		return
 	}
+	contactType, contact, err := normalizeMarketContact(
+		models.BoardID(input.BoardID),
+		input.ContactType,
+		input.Contact,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// 先创建帖子
 	now := time.Now()
@@ -1096,7 +1174,8 @@ func (h *PostHandler) Create(c *gin.Context) {
 		AuthorID:       userID.(uint),
 		PostType:       normalizedType,
 		Price:          input.Price,
-		Contact:        input.Contact,
+		ContactType:    contactType,
+		Contact:        contact,
 		MarketTags:     normalizeMarketTags(input.MarketTags),
 		Status:         models.PostStatusNormal,
 		CreatedAt:      now,
@@ -1291,6 +1370,7 @@ type UpdatePostInput struct {
 	PostType        string  `form:"post_type"`
 	Price           float64 `form:"price"`
 	Contact         string  `form:"contact"`
+	ContactType     string  `form:"contact_type"`
 	MarketTags      string  `form:"market_tags"`
 	WaterTagID      *uint   `form:"water_tag_id"`
 	TeamNeededCount int     `form:"team_needed_count"`
@@ -1352,14 +1432,30 @@ func (h *PostHandler) Update(c *gin.Context) {
 		if err != nil {
 			return fmt.Errorf("invalid_post_type")
 		}
+		var contactType models.MarketContactType
+		var contact string
+		if post.BoardID == models.BoardMarket &&
+			post.ContactType == models.MarketContactTypeOther &&
+			models.MarketContactType(strings.TrimSpace(input.ContactType)) == models.MarketContactTypeOther &&
+			strings.TrimSpace(input.Contact) == post.Contact {
+			// 历史 other 类型只允许原样保留；修改账号时必须选择结构化类型。
+			contactType = models.MarketContactTypeOther
+			contact = post.Contact
+		} else {
+			contactType, contact, err = normalizeMarketContact(post.BoardID, input.ContactType, input.Contact)
+			if err != nil {
+				return err
+			}
+		}
 
 		updates := map[string]interface{}{
-			"title":       input.Title,
-			"content":     input.Content,
-			"post_type":   normalizedType,
-			"price":       input.Price,
-			"contact":     input.Contact,
-			"market_tags": normalizeMarketTags(input.MarketTags),
+			"title":        input.Title,
+			"content":      input.Content,
+			"post_type":    normalizedType,
+			"price":        input.Price,
+			"contact_type": contactType,
+			"contact":      contact,
+			"market_tags":  normalizeMarketTags(input.MarketTags),
 		}
 
 		var isOriginalTeam bool

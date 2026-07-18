@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -25,19 +27,18 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     with WidgetsBindingObserver {
   bool _optionalDialogVisible = false;
   int? _presentedOptionalVersion;
+  Timer? _optionalRetryTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<AppUpdateCoordinator>().initialize();
-    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _optionalRetryTimer?.cancel();
     super.dispose();
   }
 
@@ -86,6 +87,14 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     }
     final dialogContext = widget.navigatorKey.currentState?.overlay?.context;
     if (dialogContext == null) return;
+    final navigator = widget.navigatorKey.currentState;
+    if (navigator == null || navigator.canPop()) {
+      _optionalRetryTimer ??= Timer(const Duration(milliseconds: 350), () {
+        _optionalRetryTimer = null;
+        _showOptionalDialog();
+      });
+      return;
+    }
     _optionalDialogVisible = true;
     final action = await showDialog<_OptionalUpdateAction>(
       context: dialogContext,
@@ -156,7 +165,7 @@ class _OptionalUpdateDialog extends StatelessWidget {
   }
 }
 
-/// 全屏更新页，覆盖冷启动检查、强制更新、下载、校验完成和唤起安装器的状态。
+/// 全屏更新页，仅覆盖强制更新、下载、校验完成和唤起安装器的状态。
 class AppUpdateScreen extends StatelessWidget {
   final AppUpdateCoordinator coordinator;
 
@@ -292,7 +301,7 @@ class AppUpdateScreen extends StatelessWidget {
       case AppUpdatePhase.installing:
         return '已打开系统安装器';
       case AppUpdatePhase.required:
-        return canDownload ? '立即更新' : '重新检查';
+        return canDownload ? '下载更新' : '重新检查';
       case AppUpdatePhase.initializing:
       case AppUpdatePhase.checking:
         return '正在检查';

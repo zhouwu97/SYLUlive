@@ -147,12 +147,19 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     final auth = context.read<AuthProvider>();
     if (enabled) {
       await PushSettingsService.enable();
+      var permissionGranted = false;
+      try {
+        permissionGranted =
+            await PushSettingsService.requestSystemNotificationPermission();
+      } catch (error) {
+        debugPrint('请求推送通知权限失败: $error');
+      }
       if (mounted) {
         setState(() {
           _pushEnabled = true;
           _pushLoading = false;
         });
-        _showMessage('已记录推送选择，返回前台后完成初始化');
+        _showMessage(permissionGranted ? '已开启推送通知' : '已记录推送选择，但通知权限未开启');
       }
       return;
     }

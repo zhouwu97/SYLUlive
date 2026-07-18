@@ -82,7 +82,9 @@ func normalizeMarketContact(
 		return "", "", nil
 	}
 	if contactType == "" {
-		return "", "", fmt.Errorf("请选择联系方式类型")
+		// 旧客户端只提交 contact；缺失类型时沿用历史数据解析规则。
+		legacyType, legacyContact := models.ParseLegacyMarketContact(contact)
+		return legacyType, legacyContact, nil
 	}
 
 	var normalizedType models.MarketContactType

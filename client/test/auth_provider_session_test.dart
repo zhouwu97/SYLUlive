@@ -685,6 +685,8 @@ Map<String, dynamic> _userJson(int id) {
     'student_id': '2026000$id',
     'nickname': '用户$id',
     'created_at': '2026-07-13T10:00:00Z',
+    'legal_consents_active': true,
+    'legal_consents_required': false,
   };
 }
 

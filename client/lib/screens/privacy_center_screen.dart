@@ -11,7 +11,9 @@ import '../providers/auth_provider.dart';
 import 'legal_documents_screen.dart';
 
 class PrivacyCenterScreen extends StatefulWidget {
-  const PrivacyCenterScreen({super.key});
+  final bool restricted;
+
+  const PrivacyCenterScreen({super.key, this.restricted = false});
 
   @override
   State<PrivacyCenterScreen> createState() => _PrivacyCenterScreenState();

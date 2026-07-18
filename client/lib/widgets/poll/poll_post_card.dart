@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/api_constants.dart';
+import '../../models/poll.dart';
 import '../../models/post.dart';
 import '../../providers/poll_provider.dart';
 import '../cached_avatar.dart';
@@ -14,6 +15,7 @@ class PollPostCard extends StatefulWidget {
   final Post post;
   final VoidCallback? onTap;
   final ValueChanged<int>? onAuthorTap;
+  final ValueChanged<Post>? onPostUpdated;
   final PollCardVariant variant;
 
   const PollPostCard({
@@ -21,6 +23,7 @@ class PollPostCard extends StatefulWidget {
     required this.post,
     this.onTap,
     this.onAuthorTap,
+    this.onPostUpdated,
     this.variant = PollCardVariant.homeCompact,
   });
 
@@ -74,7 +77,9 @@ class _PollPostCardState extends State<PollPostCard> {
         .read<PollProvider>()
         .submitBallot(poll.id, _selected.toList());
     if (!mounted) return;
-    if (result == null) {
+    if (result != null) {
+      widget.onPostUpdated?.call(result);
+    } else {
       final message = context.read<PollProvider>().mutationError(poll.id);
       if (message != null) {
         ScaffoldMessenger.of(context)
@@ -252,9 +257,7 @@ class _PollPostCardState extends State<PollPostCard> {
                           height: 18,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
-                      : Text(poll.hasVoted
-                          ? '修改我的选择'
-                          : (_selected.isEmpty ? '选择一项后投票' : '提交选择')),
+                      : Text(_actionLabel(poll, _selected, hasChanges)),
                 ),
               ),
               const SizedBox(height: 10),
@@ -288,6 +291,16 @@ class _PollPostCardState extends State<PollPostCard> {
 
   bool _sameSet(Set<int> a, Set<int> b) =>
       a.length == b.length && a.containsAll(b);
+
+  String _actionLabel(PollMeta poll, Set<int> selected, bool hasChanges) {
+    if (!poll.isActive) {
+      return poll.resultsVisible ? '查看投票结果' : '投票已结束';
+    }
+    if (poll.hasVoted && !poll.canChange) return '已提交，不可修改';
+    if (poll.hasVoted && !hasChanges) return '已提交选择';
+    if (selected.isEmpty) return poll.isMultiple ? '选择后提交' : '选择一项后投票';
+    return poll.hasVoted ? '确认修改' : '提交选择';
+  }
 
   String _relativeTime(DateTime value) {
     final difference = DateTime.now().difference(value.toLocal());

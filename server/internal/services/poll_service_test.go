@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,6 +155,9 @@ func TestPollServiceValidationAndRulesLock(t *testing.T) {
 	if err != nil || updated.Content != input.Description {
 		t.Fatalf("有票后修改说明失败: post=%#v err=%v", updated, err)
 	}
+	input.Description = strings.Repeat("超长", 501)
+	_, err = service.Update(created.PollMeta.ID, owner.ID, string(owner.Role), input)
+	requirePollCode(t, err, PollCodeInvalidInput)
 }
 
 func TestPollServiceCloseDeleteAndRecalculate(t *testing.T) {
@@ -179,6 +183,8 @@ func TestPollServiceCloseDeleteAndRecalculate(t *testing.T) {
 	if closed.PollMeta.EffectiveStatus != models.PollStatusClosed || !closed.PollMeta.ResultsVisible {
 		t.Fatalf("关闭后的结果状态错误: %#v", closed.PollMeta)
 	}
+	_, err = service.Update(created.PollMeta.ID, owner.ID, string(owner.Role), input)
+	requirePollCode(t, err, PollCodeEnded)
 	_, err = service.PutBallot(created.PollMeta.ID, owner.ID, []uint{created.PollMeta.Options[1].ID})
 	requirePollCode(t, err, PollCodeEnded)
 

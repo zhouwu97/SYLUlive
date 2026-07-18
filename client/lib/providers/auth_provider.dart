@@ -1196,6 +1196,31 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// 原子更新单活跃设备的远程推送设置。
+  Future<AuthResult> updatePushSettings({
+    required bool enabled,
+    required String installationId,
+    required String registrationId,
+    required String noticeVersion,
+  }) async {
+    if (!isLoggedIn) return AuthResult.failure('请先登录');
+    try {
+      await _dio.put(
+        '/user/push-settings',
+        data: {
+          'enabled': enabled,
+          'installation_id': installationId,
+          'registration_id': registrationId,
+          'notice_version': noticeVersion,
+        },
+      );
+      return AuthResult.success();
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
+    }
+  }
+
   Future<AuthResult> registerGraduate(
     String qq,
     String code,

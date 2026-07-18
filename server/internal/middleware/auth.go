@@ -91,6 +91,21 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 
 		c.Set("user_id", claims.UserID)
 		c.Set("role", claims.Role)
+		if legalConsentEnforcement == LegalConsentEnforcementHard && isCommunityWriteRequest(c) {
+			var accepted int64
+			if err := db.Model(&models.UserLegalConsent{}).
+				Where("user_id = ? AND document = ? AND version = ? AND revoked_at IS NULL AND acknowledgement_type = ?", claims.UserID, models.LegalDocumentCommunityRules, models.LegalDocumentVersion, "rules_acceptance").
+				Count(&accepted).Error; err != nil {
+				writeAPIError(c, http.StatusInternalServerError, "legal_consent_lookup_failed", "读取社区规则确认状态失败")
+				c.Abort()
+				return
+			}
+			if accepted == 0 {
+				writeAPIError(c, http.StatusForbidden, "community_rules_required", "请先确认社区规则")
+				c.Abort()
+				return
+			}
+		}
 		if state.legalConsentState != models.LegalConsentStateActive && !isLegalConsentExemptRequest(c) {
 			switch legalConsentEnforcement {
 			case LegalConsentEnforcementHard:
@@ -107,6 +122,23 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func isCommunityWriteRequest(c *gin.Context) bool {
+	if c.Request.Method != http.MethodPost && c.Request.Method != http.MethodPut &&
+		c.Request.Method != http.MethodPatch && c.Request.Method != http.MethodDelete {
+		return false
+	}
+	path := c.Request.URL.Path
+	for _, prefix := range []string{
+		"/api/posts", "/api/replies", "/api/messages/", "/api/team/",
+		"/api/water/team/", "/api/posts/", "/api/market",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // OptionalAuthMiddleware 可选JWT认证中间件。hard 模式下未授权用户访问公开接口时按匿名处理。
@@ -208,7 +240,11 @@ func isLegalConsentExemptRequest(c *gin.Context) bool {
 		return true
 	case method == http.MethodDelete && path == "/api/user/account":
 		return true
-	case method == http.MethodPost && path == "/api/auth/logout":
+	case method == http.MethodDelete && path == "/api/user/edu-binding":
+		return true
+	case method == http.MethodPut && path == "/api/user/push-settings":
+		return true
+	case method == http.MethodPost && path == "/api/logout":
 		return true
 	default:
 		return false

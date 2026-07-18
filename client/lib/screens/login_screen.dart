@@ -64,10 +64,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool get _hasRequiredRegistrationConsents =>
       _userAgreementAccepted &&
       _privacyPolicyAccepted &&
-      _communityRulesAccepted &&
-      _minorProtectionAccepted &&
-      _contentComplaintAccepted &&
-      _sdkDisclosureAccepted &&
       (_isGraduateRegister || _eduDataConsentAccepted);
 
   RegistrationConsents get _registrationConsents => RegistrationConsents(
@@ -922,36 +918,6 @@ class _LoginScreenState extends State<LoginScreen> {
           documentId: 'privacy_policy',
           onChanged: (value) => setState(() => _privacyPolicyAccepted = value),
         ),
-        _buildConsentItem(
-          context,
-          value: _communityRulesAccepted,
-          title: '我已阅读并同意《社区规则》',
-          documentId: 'community_rules',
-          onChanged: (value) => setState(() => _communityRulesAccepted = value),
-        ),
-        _buildConsentItem(
-          context,
-          value: _minorProtectionAccepted,
-          title: '我已阅读并同意《未成年人保护规则》',
-          documentId: 'minor_protection',
-          onChanged: (value) =>
-              setState(() => _minorProtectionAccepted = value),
-        ),
-        _buildConsentItem(
-          context,
-          value: _contentComplaintAccepted,
-          title: '我已阅读并同意《投诉举报规则》',
-          documentId: 'content_complaint_rules',
-          onChanged: (value) =>
-              setState(() => _contentComplaintAccepted = value),
-        ),
-        _buildConsentItem(
-          context,
-          value: _sdkDisclosureAccepted,
-          title: '我已阅读《第三方服务说明》',
-          documentId: 'sdk_disclosure',
-          onChanged: (value) => setState(() => _sdkDisclosureAccepted = value),
-        ),
         if (!_isGraduateRegister) ...[
           const SizedBox(height: 4),
           _buildConsentItem(
@@ -966,7 +932,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ],
         const SizedBox(height: 4),
         Text(
-          '协议版本以文档页面显示为准。你可在设置的“隐私与数据权利”中查看、导出或提交处理请求。',
+          '社区规则在首次发布、评论、私信、集市或组队写操作前单独确认；其他说明可在文档中心随时查看。',
           style: TextStyle(fontSize: 11, height: 1.4, color: subText),
         ),
       ],

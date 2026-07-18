@@ -222,15 +222,19 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-			"legal_consent_revoked_at": &now,
-			"device_token":             "",
-			"edu_student_id":           "",
-			"edu_password":             "",
-			"edu_cookie":               "",
-			"edu_bound":                false,
-			"edu_grade":                "",
-			"edu_college":              "",
-			"edu_major":                "",
+			"legal_consent_revoked_at":     &now,
+			"device_token":                 "",
+			"push_data_processing_enabled": false,
+			"push_installation_id":         "",
+			"push_notice_version":          "",
+			"push_enabled_at":              nil,
+			"edu_student_id":               "",
+			"edu_password":                 "",
+			"edu_cookie":                   "",
+			"edu_bound":                    false,
+			"edu_grade":                    "",
+			"edu_college":                  "",
+			"edu_major":                    "",
 		}).Error; err != nil {
 			return err
 		}
@@ -253,6 +257,43 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 		"legal_consents_active":   false,
 		"legal_consents_required": false,
 		"revoked_at":              now,
+	})
+}
+
+// UnbindEdu 解除教务绑定，主库事务成功后再异步清理 Python 服务凭证。
+func (h *PrivacyHandler) UnbindEdu(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	needsCleanup := user.EduBound || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+			"edu_student_id": "",
+			"edu_password":   "",
+			"edu_cookie":     "",
+			"edu_bound":      false,
+			"edu_grade":      "",
+			"edu_college":    "",
+			"edu_major":      "",
+		}).Error; err != nil {
+			return err
+		}
+		if needsCleanup {
+			return h.eduCredentialCleanupJobs.Enqueue(tx, userID)
+		}
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "解除教务绑定失败"})
+		return
+	}
+	middleware.InvalidateTokenVersionCache(userID)
+	c.JSON(http.StatusOK, gin.H{
+		"message":         "已解除教务绑定，远端凭证清理中",
+		"edu_bound":       false,
+		"cleanup_pending": needsCleanup,
 	})
 }
 
@@ -354,48 +395,45 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
 		return
 	}
-	// 教务凭证由独立服务保存时，必须先完成远端解绑，避免只清除主库而留下认证凭证。
-	if user.EduBound {
-		response, err := pythonEduRequest(http.MethodDelete, "/api/edu/bind", &userID, nil)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": "教务凭证清除失败，请稍后重试账号注销"})
-			return
-		}
-		if response.StatusCode() != http.StatusOK {
-			mapEduServiceError(c, response.StatusCode(), response.Body())
-			return
-		}
-	}
-
 	randomPassword, err := bcrypt.GenerateFromPassword([]byte(fmt.Sprintf("cancelled-%d-%d", user.ID, time.Now().UnixNano())), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "处理账号注销失败"})
 		return
 	}
 	now := time.Now()
+	needsEduCredentialCleanup := user.EduBound || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-			"student_id":     fmt.Sprintf("cancelled-%d-%d", userID, now.UnixNano()),
-			"password_hash":  string(randomPassword),
-			"nickname":       "已注销用户",
-			"gender":         "",
-			"avatar":         "",
-			"background":     "",
-			"qq":             "",
-			"device_token":   "",
-			"edu_student_id": "",
-			"edu_password":   "",
-			"edu_cookie":     "",
-			"edu_bound":      false,
-			"edu_grade":      "",
-			"edu_college":    "",
-			"edu_major":      "",
-			"token_version":  gorm.Expr("token_version + 1"),
+			"student_id":                   fmt.Sprintf("cancelled-%d-%d", userID, now.UnixNano()),
+			"password_hash":                string(randomPassword),
+			"nickname":                     "已注销用户",
+			"gender":                       "",
+			"avatar":                       "",
+			"background":                   "",
+			"qq":                           "",
+			"device_token":                 "",
+			"push_data_processing_enabled": false,
+			"push_installation_id":         "",
+			"push_notice_version":          "",
+			"push_enabled_at":              nil,
+			"edu_student_id":               "",
+			"edu_password":                 "",
+			"edu_cookie":                   "",
+			"edu_bound":                    false,
+			"edu_grade":                    "",
+			"edu_college":                  "",
+			"edu_major":                    "",
+			"token_version":                gorm.Expr("token_version + 1"),
 		}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("follower_id = ? OR following_id = ?", userID, userID).Delete(&models.UserFollow{}).Error; err != nil {
 			return err
+		}
+		if needsEduCredentialCleanup {
+			if err := h.eduCredentialCleanupJobs.Enqueue(tx, userID); err != nil {
+				return err
+			}
 		}
 		return tx.Create(&models.PersonalDataRequest{
 			UserID: userID, RequestType: models.PersonalDataRequestAccountCancelled,
@@ -408,5 +446,5 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		return
 	}
 	middleware.InvalidateTokenVersionCache(userID)
-	c.JSON(http.StatusOK, gin.H{"message": "账号已注销并完成本地身份信息匿名化"})
+	c.JSON(http.StatusOK, gin.H{"message": "账号已注销并完成本地身份信息匿名化，相关远端清理任务已排队", "cleanup_pending": needsEduCredentialCleanup})
 }

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.shenliyuan",
+      "sha256_cert_fingerprints": [
+        "C3:95:8B:CE:3A:6F:9B:86:FD:DF:80:E8:43:91:E3:BB:C5:83:21:60:4A:20:2C:66:E7:6C:5A:6E:5A:1F:71:AB"
+      ]
+    }
+  }
+]

@@ -35,6 +35,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   final _replyController = TextEditingController();
   bool _loading = true;
   String? _pollError;
+  bool _pollNotFound = false;
   bool _repliesLoading = false;
   String? _repliesError;
   bool _sending = false;
@@ -64,13 +65,22 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   }
 
   Future<void> _loadPoll() async {
-    if (mounted) setState(() { _pollError = null; });
+    if (mounted) setState(() { _pollError = null; _pollNotFound = false; });
     try {
       final post = await _service.getPoll(widget.pollId);
       if (!mounted) return;
-      setState(() { _post = post; _liked = post.isLiked; _likeCount = post.likeCount; _loading = false; });
+      setState(() { _post = post; _liked = post.isLiked; _likeCount = post.likeCount; _loading = false; _pollNotFound = false; });
       context.read<PollProvider>().applyExternalPostUpdate(post);
       context.read<PostProvider>().applyExternalPostUpdate(post);
+    } on PollApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _pollError = error.message;
+          _pollNotFound = error.statusCode == 404;
+          if (_pollNotFound) _post = null;
+        });
+      }
     } on DioException catch (error) {
       if (mounted) setState(() { _loading = false; _pollError = AppFeedback.dioErrorMessage(error, fallback: '加载投票失败'); });
     } catch (_) {
@@ -122,8 +132,17 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
 
   Future<void> _close() async {
     if (_post?.pollMeta == null) return;
-    final updated = await context.read<PollProvider>().closePoll(_post!.pollMeta!.id);
-    if (updated != null && mounted) setState(() => _post = updated);
+    final pollId = _post!.pollMeta!.id;
+    final provider = context.read<PollProvider>();
+    final updated = await provider.closePoll(pollId);
+    if (!mounted) return;
+    if (updated != null) {
+      setState(() => _post = updated);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(provider.mutationError(pollId) ?? '提前结束投票失败')),
+      );
+    }
   }
 
   Future<void> _delete() async {
@@ -137,7 +156,22 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   Widget build(BuildContext context) {
     final post = _post;
     if (_loading && post == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (post == null) return const Scaffold(body: Center(child: Text('投票不存在或已删除')));
+    if (post == null) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_pollNotFound ? '投票不存在或已删除' : (_pollError ?? '加载投票失败')),
+              if (!_pollNotFound) ...[
+                const SizedBox(height: 12),
+                FilledButton.icon(onPressed: _loadPoll, icon: const Icon(Icons.refresh), label: const Text('重试')),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
     final poll = post.pollMeta!;
     return Scaffold(
       appBar: widget.hideBackButton ? null : AppBar(title: const Text('投票详情'), actions: [PopupMenuButton<String>(onSelected: (value) { if (value == 'edit') _edit(); if (value == 'close') _close(); if (value == 'delete') _delete(); if (value == 'report') showReportSheet(context, targetId: post.id); }, itemBuilder: (_) => [if (poll.isOwner) const PopupMenuItem(value: 'edit', child: Text('编辑说明')), if (poll.isOwner && poll.isActive) const PopupMenuItem(value: 'close', child: Text('提前结束')), if (poll.isOwner) const PopupMenuItem(value: 'delete', child: Text('删除')), if (!poll.isOwner) const PopupMenuItem(value: 'report', child: Text('举报'))])]),

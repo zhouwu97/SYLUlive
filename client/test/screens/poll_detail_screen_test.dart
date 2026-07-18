@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/poll_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
@@ -65,5 +66,70 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('评论失败也应显示投票'), findsOneWidget);
     expect(find.text('投票不存在或已删除'), findsNothing);
+  });
+
+  testWidgets('主体加载失败时展示错误和重试，而不是误报不存在', (tester) async {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path == '/posts/1/replies') {
+        handler.resolve(Response(requestOptions: options, statusCode: 200, data: const []));
+        return;
+      }
+      handler.reject(DioException(
+        requestOptions: options,
+        response: Response(
+          requestOptions: options,
+          statusCode: 503,
+          data: {'code': 'temporarily_unavailable', 'error': '服务暂时不可用'},
+        ),
+      ));
+    }));
+    final auth = AuthProvider(dio, loadStoredAuth: false);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: auth),
+          ChangeNotifierProvider(create: (_) => PollProvider(PollService(dio))),
+          ChangeNotifierProvider(create: (_) => PostProvider(dio)),
+        ],
+        child: const MaterialApp(home: PollDetailScreen(pollId: 1)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('服务暂时不可用'), findsOneWidget);
+    expect(find.text('投票不存在或已删除'), findsNothing);
+    expect(find.text('重试'), findsOneWidget);
+  });
+
+  testWidgets('刷新失败时保留已有投票并显示顶部错误', (tester) async {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path == '/posts/1/replies') {
+        handler.resolve(Response(requestOptions: options, statusCode: 200, data: const []));
+        return;
+      }
+      handler.reject(DioException(
+        requestOptions: options,
+        response: Response(
+          requestOptions: options,
+          statusCode: 500,
+          data: {'code': 'server_error', 'error': '服务端暂时不可用'},
+        ),
+      ));
+    }));
+    final auth = AuthProvider(dio, loadStoredAuth: false);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: auth),
+          ChangeNotifierProvider(create: (_) => PollProvider(PollService(dio))),
+          ChangeNotifierProvider(create: (_) => PostProvider(dio)),
+        ],
+        child: MaterialApp(home: PollDetailScreen(pollId: 1, initialPost: Post.fromJson(_pollJson()))),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('评论失败也应显示投票'), findsOneWidget);
+    expect(find.text('服务端暂时不可用'), findsOneWidget);
   });
 }

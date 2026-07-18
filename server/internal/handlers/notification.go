@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"shenliyuan/internal/models"
+	textutils "shenliyuan/internal/utils"
 	"shenliyuan/utils"
 
 	"github.com/gin-gonic/gin"
@@ -235,7 +236,7 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 		return
 	}
 
-	contentPreview := truncateRunes(content, 50)
+	contentPreview := textutils.TruncateGraphemes(content, 50)
 
 	go func() {
 		jpush := utils.NewJPushClient(jpushAppKey, jpushMasterSecret)
@@ -269,7 +270,7 @@ func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price 
 		return
 	}
 
-	titlePreview := truncateRunes(title, 50)
+	titlePreview := textutils.TruncateGraphemes(title, 50)
 	content := titlePreview
 	if price > 0 {
 		content = fmt.Sprintf("%s  ¥%.2f", titlePreview, price)

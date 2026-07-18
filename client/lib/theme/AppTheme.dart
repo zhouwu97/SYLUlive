@@ -30,6 +30,11 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: scheme,
       fontFamily: 'NotoSansCJKsc',
+      fontFamilyFallback: const [
+        'Noto Color Emoji',
+        'Segoe UI Emoji',
+        'Apple Color Emoji',
+      ],
       // 全局紧凑密度
       visualDensity: VisualDensity.compact,
       appBarTheme: AppBarTheme(

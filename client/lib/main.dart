@@ -575,26 +575,7 @@ Future<void> _initializePrivateMessageNotifications() async {
           importance: Importance.high,
         ),
       );
-  // Android 13+ 运行时通知权限
-  await _privateMessageNotifications
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.requestNotificationsPermission();
   _privateMessageNotificationsReady = true;
-}
-
-/// 首帧后请求通知权限（需要 Activity 已创建）
-Future<void> _requestNotificationPermissionIfNeeded() async {
-  try {
-    final plugin =
-        _privateMessageNotifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    if (plugin == null) return;
-    final granted = await plugin.requestNotificationsPermission();
-    debugPrint('通知权限请求结果: $granted');
-  } catch (e) {
-    debugPrint('请求通知权限失败: $e');
-  }
 }
 
 /// 已通过本地通知展示过的极光 msg_id，用于去重
@@ -1481,9 +1462,6 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!_jpushSetup && !_jpushSettingUp) {
               _ensureJPush(authProvider);
-              PushSettingsService.isEnabled().then((enabled) {
-                if (enabled) _requestNotificationPermissionIfNeeded();
-              });
             }
             _processPendingPrivateMessageOpen();
             _schedulePendingNotificationProcessing();

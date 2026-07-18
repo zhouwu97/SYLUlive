@@ -652,6 +652,52 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// 确认最新法律文件，并以服务端返回的授权状态更新本地会话。
+  Future<AuthResult> acceptRequiredLegalConsents({
+    required bool includeEduDataConsent,
+  }) async {
+    if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await _dio.post(
+        '/user/legal-consents',
+        data: {
+          'user_agreement_accepted': true,
+          'privacy_policy_accepted': true,
+          'community_rules_accepted': true,
+          'minor_protection_accepted': true,
+          'content_complaint_accepted': true,
+          'sdk_disclosure_accepted': true,
+          'edu_data_consent_accepted': includeEduDataConsent,
+        },
+      );
+      final payload = response.data;
+      if (response.statusCode != 200 ||
+          payload is! Map ||
+          payload['user'] is! Map) {
+        return AuthResult.failure('协议确认失败，请稍后重试');
+      }
+      await applyProfileResponse(
+        Map<String, dynamic>.from(payload['user'] as Map),
+      );
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.success();
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure(
+        _parseDioError(e),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure('协议确认失败: $e');
+    }
+  }
+
   /// 统一的本地会话清理
   ///
   /// [clearPushAlias] 为 true 时同时清除极光 Alias（手动退出 / 401）。

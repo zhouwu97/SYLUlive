@@ -419,6 +419,11 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                 }
+                "setPushOptIn" -> {
+                    val enabled = call.argument<Boolean>("enabled") == true
+                    KeepAliveForegroundService.setPushOptIn(this, enabled)
+                    result.success(true)
+                }
                 "clearAlias" -> {
                     val gen = KeepAliveForegroundService.markAliasPendingDelete(this)
                     try {
@@ -807,8 +812,12 @@ class MainActivity : FlutterActivity() {
     private fun getPushDiagnostics(): Map<String, Any?> {
         val info = mutableMapOf<String, Any?>()
 
-        // RegistrationID
-        val rid = JPushInterface.getRegistrationID(this)
+        // 未主动启用推送时不读取 RegistrationID。
+        val rid = if (KeepAliveForegroundService.isPushEnabled(this)) {
+            JPushInterface.getRegistrationID(this)
+        } else {
+            ""
+        }
         info["registrationId"] = rid.ifBlank { null }
 
         // 系统通知总权限

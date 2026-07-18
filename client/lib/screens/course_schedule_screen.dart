@@ -2826,9 +2826,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (studentId.length > 2) {
       classIdStr = studentId.substring(0, studentId.length - 2);
     }
-    String classFilterRule = classIdStr.isNotEmpty
-        ? '7. 班级过滤 (Class Filtering)：当前用户的班级号是“$classIdStr班”。如果图片中包含“班级”或类似列，请严格对比班级信息。只提取属于“$classIdStr”班级的课程行，完全忽略其他班级的行。'
-        : '7. 班级过滤 (Class Filtering)：如果我提供了我的班级号（例如：“我是 24030601 班”），并且图片中包含“班级”或类似列，请严格对比班级信息。只提取属于我班级的课程行，完全忽略其他班级的行。';
+    bool includeClassId = false;
+    String classFilterRule =
+        '7. 班级过滤 (Class Filtering)：如果我提供了我的班级号，并且图片中包含班级信息，请严格对比后只提取属于我的课程行。';
 
     String aiPromptTemplate =
         """你现在是一个专业的“教务数据提取引擎”。请读取我提供的教学日历/课表图片或文字说明，提取其中的课程安排，并严格按照以下 JSON 格式输出数据。
@@ -3075,8 +3075,22 @@ $classFilterRule
                           ),
                         ),
                         const SizedBox(height: 6),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: includeClassId,
+                          title: const Text('在提示词中加入我的班级号'),
+                          subtitle: Text(classIdStr.isEmpty
+                              ? '当前未读取到班级号'
+                              : '用于过滤 $classIdStr 班课程'),
+                          onChanged: classIdStr.isEmpty
+                              ? null
+                              : (value) {
+                                  setState(
+                                      () => includeClassId = value == true);
+                                },
+                        ),
                         Text(
-                          '*免责声明：AI 识别可能存在误差，请自行核对，因数据错误导致漏课等损失本软件概不负责。',
+                          'AI 识别结果可能存在遗漏或错误。导入前请逐项核对课程名称、周次、时间、地点和班级范围，并以学校官方课表为准。未经用户确认的结果不会自动写入正式课表。',
                           style: TextStyle(
                             fontSize: 11,
                             color: Theme.of(context).colorScheme.outline,
@@ -3098,13 +3112,17 @@ $classFilterRule
                       ).colorScheme.onPrimaryContainer,
                     ),
                     onPressed: () {
-                      Clipboard.setData(ClipboardData(text: aiPromptTemplate));
+                      final prompt = includeClassId && classIdStr.isNotEmpty
+                          ? aiPromptTemplate.replaceFirst(
+                              classFilterRule,
+                              '7. 班级过滤 (Class Filtering)：当前用户的班级号是“$classIdStr班”。请仅提取属于该班级的课程行。',
+                            )
+                          : aiPromptTemplate;
+                      Clipboard.setData(ClipboardData(text: prompt));
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            classIdStr.isNotEmpty
-                                ? '提示词已复制！（已自动为您填入班级号 $classIdStr）请前往 AI 助手处粘贴并发送图片或文字说明。'
-                                : '提示词已复制！粘贴给 AI 时，如果需要过滤班级，请在末尾加上您的班级号（如：我是xxx班）。',
+                            '提示词已复制。请前往你选择的外部 AI 服务提交，处理规则由对应服务商决定。',
                           ),
                         ),
                       );

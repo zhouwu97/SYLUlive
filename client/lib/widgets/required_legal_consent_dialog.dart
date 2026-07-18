@@ -49,11 +49,10 @@ class _RequiredLegalConsentDialogState
       _submitting = true;
       _error = null;
     });
-    final result = await context
-        .read<AuthProvider>()
-        .acceptRequiredLegalConsents(
-          includeEduDataConsent: widget.requiresEduDataConsent,
-        );
+    final result =
+        await context.read<AuthProvider>().acceptRequiredLegalConsents(
+              includeEduDataConsent: widget.requiresEduDataConsent,
+            );
     if (!mounted) return;
     if (result.success) {
       Navigator.of(context).pop();
@@ -98,10 +97,10 @@ class _RequiredLegalConsentDialogState
                 onChanged: _submitting
                     ? null
                     : (value) =>
-                          setState(() => _generalAccepted = value ?? false),
+                        setState(() => _generalAccepted = value ?? false),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
-                title: const Text('我已阅读并同意用户协议、隐私政策等 6 项说明'),
+                title: const Text('我已阅读并确认用户协议和隐私政策'),
               ),
               if (widget.requiresEduDataConsent)
                 CheckboxListTile(
@@ -110,7 +109,7 @@ class _RequiredLegalConsentDialogState
                   onChanged: _submitting
                       ? null
                       : (value) =>
-                            setState(() => _eduAccepted = value ?? false),
+                          setState(() => _eduAccepted = value ?? false),
                   contentPadding: EdgeInsets.zero,
                   controlAffinity: ListTileControlAffinity.leading,
                   title: const Text('我已阅读并同意教务数据专项授权'),

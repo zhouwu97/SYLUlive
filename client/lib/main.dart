@@ -49,6 +49,7 @@ import 'services/diagnostic_log_service.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
 import 'services/app_update_coordinator.dart';
+import 'services/push_settings_service.dart';
 import 'widgets/app_update_gate.dart';
 import 'widgets/required_legal_consent_dialog.dart';
 import 'package:crypto/crypto.dart';
@@ -471,6 +472,10 @@ void _processPendingNotificationOpen() {
 }
 
 Future<void> setupJPush(AuthProvider authProvider) async {
+  if (!await PushSettingsService.isEnabled()) {
+    debugPrint('推送未主动启用，跳过 JPush 初始化');
+    return;
+  }
   if (ApiConstants.jpushAppKey.isEmpty) {
     DiagnosticLogService.instance.record(
       level: 'error',
@@ -487,14 +492,23 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
     appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
-    production: false,
-    debug: true,
+    production: !kDebugMode,
+    debug: kDebugMode,
   );
 
   final rid = await jpush.getRegistrationID();
 
   if (rid.isNotEmpty) {
-    await authProvider.updateDeviceToken(rid);
+    final result = await authProvider.updatePushSettings(
+      enabled: true,
+      installationId: await PushSettingsService.installationId(),
+      registrationId: rid,
+      noticeVersion: PushSettingsService.noticeVersion,
+    );
+    if (!result.success) {
+      debugPrint('推送设置上传失败: ${result.errorMessage}');
+      return;
+    }
   }
 
   final userId = authProvider.user?.id;
@@ -1398,6 +1412,8 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   Future<void> _ensureJPush(AuthProvider authProvider) async {
     if (_jpushSetup || _jpushSettingUp) return;
 
+    if (!await PushSettingsService.isEnabled()) return;
+
     _jpushSettingUp = true;
     try {
       await setupJPush(authProvider);
@@ -1465,7 +1481,9 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!_jpushSetup && !_jpushSettingUp) {
               _ensureJPush(authProvider);
-              _requestNotificationPermissionIfNeeded();
+              PushSettingsService.isEnabled().then((enabled) {
+                if (enabled) _requestNotificationPermissionIfNeeded();
+              });
             }
             _processPendingPrivateMessageOpen();
             _schedulePendingNotificationProcessing();

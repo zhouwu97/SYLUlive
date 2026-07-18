@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -181,5 +182,21 @@ void main() {
       'endCourseLiveView',
     ]);
     await service.dispose();
+  });
+
+  test('ArkTS 实况窗跳转和时间参数具备发布级保护', () {
+    final source = File(
+      'ohos/entry/src/main/ets/plugins/OhosLiveViewPlugin.ets',
+    ).readAsStringSync();
+
+    expect(source, isNot(contains("BUNDLE_NAME: string = 'com.example")));
+    expect(source, contains('bundleManager.getBundleInfoForSelf'));
+    expect(source, contains('bundleInfo.name'));
+    expect(source, contains('requestCode: this.stableId(this.keyOf(payload))'));
+    expect(source, contains('实况窗参数缺少有效的开始或结束时间'));
+    expect(source, isNot(contains('return Date.now();')));
+    expect(source, contains('storedPayload = await this.requireStoredPayload(payload)'));
+    expect(source, contains('await this.stopWithActiveLiveView(state);'));
+    expect(source, contains('active.sequence = (active.sequence ?? state.sequence) + 1;'));
   });
 }

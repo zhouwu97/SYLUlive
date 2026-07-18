@@ -31,22 +31,26 @@ import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/privacy_center_screen.dart';
 import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
 import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
+import 'utils/team_share_link.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'widgets/app_update_gate.dart';
+import 'widgets/required_legal_consent_dialog.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -1004,7 +1008,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
         final uri = call.arguments as String?;
-        await _handleDeepLinkUri(uri);
+        await _consumeDeepLink(uri);
       }
     });
   }
@@ -1025,39 +1029,65 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   Future<void> _checkDeepLink() async {
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
-      await _handleDeepLinkUri(uri);
+      await _consumeDeepLink(uri);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
     }
   }
 
-  Future<void> _handleDeepLinkUri(String? uri) async {
+  Future<void> _consumeDeepLink(String? uri) async {
     if (uri == null || !mounted) return;
+    final handled = await _handleDeepLinkUri(uri);
+    if (!handled) return;
+    try {
+      await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': uri});
+    } catch (error) {
+      debugPrint('深度链接确认失败: $error');
+    }
+  }
+
+  Future<bool> _handleDeepLinkUri(String? uri) async {
+    if (uri == null || !mounted) return false;
     if (uri == 'widget_timetable' || uri == 'campus://timetable') {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
-      return;
+      return true;
     }
     if (uri.startsWith('widget_exam')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
       );
-      return;
+      return true;
     }
     if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
-      await _openGradeDeepLink(uri);
+      return _openGradeDeepLink(uri);
     }
+    final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
+    if (recruitmentId == null) return false;
+
+    // 授权撤销或尚未登录时不得通过分享链接绕过会话门禁。
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || !(auth.user?.legalConsentsActive ?? false)) {
+      return true;
+    }
+    appNavigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) =>
+            TeamRecruitmentDetailScreen(recruitmentId: recruitmentId),
+      ),
+    );
+    return true;
   }
 
-  Future<void> _openGradeDeepLink(String raw) async {
+  Future<bool> _openGradeDeepLink(String raw) async {
     final parsed = Uri.tryParse(raw);
     final year = parsed?.queryParameters['year'];
     final semester = int.tryParse(parsed?.queryParameters['semester'] ?? '');
-    if (year == null || semester == null) return;
+    if (year == null || semester == null) return false;
 
     if (await GradeScreenRegistry.trySwitch(year, semester)) {
-      return;
+      return true;
     }
 
     appNavigatorKey.currentState?.push(
@@ -1068,6 +1098,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         ),
       ),
     );
+    return true;
   }
 
   @override
@@ -1307,6 +1338,7 @@ class HomeInitialTabResolver {
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
   bool _jpushSettingUp = false;
+  bool _legalConsentDialogVisible = false;
   final HomeInitialTabResolver _homeInitialTabResolver =
       HomeInitialTabResolver();
 
@@ -1326,7 +1358,8 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       final authProvider = context.read<AuthProvider>();
-      if (authProvider.isLoggedIn) {
+      if (authProvider.isLoggedIn &&
+          (authProvider.user?.legalConsentsActive ?? false)) {
         _ensureJPush(authProvider);
         _checkNativePrivateMessage();
       }
@@ -1378,6 +1411,34 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
+  void _presentRequiredLegalConsentDialog(AuthProvider authProvider) {
+    if (_legalConsentDialogVisible) return;
+    final user = authProvider.user;
+    if (user == null ||
+        user.legalConsentsActive ||
+        !user.legalConsentsRequired) {
+      return;
+    }
+    _legalConsentDialogVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final currentUser = authProvider.user;
+      if (!authProvider.isLoggedIn ||
+          currentUser == null ||
+          currentUser.legalConsentsActive ||
+          !currentUser.legalConsentsRequired) {
+        _legalConsentDialogVisible = false;
+        return;
+      }
+      await showRequiredLegalConsentDialog(
+        context,
+        requiresEduDataConsent: currentUser.eduBound,
+      );
+      _legalConsentDialogVisible = false;
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
@@ -1388,7 +1449,19 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           );
         }
 
-        if (authProvider.isLoggedIn) {
+        final user = authProvider.user;
+        if (authProvider.isLoggedIn &&
+            user != null &&
+            !user.legalConsentsActive &&
+            user.legalConsentsRequired) {
+          _presentRequiredLegalConsentDialog(authProvider);
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (authProvider.isLoggedIn &&
+            (authProvider.user?.legalConsentsActive ?? false)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!_jpushSetup && !_jpushSettingUp) {
               _ensureJPush(authProvider);
@@ -1405,6 +1478,11 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
+        }
+
+        if (authProvider.isLoggedIn &&
+            !(authProvider.user?.legalConsentsActive ?? true)) {
+          return const PrivacyCenterScreen(restricted: true);
         }
 
         return HomeScreen(initialTab: _homeInitialTabResolver.resolve(tp));

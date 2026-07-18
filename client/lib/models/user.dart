@@ -15,6 +15,8 @@ class User {
   final bool isCheckedInToday;
   final int reportCount;
   final DateTime createdAt;
+  final bool legalConsentsActive;
+  final bool legalConsentsRequired;
 
   // 教务系统绑定信息
   final String eduStudentId;
@@ -45,6 +47,8 @@ class User {
     this.isCheckedInToday = false,
     this.reportCount = 0,
     required this.createdAt,
+    this.legalConsentsActive = true,
+    this.legalConsentsRequired = false,
     this.eduStudentId = '',
     this.eduBound = false,
     this.eduGrade = '',
@@ -73,6 +77,10 @@ class User {
       isCheckedInToday: json['is_checked_in_today'] ?? false,
       reportCount: json['report_count'] ?? 0,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+      legalConsentsActive: json['legal_consents_active'] == true,
+      legalConsentsRequired:
+          json['legal_consents_required'] == true ||
+          !json.containsKey('legal_consents_active'),
       eduStudentId: json['edu_student_id'] ?? '',
       eduBound: json['edu_bound'] ?? false,
       eduGrade: json['edu_grade'] ?? '',
@@ -102,6 +110,8 @@ class User {
       'is_checked_in_today': isCheckedInToday,
       'report_count': reportCount,
       'created_at': createdAt.toIso8601String(),
+      'legal_consents_active': legalConsentsActive,
+      'legal_consents_required': legalConsentsRequired,
       'edu_student_id': eduStudentId,
       'edu_bound': eduBound,
       'edu_grade': eduGrade,
@@ -163,8 +173,9 @@ class User {
   /// 当前等级进度（0.0 - 1.0）
   double get levelProgress {
     if (level >= 8) return 1.0;
-    final currentMin =
-        level == 1 ? 0 : [0, 50, 150, 500, 1000, 2500, 5000, 8000][level - 1];
+    final currentMin = level == 1
+        ? 0
+        : [0, 50, 150, 500, 1000, 2500, 5000, 8000][level - 1];
     final needed = expToNextLevel - currentMin;
     if (needed <= 0) return 1.0;
     return ((exp - currentMin) / needed).clamp(0.0, 1.0);

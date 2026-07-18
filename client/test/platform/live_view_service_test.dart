@@ -193,7 +193,9 @@ void main() {
     expect(source, contains('bundleManager.getBundleInfoForSelf'));
     expect(source, contains('bundleInfo.name'));
     expect(source, contains('requestCode: this.stableId(this.keyOf(payload))'));
-    expect(source, contains('实况窗参数缺少有效的开始或结束时间'));
+    expect(source, contains('实况窗开始时间必须早于结束时间'));
+    expect(source, contains('businessId.trim().length'));
+    expect(source, contains('startTime < endTime'));
     expect(source, isNot(contains('return Date.now();')));
     expect(source, contains('storedPayload = await this.requireStoredPayload(payload)'));
     expect(source, contains('await this.stopWithActiveLiveView(state);'));

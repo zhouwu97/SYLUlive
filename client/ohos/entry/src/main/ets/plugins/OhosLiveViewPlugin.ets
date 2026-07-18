@@ -361,8 +361,12 @@ export default class OhosLiveViewPlugin implements FlutterPlugin, MethodCallHand
       typeof payload.title !== 'string' || typeof payload.body !== 'string') {
       throw new Error('实况窗参数缺少 type、businessId、title 或 body');
     }
+    if (requiresSchedule && (payload.type.trim().length === 0 ||
+      payload.businessId.trim().length === 0 || payload.title.trim().length === 0)) {
+      throw new Error('创建实况窗时 type、businessId 和 title 不能为空');
+    }
     if (requiresSchedule && !this.hasValidSchedule(payload)) {
-      throw new Error('实况窗参数缺少有效的开始或结束时间');
+      throw new Error('实况窗开始时间必须早于结束时间，且两者格式有效');
     }
     return payload;
   }
@@ -381,8 +385,12 @@ export default class OhosLiveViewPlugin implements FlutterPlugin, MethodCallHand
   }
 
   private hasValidSchedule(payload: LiveViewPayload): boolean {
-    return typeof payload.startTime === 'string' && typeof payload.endTime === 'string' &&
-      Number.isFinite(Date.parse(payload.startTime)) && Number.isFinite(Date.parse(payload.endTime));
+    if (typeof payload.startTime !== 'string' || typeof payload.endTime !== 'string') {
+      return false;
+    }
+    const startTime = Date.parse(payload.startTime);
+    const endTime = Date.parse(payload.endTime);
+    return Number.isFinite(startTime) && Number.isFinite(endTime) && startTime < endTime;
   }
 
   private keyOf(payload: LiveViewPayload): string {

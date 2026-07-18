@@ -36,12 +36,14 @@ import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
 import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
+import 'utils/team_share_link.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/campus_calendar_service.dart';
@@ -1006,7 +1008,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
         final uri = call.arguments as String?;
-        await _handleDeepLinkUri(uri);
+        await _consumeDeepLink(uri);
       }
     });
   }
@@ -1027,39 +1029,65 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   Future<void> _checkDeepLink() async {
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
-      await _handleDeepLinkUri(uri);
+      await _consumeDeepLink(uri);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
     }
   }
 
-  Future<void> _handleDeepLinkUri(String? uri) async {
+  Future<void> _consumeDeepLink(String? uri) async {
     if (uri == null || !mounted) return;
+    final handled = await _handleDeepLinkUri(uri);
+    if (!handled) return;
+    try {
+      await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': uri});
+    } catch (error) {
+      debugPrint('深度链接确认失败: $error');
+    }
+  }
+
+  Future<bool> _handleDeepLinkUri(String? uri) async {
+    if (uri == null || !mounted) return false;
     if (uri == 'widget_timetable' || uri == 'campus://timetable') {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
-      return;
+      return true;
     }
     if (uri.startsWith('widget_exam')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
       );
-      return;
+      return true;
     }
     if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
-      await _openGradeDeepLink(uri);
+      return _openGradeDeepLink(uri);
     }
+    final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
+    if (recruitmentId == null) return false;
+
+    // 授权撤销或尚未登录时不得通过分享链接绕过会话门禁。
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || !(auth.user?.legalConsentsActive ?? false)) {
+      return true;
+    }
+    appNavigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) =>
+            TeamRecruitmentDetailScreen(recruitmentId: recruitmentId),
+      ),
+    );
+    return true;
   }
 
-  Future<void> _openGradeDeepLink(String raw) async {
+  Future<bool> _openGradeDeepLink(String raw) async {
     final parsed = Uri.tryParse(raw);
     final year = parsed?.queryParameters['year'];
     final semester = int.tryParse(parsed?.queryParameters['semester'] ?? '');
-    if (year == null || semester == null) return;
+    if (year == null || semester == null) return false;
 
     if (await GradeScreenRegistry.trySwitch(year, semester)) {
-      return;
+      return true;
     }
 
     appNavigatorKey.currentState?.push(
@@ -1070,6 +1098,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         ),
       ),
     );
+    return true;
   }
 
   @override

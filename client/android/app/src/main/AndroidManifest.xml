@@ -49,6 +49,10 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- 深链由 MainActivity 转交 Flutter 业务路由，避免框架重复导航。 -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -65,6 +69,23 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="sylulive" android:host="grades" />
+            </intent-filter>
+            <!-- 域名验证通过后，HTTPS 组队分享链接会直接打开 App。 -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="sylulive.online"
+                    android:pathPrefix="/team/" />
+            </intent-filter>
+            <!-- 网页落地页使用自定义协议作为未完成域名验证时的兼容入口。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sylulive" android:host="team" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

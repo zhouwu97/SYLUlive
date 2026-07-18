@@ -23,7 +23,7 @@ func newPrivacyTestHandler(t *testing.T) (*PrivacyHandler, *gorm.DB, models.User
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.UserFollow{}, &models.UserLegalConsent{}, &models.PersonalDataRequest{}, &models.AdminActionLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserFollow{}, &models.UserLegalConsent{}, &models.PersonalDataRequest{}, &models.EduCredentialCleanupJob{}, &models.AdminActionLog{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.MinCost)
@@ -137,6 +137,37 @@ func TestWithdrawConsentClearsDependentCredentials(t *testing.T) {
 	}
 	if consent.RevokedAt == nil {
 		t.Fatalf("consent was not revoked")
+	}
+}
+
+func TestWithdrawConsentQueuesEduCredentialCleanupWithoutWaitingForRemoteService(t *testing.T) {
+	handler, db, user := newPrivacyTestHandler(t)
+	if err := db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+		"edu_bound":      true,
+		"edu_student_id": "2026000001",
+		"edu_cookie":     "cookie",
+	}).Error; err != nil {
+		t.Fatalf("set edu binding: %v", err)
+	}
+	context, recorder := privacyContext(http.MethodDelete, "/api/user/privacy/consents", `{"password":"password123","confirmed":true}`, user.ID)
+	handler.WithdrawConsent(context)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var updated models.User
+	if err := db.First(&updated, user.ID).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if updated.LegalConsentRevokedAt == nil || updated.EduBound || updated.EduStudentID != "" || updated.EduCookie != "" {
+		t.Fatalf("local revoke was not committed: %#v", updated)
+	}
+	var job models.EduCredentialCleanupJob
+	if err := db.Where("user_id = ?", user.ID).First(&job).Error; err != nil {
+		t.Fatalf("load cleanup job: %v", err)
+	}
+	if job.CompletedAt != nil || job.Attempts != 0 || job.NextAttemptAt.IsZero() {
+		t.Fatalf("unexpected cleanup job: %#v", job)
 	}
 }
 

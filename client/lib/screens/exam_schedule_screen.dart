@@ -379,12 +379,13 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   void _showEditDialog([ExamModel? exam, int? index]) {
     String selectedSemester = exam?.semester ?? _currentSemester;
 
-    DateTime examDate = exam?.startTime ?? DateTime.now();
+    final now = DateTime.now();
+    DateTime examDate = exam?.startTime ?? now;
     TimeOfDay startTime = TimeOfDay.fromDateTime(
-      exam?.startTime ?? DateTime.now(),
+      exam?.startTime ?? DateTime(now.year, now.month, now.day, 9),
     );
     TimeOfDay endTime = TimeOfDay.fromDateTime(
-      exam?.endTime ?? DateTime.now().add(const Duration(hours: 2)),
+      exam?.endTime ?? DateTime(now.year, now.month, now.day, 11),
     );
 
     bool isAiMode = exam == null;
@@ -740,9 +741,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                 endTime.minute,
                               );
 
-                              if (endDateTime.isBefore(startDateTime)) {
+                              if (!endDateTime.isAfter(startDateTime)) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('结束时间不能早于开始时间')),
+                                  const SnackBar(content: Text('结束时间必须晚于开始时间')),
                                 );
                                 return;
                               }

@@ -51,5 +51,15 @@ void main() {
     expect(saved, hasLength(1));
     expect(saved.single['name'], '组件测试考试');
     expect(saved.single['location'], '测试教室');
+    expect(
+      DateTime.parse(saved.single['endTime'] as String),
+      isA<DateTime>().having(
+        (end) => end.isAfter(
+          DateTime.parse(saved.single['startTime'] as String),
+        ),
+        '晚于开始时间',
+        isTrue,
+      ),
+    );
   });
 }

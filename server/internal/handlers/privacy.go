@@ -41,11 +41,8 @@ type CancelAccountInput struct {
 }
 
 var allowedPersonalDataRequestTypes = map[models.PersonalDataRequestType]struct{}{
-	models.PersonalDataRequestAccess:          {},
-	models.PersonalDataRequestCorrection:      {},
-	models.PersonalDataRequestExport:          {},
-	models.PersonalDataRequestDeletion:        {},
-	models.PersonalDataRequestWithdrawConsent: {},
+	models.PersonalDataRequestCorrection: {},
+	models.PersonalDataRequestDeletion:   {},
 }
 
 func parsePersonalDataRequestType(value string) (models.PersonalDataRequestType, bool) {
@@ -54,7 +51,7 @@ func parsePersonalDataRequestType(value string) (models.PersonalDataRequestType,
 	return requestType, ok
 }
 
-// CreateRequest 提交查阅、更正、导出、删除或撤回同意请求。
+// CreateRequest 仅受理无法由用户直接完成的更正与删除请求。
 func (h *PrivacyHandler) CreateRequest(c *gin.Context) {
 	var input CreatePersonalDataRequestInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -113,37 +110,32 @@ func (h *PrivacyHandler) ListMyRequests(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": requests})
 }
 
-// ExportMyData 导出账户资料、授权记录和个人信息请求记录，不包含密码、Cookie 或令牌。
-func (h *PrivacyHandler) ExportMyData(c *gin.Context) {
-	userID := c.GetUint("user_id")
+func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) (gin.H, error) {
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
+		return nil, err
 	}
-
 	consents := make([]models.UserLegalConsent, 0)
-	requests := make([]models.PersonalDataRequest, 0)
 	if err := h.db.Where("user_id = ?", userID).Order("accepted_at DESC").Find(&consents).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权记录失败"})
-		return
+		return nil, err
 	}
-	if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&requests).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取个人信息请求失败"})
-		return
+	consentState, err := models.LegalConsentStateForUser(h.db, user)
+	if err != nil {
+		return nil, err
 	}
-
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=shenliyuan-personal-data-%d.json", userID))
-	c.JSON(http.StatusOK, gin.H{
-		"exported_at": time.Now().UTC(),
-		"scope":       "账户资料、法律文件授权记录和个人信息请求记录；不含密码、教务 Cookie、会话令牌及其他认证凭证",
+	payload := gin.H{
+		"exported_at":             time.Now().UTC(),
+		"scope":                   "账户资料、法律文件授权记录和个人信息请求记录；不含密码、教务 Cookie、会话令牌、推送标识及内部文件地址",
+		"legal_consents_active":   consentState == models.LegalConsentStateActive,
+		"legal_consents_required": consentState == models.LegalConsentStateRequired,
+		"consent_revoked_at":      user.LegalConsentRevokedAt,
 		"account": gin.H{
 			"id":              user.ID,
 			"student_id":      user.StudentID,
 			"nickname":        user.Nickname,
 			"gender":          user.Gender,
-			"avatar":          user.Avatar,
-			"background":      user.Background,
+			"avatar_set":      user.Avatar != "",
+			"background_set":  user.Background != "",
 			"qq":              user.QQ,
 			"created_at":      user.CreatedAt,
 			"edu_bound":       user.EduBound,
@@ -154,7 +146,107 @@ func (h *PrivacyHandler) ExportMyData(c *gin.Context) {
 			"notification_on": user.DeviceToken != "",
 		},
 		"legal_consents": consents,
-		"requests":       requests,
+	}
+	if includeRequests {
+		requests := make([]models.PersonalDataRequest, 0)
+		if err := h.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&requests).Error; err != nil {
+			return nil, err
+		}
+		payload["requests"] = requests
+	}
+	return payload, nil
+}
+
+// GetMyData 直接返回当前用户可查阅的账户资料、授权记录和请求摘要。
+func (h *PrivacyHandler) GetMyData(c *gin.Context) {
+	payload, err := h.personalDataPayload(c.GetUint("user_id"), true)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取个人数据失败"})
+		return
+	}
+	c.JSON(http.StatusOK, payload)
+}
+
+// ExportMyData 直接生成可分享的 JSON，不包含认证凭证或内部地址。
+func (h *PrivacyHandler) ExportMyData(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	payload, err := h.personalDataPayload(userID, true)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "导出个人数据失败"})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=shenliyuan-personal-data-%d.json", userID))
+	c.JSON(http.StatusOK, payload)
+}
+
+// WithdrawConsent 立即撤销全部法律文件授权，并清除依赖授权保存的教务和推送凭证。
+func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
+	var input CancelAccountInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		return
+	}
+	if !input.Confirmed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请确认已知悉撤销同意后的功能限制"})
+		return
+	}
+	userID := c.GetUint("user_id")
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
+		return
+	}
+	if user.EduBound {
+		response, err := pythonEduRequest(http.MethodDelete, "/api/edu/bind", &userID, nil)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "教务凭证清除失败，请稍后重试"})
+			return
+		}
+		if response.StatusCode() != http.StatusOK {
+			mapEduServiceError(c, response.StatusCode(), response.Body())
+			return
+		}
+	}
+	now := time.Now()
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+			"legal_consent_revoked_at": &now,
+			"device_token":             "",
+			"edu_student_id":           "",
+			"edu_password":             "",
+			"edu_cookie":               "",
+			"edu_bound":                false,
+			"edu_grade":                "",
+			"edu_college":              "",
+			"edu_major":                "",
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.UserLegalConsent{}).
+			Where("user_id = ? AND revoked_at IS NULL", userID).
+			Update("revoked_at", &now).Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤销同意失败"})
+		return
+	}
+	middleware.InvalidateTokenVersionCache(userID)
+	c.JSON(http.StatusOK, gin.H{
+		"message":                 "已撤销全部授权，相关功能已停止使用",
+		"legal_consents_active":   false,
+		"legal_consents_required": false,
+		"revoked_at":              now,
 	})
 }
 

@@ -649,9 +649,12 @@ func main() {
 
 		user.PUT("/device_token", userHandler.UpdateDeviceToken)
 
+		user.POST("/legal-consents", authHandler.AcceptLegalConsents)
+		user.GET("/privacy/data", privacyHandler.GetMyData)
 		user.POST("/privacy/requests", privacyHandler.CreateRequest)
 		user.GET("/privacy/requests", privacyHandler.ListMyRequests)
 		user.GET("/privacy/export", privacyHandler.ExportMyData)
+		user.DELETE("/privacy/consents", privacyHandler.WithdrawConsent)
 		user.DELETE("/account", privacyHandler.CancelAccount)
 
 		user.GET("/invitations", invitationHandler.GetPending)

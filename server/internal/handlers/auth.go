@@ -155,25 +155,57 @@ func (input LegalConsentInput) validate(requireEduConsent bool) error {
 
 func recordLegalConsents(tx *gorm.DB, userID uint, input LegalConsentInput, includeEduConsent bool) error {
 	now := time.Now()
-	documents := []string{
-		models.LegalDocumentUserAgreement,
-		models.LegalDocumentPrivacyPolicy,
-		models.LegalDocumentCommunityRules,
-		models.LegalDocumentMinorProtection,
-		models.LegalDocumentContentComplaint,
-		models.LegalDocumentSDKDisclosure,
-	}
-	if includeEduConsent {
-		documents = append(documents, models.LegalDocumentEduDataConsent)
-	}
-	for _, document := range documents {
-		if err := tx.Create(&models.UserLegalConsent{
-			UserID: userID, Document: document, Version: models.LegalDocumentVersion, AcceptedAt: now,
-		}).Error; err != nil {
+	for _, document := range models.RequiredLegalDocuments(includeEduConsent) {
+		consent := models.UserLegalConsent{
+			UserID: userID, Document: document, Version: models.LegalDocumentVersion,
+		}
+		if err := tx.Where("user_id = ? AND document = ? AND version = ?", userID, document, models.LegalDocumentVersion).
+			Assign(map[string]interface{}{"accepted_at": now, "revoked_at": nil}).
+			FirstOrCreate(&consent).Error; err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// AcceptLegalConsents 记录当前协议版本的同意，并恢复已主动撤销授权的账号。
+func (h *AuthHandler) AcceptLegalConsents(c *gin.Context) {
+	var input LegalConsentInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		return
+	}
+
+	userID := c.GetUint("user_id")
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	if err := input.validate(user.EduBound); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := recordLegalConsents(tx, user.ID, input, user.EduBound); err != nil {
+			return err
+		}
+		return tx.Model(&models.User{}).Where("id = ?", user.ID).Update("legal_consent_revoked_at", nil).Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存协议确认失败"})
+		return
+	}
+	if err := h.db.First(&user, user.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新授权状态失败"})
+		return
+	}
+	response, err := selfUserResponseForDB(h.db, user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
+	middleware.InvalidateTokenVersionCache(user.ID)
+	c.JSON(http.StatusOK, gin.H{"message": "已确认协议与隐私政策", "user": response})
 }
 
 // deleteIncompleteRegistrationUser 清理注册链路中未完成的账号及其授权留痕。

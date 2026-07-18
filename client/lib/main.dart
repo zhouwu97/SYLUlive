@@ -257,6 +257,8 @@ Future<void> main() async {
 
       await Hive.initFlutter();
 
+      PushSettingsService.configureRemoteRegistration(setupJPush);
+
       try {
         final deletedCount = await PostCacheService.clearLegacyCache();
         if (deletedCount > 0) {
@@ -471,10 +473,14 @@ void _processPendingNotificationOpen() {
   }
 }
 
-Future<void> setupJPush(AuthProvider authProvider) async {
+Future<RemotePushEnableResult> setupJPush(AuthProvider authProvider) async {
   if (!await PushSettingsService.isEnabled()) {
     debugPrint('推送未主动启用，跳过 JPush 初始化');
-    return;
+    return const RemotePushEnableResult(
+      permissionGranted: false,
+      registrationSucceeded: false,
+      message: '推送未开启',
+    );
   }
   if (ApiConstants.jpushAppKey.isEmpty) {
     DiagnosticLogService.instance.record(
@@ -484,7 +490,11 @@ Future<void> setupJPush(AuthProvider authProvider) async {
       summary: 'JPUSH_APP_KEY 为空，已跳过初始化',
       detail: '请通过 --dart-define=JPUSH_APP_KEY 注入或设置默认值',
     );
-    return;
+    return const RemotePushEnableResult(
+      permissionGranted: false,
+      registrationSucceeded: false,
+      message: '推送配置缺失，设备注册失败，请稍后重试',
+    );
   }
 
   _ensureJPushHandlersRegistered();
@@ -498,21 +508,36 @@ Future<void> setupJPush(AuthProvider authProvider) async {
 
   final rid = await jpush.getRegistrationID();
 
-  if (rid.isNotEmpty) {
-    final result = await authProvider.updatePushSettings(
-      enabled: true,
-      installationId: await PushSettingsService.installationId(),
-      registrationId: rid,
-      noticeVersion: PushSettingsService.noticeVersion,
+  if (rid.isEmpty) {
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: false,
+      message: '推送设置已保存，设备注册尚未完成',
     );
-    if (!result.success) {
-      debugPrint('推送设置上传失败: ${result.errorMessage}');
-      return;
-    }
+  }
+  final result = await authProvider.updatePushSettings(
+    enabled: true,
+    installationId: await PushSettingsService.installationId(),
+    registrationId: rid,
+    noticeVersion: PushSettingsService.noticeVersion,
+  );
+  if (!result.success) {
+    debugPrint('推送设置上传失败: ${result.errorMessage}');
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: false,
+      message: '推送设置已保存，设备登记失败，请稍后重试',
+    );
   }
 
   final userId = authProvider.user?.id;
-  if (userId == null) return;
+  if (userId == null) {
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: true,
+      message: '已开启远程消息推送',
+    );
+  }
 
   final userIdStr = userId.toString();
 
@@ -525,7 +550,17 @@ Future<void> setupJPush(AuthProvider authProvider) async {
     );
   } catch (e) {
     debugPrint('同步 Alias 到原生层失败: $e');
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: false,
+      message: '推送设置已保存，设备绑定失败，请稍后重试',
+    );
   }
+  return const RemotePushEnableResult(
+    permissionGranted: true,
+    registrationSucceeded: true,
+    message: '已开启远程消息推送',
+  );
 }
 
 Future<void> _initializePrivateMessageNotifications() async {
@@ -1397,9 +1432,11 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
     _jpushSettingUp = true;
     try {
-      await setupJPush(authProvider);
-      _jpushSetup = true;
-      debugPrint('✅ JPush 初始化成功');
+      final result = await setupJPush(authProvider);
+      _jpushSetup = result.registrationSucceeded;
+      debugPrint(
+        result.registrationSucceeded ? '✅ JPush 初始化成功' : result.message,
+      );
     } catch (e, stack) {
       debugPrint('JPush 初始化失败，将在下次恢复时重试: $e');
       debugPrintStack(stackTrace: stack);

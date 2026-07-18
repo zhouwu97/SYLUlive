@@ -86,13 +86,14 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       return;
     }
     final dialogContext = widget.navigatorKey.currentState?.overlay?.context;
-    if (dialogContext == null) return;
+    if (dialogContext == null) {
+      _presentedOptionalVersion = null;
+      _retryOptionalDialogLater();
+      return;
+    }
     final navigator = widget.navigatorKey.currentState;
     if (navigator == null || navigator.canPop()) {
-      _optionalRetryTimer ??= Timer(const Duration(milliseconds: 350), () {
-        _optionalRetryTimer = null;
-        _showOptionalDialog();
-      });
+      _retryOptionalDialogLater();
       return;
     }
     _optionalDialogVisible = true;
@@ -121,6 +122,13 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       case null:
         await coordinator.deferOptionalUpdate();
     }
+  }
+
+  void _retryOptionalDialogLater() {
+    _optionalRetryTimer ??= Timer(const Duration(seconds: 2), () {
+      _optionalRetryTimer = null;
+      _showOptionalDialog();
+    });
   }
 }
 

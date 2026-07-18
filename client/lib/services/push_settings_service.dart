@@ -35,6 +35,8 @@ class PushSettingsService {
   static final FlutterLocalNotificationsPlugin _permissionPlugin =
       FlutterLocalNotificationsPlugin();
   static RemotePushRegistration? _registrationHandler;
+  static Future<RemotePushEnableResult>? _registrationFuture;
+  static String? _registrationUserId;
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -60,6 +62,52 @@ class PushSettingsService {
 
   static void configureRemoteRegistration(RemotePushRegistration handler) {
     _registrationHandler = handler;
+    _registrationFuture = null;
+    _registrationUserId = null;
+  }
+
+  /// 同步原生层的主动选择状态，必须先于 JPush 初始化执行。
+  static Future<void> setNativePushOptIn(bool enabled) async {
+    await _aliasChannel.invokeMethod<void>(
+      'setPushOptIn',
+      {'enabled': enabled},
+    );
+  }
+
+  /// 同一账号的注册请求共享 Future，避免设置页和生命周期恢复重复初始化 JPush。
+  /// 注册失败时清理 Future，保留后续重试能力。
+  static Future<RemotePushEnableResult> registerOnce(AuthProvider auth) {
+    final userId = auth.user?.id.toString();
+    final existing = _registrationFuture;
+    if (existing != null && _registrationUserId == userId) {
+      return existing;
+    }
+
+    final handler = _registrationHandler;
+    if (handler == null) {
+      return Future.value(const RemotePushEnableResult(
+        permissionGranted: false,
+        registrationSucceeded: false,
+        message: '推送设置已保存，设备注册尚未完成',
+      ));
+    }
+
+    final future = Future<RemotePushEnableResult>(() => handler(auth));
+    _registrationFuture = future;
+    _registrationUserId = userId;
+    future.then((result) {
+      if (!result.registrationSucceeded &&
+          identical(_registrationFuture, future)) {
+        _registrationFuture = null;
+        _registrationUserId = null;
+      }
+    }, onError: (_, __) {
+      if (identical(_registrationFuture, future)) {
+        _registrationFuture = null;
+        _registrationUserId = null;
+      }
+    });
+    return future;
   }
 
   /// 用户主动开启远程推送时完成权限申请、设备注册和服务端登记。
@@ -72,16 +120,8 @@ class PushSettingsService {
       permissionGranted = await requestSystemNotificationPermission();
     } catch (_) {}
 
-    final handler = _registrationHandler;
-    if (handler == null) {
-      return RemotePushEnableResult(
-        permissionGranted: permissionGranted,
-        registrationSucceeded: false,
-        message: permissionGranted ? '推送设置已保存，设备注册尚未完成' : '已记录推送选择，但通知权限未允许',
-      );
-    }
     try {
-      final result = await handler(auth);
+      final result = await registerOnce(auth);
       if (!permissionGranted && result.registrationSucceeded) {
         return const RemotePushEnableResult(
           permissionGranted: false,
@@ -132,6 +172,8 @@ class PushSettingsService {
       noticeVersion: noticeVersion,
     );
     if (!result.success) return result;
+    _registrationFuture = null;
+    _registrationUserId = null;
     final prefs = await _prefs();
     await prefs.setBool(enabledKey, false);
     try {
@@ -143,6 +185,8 @@ class PushSettingsService {
   }
 
   static Future<void> clearLocal() async {
+    _registrationFuture = null;
+    _registrationUserId = null;
     final prefs = await _prefs();
     await prefs.setBool(enabledKey, false);
     try {

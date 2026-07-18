@@ -95,9 +95,14 @@ class AppUpdateCoordinator extends ChangeNotifier {
   DateTime? _lastSuccessfulCheckAt;
   bool _initialized = false;
   bool _checking = false;
-  bool _requiredLatched = false;
+  bool _requiredByApi426 = false;
+  bool _requiredByServer = false;
+  bool _requiredByCache = false;
   Future<void>? _deferredInitialCheck;
   CancelToken? _downloadCancelToken;
+
+  bool get _requiredLatched =>
+      _requiredByApi426 || _requiredByServer || _requiredByCache;
 
   AppUpdatePhase get phase => _phase;
   AppUpdateInfo? get info => _info;
@@ -142,11 +147,10 @@ class AppUpdateCoordinator extends ChangeNotifier {
       final cached = await _cache.read();
       if (cached != null) {
         _lastSuccessfulCheckAt = cached.checkedAt;
-        if (!_requiredLatched &&
-            cached.info.updateType == AppUpdateType.required &&
+        if (cached.info.updateType == AppUpdateType.required &&
             headers.versionCode < cached.info.minimumSupportedVersionCode) {
           _info = cached.info;
-          _requiredLatched = true;
+          _requiredByCache = true;
           _phase = AppUpdatePhase.required;
           notifyListeners();
         }
@@ -188,11 +192,13 @@ class AppUpdateCoordinator extends ChangeNotifier {
       // 缓存故障不能影响已经从服务端获得的有效策略；下一次成功检查会覆盖它。
       unawaited(_cache.write(info, _lastSuccessfulCheckAt!).catchError((_) {}));
 
-      if (info.updateType == AppUpdateType.required) {
-        _requiredLatched = true;
-      }
-      if (_requiredLatched) {
+      // 成功的服务端响应会覆盖旧缓存策略；只有 426 需要在当前进程中永久锁存。
+      _requiredByCache = false;
+      _requiredByServer = info.updateType == AppUpdateType.required;
+      if (_requiredByApi426) {
         // 426 已由业务接口确认当前版本不可用，任何后续响应都不能解除门禁。
+        _phase = AppUpdatePhase.required;
+      } else if (_requiredByServer) {
         _phase = AppUpdatePhase.required;
       } else {
         switch (info.updateType) {
@@ -211,7 +217,10 @@ class AppUpdateCoordinator extends ChangeNotifier {
       _errorMessage = _errorText(error);
       // 已锁存的 required 策略（缓存、服务端响应或 426）不能因临时网络错误放行；
       // 其余首次检查失败默认进入应用，避免普通网络故障阻断本地可用功能。
-      if (!_requiredLatched && _phase != AppUpdatePhase.required) {
+      if (!_requiredByApi426 &&
+          !_requiredByServer &&
+          !_requiredByCache &&
+          _phase != AppUpdatePhase.required) {
         _phase = AppUpdatePhase.allowed;
       }
     } finally {
@@ -222,7 +231,7 @@ class AppUpdateCoordinator extends ChangeNotifier {
 
   /// 业务接口返回 426 时立即进入强制门禁，并后台重拉完整发布信息。
   void requireUpdateFromApi() {
-    _requiredLatched = true;
+    _requiredByApi426 = true;
     _phase = AppUpdatePhase.required;
     notifyListeners();
     unawaited(check(force: true));
@@ -238,19 +247,21 @@ class AppUpdateCoordinator extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (_requiredLatched) return;
+    if (_requiredByApi426) return;
     await check();
   }
 
   Future<void> deferOptionalUpdate() async {
-    if (_requiredLatched || _info?.updateType != AppUpdateType.optional) return;
+    if (_requiredByApi426 || _info?.updateType != AppUpdateType.optional) {
+      return;
+    }
     _phase = AppUpdatePhase.allowed;
     notifyListeners();
   }
 
   Future<void> ignoreOptionalUpdate() async {
     final info = _info;
-    if (_requiredLatched ||
+    if (_requiredByApi426 ||
         info == null ||
         info.updateType != AppUpdateType.optional) {
       return;

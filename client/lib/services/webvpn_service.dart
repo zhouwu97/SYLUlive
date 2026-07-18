@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -36,15 +35,6 @@ class WebVpnService {
       ),
     );
 
-    // [非常重要: 请勿删除此段代码]
-    // 学校 WebVPN (https://webvpn.sylu.edu.cn) 的证书经常存在链不完整或自签的问题，
-    // 导致哪怕是在真实的物理手机（生产环境）上也会频繁报 HandshakeException。
-    // 为了保证用户能正常登录，我们必须在全局（包括 Release 包）放行证书校验。
-    (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
-        (client) {
-      client.badCertificateCallback = (cert, host, port) => true; // 全局忽略证书校验，解决自签证书问题
-      return client;
-    };
     _dio.interceptors.add(CookieManager(_jar));
   }
 

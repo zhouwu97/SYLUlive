@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../screens/user_home_screen.dart';
 import '../screens/post_detail_screen.dart';
+import '../screens/poll/poll_detail_screen.dart';
 
 class AppNavigation {
   static Future<T?> openUserHome<T>(
@@ -27,9 +28,8 @@ class AppNavigation {
       context,
       MaterialPageRoute(
         settings: RouteSettings(name: '/post/${post.id}'),
-        builder: (detailContext) => PostDetailScreen(
-          postId: post.id,
-          initialPost: post,
+        builder: (detailContext) => _buildDetail(
+          post,
           isMarket: isMarket,
           onAuthorTap: (authorId) {
             if (sourceUserId != null && authorId == sourceUserId) {
@@ -39,6 +39,26 @@ class AppNavigation {
           },
         ),
       ),
+    );
+  }
+
+  static Widget _buildDetail(
+    Post post, {
+    required bool isMarket,
+    required ValueChanged<int> onAuthorTap,
+  }) {
+    if (post.isPoll) {
+      return PollDetailScreen(
+        pollId: post.pollMeta!.id,
+        initialPost: post,
+        onAuthorTap: onAuthorTap,
+      );
+    }
+    return PostDetailScreen(
+      postId: post.id,
+      initialPost: post,
+      isMarket: isMarket,
+      onAuthorTap: onAuthorTap,
     );
   }
 }

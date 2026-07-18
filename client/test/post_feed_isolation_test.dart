@@ -318,7 +318,7 @@ void main() {
         jsonDecode(box.get('board_777_time__')!) as Map<String, dynamic>;
     final cachedAuthor = ((stored['posts'] as List).single
         as Map<String, dynamic>)['author'] as Map<String, dynamic>;
-    expect(stored['schema_version'], 5);
+    expect(stored['schema_version'], 6);
     expect(cachedAuthor.containsKey('student_id'), isFalse);
     expect(cachedAuthor['credit_score'], 88);
     expect(cachedAuthor.containsKey('report_count'), isFalse);
@@ -888,7 +888,7 @@ void main() {
     await provider.refresh(boardId: 1, sort: 'all');
 
     expect(requests.length, 1);
-    expect(requests.first.queryParameters['feed_version'], 2);
+    expect(requests.first.queryParameters['feed_version'], 3);
     expect(provider.pinnedPostsFor(1, sort: 'all').length, 1);
     expect(provider.pinnedPostsFor(1, sort: 'all').first.id, 2);
   });
@@ -941,7 +941,7 @@ void main() {
   });
 
   test(
-      'clearLegacyCache removes schema 3, empty string, and corrupt json but keeps schema 5',
+      'clearLegacyCache removes schema 3, empty string, and corrupt json but keeps schema 6',
       () async {
     final box = await Hive.openBox<String>('post_cache');
 
@@ -961,11 +961,11 @@ void main() {
           'posts': [],
         }));
 
-    // Insert valid schema 5 data
+    // Insert valid schema 6 data
     await box.put(
-        'schema5',
+      'schema6',
         jsonEncode({
-          'schema_version': 5,
+          'schema_version': 6,
           'algorithm_version': 'home_time_v2',
           'saved_at': DateTime.now().toUtc().toIso8601String(),
           'posts': [],
@@ -977,6 +977,6 @@ void main() {
     expect(box.get('corrupt'), isNull);
     expect(box.get('empty'), isNull);
     expect(box.get('schema3'), isNull);
-    expect(box.get('schema5'), isNotNull);
+    expect(box.get('schema6'), isNotNull);
   });
 }

@@ -470,7 +470,7 @@ func (h *WaterSectionHandler) fillSectionStats(resps []waterSectionResponse) []w
 	var postCounts []postCountResult
 	h.db.Model(&models.Post{}).
 		Select("post_type, COUNT(*) as count").
-		Where("board_id = ? AND post_type IN ? AND status = ?", models.BoardShuitie, slugs, models.PostStatusNormal).
+		Where("board_id = ? AND content_kind <> ? AND post_type IN ? AND status = ?", models.BoardShuitie, models.PostContentKindPoll, slugs, models.PostStatusNormal).
 		Group("post_type").
 		Scan(&postCounts)
 

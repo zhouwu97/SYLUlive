@@ -4,11 +4,15 @@ import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
+import '../providers/poll_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
+import '../utils/post_route.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/community_post_card.dart';
+import '../widgets/poll/poll_post_card.dart';
 import 'create_post_screen.dart';
-import 'post_detail_screen.dart';
+import 'poll/poll_composer_screen.dart';
 import 'dart:io' show File;
 
 /// 我的内容管理页面
@@ -153,6 +157,17 @@ class _MyContentScreenState extends State<MyContentScreen>
     final errors = <String>[];
 
     for (final id in _selectedIds.toList()) {
+      final post = [..._myPosts, ..._myMarketPosts].where((item) => item.id == id).firstOrNull;
+      if (post?.isPoll == true) {
+        final deleted = await context.read<PollProvider>().deletePoll(post!.pollMeta!.id);
+        if (deleted) {
+          deletedCount++;
+          _myPosts.removeWhere((p) => p.id == id);
+        } else {
+          errors.add(context.read<PollProvider>().mutationError(post.pollMeta!.id) ?? '删除投票失败');
+        }
+        continue;
+      }
       final result = await postProvider.deletePostDetailed(id);
       if (result.success) {
         deletedCount++;
@@ -187,22 +202,18 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   Future<void> _openPostDetail(Post post, {bool isMarket = false}) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PostDetailScreen(
-          postId: post.id,
-          isMarket: isMarket,
-          initialPost: post,
-        ),
-      ),
-    );
+    await Navigator.push(context, buildPostDetailRoute(post, isMarket: isMarket));
     if (mounted) {
       await _loadData(silent: true);
     }
   }
 
   Future<void> _editPost(Post post) async {
+    if (post.isPoll) {
+      final updated = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => PollComposerScreen(editingPost: post)));
+      if (updated == true && mounted) await _loadData(silent: true);
+      return;
+    }
     final updated = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -423,6 +434,14 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   Widget _buildPostItem(Post post, bool isDark) {
+    if (post.isPoll && !_isSelectionMode) {
+      return Column(
+        children: [
+          CommunityPostCard(post: post, pollVariant: PollCardVariant.profileCompact, onTap: () => _openPostDetail(post)),
+          Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () => _editPost(post), icon: const Icon(Icons.edit_outlined), label: const Text('编辑'))),
+        ],
+      );
+    }
     final isSelected = _selectedIds.contains(post.id);
     return GlassContainer(
       margin: const EdgeInsets.only(bottom: 10),

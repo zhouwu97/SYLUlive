@@ -178,7 +178,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		awards = append(awards, *globalAward)
 	}
 
-	if post.BoardID == models.BoardShuitie && post.PostType != "" {
+	if post.BoardID == models.BoardShuitie && post.ContentKind != models.PostContentKindPoll && post.PostType != "" {
 		var section models.WaterSection
 		if secErr := h.db.Where("slug = ?", post.PostType).First(&section).Error; secErr == nil && section.ID != 0 {
 			secAwarded, secAward, secErr := services.AwardDailySectionExp(h.db, userID.(uint), section.ID, section.Slug, section.Title, services.GlobalActionReplyDaily, services.GlobalExpReplyDaily, "reply", reply.ID)

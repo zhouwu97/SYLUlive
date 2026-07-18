@@ -28,7 +28,10 @@ func TestNormalizeMarketContact(t *testing.T) {
 		{name: "QQ", boardID: models.BoardMarket, contactType: "qq", contact: "123456789", wantType: models.MarketContactTypeQQ, wantContact: "123456789"},
 		{name: "电话", boardID: models.BoardMarket, contactType: "phone", contact: "+86 138-0013-8000", wantType: models.MarketContactTypePhone, wantContact: "+86 138-0013-8000"},
 		{name: "全部为空", boardID: models.BoardMarket},
-		{name: "缺少类型", boardID: models.BoardMarket, contact: "wx123", wantError: "请选择联系方式类型"},
+		{name: "旧客户端微信", boardID: models.BoardMarket, contact: "微信：wx123", wantType: models.MarketContactTypeWeChat, wantContact: "wx123"},
+		{name: "旧客户端QQ后缀", boardID: models.BoardMarket, contact: "123456789（QQ）", wantType: models.MarketContactTypeQQ, wantContact: "123456789"},
+		{name: "旧客户端纯账号", boardID: models.BoardMarket, contact: "wx123", wantType: models.MarketContactTypeOther, wantContact: "wx123"},
+		{name: "旧客户端纯数字", boardID: models.BoardMarket, contact: "123456789", wantType: models.MarketContactTypeOther, wantContact: "123456789"},
 		{name: "缺少账号", boardID: models.BoardMarket, contactType: "wechat", wantError: "请输入微信号"},
 		{name: "非法类型", boardID: models.BoardMarket, contactType: "other", contact: "abc", wantError: "不支持的联系方式类型"},
 		{name: "微信格式", boardID: models.BoardMarket, contactType: "wechat", contact: "微信abc", wantError: "微信号格式不正确"},
@@ -114,16 +117,60 @@ func TestCreateAndUpdateMarketPostContact(t *testing.T) {
 	}
 }
 
-func TestCreateMarketPostRejectsContactWithoutType(t *testing.T) {
+func TestLegacyClientCreateAndUpdateMarketPostContact(t *testing.T) {
 	db := newMarketTagsTestDB(t)
 	user := createMarketTagsTestUser(t, db, "20260719")
+	handler := NewPostHandler(db, "", "")
+
+	createForm := url.Values{
+		"board_id":  {"2"},
+		"title":     {"旧客户端发布"},
+		"content":   {"测试内容"},
+		"post_type": {"sell"},
+		"contact":   {"微信：legacy_wx"},
+	}
+	recorder := performMarketContactRequest(t, handler.Create, user.ID, 0, createForm)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("legacy create status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var created models.Post
+	if err := json.Unmarshal(recorder.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode legacy create response: %v", err)
+	}
+	if created.ContactType != models.MarketContactTypeWeChat || created.Contact != "legacy_wx" {
+		t.Fatalf("legacy created contact=(%q, %q)", created.ContactType, created.Contact)
+	}
+
+	updateForm := url.Values{
+		"title":     {"旧客户端编辑"},
+		"content":   {"更新内容"},
+		"post_type": {"sell"},
+		"contact":   {"unrecognized_account"},
+	}
+	recorder = performMarketContactRequest(t, handler.Update, user.ID, created.ID, updateForm)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("legacy update status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var updated models.Post
+	if err := json.Unmarshal(recorder.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode legacy update response: %v", err)
+	}
+	if updated.ContactType != models.MarketContactTypeOther || updated.Contact != "unrecognized_account" {
+		t.Fatalf("legacy updated contact=(%q, %q)", updated.ContactType, updated.Contact)
+	}
+}
+
+func TestCreateMarketPostRejectsExplicitInvalidContactType(t *testing.T) {
+	db := newMarketTagsTestDB(t)
+	user := createMarketTagsTestUser(t, db, "20260720")
 	form := url.Values{
-		"board_id": {"2"},
-		"content":  {"测试内容"},
-		"contact":  {"wx123"},
+		"board_id":     {"2"},
+		"content":      {"测试内容"},
+		"contact_type": {"invalid"},
+		"contact":      {"wx123"},
 	}
 	recorder := performMarketContactRequest(t, NewPostHandler(db, "", "").Create, user.ID, 0, form)
-	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "请选择联系方式类型") {
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "不支持的联系方式类型") {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

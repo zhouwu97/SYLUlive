@@ -24,7 +24,7 @@ func BackfillLegacyMarketContacts(db *gorm.DB) error {
 
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, post := range posts {
-			contactType, contact := parseLegacyMarketContact(post.Contact)
+			contactType, contact := ParseLegacyMarketContact(post.Contact)
 			if err := tx.Model(&Post{}).Where("id = ? AND (contact_type IS NULL OR contact_type = ?)", post.ID, "").
 				Updates(map[string]interface{}{
 					"contact_type": contactType,
@@ -37,7 +37,9 @@ func BackfillLegacyMarketContacts(db *gorm.DB) error {
 	})
 }
 
-func parseLegacyMarketContact(raw string) (MarketContactType, string) {
+// ParseLegacyMarketContact 解析旧客户端或历史数据中的联系方式文本。
+// 无法可靠识别类型时保留原文，并标记为 other。
+func ParseLegacyMarketContact(raw string) (MarketContactType, string) {
 	trimmed := strings.TrimSpace(raw)
 	if matches := legacyMarketContactPrefix.FindStringSubmatch(trimmed); len(matches) == 3 {
 		if contact := strings.TrimSpace(matches[2]); contact != "" {

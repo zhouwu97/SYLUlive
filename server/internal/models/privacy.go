@@ -21,12 +21,15 @@ const (
 
 // UserLegalConsent 保存用户对每一份法律文件版本的明确同意，不保存密码或设备标识。
 type UserLegalConsent struct {
-	ID         uint       `gorm:"primaryKey" json:"id"`
-	UserID     uint       `gorm:"not null;uniqueIndex:idx_user_legal_document_version" json:"user_id"`
-	Document   string     `gorm:"size:64;not null;uniqueIndex:idx_user_legal_document_version" json:"document"`
-	Version    string     `gorm:"size:32;not null;uniqueIndex:idx_user_legal_document_version" json:"version"`
-	AcceptedAt time.Time  `gorm:"not null" json:"accepted_at"`
-	RevokedAt  *time.Time `gorm:"index" json:"revoked_at,omitempty"`
+	ID                  uint       `gorm:"primaryKey" json:"id"`
+	UserID              uint       `gorm:"not null;uniqueIndex:idx_user_legal_document_version" json:"user_id"`
+	Document            string     `gorm:"size:64;not null;uniqueIndex:idx_user_legal_document_version" json:"document"`
+	Version             string     `gorm:"size:32;not null;uniqueIndex:idx_user_legal_document_version" json:"version"`
+	AcceptedAt          time.Time  `gorm:"not null" json:"accepted_at"`
+	RevokedAt           *time.Time `gorm:"index" json:"revoked_at,omitempty"`
+	AcknowledgementType string     `gorm:"size:32;default:'separate_consent'" json:"acknowledgement_type"`
+	Scope               string     `gorm:"size:64" json:"scope,omitempty"`
+	Scene               string     `gorm:"size:64" json:"scene,omitempty"`
 }
 
 // LegalConsentState 区分正常授权、需确认新版协议和主动撤销，避免客户端猜测状态。
@@ -43,15 +46,16 @@ func RequiredLegalDocuments(includeEduConsent bool) []string {
 	documents := []string{
 		LegalDocumentUserAgreement,
 		LegalDocumentPrivacyPolicy,
-		LegalDocumentCommunityRules,
-		LegalDocumentMinorProtection,
-		LegalDocumentContentComplaint,
-		LegalDocumentSDKDisclosure,
 	}
 	if includeEduConsent {
 		documents = append(documents, LegalDocumentEduDataConsent)
 	}
 	return documents
+}
+
+// FunctionalLegalDocuments 描述需要在具体写操作前单独确认的文件，不参与基础登录门禁。
+func FunctionalLegalDocuments() []string {
+	return []string{LegalDocumentCommunityRules, LegalDocumentContentComplaint, LegalDocumentSDKDisclosure}
 }
 
 // LegalConsentStateForUser 以当前版本的有效授权记录作为服务端唯一真值。

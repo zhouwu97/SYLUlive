@@ -265,6 +265,32 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	// 新推送授权默认关闭，旧 Token 不得被视为用户已主动同意。
+	if err := db.Model(&models.User{}).
+		Where("push_data_processing_enabled = ?", false).
+		Updates(map[string]interface{}{
+			"device_token":         "",
+			"push_installation_id": "",
+			"push_notice_version":  "",
+			"push_enabled_at":      nil,
+		}).Error; err != nil {
+		log.Fatal("历史推送 Token 清理失败:", err)
+	}
+	// 旧客户端的一次性六项确认只保留为历史捆绑证据，不能升级成独立功能授权。
+	if err := db.Model(&models.UserLegalConsent{}).
+		Where("document IN ? AND acknowledgement_type <> ?", []string{
+			models.LegalDocumentCommunityRules,
+			models.LegalDocumentMinorProtection,
+			models.LegalDocumentContentComplaint,
+			models.LegalDocumentSDKDisclosure,
+		}, "rules_acceptance").
+		Updates(map[string]interface{}{
+			"acknowledgement_type": "legacy_bundled",
+			"scope":                "legacy",
+			"scene":                "migration",
+		}).Error; err != nil {
+		log.Fatal("历史捆绑授权标记失败:", err)
+	}
 	if err := models.BackfillLegacyMarketContacts(db); err != nil {
 		log.Fatal("历史集市联系方式回填失败:", err)
 	}
@@ -375,6 +401,10 @@ func main() {
 		c.Next()
 
 	})
+
+	// 法律页面无需登录和客户端版本头，供浏览器、下载页和分享页访问。
+	r.StaticFile("/terms", filepath.Join("static", "legal", "terms.html"))
+	r.StaticFile("/privacy", filepath.Join("static", "legal", "privacy.html"))
 
 	// 最低支持版本拦截位于 CORS 之后、业务路由之前。公开更新接口和迁移期
 	// 登录接口由中间件内部放行，避免用户在被拦截后无法获得新安装包。
@@ -652,14 +682,17 @@ func main() {
 		user.PUT("/nightmode", userHandler.UpdateNightMode)
 
 		user.PUT("/device_token", userHandler.UpdateDeviceToken)
+		user.PUT("/push-settings", userHandler.UpdatePushSettings)
 
 		user.POST("/legal-consents", authHandler.AcceptLegalConsents)
+		user.POST("/community-rules", authHandler.AcceptCommunityRules)
 		user.GET("/privacy/data", privacyHandler.GetMyData)
 		user.POST("/privacy/requests", privacyHandler.CreateRequest)
 		user.GET("/privacy/requests", privacyHandler.ListMyRequests)
 		user.GET("/privacy/export", privacyHandler.ExportMyData)
 		user.DELETE("/privacy/consents", privacyHandler.WithdrawConsent)
 		user.DELETE("/account", privacyHandler.CancelAccount)
+		user.DELETE("/edu-binding", privacyHandler.UnbindEdu)
 
 		user.GET("/invitations", invitationHandler.GetPending)
 

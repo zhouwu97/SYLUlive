@@ -21,22 +21,26 @@ const (
 
 // User 用户模型
 type User struct {
-	ID           uint   `gorm:"primaryKey" json:"id"`
-	StudentID    string `gorm:"uniqueIndex;size:50;not null" json:"student_id"` // 学号/邮箱
-	PasswordHash string `gorm:"size:255;not null" json:"-"`                     // 密码哈希
-	Nickname     string `gorm:"size:100" json:"nickname"`                       // 昵称
-	Gender       string `gorm:"size:10" json:"gender"`                          // "male"/"female"/"" (未知)
-	Avatar       string `gorm:"size:500" json:"avatar"`                         // 头像URL
-	Background   string `gorm:"size:500" json:"background"`                     // 背景图URL
-	NightMode    bool   `gorm:"default:false" json:"night_mode"`                // 夜间模式
-	TokenVersion int    `gorm:"default:0" json:"-"`                             // 令牌版本号（用于改密码后强制下线）
-	CreditScore  int    `gorm:"default:100;index" json:"credit_score"`          // 诚信度 0-100
-	Role         Role   `gorm:"size:20;default:'user';index" json:"role"`       // 角色
-	AdminExp     int    `gorm:"default:0" json:"admin_exp"`                     // 管理员经验
-	Exp          int    `gorm:"default:0" json:"exp"`                           // 用户经验值（签到等获得）
-	ReportCount  int    `gorm:"default:0;index" json:"report_count"`            // 90天内举报数
-	QQ           string `gorm:"size:20" json:"qq"`                              // QQ号
-	DeviceToken  string `gorm:"size:255" json:"-"`                              // 极光 RegistrationID
+	ID                        uint       `gorm:"primaryKey" json:"id"`
+	StudentID                 string     `gorm:"uniqueIndex;size:50;not null" json:"student_id"` // 学号/邮箱
+	PasswordHash              string     `gorm:"size:255;not null" json:"-"`                     // 密码哈希
+	Nickname                  string     `gorm:"size:100" json:"nickname"`                       // 昵称
+	Gender                    string     `gorm:"size:10" json:"gender"`                          // "male"/"female"/"" (未知)
+	Avatar                    string     `gorm:"size:500" json:"avatar"`                         // 头像URL
+	Background                string     `gorm:"size:500" json:"background"`                     // 背景图URL
+	NightMode                 bool       `gorm:"default:false" json:"night_mode"`                // 夜间模式
+	TokenVersion              int        `gorm:"default:0" json:"-"`                             // 令牌版本号（用于改密码后强制下线）
+	CreditScore               int        `gorm:"default:100;index" json:"credit_score"`          // 诚信度 0-100
+	Role                      Role       `gorm:"size:20;default:'user';index" json:"role"`       // 角色
+	AdminExp                  int        `gorm:"default:0" json:"admin_exp"`                     // 管理员经验
+	Exp                       int        `gorm:"default:0" json:"exp"`                           // 用户经验值（签到等获得）
+	ReportCount               int        `gorm:"default:0;index" json:"report_count"`            // 90天内举报数
+	QQ                        string     `gorm:"size:20" json:"qq"`                              // QQ号
+	DeviceToken               string     `gorm:"size:255" json:"-"`                              // 极光 RegistrationID
+	PushDataProcessingEnabled bool       `gorm:"default:false;index" json:"-"`                   // 是否主动开启远程推送数据处理
+	PushInstallationID        string     `gorm:"size:128" json:"-"`                              // 当前活跃安装实例
+	PushNoticeVersion         string     `gorm:"size:64" json:"-"`                               // 用户确认的推送告知版本
+	PushEnabledAt             *time.Time `json:"-"`                                              // 最近一次开启时间
 	// LegalConsentRevokedAt 非空时，账号仅可使用隐私权利与退出相关功能。
 	LegalConsentRevokedAt *time.Time `gorm:"index" json:"-"`
 

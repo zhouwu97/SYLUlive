@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../providers/auth_provider.dart';
 import '../widgets/required_legal_consent_dialog.dart';
+import '../services/push_settings_service.dart';
 import 'legal_documents_screen.dart';
 
 class PrivacyCenterScreen extends StatefulWidget {
@@ -26,33 +27,144 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   bool _loadingData = false;
   bool _exporting = false;
   bool _revoking = false;
+  bool _pushEnabled = false;
+  bool _pushLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadRequests();
+    PushSettingsService.isEnabled().then((enabled) {
+      if (mounted)
+        setState(() {
+          _pushEnabled = enabled;
+          _pushLoading = false;
+        });
+    });
   }
 
   Future<void> _loadRequests() async {
-    if (mounted) setState(() => _loadingRequests = true);
     try {
       final response =
           await context.read<AuthProvider>().dio.get('/user/privacy/requests');
       final items = response.data is Map ? response.data['items'] : null;
-      if (!mounted) return;
-      setState(() {
-        _requests = items is List
-            ? items
-                .whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList(growable: false)
-            : const [];
+      if (mounted) {
+        setState(() {
+          _requests = items is List
+              ? items
+                  .whereType<Map>()
+                  .map((item) => Map<String, dynamic>.from(item))
+                  .toList()
+              : const [];
+          _loadingRequests = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingRequests = false);
+    }
+  }
+
+  Future<void> _showRequestDialog() async {
+    var requestType = 'correction';
+    final detailController = TextEditingController();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => AlertDialog(
+          title: const Text('申请更正或删除'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            DropdownButtonFormField<String>(
+              initialValue: requestType,
+              items: const [
+                DropdownMenuItem(value: 'correction', child: Text('更正个人信息')),
+                DropdownMenuItem(value: 'deletion', child: Text('删除个人信息或内容')),
+              ],
+              onChanged: (value) =>
+                  setDialogState(() => requestType = value ?? 'correction'),
+            ),
+            TextField(
+                controller: detailController, maxLength: 500, maxLines: 3),
+          ]),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('提交')),
+          ],
+        ),
+      ),
+    );
+    if (submitted != true) {
+      detailController.dispose();
+      return;
+    }
+    try {
+      await context
+          .read<AuthProvider>()
+          .dio
+          .post('/user/privacy/requests', data: {
+        'request_type': requestType,
+        'detail': detailController.text.trim(),
       });
+      _showMessage('请求已提交');
+      await _loadRequests();
     } on DioException catch (error) {
       _showMessage(_errorMessage(error));
     } finally {
-      if (mounted) setState(() => _loadingRequests = false);
+      detailController.dispose();
     }
+  }
+
+  Future<void> _showRequestHistory() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text('个人信息请求记录',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          if (_requests.isEmpty)
+            const Text('暂无个人信息请求记录')
+          else
+            ..._requests.map((request) => ListTile(
+                  title: Text(request['request_type']?.toString() ?? '请求'),
+                  subtitle: Text(
+                      request['result']?.toString().isNotEmpty == true
+                          ? request['result'].toString()
+                          : request['status']?.toString() ?? 'pending'),
+                )),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setPushEnabled(bool enabled) async {
+    if (_pushLoading) return;
+    setState(() => _pushLoading = true);
+    final auth = context.read<AuthProvider>();
+    if (enabled) {
+      await PushSettingsService.enable();
+      if (mounted) {
+        setState(() {
+          _pushEnabled = true;
+          _pushLoading = false;
+        });
+        _showMessage('已记录推送选择，返回前台后完成初始化');
+      }
+      return;
+    }
+    final result = await PushSettingsService.disable(auth);
+    if (!mounted) return;
+    setState(() => _pushLoading = false);
+    if (!result.success) {
+      _showMessage(result.errorMessage ?? '关闭远程推送失败');
+      return;
+    }
+    setState(() => _pushEnabled = false);
+    _showMessage('已关闭远程推送，课程和考试提醒不受影响');
   }
 
   Future<void> _showPersonalData() async {
@@ -97,75 +209,6 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
       _showMessage('导出失败，请稍后重试');
     } finally {
       if (mounted) setState(() => _exporting = false);
-    }
-  }
-
-  Future<void> _showRequestDialog() async {
-    final detailController = TextEditingController();
-    final dio = context.read<AuthProvider>().dio;
-    var requestType = 'correction';
-    final submitted = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (_, setDialogState) => AlertDialog(
-          title: const Text('提交数据权利请求'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: requestType,
-                decoration: const InputDecoration(labelText: '请求类型'),
-                items: const [
-                  DropdownMenuItem(value: 'correction', child: Text('更正个人信息')),
-                  DropdownMenuItem(value: 'deletion', child: Text('删除个人信息或内容')),
-                ],
-                onChanged: (value) =>
-                    setDialogState(() => requestType = value ?? 'correction'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: detailController,
-                maxLength: 500,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: '说明（可选）',
-                  hintText: '请说明需要更正或删除的信息、内容',
-                  alignLabelWithHint: true,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('提交'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (submitted != true) {
-      detailController.dispose();
-      return;
-    }
-    try {
-      await dio.post(
-        '/user/privacy/requests',
-        data: {
-          'request_type': requestType,
-          'detail': detailController.text.trim(),
-        },
-      );
-      _showMessage('请求已提交，可在本页跟踪处理状态');
-      await _loadRequests();
-    } on DioException catch (error) {
-      _showMessage(_errorMessage(error));
-    } finally {
-      detailController.dispose();
     }
   }
 
@@ -222,6 +265,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
       _showMessage(result.errorMessage ?? '撤销同意失败');
       return;
     }
+    await PushSettingsService.clearLocal();
     _showMessage('已撤销全部同意，相关功能已停止使用');
   }
 
@@ -275,6 +319,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
       _showMessage(result.errorMessage ?? '账号注销失败');
       return;
     }
+    await PushSettingsService.clearLocal();
     _showMessage('账号已注销');
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
@@ -310,208 +355,146 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
             ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadRequests,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-          children: [
-            if (restricted) ...[
-              _RestrictedNotice(),
-              const SizedBox(height: 20),
-            ],
-            const _SectionTitle('协议与说明'),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.policy_outlined),
-                title: const Text('查看协议、隐私政策与第三方服务说明'),
-                subtitle: const Text('包含教务数据专项授权和投诉举报规则'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => LegalDocumentsScreen.open(context),
-              ),
-            ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        children: [
+          if (restricted) ...[
+            _RestrictedNotice(),
             const SizedBox(height: 20),
-            const _SectionTitle('你的数据'),
-            const SizedBox(height: 8),
-            Card(
-              child: Column(
-                children: [
-                  ListTile(
-                    key: const ValueKey('access-personal-data'),
-                    leading: const Icon(Icons.person_search_outlined),
-                    title: const Text('查阅个人信息'),
-                    subtitle: const Text('直接查看账户资料、教务绑定和授权记录'),
-                    trailing: _loadingData
-                        ? const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.chevron_right),
-                    onTap: _loadingData ? null : _showPersonalData,
-                  ),
-                  const Divider(height: 1, indent: 56),
-                  ListTile(
-                    key: const ValueKey('export-personal-data'),
-                    leading: const Icon(Icons.ios_share_outlined),
-                    title: const Text('导出个人数据'),
-                    subtitle: const Text('生成可分享 JSON，不含认证凭证'),
-                    trailing: _exporting
-                        ? const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.chevron_right),
-                    onTap: _exporting ? null : _exportData,
-                  ),
-                ],
-              ),
+          ],
+          const _SectionTitle('协议与说明'),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.policy_outlined),
+              title: const Text('查看协议、隐私政策与第三方服务说明'),
+              subtitle: const Text('包含教务数据专项授权和投诉举报规则'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => LegalDocumentsScreen.open(context),
             ),
-            const SizedBox(height: 20),
-            const _SectionTitle('数据权利请求'),
-            const SizedBox(height: 8),
-            Card(
-              child: Column(
-                children: [
-                  if (!restricted) ...[
-                    ListTile(
-                      key: const ValueKey('create-privacy-request'),
-                      leading: const Icon(Icons.edit_note_outlined),
-                      title: const Text('申请更正或删除'),
-                      subtitle: const Text('更正资料，或申请删除特定数据、内容'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: _showRequestDialog,
-                    ),
-                    const Divider(height: 1, indent: 56),
-                  ],
-                  ListTile(
-                    key: const ValueKey('privacy-request-history'),
-                    leading: const Icon(Icons.history_outlined),
-                    title: const Text('查看处理记录'),
-                    subtitle: Text(_loadingRequests
-                        ? '正在读取请求状态'
-                        : '共 ${_requests.length} 条记录'),
-                    trailing: const Icon(Icons.expand_more),
-                    onTap: _showRequestHistory,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            if (restricted) ...[
-              const _SectionTitle('授权管理'),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  key: const ValueKey('renew-legal-consents'),
-                  leading: const Icon(Icons.verified_user_outlined),
-                  title: const Text('重新授权'),
-                  subtitle: const Text('重新确认最新协议后恢复正常使用'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _renewConsent,
-                ),
-              ),
-              const SizedBox(height: 20),
-            ] else ...[
-              const _SectionTitle('授权管理'),
-              const SizedBox(height: 8),
-              Card(
-                child: ListTile(
-                  key: const ValueKey('withdraw-legal-consents'),
-                  leading: Icon(
-                    Icons.no_accounts_outlined,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  title: const Text('撤销全部同意'),
-                  subtitle: const Text('停止社区、教务、消息等依赖授权的功能'),
-                  trailing: _revoking
+          ),
+          const SizedBox(height: 20),
+          const _SectionTitle('你的数据'),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  key: const ValueKey('access-personal-data'),
+                  leading: const Icon(Icons.person_search_outlined),
+                  title: const Text('查阅个人信息'),
+                  subtitle: const Text('直接查看账户资料、教务绑定和授权记录'),
+                  trailing: _loadingData
                       ? const SizedBox.square(
                           dimension: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.chevron_right),
-                  onTap: _revoking ? null : _withdrawConsent,
+                  onTap: _loadingData ? null : _showPersonalData,
                 ),
+                const Divider(height: 1, indent: 56),
+                ListTile(
+                  key: const ValueKey('export-personal-data'),
+                  leading: const Icon(Icons.ios_share_outlined),
+                  title: const Text('导出个人数据'),
+                  subtitle: const Text('生成可分享 JSON，不含认证凭证'),
+                  trailing: _exporting
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  onTap: _exporting ? null : _exportData,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          const _SectionTitle('数据权利请求'),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(children: [
+              ListTile(
+                key: const ValueKey('create-privacy-request'),
+                leading: const Icon(Icons.edit_note_outlined),
+                title: const Text('申请更正或删除'),
+                subtitle: const Text('更正资料，或申请删除特定数据、内容'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _showRequestDialog,
               ),
-              const SizedBox(height: 20),
-            ],
-            const _SectionTitle('账号管理'),
+              const Divider(height: 1, indent: 56),
+              ListTile(
+                key: const ValueKey('privacy-request-history'),
+                leading: const Icon(Icons.history_outlined),
+                title: const Text('查看处理记录'),
+                subtitle: Text(_loadingRequests
+                    ? '正在读取请求状态'
+                    : '共 ${_requests.length} 条记录'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _showRequestHistory,
+              ),
+            ]),
+          ),
+          const SizedBox(height: 20),
+          if (restricted) ...[
+            const _SectionTitle('授权管理'),
             const SizedBox(height: 8),
             Card(
               child: ListTile(
-                key: const ValueKey('cancel-account'),
-                leading: Icon(
-                  Icons.delete_forever_outlined,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                title: const Text('注销账号'),
-                subtitle: const Text('清除或匿名化账号身份资料，此操作不可恢复'),
+                key: const ValueKey('renew-legal-consents'),
+                leading: const Icon(Icons.verified_user_outlined),
+                title: const Text('重新授权'),
+                subtitle: const Text('重新确认最新协议后恢复正常使用'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: _showCancelAccountDialog,
+                onTap: _renewConsent,
               ),
             ),
+            const SizedBox(height: 20),
+          ] else ...[
+            const _SectionTitle('授权管理'),
+            const SizedBox(height: 8),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.tune_outlined),
+                title: Text('按功能管理授权'),
+                subtitle: Text('教务绑定、远程推送和本地提醒分别关闭或撤回'),
+              ),
+            ),
+            const SizedBox(height: 20),
           ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showRequestHistory() async {
-    if (_loadingRequests) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.55,
-          minChildSize: 0.32,
-          maxChildSize: 0.9,
-          builder: (_, controller) => ListView(
-            controller: controller,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-            children: [
-              const Text('个人信息请求记录',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 12),
-              if (_requests.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(child: Text('暂无个人信息请求记录')),
-                )
-              else
-                ..._requests.map(_buildRequestCard),
-            ],
+          const _SectionTitle('消息与通知'),
+          const SizedBox(height: 8),
+          Card(
+            child: SwitchListTile(
+              key: const ValueKey('push-data-processing'),
+              secondary: const Icon(Icons.notifications_active_outlined),
+              title: const Text('接收远程消息推送'),
+              subtitle: Text(widget.restricted
+                  ? '账号受限时仅可关闭推送并清理设备标识'
+                  : '默认关闭。开启后会向极光提供设备推送标识'),
+              value: _pushEnabled,
+              onChanged: _pushLoading || (widget.restricted && !_pushEnabled)
+                  ? null
+                  : _setPushEnabled,
+            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRequestCard(Map<String, dynamic> request) {
-    final status = request['status']?.toString() ?? 'pending';
-    const labels = {
-      'access': '查阅个人信息',
-      'correction': '更正个人信息',
-      'export': '导出个人信息',
-      'deletion': '删除个人信息或内容',
-      'withdraw_consent': '撤销同意',
-      'pending': '待处理',
-      'processing': '处理中',
-      'completed': '已完成',
-      'rejected': '已拒绝',
-    };
-    final result = request['result']?.toString().trim() ?? '';
-    return Card(
-      child: ListTile(
-        title: Text(labels[request['request_type']] ??
-            request['request_type'].toString()),
-        subtitle: Text(
-          result.isEmpty
-              ? labels[status] ?? status
-              : '${labels[status] ?? status}\n$result',
-        ),
-        isThreeLine: result.isNotEmpty,
-        trailing: Chip(label: Text(labels[status] ?? status)),
+          const SizedBox(height: 20),
+          const _SectionTitle('账号管理'),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              key: const ValueKey('cancel-account'),
+              leading: Icon(
+                Icons.delete_forever_outlined,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: const Text('注销账号'),
+              subtitle: const Text('清除或匿名化账号身份资料，此操作不可恢复'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _showCancelAccountDialog,
+            ),
+          ),
+        ],
       ),
     );
   }

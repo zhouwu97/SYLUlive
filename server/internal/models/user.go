@@ -37,6 +37,8 @@ type User struct {
 	ReportCount  int    `gorm:"default:0;index" json:"report_count"`            // 90天内举报数
 	QQ           string `gorm:"size:20" json:"qq"`                              // QQ号
 	DeviceToken  string `gorm:"size:255" json:"-"`                              // 极光 RegistrationID
+	// LegalConsentRevokedAt 非空时，账号仅可使用隐私权利与退出相关功能。
+	LegalConsentRevokedAt *time.Time `gorm:"index" json:"-"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

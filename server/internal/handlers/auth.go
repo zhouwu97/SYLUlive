@@ -735,11 +735,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
+	response, responseErr := selfUserResponseForDB(h.db, user)
+	if responseErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{
 
 		"token": token,
 
-		"user": selfUserResponse(user),
+		"user": response,
 	})
 
 }
@@ -914,11 +919,16 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
+	response, responseErr := selfUserResponseForDB(h.db, user)
+	if responseErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{
 
 		"token": token,
 
-		"user": selfUserResponse(user),
+		"user": response,
 	})
 
 }
@@ -1102,11 +1112,16 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
+	response, responseErr := selfUserResponseForDB(h.db, user)
+	if responseErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 
 		"token": token,
 
-		"user": selfUserResponse(user),
+		"user": response,
 	})
 
 }
@@ -1384,11 +1399,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
+	response, responseErr := selfUserResponseForDB(h.db, user)
+	if responseErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 
 		"token": token,
 
-		"user": selfUserResponse(user),
+		"user": response,
 	})
 
 }

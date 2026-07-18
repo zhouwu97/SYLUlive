@@ -88,3 +88,11 @@ python-edu-service/tools/*/output/
 /step4_7.py
 /server/handler_test_output*.txt
 /server/tmp_server
+
+# 隐私整合与文档处理过程中的本地临时产物
+/.codex-docx-work/
+/scratch/application_2026/
+/scratch/docx-format-audit-*/
+/scratch/privacy-server-deploy
+/artifacts/checkin-*.png
+/artifacts/window-*.xml

@@ -637,6 +637,31 @@ void main() {
     expect(provider.user, isNull);
     expect(provider.sessionGeneration, generation + 1);
   });
+
+  test('确认新版协议后以服务端状态更新本地会话', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(200, {
+        'user': {
+          ..._userJson(1),
+          'legal_consents_active': true,
+          'legal_consents_required': false,
+        },
+      });
+    final provider = _provider(adapter, _FakeAuthCredentialStore());
+    await provider.applyAuthPayload('token', {
+      ..._userJson(1),
+      'legal_consents_active': false,
+      'legal_consents_required': true,
+    });
+
+    final result = await provider.acceptRequiredLegalConsents(
+      includeEduDataConsent: false,
+    );
+
+    expect(result.success, isTrue);
+    expect(provider.user?.legalConsentsActive, isTrue);
+    expect(provider.user?.legalConsentsRequired, isFalse);
+  });
 }
 
 AuthProvider _provider(
@@ -660,6 +685,8 @@ Map<String, dynamic> _userJson(int id) {
     'student_id': '2026000$id',
     'nickname': '用户$id',
     'created_at': '2026-07-13T10:00:00Z',
+    'legal_consents_active': true,
+    'legal_consents_required': false,
   };
 }
 

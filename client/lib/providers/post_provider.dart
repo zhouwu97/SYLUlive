@@ -203,10 +203,11 @@ class PostProvider extends ChangeNotifier {
     if (!_enableCache || sort == 'following') return;
     try {
       final board = _boards[_stateKey(boardId, sort, type, tagId: tagId)];
-      final algorithmVersion = board != null && board.algorithmVersion.isNotEmpty
-          ? board.algorithmVersion
-          : PostCacheService.expectedAlgorithmVersion(
-              boardId: boardId, sort: sort, type: type, tagId: tagId);
+      final algorithmVersion =
+          board != null && board.algorithmVersion.isNotEmpty
+              ? board.algorithmVersion
+              : PostCacheService.expectedAlgorithmVersion(
+                  boardId: boardId, sort: sort, type: type, tagId: tagId);
       final feed = CachedPostFeed(
         posts: posts,
         pinnedPosts: board?.pinnedPosts ?? [],
@@ -289,9 +290,12 @@ class PostProvider extends ChangeNotifier {
           tagId: tagId,
         );
         if (requestVersion != board.requestVersion) return;
-        if (cachedFeed != null && cachedFeed.posts.isNotEmpty && cachedFeed.freshness == PostFeedCacheFreshness.fresh) {
+        if (cachedFeed != null &&
+            cachedFeed.posts.isNotEmpty &&
+            cachedFeed.freshness == PostFeedCacheFreshness.fresh) {
           board.posts = cachedFeed.posts;
-          if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+          if (usesHomeFeedV2(
+              boardId: boardId, sort: sort, type: type, tagId: tagId)) {
             board.pinnedPosts = cachedFeed.pinnedPosts;
             board.algorithmVersion = cachedFeed.algorithmVersion;
           }
@@ -341,7 +345,8 @@ class PostProvider extends ChangeNotifier {
         final pinned = ((data['pinned_posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
-        final isHomeV2 = usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId);
+        final isHomeV2 = usesHomeFeedV2(
+            boardId: boardId, sort: sort, type: type, tagId: tagId);
         if (isHomeV2) {
           board.pinnedPosts = pinned;
           board.algorithmVersion = data['algorithm_version']?.toString() ?? '';
@@ -407,18 +412,24 @@ class PostProvider extends ChangeNotifier {
         board.currentPage = 2;
       }
     } on DioException catch (e) {
-      if (cachedFeed != null && cachedFeed.posts.isNotEmpty && cachedFeed.freshness == PostFeedCacheFreshness.stale) {
+      if (cachedFeed != null &&
+          cachedFeed.posts.isNotEmpty &&
+          cachedFeed.freshness == PostFeedCacheFreshness.stale) {
         board.posts = cachedFeed.posts;
-        if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+        if (usesHomeFeedV2(
+            boardId: boardId, sort: sort, type: type, tagId: tagId)) {
           board.pinnedPosts = cachedFeed.pinnedPosts;
           board.algorithmVersion = cachedFeed.algorithmVersion;
         }
       }
       debugPrint('增量拉取失败(board=$boardId): ${e.type}');
     } catch (e) {
-      if (cachedFeed != null && cachedFeed.posts.isNotEmpty && cachedFeed.freshness == PostFeedCacheFreshness.stale) {
+      if (cachedFeed != null &&
+          cachedFeed.posts.isNotEmpty &&
+          cachedFeed.freshness == PostFeedCacheFreshness.stale) {
         board.posts = cachedFeed.posts;
-        if (usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+        if (usesHomeFeedV2(
+            boardId: boardId, sort: sort, type: type, tagId: tagId)) {
           board.pinnedPosts = cachedFeed.pinnedPosts;
           board.algorithmVersion = cachedFeed.algorithmVersion;
         }
@@ -540,7 +551,9 @@ class PostProvider extends ChangeNotifier {
           data is Map &&
           data['code']?.toString() == 'feed_session_expired';
 
-      if (isFeedSessionExpired && usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+      if (isFeedSessionExpired &&
+          usesHomeFeedV2(
+              boardId: boardId, sort: sort, type: type, tagId: tagId)) {
         if (!board.isRecoveringExpiredSession) {
           board.isRecoveringExpiredSession = true;
           board.sessionId = null;
@@ -614,7 +627,8 @@ class PostProvider extends ChangeNotifier {
 
     try {
       board.sessionId = null; // 清除老的会话快照
-      final useHomeFeedV2 = usesHomeFeedV2(boardId: boardId, sort: sort, type: type, tagId: tagId);
+      final useHomeFeedV2 = usesHomeFeedV2(
+          boardId: boardId, sort: sort, type: type, tagId: tagId);
       final params = <String, dynamic>{
         'board': boardId,
         'type': type,
@@ -646,7 +660,8 @@ class PostProvider extends ChangeNotifier {
               .map((e) => Post.fromJson(e))
               .toList();
           board.pinnedPosts = pinned;
-          board.algorithmVersion = response.data['algorithm_version']?.toString() ?? '';
+          board.algorithmVersion =
+              response.data['algorithm_version']?.toString() ?? '';
         }
 
         // 当用户主动刷新或切换排序时，由于后端返回的是全新的一页完整数据，
@@ -728,6 +743,7 @@ class PostProvider extends ChangeNotifier {
     String? postType,
     int? waterTagId,
     double? price,
+    String? contactType,
     String? contact,
     List<int>? fileIds,
     List<String>? marketTags,
@@ -743,6 +759,8 @@ class PostProvider extends ChangeNotifier {
         if (postType != null) 'post_type': postType,
         if (waterTagId != null && waterTagId > 0) 'water_tag_id': waterTagId,
         if (price != null) 'price': price,
+        if (contactType != null && contactType.isNotEmpty)
+          'contact_type': contactType,
         if (contact != null && contact.isNotEmpty) 'contact': contact,
         if (fileIds != null && fileIds.isNotEmpty)
           'file_ids': fileIds.join(','),
@@ -784,6 +802,7 @@ class PostProvider extends ChangeNotifier {
     String? postType,
     int? waterTagId,
     double? price,
+    String? contactType,
     String? contact,
     List<int>? fileIds,
     List<String>? marketTags,
@@ -800,6 +819,7 @@ class PostProvider extends ChangeNotifier {
         'title': title ?? '',
         'post_type': postType ?? '',
         'price': price ?? 0,
+        'contact_type': contactType ?? '',
         'contact': contact ?? '',
         if (sendWaterTagField) 'water_tag_id': waterTagId ?? 0,
         if (!sendWaterTagField && waterTagId != null && waterTagId > 0)

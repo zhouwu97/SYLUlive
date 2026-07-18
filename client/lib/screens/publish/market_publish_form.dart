@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import '../../config/market_contact_type.dart';
 import '../../config/privileged_accounts.dart';
 import '../../models/post.dart';
 import '../../providers/auth_provider.dart';
@@ -30,7 +31,7 @@ class MarketPublishForm extends StatefulWidget {
   State<MarketPublishForm> createState() => _MarketPublishFormState();
 }
 
-enum _PublishField { type, title, price, content }
+enum _PublishField { type, title, price, content, contact }
 
 class _MarketPublishFormState extends State<MarketPublishForm>
     with SingleTickerProviderStateMixin, PublishImagePickerMixin {
@@ -48,6 +49,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   final _contactController = TextEditingController();
   late final AnimationController _shakeController;
   String _postType = '';
+  String _contactType = '';
   bool _isLoading = false;
   Set<_PublishField> _attentionFields = {};
   int _attentionPulse = 0;
@@ -64,7 +66,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     final hasText = _titleController.text.trim().isNotEmpty ||
         _contentController.text.trim().isNotEmpty ||
         _priceController.text.trim().isNotEmpty ||
-        _contactController.text.trim().isNotEmpty;
+        _contactController.text.trim().isNotEmpty ||
+        _contactType.isNotEmpty;
 
     final hasMediaOrTags = _selectedImages.isNotEmpty ||
         _selectedMarketTags.isNotEmpty ||
@@ -77,6 +80,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         _titleController.text != p.title ||
         _contentController.text != p.content ||
         _priceController.text != p.price.toString() ||
+        _contactType != p.contactType ||
         _contactController.text != p.contact ||
         _selectedImages.isNotEmpty ||
         _existingImages.length != p.images.length ||
@@ -270,6 +274,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       _titleController.text = post.title;
       _contentController.text = post.content;
       _priceController.text = post.price.toString();
+      _contactType = post.contactType;
       _contactController.text = post.contact;
       _postType = post.postType;
       _existingImages.addAll(post.images);
@@ -341,6 +346,19 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     return null;
   }
 
+  String? _validateContact(String? value) {
+    final contact = (value ?? '').trim();
+    if (_contactType.isEmpty && contact.isEmpty) return null;
+    if (_contactType.isEmpty) return '请选择联系方式类型';
+    if (contact.isEmpty) return marketContactInputHint(_contactType);
+    if (contact.runes.length > 100) return '联系方式不能超过 100 个字符';
+    if (_contactType == marketContactTypeOther &&
+        (!_isEditing || contact != widget.editingPost!.contact)) {
+      return '请重新选择微信、QQ或电话';
+    }
+    return null;
+  }
+
   Set<_PublishField> _collectMissingRequiredFields() {
     final fields = <_PublishField>{};
     if (_postType.isEmpty) fields.add(_PublishField.type);
@@ -355,6 +373,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (_contentController.text.trim().isEmpty) {
       fields.add(_PublishField.content);
     }
+    final hasContactType = _contactType.isNotEmpty;
+    final hasContact = _contactController.text.trim().isNotEmpty;
+    if (hasContactType != hasContact) fields.add(_PublishField.contact);
     return fields;
   }
 
@@ -451,6 +472,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               title: _showsTitleField ? title : null,
               postType: _postType,
               price: _showsPriceField ? double.tryParse(priceText) : null,
+              contactType: _contactType,
               contact: contact,
               fileIds: mergedFileIds,
               marketTags: _selectedMarketTags.toList(growable: false),
@@ -461,6 +483,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               title: _showsTitleField && title.isNotEmpty ? title : null,
               postType: _postType.isNotEmpty ? _postType : null,
               price: _showsPriceField ? double.tryParse(priceText) : null,
+              contactType: _contactType.isNotEmpty ? _contactType : null,
               contact: contact.isNotEmpty ? contact : null,
               fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
               marketTags: _selectedMarketTags.toList(growable: false),
@@ -939,47 +962,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   Widget _buildContactInsideCard(bool isDark, ColorScheme colorScheme) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 11, 16, 11),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '联系方式',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 5),
-                SizedBox(
-                  height: 22,
-                  child: TextFormField(
-                    controller: _contactController,
-                    decoration: InputDecoration(
-                      hintText: '站内私信优先，可选填 QQ/微信',
-                      hintStyle: TextStyle(
-                        fontSize: 14.5,
-                        color: colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.78),
-                        fontWeight: FontWeight.w500,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      color: isDark ? Colors.white : const Color(0xFF202333),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      child: _buildStructuredContactInput(isDark, colorScheme),
     );
   }
 
@@ -1125,37 +1108,142 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildContactField(bool isDark) {
+    return _buildStructuredContactInput(
+      isDark,
+      Theme.of(context).colorScheme,
+    );
+  }
+
+  Widget _buildStructuredContactInput(
+    bool isDark,
+    ColorScheme colorScheme,
+  ) {
+    final needsAttention = _attentionFields.contains(_PublishField.contact);
+    final dropdownItems = <DropdownMenuItem<String>>[
+      const DropdownMenuItem(value: '', child: Text('未选择')),
+      const DropdownMenuItem(
+        value: marketContactTypeWeChat,
+        child: Text('微信'),
+      ),
+      const DropdownMenuItem(value: marketContactTypeQQ, child: Text('QQ')),
+      const DropdownMenuItem(
+        value: marketContactTypePhone,
+        child: Text('电话'),
+      ),
+      if (_contactType == marketContactTypeOther)
+        const DropdownMenuItem(
+          value: marketContactTypeOther,
+          enabled: false,
+          child: Text('其他方式'),
+        ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '联系方式',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        _ShakingAttention(
+          active: needsAttention,
+          controller: _shakeController,
+          child: const Text(
+            '联系方式（选填）',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 104,
+              child: DropdownButtonFormField<String>(
+                key: const ValueKey('market-contact-type'),
+                initialValue: _contactType,
+                isExpanded: true,
+                items: dropdownItems,
+                onChanged: (value) {
+                  setState(() => _contactType = value ?? '');
+                  if (_hasTriedSubmit) _formKey.currentState?.validate();
+                },
+                decoration: _contactInputDecoration(
+                  isDark: isDark,
+                  colorScheme: colorScheme,
+                  needsAttention: needsAttention,
+                ),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextFormField(
+                key: const ValueKey('market-contact-value'),
+                controller: _contactController,
+                keyboardType: marketContactKeyboardType(_contactType),
+                textInputAction: TextInputAction.done,
+                maxLength: 100,
+                onChanged: (_) {
+                  setState(() {});
+                  if (_hasTriedSubmit) _formKey.currentState?.validate();
+                },
+                validator: _validateContact,
+                decoration: _contactInputDecoration(
+                  isDark: isDark,
+                  colorScheme: colorScheme,
+                  needsAttention: needsAttention,
+                  hint: marketContactInputHint(_contactType),
+                ).copyWith(counterText: ''),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
         Text(
-          '选填，建议优先通过站内私信联系',
+          '详情页仅显示联系方式类型，点击后复制',
           style: TextStyle(
             fontSize: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.05)
-                : const Color(0xFFF7F7FA),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: TextFormField(
-            controller: _contactController,
-            decoration: _plainInputDecoration(
-              hint: 'QQ / 微信 / 手机号（选填）',
-            ),
+            color: colorScheme.onSurfaceVariant,
           ),
         ),
       ],
+    );
+  }
+
+  InputDecoration _contactInputDecoration({
+    required bool isDark,
+    required ColorScheme colorScheme,
+    required bool needsAttention,
+    String? hint,
+  }) {
+    final borderColor = needsAttention
+        ? colorScheme.error.withValues(alpha: 0.65)
+        : colorScheme.outlineVariant.withValues(alpha: 0.55);
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(
+        fontSize: 14,
+        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+      ),
+      filled: true,
+      fillColor: isDark
+          ? Colors.white.withValues(alpha: 0.05)
+          : const Color(0xFFF7F7FA),
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: borderColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: borderColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: _marketAccent.withValues(alpha: 0.65)),
+      ),
     );
   }
 

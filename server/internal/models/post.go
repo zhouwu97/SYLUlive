@@ -15,6 +15,17 @@ const (
 	BoardNotice  BoardID = 4 // 公告
 )
 
+// MarketContactType 集市外部联系方式类型。
+type MarketContactType string
+
+const (
+	MarketContactTypeWeChat MarketContactType = "wechat"
+	MarketContactTypeQQ     MarketContactType = "qq"
+	MarketContactTypePhone  MarketContactType = "phone"
+	// MarketContactTypeOther 仅用于无法可靠识别的历史数据。
+	MarketContactTypeOther MarketContactType = "other"
+)
+
 // PostStatus 帖子状态
 type PostStatus string
 
@@ -35,10 +46,11 @@ type Post struct {
 	// PostType 板块相关类型：
 	//   board_id = BoardShuitie 时，post_type 表示 WaterSection.Slug（如 course_study）。
 	//   board_id = BoardMarket 时，post_type 仍为 marketplace_buy / marketplace_sell 等旧语义。
-	PostType   string  `gorm:"size:50;index" json:"post_type"`
-	Price      float64 `gorm:"default:0" json:"price"`      // 价格（校园集市用）
-	Contact    string  `gorm:"size:500" json:"contact"`     // 联系方式
-	MarketTags string  `gorm:"size:200" json:"market_tags"` // 商品交易选项，逗号分隔
+	PostType    string            `gorm:"size:50;index" json:"post_type"`
+	Price       float64           `gorm:"default:0" json:"price"`                       // 价格（校园集市用）
+	ContactType MarketContactType `gorm:"size:20;default:'';index" json:"contact_type"` // 联系方式类型
+	Contact     string            `gorm:"size:500" json:"contact"`                      // 联系账号
+	MarketTags  string            `gorm:"size:200" json:"market_tags"`                  // 商品交易选项，逗号分隔
 	// WaterTagID 水帖版块内标签 ID，仅在 board_id = BoardShuitie 时使用；旧帖子与旧客户端可不传。
 	WaterTagID             *uint      `gorm:"index" json:"water_tag_id"`
 	Status                 PostStatus `gorm:"default:normal;index" json:"status"` // 状态

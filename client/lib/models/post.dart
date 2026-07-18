@@ -229,6 +229,7 @@ class Post {
   final int authorId;
   final String postType;
   final double price;
+  final String contactType;
   final String contact;
   final List<String> marketTags;
   final int? waterTagId;
@@ -270,6 +271,7 @@ class Post {
     required this.authorId,
     this.postType = '',
     this.price = 0,
+    this.contactType = '',
     this.contact = '',
     this.marketTags = const [],
     this.waterTagId,
@@ -314,6 +316,7 @@ class Post {
       authorId: json['author_id'] ?? 0,
       postType: json['post_type'] ?? '',
       price: (json['price'] ?? 0).toDouble(),
+      contactType: json['contact_type'] ?? '',
       contact: json['contact'] ?? '',
       marketTags: _parseStringList(json['market_tags']),
       waterTagId: json['water_tag_id'] != null
@@ -412,6 +415,7 @@ class Post {
     int? authorId,
     String? postType,
     double? price,
+    String? contactType,
     String? contact,
     List<String>? marketTags,
     int? waterTagId,
@@ -457,6 +461,7 @@ class Post {
       authorId: authorId ?? this.authorId,
       postType: postType ?? this.postType,
       price: price ?? this.price,
+      contactType: contactType ?? this.contactType,
       contact: contact ?? this.contact,
       marketTags: marketTags ?? this.marketTags,
       waterTagId: waterTagId ?? this.waterTagId,

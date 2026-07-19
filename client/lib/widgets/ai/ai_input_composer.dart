@@ -9,6 +9,7 @@ class AiInputComposer extends StatefulWidget {
   final bool enabled;
   final bool running;
   final ValueChanged<String> onSend;
+  final VoidCallback? onCancel;
 
   const AiInputComposer({
     super.key,
@@ -17,6 +18,7 @@ class AiInputComposer extends StatefulWidget {
     required this.enabled,
     required this.running,
     required this.onSend,
+    this.onCancel,
   });
 
   @override
@@ -88,13 +90,17 @@ class _AiInputComposerState extends State<AiInputComposer> {
                 ),
                 const SizedBox(width: 9),
                 IconButton.filled(
-                  onPressed: canSend ? _send : null,
+                  onPressed: widget.running
+                      ? widget.onCancel
+                      : (canSend ? _send : null),
                   style: IconButton.styleFrom(
                     backgroundColor: CampusTheme.primary,
                     disabledBackgroundColor: const Color(0xFFDDE4E2),
                   ),
-                  icon: const Icon(Icons.arrow_upward_rounded),
-                  tooltip: '发送',
+                  icon: Icon(widget.running
+                      ? Icons.stop_rounded
+                      : Icons.arrow_upward_rounded),
+                  tooltip: widget.running ? '取消回答' : '发送',
                 ),
               ],
             ),

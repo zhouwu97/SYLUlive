@@ -73,7 +73,12 @@ func Load() *Config {
 			}
 			parts := strings.SplitN(line, "=", 2)
 			if len(parts) == 2 {
-				os.Setenv(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+				key := strings.TrimSpace(parts[0])
+				// systemd、容器与测试显式注入的进程环境优先于文件默认值，
+				// 避免源码目录遗留 .env 覆盖部署参数或 t.Setenv。
+				if _, exists := os.LookupEnv(key); !exists {
+					os.Setenv(key, strings.TrimSpace(parts[1]))
+				}
 			}
 		}
 	}

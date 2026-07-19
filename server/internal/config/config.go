@@ -242,7 +242,7 @@ func Load() *Config {
 	}
 	deepSeekChatModel := strings.TrimSpace(os.Getenv("DEEPSEEK_CHAT_MODEL"))
 	if deepSeekChatModel == "" {
-		deepSeekChatModel = "deepseek-chat"
+		deepSeekChatModel = "deepseek-v4-flash"
 	}
 	if err := validateAIConfig(aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey, deepSeekBaseURL); err != nil {
 		panic(err)

@@ -26,6 +26,8 @@
 
 写入信封包含 `app_user_id`（App 用户 ID 的 SHA-256）、`source_account_fingerprint`（来源学号或来源账号的 SHA-256）、`schema_version: 2`、`fetched_at` 和 `payload`。
 
+这些值是用于命名空间隔离的哈希化账号标识，并非匿名化或加密。学号和数字 ID 的取值空间有限，获得本地存储的攻击者理论上可以离线枚举；阶段 3 的保险箱应改用保存在安全存储中的安装密钥计算 HMAC-SHA256。
+
 ### 体测
 
 旧键：`gym_cache_<studentId>_<year>`
@@ -52,7 +54,7 @@
 3. 撤销服务端会话、清除本地认证凭据、Cookie 和推送 Alias。
 4. 认证状态通知 `EduProvider` 与 `CourseScheduleProvider`，清除旧用户上下文并绑定新用户或空用户。
 
-异步取消失败不会阻断本地清理和退出流程。AI 运行使用 generation 令牌丢弃切换前的后续事件。
+异步取消最多等待两秒；超时或失败都不会阻断本地清理和退出流程。AI 运行使用 generation 令牌丢弃切换前的后续事件。页面销毁时也会对尚未完成的 Run 做一次不阻塞的取消尝试。
 
 ## 明确不会清除的数据
 

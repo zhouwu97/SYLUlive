@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/ai_capabilities.dart';
@@ -89,5 +91,75 @@ void main() {
 
     expect(provider.streamedText, '奖学金评定规则见学生手册。');
     expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
+  });
+
+  test('退出时远端取消超时不会阻断本地上下文关闭', () async {
+    final dio = Dio();
+    var cancelRequests = 0;
+    final runCreated = Completer<void>();
+    dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        if (options.path == '/ai/runs') {
+          handler.resolve(Response<dynamic>(
+            requestOptions: options,
+            statusCode: 202,
+            data: <String, dynamic>{
+              'run': <String, dynamic>{
+                'id': 'run-1',
+                'conversation_id': 'conversation-1',
+                'state': 'queued',
+              },
+            },
+          ));
+          runCreated.complete();
+          return;
+        }
+        if (options.path == '/ai/runs/run-1/cancel') {
+          cancelRequests++;
+          Future<void>.delayed(const Duration(seconds: 3), () {
+            handler.resolve(Response<dynamic>(
+              requestOptions: options,
+              statusCode: 200,
+              data: <String, dynamic>{
+                'run': <String, dynamic>{
+                  'id': 'run-1',
+                  'conversation_id': 'conversation-1',
+                  'state': 'cancelled',
+                },
+              },
+            ));
+          });
+          return;
+        }
+        handler.reject(DioException(requestOptions: options));
+      },
+    ));
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: false,
+        chatEnabled: true,
+        phase: 'p2',
+        features: AiFeatures(policyRag: true, scheduleWindows: false),
+        quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
+        maxMessageChars: 20,
+      ),
+    );
+    addTearDown(provider.dispose);
+
+    expect(provider.submit('测试'), AiSubmitResult.accepted);
+    await runCreated.future;
+    await Future<void>.delayed(Duration.zero);
+
+    final stopwatch = Stopwatch()..start();
+    final closeFuture = provider.closeAccountContext();
+    expect(provider.messages, isEmpty);
+    await closeFuture;
+    stopwatch.stop();
+
+    expect(cancelRequests, 1);
+    expect(stopwatch.elapsed, lessThan(const Duration(milliseconds: 2600)));
   });
 }

@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
-/// 为个人数据缓存生成不可逆的账号命名空间。
+/// 为个人数据缓存生成哈希化命名空间，不等同于匿名化或加密。
 abstract final class AccountCacheNamespace {
   static String fingerprint(String value) {
     final normalized = value.trim();

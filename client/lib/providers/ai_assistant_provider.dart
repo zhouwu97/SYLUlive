@@ -299,11 +299,7 @@ class AiAssistantProvider extends ChangeNotifier {
     _notify();
 
     if (runId == null) return;
-    try {
-      await _service.cancelRun(runId);
-    } catch (_) {
-      // 本地上下文已经关闭，远端取消失败不能阻止退出。
-    }
+    await _cancelRunBestEffort(runId);
   }
 
   Future<void> reconnect() async {
@@ -570,10 +566,23 @@ class AiAssistantProvider extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  /// 账号切换最多等待两秒，避免远端取消请求长时间挂起退出流程。
+  Future<void> _cancelRunBestEffort(String runId) async {
+    try {
+      await _service.cancelRun(runId).timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 本地上下文已经关闭，远端取消失败不能阻止退出。
+    }
+  }
+
   @override
   void dispose() {
+    final runId = _run?.id;
     _disposed = true;
     _streamGeneration++;
+    if (runId != null && isRunning) {
+      unawaited(_cancelRunBestEffort(runId));
+    }
     super.dispose();
   }
 }

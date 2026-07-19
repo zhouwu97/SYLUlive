@@ -200,6 +200,7 @@ func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	require.False(t, cfg.AIEnabled)
 	require.True(t, cfg.AIInternalTestOnly)
 	require.Empty(t, cfg.DeepSeekAPIKey)
+	require.Equal(t, "deepseek-v4-flash", cfg.DeepSeekChatModel)
 }
 
 func TestLoadAIConfigRequiresServerKeyAndWhitelist(t *testing.T) {

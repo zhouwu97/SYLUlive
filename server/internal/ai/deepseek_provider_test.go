@@ -45,3 +45,39 @@ func TestDeepSeekProviderErrorDoesNotExposeResponseBody(t *testing.T) {
 		t.Fatalf("错误不应泄露远端响应体: %v", err)
 	}
 }
+
+func TestDeepSeekProviderStreamingContract(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"回答\",\"reasoning_content\":\"不得返回\"}}]}\n\n"))
+		flusher.Flush()
+		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":3,\"prompt_cache_hit_tokens\":2}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+	provider, err := NewDeepSeekProvider(server.URL, "server-secret", "deepseek-chat", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := provider.Start(context.Background(), ProviderRequest{Messages: []Message{{Role: "user", Content: "问题"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	textEvent, err := stream.Next(context.Background())
+	if err != nil || textEvent.Type != ProviderEventTextDelta || textEvent.Text != "回答" {
+		t.Fatalf("text event = %#v err=%v", textEvent, err)
+	}
+	if strings.Contains(textEvent.Text, "不得返回") {
+		t.Fatal("reasoning_content 不得进入统一事件")
+	}
+	usageEvent, err := stream.Next(context.Background())
+	if err != nil || usageEvent.Type != ProviderEventUsage || usageEvent.CacheHitTokens != 2 {
+		t.Fatalf("usage event = %#v err=%v", usageEvent, err)
+	}
+	completed, err := stream.Next(context.Background())
+	if err != nil || completed.Type != ProviderEventCompleted {
+		t.Fatalf("completed event = %#v err=%v", completed, err)
+	}
+}

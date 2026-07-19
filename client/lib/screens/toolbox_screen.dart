@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
@@ -428,7 +427,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
   void _openPhysicalTest(BuildContext context) {
     final auth = context.read<AuthProvider>();
     final username = auth.user?.studentId ?? '';
-    if (username.isEmpty) {
+    final appUserId = auth.user?.id.toString() ?? '';
+    if (username.isEmpty || appUserId.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('请先登录')));
@@ -437,7 +437,12 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
 
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => _PhysicalTestGate(username: username)),
+      MaterialPageRoute(
+        builder: (_) => _PhysicalTestGate(
+          appUserId: appUserId,
+          username: username,
+        ),
+      ),
     );
   }
 
@@ -827,8 +832,9 @@ class _WebsiteDirectoryItem {
 
 /// 体测密码输入门控 — 独立的 StatefulWidget，避免 controller 生命周期问题
 class _PhysicalTestGate extends StatefulWidget {
+  final String appUserId;
   final String username;
-  const _PhysicalTestGate({required this.username});
+  const _PhysicalTestGate({required this.appUserId, required this.username});
 
   @override
   State<_PhysicalTestGate> createState() => _PhysicalTestGateState();
@@ -886,8 +892,11 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            PhysicalTestPage(username: widget.username, password: pwd),
+        builder: (_) => PhysicalTestPage(
+          appUserId: widget.appUserId,
+          username: widget.username,
+          password: pwd,
+        ),
       ),
     );
   }

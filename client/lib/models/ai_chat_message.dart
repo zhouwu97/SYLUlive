@@ -22,4 +22,20 @@ class AiChatMessage {
     required this.createdAt,
     this.sources = const [],
   });
+
+  AiChatMessage copyWith({
+    String? content,
+    AiMessageStatus? status,
+    List<AiSource>? sources,
+  }) {
+    return AiChatMessage(
+      id: id,
+      requestId: requestId,
+      role: role,
+      content: content ?? this.content,
+      status: status ?? this.status,
+      createdAt: createdAt,
+      sources: sources ?? this.sources,
+    );
+  }
 }

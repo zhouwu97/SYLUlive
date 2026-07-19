@@ -1,0 +1,82 @@
+class AiConversation {
+  final String id;
+  final String title;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const AiConversation({
+    required this.id,
+    required this.title,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory AiConversation.fromJson(Map<String, dynamic> json) {
+    return AiConversation(
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '新会话',
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '')?.toLocal(),
+      updatedAt:
+          DateTime.tryParse(json['updated_at']?.toString() ?? '')?.toLocal(),
+    );
+  }
+}
+
+class AiConversationMessage {
+  final String id;
+  final String conversationId;
+  final String? runId;
+  final String role;
+  final String content;
+  final DateTime? createdAt;
+
+  const AiConversationMessage({
+    required this.id,
+    required this.conversationId,
+    required this.role,
+    required this.content,
+    this.runId,
+    this.createdAt,
+  });
+
+  factory AiConversationMessage.fromJson(Map<String, dynamic> json) {
+    return AiConversationMessage(
+      id: json['id']?.toString() ?? '',
+      conversationId: json['conversation_id']?.toString() ?? '',
+      runId: json['run_id']?.toString(),
+      role: json['role']?.toString() ?? 'assistant',
+      content: json['content']?.toString() ?? '',
+      createdAt:
+          DateTime.tryParse(json['created_at']?.toString() ?? '')?.toLocal(),
+    );
+  }
+}
+
+class AiConversationDetails {
+  final AiConversation conversation;
+  final List<AiConversationMessage> messages;
+
+  const AiConversationDetails(
+      {required this.conversation, required this.messages});
+
+  factory AiConversationDetails.fromJson(Map<String, dynamic> json) {
+    final conversationJson = json['conversation'];
+    final messagesJson = json['messages'];
+    return AiConversationDetails(
+      conversation: AiConversation.fromJson(
+        conversationJson is Map
+            ? Map<String, dynamic>.from(conversationJson)
+            : const {},
+      ),
+      messages: messagesJson is List
+          ? messagesJson
+              .whereType<Map>()
+              .map((item) => AiConversationMessage.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .toList()
+          : const [],
+    );
+  }
+}

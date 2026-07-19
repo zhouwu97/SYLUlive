@@ -23,3 +23,13 @@ func TruncateGraphemes(value string, limit int) string {
 	}
 	return value
 }
+
+// CountGraphemes 按 Unicode 扩展字素簇统计用户可见字符。
+func CountGraphemes(value string) int {
+	iterator := graphemes.FromString(value)
+	count := 0
+	for iterator.Next() {
+		count++
+	}
+	return count
+}

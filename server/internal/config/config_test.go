@@ -217,6 +217,27 @@ func TestLoadAIConfigRequiresServerKeyAndWhitelist(t *testing.T) {
 	require.Equal(t, "server-only-key", cfg.DeepSeekAPIKey)
 }
 
+func TestLoadPolicyRAGRequiresInternalServiceToken(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_TEST_USER_IDS", "18")
+	t.Setenv("DEEPSEEK_API_KEY", "server-only-key")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
+	t.Setenv("RAG_SERVICE_TOKEN", "")
+	require.Panics(t, func() { Load() })
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+	cfg := Load()
+	require.True(t, cfg.AIPolicyRAGEnabled)
+	require.Equal(t, "internal-rag-token", cfg.RAGServiceToken)
+}
+
+func TestLoadAIRejectsUnsafeLimits(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "0")
+	require.Panics(t, func() { Load() })
+}
+
 func assertLoadPanics(t *testing.T) {
 	t.Helper()
 	defer func() {

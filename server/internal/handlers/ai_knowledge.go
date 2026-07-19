@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -15,24 +16,37 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/academiccalendar"
+	"shenliyuan/internal/ai"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 const maxKnowledgeDocumentBytes = 2 << 20
 
 type AIKnowledgeHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	rag *ai.RAGClient
 }
 
-func NewAIKnowledgeHandler(db *gorm.DB) *AIKnowledgeHandler {
-	return &AIKnowledgeHandler{db: db}
+func NewAIKnowledgeHandler(db *gorm.DB, ragClients ...*ai.RAGClient) *AIKnowledgeHandler {
+	var rag *ai.RAGClient
+	if len(ragClients) > 0 {
+		rag = ragClients[0]
+	}
+	return &AIKnowledgeHandler{db: db, rag: rag}
 }
 
 type knowledgeImportRequest struct {
-	Title      string `json:"title"`
-	SourceType string `json:"source_type"`
-	SourceURI  string `json:"source_uri"`
-	Content    string `json:"content"`
+	Title          string `json:"title"`
+	SourceType     string `json:"source_type"`
+	SourceURI      string `json:"source_uri"`
+	SourceFileName string `json:"source_file_name"`
+	DocumentType   string `json:"document_type"`
+	Department     string `json:"department"`
+	EffectiveFrom  string `json:"effective_from"`
+	EffectiveTo    string `json:"effective_to"`
+	Content        string `json:"content"`
 }
 
 type knowledgeSupersedeRequest struct {
@@ -40,14 +54,17 @@ type knowledgeSupersedeRequest struct {
 }
 
 func (h *AIKnowledgeHandler) Import(c *gin.Context) {
-	var request knowledgeImportRequest
-	if err := decodeStrictJSON(c, &request, maxKnowledgeDocumentBytes); err != nil {
+	request, err := h.decodeKnowledgeImport(c)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "知识文档请求格式错误"})
 		return
 	}
 	request.Title = strings.TrimSpace(request.Title)
 	request.SourceType = strings.TrimSpace(request.SourceType)
 	request.SourceURI = strings.TrimSpace(request.SourceURI)
+	request.SourceFileName = strings.TrimSpace(request.SourceFileName)
+	request.DocumentType = strings.TrimSpace(request.DocumentType)
+	request.Department = strings.TrimSpace(request.Department)
 	request.Content = strings.TrimSpace(request.Content)
 	if request.Title == "" || request.SourceType == "" || request.Content == "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"code": "knowledge_document_invalid", "message": "标题、来源类型和正文不能为空"})
@@ -57,9 +74,21 @@ func (h *AIKnowledgeHandler) Import(c *gin.Context) {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"code": "knowledge_document_too_large", "message": "知识文档超过大小限制"})
 		return
 	}
+	effectiveFrom, err := parseOptionalKnowledgeDate(request.EffectiveFrom)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"code": "knowledge_effective_date_invalid", "message": "生效日期格式无效"})
+		return
+	}
+	effectiveTo, err := parseOptionalKnowledgeDate(request.EffectiveTo)
+	if err != nil || (effectiveFrom != nil && effectiveTo != nil && effectiveTo.Before(*effectiveFrom)) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"code": "knowledge_effective_date_invalid", "message": "失效日期格式或范围无效"})
+		return
+	}
 	hash := sha256.Sum256([]byte(request.Content))
 	document := models.AIKnowledgeDocument{
 		Title: request.Title, SourceType: request.SourceType, SourceURI: request.SourceURI,
+		SourceFileName: request.SourceFileName, DocumentType: request.DocumentType,
+		Department: request.Department, EffectiveFrom: effectiveFrom, EffectiveTo: effectiveTo,
 		Content: request.Content, ContentHash: hex.EncodeToString(hash[:]),
 		Status: models.KnowledgeStatusDraft, CreatedBy: c.GetUint("user_id"),
 	}
@@ -73,6 +102,71 @@ func (h *AIKnowledgeHandler) Import(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"document": document})
+}
+
+func (h *AIKnowledgeHandler) decodeKnowledgeImport(c *gin.Context) (knowledgeImportRequest, error) {
+	var request knowledgeImportRequest
+	if !strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data") {
+		return request, decodeStrictJSON(c, &request, maxKnowledgeDocumentBytes)
+	}
+	if h.rag == nil {
+		return request, errors.New("RAG parser unavailable")
+	}
+	if err := c.Request.ParseMultipartForm(8 << 20); err != nil {
+		return request, err
+	}
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		return request, err
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		return request, err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, (8<<20)+1))
+	if err != nil || len(raw) > 8<<20 {
+		return request, errors.New("knowledge file exceeds limit")
+	}
+	sourceType := strings.TrimPrefix(strings.ToLower(filepath.Ext(fileHeader.Filename)), ".")
+	if sourceType == "" {
+		sourceType = strings.TrimSpace(c.PostForm("source_type"))
+	}
+	if sourceType == "txt" {
+		sourceType = "text"
+	}
+	if sourceType != "text" && sourceType != "html" && sourceType != "htm" && sourceType != "pdf" && sourceType != "docx" {
+		return request, errors.New("unsupported knowledge file type")
+	}
+	content, err := h.rag.ParseDocument(c.Request.Context(), sourceType, filepath.Base(fileHeader.Filename), raw)
+	if err != nil {
+		return request, err
+	}
+	request = knowledgeImportRequest{
+		Title: c.PostForm("title"), SourceType: sourceType, SourceURI: c.PostForm("source_uri"),
+		SourceFileName: filepath.Base(fileHeader.Filename), DocumentType: c.PostForm("document_type"),
+		Department: c.PostForm("department"), EffectiveFrom: c.PostForm("effective_from"),
+		EffectiveTo: c.PostForm("effective_to"), Content: content,
+	}
+	return request, nil
+}
+
+func parseOptionalKnowledgeDate(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return &parsed, nil
+	}
+	if academiccalendar.ShanghaiLocation == nil {
+		return nil, errors.New("Asia/Shanghai timezone unavailable")
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", value, academiccalendar.ShanghaiLocation)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
 }
 
 func (h *AIKnowledgeHandler) List(c *gin.Context) {
@@ -116,8 +210,25 @@ func (h *AIKnowledgeHandler) Inspect(c *gin.Context) {
 		"bytes": len(document.Content), "runes": utf8.RuneCountInString(document.Content),
 		"content_hash": document.ContentHash, "unresolved_items": []string{},
 	})
-	document.Status = models.KnowledgeStatusInspected
 	document.Inspection = string(inspectionBytes)
+	if h.rag != nil {
+		document.Status = models.KnowledgeStatusIndexing
+		if err := h.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Save(&document).Error; err != nil {
+				return err
+			}
+			if _, err := services.EnqueueKnowledgeIngestion(tx, document.ID, models.KnowledgeStatusInspected); err != nil {
+				return err
+			}
+			return createKnowledgeAudit(tx, c, document.ID, "inspect_and_index", document.Inspection)
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "knowledge_inspect_failed", "message": "提交知识文档检查失败"})
+			return
+		}
+		c.JSON(http.StatusAccepted, gin.H{"document": document})
+		return
+	}
+	document.Status = models.KnowledgeStatusInspected
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&document).Error; err != nil {
 			return err
@@ -144,9 +255,18 @@ func (h *AIKnowledgeHandler) Reindex(c *gin.Context) {
 	}
 	now := time.Now()
 	document.ReindexRequestedAt = &now
+	restoreStatus := document.Status
+	if h.rag != nil && document.Status != models.KnowledgeStatusPublished {
+		document.Status = models.KnowledgeStatusIndexing
+	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&document).Error; err != nil {
 			return err
+		}
+		if h.rag != nil {
+			if _, err := services.EnqueueKnowledgeIngestion(tx, document.ID, restoreStatus); err != nil {
+				return err
+			}
 		}
 		return createKnowledgeAudit(tx, c, document.ID, "reindex", "")
 	}); err != nil {
@@ -170,6 +290,13 @@ func (h *AIKnowledgeHandler) Publish(c *gin.Context) {
 	if document.Status != models.KnowledgeStatusInspected {
 		c.JSON(http.StatusConflict, gin.H{"code": "knowledge_not_inspected", "message": "文档必须先完成检查"})
 		return
+	}
+	if h.rag != nil {
+		var chunkCount int64
+		if err := h.db.Model(&models.AIKnowledgeChunk{}).Where("document_id = ?", document.ID).Count(&chunkCount).Error; err != nil || chunkCount == 0 {
+			c.JSON(http.StatusConflict, gin.H{"code": "knowledge_not_indexed", "message": "文档必须完成索引后才能发布"})
+			return
+		}
 	}
 	now := time.Now()
 	document.Status = models.KnowledgeStatusPublished
@@ -239,6 +366,15 @@ func (h *AIKnowledgeHandler) Supersede(c *gin.Context) {
 		}
 		if current.Status != models.KnowledgeStatusPublished || replacement.Status != models.KnowledgeStatusInspected {
 			return errKnowledgeStatusConflict
+		}
+		if h.rag != nil {
+			var chunkCount int64
+			if err := tx.Model(&models.AIKnowledgeChunk{}).Where("document_id = ?", replacement.ID).Count(&chunkCount).Error; err != nil {
+				return err
+			}
+			if chunkCount == 0 {
+				return errKnowledgeStatusConflict
+			}
 		}
 		now := time.Now()
 		current.Status, current.SupersededByID, current.ReviewedBy = models.KnowledgeStatusSuperseded, &replacement.ID, c.GetUint("user_id")

@@ -1,0 +1,3 @@
+{"name":"allowed citation","kind":"citation","answer":"规定内容[chunk:18]","allowed_chunk_ids":[18],"expected_valid":true}
+{"name":"forged citation","kind":"citation","answer":"伪造内容[chunk:999]","allowed_chunk_ids":[18],"expected_valid":false}
+{"name":"malformed citation","kind":"citation","answer":"异常引用[chunk:not-number]","allowed_chunk_ids":[18],"expected_valid":false}

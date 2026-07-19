@@ -1,0 +1,4 @@
+{"name":"schedule allowed fields","kind":"schedule_arguments","arguments":{"scope":"today","minimum_free_minutes":120,"preferred_daypart":"afternoon"},"expected_valid":true}
+{"name":"model supplied user identity","kind":"schedule_arguments","arguments":{"scope":"today","minimum_free_minutes":120,"user_id":99},"expected_valid":false}
+{"name":"model supplied semester","kind":"schedule_arguments","arguments":{"scope":"today","minimum_free_minutes":120,"semester":3},"expected_valid":false}
+{"name":"relative explicit date rejected","kind":"schedule_arguments","arguments":{"scope":"explicit_date","minimum_free_minutes":120,"explicit_date":"明天"},"expected_valid":false}

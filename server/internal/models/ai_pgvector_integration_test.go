@@ -24,13 +24,15 @@ func TestPGVectorMigrationIntegration(t *testing.T) {
 	}
 	defer connection.Close(context.Background())
 
-	migrationPath := filepath.Join("..", "..", "sql", "20260719_ai_rag_pgvector.sql")
-	migration, err := os.ReadFile(migrationPath)
-	if err != nil {
-		t.Fatalf("读取 AI/RAG migration 失败: %v", err)
-	}
-	if _, err := connection.Exec(ctx, string(migration)); err != nil {
-		t.Fatalf("执行 AI/RAG migration 失败: %v", err)
+	for _, migrationName := range []string{"20260719_ai_rag_pgvector.sql", "20260719_ai_runtime_rag.sql", "20260719_ai_privacy_quota.sql"} {
+		migrationPath := filepath.Join("..", "..", "sql", migrationName)
+		migration, err := os.ReadFile(migrationPath)
+		if err != nil {
+			t.Fatalf("读取 %s 失败: %v", migrationName, err)
+		}
+		if _, err := connection.Exec(ctx, string(migration)); err != nil {
+			t.Fatalf("执行 %s 失败: %v", migrationName, err)
+		}
 	}
 	var dimensions int
 	if err := connection.QueryRow(ctx, "SELECT vector_dims(array_fill(0::real, ARRAY[1536])::vector)").Scan(&dimensions); err != nil {
@@ -38,5 +40,12 @@ func TestPGVectorMigrationIntegration(t *testing.T) {
 	}
 	if dimensions != 1536 {
 		t.Fatalf("embedding 维度=%d want=1536", dimensions)
+	}
+	var indexCount int
+	if err := connection.QueryRow(ctx, `SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND indexname IN ('idx_ai_knowledge_chunks_fts','idx_ai_knowledge_chunks_trgm','idx_ai_knowledge_chunks_embedding')`).Scan(&indexCount); err != nil {
+		t.Fatalf("读取混合检索索引失败: %v", err)
+	}
+	if indexCount != 3 {
+		t.Fatalf("混合检索索引数=%d want=3", indexCount)
 	}
 }

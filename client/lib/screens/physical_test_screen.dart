@@ -7,9 +7,9 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/theme_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../features/physical/physical_percentile_models.dart';
 import '../features/physical/physical_percentile_service.dart';
+import '../features/campus_data/storage/physical_cache_store.dart';
 import '../utils/sign_utils.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
@@ -17,11 +17,13 @@ import '../services/physical_credential_store.dart';
 import 'physical_percentile_report_screen.dart';
 
 class PhysicalTestPage extends StatefulWidget {
+  final String appUserId;
   final String username;
   final String password;
 
   const PhysicalTestPage({
     super.key,
+    required this.appUserId,
     required this.username,
     required this.password,
   });
@@ -32,8 +34,8 @@ class PhysicalTestPage extends StatefulWidget {
 
 class _PhysicalTestPageState extends State<PhysicalTestPage> {
   static const String _baseUrl = 'http://47.92.231.221';
-  static const String _cachePrefix = 'gym_cache_';
   final PhysicalCredentialStore _credentialStore = PhysicalCredentialStore();
+  late final PhysicalCacheStore _cacheStore;
 
   static const _headers = {
     'X-Requested-With': 'com.wisedu.cpdaily',
@@ -63,6 +65,10 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   @override
   void initState() {
     super.initState();
+    _cacheStore = PhysicalCacheStore(
+      appUserId: widget.appUserId,
+      sourceAccountId: widget.username,
+    );
     // 动态生成可用年份列表：当年份优先，递减
     final now = DateTime.now();
     final currentYear = now.month >= 9 ? now.year + 1 : now.year;
@@ -126,12 +132,11 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Future<void> _loadCached() async {
-    final prefs = await SharedPreferences.getInstance();
+    await _cacheStore.discardUnownedLegacy(_availableYears);
     for (final year in _availableYears) {
-      final raw = prefs.getString('$_cachePrefix${widget.username}_$year');
-      if (raw != null) {
+      final map = await _cacheStore.readYear(year);
+      if (map != null) {
         try {
-          final map = jsonDecode(raw) as Map<String, dynamic>;
           _yearData[year] = _YearData(
             totalGrade: map['total_grade'] ?? '',
             totalScore: (map['total_score'] ?? 0).toDouble(),
@@ -148,8 +153,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Future<void> _saveCache(String year, _YearData data) async {
-    final prefs = await SharedPreferences.getInstance();
-    final json = jsonEncode({
+    await _cacheStore.writeYear(year, {
       'total_grade': data.totalGrade,
       'total_score': data.totalScore,
       'scores': data.scores.map((s) {
@@ -161,7 +165,6 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         };
       }).toList(),
     });
-    await prefs.setString('$_cachePrefix${widget.username}_$year', json);
   }
 
   Future<bool> _login() async {
@@ -236,8 +239,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         }
       }
     } catch (e, st) {
-      _debugLog('登录发生异常: $e');
-      _debugLog('$st');
+      _debugLog('登录发生异常: ${e.runtimeType}');
+      if (kDebugMode) debugPrintStack(stackTrace: st);
     }
     try {
       await _credentialStore.delete(widget.username);
@@ -349,8 +352,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         }
       }
     } catch (e, st) {
-      _debugLog('获取成绩失败，发生异常: $e');
-      _debugLog('$st');
+      _debugLog('获取成绩失败，发生异常: ${e.runtimeType}');
+      if (kDebugMode) debugPrintStack(stackTrace: st);
     }
     if (mounted) setState(() => _loadingYear = false);
   }

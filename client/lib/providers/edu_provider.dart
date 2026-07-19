@@ -182,6 +182,39 @@ class EduProvider extends ChangeNotifier {
     );
   }
 
+  void syncSessionUser(String? userId) {
+    if (userId == null || userId.isEmpty) {
+      clearMemoryForAccountTransition();
+      return;
+    }
+    setUserId(userId);
+  }
+
+  /// 同步清空可见个人数据，持久化清理由显式登出流程负责。
+  void clearMemoryForAccountTransition() {
+    if (_userId == null &&
+        _studentId.isEmpty &&
+        _gradeCache.isEmpty &&
+        _academicSituationCache.isEmpty) {
+      return;
+    }
+    _statusGeneration++;
+    _userId = null;
+    _isBound = false;
+    _studentId = '';
+    _name = '';
+    _grade = '';
+    _college = '';
+    _major = '';
+    _isLoading = false;
+    _statusLoaded = false;
+    _errorMessage = null;
+    _gradeCache.clear();
+    _gradeDetailCache.clear();
+    _academicSituationCache.clear();
+    notifyListeners();
+  }
+
   String? get userId => _userId;
 
   /// 解析Dio异常并返回友好的错误信息
@@ -310,22 +343,7 @@ class EduProvider extends ChangeNotifier {
   Future<void> clearLocalSession() async {
     final oldUserId = _userId;
     final oldStudentId = _studentId;
-
-    _statusGeneration++;
-    _userId = null;
-    _isBound = false;
-    _studentId = '';
-    _name = '';
-    _grade = '';
-    _college = '';
-    _major = '';
-    _isLoading = false;
-    _statusLoaded = false;
-    _errorMessage = null;
-    _gradeCache.clear();
-    _gradeDetailCache.clear();
-    _academicSituationCache.clear();
-    notifyListeners();
+    clearMemoryForAccountTransition();
 
     if (oldStudentId.trim().isNotEmpty) {
       await _deleteEduPassword(oldStudentId);

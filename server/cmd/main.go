@@ -100,7 +100,6 @@ func main() {
 	cfg := config.Load()
 	// P0 只准备课表能力；P3 发布并核验 v2 校历后才允许真正启用 Skill。
 	scheduleSkillEnabled := false
-	middleware.SetLegalConsentEnforcement(cfg.LegalConsentEnforcement)
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()
 

@@ -286,6 +286,26 @@ class AiAssistantProvider extends ChangeNotifier {
     }
   }
 
+  /// 退出或换号时先同步清空内存，再尽力取消服务端运行。
+  Future<void> closeAccountContext() async {
+    final runId = _run?.id;
+    _streamGeneration++;
+    _messages.clear();
+    _conversations.clear();
+    _conversationId = null;
+    _capabilities = null;
+    _quota = null;
+    _resetRunState();
+    _notify();
+
+    if (runId == null) return;
+    try {
+      await _service.cancelRun(runId);
+    } catch (_) {
+      // 本地上下文已经关闭，远端取消失败不能阻止退出。
+    }
+  }
+
   Future<void> reconnect() async {
     final runId = _run?.id;
     if (runId == null || isRunning) return;

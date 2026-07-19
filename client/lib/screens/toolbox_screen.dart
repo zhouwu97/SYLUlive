@@ -9,6 +9,7 @@ import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
+import '../services/physical_credential_store.dart';
 import 'erke_score_screen.dart';
 import 'physical_test_screen.dart';
 import 'lottery_screen.dart';
@@ -837,6 +838,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
   final _pwdCtrl = TextEditingController();
   bool _obscurePwd = true;
   String _realPwd = '';
+  final PhysicalCredentialStore _credentialStore = PhysicalCredentialStore();
 
   @override
   void initState() {
@@ -851,8 +853,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
   }
 
   Future<void> _loadSavedPassword() async {
-    final prefs = await SharedPreferences.getInstance();
-    final pwd = prefs.getString('sylu_physical_test_pwd_${widget.username}');
+    final pwd = await _credentialStore.read(widget.username);
     if (pwd != null && pwd.isNotEmpty) {
       _realPwd = pwd;
       _pwdCtrl.text = '•' * pwd.length;

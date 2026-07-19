@@ -186,6 +186,34 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")
 	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "")
+	t.Setenv("AI_ENABLED", "false")
+	t.Setenv("AI_INTERNAL_TEST_ONLY", "true")
+	t.Setenv("AI_TEST_USER_IDS", "")
+	t.Setenv("AI_PROVIDER", "deepseek")
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	t.Setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+}
+
+func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	cfg := Load()
+	require.False(t, cfg.AIEnabled)
+	require.True(t, cfg.AIInternalTestOnly)
+	require.Empty(t, cfg.DeepSeekAPIKey)
+}
+
+func TestLoadAIConfigRequiresServerKeyAndWhitelist(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	require.Panics(t, func() { Load() })
+
+	t.Setenv("AI_TEST_USER_IDS", "18, 19")
+	require.Panics(t, func() { Load() })
+
+	t.Setenv("DEEPSEEK_API_KEY", "server-only-key")
+	cfg := Load()
+	require.Equal(t, []string{"18", "19"}, cfg.AITestUserIDs)
+	require.Equal(t, "server-only-key", cfg.DeepSeekAPIKey)
 }
 
 func assertLoadPanics(t *testing.T) {

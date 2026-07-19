@@ -32,6 +32,23 @@ services:
     networks:
       - shenliyuan_network
 
+  # 独立 RAG 服务不接触教务凭证、Cookie 或用户数据库。
+  python-rag-service:
+    build:
+      context: ./python-rag-service
+      dockerfile: Dockerfile
+    environment:
+      - RAG_SERVICE_TOKEN=${RAG_SERVICE_TOKEN:-}
+      - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      - RAG_EMBEDDING_MODEL_VERSION=${RAG_EMBEDDING_MODEL_VERSION:-paraphrase-multilingual-minilm-l12-v2-padded-1536-v1}
+      - RAG_MAX_CONCURRENCY=${RAG_MAX_CONCURRENCY:-2}
+      - RAG_MAX_BATCH=${RAG_MAX_BATCH:-32}
+    expose:
+      - "8001"
+    restart: unless-stopped
+    networks:
+      - shenliyuan_network
+
   server:
     build:
       context: ./server
@@ -56,6 +73,18 @@ services:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       - DEEPSEEK_CHAT_MODEL=${DEEPSEEK_CHAT_MODEL:-deepseek-v4-flash}
+      - AI_REQUEST_TIMEOUT_SECONDS=${AI_REQUEST_TIMEOUT_SECONDS:-60}
+      - AI_MAX_TOOL_STEPS=${AI_MAX_TOOL_STEPS:-3}
+      - AI_MAX_MESSAGE_CHARS=${AI_MAX_MESSAGE_CHARS:-20}
+      - AI_HOURLY_MESSAGE_LIMIT=${AI_HOURLY_MESSAGE_LIMIT:-3}
+      - AI_USER_BUDGET_LIMIT_MICRO_YUAN=${AI_USER_BUDGET_LIMIT_MICRO_YUAN:-10000000}
+      - AI_RESERVE_MICRO_YUAN=${AI_RESERVE_MICRO_YUAN:-20000}
+      - AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS=${AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS:-4000000}
+      - AI_OUTPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS=${AI_OUTPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS:-16000000}
+      - AI_POLICY_RAG_ENABLED=${AI_POLICY_RAG_ENABLED:-false}
+      - RAG_SERVICE_URL=${RAG_SERVICE_URL:-http://python-rag-service:8001}
+      - RAG_SERVICE_TOKEN=${RAG_SERVICE_TOKEN:-}
+      - RAG_EMBEDDING_MODEL_VERSION=${RAG_EMBEDDING_MODEL_VERSION:-paraphrase-multilingual-minilm-l12-v2-padded-1536-v1}
       - GIN_MODE=release
     depends_on:
       postgres:

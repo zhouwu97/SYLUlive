@@ -21,6 +21,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/clients"
 
 	"shenliyuan/internal/config"
@@ -89,10 +90,15 @@ func serveUntilShutdown(ctx context.Context, server gracefulHTTPServer, shutdown
 }
 
 func main() {
-	// 强制设置时区为东八区（北京时间），使用 FixedZone 确保在任何没有 tzdata 的系统上也能生效
-	time.Local = time.FixedZone("CST", 8*3600)
+	timezoneReady := true
+	if err := academiccalendar.InitializeTimezone(); err != nil {
+		log.Printf("[AI_SCHEDULE_DISABLED] %v", err)
+		timezoneReady = false
+	}
 
 	cfg := config.Load()
+	// P0 只准备课表能力；P3 发布并核验 v2 校历后才允许真正启用 Skill。
+	scheduleSkillEnabled := false
 	middleware.SetLegalConsentEnforcement(cfg.LegalConsentEnforcement)
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()
@@ -261,6 +267,8 @@ func main() {
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
 		&models.CampusCalendar{},
+		&models.AIKnowledgeDocument{},
+		&models.AIKnowledgeAuditLog{},
 
 		// 应用内更新：APK 发布记录
 		&models.AppRelease{},
@@ -594,6 +602,7 @@ func main() {
 
 	campusArticleHandler := handlers.NewCampusArticleHandler(db, campusSyncServices...)
 	campusCalendarHandler := handlers.NewCampusCalendarHandler(db)
+	knowledgeHandler := handlers.NewAIKnowledgeHandler(db)
 
 	// 启动后台定时任务
 
@@ -637,6 +646,13 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 			"status": "ok",
+			"ai": gin.H{
+				"enabled": cfg.AIEnabled,
+				"schedule_skill": gin.H{
+					"enabled":  scheduleSkillEnabled,
+					"timezone": map[bool]string{true: "Asia/Shanghai", false: "unavailable"}[timezoneReady],
+				},
+			},
 		})
 	})
 
@@ -1530,6 +1546,20 @@ func main() {
 		calendarAdmin.POST("", campusCalendarHandler.CreateDraft)
 		calendarAdmin.POST("/:id/publish", campusCalendarHandler.Publish)
 		calendarAdmin.POST("/:id/archive", campusCalendarHandler.Archive)
+	}
+
+	knowledgeAdmin := r.Group("/api/admin/ai/knowledge")
+	knowledgeAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		knowledgeAdmin.POST("/import", knowledgeHandler.Import)
+		knowledgeAdmin.GET("", knowledgeHandler.List)
+		knowledgeAdmin.GET("/:id", knowledgeHandler.Read)
+		knowledgeAdmin.POST("/:id/inspect", knowledgeHandler.Inspect)
+		knowledgeAdmin.POST("/:id/reindex", knowledgeHandler.Reindex)
+		// 高权限动作在 Handler 内再次校验 super_admin，不能只依赖路由组。
+		knowledgeAdmin.POST("/:id/publish", knowledgeHandler.Publish)
+		knowledgeAdmin.POST("/:id/revoke", knowledgeHandler.Revoke)
+		knowledgeAdmin.POST("/:id/supersede", knowledgeHandler.Supersede)
 	}
 
 	// 版本信息

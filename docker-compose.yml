@@ -1,7 +1,7 @@
 services:
   # PostgreSQL数据库
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:0.8.2-pg15-bookworm
     environment:
       - POSTGRES_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
       - POSTGRES_DB=shenliyuan
@@ -49,6 +49,13 @@ services:
       - EDU_SERVICE_TOKEN=${EDU_SERVICE_TOKEN:-}
       - JWC_SYNC_ENABLED=${JWC_SYNC_ENABLED:-false}
       - JWC_SYNC_INTERVAL_MINUTES=${JWC_SYNC_INTERVAL_MINUTES:-20}
+      - AI_ENABLED=${AI_ENABLED:-false}
+      - AI_INTERNAL_TEST_ONLY=${AI_INTERNAL_TEST_ONLY:-true}
+      - AI_TEST_USER_IDS=${AI_TEST_USER_IDS:-}
+      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      - DEEPSEEK_CHAT_MODEL=${DEEPSEEK_CHAT_MODEL:-deepseek-chat}
       - GIN_MODE=release
     depends_on:
       postgres:

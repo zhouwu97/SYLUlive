@@ -66,6 +66,21 @@ void main() {
     expect(calendar.dayInfo(DateTime(2026, 9, 20)).teachingWeek, isNull);
   });
 
+  test('v1 学期保持无教务映射，v2 显式读取教务学期代码', () {
+    expect(calendar.semesters.single.eduSemesterCode, isNull);
+    final v2 = CampusCalendar.fromJson({
+      ...calendar.toJson(),
+      'schema_version': 2,
+      'semesters': [
+        {
+          ...calendar.semesters.single.toJson(),
+          'edu_semester_code': 3,
+        },
+      ],
+    });
+    expect(v2.semesters.single.eduSemesterCode, 3);
+  });
+
   test('调休补课覆盖周末默认状态，并保留当天事件', () {
     final info = calendar.dayInfo(DateTime(2026, 9, 12));
 

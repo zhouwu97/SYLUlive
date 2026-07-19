@@ -13,6 +13,7 @@ import '../features/physical/physical_percentile_service.dart';
 import '../utils/sign_utils.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
+import '../services/physical_credential_store.dart';
 import 'physical_percentile_report_screen.dart';
 
 class PhysicalTestPage extends StatefulWidget {
@@ -32,6 +33,7 @@ class PhysicalTestPage extends StatefulWidget {
 class _PhysicalTestPageState extends State<PhysicalTestPage> {
   static const String _baseUrl = 'http://47.92.231.221';
   static const String _cachePrefix = 'gym_cache_';
+  final PhysicalCredentialStore _credentialStore = PhysicalCredentialStore();
 
   static const _headers = {
     'X-Requested-With': 'com.wisedu.cpdaily',
@@ -221,11 +223,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             if (data['school_date'] != null) {
               _currentYear = data['school_date'].toString();
             }
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString(
-              'sylu_physical_test_pwd_${widget.username}',
-              widget.password,
-            );
+            await _credentialStore.write(widget.username, widget.password);
             _debugLog(
               '登录成功！UserId: $_userId, Token: <redacted>, Year: $_currentYear',
             );
@@ -242,8 +240,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       _debugLog('$st');
     }
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('sylu_physical_test_pwd_${widget.username}');
+      await _credentialStore.delete(widget.username);
     } catch (_) {}
     if (mounted) {
       setState(() => _errorMessage = '登录失败，请检查学号或体测密码');

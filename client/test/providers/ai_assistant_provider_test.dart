@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/ai_capabilities.dart';
 import 'package:shenliyuan/models/ai_quota.dart';
+import 'package:shenliyuan/models/ai_run_event.dart';
 import 'package:shenliyuan/providers/ai_assistant_provider.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
 
@@ -49,5 +50,44 @@ void main() {
       provider.submit(List.filled(21, '一').join()),
       AiSubmitResult.tooLong,
     );
+  });
+
+  test('SSE 回放重复 seq 不会重复拼接答案', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: false,
+        chatEnabled: true,
+        phase: 'p2',
+        features: AiFeatures(policyRag: true, scheduleWindows: false),
+        quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
+        maxMessageChars: 20,
+      ),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-1',
+      seq: 1,
+      type: AiRunEventType.delta,
+      text: '奖学金',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-1',
+      seq: 1,
+      type: AiRunEventType.delta,
+      text: '奖学金',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-1',
+      seq: 2,
+      type: AiRunEventType.checkpoint,
+      text: '奖学金评定规则见学生手册。',
+    ));
+
+    expect(provider.streamedText, '奖学金评定规则见学生手册。');
+    expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
   });
 }

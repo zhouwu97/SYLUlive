@@ -1,16 +1,36 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/ai_capabilities.dart';
 import '../models/ai_chat_message.dart';
+import '../models/ai_conversation.dart';
 import '../models/ai_quota.dart';
+import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
 import '../models/ai_source.dart';
 import '../services/ai_assistant_service.dart';
 
-enum AiConnectionState { idle, connecting, streaming, completed, failed }
+enum AiConnectionState {
+  idle,
+  connecting,
+  streaming,
+  completed,
+  failed,
+  cancelled
+}
 
-enum AiSubmitResult { accepted, blank, tooLong, unavailable, quotaExceeded }
+enum AiSubmitResult {
+  accepted,
+  blank,
+  tooLong,
+  unavailable,
+  quotaExceeded,
+  busy,
+  failed
+}
 
 String normalizeAiMessage(String value) {
   return value.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
@@ -31,36 +51,49 @@ class AiAssistantProvider extends ChangeNotifier {
   AiCapabilities? _capabilities;
   AiQuota? _quota;
   final List<AiChatMessage> _messages = [];
+  final List<AiConversation> _conversations = [];
   AiRunEvent? _currentRun;
+  AiRun? _run;
   AiConnectionState _connectionState = AiConnectionState.idle;
   String _streamedText = '';
   List<AiSource> _sources = [];
   String? _error;
+  String? _conversationId;
+  String? _lastFailedMessage;
+  int _lastEventSeq = 0;
   bool _loading = false;
+  bool _loadingConversations = false;
+  bool _disposed = false;
+  int _streamGeneration = 0;
 
   AiCapabilities? get capabilities => _capabilities;
   AiQuota? get quota => _quota;
   List<AiChatMessage> get messages => List.unmodifiable(_messages);
+  List<AiConversation> get conversations => List.unmodifiable(_conversations);
   AiRunEvent? get currentRun => _currentRun;
   AiConnectionState get connectionState => _connectionState;
   String get streamedText => _streamedText;
   List<AiSource> get sources => List.unmodifiable(_sources);
   String? get error => _error;
+  String? get conversationId => _conversationId;
   bool get loading => _loading;
+  bool get loadingConversations => _loadingConversations;
+  bool get canRetry => _lastFailedMessage != null && !isRunning;
   bool get isRunning =>
       _connectionState == AiConnectionState.connecting ||
       _connectionState == AiConnectionState.streaming;
+
   String get friendlyRunStatus {
-    final raw = (_currentRun?.status ?? '').toLowerCase();
+    final raw = (_currentRun?.status ?? _run?.state ?? '').toLowerCase();
     if (raw.contains('schedule') || raw.contains('course')) {
       return '正在查看已保存的课表…';
     }
-    if (raw.contains('rag') ||
-        raw.contains('retriev') ||
-        raw.contains('policy') ||
-        raw.contains('vector')) {
+    if (raw.contains('retriev') ||
+        raw.contains('rag') ||
+        raw.contains('policy')) {
       return '正在查找学校资料…';
     }
+    if (_connectionState == AiConnectionState.connecting) return '正在连接沈理 AI…';
     return '正在整理回答…';
   }
 
@@ -75,19 +108,94 @@ class AiAssistantProvider extends ChangeNotifier {
     return prompts;
   }
 
-  Future<void> refreshCapabilities() async {
-    _loading = true;
-    _error = null;
-    notifyListeners();
+  Future<void> initialize() async {
+    await Future.wait([refreshCapabilities(silent: true), loadConversations()]);
+  }
+
+  Future<void> refreshCapabilities({bool silent = false}) async {
+    if (!silent) {
+      _loading = true;
+      _error = null;
+      _notify();
+    }
     try {
       final result = await _service.getCapabilities();
       _capabilities = result;
       _quota = result.quota;
     } catch (_) {
-      _error = '暂时无法读取 AI 服务状态';
+      if (!silent) _error = '暂时无法读取 AI 服务状态';
     } finally {
       _loading = false;
-      notifyListeners();
+      _notify();
+    }
+  }
+
+  Future<void> loadConversations() async {
+    _loadingConversations = true;
+    _notify();
+    try {
+      final result = await _service.listConversations();
+      _conversations
+        ..clear()
+        ..addAll(result);
+    } on AiAssistantServiceException catch (error) {
+      _error = error.message;
+    } catch (_) {
+      _error = '读取历史会话失败，请稍后重试';
+    } finally {
+      _loadingConversations = false;
+      _notify();
+    }
+  }
+
+  Future<void> startNewConversation() async {
+    if (isRunning) return;
+    _streamGeneration++;
+    _conversationId = null;
+    _messages.clear();
+    _resetRunState();
+    _notify();
+  }
+
+  Future<void> openConversation(String id) async {
+    if (isRunning || id == _conversationId) return;
+    _loading = true;
+    _error = null;
+    _notify();
+    try {
+      final details = await _service.getConversation(id);
+      _streamGeneration++;
+      _conversationId = id;
+      _messages
+        ..clear()
+        ..addAll(details.messages.map(_fromHistory));
+      _resetRunState();
+      _moveConversationToFront(details.conversation);
+      await _restoreSources(details.messages);
+    } on AiAssistantServiceException catch (error) {
+      _error = error.message;
+    } catch (_) {
+      _error = '会话加载失败，请稍后重试';
+    } finally {
+      _loading = false;
+      _notify();
+    }
+  }
+
+  Future<void> deleteConversation(String id) async {
+    try {
+      await _service.deleteConversation(id);
+      _conversations.removeWhere((item) => item.id == id);
+      if (_conversationId == id) await startNewConversation();
+      _notify();
+    } on AiAssistantServiceException catch (error) {
+      _error = error.message;
+      _notify();
+      rethrow;
+    } catch (_) {
+      _error = '删除会话失败，请稍后重试';
+      _notify();
+      rethrow;
     }
   }
 
@@ -96,21 +204,167 @@ class AiAssistantProvider extends ChangeNotifier {
     if (message.isEmpty) return AiSubmitResult.blank;
     final maxChars = _capabilities?.maxMessageChars ?? 20;
     if (message.characters.length > maxChars) return AiSubmitResult.tooLong;
+    if (isRunning) return AiSubmitResult.busy;
     if ((_quota?.remaining ?? 0) <= 0) return AiSubmitResult.quotaExceeded;
     if (_capabilities?.chatEnabled != true) {
       _error = '基础设施测试中，暂未开放真实问答';
-      notifyListeners();
+      _notify();
       return AiSubmitResult.unavailable;
     }
 
-    // P1 接入 create-run/SSE 后由此处进入真实发送；P0 不构造假消息。
-    _error = '问答通道尚未开放';
-    notifyListeners();
-    return AiSubmitResult.unavailable;
+    final requestId = _uuidV4();
+    _error = null;
+    _lastFailedMessage = null;
+    _streamedText = '';
+    _sources = [];
+    _lastEventSeq = 0;
+    _connectionState = AiConnectionState.connecting;
+    _messages.add(AiChatMessage(
+      id: requestId,
+      requestId: requestId,
+      role: AiMessageRole.user,
+      content: message,
+      status: AiMessageStatus.pending,
+      createdAt: DateTime.now(),
+    ));
+    _notify();
+
+    unawaited(_submitAsync(requestId, message));
+    return AiSubmitResult.accepted;
   }
 
-  /// 预留给 P1 的 SSE 事件入口；所有流式状态集中在 Provider，页面不自行拼接。
+  Future<void> _submitAsync(String requestId, String message) async {
+    try {
+      final creation = await _service.createRun(
+        conversationId: _conversationId ?? '',
+        clientRequestId: requestId,
+        message: message,
+      );
+      _run = creation.run;
+      _conversationId = creation.run.conversationId;
+      _replaceUserStatus(requestId, AiMessageStatus.completed);
+      unawaited(
+          _consumeEvents(creation.run.id, generation: ++_streamGeneration));
+    } on AiAssistantServiceException catch (exception) {
+      _handleSubmitFailure(requestId, message, exception);
+    } catch (_) {
+      _handleSubmitFailure(
+        requestId,
+        message,
+        const AiAssistantServiceException('请求发送失败，请检查网络后重试', retryable: true),
+      );
+    }
+  }
+
+  AiSubmitResult retryLast() {
+    final message = _lastFailedMessage;
+    if (message == null) return AiSubmitResult.blank;
+    _messages.removeWhere(
+      (item) =>
+          item.role == AiMessageRole.user &&
+          item.status == AiMessageStatus.failed,
+    );
+    return submit(message);
+  }
+
+  Future<void> cancel() async {
+    final runId = _run?.id;
+    if (runId == null || !isRunning) return;
+    try {
+      await _service.cancelRun(runId);
+      _connectionState = AiConnectionState.cancelled;
+      _error = '已取消本次回答';
+      _streamGeneration++;
+      _notify();
+      unawaited(refreshCapabilities(silent: true));
+    } on AiAssistantServiceException catch (exception) {
+      _error = exception.message;
+      _notify();
+    } catch (_) {
+      _error = '取消回答失败，请稍后重试';
+      _notify();
+    }
+  }
+
+  Future<void> reconnect() async {
+    final runId = _run?.id;
+    if (runId == null || isRunning) return;
+    _error = null;
+    _connectionState = AiConnectionState.connecting;
+    _notify();
+    await _consumeEvents(runId,
+        generation: ++_streamGeneration, allowReconnect: false);
+  }
+
+  Future<void> _consumeEvents(
+    String runId, {
+    required int generation,
+    bool allowReconnect = true,
+  }) async {
+    try {
+      await for (final event
+          in _service.streamRunEvents(runId, lastEventId: _lastEventSeq)) {
+        if (_disposed || generation != _streamGeneration) return;
+        applyRunEvent(event);
+        if (_isTerminal(event.type)) break;
+      }
+      if (!_disposed && generation == _streamGeneration && isRunning) {
+        await _recoverRun(runId, generation, allowReconnect: allowReconnect);
+      }
+    } catch (_) {
+      if (!_disposed && generation == _streamGeneration) {
+        await _recoverRun(runId, generation, allowReconnect: allowReconnect);
+      }
+    }
+  }
+
+  Future<void> _recoverRun(String runId, int generation,
+      {required bool allowReconnect}) async {
+    try {
+      final run = await _service.getRun(runId);
+      if (_disposed || generation != _streamGeneration) return;
+      _run = run;
+      if (run.answerCheckpoint.isNotEmpty &&
+          run.answerCheckpoint != _streamedText) {
+        _streamedText = run.answerCheckpoint;
+        _upsertAssistant(run.answerCheckpoint, AiMessageStatus.streaming);
+      }
+      if (run.state == 'completed') {
+        _connectionState = AiConnectionState.completed;
+        _upsertAssistant(_streamedText, AiMessageStatus.completed);
+        await _finishRun();
+      } else if (run.state == 'failed' || run.state == 'expired') {
+        _connectionState = AiConnectionState.failed;
+        _error = _friendlyError(run.errorCode);
+        _notify();
+      } else if (run.state == 'cancelled') {
+        _connectionState = AiConnectionState.cancelled;
+        _error = '已取消本次回答';
+        _notify();
+      } else if (allowReconnect) {
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        if (!_disposed && generation == _streamGeneration) {
+          await _consumeEvents(runId,
+              generation: generation, allowReconnect: false);
+        }
+      } else {
+        _connectionState = AiConnectionState.failed;
+        _error = '连接已中断，可点击重新连接继续回放';
+        _notify();
+      }
+    } catch (_) {
+      _connectionState = AiConnectionState.failed;
+      _error = '连接已中断，可点击重新连接继续回放';
+      _notify();
+    }
+  }
+
+  /// SSE 回放可能重复到达，统一按 seq 去重，并用 checkpoint 覆盖增量文本。
   void applyRunEvent(AiRunEvent event) {
+    if (event.type != AiRunEventType.heartbeat && event.seq > 0) {
+      if (event.seq <= _lastEventSeq) return;
+      _lastEventSeq = event.seq;
+    }
     _currentRun = event;
     switch (event.type) {
       case AiRunEventType.started:
@@ -122,25 +376,196 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.delta:
         _connectionState = AiConnectionState.streaming;
         _streamedText += event.text;
+        _upsertAssistant(_streamedText, AiMessageStatus.streaming);
+        break;
+      case AiRunEventType.checkpoint:
+        _connectionState = AiConnectionState.streaming;
+        if (event.text.isNotEmpty) {
+          _streamedText = event.text;
+          _upsertAssistant(_streamedText, AiMessageStatus.streaming);
+        }
         break;
       case AiRunEventType.sources:
         _sources = List<AiSource>.unmodifiable(event.sources);
+        _upsertAssistant(_streamedText, AiMessageStatus.streaming,
+            sources: _sources);
         break;
       case AiRunEventType.completed:
         _connectionState = AiConnectionState.completed;
         if (event.quota != null) _quota = event.quota;
+        _upsertAssistant(_streamedText, AiMessageStatus.completed,
+            sources: _sources);
+        unawaited(_finishRun());
         break;
       case AiRunEventType.failed:
         _connectionState = AiConnectionState.failed;
-        _error = event.text.isEmpty ? '回答生成失败，请稍后重试' : event.text;
+        _error = _friendlyError(event.errorCode);
+        if (_streamedText.isNotEmpty) {
+          _upsertAssistant(_streamedText, AiMessageStatus.failed,
+              sources: _sources);
+        }
+        break;
+      case AiRunEventType.cancelled:
+        _connectionState = AiConnectionState.cancelled;
+        _error = '已取消本次回答';
+        break;
+      case AiRunEventType.heartbeat:
+      case AiRunEventType.unknown:
         break;
     }
-    notifyListeners();
+    _notify();
+  }
+
+  Future<void> _finishRun() async {
+    await Future.wait([refreshCapabilities(silent: true), loadConversations()]);
+  }
+
+  Future<void> _restoreSources(List<AiConversationMessage> history) async {
+    for (final message in history
+        .where((item) => item.role == 'assistant' && item.runId != null)) {
+      try {
+        List<AiSource> restored = const [];
+        await for (final event in _service.streamRunEvents(message.runId!)) {
+          if (event.type == AiRunEventType.sources) restored = event.sources;
+          if (_isTerminal(event.type)) break;
+        }
+        if (restored.isNotEmpty) {
+          final index = _messages.indexWhere((item) => item.id == message.id);
+          if (index >= 0) {
+            _messages[index] = _messages[index].copyWith(sources: restored);
+          }
+        }
+      } catch (_) {
+        // 历史来源恢复失败不阻断正文展示。
+      }
+    }
+  }
+
+  AiChatMessage _fromHistory(AiConversationMessage message) {
+    return AiChatMessage(
+      id: message.id,
+      requestId: message.runId ?? message.id,
+      role:
+          message.role == 'user' ? AiMessageRole.user : AiMessageRole.assistant,
+      content: message.content,
+      status: AiMessageStatus.completed,
+      createdAt: message.createdAt ?? DateTime.now(),
+    );
+  }
+
+  void _upsertAssistant(
+    String text,
+    AiMessageStatus status, {
+    List<AiSource>? sources,
+  }) {
+    if (text.isEmpty && (sources == null || sources.isEmpty)) return;
+    final runId = _run?.id ?? _currentRun?.runId ?? '';
+    final index = _messages.lastIndexWhere(
+      (item) => item.role == AiMessageRole.assistant && item.requestId == runId,
+    );
+    if (index >= 0) {
+      _messages[index] = _messages[index].copyWith(
+        content: text.isEmpty ? _messages[index].content : text,
+        status: status,
+        sources: sources,
+      );
+      return;
+    }
+    _messages.add(AiChatMessage(
+      id: 'assistant-$runId',
+      requestId: runId,
+      role: AiMessageRole.assistant,
+      content: text,
+      status: status,
+      createdAt: DateTime.now(),
+      sources: sources ?? const [],
+    ));
+  }
+
+  void _replaceUserStatus(String requestId, AiMessageStatus status) {
+    final index = _messages.indexWhere((item) => item.requestId == requestId);
+    if (index >= 0) {
+      _messages[index] = _messages[index].copyWith(status: status);
+    }
+    _notify();
+  }
+
+  void _handleSubmitFailure(
+    String requestId,
+    String message,
+    AiAssistantServiceException exception,
+  ) {
+    _connectionState = AiConnectionState.failed;
+    _error = exception.message;
+    _lastFailedMessage = exception.retryable ? message : null;
+    _replaceUserStatus(requestId, AiMessageStatus.failed);
+    unawaited(refreshCapabilities(silent: true));
+  }
+
+  void _moveConversationToFront(AiConversation conversation) {
+    _conversations.removeWhere((item) => item.id == conversation.id);
+    _conversations.insert(0, conversation);
+  }
+
+  void _resetRunState() {
+    _run = null;
+    _currentRun = null;
+    _connectionState = AiConnectionState.idle;
+    _streamedText = '';
+    _sources = [];
+    _lastEventSeq = 0;
+    _lastFailedMessage = null;
+    _error = null;
   }
 
   void clearError() {
     if (_error == null) return;
     _error = null;
-    notifyListeners();
+    _notify();
   }
+
+  bool _isTerminal(AiRunEventType type) =>
+      type == AiRunEventType.completed ||
+      type == AiRunEventType.failed ||
+      type == AiRunEventType.cancelled;
+
+  String _friendlyError(String code) {
+    switch (code) {
+      case 'rag_insufficient_sources':
+        return '当前已发布资料不足，暂时无法回答这个问题';
+      case 'rag_unavailable':
+        return '政策资料服务暂时不可用，请稍后重试';
+      case 'server_restarted':
+        return '服务刚刚恢复，本次回答未完成，请重新提问';
+      case 'context_cancelled':
+        return '本次回答已取消';
+      case 'run_expired':
+        return '本次回答已过期，请重新提问';
+      default:
+        return '回答生成失败，请稍后重试';
+    }
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _streamGeneration++;
+    super.dispose();
+  }
+}
+
+String _uuidV4() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  String hex(int value) => value.toRadixString(16).padLeft(2, '0');
+  final value = bytes.map(hex).join();
+  return '${value.substring(0, 8)}-${value.substring(8, 12)}-'
+      '${value.substring(12, 16)}-${value.substring(16, 20)}-'
+      '${value.substring(20)}';
 }

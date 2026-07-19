@@ -1,0 +1,15 @@
+# DevEco/HarmonyOS 本地缓存与构建产物
+.hvigor/
+.idea/
+node_modules/
+oh_modules/
+entry/build/
+entry/oh_modules/
+
+# Flutter/HarmonyOS 构建时生成的资源包，发布前由构建流水线重新生成
+entry/src/main/resources/rawfile/flutter_assets/
+
+# 机器相关配置
+local.properties
+build-profile.local.json5
+

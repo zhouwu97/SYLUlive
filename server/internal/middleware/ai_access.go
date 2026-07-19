@@ -21,7 +21,9 @@ func AIAccessMiddleware(enabled, internalTestOnly bool, allowedUserIDs []string)
 		}
 		if internalTestOnly {
 			userID := strconv.FormatUint(uint64(c.GetUint("user_id")), 10)
-			if _, ok := allowed[userID]; !ok {
+			role := c.GetString("role")
+			_, whitelisted := allowed[userID]
+			if !whitelisted && role != "admin" && role != "super_admin" {
 				writeAPIError(c, http.StatusForbidden, "ai_internal_test_only", "AI 助手当前仅对内测用户开放")
 				c.Abort()
 				return

@@ -31,6 +31,14 @@ type Config struct {
 	SuperAdminID                  string // 超级管理员账号
 	SuperAdminPass                string // 超级管理员密码
 
+	AIEnabled          bool     // AI 总开关
+	AIInternalTestOnly bool     // 仅允许内测白名单访问
+	AITestUserIDs      []string // AI 内测用户 ID 白名单
+	AIProvider         string   // AI Provider 名称
+	DeepSeekAPIKey     string   // 仅从服务端环境变量读取的 DeepSeek 密钥
+	DeepSeekBaseURL    string   // DeepSeek API 地址
+	DeepSeekChatModel  string   // DeepSeek 对话模型
+
 	EduServiceToken        string // Python 教务服务共享密钥
 	JWCSyncEnabled         bool   // 校园资讯同步开关
 	JWCSyncIntervalMinutes int    // 校园资讯同步间隔(分钟)
@@ -215,6 +223,26 @@ func Load() *Config {
 		appReleaseAccelPrefix = "/_internal/app-releases/"
 	}
 
+	aiEnabled := envBool("AI_ENABLED", false)
+	aiInternalTestOnly := envBool("AI_INTERNAL_TEST_ONLY", true)
+	aiTestUserIDs := splitNonEmpty(os.Getenv("AI_TEST_USER_IDS"))
+	aiProvider := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
+	if aiProvider == "" {
+		aiProvider = "deepseek"
+	}
+	deepSeekAPIKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
+	deepSeekBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("DEEPSEEK_BASE_URL")), "/")
+	if deepSeekBaseURL == "" {
+		deepSeekBaseURL = "https://api.deepseek.com"
+	}
+	deepSeekChatModel := strings.TrimSpace(os.Getenv("DEEPSEEK_CHAT_MODEL"))
+	if deepSeekChatModel == "" {
+		deepSeekChatModel = "deepseek-chat"
+	}
+	if err := validateAIConfig(aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey, deepSeekBaseURL); err != nil {
+		panic(err)
+	}
+
 	return &Config{
 		JWTSecret:                     jwtSecret,
 		DSN:                           dsn,
@@ -236,6 +264,14 @@ func Load() *Config {
 		SuperAdminID:                  superAdminID,
 		SuperAdminPass:                superAdminPass,
 
+		AIEnabled:          aiEnabled,
+		AIInternalTestOnly: aiInternalTestOnly,
+		AITestUserIDs:      aiTestUserIDs,
+		AIProvider:         aiProvider,
+		DeepSeekAPIKey:     deepSeekAPIKey,
+		DeepSeekBaseURL:    deepSeekBaseURL,
+		DeepSeekChatModel:  deepSeekChatModel,
+
 		EduServiceToken:        eduServiceToken,
 		JWCSyncEnabled:         jwcSyncEnabled,
 		JWCSyncIntervalMinutes: jwcSyncIntervalMinutes,
@@ -247,6 +283,56 @@ func Load() *Config {
 		AppReleaseUseAccelRedirect:  appReleaseUseAccelRedirect,
 		AppReleaseAccelPrefix:       appReleaseAccelPrefix,
 	}
+}
+
+func envBool(name string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		panic(fmt.Errorf("%s 必须为 true 或 false", name))
+	}
+	return parsed
+}
+
+func splitNonEmpty(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, exists := seen[part]; exists {
+			continue
+		}
+		seen[part] = struct{}{}
+		result = append(result, part)
+	}
+	return result
+}
+
+func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, apiKey, baseURL string) error {
+	if provider != "deepseek" && provider != "mock" {
+		return fmt.Errorf("AI_PROVIDER 只能是 deepseek 或 mock")
+	}
+	if !enabled {
+		return nil
+	}
+	if internalOnly && len(whitelist) == 0 {
+		return fmt.Errorf("AI_INTERNAL_TEST_ONLY=true 时必须设置 AI_TEST_USER_IDS")
+	}
+	if provider == "deepseek" && apiKey == "" {
+		return fmt.Errorf("AI_ENABLED=true 且 AI_PROVIDER=deepseek 时必须设置 DEEPSEEK_API_KEY")
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return fmt.Errorf("DEEPSEEK_BASE_URL 必须是无用户信息的 HTTPS 地址")
+	}
+	return nil
 }
 
 func validateExamPaperStorageConfig(mode, baseURL, signingSecret, receiptSecret string, releaseMode bool) error {

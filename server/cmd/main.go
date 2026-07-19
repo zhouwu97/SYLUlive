@@ -555,6 +555,11 @@ func main() {
 	campusArticleHandler := handlers.NewCampusArticleHandler(db, campusSyncServices...)
 	campusCalendarHandler := handlers.NewCampusCalendarHandler(db)
 	knowledgeHandler := handlers.NewAIKnowledgeHandler(db)
+	aiCapabilitiesHandler := handlers.NewAICapabilitiesHandler(
+		cfg.AIEnabled,
+		cfg.AIInternalTestOnly,
+		cfg.AITestUserIDs,
+	)
 
 	// 启动后台定时任务
 
@@ -1472,6 +1477,13 @@ func main() {
 		knowledgeAdmin.POST("/:id/publish", knowledgeHandler.Publish)
 		knowledgeAdmin.POST("/:id/revoke", knowledgeHandler.Revoke)
 		knowledgeAdmin.POST("/:id/supersede", knowledgeHandler.Supersede)
+	}
+
+	// P0 用户侧只开放能力探测。真实对话路由在 P1 上线，不能由客户端绕过阶段门禁。
+	aiCapabilities := r.Group("/api/ai")
+	aiCapabilities.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		aiCapabilities.GET("/capabilities", aiCapabilitiesHandler.Get)
 	}
 
 	// 版本信息

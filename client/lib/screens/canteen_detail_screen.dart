@@ -1377,9 +1377,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         return response.data['url'].toString();
       }
     } on DioException catch (e) {
-      debugPrint('上传食堂封面失败: ${e.message} ${e.response?.data}');
+      debugPrint('上传食堂封面失败: ${e.type} status=${e.response?.statusCode}');
     } catch (e) {
-      debugPrint('处理食堂封面失败: $e');
+      debugPrint('处理食堂封面失败: ${e.runtimeType}');
     }
     return null;
   }

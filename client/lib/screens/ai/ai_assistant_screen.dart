@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../models/ai_capabilities.dart';
 import '../../providers/ai_assistant_provider.dart';
 import '../../services/ai_assistant_service.dart';
+import '../../services/account_session_cleanup_coordinator.dart';
 import '../../widgets/ai/ai_empty_state.dart';
 import '../../widgets/ai/ai_error_card.dart';
 import '../../widgets/ai/ai_input_composer.dart';
@@ -39,11 +40,16 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       widget.service,
       initialCapabilities: widget.capabilities,
     );
+    AccountSessionCleanupCoordinator.instance.register(
+      this,
+      _provider.closeAccountContext,
+    );
     unawaited(_provider.initialize());
   }
 
   @override
   void dispose() {
+    AccountSessionCleanupCoordinator.instance.unregister(this);
     _inputController.dispose();
     _provider.dispose();
     super.dispose();

@@ -4,6 +4,39 @@ enum AIModelProviderKind {
   openAICompatible,
 }
 
+/// OpenAI 兼容服务实际采用的请求协议。
+///
+/// 自动模式优先尝试 Responses API，仅在服务明确不兼容时回退到
+/// Chat Completions，避免把网络超时或鉴权错误误判为协议不兼容。
+enum OpenAIWireApi {
+  auto,
+  responses,
+  chatCompletions,
+}
+
+extension OpenAIWireApiLabel on OpenAIWireApi {
+  String get storageValue => switch (this) {
+        OpenAIWireApi.auto => 'auto',
+        OpenAIWireApi.responses => 'responses',
+        OpenAIWireApi.chatCompletions => 'chat_completions',
+      };
+
+  String get displayName => switch (this) {
+        OpenAIWireApi.auto => '自动识别',
+        OpenAIWireApi.responses => 'Responses API',
+        OpenAIWireApi.chatCompletions => 'Chat Completions',
+      };
+
+  static OpenAIWireApi fromStorage(String? value) => switch (value) {
+        null || '' || 'auto' => OpenAIWireApi.auto,
+        'responses' => OpenAIWireApi.responses,
+        'chat_completions' ||
+        'chatCompletions' =>
+          OpenAIWireApi.chatCompletions,
+        _ => throw const FormatException('未知 OpenAI 请求协议'),
+      };
+}
+
 extension AIModelProviderKindLabel on AIModelProviderKind {
   String get storageValue => switch (this) {
         AIModelProviderKind.campusPublic => 'campus_public',
@@ -28,12 +61,14 @@ class AIModelProviderConfig {
   final AIModelProviderKind kind;
   final String endpoint;
   final String model;
+  final OpenAIWireApi wireApi;
 
   const AIModelProviderConfig({
     this.id = 'default',
     required this.kind,
     this.endpoint = '',
     this.model = '',
+    this.wireApi = OpenAIWireApi.auto,
   });
 
   factory AIModelProviderConfig.fromJson(Map<String, dynamic> json) {
@@ -42,6 +77,7 @@ class AIModelProviderConfig {
       kind: AIModelProviderKindLabel.fromStorage(json['kind']?.toString()),
       endpoint: json['endpoint']?.toString().trim() ?? '',
       model: json['model']?.toString().trim() ?? '',
+      wireApi: OpenAIWireApiLabel.fromStorage(json['wire_api']?.toString()),
     );
   }
 
@@ -50,6 +86,7 @@ class AIModelProviderConfig {
         'kind': kind.storageValue,
         'endpoint': endpoint.trim(),
         'model': model.trim(),
+        'wire_api': wireApi.storageValue,
       };
 
   AIModelProviderConfig copyWith({
@@ -57,12 +94,14 @@ class AIModelProviderConfig {
     AIModelProviderKind? kind,
     String? endpoint,
     String? model,
+    OpenAIWireApi? wireApi,
   }) {
     return AIModelProviderConfig(
       id: id ?? this.id,
       kind: kind ?? this.kind,
       endpoint: endpoint ?? this.endpoint,
       model: model ?? this.model,
+      wireApi: wireApi ?? this.wireApi,
     );
   }
 }
@@ -117,6 +156,14 @@ class AIModelProviderException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class AIModelProviderConfigurationException extends AIModelProviderException {
+  const AIModelProviderConfigurationException(super.message);
+}
+
+class AIModelProviderCompatibilityException extends AIModelProviderException {
+  const AIModelProviderCompatibilityException(super.message);
 }
 
 abstract interface class AIModelProvider {

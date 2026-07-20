@@ -104,6 +104,7 @@ class AIProviderSettingsStore {
   Future<void> saveOpenAICompatible({
     required String endpoint,
     required String model,
+    OpenAIWireApi wireApi = OpenAIWireApi.auto,
     String? apiKey,
   }) async {
     final normalizedKey = apiKey?.trim() ?? '';
@@ -119,6 +120,7 @@ class AIProviderSettingsStore {
       kind: AIModelProviderKind.openAICompatible,
       endpoint: endpoint.trim(),
       model: model.trim(),
+      wireApi: wireApi,
     );
     if (normalizedKey.isEmpty) {
       await _saveConfig(config);

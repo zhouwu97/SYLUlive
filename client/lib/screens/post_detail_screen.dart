@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
-import '../config/market_contact_type.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
@@ -19,11 +18,9 @@ import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
-import '../utils/text_editing_helper.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
-import '../widgets/emoji/app_emoji_panel.dart';
 import '../models/unread_reply_notification.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
@@ -175,8 +172,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final _replyController = TextEditingController();
   final _replyFocus = FocusNode();
   bool _isReplyComposerOpen = false;
-  bool _showEmojiPanel = false;
-  double _lastComposerKeyboardHeight = 280;
   int _marketImageIndex = 0;
   int? _parentReplyId;
   String? _replyToName;
@@ -202,7 +197,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _isLoading = false;
     }
     _activeTargetReplyId = widget.targetReplyId;
-    _replyFocus.addListener(_handleReplyFocusChange);
     _loadPost();
   }
 
@@ -218,7 +212,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   @override
   void dispose() {
     _replyController.dispose();
-    _replyFocus.removeListener(_handleReplyFocusChange);
     _replyFocus.dispose();
     _highlightTimer?.cancel();
     super.dispose();
@@ -401,23 +394,59 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = _replyController.text.trim();
     if (content.isEmpty) return;
 
-    final pendingContent = _replyController.text;
-    final pendingSelection = _replyController.selection;
-    final pendingEmojiPanel = _showEmojiPanel;
-
     if (mounted) setState(() => _isSending = true);
 
-    // 先保存 parentReplyId，后面 setState 会清空它
     final parentId = _parentReplyId;
-    final replyToName = _replyToName;
     final replyToUserId = _replyToUserId;
+
+    _replyController.clear();
+    _replyFocus.unfocus();
+    if (mounted) {
+      setState(() {
+        _isReplyComposerOpen = false;
+        _parentReplyId = null;
+        _replyToName = null;
+        _replyToUserId = null;
+      });
+    }
+
+    try {
+      await _submitReplyContent(
+        content: content,
+        parentReplyId: parentId,
+        replyToUserId: replyToUserId,
+      );
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<bool> _submitReplyContent({
+    required String content,
+    required int? parentReplyId,
+    required int? replyToUserId,
+  }) async {
+    int? tempReplyId;
+
+    void rollbackOptimisticReply() {
+      if (!mounted || tempReplyId == null) return;
+      setState(() {
+        _replies.removeWhere((reply) => reply.id == tempReplyId);
+        if (_post != null) {
+          _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
+        }
+      });
+      if (_post != null) {
+        context.read<PostProvider>().updatePostInCache(_post!);
+      }
+    }
 
     // 乐观更新：立即在本地插入评论
     final user = context.read<AuthProvider>().user;
     if (user != null && _post != null) {
-      final tempId = -DateTime.now().millisecondsSinceEpoch;
+      tempReplyId = -DateTime.now().microsecondsSinceEpoch;
       final tempReply = Reply(
-        id: tempId,
+        id: tempReplyId,
         postId: widget.postId,
         authorId: user.id,
         content: content,
@@ -429,28 +458,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           avatar: user.avatar,
           createdAt: DateTime.now(),
         ),
-        parentReplyId: parentId,
+        parentReplyId: parentReplyId,
       );
-      _replies.insert(0, tempReply);
-      _post = _post!.copyWith(replyCount: _post!.replyCount + 1);
+      setState(() {
+        _replies.insert(0, tempReply);
+        _post = _post!.copyWith(replyCount: _post!.replyCount + 1);
+      });
       context.read<PostProvider>().updatePostInCache(_post!);
     }
-    _replyController.clear();
-    _replyFocus.unfocus();
-    if (mounted)
-      setState(() {
-        _isReplyComposerOpen = false;
-        _parentReplyId = null;
-        _replyToName = null;
-        _replyToUserId = null;
-        _showEmojiPanel = false;
-      });
 
     // 后台静默发送
     try {
       final formData = FormData.fromMap({
         'content': content,
-        if (parentId != null) 'parent_reply_id': parentId.toString(),
+        if (parentReplyId != null) 'parent_reply_id': parentReplyId.toString(),
         if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
       });
       final createResponse =
@@ -470,74 +491,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               .toList();
         });
       }
+      return true;
     } on DioException catch (e) {
       if (mounted) {
-        setState(() {
-          _replies.removeWhere((r) => r.id < 0);
-          if (_post != null) {
-            _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
-          }
-          _replyController.value = TextEditingValue(
-            text: pendingContent,
-            selection: pendingSelection.isValid
-                ? pendingSelection
-                : TextSelection.collapsed(offset: pendingContent.length),
-          );
-          _isReplyComposerOpen = true;
-          _parentReplyId = parentId;
-          _replyToName = replyToName;
-          _replyToUserId = replyToUserId;
-          _showEmojiPanel = pendingEmojiPanel;
-        });
-        if (!pendingEmojiPanel) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _replyFocus.requestFocus();
-          });
-        }
-        if (_post != null) {
-          context.read<PostProvider>().updatePostInCache(_post!);
-        }
+        rollbackOptimisticReply();
         AppFeedback.showSnackBar(
           context,
           AppFeedback.dioErrorMessage(e, fallback: '发送失败'),
           isError: true,
         );
       }
-    } finally {
-      if (mounted) setState(() => _isSending = false);
+      return false;
+    } catch (_) {
+      if (mounted) {
+        rollbackOptimisticReply();
+        AppFeedback.showSnackBar(context, '发送失败', isError: true);
+      }
+      return false;
     }
-  }
-
-  void _handleReplyFocusChange() {
-    if (_replyFocus.hasFocus && _showEmojiPanel && mounted) {
-      setState(() => _showEmojiPanel = false);
-    }
-  }
-
-  void _toggleReplyEmojiPanel() {
-    if (_showEmojiPanel) {
-      setState(() => _showEmojiPanel = false);
-      _replyFocus.requestFocus();
-      return;
-    }
-    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
-    if (keyboardHeight > 0) {
-      _lastComposerKeyboardHeight =
-          keyboardHeight.clamp(240.0, 320.0).toDouble();
-    }
-    _replyFocus.unfocus();
-    setState(() => _showEmojiPanel = true);
-  }
-
-  void _insertReplyEmoji(String emoji) {
-    insertAtSelection(_replyController, emoji);
-  }
-
-  double get _replyEmojiPanelHeight {
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    return _lastComposerKeyboardHeight
-        .clamp(220.0, screenHeight * 0.42)
-        .toDouble();
   }
 
   ExpAward? _firstAwardWhere(
@@ -1400,58 +1371,50 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
-      child: PopScope(
-        canPop: !_showEmojiPanel,
-        onPopInvokedWithResult: (didPop, result) {
-          if (!didPop && _showEmojiPanel) {
-            setState(() => _showEmojiPanel = false);
-          }
-        },
-        child: Scaffold(
-          resizeToAvoidBottomInset: false,
-          backgroundColor: transparentMode
-              ? Colors.transparent
-              : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
-          appBar: transparentMode
-              ? AppBar(
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  automaticallyImplyLeading: false,
-                )
-              : widget.isMarket
-                  ? _buildMarketAppBar(
-                      isDark,
-                      canEdit: canEdit,
-                      canDelete: canDelete,
-                      isOwn: isOwn,
-                      isAdmin: isAdmin,
-                    )
-                  : _buildWaterAppBar(isDark,
-                      canEdit: canEdit,
-                      canDelete: canDelete,
-                      isOwn: isOwn,
-                      isAdmin: isAdmin),
-          body: Stack(
-            children: [
-              if (_isLoading)
-                const SafeArea(
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_errorMessage != null)
-                SafeArea(child: _buildErrorView(isDark))
-              else if (_post == null)
-                SafeArea(child: _buildEmptyView(isDark))
-              else if (widget.isMarket)
-                _buildMarketDetail(isDark)
-              else
-                Column(
-                  children: [
-                    Expanded(child: _buildWaterDetail(isDark)),
-                    _buildWaterReplyBar(isDark),
-                  ],
-                ),
-            ],
-          ),
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        backgroundColor: transparentMode
+            ? Colors.transparent
+            : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
+        appBar: transparentMode
+            ? AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                automaticallyImplyLeading: false,
+              )
+            : widget.isMarket
+                ? _buildMarketAppBar(
+                    isDark,
+                    canEdit: canEdit,
+                    canDelete: canDelete,
+                    isOwn: isOwn,
+                    isAdmin: isAdmin,
+                  )
+                : _buildWaterAppBar(isDark,
+                    canEdit: canEdit,
+                    canDelete: canDelete,
+                    isOwn: isOwn,
+                    isAdmin: isAdmin),
+        body: Stack(
+          children: [
+            if (_isLoading)
+              const SafeArea(
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_errorMessage != null)
+              SafeArea(child: _buildErrorView(isDark))
+            else if (_post == null)
+              SafeArea(child: _buildEmptyView(isDark))
+            else if (widget.isMarket)
+              _buildMarketDetail(isDark)
+            else
+              Column(
+                children: [
+                  Expanded(child: _buildWaterDetail(isDark)),
+                  _buildWaterReplyBar(isDark),
+                ],
+              ),
+          ],
         ),
       ),
     );
@@ -1991,7 +1954,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        _buildMarketSellerRow(p, isDark),
+                        _buildAuthorCard(p, isDark),
+                        if (p.contact.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: p.contact));
+                              AppFeedback.showSnackBar(context, '联系方式已复制到剪贴板');
+                            },
+                            child: _buildContactChip(p.contact, isDark),
+                          ),
+                        ],
                         if (_canUseOwnerMarketActions()) ...[
                           const SizedBox(height: 24),
                           _buildOwnerMarketActions(isDark),
@@ -2129,7 +2102,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        _buildMarketSellerRow(p, isDark),
+                        _buildAuthorCard(p, isDark),
+                        if (p.contact.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: p.contact));
+                              AppFeedback.showSnackBar(context, '联系方式已复制到剪贴板');
+                            },
+                            child: _buildContactChip(p.contact, isDark),
+                          ),
+                        ],
                         if (_canUseOwnerMarketActions()) ...[
                           const SizedBox(height: 24),
                           _buildOwnerMarketActions(isDark),
@@ -2793,151 +2776,116 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: SafeArea(
           top: false,
           bottom: bottomPadding == 0,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        _replyController.clear();
-                        _replyFocus.unfocus();
-                        if (mounted) {
-                          setState(() {
-                            _isReplyComposerOpen = false;
-                            _parentReplyId = null;
-                            _replyToName = null;
-                            _replyToUserId = null;
-                            _showEmojiPanel = false;
-                          });
-                        }
-                      },
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        margin: const EdgeInsets.only(bottom: 3),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.08)
-                              : const Color(0xFFF3F4F6),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          size: 20,
-                          color: isDark ? Colors.white54 : Colors.grey[600],
-                        ),
-                      ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    _replyController.clear();
+                    _replyFocus.unfocus();
+                    if (mounted) {
+                      setState(() {
+                        _isReplyComposerOpen = false;
+                        _parentReplyId = null;
+                        _replyToName = null;
+                        _replyToUserId = null;
+                      });
+                    }
+                  },
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    margin: const EdgeInsets.only(bottom: 3),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : const Color(0xFFF3F4F6),
+                      shape: BoxShape.circle,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Container(
-                        constraints: const BoxConstraints(minHeight: 42),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.08)
-                              : const Color(0xFFF3F4F6),
-                          borderRadius: BorderRadius.circular(21),
-                        ),
-                        child: TextField(
-                          controller: _replyController,
-                          focusNode: _replyFocus,
-                          minLines: 1,
-                          maxLines: 3,
-                          textAlignVertical: TextAlignVertical.center,
-                          textInputAction: TextInputAction.newline,
-                          decoration: InputDecoration(
-                            hintText: _replyToName != null
-                                ? '回复 @$_replyToName'
-                                : '写下你的想法...',
-                            hintStyle: TextStyle(
-                              color: isDark ? Colors.white30 : Colors.grey[400],
-                              fontSize: 14,
-                            ),
-                            border: InputBorder.none,
-                            isDense: true,
-                            suffixIcon: IconButton(
-                              tooltip: _showEmojiPanel ? '打开键盘' : '选择表情',
-                              onPressed:
-                                  _isSending ? null : _toggleReplyEmojiPanel,
-                              icon: Icon(
-                                _showEmojiPanel
-                                    ? Icons.keyboard_alt_outlined
-                                    : Icons.sentiment_satisfied_alt_outlined,
-                                size: 21,
-                              ),
-                            ),
-                            suffixIconConstraints: const BoxConstraints(
-                              minWidth: 42,
-                              minHeight: 40,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                          ),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: isDark ? Colors.white : Colors.black87,
-                            height: 1.3,
-                          ),
-                        ),
-                      ),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: isDark ? Colors.white54 : Colors.grey[600],
                     ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: _isSending ? null : _sendReply,
-                      child: Container(
-                        width: 42,
-                        height: 42,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: _isSending
-                              ? (isDark ? Colors.white24 : Colors.grey[300])
-                              : (isDark
-                                  ? const Color(0xFF82A0FF)
-                                  : const Color(0xFF6B8EFF)),
-                          shape: BoxShape.circle,
-                        ),
-                        child: _isSending
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.send_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                child: _showEmojiPanel
-                    ? SizedBox(
-                        height: _replyEmojiPanelHeight,
-                        child: AppEmojiPanel(
-                          onEmojiSelected: _insertReplyEmoji,
-                          onBackspace: () =>
-                              deletePreviousCharacter(_replyController),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 42),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(21),
+                    ),
+                    child: TextField(
+                      controller: _replyController,
+                      focusNode: _replyFocus,
+                      minLines: 1,
+                      maxLines: 3,
+                      textAlignVertical: TextAlignVertical.center,
+                      textInputAction: TextInputAction.newline,
+                      decoration: InputDecoration(
+                        hintText: _replyToName != null
+                            ? '回复 @$_replyToName'
+                            : '写下你的想法...',
+                        hintStyle: TextStyle(
+                          color: isDark ? Colors.white30 : Colors.grey[400],
+                          fontSize: 14,
                         ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ],
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                      ),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white : Colors.black87,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _isSending ? null : _sendReply,
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _isSending
+                          ? (isDark ? Colors.white24 : Colors.grey[300])
+                          : (isDark
+                              ? const Color(0xFF82A0FF)
+                              : const Color(0xFF6B8EFF)),
+                      shape: BoxShape.circle,
+                    ),
+                    child: _isSending
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.send_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3045,139 +2993,122 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 集市卖家信息 ----
+  // ---- 作者卡片（集市复用，保持不变） ----
 
-  Widget _buildMarketSellerRow(Post post, bool isDark) {
-    final dividerColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.07);
-    final secondaryColor = isDark ? Colors.white54 : const Color(0xFF747B82);
-
-    return Container(
-      key: const ValueKey('market-seller-row'),
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 9),
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: dividerColor),
-          bottom: BorderSide(color: dividerColor),
+  Widget _buildAuthorCard(Post p, bool isDark) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (p.author != null) {
+          _openAuthorHome(p.author!.id);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),
+          borderRadius: BorderRadius.circular(18),
         ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(6),
-              onTap: post.author == null
-                  ? null
-                  : () => _openAuthorHome(post.author!.id),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 1),
-                child: Row(
-                  children: [
-                    CachedAvatar(
-                      radius: 20,
-                      imageUrl: post.author?.avatar.isNotEmpty == true
-                          ? ApiConstants.fullUrl(post.author!.avatar)
-                          : null,
-                      fallbackText: post.author?.nickname,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  post.author?.nickname ?? '匿名',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark
-                                        ? Colors.white
-                                        : const Color(0xFF202124),
-                                  ),
-                                ),
-                              ),
-                              if (post.author != null) ...[
-                                const SizedBox(width: 5),
-                                _buildLevelBadge(post.author!, isDark),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            '诚信${post.author?.creditScore ?? 100}% · '
-                            '${_formatTime(post.createdAt)} · 浏览${post.viewCount}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: secondaryColor,
-                            ),
-                          ),
-                        ],
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () {
+                if (p.author?.avatar.isNotEmpty == true) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ImageViewerScreen(
+                        imageUrls: [ApiConstants.fullUrl(p.author!.avatar)],
                       ),
                     ),
-                  ],
-                ),
+                  );
+                }
+              },
+              child: CachedAvatar(
+                radius: 24,
+                imageUrl: p.author?.avatar.isNotEmpty == true
+                    ? ApiConstants.fullUrl(p.author!.avatar)
+                    : null,
+                fallbackText: p.author?.nickname,
               ),
             ),
-          ),
-          if (post.contact.trim().isNotEmpty) ...[
-            const SizedBox(width: 8),
-            _buildMarketContactCopyAction(post, isDark),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          p.author?.nickname ?? '匿名',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ),
+                      if (p.author != null) ...[
+                        const SizedBox(width: 6),
+                        _buildLevelBadge(p.author!, isDark),
+                      ],
+                      if (p.waterSectionAuthorMeta != null) ...[
+                        const SizedBox(width: 6),
+                        _buildSectionLevelBadge(p.waterSectionAuthorMeta!),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _creditColor(
+                            p.author?.creditScore ?? 100,
+                          ).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '诚信 ${p.author?.creditScore ?? 100}%',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _creditColor(p.author?.creditScore ?? 100),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.visibility_outlined,
+                        size: 13,
+                        color: isDark ? Colors.white30 : Colors.grey[400],
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${p.viewCount}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white30 : Colors.grey[400],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              _formatTime(p.createdAt),
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white30 : Colors.grey[400],
+              ),
+            ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMarketContactCopyAction(Post post, bool isDark) {
-    final label = marketContactTypeLabel(post.contactType);
-    final primary = Theme.of(context).colorScheme.primary;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 120),
-      child: OutlinedButton.icon(
-        key: const ValueKey('market-contact-copy'),
-        onPressed: () async {
-          await Clipboard.setData(
-            ClipboardData(text: post.contact.trim()),
-          );
-          await HapticFeedback.selectionClick();
-          if (mounted) {
-            AppFeedback.showSnackBar(
-              context,
-              marketContactCopiedMessage(post.contactType),
-            );
-          }
-        },
-        icon: Icon(
-          marketContactTypeIcon(post.contactType),
-          size: 14,
-        ),
-        label: Text(
-          '$label · 复制',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: primary,
-          minimumSize: const Size(0, 32),
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          textStyle: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-          side: BorderSide(
-            color: primary.withValues(alpha: isDark ? 0.42 : 0.28),
-          ),
-          shape: const StadiumBorder(),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
       ),
     );
@@ -3290,6 +3221,101 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               color: color,
               fontSize: 13,
               fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- 联系方式（集市复用） ----
+
+  Widget _buildContactChip(String contact, bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF222731) : const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.black.withValues(alpha: 0.05),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.alternate_email_rounded,
+              size: 20,
+              color: Theme.of(context).primaryColor,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '联系方式',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: isDark ? Colors.white54 : Colors.grey[500],
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  contact,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white10 : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: isDark
+                  ? []
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.copy_rounded,
+                  size: 14,
+                  color: isDark ? Colors.white70 : Colors.black54,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '一键复制',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white70 : Colors.black54,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -3694,64 +3720,149 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  void _showReplyThreadSheet({
+  Future<void> _showReplyThreadSheet({
     required Reply parentReply,
     required Reply? anchorReply,
-  }) {
+  }) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final replyController = TextEditingController();
+    final replyFocus = FocusNode();
+    var replyTarget = anchorReply ?? parentReply;
+    var isSending = false;
 
-    showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.08),
       builder: (sheetContext) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.72,
-          minChildSize: 0.50,
-          maxChildSize: 0.92,
-          expand: false,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF171B24) : Colors.white,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(16)),
+        return StatefulBuilder(
+          builder: (sheetContentContext, setSheetState) {
+            void selectReplyTarget(Reply target, {bool requestFocus = true}) {
+              setSheetState(() {
+                replyTarget = target;
+                final nickname = target.author?.nickname.trim() ?? '';
+                replyController.text = nickname.isEmpty ? '' : '@$nickname ';
+                replyController.selection = TextSelection.collapsed(
+                  offset: replyController.text.length,
+                );
+              });
+              if (requestFocus) {
+                replyFocus.requestFocus();
+              }
+            }
+
+            Future<void> sendReply() async {
+              if (isSending) return;
+              final content = replyController.text.trim();
+              if (content.isEmpty) return;
+
+              setSheetState(() => isSending = true);
+              var succeeded = false;
+              try {
+                succeeded = await _submitReplyContent(
+                  content: content,
+                  parentReplyId: parentReply.id,
+                  replyToUserId: replyTarget.authorId,
+                );
+              } finally {
+                if (sheetContentContext.mounted) {
+                  setSheetState(() {
+                    isSending = false;
+                    if (succeeded) {
+                      replyController.clear();
+                      replyTarget = parentReply;
+                    }
+                  });
+                }
+              }
+            }
+
+            return AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(sheetContentContext).bottom,
               ),
-              child: Column(
-                children: [
-                  _buildReplyThreadSheetHeader(sheetContext, isDark),
-                  Expanded(
-                    child: CustomScrollView(
-                      controller: scrollController,
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                            child: _buildSheetParentReply(
-                                sheetContext, parentReply, isDark),
+              child: DraggableScrollableSheet(
+                initialChildSize: 0.72,
+                minChildSize: 0.50,
+                maxChildSize: 0.92,
+                expand: false,
+                builder: (context, scrollController) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF171B24) : Colors.white,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildReplyThreadSheetHeader(sheetContext, isDark),
+                        Expanded(
+                          child: CustomScrollView(
+                            controller: scrollController,
+                            slivers: [
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                                  child: _buildSheetParentReply(
+                                    sheetContext,
+                                    parentReply,
+                                    isDark,
+                                    onReply: () =>
+                                        selectReplyTarget(parentReply),
+                                  ),
+                                ),
+                              ),
+                              SliverToBoxAdapter(
+                                child: _buildRelatedRepliesHeader(
+                                  parentReply.id,
+                                  isDark,
+                                ),
+                              ),
+                              SliverPadding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                sliver: _buildSheetChildrenList(
+                                  sheetContext,
+                                  parentReply,
+                                  isDark,
+                                  onReply: selectReplyTarget,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        SliverToBoxAdapter(
-                          child: _buildRelatedRepliesHeader(
-                              parentReply.id, isDark),
-                        ),
-                        SliverPadding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          sliver: _buildSheetChildrenList(
-                              sheetContext, parentReply, isDark),
+                        _buildSheetReplyInputBar(
+                          controller: replyController,
+                          focusNode: replyFocus,
+                          replyTarget: replyTarget,
+                          isSending: isSending,
+                          isDark: isDark,
+                          onTap: () {
+                            if (replyController.text.isEmpty) {
+                              selectReplyTarget(replyTarget,
+                                  requestFocus: false);
+                            }
+                          },
+                          onSend: sendReply,
                         ),
                       ],
                     ),
-                  ),
-                  _buildSheetReplyInputBar(sheetContext, parentReply, isDark),
-                ],
+                  );
+                },
               ),
             );
           },
         );
       },
     );
+
+    replyController.dispose();
+    replyFocus.dispose();
   }
 
   Widget _buildReplyThreadSheetHeader(BuildContext sheetContext, bool isDark) {
@@ -3804,120 +3915,121 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildSheetParentReply(
-      BuildContext sheetContext, Reply r, bool isDark) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        GestureDetector(
-          onTap: () {
-            Navigator.pop(sheetContext);
-            if (r.author != null) {
-              _openAuthorHome(r.author!.id);
-            }
-          },
-          child: CachedAvatar(
-            radius: 18,
-            imageUrl: r.author?.avatar.isNotEmpty == true
-                ? ApiConstants.fullUrl(r.author!.avatar)
-                : null,
-            fallbackText: r.author?.nickname,
+    BuildContext sheetContext,
+    Reply r,
+    bool isDark, {
+    required VoidCallback onReply,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onReply,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () {
+              Navigator.pop(sheetContext);
+              if (r.author != null) {
+                _openAuthorHome(r.author!.id);
+              }
+            },
+            child: CachedAvatar(
+              radius: 18,
+              imageUrl: r.author?.avatar.isNotEmpty == true
+                  ? ApiConstants.fullUrl(r.author!.avatar)
+                  : null,
+              fallbackText: r.author?.nickname,
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    r.author?.nickname ?? '匿名',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.82)
-                          : Colors.black87,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      r.author?.nickname ?? '匿名',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.82)
+                            : Colors.black87,
+                      ),
                     ),
-                  ),
-                  if (r.author != null) ...[
-                    const SizedBox(width: 4),
-                    _buildLevelBadgeSmall(r.author!, isDark),
+                    if (r.author != null) ...[
+                      const SizedBox(width: 4),
+                      _buildLevelBadgeSmall(r.author!, isDark),
+                    ],
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatTime(r.createdAt),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white24 : Colors.grey[400],
+                      ),
+                    ),
                   ],
-                  const SizedBox(width: 8),
-                  Text(
-                    _formatTime(r.createdAt),
+                ),
+                const SizedBox(height: 4),
+                SelectionContainer.disabled(
+                  child: Text(
+                    r.content,
                     style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? Colors.white24 : Colors.grey[400],
+                      fontSize: 14,
+                      height: 1.55,
+                      color: isDark ? Colors.white70 : Colors.grey[800],
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              SelectionContainer.disabled(
-                child: Text(
-                  r.content,
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.55,
-                    color: isDark ? Colors.white70 : Colors.grey[800],
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _openReplyComposer(
-                        parentReplyId: r.id,
-                        replyToName: r.author?.nickname,
-                        replyToUserId: r.authorId,
-                      );
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.reply,
-                          size: 14,
-                          color: isDark ? Colors.white38 : Colors.grey[500],
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '回复',
-                          style: TextStyle(
-                            fontSize: 12,
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: onReply,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.reply,
+                            size: 14,
                             color: isDark ? Colors.white38 : Colors.grey[500],
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          Text(
+                            '回复',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white38 : Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      showReportSheet(
-                        context,
-                        targetId: r.id,
-                        targetType: 'reply',
-                      );
-                    },
-                    child: Icon(
-                      Icons.more_horiz,
-                      size: 16,
-                      color: isDark ? Colors.white24 : Colors.grey[300],
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        showReportSheet(
+                          context,
+                          targetId: r.id,
+                          targetType: 'reply',
+                        );
+                      },
+                      child: Icon(
+                        Icons.more_horiz,
+                        size: 16,
+                        color: isDark ? Colors.white24 : Colors.grey[300],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -3958,7 +4070,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildSheetChildrenList(
-      BuildContext sheetContext, Reply parentReply, bool isDark) {
+    BuildContext sheetContext,
+    Reply parentReply,
+    bool isDark, {
+    required ValueChanged<Reply> onReply,
+  }) {
     final children = _collectThreadChildren(parentReply.id);
 
     if (children.isEmpty) {
@@ -3971,7 +4087,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       delegate: SliverChildBuilderDelegate(
         (context, index) {
           return _buildSheetChildReplyItem(
-              sheetContext, children[index], parentReply, isDark);
+            sheetContext,
+            children[index],
+            isDark,
+            onReply: () => onReply(children[index]),
+          );
         },
         childCount: children.length,
       ),
@@ -3981,127 +4101,132 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildSheetChildReplyItem(
     BuildContext sheetContext,
     Reply child,
-    Reply parentReply,
-    bool isDark,
-  ) {
+    bool isDark, {
+    required VoidCallback onReply,
+  }) {
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == child.authorId;
     final isAdmin = currentUser?.isAdmin ?? false;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () {
-              Navigator.pop(sheetContext);
-              if (child.author != null) {
-                _openAuthorHome(child.author!.id);
-              }
-            },
-            child: CachedAvatar(
-              radius: 14,
-              imageUrl: child.author?.avatar.isNotEmpty == true
-                  ? ApiConstants.fullUrl(child.author!.avatar)
-                  : null,
-              fallbackText: child.author?.nickname,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onReply,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: () {
+                Navigator.pop(sheetContext);
+                if (child.author != null) {
+                  _openAuthorHome(child.author!.id);
+                }
+              },
+              child: CachedAvatar(
+                radius: 14,
+                imageUrl: child.author?.avatar.isNotEmpty == true
+                    ? ApiConstants.fullUrl(child.author!.avatar)
+                    : null,
+                fallbackText: child.author?.nickname,
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      child.author?.nickname ?? '匿名',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.white70 : Colors.black87,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        child.author?.nickname ?? '匿名',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? Colors.white70 : Colors.black87,
+                        ),
                       ),
-                    ),
-                    if (child.author != null) ...[
-                      const SizedBox(width: 4),
-                      _buildLevelBadgeSmall(child.author!, isDark),
-                    ],
-                    const SizedBox(width: 8),
-                    Text(
-                      _formatTime(child.createdAt),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white24 : Colors.grey[400],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                _buildChildContent(child, isDark),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _openReplyComposer(
-                          parentReplyId: parentReply.id,
-                          replyToName: child.author?.nickname,
-                          replyToUserId: child.authorId,
-                        );
-                      },
-                      child: Text(
-                        '回复',
+                      if (child.author != null) ...[
+                        const SizedBox(width: 4),
+                        _buildLevelBadgeSmall(child.author!, isDark),
+                      ],
+                      const SizedBox(width: 8),
+                      Text(
+                        _formatTime(child.createdAt),
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? Colors.white38 : Colors.grey[500],
+                          color: isDark ? Colors.white24 : Colors.grey[400],
                         ),
                       ),
-                    ),
-                    const Spacer(),
-                    if (isOwn || isAdmin)
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  _buildChildContent(child, isDark),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
                       GestureDetector(
-                        onTap: () async {
-                          Navigator.pop(sheetContext);
-                          await _deleteReply(child);
-                        },
+                        onTap: onReply,
                         child: Text(
-                          '删除',
+                          '回复',
                           style: TextStyle(
                             fontSize: 11,
-                            color: Colors.red[400],
-                          ),
-                        ),
-                      )
-                    else
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.pop(sheetContext);
-                          showReportSheet(context,
-                              targetId: child.id, targetType: 'reply');
-                        },
-                        child: Text(
-                          '举报',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: isDark ? Colors.white24 : Colors.grey[400],
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? Colors.white38 : Colors.grey[500],
                           ),
                         ),
                       ),
-                  ],
-                ),
-              ],
+                      const Spacer(),
+                      if (isOwn || isAdmin)
+                        GestureDetector(
+                          onTap: () async {
+                            Navigator.pop(sheetContext);
+                            await _deleteReply(child);
+                          },
+                          child: Text(
+                            '删除',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.red[400],
+                            ),
+                          ),
+                        )
+                      else
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            showReportSheet(context,
+                                targetId: child.id, targetType: 'reply');
+                          },
+                          child: Text(
+                            '举报',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white24 : Colors.grey[400],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSheetReplyInputBar(
-      BuildContext sheetContext, Reply parentReply, bool isDark) {
+  Widget _buildSheetReplyInputBar({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required Reply replyTarget,
+    required bool isSending,
+    required bool isDark,
+    required VoidCallback onTap,
+    required VoidCallback onSend,
+  }) {
+    final targetName = replyTarget.author?.nickname.trim() ?? '';
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF131720) : Colors.white,
@@ -4116,34 +4241,79 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: GestureDetector(
-            onTap: () {
-              Navigator.pop(sheetContext);
-              _openReplyComposer(
-                parentReplyId: parentReply.id,
-                replyToName: parentReply.author?.nickname,
-                replyToUserId: parentReply.authorId,
-              );
-            },
-            child: Container(
-              height: 38,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : const Color(0xFFF5F6F8),
-                borderRadius: BorderRadius.circular(19),
-              ),
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '说点什么...',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.white38 : Colors.grey[500],
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 40),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : const Color(0xFFF5F6F8),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    minLines: 1,
+                    maxLines: 3,
+                    textInputAction: TextInputAction.newline,
+                    onTap: onTap,
+                    decoration: InputDecoration(
+                      hintText:
+                          targetName.isEmpty ? '说点什么...' : '回复 @$targetName',
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white38 : Colors.grey[500],
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                    ),
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.3,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: isSending ? null : onSend,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isSending
+                        ? (isDark ? Colors.white24 : Colors.grey[300])
+                        : const Color(0xFF6B8EFF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: isSending
+                      ? const SizedBox(
+                          width: 17,
+                          height: 17,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.3,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.send_rounded,
+                          size: 19,
+                          color: Colors.white,
+                        ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -4232,6 +4402,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   // ---- 工具 ----
+
+  Color _creditColor(int score) {
+    if (score >= 90) return const Color(0xFF4CAF50);
+    if (score >= 70) return const Color(0xFFFF9800);
+    return const Color(0xFFF44336);
+  }
 
   String _formatTime(DateTime dt) {
     final now = DateTime.now();
@@ -4365,40 +4541,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  void _updateReplyMention(String? previousName, String? nextName) {
-    if (previousName == nextName) return;
-    var content = _replyController.text;
-    if (previousName != null && previousName.isNotEmpty) {
-      final previousPrefix = '@$previousName ';
-      if (content.startsWith(previousPrefix)) {
-        content = content.substring(previousPrefix.length);
-      }
-    }
-    if (nextName != null && nextName.isNotEmpty) {
-      content = '@$nextName $content';
-    }
-    _replyController.value = TextEditingValue(
-      text: content,
-      selection: TextSelection.collapsed(offset: content.length),
-    );
-  }
-
   void _openReplyComposer({
     int? parentReplyId,
     String? replyToName,
     int? replyToUserId,
   }) {
-    final previousName = _replyToName;
-    if (mounted) {
+    if (mounted)
       setState(() {
         _isReplyComposerOpen = true;
         _parentReplyId = parentReplyId;
-        _updateReplyMention(previousName, replyToName);
         _replyToName = replyToName;
         _replyToUserId = replyToUserId;
-        _showEmojiPanel = false;
+        if (replyToName != null && replyToName.isNotEmpty) {
+          _replyController.text = '@$replyToName ';
+          _replyController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _replyController.text.length),
+          );
+        }
       });
-    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _replyFocus.requestFocus();

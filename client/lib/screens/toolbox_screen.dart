@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
@@ -886,8 +885,11 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            PhysicalTestPage(username: widget.username, password: pwd),
+        builder: (_) => PhysicalTestPage(
+          appUserId: context.read<AuthProvider>().user!.id.toString(),
+          username: widget.username,
+          password: pwd,
+        ),
       ),
     );
   }

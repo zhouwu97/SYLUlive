@@ -3,6 +3,8 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
+import '../features/campus_data/storage/academic_cache_store.dart';
+import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_grade.dart';
@@ -43,6 +45,8 @@ class AcademicSituationCacheEntry {
 
 class EduProvider extends ChangeNotifier {
   late final Dio _authDio; // Go 服务器（获取当前用户信息）
+  final AccountScopedSnapshotStore Function(String appUserId)?
+      _snapshotStoreBuilder;
 
   String? _userId;
   bool _isBound = false;
@@ -88,6 +92,21 @@ class EduProvider extends ChangeNotifier {
   String _academicSituationCacheKey(String userId) {
     return 'edu_academic_situation_$userId';
   }
+
+  AcademicCacheStore? _academicCacheStoreFor({
+    required String appUserId,
+    required String sourceAccountId,
+  }) {
+    if (appUserId.trim().isEmpty || sourceAccountId.trim().isEmpty) return null;
+    return AcademicCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: _snapshotStoreBuilder?.call(appUserId),
+    );
+  }
+
+  bool _isSameAcademicContext(String appUserId, String sourceAccountId) =>
+      _userId == appUserId && _studentId.trim() == sourceAccountId;
 
   /// 读取内存缓存（同步方法，直接使用当前 _userId，安全）
   GradeCacheEntry? getCachedGrades(String year, int semester) {
@@ -150,9 +169,11 @@ class EduProvider extends ChangeNotifier {
     }
   }
 
-  EduProvider(Dio authDio) {
-    _authDio = authDio;
-  }
+  EduProvider(
+    Dio authDio, [
+    AccountScopedSnapshotStore Function(String appUserId)? snapshotStoreBuilder,
+  ])  : _snapshotStoreBuilder = snapshotStoreBuilder,
+        _authDio = authDio;
 
   void setUserId(String userId) {
     if (_userId == userId) return;
@@ -574,15 +595,35 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('用户未登录');
     }
 
+    final requestSourceAccountId = _studentId.trim();
     final raw = await _fetchGradesRaw(year, semester);
 
     // 请求期间用户已切换 → 丢弃结果
-    if (_userId != requestUserId) {
+    if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
       return OperationResult.fail('用户已切换');
     }
 
     if (raw != null && raw.success && raw.data != null) {
       final grades = raw.data!.map((m) => EduGrade.fromJson(m)).toList();
+      final store = _academicCacheStoreFor(
+        appUserId: requestUserId,
+        sourceAccountId: requestSourceAccountId,
+      );
+      if (store != null) {
+        try {
+          await store.writeGrades(
+            year: year,
+            semester: semester,
+            grades: raw.data!,
+          );
+        } catch (error) {
+          // 页面仍可使用本次响应；AI Gateway 没有成功密文时会返回缺失。
+          debugPrint('保存加密成绩失败: ${error.runtimeType}');
+        }
+      }
+      if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+        return OperationResult.fail('用户已切换');
+      }
       // 使用捕获的 requestUserId 生成缓存键，防止写入错误用户的缓存
       _gradeCache[_cacheKeyFor(requestUserId, year, semester)] =
           GradeCacheEntry(
@@ -692,6 +733,7 @@ class EduProvider extends ChangeNotifier {
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
+    final requestSourceAccountId = _studentId.trim();
 
     Future<Response<dynamic>> request() {
       return _authDio.post(
@@ -703,21 +745,33 @@ class EduProvider extends ChangeNotifier {
     return _runEduRequest(() async {
       try {
         final response = await request();
-        if (_userId != requestUserId) {
+        if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
           return OperationResult.fail('用户已切换');
         }
         if (response.statusCode == 200) {
+          if (response.data is! Map) {
+            return OperationResult.fail('获取学业情况失败');
+          }
+          final rawSituation = Map<String, dynamic>.from(response.data as Map);
           final situation = EduAcademicSituation.fromJson(
-            Map<String, dynamic>.from(response.data),
+            rawSituation,
           );
+          if (!situation.success) {
+            return OperationResult.fail(situation.message ?? '获取学业情况失败');
+          }
+          final persisted = await _persistAcademicSituation(
+            appUserId: requestUserId,
+            sourceAccountId: requestSourceAccountId,
+            raw: rawSituation,
+          );
+          if (!persisted) {
+            return OperationResult.fail('学业情况本地加密保存失败，请稍后重试');
+          }
           _academicSituationCache[_academicSituationCacheKey(requestUserId)] =
               AcademicSituationCacheEntry(
             data: situation,
             updatedAt: DateTime.now(),
           );
-          if (!situation.success) {
-            return OperationResult.fail(situation.message ?? '获取学业情况失败');
-          }
           return OperationResult.ok(situation);
         }
         return OperationResult.fail('获取学业情况失败');
@@ -728,22 +782,38 @@ class EduProvider extends ChangeNotifier {
           await Future.delayed(const Duration(milliseconds: 350));
           try {
             final retryResp = await request();
-            if (_userId != requestUserId) {
+            if (!_isSameAcademicContext(
+              requestUserId,
+              requestSourceAccountId,
+            )) {
               return OperationResult.fail('用户已切换');
             }
             if (retryResp.statusCode == 200) {
+              if (retryResp.data is! Map) {
+                return OperationResult.fail('获取学业情况失败');
+              }
+              final rawSituation =
+                  Map<String, dynamic>.from(retryResp.data as Map);
               final situation = EduAcademicSituation.fromJson(
-                Map<String, dynamic>.from(retryResp.data),
+                rawSituation,
               );
+              if (!situation.success) {
+                return OperationResult.fail(situation.message ?? '获取学业情况失败');
+              }
+              final persisted = await _persistAcademicSituation(
+                appUserId: requestUserId,
+                sourceAccountId: requestSourceAccountId,
+                raw: rawSituation,
+              );
+              if (!persisted) {
+                return OperationResult.fail('学业情况本地加密保存失败，请稍后重试');
+              }
               _academicSituationCache[
                       _academicSituationCacheKey(requestUserId)] =
                   AcademicSituationCacheEntry(
                 data: situation,
                 updatedAt: DateTime.now(),
               );
-              if (!situation.success) {
-                return OperationResult.fail(situation.message ?? '获取学业情况失败');
-              }
               return OperationResult.ok(situation);
             }
           } on DioException catch (retryError) {
@@ -761,6 +831,53 @@ class EduProvider extends ChangeNotifier {
         return OperationResult.fail(errorMsg);
       }
     });
+  }
+
+  /// 由应用根节点同步认证账号，登出时只清除内存，不删除用户主动保存的绑定信息。
+  void syncSessionUser(String? userId) {
+    final normalized = userId?.trim() ?? '';
+    if (normalized.isNotEmpty) {
+      setUserId(normalized);
+      return;
+    }
+    if (_userId == null) return;
+    _statusGeneration++;
+    _userId = null;
+    _isBound = false;
+    _studentId = '';
+    _name = '';
+    _grade = '';
+    _college = '';
+    _major = '';
+    _isLoading = false;
+    _statusLoaded = false;
+    _errorMessage = null;
+    _gradeCache.clear();
+    _gradeDetailCache.clear();
+    _academicSituationCache.clear();
+    notifyListeners();
+  }
+
+  Future<bool> _persistAcademicSituation({
+    required String appUserId,
+    required String sourceAccountId,
+    required Map<String, dynamic> raw,
+  }) async {
+    final store = _academicCacheStoreFor(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+    );
+    if (store == null) {
+      return _isSameAcademicContext(appUserId, sourceAccountId);
+    }
+    try {
+      await store.writeAcademicSituation(data: raw);
+      return _isSameAcademicContext(appUserId, sourceAccountId);
+    } catch (error) {
+      // 页面保留本次网络响应，但 AI 侧不会获得未落入保险箱的数据。
+      debugPrint('保存加密学业情况失败: ${error.runtimeType}');
+      return _isSameAcademicContext(appUserId, sourceAccountId);
+    }
   }
 
   // 获取成绩（原始数据，内部使用）

@@ -2,64 +2,128 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/ai_assistant_provider.dart';
+import 'ai_history_tile.dart';
 
-class AiHistorySheet extends StatelessWidget {
+class AiHistorySheet extends StatefulWidget {
   const AiHistorySheet({super.key});
 
   @override
+  State<AiHistorySheet> createState() => _AiHistorySheetState();
+}
+
+class _AiHistorySheetState extends State<AiHistorySheet> {
+  String? _deletingId;
+
+  @override
   Widget build(BuildContext context) {
-    return Consumer<AiAssistantProvider>(
-      builder: (context, provider, _) {
-        return SafeArea(
-          child: SizedBox(
-            height: MediaQuery.sizeOf(context).height * 0.62,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
-                  child: Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '历史会话',
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: '新建会话',
-                        onPressed: () {
-                          provider.startNewConversation();
-                          Navigator.pop(context);
-                        },
-                        icon: const Icon(Icons.add_rounded),
-                      ),
-                    ],
+    final colors = Theme.of(context).colorScheme;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.52,
+      minChildSize: 0.38,
+      maxChildSize: 0.82,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          ),
+          child: Consumer<AiAssistantProvider>(
+            builder: (context, provider, _) {
+              return Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 32,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: provider.loadingConversations
-                      ? const Center(child: CircularProgressIndicator())
-                      : provider.conversations.isEmpty
-                          ? const Center(child: Text('暂无历史会话'))
-                          : ListView.separated(
-                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
-                              itemCount: provider.conversations.length,
-                              separatorBuilder: (_, __) => const Divider(height: 1),
-                              itemBuilder: (_, index) {
-                                final conversation = provider.conversations[index];
-                                final selected = conversation.id == provider.conversationId;
-                                return ListTile(
-                                  selected: selected,
-                                  leading: const Icon(Icons.forum_outlined),
-                                  title: Text(
-                                    conversation.title.isEmpty ? '新会话' : conversation.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  trailing: IconButton(
-                                    tooltip: '删除会话',
-                                    icon: const Icon(Icons.delete_outline_rounded),
-                                    onPressed: () async {
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '历史会话',
+                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: IconButton.filled(
+                            tooltip: '新建会话',
+                            onPressed: () {
+                              provider.startNewConversation();
+                              Navigator.pop(context);
+                            },
+                            icon: const Icon(Icons.add_rounded, size: 22),
+                            style: IconButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              backgroundColor: colors.surfaceContainerHighest,
+                              foregroundColor: colors.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: provider.loadingConversations
+                        ? const Center(child: CircularProgressIndicator())
+                        : provider.conversations.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      '暂无历史会话',
+                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '提出问题后，会话会保存在这里',
+                                      style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    FilledButton(
+                                      onPressed: () {
+                                        provider.startNewConversation();
+                                        Navigator.pop(context);
+                                      },
+                                      child: const Text('开始新会话'),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                controller: scrollController,
+                                itemCount: provider.conversations.length,
+                                itemBuilder: (_, index) {
+                                  final conversation = provider.conversations[index];
+                                  final selected = conversation.id == provider.conversationId;
+                                  return AiHistoryTile(
+                                    conversation: conversation,
+                                    isSelected: selected,
+                                    isDeleting: _deletingId == conversation.id,
+                                    onTap: () {
+                                      if (provider.isRunning) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('请等待当前回答完成或先停止生成')),
+                                        );
+                                        return;
+                                      }
+                                      provider.openConversation(conversation.id);
+                                      Navigator.pop(context);
+                                    },
+                                    onDelete: () async {
                                       final confirmed = await showDialog<bool>(
                                         context: context,
                                         builder: (dialogContext) => AlertDialog(
@@ -71,25 +135,33 @@ class AiHistorySheet extends StatelessWidget {
                                                 child: const Text('取消')),
                                             FilledButton(
                                                 onPressed: () => Navigator.pop(dialogContext, true),
+                                                style: FilledButton.styleFrom(backgroundColor: colors.error),
                                                 child: const Text('删除')),
                                           ],
                                         ),
                                       );
-                                      if (confirmed == true) {
-                                        await provider.deleteConversation(conversation.id);
+                                      if (confirmed == true && mounted) {
+                                        setState(() => _deletingId = conversation.id);
+                                        try {
+                                          await provider.deleteConversation(conversation.id);
+                                        } catch (e) {
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(content: Text('删除失败，请重试')),
+                                            );
+                                          }
+                                        } finally {
+                                          if (mounted) setState(() => _deletingId = null);
+                                        }
                                       }
                                     },
-                                  ),
-                                  onTap: () {
-                                    provider.openConversation(conversation.id);
-                                    Navigator.pop(context);
-                                  },
-                                );
-                              },
-                            ),
-                ),
-              ],
-            ),
+                                  );
+                                },
+                              ),
+                  ),
+                ],
+              );
+            },
           ),
         );
       },

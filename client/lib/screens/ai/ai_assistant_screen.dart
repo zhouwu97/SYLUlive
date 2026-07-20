@@ -66,6 +66,7 @@ class AiAssistantScreen extends StatefulWidget {
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
   late final AiAssistantProvider _provider;
   final TextEditingController _inputController = TextEditingController();
+  final FocusNode _inputFocusNode = FocusNode();
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final AIFeatureFlagStore _featureFlags = AIFeatureFlagStore();
   bool _personalMode = false;
@@ -90,6 +91,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void dispose() {
     _toolCancellation?.cancel();
     unawaited(_activeToolModel?.cancel());
+    _inputFocusNode.dispose();
     _inputController.dispose();
     _provider.dispose();
     super.dispose();
@@ -143,10 +145,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       model = await OpenAIToolCallingModel.create(
         settingsStore: AIProviderSettingsStore(appUserId: appUserId),
       );
-    } on AIModelConfigurationException catch (error) {
+    } catch (error) {
       if (mounted) {
         setState(() {
-          _personalError = error.message;
+          _personalError = error.toString();
           _personalNeedsModelConfiguration = true;
         });
       }
@@ -253,9 +255,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           _personalError = error is Exception
               ? error.toString().replaceFirst('Exception: ', '')
               : '个人助手暂不可用';
-          _personalNeedsModelConfiguration =
-              error is AIModelConfigurationException ||
-                  error is AIModelCompatibilityException;
+          _personalNeedsModelConfiguration = false;
         });
       }
     } finally {
@@ -307,10 +307,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           _personalNeedsModelConfiguration = false;
         });
       }
-    } on AIModelConfigurationException catch (error) {
+    } catch (error) {
       if (mounted && _personalMode) {
         setState(() {
-          _personalError = error.message;
+          _personalError = error.toString();
           _personalNeedsModelConfiguration = true;
         });
       }
@@ -320,11 +320,20 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   Future<void> _showConversations() async {
     await showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.28),
       builder: (sheetContext) =>
           ChangeNotifierProvider<AiAssistantProvider>.value(
         value: _provider,
-        child: const AiHistorySheet(),
+        child: AiHistorySheet(
+          onFocusRequest: () {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _inputFocusNode.requestFocus();
+            });
+          },
+        ),
       ),
     );
   }
@@ -459,7 +468,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     icon: const Icon(Icons.history_rounded),
                   ),
                 AppActionPopupMenu(
-                  tooltip: 'AI 设置',
                   icon: const Icon(Icons.settings_outlined),
                   entries: const <Object>[
                     AppPopupAction(
@@ -567,6 +575,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 ),
                 AiInputComposer(
                   controller: _inputController,
+                  focusNode: _inputFocusNode,
                   maxCharacters: capabilities.maxMessageChars,
                   enabled: _personalMode
                       ? !_personalSending

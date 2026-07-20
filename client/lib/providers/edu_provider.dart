@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:convert';
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../utils/app_feedback.dart';
@@ -531,10 +530,8 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('教务账号未就绪');
     }
 
-    bool isCurrentContext() => _isSameAcademicContext(
-          appUserId: requestUserId,
-          sourceAccountId: requestSourceAccountId,
-        );
+    bool isCurrentContext() =>
+        _isSameAcademicContext(requestUserId, requestSourceAccountId);
 
     return _runEduRequest(() async {
       try {
@@ -621,8 +618,6 @@ class EduProvider extends ChangeNotifier {
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
-    final requestSourceAccountId = _studentId.trim();
-
     final requestSourceAccountId = _studentId.trim();
     final raw = await _fetchGradesRaw(year, semester);
 
@@ -899,31 +894,6 @@ class EduProvider extends ChangeNotifier {
         return OperationResult.fail(errorMsg);
       }
     });
-  }
-
-  /// 由应用根节点同步认证账号，登出时只清除内存，不删除用户主动保存的绑定信息。
-  void syncSessionUser(String? userId) {
-    final normalized = userId?.trim() ?? '';
-    if (normalized.isNotEmpty) {
-      setUserId(normalized);
-      return;
-    }
-    if (_userId == null) return;
-    _statusGeneration++;
-    _userId = null;
-    _isBound = false;
-    _studentId = '';
-    _name = '';
-    _grade = '';
-    _college = '';
-    _major = '';
-    _isLoading = false;
-    _statusLoaded = false;
-    _errorMessage = null;
-    _gradeCache.clear();
-    _gradeDetailCache.clear();
-    _academicSituationCache.clear();
-    notifyListeners();
   }
 
   Future<bool> _persistAcademicSituation({

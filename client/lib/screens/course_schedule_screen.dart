@@ -1264,8 +1264,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           if (!synced) {
             debugPrint('课表已本地导入，后台同步到服务器失败，等待下次刷新重试');
           }
-        }).catchError((Object error, StackTrace stackTrace) {
-          debugPrint('课表后台同步异常: $error\n$stackTrace');
+        }).catchError((Object error, StackTrace _) {
+          debugPrint('课表后台同步异常: ${error.runtimeType}');
           return null;
         }),
       );
@@ -1469,8 +1469,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         edu
             .syncCourses(result.year, result.semester, result.courses)
             .catchError(
-          (Object error, StackTrace stackTrace) {
-            debugPrint('课表后台同步异常: $error\n$stackTrace');
+          (Object error, StackTrace _) {
+            debugPrint('课表后台同步异常: ${error.runtimeType}');
             return false;
           },
         ),
@@ -1662,8 +1662,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       // 非关键路径：异步加载后台服务状态和提醒状态，不阻塞 UI
       _loadBackgroundStatusAsync();
-    } catch (e, stack) {
-      debugPrint('Error loading settings: $e\n$stack');
+    } catch (e) {
+      debugPrint('加载课表设置失败: ${e.runtimeType}');
       if (mounted) {
         setState(() {
           _settingsLoaded = true;
@@ -1692,7 +1692,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Background keep alive status check failed: $e');
+      debugPrint('后台保活状态检查失败: ${e.runtimeType}');
     }
   }
 
@@ -3339,11 +3339,11 @@ $classFilterRule
         _executeImport(dialogCtx, action, validCourses);
       }
     } catch (e) {
-      debugPrint("AI 导入解析失败: $e");
+      debugPrint('AI 导入解析失败: ${e.runtimeType}');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '解析失败，请检查数据格式。\n错误信息: ${e.toString().split('\n').first}',
+            '解析失败，请检查数据格式。',
           ),
         ),
       );
@@ -3370,7 +3370,7 @@ $classFilterRule
         int end2 = existing.endSection;
 
         if (start1 <= end2 && end1 >= start2) {
-          debugPrint("冲突拦截: ${newCourse['name']} vs ${existing.name}");
+          debugPrint('课表冲突已拦截');
           if (!conflicts.contains(existing)) {
             conflicts.add(existing);
           }

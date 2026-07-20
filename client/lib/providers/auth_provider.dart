@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
+import '../services/account_session_cleanup_coordinator.dart';
 import '../platform/app_platform.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
@@ -377,6 +378,7 @@ class AuthProvider extends ChangeNotifier {
   final AuthCredentialStore _credentialStore;
   final bool _usesPlatformCredentialStore;
   final VoidCallback _onAuthenticated;
+  final AccountSessionCleanupCoordinator _sessionCleanupCoordinator;
   User? _user;
   String? _token;
   bool _isLoading = false;
@@ -398,13 +400,16 @@ class AuthProvider extends ChangeNotifier {
     AuthCredentialStore? credentialStore,
     bool loadStoredAuth = true,
     VoidCallback? onAuthenticated,
+    AccountSessionCleanupCoordinator? sessionCleanupCoordinator,
   })  : _credentialStore = credentialStore ??
             (AppPlatforms.current.isOhos
                 ? const _OhosAuthCredentialStore()
                 : _PlatformAuthCredentialStore()),
         _usesPlatformCredentialStore =
             credentialStore == null && !AppPlatforms.current.isOhos,
-        _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start {
+        _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start,
+        _sessionCleanupCoordinator = sessionCleanupCoordinator ??
+            AccountSessionCleanupCoordinator.instance {
     // 添加 401 拦截器：自动登出并提示重新登录
     _dio.interceptors.add(
       InterceptorsWrapper(
@@ -571,13 +576,18 @@ class AuthProvider extends ChangeNotifier {
     bool prefetchWallpaper = false,
   }) async {
     await _saveAuthCandidate(candidate);
+    if (_user != null && _user!.id != candidate.user.id) {
+      await _sessionCleanupCoordinator.closeCurrentSession();
+    }
     _commitAuthSession(candidate);
     if (prefetchWallpaper) _onAuthenticated();
   }
 
-  /// 解析Dio异常并返回友好的错误信息（附带技术细节方便排查）
+  /// 解析 Dio 异常并返回友好的错误信息。
   String _parseDioError(DioException e) {
-    debugPrint('Dio error: ${e.requestOptions.uri} ${e.type} ${e.error}');
+    debugPrint(
+      '认证请求失败: type=${e.type}, status=${e.response?.statusCode}',
+    );
     return AppFeedback.dioErrorMessage(e, fallback: '操作失败，请稍后再试');
   }
 
@@ -622,13 +632,15 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       final errorMsg = _parseDioError(e);
-      debugPrint('注册失败: $errorMsg');
+      debugPrint(
+        '注册失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
       return AuthResult.failure(errorMsg);
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      debugPrint('注册失败: $e');
-      return AuthResult.failure('注册失败: $e');
+      debugPrint('注册异常: ${e.runtimeType}');
+      return AuthResult.failure('注册失败');
     }
   }
 
@@ -654,29 +666,41 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       final errorMsg = _parseDioError(e);
-      debugPrint('登录失败: $errorMsg');
+      debugPrint(
+        '登录失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
       return AuthResult.failure(errorMsg, statusCode: e.response?.statusCode);
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      debugPrint('登录失败: $e');
-      return AuthResult.failure('登录失败: $e');
+      debugPrint('登录异常: ${e.runtimeType}');
+      return AuthResult.failure('登录失败');
     }
   }
 
   Future<void> logout() async {
+    await _sessionCleanupCoordinator.closeCurrentSession();
     try {
       await _dio.post('/logout'); // 调用服务端登出接口
     } catch (e) {
-      debugPrint('服务端登出异常: $e');
+      debugPrint('服务端登出异常: ${e.runtimeType}');
     }
-    await _clearLocalSession(clearPushAlias: true);
+    await _clearLocalSession(
+      clearPushAlias: true,
+      closeAccountContext: false,
+    );
   }
 
   /// 统一的本地会话清理
   ///
   /// [clearPushAlias] 为 true 时同时清除极光 Alias（手动退出 / 401）。
-  Future<void> _clearLocalSession({required bool clearPushAlias}) async {
+  Future<void> _clearLocalSession({
+    required bool clearPushAlias,
+    bool closeAccountContext = true,
+  }) async {
+    if (closeAccountContext) {
+      await _sessionCleanupCoordinator.closeCurrentSession();
+    }
     final hadSession = _token != null || _user != null;
     final oldUserId = _user?.id.toString();
     if (oldUserId != null) {
@@ -702,7 +726,7 @@ class AuthProvider extends ChangeNotifier {
       await const MethodChannel('shenliyuan/private_message_notifications')
           .invokeMethod('clearAlias');
     } catch (e) {
-      debugPrint('清除 JPush Alias 失败: $e');
+      debugPrint('清除 JPush Alias 失败: ${e.runtimeType}');
     }
   }
 
@@ -740,7 +764,9 @@ class AuthProvider extends ChangeNotifier {
       return AuthResult.failure('更新资料失败');
     } on DioException catch (e) {
       final errorMsg = _parseDioError(e);
-      debugPrint('更新资料失败: $errorMsg');
+      debugPrint(
+        '更新资料失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
       return AuthResult.failure(errorMsg);
     }
   }
@@ -761,7 +787,9 @@ class AuthProvider extends ChangeNotifier {
         );
       }
     } on DioException catch (e) {
-      debugPrint('刷新用户信息失败: ${e.message}');
+      debugPrint(
+        '刷新用户信息失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
     }
   }
 
@@ -842,7 +870,9 @@ class AuthProvider extends ChangeNotifier {
       return AuthResult.failure('更新头像失败');
     } on DioException catch (e) {
       final errorMsg = _parseDioError(e);
-      debugPrint('更新头像失败: $errorMsg');
+      debugPrint(
+        '更新头像失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
       return AuthResult.failure(errorMsg);
     }
   }
@@ -862,7 +892,9 @@ class AuthProvider extends ChangeNotifier {
       return AuthResult.failure('修改密码失败');
     } on DioException catch (e) {
       final errorMsg = _parseDioError(e);
-      debugPrint('修改密码失败: $errorMsg');
+      debugPrint(
+        '修改密码失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
       return AuthResult.failure(errorMsg);
     }
   }
@@ -887,11 +919,13 @@ class AuthProvider extends ChangeNotifier {
       return AuthResult.failure('密码重置失败');
     } on DioException catch (e) {
       final errorMsg = _parseDioError(e);
-      debugPrint('密码重置失败: $errorMsg');
+      debugPrint(
+        '密码重置失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
       return AuthResult.failure(errorMsg);
     } catch (e) {
-      debugPrint('密码重置失败: $e');
-      return AuthResult.failure('密码重置失败: $e');
+      debugPrint('密码重置异常: ${e.runtimeType}');
+      return AuthResult.failure('密码重置失败');
     }
   }
 
@@ -953,20 +987,17 @@ class AuthProvider extends ChangeNotifier {
     } on DioException catch (e) {
       debugPrint('=== verifyEdu DioException ===');
       debugPrint('type: ${e.type}');
-      debugPrint('message: ${e.message}');
-      debugPrint('response: ${e.response}');
       debugPrint('response.statusCode: ${e.response?.statusCode}');
       if (e.response?.data is Map) {
         final data = e.response?.data as Map;
         debugPrint('response.code: ${data['code']}');
       }
-      debugPrint('requestOptions.uri: ${e.requestOptions.uri}');
       return AuthResult.failure(_parseDioError(e));
     } catch (e, st) {
       debugPrint('=== verifyEdu 未知异常 ===');
-      debugPrint('error: $e');
-      debugPrint('stackTrace: $st');
-      return AuthResult.failure('未知错误: $e');
+      debugPrint('type: ${e.runtimeType}');
+      debugPrintStack(stackTrace: st);
+      return AuthResult.failure('未知错误');
     }
   }
 
@@ -1004,13 +1035,15 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       final errorMsg = _parseDioError(e);
-      debugPrint('登录失败: $errorMsg');
+      debugPrint(
+        '登录失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
       return AuthResult.failure(errorMsg);
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      debugPrint('登录失败: $e');
-      return AuthResult.failure('登录失败: $e');
+      debugPrint('登录异常: ${e.runtimeType}');
+      return AuthResult.failure('登录失败');
     }
   }
 
@@ -1051,13 +1084,15 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       final errorMsg = _parseDioError(e);
-      debugPrint('注册失败: $errorMsg');
+      debugPrint(
+        '注册失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
       return AuthResult.failure(errorMsg);
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      debugPrint('注册失败: $e');
-      return AuthResult.failure('注册失败: $e');
+      debugPrint('注册异常: ${e.runtimeType}');
+      return AuthResult.failure('注册失败');
     }
   }
 
@@ -1070,7 +1105,7 @@ class AuthProvider extends ChangeNotifier {
         data: {'device_token': registrationId},
       );
     } catch (e) {
-      debugPrint('更新设备Token失败: $e');
+      debugPrint('更新设备Token失败: ${e.runtimeType}');
     }
   }
 
@@ -1105,13 +1140,15 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       final errorMsg = _parseDioError(e);
-      debugPrint('毕业用户注册失败: $errorMsg');
+      debugPrint(
+        '毕业用户注册失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
       return AuthResult.failure(errorMsg);
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      debugPrint('毕业用户注册失败: $e');
-      return AuthResult.failure('注册失败: $e');
+      debugPrint('毕业用户注册异常: ${e.runtimeType}');
+      return AuthResult.failure('注册失败');
     }
   }
 }

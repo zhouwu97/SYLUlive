@@ -40,6 +40,7 @@ dependencies:
   jpush_flutter: ^3.4.5
   qr_flutter: ^4.1.0
   crypto: ^3.0.3
+  characters: ^1.4.1
   dio_cookie_manager: ^3.4.0
   cookie_jar: ^4.0.9
   encrypt: ^5.0.3

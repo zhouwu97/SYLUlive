@@ -1,11 +1,17 @@
+import '../../../campus_data/storage/academic_cache_store.dart';
 import '../../../campus_data/storage/account_scoped_snapshot_store.dart';
 import '../../../campus_data/storage/erke_cache_store.dart';
 import '../../../campus_data/storage/physical_cache_store.dart';
+import '../../../campus_data/storage/schedule_cache_store.dart';
 import '../../../../services/account_session_cleanup_coordinator.dart';
+import '../adapters/academic_gateway_adapter.dart';
 import '../adapters/erke_gateway_adapter.dart';
 import '../adapters/physical_gateway_adapter.dart';
+import '../adapters/schedule_gateway_adapter.dart';
+import '../models/academic_overview.dart';
 import '../models/erke_overview.dart';
 import '../models/physical_overview.dart';
+import '../models/schedule_overview.dart';
 import 'gateway_error.dart';
 import 'gateway_result.dart';
 import 'personal_account_context.dart';
@@ -38,6 +44,16 @@ class PersonalDataGatewayFactory {
       sourceAccountId: context.sourceAccountId,
       snapshotStore: snapshotStore,
     );
+    final scheduleStore = ScheduleCacheStore(
+      appUserId: context.appUserId,
+      sourceAccountId: context.sourceAccountId,
+      snapshotStore: snapshotStore,
+    );
+    final academicStore = AcademicCacheStore(
+      appUserId: context.appUserId,
+      sourceAccountId: context.sourceAccountId,
+      snapshotStore: snapshotStore,
+    );
     return PersonalDataGatewayImpl(
       context: context,
       snapshotStore: snapshotStore,
@@ -51,6 +67,11 @@ class PersonalDataGatewayFactory {
         context: context,
         needsResync: physicalStore.needsResync,
       ),
+      scheduleAdapter: ScheduleGatewayAdapter(
+        cacheStore: scheduleStore,
+        needsResync: scheduleStore.needsResync,
+      ),
+      academicAdapter: AcademicGatewayAdapter(cacheStore: academicStore),
       cleanupCoordinator: _cleanupCoordinator,
     );
   }
@@ -62,11 +83,15 @@ class PersonalDataGatewayImpl implements PersonalDataGateway {
     required AccountScopedSnapshotStore snapshotStore,
     required ErkeGatewayAdapter erkeAdapter,
     required PhysicalGatewayAdapter physicalAdapter,
+    required ScheduleGatewayAdapter scheduleAdapter,
+    required AcademicGatewayAdapter academicAdapter,
     AccountSessionCleanupCoordinator? cleanupCoordinator,
   })  : _context = context,
         _snapshotStore = snapshotStore,
         _erkeAdapter = erkeAdapter,
         _physicalAdapter = physicalAdapter,
+        _scheduleAdapter = scheduleAdapter,
+        _academicAdapter = academicAdapter,
         _cleanupCoordinator = cleanupCoordinator {
     _cleanupCoordinator?.register(this, close);
   }
@@ -75,6 +100,8 @@ class PersonalDataGatewayImpl implements PersonalDataGateway {
   final AccountScopedSnapshotStore _snapshotStore;
   final ErkeGatewayAdapter _erkeAdapter;
   final PhysicalGatewayAdapter _physicalAdapter;
+  final ScheduleGatewayAdapter _scheduleAdapter;
+  final AcademicGatewayAdapter _academicAdapter;
   final AccountSessionCleanupCoordinator? _cleanupCoordinator;
 
   bool _closed = false;
@@ -88,6 +115,22 @@ class PersonalDataGatewayImpl implements PersonalDataGateway {
   @override
   Future<GatewayResult<PhysicalOverview>> getPhysicalOverview() {
     return _read(_physicalAdapter.loadOverview, '体测');
+  }
+
+  @override
+  Future<GatewayResult<ScheduleOverview>> getScheduleOverview({
+    required DateTime start,
+    required DateTime end,
+  }) {
+    return _read(
+      () => _scheduleAdapter.loadOverview(start: start, end: end),
+      '课表',
+    );
+  }
+
+  @override
+  Future<GatewayResult<AcademicOverview>> getAcademicOverview() {
+    return _read(_academicAdapter.loadOverview, '成绩');
   }
 
   Future<GatewayResult<T>> _read<T>(

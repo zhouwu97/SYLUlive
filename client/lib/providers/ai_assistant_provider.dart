@@ -551,6 +551,10 @@ class AiAssistantProvider extends ChangeNotifier {
         return '当前已发布资料不足，暂时无法回答这个问题';
       case 'rag_unavailable':
         return '政策资料服务暂时不可用，请稍后重试';
+      case 'provider_missing_citations':
+        return '回答未生成可核验来源，请重试';
+      case 'knowledge_validation_failed':
+        return '政策资料校验失败，请稍后重试';
       case 'server_restarted':
         return '服务刚刚恢复，本次回答未完成，请重新提问';
       case 'context_cancelled':

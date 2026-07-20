@@ -268,6 +268,7 @@ class _CampusScreenState extends State<CampusScreen>
                             AiAssistantScreen(
                               capabilities: _aiCapabilities!,
                               service: _aiService,
+                              dio: getSharedDio(),
                             ),
                           ),
                         ),

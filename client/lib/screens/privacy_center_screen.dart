@@ -28,21 +28,11 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   bool _loadingData = false;
   bool _exporting = false;
   bool _revoking = false;
-  bool _pushEnabled = false;
-  bool _pushLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadRequests();
-    PushSettingsService.isEnabled().then((enabled) {
-      if (mounted) {
-        setState(() {
-          _pushEnabled = enabled;
-          _pushLoading = false;
-        });
-      }
-    });
   }
 
   Future<void> _loadRequests() async {
@@ -65,29 +55,83 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   Future<void> _showRequestDialog() async {
     var requestType = 'correction';
     final detailController = TextEditingController();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
+    
     final submitted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (_, setDialogState) => AlertDialog(
-          title: const Text('申请更正或删除'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            DropdownButtonFormField<String>(
-              initialValue: requestType,
-              items: const [
-                DropdownMenuItem(value: 'correction', child: Text('更正个人信息')),
-                DropdownMenuItem(value: 'deletion', child: Text('删除个人信息或内容')),
-              ],
-              onChanged: (value) => setDialogState(() => requestType = value ?? 'correction'),
-            ),
-            TextField(controller: detailController, maxLength: 500, maxLines: 3),
-          ]),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('申请更正或删除', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withValues(alpha: 0.05) : CampusTheme.bg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? Colors.white24 : CampusTheme.softBorder),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: requestType,
+                    isExpanded: true,
+                    icon: const Icon(Icons.arrow_drop_down_rounded),
+                    items: const [
+                      DropdownMenuItem(value: 'correction', child: Text('更正个人信息')),
+                      DropdownMenuItem(value: 'deletion', child: Text('删除个人信息或内容')),
+                    ],
+                    onChanged: (value) => setDialogState(() => requestType = value ?? 'correction'),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: detailController,
+                maxLength: 500,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: '补充详细说明（选填）',
+                  filled: true,
+                  fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : CampusTheme.bg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: isDark ? Colors.white24 : CampusTheme.softBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: isDark ? Colors.white24 : CampusTheme.softBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: accent),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('取消')),
+              onPressed: () => Navigator.pop(dialogContext, false),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).textTheme.bodyMedium?.color,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+              ),
+              child: const Text('取消', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('提交')),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+              ),
+              child: const Text('提交', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
           ],
         ),
       ),
@@ -144,32 +188,6 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _setPushEnabled(bool enabled) async {
-    if (_pushLoading) return;
-    setState(() => _pushLoading = true);
-    final auth = context.read<AuthProvider>();
-    if (enabled) {
-      final result = await PushSettingsService.enableAndRegister(auth);
-      if (mounted) {
-        setState(() {
-          _pushEnabled = true;
-          _pushLoading = false;
-        });
-        _showMessage(result.message);
-      }
-      return;
-    }
-    final result = await PushSettingsService.disable(auth);
-    if (!mounted) return;
-    setState(() => _pushLoading = false);
-    if (!result.success) {
-      _showMessage(result.errorMessage ?? '关闭远程推送失败');
-      return;
-    }
-    setState(() => _pushEnabled = false);
-    _showMessage('已关闭远程推送，课程和考试提醒不受影响');
   }
 
   Future<void> _showPersonalData() async {
@@ -441,28 +459,6 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                     trailing: const SizedBox.shrink(),
                   ),
                   _PrivacyActionTile(
-                    icon: Icons.notifications_none_rounded,
-                    title: '远程消息推送',
-                    subtitle: '开启后会向极光提供设备推送标识',
-                    trailing: Transform.scale(
-                      scale: 0.88,
-                      child: Switch(
-                        value: _pushEnabled,
-                        activeTrackColor: isDark ? const Color(0xFF62CDBD) : CampusTheme.primary,
-                        activeThumbColor: Colors.white,
-                        inactiveTrackColor: Colors.grey,
-                        onChanged: _pushLoading 
-                            ? null
-                            : (val) {
-                                _setPushEnabled(val).whenComplete(() {
-                                  if (mounted) setSheetState(() {});
-                                });
-                                setSheetState(() {});
-                              },
-                      ),
-                    ),
-                  ),
-                  _PrivacyActionTile(
                     icon: Icons.alarm_on_outlined,
                     title: '本地课程和考试提醒',
                     subtitle: '本地提醒不依赖远程推送，可在课表和考试功能中分别管理',
@@ -517,22 +513,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
       backgroundColor: bg,
       appBar: AppBar(
         automaticallyImplyLeading: !widget.restricted,
-        backgroundColor: bg,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        toolbarHeight: 54,
-        centerTitle: true,
-        leading: !widget.restricted
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back, size: 24),
-                onPressed: () => Navigator.maybePop(context),
-              )
-            : null,
-        title: const Text(
-          '隐私与数据权利',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-        ),
+        title: const Text('隐私与数据权利'),
         actions: [
           if (restricted)
             IconButton(
@@ -624,37 +605,6 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                 ),
               ],
             ),
-          const SizedBox(height: 18),
-
-          const _PrivacySectionTitle('消息与通知'),
-          const SizedBox(height: 10),
-          _PrivacySectionCard(
-            children: [
-              _PrivacyActionTile(
-                key: const ValueKey('push-data-processing'),
-                icon: Icons.notifications_none_rounded,
-                title: '接收远程消息推送',
-                subtitle: widget.restricted
-                    ? '账号受限时仅可关闭推送并清理设备标识'
-                    : '默认关闭，开启后会向极光提供设备推送标识',
-                onTap: _pushLoading || (widget.restricted && !_pushEnabled)
-                    ? null
-                    : () => _setPushEnabled(!_pushEnabled),
-                trailing: Transform.scale(
-                  scale: 0.88,
-                  child: Switch(
-                    value: _pushEnabled,
-                    activeTrackColor: accent,
-                    activeColor: Colors.white,
-                    inactiveTrackColor: Colors.grey,
-                    onChanged: _pushLoading || (widget.restricted && !_pushEnabled)
-                        ? null
-                        : _setPushEnabled,
-                  ),
-                ),
-              ),
-            ],
-          ),
           const SizedBox(height: 18),
 
           const _PrivacySectionTitle('账号管理'),
@@ -827,7 +777,7 @@ class _PrivacyActionTile extends StatelessWidget {
     this.onTap,
     this.danger = false,
     this.enabled = true,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

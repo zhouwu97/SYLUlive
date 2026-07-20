@@ -20,7 +20,7 @@ func newUserPrivacyTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open database: %v", err)
 	}
 	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.CheckIn{}); err != nil {
-		t.Fatalf("migrate users: %v", err)
+		t.Fatalf("migrate user privacy dependencies: %v", err)
 	}
 	return db
 }

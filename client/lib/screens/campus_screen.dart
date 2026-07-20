@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 import '../main.dart';
+import '../providers/auth_provider.dart';
 import '../models/campus_article.dart';
+import '../models/ai_capabilities.dart';
+import '../services/ai_assistant_service.dart';
 import '../services/campus_article_service.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/campus_asset_preloader.dart';
 
 import '../widgets/campus/campus_theme.dart';
+import '../widgets/campus/campus_ai_entry_card.dart';
+import '../widgets/campus/campus_model_chat_entry_card.dart';
 import '../widgets/campus/campus_header.dart';
 import '../widgets/campus/campus_feature_notice_card.dart';
 import '../widgets/campus/campus_service_grid.dart';
@@ -15,6 +21,8 @@ import '../widgets/campus/campus_news_section_header.dart';
 import '../widgets/campus/campus_news_card.dart';
 
 import 'campus_article_detail_screen.dart';
+import 'ai/ai_assistant_screen.dart';
+import 'ai/ai_model_chat_screen.dart';
 import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
 import 'campus_map_tab_page.dart';
@@ -24,7 +32,11 @@ import 'teacher_rate_screen.dart';
 import 'team/team_recruitment_center_screen.dart';
 
 class CampusScreen extends StatefulWidget {
-  const CampusScreen({super.key});
+  /// 可选依赖仅用于测试；生产环境继续复用全局 Dio 与鉴权头。
+  final CampusArticleService? articleService;
+  final AiAssistantService? aiService;
+
+  const CampusScreen({super.key, this.articleService, this.aiService});
 
   @override
   State<CampusScreen> createState() => _CampusScreenState();
@@ -36,6 +48,8 @@ class _CampusScreenState extends State<CampusScreen>
   bool get wantKeepAlive => true;
 
   late CampusArticleService _articleService;
+  late AiAssistantService _aiService;
+  AiCapabilities? _aiCapabilities;
 
   // 最新文章
   CampusArticleSummary? _latestArticle;
@@ -51,7 +65,9 @@ class _CampusScreenState extends State<CampusScreen>
   @override
   void initState() {
     super.initState();
-    _articleService = CampusArticleService(getSharedDio());
+    final dio = getSharedDio();
+    _articleService = widget.articleService ?? CampusArticleService(dio);
+    _aiService = widget.aiService ?? AiAssistantService(dio);
     _loadAll();
   }
 
@@ -66,12 +82,27 @@ class _CampusScreenState extends State<CampusScreen>
     });
   }
 
-  /// 并行加载最新文章和最近列表。
+  /// 三路请求互不依赖；AI 探测失败时安静隐藏入口，不影响校园资讯。
   Future<void> _loadAll() async {
     await Future.wait([
       _loadLatest(),
       _loadRecent(),
+      _loadAiCapabilities(),
     ]);
+  }
+
+  Future<void> _loadAiCapabilities() async {
+    try {
+      final capabilities = await _aiService.getCapabilities();
+      if (mounted) {
+        setState(() {
+          _aiCapabilities = capabilities.isVisible ? capabilities : null;
+        });
+      }
+    } catch (_) {
+      // 能力接口失败不能污染“校园”页；刷新成功前保持入口隐藏。
+      if (mounted) setState(() => _aiCapabilities = null);
+    }
   }
 
   Future<void> _loadLatest() async {
@@ -200,6 +231,7 @@ class _CampusScreenState extends State<CampusScreen>
     super.build(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final appUserId = _modelChatUserId(context);
 
     return Scaffold(
       backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
@@ -225,9 +257,37 @@ class _CampusScreenState extends State<CampusScreen>
                       index: 1,
                       child: _buildLatestCard(isDark),
                     ),
+                    if (_aiCapabilities != null) ...[
+                      const SizedBox(height: 12),
+                      HomeTabRevealItem(
+                        index: 2,
+                        child: CampusAiEntryCard(
+                          capabilities: _aiCapabilities!,
+                          isDark: isDark,
+                          onTap: () => _openPage(
+                            AiAssistantScreen(
+                              capabilities: _aiCapabilities!,
+                              service: _aiService,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: 2,
+                      index: _aiCapabilities == null ? 2 : 3,
+                      child: CampusModelChatEntryCard(
+                        isDark: isDark,
+                        onTap: appUserId == null
+                            ? null
+                            : () => _openPage(
+                                  AIModelChatScreen(appUserId: appUserId),
+                                ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    HomeTabRevealItem(
+                      index: _aiCapabilities == null ? 3 : 4,
                       child: CampusServiceGrid(
                         isDark: isDark,
                         onEduTap: () => _openPage(const EduScreen()),
@@ -241,7 +301,7 @@ class _CampusScreenState extends State<CampusScreen>
                     ),
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: 3,
+                      index: _aiCapabilities == null ? 4 : 5,
                       child: CampusNewsSectionHeader(
                         isDark: isDark,
                         onCompetitionTap: () =>
@@ -256,7 +316,7 @@ class _CampusScreenState extends State<CampusScreen>
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 126),
                 sliver: SliverToBoxAdapter(
                   child: HomeTabRevealItem(
-                    index: 4,
+                    index: _aiCapabilities == null ? 5 : 6,
                     child: _buildRecentList(isDark),
                   ),
                 ),
@@ -266,6 +326,15 @@ class _CampusScreenState extends State<CampusScreen>
         ),
       ),
     );
+  }
+
+  String? _modelChatUserId(BuildContext context) {
+    try {
+      return context.read<AuthProvider>().user?.id.toString();
+    } on ProviderNotFoundException {
+      // 未认证或隔离的页面测试不创建第三方模型配置上下文。
+      return null;
+    }
   }
 
   // ── 最新文章卡片 ───────────────────────────────────────────────

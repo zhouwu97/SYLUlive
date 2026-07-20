@@ -163,4 +163,45 @@ void main() {
     expect(await newStore.readTerm(year: '2025', semester: 12), isNull);
     expect(requestedServerCourseCache, isFalse);
   });
+
+  test('课程获取成功但保险箱写入失败时明确提示未持久化', () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.path == '/edu/courses') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: <String, dynamic>{
+                  'success': true,
+                  'courses': <Map<String, dynamic>>[
+                    <String, dynamic>{
+                      'name': '数据结构',
+                      'time': 1,
+                      'end_time': 2,
+                      'week_day': 1,
+                      'weeks': <int>[1, 2],
+                    },
+                  ],
+                },
+              ),
+            );
+            return;
+          }
+          handler.next(options);
+        },
+      ),
+    );
+    files.failWrites = true;
+    final provider = createProvider(dio)
+      ..syncSessionContext('1001', '2403130233');
+
+    await provider.loadCourses(forceRefresh: true);
+
+    expect(provider.courses.single.name, '数据结构');
+    expect(provider.errorMessage, '课程已获取，但未能安全保存，请稍后重试');
+    expect(provider.isLoading, isFalse);
+  });
 }

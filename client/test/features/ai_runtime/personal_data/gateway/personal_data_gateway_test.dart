@@ -380,6 +380,160 @@ void main() {
     expect(occurrence.endSection, 2);
   });
 
+  test('新学期开始后不返回旧学期的不限周次课程', () async {
+    final vault = createVault();
+    final scheduleStore = ScheduleCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: vault,
+    );
+    await _writeScheduleTerm(
+      scheduleStore,
+      year: '2025',
+      semester: 3,
+      start: DateTime.utc(2025, 9, 1),
+      courseName: '旧学期课程',
+    );
+    await _writeScheduleTerm(
+      scheduleStore,
+      year: '2026',
+      semester: 3,
+      start: DateTime.utc(2026, 3, 2),
+      courseName: '新学期课程',
+    );
+    final gateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      snapshotStore: vault,
+    );
+
+    final result = await gateway.getScheduleOverview(
+      start: DateTime.utc(2026, 3, 2),
+      end: DateTime.utc(2026, 3, 2),
+    );
+
+    expect(result.status, GatewayStatus.available);
+    expect(result.data?.occurrences, hasLength(1));
+    expect(result.data?.occurrences.single.courseName, '新学期课程');
+    expect(result.data?.occurrences.single.semesterId, '2026_3');
+  });
+
+  test('课表 Gateway 在跨学期范围内仅返回各自学期课程', () async {
+    final vault = createVault();
+    final scheduleStore = ScheduleCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: vault,
+    );
+    await _writeScheduleTerm(
+      scheduleStore,
+      year: '2025',
+      semester: 3,
+      start: DateTime.utc(2025, 9, 1),
+      courseName: '旧学期课程',
+    );
+    await _writeScheduleTerm(
+      scheduleStore,
+      year: '2026',
+      semester: 3,
+      start: DateTime.utc(2026, 3, 2),
+      courseName: '新学期课程',
+    );
+    final gateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      snapshotStore: vault,
+    );
+
+    final result = await gateway.getScheduleOverview(
+      start: DateTime.utc(2026, 2, 23),
+      end: DateTime.utc(2026, 3, 2),
+    );
+
+    expect(result.status, GatewayStatus.available);
+    expect(
+      result.data?.occurrences.map((item) => item.courseName).toList(),
+      <String>['旧学期课程', '新学期课程'],
+    );
+    expect(
+      result.data?.occurrences.map((item) => item.semesterId).toList(),
+      <String>['2025_3', '2026_3'],
+    );
+  });
+
+  test('课表学期起始日重复时失败关闭', () async {
+    final vault = createVault();
+    final scheduleStore = ScheduleCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: vault,
+    );
+    await _writeScheduleTerm(
+      scheduleStore,
+      year: '2025',
+      semester: 3,
+      start: DateTime.utc(2026, 9, 7),
+      courseName: '课程一',
+    );
+    await _writeScheduleTerm(
+      scheduleStore,
+      year: '2026',
+      semester: 3,
+      start: DateTime.utc(2026, 9, 7),
+      courseName: '课程二',
+    );
+    final gateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      snapshotStore: vault,
+    );
+
+    final result = await gateway.getScheduleOverview(
+      start: DateTime.utc(2026, 9, 7),
+      end: DateTime.utc(2026, 9, 7),
+    );
+
+    expect(result.status, GatewayStatus.corrupted);
+    expect(result.data, isNull);
+  });
+
+  test('最后学期超过 26 周后不再延续不限周次课程', () async {
+    final vault = createVault();
+    final scheduleStore = ScheduleCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: vault,
+    );
+    await _writeScheduleTerm(
+      scheduleStore,
+      year: '2026',
+      semester: 3,
+      start: DateTime.utc(2026, 9, 7),
+      courseName: '本学期课程',
+    );
+    final gateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      snapshotStore: vault,
+    );
+
+    final result = await gateway.getScheduleOverview(
+      start: DateTime.utc(2027, 3, 8),
+      end: DateTime.utc(2027, 3, 8),
+    );
+
+    expect(result.status, GatewayStatus.available);
+    expect(result.data?.occurrences, isEmpty);
+  });
+
   test('课表 Gateway 拒绝超过上限的读取范围', () async {
     final vault = createVault();
     final gateway = createGateway(
@@ -620,6 +774,33 @@ Map<String, dynamic> _physicalPayload() => <String, dynamic>{
         },
       },
     };
+
+Future<void> _writeScheduleTerm(
+  ScheduleCacheStore store, {
+  required String year,
+  required int semester,
+  required DateTime start,
+  required String courseName,
+}) async {
+  await store.writeSemesterStart(
+    year: year,
+    semester: semester,
+    semesterStart: start,
+  );
+  await store.writeCourses(
+    year: year,
+    semester: semester,
+    courses: <Map<String, dynamic>>[
+      <String, dynamic>{
+        'name': courseName,
+        'weekday': 1,
+        'start_section': 1,
+        'end_section': 2,
+        'weeks': <int>[],
+      },
+    ],
+  );
+}
 
 class _DelayedSnapshotStore implements AccountScopedSnapshotStore {
   _DelayedSnapshotStore({required this.accountFingerprint});

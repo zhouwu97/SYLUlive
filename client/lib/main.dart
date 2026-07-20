@@ -51,6 +51,8 @@ import 'services/post_cache_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'widgets/app_update_gate.dart';
 import 'widgets/required_legal_consent_dialog.dart';
+import 'platform/platform_bootstrap.dart';
+import 'platform/platform_capabilities.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -269,8 +271,12 @@ Future<void> main() async {
       runApp(const MyApp());
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        CourseReminderService.instance.initialize();
-        _initializePrivateMessageNotifications();
+        PlatformBootstrap().initializeAfterFirstFrame(
+          initializeAndroidServices: () async {
+            await CourseReminderService.instance.initialize();
+            await _initializePrivateMessageNotifications();
+          },
+        );
       });
     },
     (error, stack) {
@@ -955,8 +961,20 @@ class MyApp extends StatelessWidget {
           update: (_, auth, provider) =>
               provider!..syncSessionUser(auth.user?.id),
         ),
-        ChangeNotifierProvider(create: (_) => EduProvider(dio)),
-        ChangeNotifierProvider(create: (_) => CourseScheduleProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, EduProvider>(
+          create: (_) => EduProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id.toString()),
+        ),
+        ChangeNotifierProxyProvider2<AuthProvider, EduProvider,
+            CourseScheduleProvider>(
+          create: (_) => CourseScheduleProvider(dio),
+          update: (_, auth, edu, provider) => provider!
+            ..syncSessionContext(
+              auth.user?.id.toString(),
+              edu.isBound ? edu.studentId : null,
+            ),
+        ),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
@@ -1365,7 +1383,8 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       final authProvider = context.read<AuthProvider>();
-      if (authProvider.isLoggedIn) {
+      if (authProvider.isLoggedIn &&
+          PlatformCapabilities.current.supportsJPush) {
         _ensureJPush(authProvider);
         _checkNativePrivateMessage();
       }
@@ -1469,13 +1488,17 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         if (authProvider.isLoggedIn &&
             (authProvider.user?.legalConsentsActive ?? true)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!_jpushSetup && !_jpushSettingUp) {
+            if (PlatformCapabilities.current.supportsJPush &&
+                !_jpushSetup &&
+                !_jpushSettingUp) {
               _ensureJPush(authProvider);
               _requestNotificationPermissionIfNeeded();
             }
             _processPendingPrivateMessageOpen();
             _schedulePendingNotificationProcessing();
-            _checkNativePrivateMessage();
+            if (PlatformCapabilities.current.supportsJPush) {
+              _checkNativePrivateMessage();
+            }
           });
         }
 

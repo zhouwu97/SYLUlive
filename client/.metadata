@@ -27,6 +27,9 @@ migration:
     - platform: macos
       create_revision: 02085feb3f5d8a8156e5e28512b9d99351d510c0
       base_revision: 02085feb3f5d8a8156e5e28512b9d99351d510c0
+    - platform: ohos
+      create_revision: aa33b6e2a6ed5e2672e45eef43d1221310a96878
+      base_revision: aa33b6e2a6ed5e2672e45eef43d1221310a96878
     - platform: web
       create_revision: 02085feb3f5d8a8156e5e28512b9d99351d510c0
       base_revision: 02085feb3f5d8a8156e5e28512b9d99351d510c0

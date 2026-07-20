@@ -186,6 +186,56 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")
 	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "")
+	t.Setenv("AI_ENABLED", "false")
+	t.Setenv("AI_INTERNAL_TEST_ONLY", "true")
+	t.Setenv("AI_TEST_USER_IDS", "")
+	t.Setenv("AI_PROVIDER", "deepseek")
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	t.Setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+}
+
+func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	cfg := Load()
+	require.False(t, cfg.AIEnabled)
+	require.True(t, cfg.AIInternalTestOnly)
+	require.Empty(t, cfg.DeepSeekAPIKey)
+	require.Equal(t, "deepseek-v4-flash", cfg.DeepSeekChatModel)
+}
+
+func TestLoadAIConfigRequiresServerKeyAndWhitelist(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	require.Panics(t, func() { Load() })
+
+	t.Setenv("AI_TEST_USER_IDS", "18, 19")
+	require.Panics(t, func() { Load() })
+
+	t.Setenv("DEEPSEEK_API_KEY", "server-only-key")
+	cfg := Load()
+	require.Equal(t, []string{"18", "19"}, cfg.AITestUserIDs)
+	require.Equal(t, "server-only-key", cfg.DeepSeekAPIKey)
+}
+
+func TestLoadPolicyRAGRequiresInternalServiceToken(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_TEST_USER_IDS", "18")
+	t.Setenv("DEEPSEEK_API_KEY", "server-only-key")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
+	t.Setenv("RAG_SERVICE_TOKEN", "")
+	require.Panics(t, func() { Load() })
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+	cfg := Load()
+	require.True(t, cfg.AIPolicyRAGEnabled)
+	require.Equal(t, "internal-rag-token", cfg.RAGServiceToken)
+}
+
+func TestLoadAIRejectsUnsafeLimits(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "0")
+	require.Panics(t, func() { Load() })
 }
 
 func assertLoadPanics(t *testing.T) {

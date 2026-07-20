@@ -1,7 +1,34 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shenliyuan/main.dart';
+import 'package:shenliyuan/services/app_update_coordinator.dart';
+import 'package:shenliyuan/widgets/app_update_gate.dart';
 
 void main() {
-  test('placeholder test', () {
-    expect(1 + 1, 2);
+  testWidgets('应用根组件在更新门禁启用时提供方向性上下文', (tester) async {
+    await tester.pumpWidget(const MyApp());
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('冷启动检查更新时不覆盖原有开屏内容', (tester) async {
+    final coordinator = AppUpdateCoordinator();
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: coordinator,
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          home: AppUpdateGate(
+            navigatorKey: navigatorKey,
+            child: const Scaffold(body: Center(child: Text('原有开屏内容'))),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('原有开屏内容'), findsOneWidget);
+    expect(find.byType(AppUpdateScreen), findsNothing);
   });
 }

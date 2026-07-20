@@ -62,14 +62,15 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
               'created_at': '2026-07-15T00:00:00Z',
               'background': 'http://example.com/bg.jpg',
             }
-          : profileResponse ?? {
-              'id': 2,
-              'student_id': '20260002',
-              'nickname': '女生用户',
-              'gender': 'female',
-              'created_at': '2026-07-15T00:00:00Z',
-              'background': '',
-            },
+          : profileResponse ??
+              {
+                'id': 2,
+                'student_id': '20260002',
+                'nickname': '女生用户',
+                'gender': 'female',
+                'created_at': '2026-07-15T00:00:00Z',
+                'background': '',
+              },
       '/user/background' => {
           'id': 2,
           'student_id': '20260002',
@@ -77,7 +78,7 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
           'gender': '',
           'created_at': '2026-07-15T00:00:00Z',
           'background': 'http://example.com/new_bg.jpg',
-      },
+        },
       '/user/2/posts' => <Object>[],
       '/user/2/market-posts' => {
           'items': <Object>[],
@@ -86,6 +87,11 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
         },
       _ => {'error': 'not found'},
     };
+    if (response is Map<String, dynamic> &&
+        (route == '/user/profile' || route == '/user/background')) {
+      response.putIfAbsent('legal_consents_active', () => true);
+      response.putIfAbsent('legal_consents_required', () => false);
+    }
     return ResponseBody.fromString(
       jsonEncode(response),
       statusCode,
@@ -166,6 +172,8 @@ void main() {
       'nickname': '女生用户',
       'gender': 'female',
       'created_at': '2026-07-15T00:00:00Z',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
     });
 
     await tester.pumpWidget(
@@ -219,6 +227,8 @@ void main() {
       'nickname': '女生用户',
       'gender': 'female',
       'created_at': '2026-07-15T00:00:00Z',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
     });
 
     await tester.pumpWidget(
@@ -278,6 +288,8 @@ void main() {
       'nickname': '未知性别用户',
       'gender': '',
       'created_at': '2026-07-15T00:00:00Z',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
     });
 
     await tester.pumpWidget(
@@ -300,7 +312,8 @@ void main() {
 
     // 打开编辑页
     await tester.tap(find.text('编辑资料'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     // 未知性别默认选中保密
     final secrecySegment = find.descendant(
@@ -319,7 +332,12 @@ void main() {
     // 点击保存
     await tester.tap(find.text('保存'));
     await tester.pump();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    for (var i = 0;
+        i < 10 && find.byType(SegmentedButton<String>).evaluate().isNotEmpty;
+        i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
 
     // 验证请求
     final profileRequests = adapter.requests
@@ -382,6 +400,8 @@ void main() {
       'gender': 'male',
       'created_at': '2026-07-15T00:00:00Z',
       'background': '',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
     });
 
     await tester.pumpWidget(
@@ -413,6 +433,8 @@ void main() {
       'gender': '',
       'created_at': '2026-07-15T00:00:00Z',
       'background': 'http://example.com/new_bg.jpg',
+      'legal_consents_active': true,
+      'legal_consents_required': false,
     });
     await tester.pump();
 

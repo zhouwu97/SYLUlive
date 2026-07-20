@@ -4,7 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
-import 'package:shenliyuan/models/edu_grade.dart';
+import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
+import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
+
+import '../helpers/personal_snapshot_test_fakes.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -12,10 +15,16 @@ void main() {
       MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
   final secureStore = <String, String>{};
   late EduProvider provider;
+  late MemoryPersonalSnapshotSecureStore vaultSecureStore;
+  late MemoryPersonalSnapshotFileBackend vaultFiles;
+  late IncrementingRandomBytes vaultRandom;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     secureStore.clear();
+    vaultSecureStore = MemoryPersonalSnapshotSecureStore();
+    vaultFiles = MemoryPersonalSnapshotFileBackend();
+    vaultRandom = IncrementingRandomBytes();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(secureStorageChannel, (call) async {
       final args = Map<String, dynamic>.from(call.arguments as Map);
@@ -41,6 +50,20 @@ void main() {
     });
   });
 
+  AccountScopedSnapshotStore createSnapshotStore(String appUserId) {
+    return AesGcmAccountScopedSnapshotStore(
+      appUserId: appUserId,
+      secureStore: vaultSecureStore,
+      fileBackend: vaultFiles,
+      randomBytes: vaultRandom.call,
+    );
+  }
+
+  Future<void> setBoundUser(EduProvider value, String userId) async {
+    value.setUserId(userId);
+    await value.ensureStatusLoaded();
+  }
+
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(secureStorageChannel, null);
@@ -57,6 +80,19 @@ void main() {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
+          if (options.path == '/edu/status') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: <String, dynamic>{
+                  'edu_bound': true,
+                  'edu_student_id': '2403130233',
+                },
+              ),
+            );
+            return;
+          }
           if (options.path == '/edu/grades') {
             if (delay != null) {
               Future.delayed(delay, () {
@@ -84,15 +120,15 @@ void main() {
         },
       ),
     );
-    return EduProvider(dio);
+    return EduProvider(dio, createSnapshotStore);
   }
 
   group('EduProvider grade cache isolation', () {
-    test('getCachedGrades returns null after userId switch', () {
+    test('getCachedGrades returns null after userId switch', () async {
       provider = createProvider(responseData: []);
 
       // Set user A, manually add cache entry
-      provider.setUserId('user_a');
+      await setBoundUser(provider, 'user_a');
       // Use fetchGrades to populate cache for A
       expect(provider.getCachedGrades('2025', 3), isNull);
     });
@@ -109,12 +145,12 @@ void main() {
       ]);
 
       // Populate cache for user A
-      provider.setUserId('user_a');
+      await setBoundUser(provider, 'user_a');
       await provider.fetchGrades('2025', 3);
       expect(provider.getCachedGrades('2025', 3), isNotNull);
 
       // Populate cache for user B (setUserId clears A's cache — expected behavior)
-      provider.setUserId('user_b');
+      await setBoundUser(provider, 'user_b');
       await provider.fetchGrades('2025', 3);
       expect(provider.getCachedGrades('2025', 3), isNotNull);
 
@@ -164,10 +200,30 @@ void main() {
           },
         ),
       );
-      final p = EduProvider(dio);
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: <String, dynamic>{
+                    'edu_bound': true,
+                    'edu_student_id': '2403130233',
+                  },
+                ),
+              );
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+      final p = EduProvider(dio, createSnapshotStore);
 
       // Set user A and fire request
-      p.setUserId('user_a');
+      await setBoundUser(p, 'user_a');
       final future = p.fetchGrades('2025', 3);
 
       // Switch to user B before the response arrives
@@ -186,6 +242,61 @@ void main() {
       expect(p.getCachedGrades('2025', 3), isNull);
     });
 
+    test('getCourses rejects delayed response after account context changes',
+        () async {
+      final responseStarted = Completer<void>();
+      final releaseResponse = Completer<void>();
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: <String, dynamic>{
+                    'edu_bound': true,
+                    'edu_student_id': '2403130233',
+                  },
+                ),
+              );
+              return;
+            }
+            if (options.path == '/edu/courses') {
+              responseStarted.complete();
+              releaseResponse.future.then((_) {
+                handler.resolve(
+                  Response(
+                    requestOptions: options,
+                    statusCode: 200,
+                    data: <String, dynamic>{
+                      'courses': <Map<String, dynamic>>[
+                        <String, dynamic>{'name': '旧账号课程'},
+                      ],
+                    },
+                  ),
+                );
+              });
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+      final value = EduProvider(dio, createSnapshotStore);
+      await setBoundUser(value, 'user_a');
+
+      final pending = value.getCourses('2025', 3);
+      await responseStarted.future;
+      value.setUserId('user_b');
+      releaseResponse.complete();
+
+      final result = await pending;
+      expect(result?.success, isFalse);
+      expect(result?.errorMessage, contains('用户已切换'));
+    });
+
     test('fetchGrades writes to correct user cache on success', () async {
       provider = createProvider(responseData: [
         {
@@ -197,7 +308,7 @@ void main() {
         },
       ]);
 
-      provider.setUserId('user_123');
+      await setBoundUser(provider, 'user_123');
       final result = await provider.fetchGrades('2025', 3);
 
       expect(result.success, true);
@@ -214,7 +325,7 @@ void main() {
     test('fetchGrades returns fail for empty grades list', () async {
       provider = createProvider(responseData: []);
 
-      provider.setUserId('user_x');
+      await setBoundUser(provider, 'user_x');
       final result = await provider.fetchGrades('2025', 3);
 
       // Empty list is still "success" (the request succeeded, just no grades)
@@ -241,15 +352,85 @@ void main() {
           },
         ),
       );
-      final p = EduProvider(dio);
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: <String, dynamic>{
+                    'edu_bound': true,
+                    'edu_student_id': '2403130233',
+                  },
+                ),
+              );
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+      final p = EduProvider(dio, createSnapshotStore);
 
-      p.setUserId('user_x');
+      await setBoundUser(p, 'user_x');
       final result = await p.fetchGrades('2025', 3);
 
       expect(result.success, false);
       expect(result.errorMessage, isNotEmpty);
       // No cache should be written on failure
       expect(p.getCachedGrades('2025', 3), isNull);
+    });
+
+    test('失败的学业情况响应不会写入加密快照', () async {
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: <String, dynamic>{
+                    'edu_bound': true,
+                    'edu_student_id': '2403130233',
+                  },
+                ),
+              );
+              return;
+            }
+            if (options.path == '/edu/academic-situation') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: <String, dynamic>{
+                    'success': false,
+                    'message': '教务数据暂不可用',
+                  },
+                ),
+              );
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+      final value = EduProvider(dio, createSnapshotStore);
+      await setBoundUser(value, 'user_academic');
+
+      final result = await value.fetchAcademicSituation();
+
+      expect(result.success, isFalse);
+      final store = AcademicCacheStore(
+        appUserId: 'user_academic',
+        sourceAccountId: '2403130233',
+        snapshotStore: createSnapshotStore('user_academic'),
+      );
+      expect(await store.readSnapshot(), isNull);
+      expect(value.getCachedAcademicSituation(), isNull);
     });
 
     test('setUserId clears cache for old user', () async {
@@ -263,14 +444,14 @@ void main() {
         },
       ]);
 
-      provider.setUserId('user_a');
+      await setBoundUser(provider, 'user_a');
       await provider.fetchGrades('2025', 3);
       expect(provider.getCachedGrades('2025', 3), isNotNull);
 
       // Switch to user B — should clear A's cache
-      provider.setUserId('user_b');
+      await setBoundUser(provider, 'user_b');
       // Now switch back to A — cache should be cleared
-      provider.setUserId('user_a');
+      await setBoundUser(provider, 'user_a');
       expect(provider.getCachedGrades('2025', 3), isNull);
     });
 
@@ -292,7 +473,7 @@ void main() {
         },
       ]);
 
-      provider.setUserId('user_test');
+      await setBoundUser(provider, 'user_test');
       final result = await provider.fetchGrades('2025', 12);
 
       expect(result.success, true);
@@ -365,11 +546,9 @@ void main() {
           },
         ),
       );
-      final p = EduProvider(dio);
+      final p = EduProvider(dio, createSnapshotStore);
 
-      p.setUserId('user_a');
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+      await setBoundUser(p, 'user_a');
       await p.fetchGrades('2025', 3);
       expect(p.isBound, true);
       expect(p.getCachedGrades('2025', 3), isNotNull);
@@ -429,7 +608,7 @@ void main() {
           },
         ),
       );
-      final p = EduProvider(dio);
+      final p = EduProvider(dio, createSnapshotStore);
 
       p.setUserId('user_a');
       await Future<void>.delayed(Duration.zero);

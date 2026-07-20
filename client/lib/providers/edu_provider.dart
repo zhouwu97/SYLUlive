@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:convert';
+import '../features/campus_data/storage/academic_cache_store.dart';
+import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_grade.dart';
@@ -43,6 +44,8 @@ class AcademicSituationCacheEntry {
 
 class EduProvider extends ChangeNotifier {
   late final Dio _authDio; // Go 服务器（获取当前用户信息）
+  final AccountScopedSnapshotStore Function(String appUserId)?
+      _snapshotStoreBuilder;
 
   String? _userId;
   bool _isBound = false;
@@ -87,6 +90,27 @@ class EduProvider extends ChangeNotifier {
 
   String _academicSituationCacheKey(String userId) {
     return 'edu_academic_situation_$userId';
+  }
+
+  AcademicCacheStore? _academicCacheStoreFor({
+    required String appUserId,
+    required String sourceAccountId,
+  }) {
+    if (appUserId.trim().isEmpty || sourceAccountId.trim().isEmpty) {
+      return null;
+    }
+    return AcademicCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: _snapshotStoreBuilder?.call(appUserId),
+    );
+  }
+
+  bool _isSameAcademicContext({
+    required String appUserId,
+    required String sourceAccountId,
+  }) {
+    return _userId == appUserId && _studentId.trim() == sourceAccountId;
   }
 
   /// 读取内存缓存（同步方法，直接使用当前 _userId，安全）
@@ -150,9 +174,11 @@ class EduProvider extends ChangeNotifier {
     }
   }
 
-  EduProvider(Dio authDio) {
-    _authDio = authDio;
-  }
+  EduProvider(
+    Dio authDio, [
+    AccountScopedSnapshotStore Function(String appUserId)? snapshotStoreBuilder,
+  ])  : _snapshotStoreBuilder = snapshotStoreBuilder,
+        _authDio = authDio;
 
   void setUserId(String userId) {
     if (_userId == userId) return;
@@ -182,21 +208,47 @@ class EduProvider extends ChangeNotifier {
     );
   }
 
+  void syncSessionUser(String? userId) {
+    if (userId == null || userId.isEmpty) {
+      clearMemoryForAccountTransition();
+      return;
+    }
+    setUserId(userId);
+  }
+
+  /// 同步清空可见个人数据，持久化清理由显式登出流程负责。
+  void clearMemoryForAccountTransition() {
+    if (_userId == null &&
+        _studentId.isEmpty &&
+        _gradeCache.isEmpty &&
+        _academicSituationCache.isEmpty) {
+      return;
+    }
+    _statusGeneration++;
+    _userId = null;
+    _isBound = false;
+    _studentId = '';
+    _name = '';
+    _grade = '';
+    _college = '';
+    _major = '';
+    _isLoading = false;
+    _statusLoaded = false;
+    _errorMessage = null;
+    _gradeCache.clear();
+    _gradeDetailCache.clear();
+    _academicSituationCache.clear();
+    notifyListeners();
+  }
+
   String? get userId => _userId;
 
   /// 解析Dio异常并返回友好的错误信息
   String _parseDioError(DioException e) {
     final statusCode = e.response?.statusCode;
-    final data = e.response?.data;
     debugPrint(
-      'Edu Dio error: uri=${e.requestOptions.uri} '
-      'status=$statusCode type=${e.type} '
-      'data=${data is Map ? {
-          'code': data['code'],
-          'error': data['error'],
-          'upstream_code': data['upstream_code']
-        } : data} '
-      'error=${e.error}',
+      'Edu Dio error: path=${e.requestOptions.uri.path} '
+      'status=$statusCode type=${e.type}',
     );
     return AppFeedback.dioErrorMessage(
       e,
@@ -310,22 +362,7 @@ class EduProvider extends ChangeNotifier {
   Future<void> clearLocalSession() async {
     final oldUserId = _userId;
     final oldStudentId = _studentId;
-
-    _statusGeneration++;
-    _userId = null;
-    _isBound = false;
-    _studentId = '';
-    _name = '';
-    _grade = '';
-    _college = '';
-    _major = '';
-    _isLoading = false;
-    _statusLoaded = false;
-    _errorMessage = null;
-    _gradeCache.clear();
-    _gradeDetailCache.clear();
-    _academicSituationCache.clear();
-    notifyListeners();
+    clearMemoryForAccountTransition();
 
     if (oldStudentId.trim().isNotEmpty) {
       await _deleteEduPassword(oldStudentId);
@@ -489,9 +526,19 @@ class EduProvider extends ChangeNotifier {
     String year,
     int semester,
   ) async {
-    if (_userId == null) {
+    final requestUserId = _userId;
+    final requestSourceAccountId = _studentId.trim();
+    if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
+    if (!_isBound || requestSourceAccountId.isEmpty) {
+      return OperationResult.fail('教务账号未就绪');
+    }
+
+    bool isCurrentContext() => _isSameAcademicContext(
+          appUserId: requestUserId,
+          sourceAccountId: requestSourceAccountId,
+        );
 
     return _runEduRequest(() async {
       try {
@@ -500,6 +547,9 @@ class EduProvider extends ChangeNotifier {
           '/edu/courses',
           data: {'year': year, 'semester': semester},
         );
+        if (!isCurrentContext()) {
+          return OperationResult.fail('用户已切换');
+        }
 
         if (response.statusCode == 200) {
           final data = response.data;
@@ -509,7 +559,7 @@ class EduProvider extends ChangeNotifier {
           debugPrint(
             'Edu getCourses result: success=${data['success']}, '
             'year=${data['year']}, semester=${data['semester']}, '
-            'courses=$courseCount, message=${data['message']}',
+            'courses=$courseCount',
           );
 
           if (courses != null && (courses as List).isNotEmpty) {
@@ -538,6 +588,9 @@ class EduProvider extends ChangeNotifier {
               '/edu/courses',
               data: {'year': year, 'semester': semester},
             );
+            if (!isCurrentContext()) {
+              return OperationResult.fail('用户已切换');
+            }
             if (retryResp.statusCode == 200 &&
                 retryResp.data['courses'] != null &&
                 (retryResp.data['courses'] as List).isNotEmpty) {
@@ -556,7 +609,6 @@ class EduProvider extends ChangeNotifier {
           }
           return OperationResult.fail('获取课表失败');
         }
-        debugPrint('获取课表失败: $errorMsg');
         return OperationResult.fail(errorMsg);
       }
     });
@@ -573,16 +625,43 @@ class EduProvider extends ChangeNotifier {
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
+    final requestSourceAccountId = _studentId.trim();
 
     final raw = await _fetchGradesRaw(year, semester);
 
     // 请求期间用户已切换 → 丢弃结果
-    if (_userId != requestUserId) {
+    if (!_isSameAcademicContext(
+      appUserId: requestUserId,
+      sourceAccountId: requestSourceAccountId,
+    )) {
       return OperationResult.fail('用户已切换');
     }
 
     if (raw != null && raw.success && raw.data != null) {
       final grades = raw.data!.map((m) => EduGrade.fromJson(m)).toList();
+      final store = _academicCacheStoreFor(
+        appUserId: requestUserId,
+        sourceAccountId: requestSourceAccountId,
+      );
+      if (store == null) {
+        return OperationResult.fail('教务账号未就绪，无法安全保存成绩');
+      }
+      try {
+        await store.writeGrades(
+          year: year,
+          semester: semester,
+          grades: raw.data!,
+        );
+      } catch (error) {
+        debugPrint('保存加密成绩失败: ${error.runtimeType}');
+        return OperationResult.fail('成绩本地加密保存失败，请稍后重试');
+      }
+      if (!_isSameAcademicContext(
+        appUserId: requestUserId,
+        sourceAccountId: requestSourceAccountId,
+      )) {
+        return OperationResult.fail('用户已切换');
+      }
       // 使用捕获的 requestUserId 生成缓存键，防止写入错误用户的缓存
       _gradeCache[_cacheKeyFor(requestUserId, year, semester)] =
           GradeCacheEntry(
@@ -679,7 +758,6 @@ class EduProvider extends ChangeNotifier {
           }
           return OperationResult.fail('获取成绩构成失败');
         }
-        debugPrint('获取成绩构成失败: $errorMsg');
         return OperationResult.fail(errorMsg);
       }
     });
@@ -692,6 +770,7 @@ class EduProvider extends ChangeNotifier {
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
+    final requestSourceAccountId = _studentId.trim();
 
     Future<Response<dynamic>> request() {
       return _authDio.post(
@@ -703,21 +782,45 @@ class EduProvider extends ChangeNotifier {
     return _runEduRequest(() async {
       try {
         final response = await request();
-        if (_userId != requestUserId) {
+        if (!_isSameAcademicContext(
+          appUserId: requestUserId,
+          sourceAccountId: requestSourceAccountId,
+        )) {
           return OperationResult.fail('用户已切换');
         }
         if (response.statusCode == 200) {
-          final situation = EduAcademicSituation.fromJson(
-            Map<String, dynamic>.from(response.data),
+          if (response.data is! Map) {
+            return OperationResult.fail('获取学业情况失败');
+          }
+          final rawSituation = Map<String, dynamic>.from(response.data as Map);
+          final situation = EduAcademicSituation.fromJson(rawSituation);
+          if (!situation.success) {
+            return OperationResult.fail(situation.message ?? '获取学业情况失败');
+          }
+          final store = _academicCacheStoreFor(
+            appUserId: requestUserId,
+            sourceAccountId: requestSourceAccountId,
           );
+          if (store == null) {
+            return OperationResult.fail('教务账号未就绪，无法安全保存学业情况');
+          }
+          try {
+            await store.writeAcademicSituation(data: rawSituation);
+          } catch (error) {
+            debugPrint('保存加密学业情况失败: ${error.runtimeType}');
+            return OperationResult.fail('学业情况本地加密保存失败，请稍后重试');
+          }
+          if (!_isSameAcademicContext(
+            appUserId: requestUserId,
+            sourceAccountId: requestSourceAccountId,
+          )) {
+            return OperationResult.fail('用户已切换');
+          }
           _academicSituationCache[_academicSituationCacheKey(requestUserId)] =
               AcademicSituationCacheEntry(
             data: situation,
             updatedAt: DateTime.now(),
           );
-          if (!situation.success) {
-            return OperationResult.fail(situation.message ?? '获取学业情况失败');
-          }
           return OperationResult.ok(situation);
         }
         return OperationResult.fail('获取学业情况失败');
@@ -728,22 +831,49 @@ class EduProvider extends ChangeNotifier {
           await Future.delayed(const Duration(milliseconds: 350));
           try {
             final retryResp = await request();
-            if (_userId != requestUserId) {
+            if (!_isSameAcademicContext(
+              appUserId: requestUserId,
+              sourceAccountId: requestSourceAccountId,
+            )) {
               return OperationResult.fail('用户已切换');
             }
             if (retryResp.statusCode == 200) {
-              final situation = EduAcademicSituation.fromJson(
-                Map<String, dynamic>.from(retryResp.data),
+              if (retryResp.data is! Map) {
+                return OperationResult.fail('获取学业情况失败');
+              }
+              final rawSituation =
+                  Map<String, dynamic>.from(retryResp.data as Map);
+              final situation = EduAcademicSituation.fromJson(rawSituation);
+              if (!situation.success) {
+                return OperationResult.fail(
+                  situation.message ?? '获取学业情况失败',
+                );
+              }
+              final store = _academicCacheStoreFor(
+                appUserId: requestUserId,
+                sourceAccountId: requestSourceAccountId,
               );
+              if (store == null) {
+                return OperationResult.fail('教务账号未就绪，无法安全保存学业情况');
+              }
+              try {
+                await store.writeAcademicSituation(data: rawSituation);
+              } catch (error) {
+                debugPrint('保存加密学业情况失败: ${error.runtimeType}');
+                return OperationResult.fail('学业情况本地加密保存失败，请稍后重试');
+              }
+              if (!_isSameAcademicContext(
+                appUserId: requestUserId,
+                sourceAccountId: requestSourceAccountId,
+              )) {
+                return OperationResult.fail('用户已切换');
+              }
               _academicSituationCache[
                       _academicSituationCacheKey(requestUserId)] =
                   AcademicSituationCacheEntry(
                 data: situation,
                 updatedAt: DateTime.now(),
               );
-              if (!situation.success) {
-                return OperationResult.fail(situation.message ?? '获取学业情况失败');
-              }
               return OperationResult.ok(situation);
             }
           } on DioException catch (retryError) {
@@ -757,7 +887,6 @@ class EduProvider extends ChangeNotifier {
           }
           return OperationResult.fail('获取学业情况失败');
         }
-        debugPrint('获取学业情况失败: $errorMsg');
         return OperationResult.fail(errorMsg);
       }
     });
@@ -819,51 +948,8 @@ class EduProvider extends ChangeNotifier {
           }
           return OperationResult.fail('获取成绩失败');
         }
-        debugPrint('获取成绩失败: $errorMsg');
         return OperationResult.fail(errorMsg);
       }
     });
-  }
-
-  /// 将课表同步到本地数据库（供课表页展示）
-  /// [courses] 为 fetch 返回的原始课程列表
-  Future<bool> syncCourses(
-    String year,
-    int semester,
-    List<Map<String, dynamic>> courses,
-  ) async {
-    if (_userId == null) return false;
-
-    final kbList = courses.map((c) {
-      final time = (c['time'] as num?)?.toInt() ?? 1;
-      final endTime = (c['end_time'] as num?)?.toInt() ?? time;
-      return {
-        'kcmc': c['name'] ?? '',
-        'xm': c['teacher'] ?? '',
-        'cdmc': c['location'] ?? '',
-        'jc':
-            '${time.toString().padLeft(2, '0')}${endTime.toString().padLeft(2, '0')}',
-        'xqj': (c['week_day'] as int? ?? 1).toString(),
-        'zcd': (c['weeks'] as List?)?.join(',') ?? '',
-      };
-    }).toList();
-
-    final rawJson = jsonEncode({'kbList': kbList});
-
-    try {
-      final response = await _authDio.post(
-        '/edu/courses/sync',
-        data: {
-          'year': year,
-          'semester': semester,
-          'raw_json': rawJson,
-          'customizations': [],
-        },
-      );
-      return response.statusCode == 200;
-    } on DioException catch (e) {
-      debugPrint('同步课程失败: ${_parseDioError(e)}');
-      return false;
-    }
   }
 }

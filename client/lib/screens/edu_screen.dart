@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -543,8 +542,6 @@ class _EduScreenState extends State<EduScreen> {
     final sc = context.read<CourseScheduleProvider>();
     await sc.selectTerm(result.year, result.semester, clearCurrent: true);
     await sc.applyFetchedCourses(result.courses);
-    unawaited(
-        eduProvider.syncCourses(result.year, result.semester, result.courses));
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

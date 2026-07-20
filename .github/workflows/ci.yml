@@ -12,6 +12,8 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
@@ -25,10 +27,28 @@ jobs:
         working-directory: python-edu-service
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
+      - run: python -m compileall -q .
+      - run: python -m pytest -q
+
+  rag-service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python-rag-service
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements-test.txt
       - run: python -m compileall -q .
       - run: python -m pytest -q
 
@@ -39,6 +59,8 @@ jobs:
         working-directory: client
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.8'
@@ -47,3 +69,49 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze --no-fatal-warnings --no-fatal-infos
       - run: flutter test --reporter compact
+
+  python-edu-service-unchanged:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Ensure python edu service is unchanged in pull request
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --exit-code "${BASE_SHA}...HEAD" -- python-edu-service
+      - name: Ensure python edu service is unchanged on push
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+        run: git diff --exit-code "${BASE_SHA}...HEAD" -- python-edu-service
+
+  pgvector-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg15-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_rag_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ai_rag_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGVECTOR_TEST_DSN: postgres://postgres:postgres@127.0.0.1:5432/ai_rag_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: Run independent pgvector migration test
+        working-directory: server
+        run: go test ./internal/models -run TestPGVectorMigrationIntegration -count=1

@@ -904,7 +904,11 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: _EditProfileSheet(user: user, onSaved: () async { _onProfileSaved(); }),
+        child: _EditProfileSheet(
+            user: user,
+            onSaved: () async {
+              _onProfileSaved();
+            }),
       ),
     );
   }
@@ -1007,7 +1011,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       final uploadRes = await auth.dio.post('/upload', data: formData);
       if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
         final url = uploadRes.data['url'] as String;
-        final response = await auth.dio.put('/user/background', data: {'background': url});
+        final response =
+            await auth.dio.put('/user/background', data: {'background': url});
 
         await auth.applyProfileResponse(
           Map<String, dynamic>.from(response.data),
@@ -1020,7 +1025,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           ).showSnackBar(const SnackBar(content: Text('背景更换成功')));
         }
       } else {
-        debugPrint('上传失败 (${uploadRes.statusCode}): ${uploadRes.data}');
+        debugPrint('上传失败 (${uploadRes.statusCode})');
         if (mounted) {
           ScaffoldMessenger.of(
             context,
@@ -1031,7 +1036,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       }
     } on DioException catch (e) {
       debugPrint(
-          '背景上传 DioException: ${e.response?.statusCode} ${e.response?.data}');
+        '背景上传 DioException: type=${e.type}, status=${e.response?.statusCode}',
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -1040,7 +1046,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         );
       }
     } catch (e) {
-      debugPrint('背景上传异常: $e');
+      debugPrint('背景上传异常: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(
           context,

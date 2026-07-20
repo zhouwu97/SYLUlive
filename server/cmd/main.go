@@ -21,6 +21,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/academiccalendar"
+	"shenliyuan/internal/ai"
 	"shenliyuan/internal/clients"
 
 	"shenliyuan/internal/config"
@@ -89,10 +91,15 @@ func serveUntilShutdown(ctx context.Context, server gracefulHTTPServer, shutdown
 }
 
 func main() {
-	// 强制设置时区为东八区（北京时间），使用 FixedZone 确保在任何没有 tzdata 的系统上也能生效
-	time.Local = time.FixedZone("CST", 8*3600)
+	timezoneReady := true
+	if err := academiccalendar.InitializeTimezone(); err != nil {
+		log.Printf("[AI_SCHEDULE_DISABLED] %v", err)
+		timezoneReady = false
+	}
 
 	cfg := config.Load()
+	// P0 只准备课表能力；P3 发布并核验 v2 校历后才允许真正启用 Skill。
+	scheduleSkillEnabled := false
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()
 
@@ -255,6 +262,8 @@ func main() {
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
 		&models.CampusCalendar{},
+		&models.AIKnowledgeDocument{},
+		&models.AIKnowledgeAuditLog{},
 
 		// 应用内更新：APK 发布记录
 		&models.AppRelease{},
@@ -551,6 +560,81 @@ func main() {
 
 	campusArticleHandler := handlers.NewCampusArticleHandler(db, campusSyncServices...)
 	campusCalendarHandler := handlers.NewCampusCalendarHandler(db)
+	classPeriodProfileHandler := handlers.NewClassPeriodProfileHandler(db)
+
+	var ragClient *ai.RAGClient
+	var aiRuntime *ai.Runtime
+	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
+		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
+			log.Fatalf("AI Runtime Schema 未就绪，请先执行 server/sql/20260719_ai_runtime_rag.sql: %v", schemaErr)
+		}
+		ragHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
+		var ragErr error
+		ragClient, ragErr = ai.NewRAGClient(cfg.RAGServiceURL, cfg.RAGServiceToken, ragHTTPClient)
+		if ragErr != nil {
+			log.Fatalf("AI RAG 配置无效: %v", ragErr)
+		}
+		var provider ai.AIProvider
+		if cfg.AIProvider == "mock" {
+			provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
+		} else {
+			providerHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
+			provider, ragErr = ai.NewDeepSeekProvider(cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekChatModel, providerHTTPClient)
+			if ragErr != nil {
+				log.Fatalf("AI Provider 初始化失败: %v", ragErr)
+			}
+		}
+		aiRuntime, ragErr = ai.NewRuntime(
+			db, provider, ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion), ai.NewEventBroker(),
+			ai.RuntimeConfig{
+				ProviderName: cfg.AIProvider, Model: cfg.DeepSeekChatModel,
+				RequestTimeout:  time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second,
+				MaxMessageChars: cfg.AIMaxMessageChars, HourlyMessageLimit: cfg.AIHourlyMessageLimit,
+				DefaultBudgetLimitMicroYuan:    cfg.AIUserBudgetLimitMicroYuan,
+				ReservationMicroYuan:           cfg.AIReserveMicroYuan,
+				InputPriceMicroYuanPerMillion:  cfg.AIInputPriceMicroYuanPerMillionTokens,
+				OutputPriceMicroYuanPerMillion: cfg.AIOutputPriceMicroYuanPerMillionTokens,
+				AuditHashSecret:                cfg.JWTSecret,
+			},
+		)
+		if ragErr != nil {
+			log.Fatalf("AI Runtime 初始化失败: %v", ragErr)
+		}
+		if ragErr := aiRuntime.RecoverAbandonedRuns(appCtx); ragErr != nil {
+			log.Printf("[AI_RECOVERY_FAILED] %v", ragErr)
+		}
+		ingestionWorker := services.NewKnowledgeIngestionWorker(db, ragClient, cfg.RAGEmbeddingModelVersion)
+		go ingestionWorker.Start(appCtx)
+		go func() {
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-appCtx.Done():
+					return
+				case <-ticker.C:
+					if err := aiRuntime.ReclaimExpiredReservations(appCtx); err != nil {
+						log.Printf("[AI_BUDGET_RECLAIM_FAILED] %v", err)
+					}
+				}
+			}
+		}()
+	}
+	knowledgeHandler := handlers.NewAIKnowledgeHandler(db, ragClient)
+	aiCapabilitiesHandler := handlers.NewAICapabilitiesHandler(
+		cfg.AIEnabled,
+		cfg.AIInternalTestOnly,
+		cfg.AITestUserIDs,
+		handlers.AICapabilitiesOptions{
+			Runtime: aiRuntime, PolicyRAGEnabled: cfg.AIPolicyRAGEnabled && aiRuntime != nil,
+			ScheduleEnabled: scheduleSkillEnabled, HourlyLimit: cfg.AIHourlyMessageLimit,
+			MaxMessageChars: cfg.AIMaxMessageChars,
+		},
+	)
+	var aiRuntimeHandler *handlers.AIRuntimeHandler
+	if aiRuntime != nil {
+		aiRuntimeHandler = handlers.NewAIRuntimeHandler(db, aiRuntime)
+	}
 
 	// 启动后台定时任务
 
@@ -591,8 +675,28 @@ func main() {
 			return
 		}
 
+		ragHealth := "disabled"
+		if cfg.AIPolicyRAGEnabled {
+			ragHealth = "unavailable"
+			if ragClient != nil {
+				ragCtx, ragCancel := context.WithTimeout(c.Request.Context(), 800*time.Millisecond)
+				if err := ragClient.Health(ragCtx); err == nil {
+					ragHealth = "ok"
+				}
+				ragCancel()
+			}
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"status": "ok",
+			"ai": gin.H{
+				"enabled":         cfg.AIEnabled,
+				"runtime_enabled": aiRuntime != nil,
+				"policy_rag":      gin.H{"enabled": cfg.AIPolicyRAGEnabled, "status": ragHealth},
+				"schedule_skill": gin.H{
+					"enabled":  scheduleSkillEnabled,
+					"timezone": map[bool]string{true: "Asia/Shanghai", false: "unavailable"}[timezoneReady],
+				},
+			},
 		})
 	})
 
@@ -1456,6 +1560,52 @@ func main() {
 		calendarAdmin.POST("", campusCalendarHandler.CreateDraft)
 		calendarAdmin.POST("/:id/publish", campusCalendarHandler.Publish)
 		calendarAdmin.POST("/:id/archive", campusCalendarHandler.Archive)
+	}
+	classPeriodAdmin := r.Group("/api/admin/class-period-profiles")
+	classPeriodAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		classPeriodAdmin.POST("", classPeriodProfileHandler.Create)
+		classPeriodAdmin.GET("", classPeriodProfileHandler.List)
+		// 发布动作在 Handler 内再次校验 super_admin。
+		classPeriodAdmin.POST("/:id/publish", classPeriodProfileHandler.Publish)
+	}
+
+	knowledgeAdmin := r.Group("/api/admin/ai/knowledge")
+	knowledgeAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		knowledgeAdmin.POST("/import", knowledgeHandler.Import)
+		knowledgeAdmin.GET("", knowledgeHandler.List)
+		knowledgeAdmin.GET("/:id", knowledgeHandler.Read)
+		knowledgeAdmin.POST("/:id/inspect", knowledgeHandler.Inspect)
+		knowledgeAdmin.POST("/:id/reindex", knowledgeHandler.Reindex)
+		// 高权限动作在 Handler 内再次校验 super_admin，不能只依赖路由组。
+		knowledgeAdmin.POST("/:id/publish", knowledgeHandler.Publish)
+		knowledgeAdmin.POST("/:id/revoke", knowledgeHandler.Revoke)
+		knowledgeAdmin.POST("/:id/supersede", knowledgeHandler.Supersede)
+	}
+
+	// 能力探测保持可达，未获内测资格的客户端据此安静隐藏入口。
+	aiCapabilities := r.Group("/api/ai")
+	aiCapabilities.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		aiCapabilities.GET("/capabilities", aiCapabilitiesHandler.Get)
+	}
+	if aiRuntimeHandler != nil {
+		aiProtected := r.Group("/api/ai")
+		aiProtected.Use(
+			middleware.AuthMiddleware(db, cfg.JWTSecret),
+			middleware.AIAccessMiddleware(cfg.AIEnabled, cfg.AIInternalTestOnly, cfg.AITestUserIDs),
+		)
+		{
+			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)
+			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
+			aiProtected.GET("/runs/:id/events", aiRuntimeHandler.Events)
+			aiProtected.POST("/runs/:id/cancel", aiRuntimeHandler.CancelRun)
+			aiProtected.GET("/conversations", aiRuntimeHandler.ListConversations)
+			aiProtected.POST("/conversations", aiRuntimeHandler.CreateConversation)
+			aiProtected.GET("/conversations/:id", aiRuntimeHandler.GetConversation)
+			aiProtected.DELETE("/conversations/:id", aiRuntimeHandler.DeleteConversation)
+		}
 	}
 
 	// 版本信息

@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestV1CalendarCannotEnableScheduleSkill(t *testing.T) {
+func TestV1CalendarReturnsUnavailableSemesterMapping(t *testing.T) {
 	if err := InitializeTimezone(); err != nil {
 		t.Fatal(err)
 	}

@@ -14,11 +14,14 @@ void main() {
 
   testWidgets('冷启动检查更新时不覆盖原有开屏内容', (tester) async {
     final coordinator = AppUpdateCoordinator();
+    final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: coordinator,
-        child: const MaterialApp(
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
           home: AppUpdateGate(
+            navigatorKey: navigatorKey,
             child: Scaffold(body: Center(child: Text('原有开屏内容'))),
           ),
         ),

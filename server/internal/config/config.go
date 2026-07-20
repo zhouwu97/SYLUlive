@@ -286,44 +286,6 @@ func Load() *Config {
 		panic(err)
 	}
 
-	aiEnabled := envBool("AI_ENABLED", false)
-	aiInternalTestOnly := envBool("AI_INTERNAL_TEST_ONLY", true)
-	aiTestUserIDs := splitNonEmpty(os.Getenv("AI_TEST_USER_IDS"))
-	aiProvider := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
-	if aiProvider == "" {
-		aiProvider = "deepseek"
-	}
-	deepSeekAPIKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
-	deepSeekBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("DEEPSEEK_BASE_URL")), "/")
-	if deepSeekBaseURL == "" {
-		deepSeekBaseURL = "https://api.deepseek.com"
-	}
-	deepSeekChatModel := strings.TrimSpace(os.Getenv("DEEPSEEK_CHAT_MODEL"))
-	if deepSeekChatModel == "" {
-		deepSeekChatModel = "deepseek-v4-flash"
-	}
-	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
-	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 3, 1, 5)
-	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 20, 1, 100)
-	aiHourlyMessageLimit := envIntInRange("AI_HOURLY_MESSAGE_LIMIT", 3, 1, 100)
-	aiUserBudgetLimitMicroYuan := envInt64InRange("AI_USER_BUDGET_LIMIT_MICRO_YUAN", 10_000_000, 1, 1_000_000_000)
-	aiReserveMicroYuan := envInt64InRange("AI_RESERVE_MICRO_YUAN", 20_000, 1, aiUserBudgetLimitMicroYuan)
-	aiInputPrice := envInt64InRange("AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS", 4_000_000, 0, 1_000_000_000)
-	aiOutputPrice := envInt64InRange("AI_OUTPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS", 16_000_000, 0, 1_000_000_000)
-	aiPolicyRAGEnabled := envBool("AI_POLICY_RAG_ENABLED", false)
-	ragServiceURL := strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/")
-	if ragServiceURL == "" {
-		ragServiceURL = "http://127.0.0.1:18001"
-	}
-	ragServiceToken := strings.TrimSpace(os.Getenv("RAG_SERVICE_TOKEN"))
-	ragEmbeddingModelVersion := strings.TrimSpace(os.Getenv("RAG_EMBEDDING_MODEL_VERSION"))
-	if ragEmbeddingModelVersion == "" {
-		ragEmbeddingModelVersion = "paraphrase-multilingual-minilm-l12-v2-padded-1536-v1"
-	}
-	if err := validateAIConfig(aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey, deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled, ragServiceURL, ragServiceToken); err != nil {
-		panic(err)
-	}
-
 	return &Config{
 		JWTSecret:                     jwtSecret,
 		DSN:                           dsn,

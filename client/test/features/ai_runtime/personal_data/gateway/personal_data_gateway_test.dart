@@ -580,6 +580,7 @@ void main() {
         'courses': <Map<String, dynamic>>[],
       },
     );
+    await academicStore.markGradeSyncComplete();
     final gateway = createGateway(
       context: PersonalAccountContext(
         appUserId: appUserId,

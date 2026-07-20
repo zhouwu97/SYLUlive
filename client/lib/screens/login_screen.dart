@@ -903,9 +903,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildConsentSection(BuildContext context, Color subText) {
     return Column(
+      key: const ValueKey('registration-consent-panel'),
       children: [
         _buildConsentItem(
           context,
+          checkboxKey: const ValueKey('registration-user-agreement'),
           value: _userAgreementAccepted,
           title: '我已阅读并同意《用户协议》',
           documentId: 'user_agreement',
@@ -913,6 +915,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         _buildConsentItem(
           context,
+          checkboxKey: const ValueKey('registration-privacy-policy'),
           value: _privacyPolicyAccepted,
           title: '我已阅读并同意《隐私政策》',
           documentId: 'privacy_policy',
@@ -922,6 +925,7 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 4),
           _buildConsentItem(
             context,
+            checkboxKey: const ValueKey('registration-edu-consent'),
             value: _eduDataConsentAccepted,
             title: '我同意《教务数据专项授权》',
             documentId: 'edu_data_consent',
@@ -941,6 +945,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildConsentItem(
     BuildContext context, {
+    required Key checkboxKey,
     required bool value,
     required String title,
     required String documentId,
@@ -952,6 +957,7 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Checkbox(
+          key: checkboxKey,
           value: value,
           onChanged: (checked) => onChanged(checked ?? false),
           visualDensity: VisualDensity.compact,

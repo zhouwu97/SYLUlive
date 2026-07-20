@@ -52,6 +52,8 @@ import 'services/post_cache_service.dart';
 import 'services/poll_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
+import 'platform/platform_bootstrap.dart';
+import 'platform/platform_capabilities.dart';
 import 'widgets/app_update_gate.dart';
 import 'widgets/required_legal_consent_dialog.dart';
 import 'package:crypto/crypto.dart';
@@ -1187,10 +1189,6 @@ class _AppContent extends StatelessWidget {
     return MaterialApp(
       title: '沈理校园',
       debugShowCheckedModeBanner: false,
-      // 更新门禁依赖 Directionality、主题和本地化，必须位于 MaterialApp 内部。
-      builder: (context, child) => AppUpdateGate(
-        child: child ?? const SizedBox.shrink(),
-      ),
       locale: const Locale('zh', 'CN'),
       supportedLocales: const [
         Locale('zh', 'CN'),

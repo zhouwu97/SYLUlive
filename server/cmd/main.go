@@ -91,15 +91,11 @@ func serveUntilShutdown(ctx context.Context, server gracefulHTTPServer, shutdown
 }
 
 func main() {
-	timezoneReady := true
 	if err := academiccalendar.InitializeTimezone(); err != nil {
-		log.Printf("[AI_SCHEDULE_DISABLED] %v", err)
-		timezoneReady = false
+		log.Printf("[ACADEMIC_CALENDAR_TIMEZONE_UNAVAILABLE] %v", err)
 	}
 
 	cfg := config.Load()
-	// P0 只准备课表能力；P3 发布并核验 v2 校历后才允许真正启用 Skill。
-	scheduleSkillEnabled := false
 	middleware.SetLegalConsentEnforcement(cfg.LegalConsentEnforcement)
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()
@@ -670,7 +666,7 @@ func main() {
 		cfg.AITestUserIDs,
 		handlers.AICapabilitiesOptions{
 			Runtime: aiRuntime, PolicyRAGEnabled: cfg.AIPolicyRAGEnabled && aiRuntime != nil,
-			ScheduleEnabled: scheduleSkillEnabled, HourlyLimit: cfg.AIHourlyMessageLimit,
+			HourlyLimit:     cfg.AIHourlyMessageLimit,
 			MaxMessageChars: cfg.AIMaxMessageChars,
 		},
 	)
@@ -736,10 +732,6 @@ func main() {
 				"enabled":         cfg.AIEnabled,
 				"runtime_enabled": aiRuntime != nil,
 				"policy_rag":      gin.H{"enabled": cfg.AIPolicyRAGEnabled, "status": ragHealth},
-				"schedule_skill": gin.H{
-					"enabled":  scheduleSkillEnabled,
-					"timezone": map[bool]string{true: "Asia/Shanghai", false: "unavailable"}[timezoneReady],
-				},
 			},
 		})
 	})

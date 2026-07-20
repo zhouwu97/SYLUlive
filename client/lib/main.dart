@@ -1011,8 +1011,20 @@ class MyApp extends StatelessWidget {
           update: (_, auth, provider) =>
               provider!..syncSessionUser(auth.user?.id),
         ),
-        ChangeNotifierProvider(create: (_) => EduProvider(dio)),
-        ChangeNotifierProvider(create: (_) => CourseScheduleProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, EduProvider>(
+          create: (_) => EduProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id.toString()),
+        ),
+        ChangeNotifierProxyProvider2<AuthProvider, EduProvider,
+            CourseScheduleProvider>(
+          create: (_) => CourseScheduleProvider(dio),
+          update: (_, auth, edu, provider) => provider!
+            ..syncSessionContext(
+              auth.user?.id.toString(),
+              edu.studentId,
+            ),
+        ),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),

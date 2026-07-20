@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/theme_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../features/campus_data/storage/physical_cache_store.dart';
 import '../features/physical/physical_percentile_models.dart';
 import '../features/physical/physical_percentile_service.dart';
 import '../utils/sign_utils.dart';
@@ -17,11 +17,13 @@ import '../services/physical_credential_store.dart';
 import 'physical_percentile_report_screen.dart';
 
 class PhysicalTestPage extends StatefulWidget {
+  final String appUserId;
   final String username;
   final String password;
 
   const PhysicalTestPage({
     super.key,
+    required this.appUserId,
     required this.username,
     required this.password,
   });
@@ -32,8 +34,8 @@ class PhysicalTestPage extends StatefulWidget {
 
 class _PhysicalTestPageState extends State<PhysicalTestPage> {
   static const String _baseUrl = 'http://47.92.231.221';
-  static const String _cachePrefix = 'gym_cache_';
   final PhysicalCredentialStore _credentialStore = PhysicalCredentialStore();
+  late final PhysicalCacheStore _cacheStore;
 
   static const _headers = {
     'X-Requested-With': 'com.wisedu.cpdaily',
@@ -56,13 +58,16 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   // year → {total_grade, total_score, scores[]}
   final Map<String, _YearData> _yearData = {};
 
-  bool _showQr = false;
   String _testCode = '';
   int _displayMode = 0; // 0: 成绩, 1: 得分, 2: 评级
 
   @override
   void initState() {
     super.initState();
+    _cacheStore = PhysicalCacheStore(
+      appUserId: widget.appUserId,
+      sourceAccountId: widget.username,
+    );
     // 动态生成可用年份列表：当年份优先，递减
     final now = DateTime.now();
     final currentYear = now.month >= 9 ? now.year + 1 : now.year;
@@ -106,7 +111,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final academicYear = now.month >= 9 ? now.year + 1 : now.year;
     final currentYearStr = academicYear.toString();
     // 服务端的 school_date 可能返回旧年份，不要直接信任
-    if (mounted)
+    if (mounted) {
       setState(() {
         _currentYear = _yearData[currentYearStr] != null
             ? currentYearStr // 当前学年有数据，优先用
@@ -115,6 +120,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 orElse: () => currentYearStr, // 都没数据，用当前学年
               );
       });
+    }
 
     // 如果选中年份没有缓存，自动拉取；优先拉取当前年份
     if (_yearData[_currentYear] == null) {
@@ -126,12 +132,11 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Future<void> _loadCached() async {
-    final prefs = await SharedPreferences.getInstance();
+    await _cacheStore.discardUnownedLegacy(_availableYears);
     for (final year in _availableYears) {
-      final raw = prefs.getString('$_cachePrefix${widget.username}_$year');
-      if (raw != null) {
+      final map = await _cacheStore.readYear(year);
+      if (map != null) {
         try {
-          final map = jsonDecode(raw) as Map<String, dynamic>;
           _yearData[year] = _YearData(
             totalGrade: map['total_grade'] ?? '',
             totalScore: (map['total_score'] ?? 0).toDouble(),
@@ -148,8 +153,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Future<void> _saveCache(String year, _YearData data) async {
-    final prefs = await SharedPreferences.getInstance();
-    final json = jsonEncode({
+    await _cacheStore.writeYear(year, {
       'total_grade': data.totalGrade,
       'total_score': data.totalScore,
       'scores': data.scores.map((s) {
@@ -161,7 +165,6 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         };
       }).toList(),
     });
-    await prefs.setString('$_cachePrefix${widget.username}_$year', json);
   }
 
   Future<bool> _login() async {

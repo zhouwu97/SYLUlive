@@ -13,6 +13,7 @@ class ScheduleGatewayAdapter {
         _needsResync = needsResync;
 
   static const int _maxRangeDays = 31;
+  static const Duration _lastTermMaximumDuration = Duration(days: 26 * 7);
 
   final ScheduleCacheStore _cacheStore;
   final Future<bool> Function()? _needsResync;
@@ -49,19 +50,47 @@ class ScheduleGatewayAdapter {
       final occurrences = <ScheduleCourseOccurrence>[];
       var termsWithoutStartDate = 0;
       final availableTermIds = snapshot.terms.keys.toList()..sort();
+      final datedTerms = <_DatedScheduleTerm>[];
       for (final entry in snapshot.terms.entries) {
         final termStart = entry.value.semesterStart;
         if (termStart == null) {
           termsWithoutStartDate++;
           continue;
         }
-        occurrences.addAll(
-          _occurrencesForTerm(
+        datedTerms.add(
+          _DatedScheduleTerm(
             semesterId: entry.key,
             term: entry.value,
-            semesterStart: _utcDate(termStart),
-            start: normalizedStart,
-            end: normalizedEnd,
+            start: _utcDate(termStart),
+          ),
+        );
+      }
+      datedTerms.sort((left, right) => left.start.compareTo(right.start));
+      for (var index = 1; index < datedTerms.length; index++) {
+        if (datedTerms[index - 1].start == datedTerms[index].start) {
+          return _corruptedResult();
+        }
+      }
+
+      for (var index = 0; index < datedTerms.length; index++) {
+        final datedTerm = datedTerms[index];
+        final termEndExclusive = index + 1 < datedTerms.length
+            ? datedTerms[index + 1].start
+            : datedTerm.start.add(_lastTermMaximumDuration);
+        final effectiveStart = normalizedStart.isAfter(datedTerm.start)
+            ? normalizedStart
+            : datedTerm.start;
+        final lastTermDate = termEndExclusive.subtract(const Duration(days: 1));
+        final effectiveEnd =
+            normalizedEnd.isBefore(lastTermDate) ? normalizedEnd : lastTermDate;
+        if (effectiveEnd.isBefore(effectiveStart)) continue;
+        occurrences.addAll(
+          _occurrencesForTerm(
+            semesterId: datedTerm.semesterId,
+            term: datedTerm.term,
+            semesterStart: datedTerm.start,
+            start: effectiveStart,
+            end: effectiveEnd,
           ),
         );
       }
@@ -165,6 +194,18 @@ class ScheduleGatewayAdapter {
     if (section != 0) return section;
     return left.courseName.compareTo(right.courseName);
   }
+}
+
+class _DatedScheduleTerm {
+  const _DatedScheduleTerm({
+    required this.semesterId,
+    required this.term,
+    required this.start,
+  });
+
+  final String semesterId;
+  final ScheduleTermSnapshot term;
+  final DateTime start;
 }
 
 class _GatewayScheduleCourse {

@@ -822,12 +822,13 @@ class CourseScheduleProvider extends ChangeNotifier {
         _buildGrid();
       }
 
-      if (_courses.isNotEmpty) {
-        await _saveOperationCourses(operation, _courses);
-      } else {
-        await _clearOperationCourses(operation);
-      }
+      final persisted = _courses.isNotEmpty
+          ? await _saveOperationCourses(operation, _courses)
+          : await _clearOperationCourses(operation);
       if (!_isCurrentOperation(operation)) return;
+      if (!persisted) {
+        _errorMessage = '课程已获取，但未能安全保存，请稍后重试';
+      }
     }
 
     if (!networkSuccess && backupCourses.isNotEmpty) {

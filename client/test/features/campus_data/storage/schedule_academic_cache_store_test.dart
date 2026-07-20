@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_cache_namespace.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
+import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 
 import '../../../helpers/personal_snapshot_test_fakes.dart';
@@ -219,6 +220,130 @@ void main() {
 
     final snapshot = await first.readSnapshot();
     expect(snapshot?.terms.keys, containsAll(<String>['2025_3', '2026_12']));
+  });
+
+  test('未知课表版本拒绝写入课程且保留原密文', () async {
+    final vault = createVault('app-user-a');
+    final store = ScheduleCacheStore(
+      appUserId: 'app-user-a',
+      sourceAccountId: '20240001',
+      snapshotStore: vault,
+    );
+    await vault.write(
+      type: PersonalDataType.schedule,
+      schemaVersion: 99,
+      sourceSystem: 'edu',
+      sourceAccountId: '20240001',
+      payload: <String, dynamic>{'terms': <String, dynamic>{}},
+    );
+    final fileKey =
+        files.key(vault.accountFingerprint, PersonalDataType.schedule);
+    final before = List<int>.from(files.values[fileKey]!);
+
+    await expectLater(
+      store.writeCourses(
+        year: '2026',
+        semester: 3,
+        courses: <Map<String, dynamic>>[_coursePayload(name: '离散数学')],
+      ),
+      throwsA(isA<PersonalSnapshotStoreException>()),
+    );
+
+    expect(files.values[fileKey], orderedEquals(before));
+  });
+
+  test('未知课表版本拒绝写入学期起始日且保留原密文', () async {
+    final vault = createVault('app-user-a');
+    final store = ScheduleCacheStore(
+      appUserId: 'app-user-a',
+      sourceAccountId: '20240001',
+      snapshotStore: vault,
+    );
+    await vault.write(
+      type: PersonalDataType.schedule,
+      schemaVersion: 99,
+      sourceSystem: 'edu',
+      sourceAccountId: '20240001',
+      payload: <String, dynamic>{'terms': <String, dynamic>{}},
+    );
+    final fileKey =
+        files.key(vault.accountFingerprint, PersonalDataType.schedule);
+    final before = List<int>.from(files.values[fileKey]!);
+
+    await expectLater(
+      store.writeSemesterStart(
+        year: '2026',
+        semester: 3,
+        semesterStart: DateTime.utc(2026, 9, 7),
+      ),
+      throwsA(isA<PersonalSnapshotStoreException>()),
+    );
+
+    expect(files.values[fileKey], orderedEquals(before));
+  });
+
+  test('未知成绩版本拒绝写入成绩且保留原密文', () async {
+    final vault = createVault('app-user-a');
+    final store = AcademicCacheStore(
+      appUserId: 'app-user-a',
+      sourceAccountId: '20240001',
+      snapshotStore: vault,
+    );
+    await vault.write(
+      type: PersonalDataType.academic,
+      schemaVersion: 99,
+      sourceSystem: 'edu',
+      sourceAccountId: '20240001',
+      payload: <String, dynamic>{
+        'grade_terms': <String, dynamic>{},
+        'academic_situation': null,
+      },
+    );
+    final fileKey =
+        files.key(vault.accountFingerprint, PersonalDataType.academic);
+    final before = List<int>.from(files.values[fileKey]!);
+
+    await expectLater(
+      store.writeGrades(
+        year: '2026',
+        semester: 3,
+        grades: <Map<String, dynamic>>[_gradePayload('离散数学', '90')],
+      ),
+      throwsA(isA<PersonalSnapshotStoreException>()),
+    );
+
+    expect(files.values[fileKey], orderedEquals(before));
+  });
+
+  test('未知成绩版本拒绝写入学业情况且保留原密文', () async {
+    final vault = createVault('app-user-a');
+    final store = AcademicCacheStore(
+      appUserId: 'app-user-a',
+      sourceAccountId: '20240001',
+      snapshotStore: vault,
+    );
+    await vault.write(
+      type: PersonalDataType.academic,
+      schemaVersion: 99,
+      sourceSystem: 'edu',
+      sourceAccountId: '20240001',
+      payload: <String, dynamic>{
+        'grade_terms': <String, dynamic>{},
+        'academic_situation': null,
+      },
+    );
+    final fileKey =
+        files.key(vault.accountFingerprint, PersonalDataType.academic);
+    final before = List<int>.from(files.values[fileKey]!);
+
+    await expectLater(
+      store.writeAcademicSituation(
+        data: <String, dynamic>{'success': true, 'total_courses': 1},
+      ),
+      throwsA(isA<PersonalSnapshotStoreException>()),
+    );
+
+    expect(files.values[fileKey], orderedEquals(before));
   });
 }
 

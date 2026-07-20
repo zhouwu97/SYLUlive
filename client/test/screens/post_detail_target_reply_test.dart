@@ -510,6 +510,52 @@ void main() {
     expect(clearedDecoration.color, Colors.transparent);
   });
 
+  testWidgets('评论详情内点击子回复时保持展开并进入回复状态', (WidgetTester tester) async {
+    final fakePost = Post(
+      id: 100,
+      title: '测试帖子',
+      content: '这是内容',
+      boardId: 1,
+      authorId: 1,
+      author: User(
+        id: 1,
+        studentId: '123',
+        nickname: 'TestUser',
+        avatar: '',
+        createdAt: DateTime.now(),
+      ),
+      createdAt: DateTime.now(),
+    );
+
+    await tester.pumpWidget(_postDetailTestApp(fakePost));
+    await tester.pumpAndSettle();
+
+    final expandReplies = find.textContaining('共 2 条回复');
+    await tester.scrollUntilVisible(
+      expandReplies,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(expandReplies);
+    await tester.pumpAndSettle();
+
+    expect(find.text('评论详情'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+
+    final targetReply = find.textContaining(
+      'Target second level reply',
+      findRichText: true,
+    );
+    await tester.tap(targetReply.last);
+    await tester.pump();
+
+    // 进入回复态后详情页不能关闭，输入框需指向被点击的回复作者。
+    expect(find.text('评论详情'), findsOneWidget);
+    final input = tester.widget<TextField>(find.byType(TextField));
+    expect(input.focusNode?.hasFocus, isTrue);
+    expect(input.controller?.text, '@User4 ');
+  });
+
   testWidgets('PostDetailScreen renders post images as a three-column grid',
       (WidgetTester tester) async {
     final fakePost = _postWithImages(

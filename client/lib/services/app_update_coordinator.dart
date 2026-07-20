@@ -34,11 +34,11 @@ class AppVersionHeaders {
   // 正式接入后构建脚本可用 dart-define 覆盖这两个兜底值。
   static const _fallbackVersionName = String.fromEnvironment(
     'APP_VERSION_NAME',
-    defaultValue: '1.6.2',
+    defaultValue: '1.6.5',
   );
   static const _fallbackVersionCode = int.fromEnvironment(
     'APP_VERSION_CODE',
-    defaultValue: 1602,
+    defaultValue: 1605,
   );
 
   final String versionName;

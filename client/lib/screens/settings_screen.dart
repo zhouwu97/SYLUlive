@@ -378,6 +378,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         _buildSettingsRow(
           child: _buildSettingsTile(
+            icon: Icons.notifications_none_rounded,
+            iconColor: Colors.blueAccent,
+            title: '接收远程消息推送',
+            subtitle: '默认关闭，开启后会向极光提供设备推送标识',
+            trailing: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: _pushEnabled,
+                onChanged: _pushLoading ? null : _setPushEnabled,
+                activeThumbColor: Theme.of(context).primaryColor,
+              ),
+            ),
+            isDark: isDark,
+          ),
+        ),
+        _buildSettingsRow(
+          child: _buildSettingsTile(
             icon: Icons.battery_saver,
             iconColor: Colors.green,
             title: '后台保活',

@@ -45,6 +45,7 @@ import 'graduation_checklist_screen.dart';
 import 'personal_data_center_screen.dart';
 import '../../widgets/ai/ai_history_sheet.dart';
 import '../../widgets/ai/ai_app_bar_title.dart';
+import '../../widgets/ai/ai_mode_switch.dart';
 
 class AiAssistantScreen extends StatefulWidget {
   final AiCapabilities capabilities;
@@ -489,37 +490,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             ),
             body: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<bool>(
-                      segments: const <ButtonSegment<bool>>[
-                        ButtonSegment<bool>(
-                          value: false,
-                          icon: Icon(Icons.public_outlined),
-                          label: Text('校园问答'),
-                        ),
-                        ButtonSegment<bool>(
-                          value: true,
-                          icon: Icon(Icons.person_outline),
-                          label: Text('个人助手'),
-                        ),
-                      ],
-                      selected: <bool>{_personalMode},
-                      onSelectionChanged: (selection) {
-                        final selected = selection.single;
-                        setState(() {
-                          _personalMode = selected;
-                          if (selected) {
-                            _personalError = null;
-                            _personalNeedsModelConfiguration = false;
-                          }
-                        });
-                        if (selected) unawaited(_checkPersonalConfiguration());
-                      },
-                    ),
-                  ),
+                AiModeSwitch(
+                  isPersonalMode: _personalMode,
+                  onModeChanged: (selected) {
+                    setState(() {
+                      _personalMode = selected;
+                      if (selected) {
+                        _personalError = null;
+                        _personalNeedsModelConfiguration = false;
+                      }
+                    });
+                    if (selected) unawaited(_checkPersonalConfiguration());
+                  },
                 ),
                 if (!_personalMode)
                   Padding(

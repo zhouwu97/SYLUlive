@@ -169,6 +169,80 @@ void main() {
     );
   });
 
+  test('体测并发写入不同年份时保留全部年份', () async {
+    final snapshotStore = YieldingPersonalSnapshotStore();
+    final store2025 = PhysicalCacheStore(
+      appUserId: 'user-a',
+      sourceAccountId: 'sid-a',
+      snapshotStore: snapshotStore,
+    );
+    final store2026 = PhysicalCacheStore(
+      appUserId: 'user-a',
+      sourceAccountId: 'sid-a',
+      snapshotStore: snapshotStore,
+    );
+
+    await Future.wait(<Future<void>>[
+      store2025.writeYear('2025', <String, dynamic>{'total_score': 85}),
+      store2026.writeYear('2026', <String, dynamic>{'total_score': 90}),
+    ]);
+
+    expect(
+      await store2025.readYear('2025'),
+      <String, dynamic>{'total_score': 85},
+    );
+    expect(
+      await store2025.readYear('2026'),
+      <String, dynamic>{'total_score': 90},
+    );
+  });
+
+  test('体测旧明文迁移与新年份写入并发时保留全部年份', () async {
+    const appUserId = 'user-a';
+    const sourceAccountId = 'sid-a';
+    const legacyYear = '2025';
+    final legacyKey = AccountCacheNamespace.physicalSnapshot(
+      appUserId,
+      sourceAccountId,
+      legacyYear,
+    );
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      legacyKey: jsonEncode(<String, dynamic>{
+        'app_user_id': AccountCacheNamespace.fingerprint(appUserId),
+        'source_account_fingerprint': AccountCacheNamespace.fingerprint(
+          sourceAccountId,
+        ),
+        'schema_version': PhysicalCacheStore.schemaVersion,
+        'data': <String, dynamic>{'total_score': 85},
+      }),
+    });
+    final snapshotStore = YieldingPersonalSnapshotStore();
+    final migrationStore = PhysicalCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: snapshotStore,
+    );
+    final writingStore = PhysicalCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: snapshotStore,
+    );
+
+    await Future.wait(<Future<Object?>>[
+      migrationStore.readYear(legacyYear),
+      writingStore.writeYear('2026', <String, dynamic>{'total_score': 90}),
+    ]);
+
+    expect(
+      await migrationStore.readYear(legacyYear),
+      <String, dynamic>{'total_score': 85},
+    );
+    expect(
+      await migrationStore.readYear('2026'),
+      <String, dynamic>{'total_score': 90},
+    );
+  });
+
   test('阶段 0B 已归属体测明文信封迁入保险箱后删除', () async {
     const appUserId = 'user-a';
     const sourceAccountId = 'sid-a';

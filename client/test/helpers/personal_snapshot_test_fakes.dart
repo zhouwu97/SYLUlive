@@ -35,7 +35,8 @@ class MemoryPersonalSnapshotFileBackend implements PersonalSnapshotFileBackend {
   Future<void> deleteType({
     required String accountHash,
     required PersonalDataType type,
-  }) async => values.remove(key(accountHash, type));
+  }) async =>
+      values.remove(key(accountHash, type));
 
   @override
   Future<void> deleteUser(String accountHash) async {
@@ -59,6 +60,80 @@ class MemoryPersonalSnapshotFileBackend implements PersonalSnapshotFileBackend {
   }) async {
     if (failWrites) throw StateError('写入失败');
     values[key(accountHash, type)] = Uint8List.fromList(bytes);
+  }
+}
+
+/// 每次读写均让出事件循环，用于稳定复现上层读改写竞争。
+class YieldingPersonalSnapshotStore implements AccountScopedSnapshotStore {
+  YieldingPersonalSnapshotStore({
+    this.accountFingerprint = 'concurrent-test-account',
+  });
+
+  @override
+  final String accountFingerprint;
+
+  PersonalSnapshot? _snapshot;
+
+  @override
+  Future<void> clearUser() async {
+    await Future<void>.delayed(Duration.zero);
+    _snapshot = null;
+  }
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  Future<void> deleteType(PersonalDataType type) async {
+    await Future<void>.delayed(Duration.zero);
+    if (_snapshot?.type == type) _snapshot = null;
+  }
+
+  @override
+  Future<PersonalSnapshot?> read({
+    required PersonalDataType type,
+    required String sourceSystem,
+    required String sourceAccountId,
+  }) async {
+    final snapshot = _snapshot;
+    await Future<void>.delayed(Duration.zero);
+    if (snapshot == null || snapshot.type != type) return null;
+    return PersonalSnapshot(
+      appUserFingerprint: snapshot.appUserFingerprint,
+      sourceAccountFingerprint: snapshot.sourceAccountFingerprint,
+      type: snapshot.type,
+      schemaVersion: snapshot.schemaVersion,
+      encryptionVersion: snapshot.encryptionVersion,
+      fetchedAt: snapshot.fetchedAt,
+      expiresAt: snapshot.expiresAt,
+      contentHash: snapshot.contentHash,
+      payload: Map<String, dynamic>.from(snapshot.payload),
+    );
+  }
+
+  @override
+  Future<void> write({
+    required PersonalDataType type,
+    required int schemaVersion,
+    required String sourceSystem,
+    required String sourceAccountId,
+    required Map<String, dynamic> payload,
+    DateTime? fetchedAt,
+    DateTime? expiresAt,
+  }) async {
+    final next = PersonalSnapshot(
+      appUserFingerprint: accountFingerprint,
+      sourceAccountFingerprint: 'test-source',
+      type: type,
+      schemaVersion: schemaVersion,
+      encryptionVersion: 1,
+      fetchedAt: fetchedAt ?? DateTime.now().toUtc(),
+      expiresAt: expiresAt,
+      contentHash: 'test-content-hash',
+      payload: Map<String, dynamic>.from(payload),
+    );
+    await Future<void>.delayed(Duration.zero);
+    _snapshot = next;
   }
 }
 

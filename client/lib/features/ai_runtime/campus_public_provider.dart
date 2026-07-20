@@ -9,6 +9,8 @@ class CampusPublicProvider implements AIModelProvider {
 
   final AiAssistantService _service;
   String? _conversationId;
+  String? _activeRunId;
+  bool _cancelRequested = false;
 
   @override
   AIModelProviderKind get kind => AIModelProviderKind.campusPublic;
@@ -30,6 +32,7 @@ class CampusPublicProvider implements AIModelProvider {
   @override
   Future<AIModelChatResponse> complete(
       List<AIModelChatMessage> messages) async {
+    _cancelRequested = false;
     final input = messages.reversed
         .where((message) => message.role == AIModelMessageRole.user)
         .map((message) => message.content.trim())
@@ -42,47 +45,83 @@ class CampusPublicProvider implements AIModelProvider {
     }
 
     final capabilities = await _service.getCapabilities();
+    _throwIfCancellationRequested();
     if (!capabilities.isVisible || !capabilities.chatEnabled) {
       throw const AIModelProviderException('校园公益 AI 当前未开放普通聊天');
     }
 
     final conversationId =
         _conversationId ?? (await _service.createConversation()).id;
+    _throwIfCancellationRequested();
     final creation = await _service.createRun(
       conversationId: conversationId,
       clientRequestId: _requestId(),
       message: input,
     );
     _conversationId = creation.run.conversationId;
+    final runId = creation.run.id;
+    _activeRunId = runId;
 
-    var answer = '';
-    await for (final event in _service.streamRunEvents(creation.run.id)) {
-      switch (event.type) {
-        case AiRunEventType.delta:
-          answer += event.text;
-          break;
-        case AiRunEventType.checkpoint:
-          if (event.text.isNotEmpty) answer = event.text;
-          break;
-        case AiRunEventType.completed:
-          return _completedAnswer(
-            answer,
-            creation.run.id,
-            confirmedCompleted: true,
-          );
-        case AiRunEventType.failed:
-          throw AIModelProviderException(_errorFor(event.errorCode));
-        case AiRunEventType.cancelled:
-          throw const AIModelProviderException('本次回答已取消');
-        case AiRunEventType.started:
-        case AiRunEventType.status:
-        case AiRunEventType.sources:
-        case AiRunEventType.heartbeat:
-        case AiRunEventType.unknown:
-          break;
+    try {
+      if (_cancelRequested) {
+        await _cancelRunBestEffort(runId);
+        throw const AIModelProviderException('本次回答已取消');
       }
+
+      var answer = '';
+      await for (final event in _service.streamRunEvents(runId)) {
+        switch (event.type) {
+          case AiRunEventType.delta:
+            answer += event.text;
+            break;
+          case AiRunEventType.checkpoint:
+            if (event.text.isNotEmpty) answer = event.text;
+            break;
+          case AiRunEventType.completed:
+            return _completedAnswer(
+              answer,
+              runId,
+              confirmedCompleted: true,
+            );
+          case AiRunEventType.failed:
+            throw AIModelProviderException(_errorFor(event.errorCode));
+          case AiRunEventType.cancelled:
+            throw const AIModelProviderException('本次回答已取消');
+          case AiRunEventType.started:
+          case AiRunEventType.status:
+          case AiRunEventType.sources:
+          case AiRunEventType.heartbeat:
+          case AiRunEventType.unknown:
+            break;
+        }
+      }
+      return _completedAnswer(answer, runId);
+    } finally {
+      if (_activeRunId == runId) _activeRunId = null;
     }
-    return _completedAnswer(answer, creation.run.id);
+  }
+
+  @override
+  Future<void> cancelActiveRequest() async {
+    _cancelRequested = true;
+    final runId = _activeRunId;
+    if (runId == null) return;
+    _activeRunId = null;
+    await _cancelRunBestEffort(runId);
+  }
+
+  void _throwIfCancellationRequested() {
+    if (_cancelRequested) {
+      throw const AIModelProviderException('本次回答已取消');
+    }
+  }
+
+  Future<void> _cancelRunBestEffort(String runId) async {
+    try {
+      await _service.cancelRun(runId).timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 本地上下文已关闭，远端取消失败不能阻止退出。
+    }
   }
 
   Future<AIModelChatResponse> _completedAnswer(

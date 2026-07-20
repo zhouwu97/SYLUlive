@@ -13,12 +13,22 @@ class OpenAICompatibleProvider implements AIModelProvider {
   })  : _config = config,
         _apiKey = apiKey.trim(),
         _baseEndpoint = AIEndpointPolicy.parseBaseEndpoint(config.endpoint),
-        _dio = dio ?? Dio();
+        _dio = _withDefaultTimeouts(dio ?? Dio());
+
+  static Dio createDio() => _withDefaultTimeouts(Dio());
+
+  static Dio _withDefaultTimeouts(Dio dio) {
+    dio.options.connectTimeout ??= const Duration(seconds: 10);
+    dio.options.sendTimeout ??= const Duration(seconds: 15);
+    dio.options.receiveTimeout ??= const Duration(seconds: 60);
+    return dio;
+  }
 
   final AIModelProviderConfig _config;
   final String _apiKey;
   final Uri _baseEndpoint;
   final Dio _dio;
+  CancelToken? _activeCancelToken;
 
   @override
   AIModelProviderKind get kind => AIModelProviderKind.openAICompatible;
@@ -94,6 +104,11 @@ class OpenAICompatibleProvider implements AIModelProvider {
     );
   }
 
+  @override
+  Future<void> cancelActiveRequest() async {
+    _activeCancelToken?.cancel('client_ai_context_closed');
+  }
+
   Future<Response<dynamic>> _request(
     String path, {
     required String method,
@@ -104,10 +119,13 @@ class OpenAICompatibleProvider implements AIModelProvider {
         '为保护 API Key，浏览器端不支持第三方模型服务，请使用 App 客户端',
       );
     }
+    final cancelToken = CancelToken();
+    _activeCancelToken = cancelToken;
     try {
       final response = await _dio.requestUri<dynamic>(
         AIEndpointPolicy.endpointFor(_baseEndpoint, path),
         data: data,
+        cancelToken: cancelToken,
         options: AIEndpointPolicy.directRequestOptions(<String, dynamic>{
           'Authorization': 'Bearer $_apiKey',
           'Accept': 'application/json',
@@ -125,6 +143,10 @@ class OpenAICompatibleProvider implements AIModelProvider {
         );
       }
       throw AIModelProviderException(_dioErrorMessage(error));
+    } finally {
+      if (identical(_activeCancelToken, cancelToken)) {
+        _activeCancelToken = null;
+      }
     }
   }
 
@@ -156,9 +178,11 @@ class OpenAICompatibleProvider implements AIModelProvider {
 
   String _dioErrorMessage(DioException error) {
     if (error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
         error.type == DioExceptionType.receiveTimeout) {
       return '连接模型服务超时';
     }
+    if (error.type == DioExceptionType.cancel) return '模型服务请求已取消';
     return '无法连接模型服务，请检查 HTTPS 地址和网络';
   }
 

@@ -3,13 +3,18 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shenliyuan/features/ai_runtime/personal_data/adapters/academic_gateway_adapter.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/adapters/erke_gateway_adapter.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/adapters/physical_gateway_adapter.dart';
+import 'package:shenliyuan/features/ai_runtime/personal_data/adapters/schedule_gateway_adapter.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/gateway_result.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/personal_account_context.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/personal_data_gateway_impl.dart';
+import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
+import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 import '../../../../helpers/personal_snapshot_test_fakes.dart';
@@ -25,6 +30,7 @@ void main() {
   late IncrementingRandomBytes random;
 
   setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     secureStore = MemoryPersonalSnapshotSecureStore();
     files = MemoryPersonalSnapshotFileBackend();
     random = IncrementingRandomBytes();
@@ -58,6 +64,20 @@ void main() {
         snapshotStore: snapshotStore,
         context: context,
         needsResync: physicalNeedsResync,
+      ),
+      scheduleAdapter: ScheduleGatewayAdapter(
+        cacheStore: ScheduleCacheStore(
+          appUserId: context.appUserId,
+          sourceAccountId: context.sourceAccountId,
+          snapshotStore: snapshotStore,
+        ),
+      ),
+      academicAdapter: AcademicGatewayAdapter(
+        cacheStore: AcademicCacheStore(
+          appUserId: context.appUserId,
+          sourceAccountId: context.sourceAccountId,
+          snapshotStore: snapshotStore,
+        ),
       ),
       cleanupCoordinator: cleanupCoordinator,
     );
@@ -303,6 +323,230 @@ void main() {
     expect(result.status, GatewayStatus.needsRefresh);
     expect(result.data, isNull);
     expect(result.warnings, isNotEmpty);
+  });
+
+  test('课表 Gateway 只返回指定日期范围内的最小化课程出现项', () async {
+    final vault = createVault();
+    final scheduleStore = ScheduleCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: vault,
+    );
+    await scheduleStore.writeSemesterStart(
+      year: '2026',
+      semester: 3,
+      semesterStart: DateTime.utc(2026, 9, 7),
+    );
+    await scheduleStore.writeCourses(
+      year: '2026',
+      semester: 3,
+      courses: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 12,
+          'course_code': 'MATH-101',
+          'name': '离散数学',
+          'teacher': '张老师',
+          'location': 'A101',
+          'color': '#6366F1',
+          'weekday': 1,
+          'start_section': 1,
+          'end_section': 2,
+          'weeks': <int>[1, 2],
+          'note': '内部备注',
+        },
+      ],
+    );
+    final gateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      snapshotStore: vault,
+    );
+
+    final result = await gateway.getScheduleOverview(
+      start: DateTime.utc(2026, 9, 7),
+      end: DateTime.utc(2026, 9, 7),
+    );
+
+    expect(result.status, GatewayStatus.available);
+    expect(result.source, PersonalDataSource.localEncryptedVault);
+    expect(result.data?.occurrences, hasLength(1));
+    final occurrence = result.data!.occurrences.single;
+    expect(occurrence.courseName, '离散数学');
+    expect(occurrence.teacher, '张老师');
+    expect(occurrence.location, 'A101');
+    expect(occurrence.startSection, 1);
+    expect(occurrence.endSection, 2);
+  });
+
+  test('课表 Gateway 拒绝超过上限的读取范围', () async {
+    final vault = createVault();
+    final gateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      snapshotStore: vault,
+    );
+
+    final result = await gateway.getScheduleOverview(
+      start: DateTime.utc(2026, 9, 1),
+      end: DateTime.utc(2026, 10, 2),
+    );
+
+    expect(result.status, GatewayStatus.unsupported);
+    expect(result.data, isNull);
+  });
+
+  test('成绩 Gateway 只返回学期覆盖和数量', () async {
+    final vault = createVault();
+    final academicStore = AcademicCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: vault,
+    );
+    await academicStore.writeGrades(
+      year: '2025',
+      semester: 3,
+      grades: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'name': '数据结构',
+          'grade': '93',
+          'credits': 4,
+          'gpa': 4.0,
+          'is_degree': true,
+        },
+      ],
+    );
+    await academicStore.writeAcademicSituation(
+      data: <String, dynamic>{
+        'success': true,
+        'total_courses': 1,
+        'courses': <Map<String, dynamic>>[],
+      },
+    );
+    final gateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      snapshotStore: vault,
+    );
+
+    final result = await gateway.getAcademicOverview();
+
+    expect(result.status, GatewayStatus.available);
+    expect(result.data?.totalRecordedCourses, 1);
+    expect(result.data?.terms, hasLength(1));
+    expect(result.data?.terms.single.year, '2025');
+    expect(result.data?.terms.single.semester, 3);
+    expect(result.data?.hasAcademicSituation, isTrue);
+  });
+
+  test('来源账号变化后课表和成绩均不返回旧数据', () async {
+    final vault = createVault();
+    final scheduleStore = ScheduleCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: vault,
+    );
+    await scheduleStore.writeCourses(
+      year: '2026',
+      semester: 3,
+      courses: const <Map<String, dynamic>>[],
+    );
+    await AcademicCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      snapshotStore: vault,
+    ).writeGrades(
+      year: '2026',
+      semester: 3,
+      grades: <Map<String, dynamic>>[
+        <String, dynamic>{'name': '课程', 'grade': '90'},
+      ],
+    );
+    final changedSourceGateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: 'another-source',
+      ),
+      snapshotStore: vault,
+    );
+
+    final schedule = await changedSourceGateway.getScheduleOverview(
+      start: DateTime.utc(2026, 9, 1),
+      end: DateTime.utc(2026, 9, 1),
+    );
+    final academic = await changedSourceGateway.getAcademicOverview();
+
+    expect(schedule.status, GatewayStatus.missing);
+    expect(schedule.data, isNull);
+    expect(academic.status, GatewayStatus.missing);
+    expect(academic.data, isNull);
+  });
+
+  test('未知课表快照版本失败关闭，不返回旧课程', () async {
+    final vault = createVault();
+    await vault.write(
+      type: PersonalDataType.schedule,
+      schemaVersion: 99,
+      sourceSystem: 'edu',
+      sourceAccountId: sourceAccountId,
+      payload: <String, dynamic>{
+        'terms': <String, dynamic>{
+          '2026_3': <String, dynamic>{
+            'courses': <Map<String, dynamic>>[],
+            'hidden_course_ids': <int>[],
+            'semester_start': null,
+            'archives': <Map<String, dynamic>>[],
+            'active_archive_id': null,
+          },
+        },
+      },
+    );
+    final gateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      snapshotStore: vault,
+    );
+
+    final result = await gateway.getScheduleOverview(
+      start: DateTime.utc(2026, 9, 7),
+      end: DateTime.utc(2026, 9, 7),
+    );
+
+    expect(result.status, GatewayStatus.corrupted);
+    expect(result.data, isNull);
+  });
+
+  test('未知成绩快照版本失败关闭，不返回旧概览', () async {
+    final vault = createVault();
+    await vault.write(
+      type: PersonalDataType.academic,
+      schemaVersion: 99,
+      sourceSystem: 'edu',
+      sourceAccountId: sourceAccountId,
+      payload: <String, dynamic>{
+        'grade_terms': <String, dynamic>{},
+        'academic_situation': null,
+      },
+    );
+    final gateway = createGateway(
+      context: PersonalAccountContext(
+        appUserId: appUserId,
+        sourceAccountId: sourceAccountId,
+      ),
+      snapshotStore: vault,
+    );
+
+    final result = await gateway.getAcademicOverview();
+
+    expect(result.status, GatewayStatus.corrupted);
+    expect(result.data, isNull);
   });
 }
 

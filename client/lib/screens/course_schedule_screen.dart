@@ -1257,18 +1257,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       }
 
       await sc.applyFetchedCourses(courses);
-      unawaited(
-        edu.syncCourses(sc.selectedYear, sc.selectedSemester, courses).then((
-          synced,
-        ) {
-          if (!synced) {
-            debugPrint('课表已本地导入，后台同步到服务器失败，等待下次刷新重试');
-          }
-        }).catchError((Object error, StackTrace _) {
-          debugPrint('课表后台同步异常: ${error.runtimeType}');
-          return null;
-        }),
-      );
 
       await _syncCourseReminders(sc);
       if (!mounted) return;
@@ -1464,17 +1452,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         );
         return;
       }
-
-      unawaited(
-        edu
-            .syncCourses(result.year, result.semester, result.courses)
-            .catchError(
-          (Object error, StackTrace _) {
-            debugPrint('课表后台同步异常: ${error.runtimeType}');
-            return false;
-          },
-        ),
-      );
 
       await _syncCourseReminders(sc);
 

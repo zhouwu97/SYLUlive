@@ -9,6 +9,7 @@ import '../adapters/erke_gateway_adapter.dart';
 import '../adapters/physical_gateway_adapter.dart';
 import '../adapters/schedule_gateway_adapter.dart';
 import '../models/academic_overview.dart';
+import '../models/academic_records.dart';
 import '../models/erke_overview.dart';
 import '../models/physical_overview.dart';
 import '../models/schedule_overview.dart';
@@ -131,6 +132,11 @@ class PersonalDataGatewayImpl implements PersonalDataGateway {
   @override
   Future<GatewayResult<AcademicOverview>> getAcademicOverview() {
     return _read(_academicAdapter.loadOverview, '成绩');
+  }
+
+  @override
+  Future<GatewayResult<AcademicRecords>> getAcademicRecords() {
+    return _read(_academicAdapter.loadRecords, '成绩明细');
   }
 
   Future<GatewayResult<T>> _read<T>(

@@ -149,7 +149,14 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     if (_post == null) return;
     final yes = await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: const Text('删除投票？'), content: const Text('删除后不可恢复。'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('删除'))])) ?? false;
     if (!yes || !mounted) return;
-    if (await context.read<PollProvider>().deletePoll(widget.pollId)) Navigator.pop(context, true);
+    
+    final provider = context.read<PollProvider>();
+    final deleted = await provider.deletePoll(widget.pollId);
+    
+    if (!mounted) return;
+    if (deleted) {
+      Navigator.pop(context, true);
+    }
   }
 
   @override

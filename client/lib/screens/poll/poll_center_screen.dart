@@ -54,7 +54,9 @@ class _PollCenterScreenState extends State<PollCenterScreen>
   @override
   void dispose() {
     _tabController.dispose();
-    for (final controller in _scrollControllers.values) controller.dispose();
+    for (final controller in _scrollControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 

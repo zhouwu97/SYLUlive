@@ -19,7 +19,7 @@ func TestShanghaiTimezoneLoads(t *testing.T) {
 	}
 }
 
-func TestScheduleSkillDisabledWhenTimezoneUnavailable(t *testing.T) {
+func TestTimezoneInitializationFailsWhenTimezoneUnavailable(t *testing.T) {
 	original := loadLocation
 	t.Cleanup(func() {
 		loadLocation = original

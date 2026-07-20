@@ -27,6 +27,9 @@ const (
 	indexUrl  = "https://jxw.sylu.edu.cn/xtgl"
 	courseUrl = "https://jxw.sylu.edu.cn/kbcx"
 	gradeUrl  = "https://jxw.sylu.edu.cn/cjcx"
+
+	legacyCourseCacheRetiredCode = "COURSE_CACHE_RETIRED"
+	legacyCourseCacheRetiredText = "服务器课表缓存已退役，请升级客户端后重新同步课表"
 )
 
 var (
@@ -455,58 +458,17 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json", resp.Body())
 }
 
-// GetLocalCourses 通过 Go 代理读取 Python 中按内部用户 ID 隔离的课表缓存。
-func (h *EduHandler) GetLocalCourses(c *gin.Context) {
-	userID := c.GetUint("user_id")
-	year := strings.TrimSpace(c.Query("year"))
-	semester := strings.TrimSpace(c.Query("semester"))
-	if year == "" || semester == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少学年或学期"})
-		return
-	}
-	query := url.Values{}
-	query.Set("year", year)
-	query.Set("semester", semester)
-	resp, err := pythonEduRequest(http.MethodGet, "/api/edu/courses/local?"+query.Encode(), &userID, nil)
-	if err != nil {
-		writeEduServiceError(c, &eduServiceRequestError{err: err})
-		return
-	}
-	if !json.Valid(resp.Body()) {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
-		return
-	}
-	if resp.StatusCode() != http.StatusOK {
-		mapEduServiceError(c, resp.StatusCode(), resp.Body())
-		return
-	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", resp.Body())
-}
-
-// SyncCourses 通过 Go 代理写入 Python 课表缓存，忽略客户端传入的 user_id。
-func (h *EduHandler) SyncCourses(c *gin.Context) {
-	userID := c.GetUint("user_id")
-	var input map[string]interface{}
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "课表同步参数错误"})
-		return
-	}
-	delete(input, "user_id")
-	input["user_id"] = strconv.FormatUint(uint64(userID), 10)
-	resp, err := pythonEduRequest(http.MethodPost, "/api/edu/courses/sync", &userID, input)
-	if err != nil {
-		writeEduServiceError(c, &eduServiceRequestError{err: err})
-		return
-	}
-	if !json.Valid(resp.Body()) {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
-		return
-	}
-	if resp.StatusCode() != http.StatusOK {
-		mapEduServiceError(c, resp.StatusCode(), resp.Body())
-		return
-	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", resp.Body())
+// RetiredCourseCache 为旧客户端提供明确的迁移响应。
+//
+// 课表原始数据只能保存在当前客户端账号隔离的加密保险箱中，服务端不再
+// 接受上传、读取历史副本或代理这些副本。
+func (h *EduHandler) RetiredCourseCache(c *gin.Context) {
+	c.JSON(http.StatusGone, gin.H{
+		"code":      legacyCourseCacheRetiredCode,
+		"error":     legacyCourseCacheRetiredText,
+		"action":    "upgrade_client",
+		"retryable": false,
+	})
 }
 
 // GradesInput 成绩查询输入

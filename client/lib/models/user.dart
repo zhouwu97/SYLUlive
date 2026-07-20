@@ -15,6 +15,9 @@ class User {
   final bool isCheckedInToday;
   final int reportCount;
   final DateTime createdAt;
+  final bool legalConsentsActive;
+  final bool legalConsentsRequired;
+  final bool pushEnabled;
 
   // 教务系统绑定信息
   final String eduStudentId;
@@ -45,6 +48,9 @@ class User {
     this.isCheckedInToday = false,
     this.reportCount = 0,
     required this.createdAt,
+    this.legalConsentsActive = true,
+    this.legalConsentsRequired = false,
+    this.pushEnabled = false,
     this.eduStudentId = '',
     this.eduBound = false,
     this.eduGrade = '',
@@ -73,6 +79,10 @@ class User {
       isCheckedInToday: json['is_checked_in_today'] ?? false,
       reportCount: json['report_count'] ?? 0,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+      legalConsentsActive: json['legal_consents_active'] == true,
+      legalConsentsRequired: json['legal_consents_required'] == true ||
+          !json.containsKey('legal_consents_active'),
+      pushEnabled: json['push_enabled'] == true,
       eduStudentId: json['edu_student_id'] ?? '',
       eduBound: json['edu_bound'] ?? false,
       eduGrade: json['edu_grade'] ?? '',
@@ -102,6 +112,9 @@ class User {
       'is_checked_in_today': isCheckedInToday,
       'report_count': reportCount,
       'created_at': createdAt.toIso8601String(),
+      'legal_consents_active': legalConsentsActive,
+      'legal_consents_required': legalConsentsRequired,
+      'push_enabled': pushEnabled,
       'edu_student_id': eduStudentId,
       'edu_bound': eduBound,
       'edu_grade': eduGrade,

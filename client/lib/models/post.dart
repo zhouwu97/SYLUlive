@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'user.dart';
+import 'poll.dart';
 
 // 水帖版块内作者称号及等级
 class WaterSectionAuthorMeta {
@@ -228,7 +229,9 @@ class Post {
   final int boardId;
   final int authorId;
   final String postType;
+  final String contentKind;
   final double price;
+  final String contactType;
   final String contact;
   final List<String> marketTags;
   final int? waterTagId;
@@ -254,6 +257,7 @@ class Post {
   final bool homeFeaturedPending;
   final WaterSectionAuthorMeta? waterSectionAuthorMeta;
   final TeamRecruitmentMeta? teamRecruitment;
+  final PollMeta? pollMeta;
   final int? expEarned; // 发帖/评论成功时服务端返回的本次经验值，null=无奖励
   final List<ExpAward> expAwards;
   final List<PostImage> images;
@@ -269,7 +273,9 @@ class Post {
     required this.boardId,
     required this.authorId,
     this.postType = '',
+    this.contentKind = 'normal',
     this.price = 0,
+    this.contactType = '',
     this.contact = '',
     this.marketTags = const [],
     this.waterTagId,
@@ -295,6 +301,7 @@ class Post {
     this.homeFeaturedPending = false,
     this.waterSectionAuthorMeta,
     this.teamRecruitment,
+    this.pollMeta,
     this.expEarned,
     this.expAwards = const [],
     this.images = const [],
@@ -313,7 +320,9 @@ class Post {
       boardId: json['board_id'] ?? 1,
       authorId: json['author_id'] ?? 0,
       postType: json['post_type'] ?? '',
+      contentKind: json['content_kind'] ?? 'normal',
       price: (json['price'] ?? 0).toDouble(),
+      contactType: json['contact_type'] ?? '',
       contact: json['contact'] ?? '',
       marketTags: _parseStringList(json['market_tags']),
       waterTagId: json['water_tag_id'] != null
@@ -349,6 +358,9 @@ class Post {
       teamRecruitment: json['team_recruitment_meta'] != null
           ? TeamRecruitmentMeta.fromJson(json['team_recruitment_meta'])
           : null,
+      pollMeta: json['poll_meta'] != null
+          ? PollMeta.fromJson(json['poll_meta'] as Map<String, dynamic>)
+          : null,
       expEarned: json['exp_earned'] != null
           ? (json['exp_earned'] as num).toInt()
           : null,
@@ -370,6 +382,8 @@ class Post {
   }
 
   String get firstImageUrl => images.isNotEmpty ? images.first.url : '';
+
+  bool get isPoll => contentKind == 'poll' && pollMeta != null;
 
   static List<String> _parseStringList(dynamic value) {
     if (value == null) return const [];
@@ -411,7 +425,9 @@ class Post {
     int? boardId,
     int? authorId,
     String? postType,
+    String? contentKind,
     double? price,
+    String? contactType,
     String? contact,
     List<String>? marketTags,
     int? waterTagId,
@@ -439,6 +455,8 @@ class Post {
     bool? homeFeaturedPending,
     WaterSectionAuthorMeta? waterSectionAuthorMeta,
     TeamRecruitmentMeta? teamRecruitment,
+    PollMeta? pollMeta,
+    bool clearPollMeta = false,
     bool clearTeamRecruitment = false,
     bool clearTeamRecruitmentMeta = false,
     int? expEarned,
@@ -456,7 +474,9 @@ class Post {
       boardId: boardId ?? this.boardId,
       authorId: authorId ?? this.authorId,
       postType: postType ?? this.postType,
+      contentKind: contentKind ?? this.contentKind,
       price: price ?? this.price,
+      contactType: contactType ?? this.contactType,
       contact: contact ?? this.contact,
       marketTags: marketTags ?? this.marketTags,
       waterTagId: waterTagId ?? this.waterTagId,
@@ -486,6 +506,7 @@ class Post {
       teamRecruitment: (clearTeamRecruitment || clearTeamRecruitmentMeta)
           ? null
           : (teamRecruitment ?? this.teamRecruitment),
+      pollMeta: clearPollMeta ? null : (pollMeta ?? this.pollMeta),
       expEarned: expEarned ?? this.expEarned,
       expAwards: expAwards ?? this.expAwards,
       images: images ?? this.images,

@@ -156,7 +156,7 @@ class KeepAliveForegroundService : Service() {
     }
 
     private val ridCheckRunnable = Runnable {
-        if (serviceDestroyed) return@Runnable
+        if (serviceDestroyed || !isPushEnabled(applicationContext)) return@Runnable
         val rid = JPushInterface.getRegistrationID(applicationContext)
 
         if (rid.isNotBlank()) {
@@ -184,6 +184,10 @@ class KeepAliveForegroundService : Service() {
     }
 
     private fun restoreJPush() {
+		if (!isPushEnabled(this)) {
+			Log.d(TAG, "skip JPush restore: push opt-in disabled")
+			return
+		}
         val hasAuthToken = !authToken(this).isNullOrBlank()
         val aliasState = getAliasState(this)
 
@@ -356,6 +360,7 @@ class KeepAliveForegroundService : Service() {
         private const val KEY_JPUSH_ALIAS = "flutter.jpush_alias"
         private const val KEY_JPUSH_ALIAS_STATE = "flutter.jpush_alias_state"
         private const val KEY_JPUSH_ALIAS_GEN = "flutter.jpush_alias_generation"
+        private const val KEY_PUSH_OPT_IN = "flutter.push_data_processing_enabled"
         private const val ACTION_START =
             "com.example.shenliyuan.action.START_KEEP_ALIVE"
         private const val ACTION_STOP =
@@ -439,7 +444,7 @@ class KeepAliveForegroundService : Service() {
                     }
                 }
 
-                loggedIn && (state == "pending_bind" || state == "active") && !alias.isNullOrBlank() -> {
+                isPushEnabled(appContext) && loggedIn && (state == "pending_bind" || state == "active") && !alias.isNullOrBlank() -> {
                     try {
                         val sequence =
                             PrivateMessageJPushReceiver.restoreSequence(gen)
@@ -493,8 +498,12 @@ class KeepAliveForegroundService : Service() {
             editor.apply()
         }
 
-        fun syncAlias(context: Context, alias: String?) {
+        fun syncAlias(context: Context, alias: String?): Boolean {
             val p = prefs(context.applicationContext)
+            if (!alias.isNullOrBlank() && !isPushEnabled(context)) {
+                Log.d(TAG, "JPush alias sync skipped: push opt-in disabled")
+                return false
+            }
             
             // 如果 alias 没有变化，且已经是 active 或 pending_bind，跳过自增
             if (alias != null) {
@@ -502,7 +511,7 @@ class KeepAliveForegroundService : Service() {
                 val currentState = p.getString(KEY_JPUSH_ALIAS_STATE, null)
                 if (currentAlias == alias && (currentState == "active" || currentState == "pending_bind")) {
                     Log.d(TAG, "JPush alias sync skipped: already $currentState for ***${alias.takeLast(4)}")
-                    return
+                    return true
                 }
             }
             
@@ -519,7 +528,23 @@ class KeepAliveForegroundService : Service() {
                 Log.d(TAG, "JPush alias synced: ***${alias.takeLast(4)} state=pending_bind gen=$gen")
             }
             editor.apply()
+            return true
         }
+
+		fun isPushEnabled(context: Context): Boolean =
+			prefs(context.applicationContext).getBoolean(KEY_PUSH_OPT_IN, false)
+
+		fun setPushOptIn(context: Context, enabled: Boolean) {
+			val appContext = context.applicationContext
+			prefs(appContext).edit().putBoolean(KEY_PUSH_OPT_IN, enabled).apply()
+			if (enabled) return
+			val gen = markAliasPendingDelete(appContext)
+			try {
+				JPushInterface.deleteAlias(appContext, PrivateMessageJPushReceiver.deleteSequence(gen))
+			} catch (e: Exception) {
+				PrivateMessageJPushReceiver.scheduleDeleteRetry(appContext, gen)
+			}
+		}
 
         fun confirmAliasBoundIfCurrent(context: Context, gen: Int, alias: String): Boolean {
             val p = prefs(context.applicationContext)

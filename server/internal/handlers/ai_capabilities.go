@@ -24,6 +24,7 @@ type AICapabilitiesHandler struct {
 	allowedUserIDs   map[string]struct{}
 	runtime          *ai.Runtime
 	policyRAGEnabled bool
+	scheduleEnabled  bool
 	hourlyLimit      int
 	maxMessageChars  int
 }
@@ -31,6 +32,7 @@ type AICapabilitiesHandler struct {
 type AICapabilitiesOptions struct {
 	Runtime          *ai.Runtime
 	PolicyRAGEnabled bool
+	ScheduleEnabled  bool
 	HourlyLimit      int
 	MaxMessageChars  int
 }
@@ -52,6 +54,7 @@ func NewAICapabilitiesHandler(enabled, internalTestOnly bool, allowedUserIDs []s
 	if len(options) > 0 {
 		handler.runtime = options[0].Runtime
 		handler.policyRAGEnabled = options[0].PolicyRAGEnabled
+		handler.scheduleEnabled = options[0].ScheduleEnabled
 		if options[0].HourlyLimit > 0 {
 			handler.hourlyLimit = options[0].HourlyLimit
 		}
@@ -98,7 +101,7 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 		"chat_enabled":       chatEnabled,
 		"features": gin.H{
 			"policy_rag":       accessAllowed && h.policyRAGEnabled,
-			"schedule_windows": false,
+			"schedule_windows": accessAllowed && h.scheduleEnabled,
 		},
 		"quota": gin.H{
 			"limit":          h.hourlyLimit,

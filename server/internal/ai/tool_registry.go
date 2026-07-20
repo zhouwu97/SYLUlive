@@ -1,12 +1,14 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"gorm.io/datatypes"
@@ -110,4 +112,61 @@ func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID
 		return nil, false, errors.New("tool_state_conflict")
 	}
 	return encoded, false, nil
+}
+
+type ScheduleWindowsTool struct {
+	skill *ScheduleSkill
+}
+
+func NewScheduleWindowsTool(skill *ScheduleSkill) *ScheduleWindowsTool {
+	return &ScheduleWindowsTool{skill: skill}
+}
+
+func (t *ScheduleWindowsTool) Name() string    { return "get_my_schedule_windows" }
+func (t *ScheduleWindowsTool) Version() string { return "1.0.0" }
+
+func (t *ScheduleWindowsTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name: t.Name(), Description: "读取当前用户已同步的课表缓存并确定性计算空闲窗口",
+		Parameters: map[string]interface{}{
+			"type": "object", "additionalProperties": false,
+			"required": []string{"scope", "minimum_free_minutes"},
+			"properties": map[string]interface{}{
+				"scope":                map[string]interface{}{"type": "string", "enum": []string{"today", "tomorrow", "this_week", "next_week", "explicit_date"}},
+				"explicit_date":        map[string]interface{}{"type": "string", "pattern": `^\d{4}-\d{2}-\d{2}$`},
+				"minimum_free_minutes": map[string]interface{}{"type": "integer", "minimum": 15, "maximum": 720},
+				"preferred_daypart":    map[string]interface{}{"type": "string", "enum": []string{"morning", "afternoon", "evening"}},
+			},
+		},
+	}
+}
+
+func (t *ScheduleWindowsTool) Execute(ctx context.Context, userID uint, raw json.RawMessage) (interface{}, error) {
+	if t.skill == nil {
+		if _, err := DecodeScheduleWindowsArguments(raw); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("schedule_skill_disabled")
+	}
+	arguments, err := DecodeScheduleWindowsArguments(raw)
+	if err != nil {
+		return nil, err
+	}
+	return t.skill.Execute(ctx, userID, arguments)
+}
+
+func DecodeScheduleWindowsArguments(raw json.RawMessage) (ScheduleWindowsArguments, error) {
+	decoder := json.NewDecoder(io.LimitReader(bytes.NewReader(raw), 16<<10))
+	decoder.DisallowUnknownFields()
+	var arguments ScheduleWindowsArguments
+	if err := decoder.Decode(&arguments); err != nil {
+		return arguments, errors.New("invalid_schedule_arguments")
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return arguments, errors.New("invalid_schedule_arguments")
+	}
+	if err := validateScheduleArguments(arguments); err != nil {
+		return arguments, err
+	}
+	return arguments, nil
 }

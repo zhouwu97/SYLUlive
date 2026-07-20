@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,8 +11,13 @@ import '../services/app_update_download_service.dart';
 /// 页面或未登录路径绕过；普通更新仅在首次发现时提示一次，仍可继续使用 App。
 class AppUpdateGate extends StatefulWidget {
   final Widget child;
+  final GlobalKey<NavigatorState> navigatorKey;
 
-  const AppUpdateGate({super.key, required this.child});
+  const AppUpdateGate({
+    super.key,
+    required this.child,
+    required this.navigatorKey,
+  });
 
   @override
   State<AppUpdateGate> createState() => _AppUpdateGateState();
@@ -20,19 +27,18 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     with WidgetsBindingObserver {
   bool _optionalDialogVisible = false;
   int? _presentedOptionalVersion;
+  Timer? _optionalRetryTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<AppUpdateCoordinator>().initialize();
-    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _optionalRetryTimer?.cancel();
     super.dispose();
   }
 
@@ -79,9 +85,20 @@ class _AppUpdateGateState extends State<AppUpdateGate>
         coordinator.info == null) {
       return;
     }
+    final dialogContext = widget.navigatorKey.currentState?.overlay?.context;
+    if (dialogContext == null) {
+      _presentedOptionalVersion = null;
+      _retryOptionalDialogLater();
+      return;
+    }
+    final navigator = widget.navigatorKey.currentState;
+    if (navigator == null || navigator.canPop()) {
+      _retryOptionalDialogLater();
+      return;
+    }
     _optionalDialogVisible = true;
     final action = await showDialog<_OptionalUpdateAction>(
-      context: context,
+      context: dialogContext,
       barrierDismissible: true,
       builder: (dialogContext) => _OptionalUpdateDialog(
         info: coordinator.info!,
@@ -105,6 +122,13 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       case null:
         await coordinator.deferOptionalUpdate();
     }
+  }
+
+  void _retryOptionalDialogLater() {
+    _optionalRetryTimer ??= Timer(const Duration(seconds: 2), () {
+      _optionalRetryTimer = null;
+      _showOptionalDialog();
+    });
   }
 }
 
@@ -149,7 +173,7 @@ class _OptionalUpdateDialog extends StatelessWidget {
   }
 }
 
-/// 全屏更新页，覆盖冷启动检查、强制更新、下载、校验完成和唤起安装器的状态。
+/// 全屏更新页，仅覆盖强制更新、下载、校验完成和唤起安装器的状态。
 class AppUpdateScreen extends StatelessWidget {
   final AppUpdateCoordinator coordinator;
 
@@ -285,7 +309,7 @@ class AppUpdateScreen extends StatelessWidget {
       case AppUpdatePhase.installing:
         return '已打开系统安装器';
       case AppUpdatePhase.required:
-        return canDownload ? '立即更新' : '重新检查';
+        return canDownload ? '下载更新' : '重新检查';
       case AppUpdatePhase.initializing:
       case AppUpdatePhase.checking:
         return '正在检查';

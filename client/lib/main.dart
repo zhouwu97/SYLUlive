@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/post_provider.dart';
+import 'providers/poll_provider.dart';
 import 'providers/team_recruitment_provider.dart';
 import 'providers/message_provider.dart';
 import 'providers/edu_provider.dart';
@@ -31,24 +32,28 @@ import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/privacy_center_screen.dart';
 import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
 import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
 import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
+import 'utils/team_share_link.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
+import 'services/poll_service.dart';
 import 'services/app_update_coordinator.dart';
+import 'services/push_settings_service.dart';
 import 'widgets/app_update_gate.dart';
-import 'platform/platform_bootstrap.dart';
-import 'platform/platform_capabilities.dart';
+import 'widgets/required_legal_consent_dialog.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
@@ -253,6 +258,8 @@ Future<void> main() async {
       );
 
       await Hive.initFlutter();
+
+      PushSettingsService.configureRemoteRegistration(setupJPush);
 
       try {
         final deletedCount = await PostCacheService.clearLegacyCache();
@@ -472,7 +479,15 @@ void _processPendingNotificationOpen() {
   }
 }
 
-Future<void> setupJPush(AuthProvider authProvider) async {
+Future<RemotePushEnableResult> setupJPush(AuthProvider authProvider) async {
+  if (!await PushSettingsService.isEnabled()) {
+    debugPrint('推送未主动启用，跳过 JPush 初始化');
+    return const RemotePushEnableResult(
+      permissionGranted: false,
+      registrationSucceeded: false,
+      message: '推送未开启',
+    );
+  }
   if (ApiConstants.jpushAppKey.isEmpty) {
     DiagnosticLogService.instance.record(
       level: 'error',
@@ -481,39 +496,97 @@ Future<void> setupJPush(AuthProvider authProvider) async {
       summary: 'JPUSH_APP_KEY 为空，已跳过初始化',
       detail: '请通过 --dart-define=JPUSH_APP_KEY 注入或设置默认值',
     );
-    return;
+    return const RemotePushEnableResult(
+      permissionGranted: false,
+      registrationSucceeded: false,
+      message: '推送配置缺失，设备注册失败，请稍后重试',
+    );
   }
 
   _ensureJPushHandlersRegistered();
 
+  try {
+    await PushSettingsService.setNativePushOptIn(true);
+  } catch (e) {
+    debugPrint('同步原生推送开关失败: $e');
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: false,
+      message: '推送设置已保存，原生推送初始化失败，请稍后重试',
+    );
+  }
+
   jpush.setup(
     appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
-    production: false,
-    debug: true,
+    production: !kDebugMode,
+    debug: kDebugMode,
   );
 
   final rid = await jpush.getRegistrationID();
 
-  if (rid.isNotEmpty) {
-    await authProvider.updateDeviceToken(rid);
+  if (rid.isEmpty) {
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: false,
+      message: '推送设置已保存，设备注册尚未完成',
+    );
+  }
+  final result = await authProvider.updatePushSettings(
+    enabled: true,
+    installationId: await PushSettingsService.installationId(),
+    registrationId: rid,
+    noticeVersion: PushSettingsService.noticeVersion,
+  );
+  if (!result.success) {
+    debugPrint('推送设置上传失败: ${result.errorMessage}');
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: false,
+      message: '推送设置已保存，设备登记失败，请稍后重试',
+    );
   }
 
   final userId = authProvider.user?.id;
-  if (userId == null) return;
+  if (userId == null) {
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: true,
+      message: '已开启远程消息推送',
+    );
+  }
 
   final userIdStr = userId.toString();
 
   // 将 userId 同步给原生层，后续的 Alias 绑定与退避重试完全由原生层
   // KeepAliveForegroundService 的 reconcileAliasState 机制接管
   try {
-    await _privateMessageNotificationChannel.invokeMethod(
-      'syncAlias',
-      {'userId': userIdStr},
-    );
+    final aliasSynced =
+        await _privateMessageNotificationChannel.invokeMethod<bool>(
+              'syncAlias',
+              {'userId': userIdStr},
+            ) ??
+            false;
+    if (!aliasSynced) {
+      return const RemotePushEnableResult(
+        permissionGranted: true,
+        registrationSucceeded: false,
+        message: '推送设置已保存，设备绑定失败，请稍后重试',
+      );
+    }
   } catch (e) {
     debugPrint('同步 Alias 到原生层失败: $e');
+    return const RemotePushEnableResult(
+      permissionGranted: true,
+      registrationSucceeded: false,
+      message: '推送设置已保存，设备绑定失败，请稍后重试',
+    );
   }
+  return const RemotePushEnableResult(
+    permissionGranted: true,
+    registrationSucceeded: true,
+    message: '已开启远程消息推送',
+  );
 }
 
 Future<void> _initializePrivateMessageNotifications() async {
@@ -563,26 +636,7 @@ Future<void> _initializePrivateMessageNotifications() async {
           importance: Importance.high,
         ),
       );
-  // Android 13+ 运行时通知权限
-  await _privateMessageNotifications
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.requestNotificationsPermission();
   _privateMessageNotificationsReady = true;
-}
-
-/// 首帧后请求通知权限（需要 Activity 已创建）
-Future<void> _requestNotificationPermissionIfNeeded() async {
-  try {
-    final plugin =
-        _privateMessageNotifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    if (plugin == null) return;
-    final granted = await plugin.requestNotificationsPermission();
-    debugPrint('通知权限请求结果: $granted');
-  } catch (e) {
-    debugPrint('请求通知权限失败: $e');
-  }
 }
 
 /// 已通过本地通知展示过的极光 msg_id，用于去重
@@ -947,6 +1001,10 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
         ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
         ChangeNotifierProvider(create: (_) => PostProvider(dio)),
+        ChangeNotifierProxyProvider<PostProvider, PollProvider>(
+          create: (_) => PollProvider(PollService(dio)),
+          update: (_, posts, polls) => polls!..bindPostProvider(posts),
+        ),
         ChangeNotifierProxyProvider<AuthProvider, TeamRecruitmentProvider>(
           create: (_) => TeamRecruitmentProvider(dio),
           update: (_, auth, provider) =>
@@ -968,7 +1026,7 @@ class MyApp extends StatelessWidget {
           update: (_, auth, edu, provider) => provider!
             ..syncSessionContext(
               auth.user?.id.toString(),
-              edu.isBound ? edu.studentId : null,
+              edu.studentId,
             ),
         ),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
@@ -1022,7 +1080,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
         final uri = call.arguments as String?;
-        await _handleDeepLinkUri(uri);
+        await _consumeDeepLink(uri);
       }
     });
   }
@@ -1043,39 +1101,65 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   Future<void> _checkDeepLink() async {
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
-      await _handleDeepLinkUri(uri);
+      await _consumeDeepLink(uri);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
     }
   }
 
-  Future<void> _handleDeepLinkUri(String? uri) async {
+  Future<void> _consumeDeepLink(String? uri) async {
     if (uri == null || !mounted) return;
+    final handled = await _handleDeepLinkUri(uri);
+    if (!handled) return;
+    try {
+      await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': uri});
+    } catch (error) {
+      debugPrint('深度链接确认失败: $error');
+    }
+  }
+
+  Future<bool> _handleDeepLinkUri(String? uri) async {
+    if (uri == null || !mounted) return false;
     if (uri == 'widget_timetable' || uri == 'campus://timetable') {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
-      return;
+      return true;
     }
     if (uri.startsWith('widget_exam')) {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       appNavigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
       );
-      return;
+      return true;
     }
     if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
-      await _openGradeDeepLink(uri);
+      return _openGradeDeepLink(uri);
     }
+    final recruitmentId = TeamShareLink.parseRecruitmentId(uri);
+    if (recruitmentId == null) return false;
+
+    // 授权撤销或尚未登录时不得通过分享链接绕过会话门禁。
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || !(auth.user?.legalConsentsActive ?? false)) {
+      return true;
+    }
+    appNavigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) =>
+            TeamRecruitmentDetailScreen(recruitmentId: recruitmentId),
+      ),
+    );
+    return true;
   }
 
-  Future<void> _openGradeDeepLink(String raw) async {
+  Future<bool> _openGradeDeepLink(String raw) async {
     final parsed = Uri.tryParse(raw);
     final year = parsed?.queryParameters['year'];
     final semester = int.tryParse(parsed?.queryParameters['semester'] ?? '');
-    if (year == null || semester == null) return;
+    if (year == null || semester == null) return false;
 
     if (await GradeScreenRegistry.trySwitch(year, semester)) {
-      return;
+      return true;
     }
 
     appNavigatorKey.currentState?.push(
@@ -1086,6 +1170,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         ),
       ),
     );
+    return true;
   }
 
   @override
@@ -1142,6 +1227,10 @@ class _AppContent extends StatelessWidget {
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       navigatorKey: appNavigatorKey,
       scaffoldMessengerKey: scaffoldMessengerKey,
+      builder: (context, child) => AppUpdateGate(
+        navigatorKey: appNavigatorKey,
+        child: child ?? const SizedBox.shrink(),
+      ),
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => const PredictiveBackGate(
@@ -1325,6 +1414,7 @@ class HomeInitialTabResolver {
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
   bool _jpushSettingUp = false;
+  bool _legalConsentDialogVisible = false;
   final HomeInitialTabResolver _homeInitialTabResolver =
       HomeInitialTabResolver();
 
@@ -1345,7 +1435,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final authProvider = context.read<AuthProvider>();
       if (authProvider.isLoggedIn &&
-          PlatformCapabilities.current.supportsJPush) {
+          (authProvider.user?.legalConsentsActive ?? false)) {
         _ensureJPush(authProvider);
         _checkNativePrivateMessage();
       }
@@ -1384,17 +1474,49 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   Future<void> _ensureJPush(AuthProvider authProvider) async {
     if (_jpushSetup || _jpushSettingUp) return;
 
+    if (!await PushSettingsService.isEnabled()) return;
+
     _jpushSettingUp = true;
     try {
-      await setupJPush(authProvider);
-      _jpushSetup = true;
-      debugPrint('✅ JPush 初始化成功');
+      final result = await PushSettingsService.registerOnce(authProvider);
+      _jpushSetup = result.registrationSucceeded;
+      debugPrint(
+        result.registrationSucceeded ? '✅ JPush 初始化成功' : result.message,
+      );
     } catch (e, stack) {
       debugPrint('JPush 初始化失败，将在下次恢复时重试: $e');
       debugPrintStack(stackTrace: stack);
     } finally {
       _jpushSettingUp = false;
     }
+  }
+
+  void _presentRequiredLegalConsentDialog(AuthProvider authProvider) {
+    if (_legalConsentDialogVisible) return;
+    final user = authProvider.user;
+    if (user == null ||
+        user.legalConsentsActive ||
+        !user.legalConsentsRequired) {
+      return;
+    }
+    _legalConsentDialogVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final currentUser = authProvider.user;
+      if (!authProvider.isLoggedIn ||
+          currentUser == null ||
+          currentUser.legalConsentsActive ||
+          !currentUser.legalConsentsRequired) {
+        _legalConsentDialogVisible = false;
+        return;
+      }
+      await showRequiredLegalConsentDialog(
+        context,
+        requiresEduDataConsent: currentUser.eduBound,
+      );
+      _legalConsentDialogVisible = false;
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -1407,13 +1529,24 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           );
         }
 
-        if (authProvider.isLoggedIn) {
+        final user = authProvider.user;
+        if (authProvider.isLoggedIn &&
+            user != null &&
+            !user.legalConsentsActive &&
+            user.legalConsentsRequired) {
+          _presentRequiredLegalConsentDialog(authProvider);
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (authProvider.isLoggedIn &&
+            (authProvider.user?.legalConsentsActive ?? false)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (PlatformCapabilities.current.supportsJPush &&
                 !_jpushSetup &&
                 !_jpushSettingUp) {
               _ensureJPush(authProvider);
-              _requestNotificationPermissionIfNeeded();
             }
             _processPendingPrivateMessageOpen();
             _schedulePendingNotificationProcessing();
@@ -1428,6 +1561,11 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
+        }
+
+        if (authProvider.isLoggedIn &&
+            !(authProvider.user?.legalConsentsActive ?? true)) {
+          return const PrivacyCenterScreen(restricted: true);
         }
 
         return HomeScreen(initialTab: _homeInitialTabResolver.resolve(tp));

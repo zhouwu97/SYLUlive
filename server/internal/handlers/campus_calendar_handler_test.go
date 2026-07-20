@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -83,6 +85,46 @@ func TestValidateCampusCalendarRejectsDuplicateOverrides(t *testing.T) {
 	result, _ := validateCampusCalendar(raw)
 	if result.Valid {
 		t.Fatal("expected duplicate day override to be rejected")
+	}
+}
+
+func TestValidateCampusCalendarAcceptsV2SemesterMappings(t *testing.T) {
+	raw := []byte(`{
+        "schema_version": 2,
+        "calendar_id": "sylu-2026-2027",
+        "school": "测试大学",
+        "academic_year": "2026-2027",
+        "timezone": "Asia/Shanghai",
+        "source": {"type":"official_calendar_image","title":"官方校历","file_name":"calendar.jpg","verified":true},
+        "semesters": [
+            {"id":"fall","name":"第一学期","edu_semester_code":3,"start_date":"2026-09-01","end_date":"2027-01-15","teaching_weeks":[]},
+            {"id":"spring","name":"第二学期","edu_semester_code":12,"start_date":"2027-02-22","end_date":"2027-07-16","teaching_weeks":[]}
+        ]
+    }`)
+
+	result, _ := validateCampusCalendar(raw)
+	if !result.Valid {
+		t.Fatalf("v2 校历应通过校验: %#v", result.Errors)
+	}
+}
+
+func TestValidateCampusCalendarRejectsInvalidV2SemesterMappings(t *testing.T) {
+	tests := []struct {
+		name      string
+		semesters string
+	}{
+		{"缺少代码", `[{"id":"fall","name":"第一学期","start_date":"2026-09-01","end_date":"2027-01-15","teaching_weeks":[]}]`},
+		{"非法代码", `[{"id":"fall","name":"第一学期","edu_semester_code":1,"start_date":"2026-09-01","end_date":"2027-01-15","teaching_weeks":[]}]`},
+		{"重复代码", `[{"id":"fall","name":"第一学期","edu_semester_code":3,"start_date":"2026-09-01","end_date":"2027-01-15","teaching_weeks":[]},{"id":"spring","name":"第二学期","edu_semester_code":3,"start_date":"2027-02-22","end_date":"2027-07-16","teaching_weeks":[]}]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := []byte(`{"schema_version":2,"calendar_id":"sylu-2026-2027","school":"测试大学","academic_year":"2026-2027","timezone":"Asia/Shanghai","source":{"type":"official_calendar_image","title":"官方校历","file_name":"calendar.jpg","verified":true},"semesters":` + tt.semesters + `}`)
+			result, _ := validateCampusCalendar(raw)
+			if result.Valid {
+				t.Fatal("无效 v2 学期映射不应通过")
+			}
+		})
 	}
 }
 
@@ -168,5 +210,41 @@ func TestWriteCampusCalendarUsesDatabaseVersion(t *testing.T) {
 	}
 	if got := response.Calendar["version"]; got != float64(3) {
 		t.Fatalf("version=%v want 3", got)
+	}
+}
+
+func TestPublishV2CalendarRejectsUnresolvedItems(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "calendar-unresolved.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&models.CampusCalendar{}); err != nil {
+		t.Fatal(err)
+	}
+	document := models.CampusCalendar{
+		AcademicYear: "2026-2027", Version: 1, Status: "draft", SourceHash: "unresolved",
+		Data: datatypes.JSON([]byte(`{
+            "schema_version":2,"calendar_id":"sylu-2026-2027","school":"测试大学",
+            "academic_year":"2026-2027","timezone":"Asia/Shanghai",
+            "source":{"type":"official_calendar_image","title":"官方校历","file_name":"calendar.jpg","verified":true},
+            "semesters":[{"id":"fall","name":"第一学期","edu_semester_code":3,"start_date":"2026-09-01","end_date":"2027-01-15","teaching_weeks":[]}],
+            "unresolved_items":[{"path":"day_overrides","reason":"调休待核验"}]
+        }`)),
+	}
+	if err := db.Create(&document).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(document.ID), 10)}}
+	NewCampusCalendarHandler(db).Publish(context)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("存在待确认项的 v2 校历不应发布: status=%d body=%s", response.Code, response.Body.String())
 	}
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -15,13 +16,23 @@ PersonalSnapshotFileBackend createPersonalSnapshotFileBackend() {
 class IoPersonalSnapshotFileBackend implements PersonalSnapshotFileBackend {
   IoPersonalSnapshotFileBackend({
     Future<Directory> Function()? supportDirectoryLoader,
-  }) : _supportDirectoryLoader =
-            supportDirectoryLoader ?? getApplicationSupportDirectory;
+    Future<void> Function()? onBackupMoved,
+  })  : _supportDirectoryLoader =
+            supportDirectoryLoader ?? getApplicationSupportDirectory,
+        _onBackupMoved = onBackupMoved;
 
   static const int _maxSnapshotBytes = 20 * 1024 * 1024;
   static final RegExp _accountHashPattern = RegExp(r'^[a-f0-9]{64}$');
 
+  // 后端实例可能随页面或依赖注入容器重建，队列必须跨实例共享。
+  static final Map<String, Future<void>> _targetOperationTails =
+      <String, Future<void>>{};
+  static final Map<String, _AsyncReadWriteGate> _accountOperationGates =
+      <String, _AsyncReadWriteGate>{};
+  static final _AsyncReadWriteGate _globalOperationGate = _AsyncReadWriteGate();
+
   final Future<Directory> Function() _supportDirectoryLoader;
+  final Future<void> Function()? _onBackupMoved;
 
   Future<Directory> _rootDirectory() async {
     final supportDirectory = await _supportDirectoryLoader();
@@ -41,19 +52,64 @@ class IoPersonalSnapshotFileBackend implements PersonalSnapshotFileBackend {
     return File(path.join(directory.path, '${type.storageValue}.bin'));
   }
 
+  _AsyncReadWriteGate _accountOperationGate(String accountHash) {
+    return _accountOperationGates.putIfAbsent(
+      accountHash,
+      _AsyncReadWriteGate.new,
+    );
+  }
+
+  Future<T> _runTargetOperation<T>({
+    required String accountHash,
+    required PersonalDataType type,
+    required Future<T> Function(File target) operation,
+  }) async {
+    final target = await _file(accountHash, type);
+    return _globalOperationGate.runRead(() {
+      return _accountOperationGate(accountHash).runRead(() {
+        return _serializeTarget(target, () => operation(target));
+      });
+    });
+  }
+
+  Future<T> _serializeTarget<T>(
+    File target,
+    Future<T> Function() operation,
+  ) {
+    final key = path.normalize(path.absolute(target.path));
+    final previous = _targetOperationTails[key] ?? Future<void>.value();
+    final guarded = previous.then<T>((_) => Future<T>.sync(operation));
+    final tail = guarded.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    _targetOperationTails[key] = tail;
+
+    return guarded.whenComplete(() {
+      if (identical(_targetOperationTails[key], tail)) {
+        _targetOperationTails.remove(key);
+      }
+    });
+  }
+
   @override
   Future<Uint8List?> read({
     required String accountHash,
     required PersonalDataType type,
   }) async {
-    final file = await _file(accountHash, type);
-    await _recoverForRead(file);
-    if (!await file.exists()) return null;
-    final length = await file.length();
-    if (length <= 0 || length > _maxSnapshotBytes) {
-      throw const PersonalSnapshotStoreException('个人数据密文文件大小异常');
-    }
-    return file.readAsBytes();
+    return _runTargetOperation(
+      accountHash: accountHash,
+      type: type,
+      operation: (file) async {
+        await _recoverForReadUnlocked(file);
+        if (!await file.exists()) return null;
+        final length = await file.length();
+        if (length <= 0 || length > _maxSnapshotBytes) {
+          throw const PersonalSnapshotStoreException('个人数据密文文件大小异常');
+        }
+        return file.readAsBytes();
+      },
+    );
   }
 
   @override
@@ -65,33 +121,42 @@ class IoPersonalSnapshotFileBackend implements PersonalSnapshotFileBackend {
     if (bytes.isEmpty || bytes.length > _maxSnapshotBytes) {
       throw const PersonalSnapshotStoreException('个人数据密文文件大小异常');
     }
-    final target = await _file(accountHash, type);
-    await target.parent.create(recursive: true);
-    await _recoverForRead(target);
-    final suffix =
-        '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
-    final temporary = File('${target.path}.$suffix.tmp');
-    final backup = File('${target.path}.$suffix.bak');
-    var movedPrevious = false;
-    try {
-      await temporary.writeAsBytes(bytes, flush: true);
-      if (await target.exists()) {
-        await target.rename(backup.path);
-        movedPrevious = true;
-      }
-      await temporary.rename(target.path);
-      if (await backup.exists()) await backup.delete();
-    } catch (_) {
-      if (!await target.exists() && movedPrevious && await backup.exists()) {
-        await backup.rename(target.path);
-      }
-      rethrow;
-    } finally {
-      if (await temporary.exists()) await temporary.delete();
-      if (await backup.exists() && await target.exists()) {
-        await backup.delete();
-      }
-    }
+    await _runTargetOperation(
+      accountHash: accountHash,
+      type: type,
+      operation: (target) async {
+        await target.parent.create(recursive: true);
+        await _recoverForReadUnlocked(target);
+        final suffix =
+            '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
+        final temporary = File('${target.path}.$suffix.tmp');
+        final backup = File('${target.path}.$suffix.bak');
+        var movedPrevious = false;
+        try {
+          await temporary.writeAsBytes(bytes, flush: true);
+          if (await target.exists()) {
+            await target.rename(backup.path);
+            movedPrevious = true;
+            // 仅用于回归测试，在正式构造路径中始终为 null。
+            await _onBackupMoved?.call();
+          }
+          await temporary.rename(target.path);
+          if (await backup.exists()) await backup.delete();
+        } catch (_) {
+          if (!await target.exists() &&
+              movedPrevious &&
+              await backup.exists()) {
+            await backup.rename(target.path);
+          }
+          rethrow;
+        } finally {
+          if (await temporary.exists()) await temporary.delete();
+          if (await backup.exists() && await target.exists()) {
+            await backup.delete();
+          }
+        }
+      },
+    );
   }
 
   @override
@@ -99,26 +164,36 @@ class IoPersonalSnapshotFileBackend implements PersonalSnapshotFileBackend {
     required String accountHash,
     required PersonalDataType type,
   }) async {
-    final file = await _file(accountHash, type);
-    await _deleteSnapshotFiles(file);
+    await _runTargetOperation(
+      accountHash: accountHash,
+      type: type,
+      operation: _deleteSnapshotFiles,
+    );
   }
 
   @override
   Future<void> deleteUser(String accountHash) async {
     final directory = await _accountDirectory(accountHash);
-    if (await directory.exists()) {
-      await directory.delete(recursive: true);
-    }
+    await _globalOperationGate.runRead(() {
+      return _accountOperationGate(accountHash).runWrite(() async {
+        if (await directory.exists()) {
+          await directory.delete(recursive: true);
+        }
+      });
+    });
   }
 
   @override
   Future<void> deleteAll() async {
     final root = await _rootDirectory();
-    if (await root.exists()) await root.delete(recursive: true);
+    await _globalOperationGate.runWrite(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
   }
 
   /// 只恢复当前账号目录下由本后端生成的中断写入备份文件。
-  Future<void> _recoverForRead(File target) async {
+  /// 调用方必须已持有 target 的串行队列。
+  Future<void> _recoverForReadUnlocked(File target) async {
     final backups = await _findArtifacts(target, 'bak');
     final temporaries = await _findArtifacts(target, 'tmp');
 
@@ -182,6 +257,51 @@ class IoPersonalSnapshotFileBackend implements PersonalSnapshotFileBackend {
         if (await file.exists()) await file.delete();
       } on FileSystemException {
         // 残留文件清理失败不影响已验证正式密文的读取。
+      }
+    }
+  }
+}
+
+/// 允许多个普通操作并行，但让删除操作等待已有操作后独占执行。
+class _AsyncReadWriteGate {
+  Future<void> _writerTail = Future<void>.value();
+  int _activeReaders = 0;
+  Completer<void>? _readersDrained;
+
+  Future<T> runRead<T>(Future<T> Function() operation) {
+    final priorWriter = _writerTail;
+    _activeReaders++;
+
+    return Future<T>.sync(() async {
+      await priorWriter;
+      return operation();
+    }).whenComplete(_releaseReader);
+  }
+
+  Future<T> runWrite<T>(Future<T> Function() operation) {
+    final priorWriter = _writerTail;
+    final priorReaders = _activeReaders == 0
+        ? Future<void>.value()
+        : (_readersDrained ??= Completer<void>()).future;
+    final releaseWriter = Completer<void>();
+    _writerTail = releaseWriter.future;
+
+    return Future<T>.sync(() async {
+      await priorWriter;
+      await priorReaders;
+      return operation();
+    }).whenComplete(() {
+      if (!releaseWriter.isCompleted) releaseWriter.complete();
+    });
+  }
+
+  void _releaseReader() {
+    _activeReaders--;
+    if (_activeReaders == 0) {
+      final readersDrained = _readersDrained;
+      _readersDrained = null;
+      if (readersDrained != null && !readersDrained.isCompleted) {
+        readersDrained.complete();
       }
     }
   }

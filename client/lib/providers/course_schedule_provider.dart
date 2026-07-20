@@ -183,13 +183,8 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 设置当前用户，但不自动拉取数据（由调用方决定何时拉取）
   /// 切换用户时自动清空内存中的旧数据，防止跨账号泄漏
   void setUserId(String userId) {
-    debugPrint(
-      'Schedule: setUserId called with $userId, current is $_userId at ${DateTime.now()}',
-    );
     if (_userId == userId) return;
-    debugPrint(
-      'Schedule: Wiping data because userId changed from $_userId to $userId at ${DateTime.now()}',
-    );
+    debugPrint('课表账号命名空间已切换，清理旧内存数据');
     // 切换到了不同用户 → 立刻清空旧数据
     _courses = [];
     _gridData = {};
@@ -218,6 +213,14 @@ class CourseScheduleProvider extends ChangeNotifier {
     _currentTerm = null;
     _isLoading = false;
     notifyListeners();
+  }
+
+  void syncSessionUser(String? userId) {
+    if (userId == null || userId.isEmpty) {
+      clearAllUserState();
+      return;
+    }
+    setUserId(userId);
   }
 
   /// 默认颜色池（按课程名哈希分配）
@@ -268,10 +271,6 @@ class CourseScheduleProvider extends ChangeNotifier {
       'hidden=${_hiddenCourseIds.length}',
     );
 
-    if (rawCourses.isNotEmpty) {
-      debugPrint('Schedule first raw course: ${rawCourses.first}');
-    }
-
     if (resetHidden) {
       _hiddenCourseIds = {};
       await _saveHiddenCourses();
@@ -290,15 +289,15 @@ class CourseScheduleProvider extends ChangeNotifier {
           parsedCourses.add(parsed);
           importedCount++;
         }
-      } catch (e, stackTrace) {
-        debugPrint('解析课程失败: $e\n$stackTrace\nrawCourse=$rawCourse');
+      } catch (e) {
+        debugPrint('解析课程失败: ${e.runtimeType}');
       }
     }
 
     debugPrint(
       'Schedule applyFetchedCourses done: '
       'imported=$importedCount, total=${parsedCourses.length}, '
-      'cacheKey=$_currentCacheKey',
+      'cache namespace updated',
     );
 
     _courses = parsedCourses;
@@ -497,7 +496,7 @@ class CourseScheduleProvider extends ChangeNotifier {
         jsonEncode(_hiddenCourseIds.toList()),
       );
     } catch (e) {
-      debugPrint('保存隐藏课程失败: $e');
+      debugPrint('保存隐藏课程失败: ${e.runtimeType}');
     }
   }
 
@@ -529,17 +528,12 @@ class CourseScheduleProvider extends ChangeNotifier {
       if (cached != null) {
         _courses = cached;
         _buildGrid();
-        debugPrint('📱 从手机缓存加载: ${_courses.length}门课');
-        for (final c in _courses) {
-          debugPrint(
-            '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节',
-          );
-        }
+        debugPrint('从手机缓存加载课程: count=${_courses.length}');
         _isLoading = false;
         notifyListeners();
         _syncWidget(); // 更新桌面小部件
         debugPrint(
-          'Schedule: Cache Loaded. Course Count: ${_courses.length}, Archive Count: ${_archives.length} at ${DateTime.now()}',
+          '课表缓存加载完成: count=${_courses.length}',
         );
         return; // 缓存命中，不请求网络
       }
@@ -557,7 +551,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     final activeArchiveId = prefs.getString(_activeArchiveKey);
     // 如果当前处于“查看存档”模式，且不是用户主动的手动刷新，则跳过后续的网络拉取，防止存档被覆盖
     if (activeArchiveId != null && !isManualRefresh) {
-      debugPrint('目前正在使用存档 $activeArchiveId，跳过后台静默同步');
+      debugPrint('当前处于课表存档模式，跳过后台静默同步');
       return;
     }
 
@@ -597,16 +591,13 @@ class CourseScheduleProvider extends ChangeNotifier {
           _buildGrid();
           localSuccess = true;
           networkSuccess = true;
-          debugPrint('✅ 从服务器本地加载: ${_courses.length}门课');
-          for (final c in _courses) {
-            debugPrint(
-              '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节',
-            );
-          }
+          debugPrint('从服务器本地加载课程: count=${_courses.length}');
         }
       }
     } on DioException catch (e) {
-      debugPrint('获取本地课程失败: ${_parseDioError(e)}');
+      debugPrint(
+        '获取本地课程失败: type=${e.type}, status=${e.response?.statusCode}',
+      );
     }
 
     // Step 2: 服务器本地为空，从教务系统拉取原始数据
@@ -641,19 +632,16 @@ class CourseScheduleProvider extends ChangeNotifier {
               _buildGrid();
               networkSuccess = true;
             }
-            debugPrint('🌐 从教务拉取原始数据: ${_courses.length}门课');
-            for (final c in _courses) {
-              debugPrint(
-                '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节 | ${c.teacher} | ${c.location}',
-              );
-            }
+            debugPrint('从教务拉取课程: count=${_courses.length}');
           } else {
             _errorMessage = data['message'] as String?;
           }
         }
       } on DioException catch (e) {
         _errorMessage = _parseDioError(e);
-        debugPrint('从教务拉取课程失败: $_errorMessage');
+        debugPrint(
+          '从教务拉取课程失败: type=${e.type}, status=${e.response?.statusCode}',
+        );
       }
     }
 
@@ -682,7 +670,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     notifyListeners();
     _syncWidget(); // 更新桌面小部件
     debugPrint(
-      'Schedule: Network Fetch Finished. Course Count: ${_courses.length}, Archive Count: ${_archives.length} at ${DateTime.now()}',
+      '课表网络拉取完成: count=${_courses.length}',
     );
   }
 
@@ -702,7 +690,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       await prefs.setString(key, json);
       await prefs.setInt('${key}_ver', _cacheVersion);
     } catch (e) {
-      debugPrint('缓存课程失败: $e');
+      debugPrint('缓存课程失败: ${e.runtimeType}');
     }
   }
 
@@ -724,7 +712,7 @@ class CourseScheduleProvider extends ChangeNotifier {
           .map((e) => CourseBlock.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      debugPrint('读取缓存课程失败: $e');
+      debugPrint('读取缓存课程失败: ${e.runtimeType}');
       return null;
     }
   }
@@ -736,23 +724,12 @@ class CourseScheduleProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_currentCacheKey);
     } catch (e) {
-      debugPrint('清除缓存失败: $e');
+      debugPrint('清除缓存失败: ${e.runtimeType}');
     }
   }
 
   String _parseDioError(DioException e) {
     if (e.response != null) {
-      final data = e.response!.data;
-      if (data is Map) {
-        if (data.containsKey('detail')) {
-          final detail = data['detail'];
-          if (detail is Map && detail['message'] != null) {
-            return detail['message'].toString();
-          }
-          return detail.toString();
-        }
-        if (data.containsKey('error')) return data['error'].toString();
-      }
       switch (e.response!.statusCode) {
         case 401:
           return '教务登录状态已失效，请重新登录';
@@ -831,11 +808,11 @@ class CourseScheduleProvider extends ChangeNotifier {
         final legacyStr = prefs.getString(_legacySemesterStartKey);
         if (legacyStr != null) {
           await prefs.setString(newKey, legacyStr);
-          debugPrint('Migrated legacy semester_start to $newKey');
+          debugPrint('已迁移旧版学期起始日期');
         }
       }
     } catch (e) {
-      debugPrint('Error migrating legacy semester_start: $e');
+      debugPrint('迁移旧版学期起始日期失败: ${e.runtimeType}');
     }
   }
 
@@ -1057,7 +1034,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      debugPrint('加载存档列表失败: $e');
+      debugPrint('加载存档列表失败: ${e.runtimeType}');
       _archives = [];
     }
   }
@@ -1087,10 +1064,10 @@ class CourseScheduleProvider extends ChangeNotifier {
         final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
         final file = File('${baseDir.path}/课表存档_$safeName.json');
         await file.writeAsString(coursesJson);
-        debugPrint('已自动备份到 Download 目录: ${file.path}');
+        debugPrint('已自动备份课表存档');
       }
     } catch (e) {
-      debugPrint('备份到 Download 目录失败: $e');
+      debugPrint('备份课表存档失败: ${e.runtimeType}');
     }
 
     // 更新存档列表
@@ -1182,7 +1159,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       final jsonStr = jsonEncode(_archives.map((a) => a.toJson()).toList());
       await prefs.setString(_archiveListKey, jsonStr);
     } catch (e) {
-      debugPrint('保存存档列表失败: $e');
+      debugPrint('保存存档列表失败: ${e.runtimeType}');
     }
   }
 }

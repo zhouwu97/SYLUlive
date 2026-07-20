@@ -106,7 +106,7 @@ class WebVpnService {
           ).firstMatch(html);
           if (casLinkMatch != null) {
             final casLink = casLinkMatch.group(1)!;
-            debugPrint('[VPN] 跟随CAS链接: $casLink');
+            debugPrint('[VPN] 跟随CAS链接');
             final decodedLink = casLink.replaceAll('&amp;', '&');
             nextUrl = _resolveUrl(decodedLink, url);
             continue;
@@ -148,9 +148,6 @@ class WebVpnService {
       }
     }
     debugPrint('[CAS] CAS页面Set-Cookie数量: ${setCookies?.length ?? 0}');
-    debugPrint(
-      '[CAS] 提取的Cookie名: ${casCookiesRaw.map((c) => c.split("=")[0]).toList()}',
-    );
 
     // 提取关键字段 — 打印完整的 input 列表辅助调试
     final allInputs = doc.querySelectorAll('input');
@@ -171,15 +168,11 @@ class WebVpnService {
     final lt = _extractValue(doc, 'lt') ?? '';
 
     debugPrint('[CAS] salt=<redacted> executionLength=${execution.length}');
-    debugPrint('[CAS] eventId=$eventId cllt=$cllt dllt=$dllt lt=$lt');
+    debugPrint('[CAS] 登录表单字段已解析');
 
     // AES 加密密码 — 注意: 密码字段名是 userPassword，但要提交为 password
     final encryptedPwd = _encryptPassword(password, salt);
     debugPrint('[CAS] 加密密码: <redacted>, length=${encryptedPwd.length}');
-
-    // 打印当前 Cookie
-    final cookies = await _jar.loadForRequest(Uri.parse(pageUrl));
-    debugPrint('[CAS] 当前Cookie: ${cookies.map((c) => c.name).toList()}');
 
     // 构造表单 — 严格对齐抓包，不能多字段
     final formData = <String, String>{
@@ -239,9 +232,7 @@ class WebVpnService {
       }
     }
     final cookieHeader = allCookies.join('; ');
-    debugPrint(
-      '[CAS] 最终Cookie名: ${allCookies.map((c) => c.split('=').first).toList()}',
-    );
+    debugPrint('[CAS] 登录请求Cookie数量: ${allCookies.length}');
 
     final loginResp = await _dio.post(
       action,
@@ -261,7 +252,6 @@ class WebVpnService {
     if (loginResp.statusCode == 401) {
       final body = loginResp.data.toString();
       debugPrint('[CAS] 401! bodyLength=${body.length}');
-      debugPrint('[CAS] 响应头名称: ${loginResp.headers.map.keys.toList()}');
       return false;
     }
 

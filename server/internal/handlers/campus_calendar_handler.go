@@ -52,11 +52,12 @@ type campusCalendarDocument struct {
 }
 
 type campusSemesterDocument struct {
-	ID            string                       `json:"id"`
-	Name          string                       `json:"name"`
-	StartDate     string                       `json:"start_date"`
-	EndDate       string                       `json:"end_date"`
-	TeachingWeeks []campusTeachingWeekDocument `json:"teaching_weeks"`
+	ID              string                       `json:"id"`
+	Name            string                       `json:"name"`
+	EduSemesterCode *int                         `json:"edu_semester_code,omitempty"`
+	StartDate       string                       `json:"start_date"`
+	EndDate         string                       `json:"end_date"`
+	TeachingWeeks   []campusTeachingWeekDocument `json:"teaching_weeks"`
 }
 
 type campusTeachingWeekDocument struct {
@@ -291,8 +292,8 @@ func validateCampusCalendar(raw []byte) (calendarValidationResult, campusCalenda
 		result.Errors = append(result.Errors, calendarValidationIssue{Path: "$", Message: "必须提交合法 JSON"})
 		return result, document
 	}
-	if document.SchemaVersion != 1 {
-		result.Errors = append(result.Errors, calendarValidationIssue{Path: "schema_version", Message: "仅支持 schema_version=1"})
+	if document.SchemaVersion != 1 && document.SchemaVersion != 2 {
+		result.Errors = append(result.Errors, calendarValidationIssue{Path: "schema_version", Message: "仅支持 schema_version=1 或 schema_version=2"})
 	}
 	if !academicYearPattern.MatchString(document.AcademicYear) {
 		result.Errors = append(result.Errors, calendarValidationIssue{Path: "academic_year", Message: "学年格式应为 YYYY-YYYY"})
@@ -317,6 +318,7 @@ func validateCampusCalendar(raw []byte) (calendarValidationResult, campusCalenda
 	}
 
 	semesterIDs := make(map[string]struct{})
+	eduSemesterCodes := make(map[int]struct{})
 	for semesterIndex, semester := range document.Semesters {
 		path := "semesters[" + strconv.Itoa(semesterIndex) + "]"
 		if strings.TrimSpace(semester.ID) == "" || strings.TrimSpace(semester.Name) == "" {
@@ -325,6 +327,17 @@ func validateCampusCalendar(raw []byte) (calendarValidationResult, campusCalenda
 			result.Errors = append(result.Errors, calendarValidationIssue{Path: path + ".id", Message: "学期标识不能重复"})
 		} else {
 			semesterIDs[semester.ID] = struct{}{}
+		}
+		if document.SchemaVersion == 2 {
+			if semester.EduSemesterCode == nil {
+				result.Errors = append(result.Errors, calendarValidationIssue{Path: path + ".edu_semester_code", Message: "schema_version=2 必须提供教务学期代码"})
+			} else if *semester.EduSemesterCode != 3 && *semester.EduSemesterCode != 12 {
+				result.Errors = append(result.Errors, calendarValidationIssue{Path: path + ".edu_semester_code", Message: "教务学期代码只能为 3 或 12"})
+			} else if _, exists := eduSemesterCodes[*semester.EduSemesterCode]; exists {
+				result.Errors = append(result.Errors, calendarValidationIssue{Path: path + ".edu_semester_code", Message: "同一学年教务学期代码不能重复"})
+			} else {
+				eduSemesterCodes[*semester.EduSemesterCode] = struct{}{}
+			}
 		}
 		start, startOK := validateCalendarDate(&result, path+".start_date", semester.StartDate)
 		end, endOK := validateCalendarDate(&result, path+".end_date", semester.EndDate)

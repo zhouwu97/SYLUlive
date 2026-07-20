@@ -21,8 +21,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   final _studentIdCtrl = TextEditingController();
 
   final WebVpnService _vpn = WebVpnService();
-  final ErkeCacheStore _cache = ErkeCacheStore();
-  late final ErkeRepository _repo;
+  late ErkeCacheStore _cache;
+  late ErkeRepository _repo;
+  String _repositoryNamespace = '';
 
   bool _isLoading = false;
   String _loadingMessage = '';
@@ -46,8 +47,11 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   @override
   void initState() {
     super.initState();
-    _repo = ErkeRepository(vpnService: _vpn, cacheStore: _cache);
     final user = context.read<AuthProvider>().user;
+    _bindRepository(
+      appUserId: user?.id.toString() ?? '',
+      sourceAccountId: user?.studentId ?? '',
+    );
     if (user != null) {
       _studentIdCtrl.text = user.studentId;
     }
@@ -58,6 +62,20 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   // ==================================================================
   //  缓存
   // ==================================================================
+
+  void _bindRepository({
+    required String appUserId,
+    required String sourceAccountId,
+  }) {
+    final namespace = '$appUserId|$sourceAccountId';
+    if (_repositoryNamespace == namespace) return;
+    _repositoryNamespace = namespace;
+    _cache = ErkeCacheStore(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+    );
+    _repo = ErkeRepository(vpnService: _vpn, cacheStore: _cache);
+  }
 
   Future<void> _loadCache() async {
     try {
@@ -102,6 +120,11 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       AppFeedback.showSnackBar(context, '请填写完整信息');
       return;
     }
+
+    _bindRepository(
+      appUserId: auth.user!.id.toString(),
+      sourceAccountId: studentId,
+    );
 
     setState(() {
       _isLoading = true;

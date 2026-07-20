@@ -70,3 +70,14 @@ func TestAICapabilitiesPublicAccess(t *testing.T) {
 		t.Fatalf("expected public access: %#v", body)
 	}
 }
+
+func TestAICapabilitiesDoesNotExposeRetiredServerScheduleFeature(t *testing.T) {
+	body := requestAICapabilities(t, NewAICapabilitiesHandler(true, false, nil), 99)
+	features, ok := body["features"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("features = %#v, want object", body["features"])
+	}
+	if features["schedule_windows"] != false {
+		t.Fatalf("retired schedule skill must stay unavailable: %#v", features)
+	}
+}

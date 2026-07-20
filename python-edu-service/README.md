@@ -5,8 +5,7 @@
 ## 功能
 
 - 🎓 教务账号绑定（RSA加密登录）
-- 📚 课表提取与同步
-- ✏️ 课程自定义（颜色、别名、地点、课时长等）
+- 📚 按需课表提取（不保存服务器课程副本）
 - 📊 成绩查询
 
 ## 快速开始
@@ -47,10 +46,8 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8081
 
 ### 课程
 - `POST /api/edu/courses/fetch` - 从教务提取课表
-- `POST /api/edu/courses/sync` - 同步课表到本地
-- `GET /api/edu/courses/local` - 获取本地课表
-- `PUT /api/edu/courses/{id}` - 更新课程
-- `DELETE /api/edu/courses/{id}` - 删除课程
+- 历史课程缓存端点会返回 `410 COURSE_CACHE_RETIRED`，客户端应升级后将课表
+  写入本机加密保险箱。
 
 ### 成绩
 - `POST /api/edu/grades` - 获取成绩

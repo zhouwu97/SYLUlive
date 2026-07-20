@@ -893,7 +893,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
       context,
       MaterialPageRoute(
         builder: (_) => PhysicalTestPage(
-          appUserId: widget.appUserId,
+          appUserId: context.read<AuthProvider>().user!.id.toString(),
           username: widget.username,
           password: pwd,
         ),

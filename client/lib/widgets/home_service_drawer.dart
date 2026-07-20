@@ -166,7 +166,7 @@ class HomeServiceDrawer extends StatelessWidget {
             child: _CompactQuickEntryItem(
               icon: Icons.task_alt_rounded,
               iconColor: checkedIn ? Colors.grey : const Color(0xFF16A34A),
-              title: checkedIn ? '已签到' : '签到',
+              title: checkedIn ? '签到记录' : '签到',
               isDark: isDark,
               isLoading: checkInLoading,
               showDot: showCheckInDot,

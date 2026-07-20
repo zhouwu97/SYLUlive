@@ -12,7 +12,8 @@ import '../models/user.dart';
 import '../models/post.dart';
 import '../providers/social_provider.dart';
 import '../providers/post_provider.dart';
-import '../widgets/post_card.dart';
+import '../widgets/community_post_card.dart';
+import '../widgets/poll/poll_post_card.dart';
 import '../widgets/market_post_card.dart';
 import '../widgets/cached_avatar.dart';
 import 'social_list_screen.dart';
@@ -337,9 +338,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                     padding: const EdgeInsets.all(16),
                                     itemCount: _posts.length,
                                     itemBuilder: (context, index) {
-                                      return PostCard(
+                                      return CommunityPostCard(
                                         post: _posts[index],
                                         disableAuthorNavigation: true,
+                                        pollVariant: PollCardVariant.profileCompact,
                                         onTap: () => _openProfilePostDetail(
                                           _posts[index],
                                         ),
@@ -511,9 +513,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                           padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
                           itemCount: _posts.length,
                           itemBuilder: (context, index) {
-                            return PostCard(
+                            return CommunityPostCard(
                               post: _posts[index],
                               disableAuthorNavigation: true,
+                              pollVariant: PollCardVariant.profileCompact,
                               onTap: () => _openProfilePostDetail(
                                 _posts[index],
                               ),

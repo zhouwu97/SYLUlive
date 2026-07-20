@@ -136,6 +136,16 @@ class _FakePreferenceStore implements PreferenceStore {
 
 typedef _AuthInvocation = Future<AuthResult> Function(AuthProvider provider);
 
+const _registrationConsents = RegistrationConsents(
+  userAgreementAccepted: true,
+  privacyPolicyAccepted: true,
+  communityRulesAccepted: true,
+  minorProtectionAccepted: true,
+  contentComplaintAccepted: true,
+  sdkDisclosureAccepted: true,
+  eduDataConsentAccepted: true,
+);
+
 class _AuthCase {
   final String name;
   final int statusCode;
@@ -148,7 +158,11 @@ final _authCases = <_AuthCase>[
   _AuthCase(
     'register',
     201,
-    (provider) => provider.register('20260001', 'password'),
+    (provider) => provider.register(
+      '20260001',
+      'password',
+      consents: _registrationConsents,
+    ),
   ),
   _AuthCase(
     'login',
@@ -167,6 +181,7 @@ final _authCases = <_AuthCase>[
       '20260001',
       'password',
       eduPassword: 'edu-pass',
+      consents: _registrationConsents,
     ),
   ),
   _AuthCase(
@@ -176,6 +191,7 @@ final _authCases = <_AuthCase>[
       '10000',
       '123456',
       'password',
+      consents: _registrationConsents,
     ),
   ),
 ];
@@ -336,6 +352,7 @@ void main() {
       '20260001',
       'password',
       eduPassword: 'edu-pass',
+      consents: _registrationConsents,
     );
 
     expect(result.success, isFalse);
@@ -620,6 +637,31 @@ void main() {
     expect(provider.user, isNull);
     expect(provider.sessionGeneration, generation + 1);
   });
+
+  test('确认新版协议后以服务端状态更新本地会话', () async {
+    final adapter = _QueuedAuthAdapter()
+      ..enqueue(200, {
+        'user': {
+          ..._userJson(1),
+          'legal_consents_active': true,
+          'legal_consents_required': false,
+        },
+      });
+    final provider = _provider(adapter, _FakeAuthCredentialStore());
+    await provider.applyAuthPayload('token', {
+      ..._userJson(1),
+      'legal_consents_active': false,
+      'legal_consents_required': true,
+    });
+
+    final result = await provider.acceptRequiredLegalConsents(
+      includeEduDataConsent: false,
+    );
+
+    expect(result.success, isTrue);
+    expect(provider.user?.legalConsentsActive, isTrue);
+    expect(provider.user?.legalConsentsRequired, isFalse);
+  });
 }
 
 AuthProvider _provider(
@@ -643,6 +685,8 @@ Map<String, dynamic> _userJson(int id) {
     'student_id': '2026000$id',
     'nickname': '用户$id',
     'created_at': '2026-07-13T10:00:00Z',
+    'legal_consents_active': true,
+    'legal_consents_required': false,
   };
 }
 

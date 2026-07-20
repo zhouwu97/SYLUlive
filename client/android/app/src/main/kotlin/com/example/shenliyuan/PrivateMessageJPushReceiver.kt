@@ -184,7 +184,8 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                 val currentAlias =
                     KeepAliveForegroundService.getStoredAlias(context)
 
-                if ((currentState != "active" && currentState != "pending_bind")
+                if (!KeepAliveForegroundService.isPushEnabled(context)
+                    || (currentState != "active" && currentState != "pending_bind")
                     || currentGen != generation
                     || !hasToken
                     || currentAlias.isNullOrBlank()) {

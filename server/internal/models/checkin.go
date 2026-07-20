@@ -9,16 +9,20 @@ type CheckIn struct {
 	CheckInDate time.Time `gorm:"type:date;not null;index" json:"check_in_date"`
 	StreakDays  int       `gorm:"not null;default:1" json:"streak_days"`
 	ExpEarned   int       `gorm:"not null;default:1" json:"exp_earned"`
+	IsMakeup    bool      `gorm:"not null;default:false;index" json:"is_makeup"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
 // UserCheckInStat 保存签到事实的可重建汇总，绝不能作为签到是否成功的依据。
 type UserCheckInStat struct {
-	UserID          uint       `gorm:"primaryKey" json:"user_id"`
-	LastCheckInDate *time.Time `gorm:"type:date" json:"last_check_in_date,omitempty"`
-	CurrentStreak   int        `gorm:"not null;default:0" json:"current_streak"`
-	LongestStreak   int        `gorm:"not null;default:0" json:"longest_streak"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	UserID             uint       `gorm:"primaryKey" json:"user_id"`
+	LastCheckInDate    *time.Time `gorm:"type:date" json:"last_check_in_date,omitempty"`
+	CurrentStreak      int        `gorm:"not null;default:0" json:"current_streak"`
+	LongestStreak      int        `gorm:"not null;default:0" json:"longest_streak"`
+	MakeupCardsEarned  int        `gorm:"not null;default:0" json:"makeup_cards_earned"`
+	MakeupCardsGranted int        `gorm:"not null;default:0" json:"makeup_cards_granted"`
+	MakeupCardsUsed    int        `gorm:"not null;default:0" json:"makeup_cards_used"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // CheckInRepairLog 记录人工补录、回算等修改签到事实或汇总的操作，便于审计和回滚追踪。

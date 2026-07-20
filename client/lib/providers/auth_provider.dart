@@ -34,6 +34,37 @@ class AuthResult {
       AuthResult(success: false, errorMessage: message, statusCode: statusCode);
 }
 
+/// 注册时提交的法律文件确认。服务端会校验并持久化每份文件的同意记录。
+class RegistrationConsents {
+  final bool userAgreementAccepted;
+  final bool privacyPolicyAccepted;
+  final bool communityRulesAccepted;
+  final bool minorProtectionAccepted;
+  final bool contentComplaintAccepted;
+  final bool sdkDisclosureAccepted;
+  final bool eduDataConsentAccepted;
+
+  const RegistrationConsents({
+    required this.userAgreementAccepted,
+    required this.privacyPolicyAccepted,
+    required this.communityRulesAccepted,
+    required this.minorProtectionAccepted,
+    required this.contentComplaintAccepted,
+    required this.sdkDisclosureAccepted,
+    this.eduDataConsentAccepted = false,
+  });
+
+  Map<String, bool> toJson() => {
+        'user_agreement_accepted': userAgreementAccepted,
+        'privacy_policy_accepted': privacyPolicyAccepted,
+        'community_rules_accepted': communityRulesAccepted,
+        'minor_protection_accepted': minorProtectionAccepted,
+        'content_complaint_accepted': contentComplaintAccepted,
+        'sdk_disclosure_accepted': sdkDisclosureAccepted,
+        'edu_data_consent_accepted': eduDataConsentAccepted,
+      };
+}
+
 class StoredAuthCredentials {
   final String? token;
   final String? userJson;
@@ -385,6 +416,7 @@ class AuthProvider extends ChangeNotifier {
   bool _initialized = false;
   Future<void>? _initializationFuture;
   int _sessionGeneration = 0;
+  bool _applyingConsentRestriction = false;
 
   User? get user => _user;
   String? get token => _token;
@@ -419,6 +451,8 @@ class AuthProvider extends ChangeNotifier {
         },
         onError: (error, handler) {
           final status = error.response?.statusCode;
+          final responseBody = error.response?.data;
+          final errorCode = responseBody is Map ? responseBody['code'] : null;
           final rawPath = error.requestOptions.path;
           final uriPath = error.requestOptions.uri.path;
 
@@ -444,6 +478,14 @@ class AuthProvider extends ChangeNotifier {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _showAuthExpiredOverlay();
             });
+          }
+          if (status == 403 &&
+              (errorCode == 'legal_consent_withdrawn' ||
+                  errorCode == 'legal_consent_required') &&
+              _token != null) {
+            _applyLegalConsentRestriction(
+              required: errorCode == 'legal_consent_required',
+            );
           }
           handler.next(error);
         },
@@ -494,17 +536,23 @@ class AuthProvider extends ChangeNotifier {
           Map<String, dynamic>.from(decoded),
         );
         _commitAuthSession(candidate);
-        _onAuthenticated();
+        if (candidate.user.legalConsentsActive) {
+          _onAuthenticated();
+        } else {
+          await _clearConsentDependentLocalData(candidate.user);
+        }
       }
     } catch (e) {
       debugPrint('解析本地认证信息失败: $e');
     }
     _initialized = true;
-    await KeepAliveService.instance.syncAuthToken(_token);
-    await GradeReminderService.instance.syncRuntimeConfig(
-      userId: _user?.id.toString(),
-    );
-    await GradeReminderService.instance.ensureScheduledIfEnabled();
+    if (_user?.legalConsentsActive ?? false) {
+      await KeepAliveService.instance.syncAuthToken(_token);
+      await GradeReminderService.instance.syncRuntimeConfig(
+        userId: _user?.id.toString(),
+      );
+      await GradeReminderService.instance.ensureScheduledIfEnabled();
+    }
     notifyListeners();
   }
 
@@ -513,11 +561,15 @@ class AuthProvider extends ChangeNotifier {
       token: candidate.token,
       userJson: jsonEncode(candidate.user.toJson()),
     );
-    await KeepAliveService.instance.syncAuthToken(candidate.token);
-    await GradeReminderService.instance.syncRuntimeConfig(
-      userId: candidate.user.id.toString(),
-    );
-    await GradeReminderService.instance.ensureScheduledIfEnabled();
+    if (candidate.user.legalConsentsActive) {
+      await KeepAliveService.instance.syncAuthToken(candidate.token);
+      await GradeReminderService.instance.syncRuntimeConfig(
+        userId: candidate.user.id.toString(),
+      );
+      await GradeReminderService.instance.ensureScheduledIfEnabled();
+    } else {
+      await _clearConsentDependentLocalData(candidate.user);
+    }
   }
 
   Future<void> _saveEduPassword(String studentId, String password) async {
@@ -580,7 +632,9 @@ class AuthProvider extends ChangeNotifier {
       await _sessionCleanupCoordinator.closeCurrentSession();
     }
     _commitAuthSession(candidate);
-    if (prefetchWallpaper) _onAuthenticated();
+    if (prefetchWallpaper && candidate.user.legalConsentsActive) {
+      _onAuthenticated();
+    }
   }
 
   /// 解析 Dio 异常并返回友好的错误信息。
@@ -602,6 +656,7 @@ class AuthProvider extends ChangeNotifier {
     String password, {
     String? nickname,
     String? qq,
+    RegistrationConsents? consents,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -617,6 +672,7 @@ class AuthProvider extends ChangeNotifier {
       if (qq != null && qq.isNotEmpty) {
         data['qq'] = qq;
       }
+      if (consents != null) data.addAll(consents.toJson());
       final response = await _dio.post('/register', data: data);
 
       _isLoading = false;
@@ -689,6 +745,153 @@ class AuthProvider extends ChangeNotifier {
       clearPushAlias: true,
       closeAccountContext: false,
     );
+  }
+
+  Future<AuthResult> deleteAccount(String password) async {
+    final studentId = _user?.studentId;
+    if (!isLoggedIn || studentId == null || studentId.isEmpty) {
+      return AuthResult.failure('当前未登录');
+    }
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _dio.delete(
+        '/user/account',
+        data: {'password': password, 'confirmed': true},
+      );
+      await _clearLocalSession(clearPushAlias: true);
+      await _credentialStore.deleteEduPassword(studentId);
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.success();
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure(_parseDioError(e),
+          statusCode: e.response?.statusCode);
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure('账号注销失败: $e');
+    }
+  }
+
+  /// 确认最新法律文件，并以服务端返回的授权状态更新本地会话。
+  Future<AuthResult> acceptRequiredLegalConsents({
+    required bool includeEduDataConsent,
+  }) async {
+    if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await _dio.post(
+        '/user/legal-consents',
+        data: {
+          'user_agreement_accepted': true,
+          'privacy_policy_accepted': true,
+          'community_rules_accepted': true,
+          'minor_protection_accepted': true,
+          'content_complaint_accepted': true,
+          'sdk_disclosure_accepted': true,
+          'edu_data_consent_accepted': includeEduDataConsent,
+        },
+      );
+      final payload = response.data;
+      if (response.statusCode != 200 ||
+          payload is! Map ||
+          payload['user'] is! Map) {
+        return AuthResult.failure('协议确认失败，请稍后重试');
+      }
+      await applyProfileResponse(
+        Map<String, dynamic>.from(payload['user'] as Map),
+      );
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.success();
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure(
+        _parseDioError(e),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure('协议确认失败: $e');
+    }
+  }
+
+  /// 立即撤销全部法律文件授权，并保留当前会话办理隐私权利与账号注销。
+  Future<AuthResult> withdrawLegalConsents(String password) async {
+    if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _dio.delete(
+        '/user/privacy/consents',
+        data: {'password': password, 'confirmed': true},
+      );
+      await _applyLegalConsentRestriction(required: false);
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.success();
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure(
+        _parseDioError(e),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure('撤销同意失败: $e');
+    }
+  }
+
+  Future<void> _applyLegalConsentRestriction({required bool required}) async {
+    if (_applyingConsentRestriction || _user == null || _token == null) return;
+    if (!_user!.legalConsentsActive &&
+        _user!.legalConsentsRequired == required) {
+      return;
+    }
+    _applyingConsentRestriction = true;
+    final currentUser = _user!;
+    try {
+      final userJson = Map<String, dynamic>.from(currentUser.toJson())
+        ..['legal_consents_active'] = false
+        ..['legal_consents_required'] = required
+        ..['edu_student_id'] = ''
+        ..['edu_bound'] = false
+        ..['edu_grade'] = ''
+        ..['edu_college'] = ''
+        ..['edu_major'] = '';
+      final nextUser = User.fromJson(userJson);
+      await _credentialStore.write(
+        token: _token!,
+        userJson: jsonEncode(nextUser.toJson()),
+      );
+      _user = nextUser;
+      _sessionGeneration++;
+      await _clearConsentDependentLocalData(currentUser);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('同步授权受限状态失败: $e');
+    } finally {
+      _applyingConsentRestriction = false;
+    }
+  }
+
+  Future<void> _clearConsentDependentLocalData(User user) async {
+    await _credentialStore.deleteEduPassword(user.studentId);
+    if (user.eduStudentId.isNotEmpty && user.eduStudentId != user.studentId) {
+      await _credentialStore.deleteEduPassword(user.eduStudentId);
+    }
+    await KeepAliveService.instance.syncAuthToken(null);
+    await GradeReminderService.instance.clearForUser(user.id.toString());
+    await GradeReminderService.instance.syncRuntimeConfig(userId: null);
+    await _clearPushAlias();
   }
 
   /// 统一的本地会话清理
@@ -1053,6 +1256,7 @@ class AuthProvider extends ChangeNotifier {
     String appPassword, {
     String? nickname,
     required String eduPassword,
+    required RegistrationConsents consents,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -1064,6 +1268,7 @@ class AuthProvider extends ChangeNotifier {
           'student_id': studentId,
           'password': appPassword,
           'edu_password': eduPassword,
+          ...consents.toJson(),
           if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
         },
       );
@@ -1109,11 +1314,37 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// 原子更新单活跃设备的远程推送设置。
+  Future<AuthResult> updatePushSettings({
+    required bool enabled,
+    required String installationId,
+    required String registrationId,
+    required String noticeVersion,
+  }) async {
+    if (!isLoggedIn) return AuthResult.failure('请先登录');
+    try {
+      await _dio.put(
+        '/user/push-settings',
+        data: {
+          'enabled': enabled,
+          'installation_id': installationId,
+          'registration_id': registrationId,
+          'notice_version': noticeVersion,
+        },
+      );
+      return AuthResult.success();
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
+    }
+  }
+
   Future<AuthResult> registerGraduate(
     String qq,
     String code,
     String password, {
     String? nickname,
+    required RegistrationConsents consents,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -1124,6 +1355,7 @@ class AuthProvider extends ChangeNotifier {
           'qq': qq,
           'code': code,
           'password': password,
+          ...consents.toJson(),
           if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
         },
       );

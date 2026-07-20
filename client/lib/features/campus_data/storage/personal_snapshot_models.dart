@@ -2,19 +2,19 @@ enum PersonalDataType { academic, schedule, physical, erke }
 
 extension PersonalDataTypeStorage on PersonalDataType {
   String get storageValue => switch (this) {
-    PersonalDataType.academic => 'academic',
-    PersonalDataType.schedule => 'schedule',
-    PersonalDataType.physical => 'physical',
-    PersonalDataType.erke => 'erke',
-  };
+        PersonalDataType.academic => 'academic',
+        PersonalDataType.schedule => 'schedule',
+        PersonalDataType.physical => 'physical',
+        PersonalDataType.erke => 'erke',
+      };
 
   static PersonalDataType fromStorage(String value) => switch (value) {
-    'academic' => PersonalDataType.academic,
-    'schedule' => PersonalDataType.schedule,
-    'physical' => PersonalDataType.physical,
-    'erke' => PersonalDataType.erke,
-    _ => throw const FormatException('未知个人数据类型'),
-  };
+        'academic' => PersonalDataType.academic,
+        'schedule' => PersonalDataType.schedule,
+        'physical' => PersonalDataType.physical,
+        'erke' => PersonalDataType.erke,
+        _ => throw const FormatException('未知个人数据类型'),
+      };
 }
 
 /// 已通过密文认证和账号归属校验的本地个人数据快照。

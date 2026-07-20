@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/team_recruitment.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/team_recruitment_provider.dart';
+import '../../utils/team_share_link.dart';
+import '../../widgets/team/team_application_sheet.dart';
 import '../../widgets/team/team_recruitment_card.dart';
 import '../chat_detail_screen.dart';
 import '../../widgets/team/team_ui_tokens.dart';
@@ -87,79 +90,7 @@ class _TeamRecruitmentDetailScreenState
   }
 
   Future<({String message, String availability})?> _applicationSheet() async {
-    final messageController = TextEditingController();
-    final availabilityController = TextEditingController();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final borderColor = TeamUiTokens.border(isDark);
-    final inputDeco = InputDecoration(
-      filled: true,
-      fillColor: Colors.transparent,
-      border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: borderColor)),
-      enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: borderColor)),
-      focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide:
-              BorderSide(color: TeamUiTokens.accent(isDark), width: 1.5)),
-    );
-    final result =
-        await showModalBottomSheet<({String message, String availability})>(
-            context: context,
-            isScrollControlled: true,
-            builder: (sheetContext) => Padding(
-                  padding: EdgeInsets.fromLTRB(20, 20, 20,
-                      MediaQuery.viewInsetsOf(sheetContext).bottom + 20),
-                  child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('申请加入',
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                                color: TeamUiTokens.title(isDark))),
-                        const SizedBox(height: 12),
-                        TextField(
-                            controller: messageController,
-                            maxLines: 4,
-                            maxLength: 500,
-                            cursorColor: TeamUiTokens.accent(isDark),
-                            decoration: inputDeco.copyWith(
-                                labelText: '申请说明 *',
-                                hintText: '介绍你的经验、能力和加入原因')),
-                        const SizedBox(height: 10),
-                        TextField(
-                            controller: availabilityController,
-                            maxLines: 2,
-                            maxLength: 200,
-                            cursorColor: TeamUiTokens.accent(isDark),
-                            decoration: inputDeco.copyWith(
-                                labelText: '可参与时间（选填）',
-                                hintText: '例如：工作日晚 7 点后，周末全天')),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: FilledButton(
-                                style: TeamUiTokens.primaryButtonStyle(isDark),
-                                onPressed: () {
-                                  final message = messageController.text.trim();
-                                  if (message.length < 5) return;
-                                  Navigator.pop(sheetContext, (
-                                    message: message,
-                                    availability:
-                                        availabilityController.text.trim(),
-                                  ));
-                                },
-                                child: const Text('提交申请'))),
-                      ]),
-                ));
-    messageController.dispose();
-    availabilityController.dispose();
-    return result;
+    return TeamRecruitmentApplicationSheet.show(context);
   }
 
   Future<void> _changeStatus(TeamRecruitment item, String status) async {
@@ -174,6 +105,26 @@ class _TeamRecruitmentDetailScreenState
         content: Text(error ?? (status == 'closed' ? '已关闭招募' : '已重新开启招募'))));
     if (error == null) {
       _load();
+    }
+  }
+
+  Future<void> _share(TeamRecruitment item) async {
+    final link = TeamShareLink.webUri(item.id).toString();
+    final renderObject = context.findRenderObject();
+    final origin = renderObject is RenderBox
+        ? renderObject.localToGlobal(Offset.zero) & renderObject.size
+        : null;
+    try {
+      await Share.share(
+        '我在沈理校园发起了组队：${item.title}\n$link',
+        subject: '${item.title} - 沈理校园组队',
+        sharePositionOrigin: origin,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂时无法调起分享，请稍后重试')),
+      );
     }
   }
 
@@ -214,9 +165,7 @@ class _TeamRecruitmentDetailScreenState
           IconButton(
             tooltip: '分享',
             icon: const Icon(Icons.ios_share_outlined),
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('分享链接功能即将支持')),
-            ),
+            onPressed: () => _share(item),
           ),
         ],
       ),

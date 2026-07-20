@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
+import 'legal_documents_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,6 +30,13 @@ class _LoginScreenState extends State<LoginScreen> {
   int _codeCooldown = 0;
   bool _obscureAppPassword = true;
   bool _obscureEduPassword = true;
+  bool _userAgreementAccepted = false;
+  bool _privacyPolicyAccepted = false;
+  bool _communityRulesAccepted = false;
+  bool _minorProtectionAccepted = false;
+  bool _contentComplaintAccepted = false;
+  bool _sdkDisclosureAccepted = false;
+  bool _eduDataConsentAccepted = false;
 
   @override
   void dispose() {
@@ -52,6 +60,21 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   bool get _isGraduateRegister => _isRegister && _registerMode == 'graduate';
+
+  bool get _hasRequiredRegistrationConsents =>
+      _userAgreementAccepted &&
+      _privacyPolicyAccepted &&
+      (_isGraduateRegister || _eduDataConsentAccepted);
+
+  RegistrationConsents get _registrationConsents => RegistrationConsents(
+        userAgreementAccepted: _userAgreementAccepted,
+        privacyPolicyAccepted: _privacyPolicyAccepted,
+        communityRulesAccepted: _communityRulesAccepted,
+        minorProtectionAccepted: _minorProtectionAccepted,
+        contentComplaintAccepted: _contentComplaintAccepted,
+        sdkDisclosureAccepted: _sdkDisclosureAccepted,
+        eduDataConsentAccepted: _eduDataConsentAccepted,
+      );
 
   InputDecoration _inputDecoration(
     BuildContext context, {
@@ -122,6 +145,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isRegister && !_hasRequiredRegistrationConsents) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先阅读并确认全部必选协议与授权')),
+      );
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
 
     final authProvider = context.read<AuthProvider>();
@@ -138,6 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
           nickname: _nicknameController.text.trim().isNotEmpty
               ? _nicknameController.text.trim()
               : null,
+          consents: _registrationConsents,
         );
       } else {
         result = await authProvider.registerWithEdu(
@@ -147,6 +177,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ? _nicknameController.text.trim()
               : null,
           eduPassword: _eduPasswordController.text,
+          consents: _registrationConsents,
         );
       }
     } else {
@@ -171,13 +202,14 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (!_isRegister && result.errorMessage!.contains('尚未注册')) {
         FocusManager.instance.primaryFocus?.unfocus();
-        if (mounted)
+        if (mounted) {
           setState(() {
             _isRegister = true;
             _eduPasswordController.clear();
             _appPasswordController.clear();
             _nicknameController.clear();
           });
+        }
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             _eduPasswordFocus.requestFocus();
@@ -397,7 +429,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (dialogContext.mounted) {
                               Navigator.pop(dialogContext);
                             }
-                            if (mounted)
+                            if (mounted) {
                               setState(() {
                                 _isRegister = false;
                                 _studentIdController.text =
@@ -405,6 +437,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 _appPasswordController.clear();
                                 _eduPasswordController.clear();
                               });
+                            }
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('密码已重置，请使用新密码登录'),
@@ -784,7 +817,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                             ] else ...[
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 12),
+                              _buildConsentSection(context, subText),
+                              const SizedBox(height: 20),
                             ],
 
                             // Submit Button
@@ -826,7 +861,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextButton(
                               onPressed: () {
                                 FocusManager.instance.primaryFocus?.unfocus();
-                                if (mounted)
+                                if (mounted) {
                                   setState(() {
                                     _isRegister = !_isRegister;
                                     _eduPasswordController.clear();
@@ -834,6 +869,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     _appPasswordController.clear();
                                     _verifyCodeController.clear();
                                   });
+                                }
                               },
                               style: TextButton.styleFrom(
                                   foregroundColor: subText),
@@ -862,6 +898,79 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildConsentSection(BuildContext context, Color subText) {
+    return Column(
+      children: [
+        _buildConsentItem(
+          context,
+          value: _userAgreementAccepted,
+          title: '我已阅读并同意《用户协议》',
+          documentId: 'user_agreement',
+          onChanged: (value) => setState(() => _userAgreementAccepted = value),
+        ),
+        _buildConsentItem(
+          context,
+          value: _privacyPolicyAccepted,
+          title: '我已阅读并同意《隐私政策》',
+          documentId: 'privacy_policy',
+          onChanged: (value) => setState(() => _privacyPolicyAccepted = value),
+        ),
+        if (!_isGraduateRegister) ...[
+          const SizedBox(height: 4),
+          _buildConsentItem(
+            context,
+            value: _eduDataConsentAccepted,
+            title: '我同意《教务数据专项授权》',
+            documentId: 'edu_data_consent',
+            onChanged: (value) =>
+                setState(() => _eduDataConsentAccepted = value),
+            emphasize: true,
+          ),
+        ],
+        const SizedBox(height: 4),
+        Text(
+          '社区规则在首次发布、评论、私信、集市或组队写操作前单独确认；其他说明可在文档中心随时查看。',
+          style: TextStyle(fontSize: 11, height: 1.4, color: subText),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConsentItem(
+    BuildContext context, {
+    required bool value,
+    required String title,
+    required String documentId,
+    required ValueChanged<bool> onChanged,
+    bool emphasize = false,
+  }) {
+    final color = emphasize ? Theme.of(context).colorScheme.primary : null;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Checkbox(
+          value: value,
+          onChanged: (checked) => onChanged(checked ?? false),
+          visualDensity: VisualDensity.compact,
+        ),
+        Expanded(
+          child: TextButton(
+            style: TextButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+              foregroundColor: color,
+            ),
+            onPressed: () => LegalDocumentsScreen.open(
+              context,
+              documentId: documentId,
+            ),
+            child: Text(title, style: const TextStyle(fontSize: 12.5)),
+          ),
+        ),
+      ],
     );
   }
 }

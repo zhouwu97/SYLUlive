@@ -8,6 +8,7 @@ import '../../config/api_constants.dart';
 import '../../models/post.dart';
 import '../../providers/poll_provider.dart';
 import '../../services/poll_service.dart';
+import '../../widgets/campus/campus_theme.dart';
 import 'widgets/poll_option_editor.dart';
 import 'widgets/poll_setting_row.dart';
 
@@ -21,7 +22,7 @@ class PollComposerScreen extends StatefulWidget {
 }
 
 class _PollComposerScreenState extends State<PollComposerScreen> {
-  static const _accent = Color(0xFF7C3AED);
+  static const _accent = CampusTheme.primary;
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _titleFocus = FocusNode();
@@ -180,9 +181,10 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
       }
       Navigator.pop(context, result);
     } on PollApiException catch (error) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(error.message)));
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -225,8 +227,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF111318) : const Color(0xFFFFFCF8),
+      backgroundColor: CampusTheme.pageBackground(context),
       appBar: AppBar(
         title: Text(_isEditing ? '编辑投票' : '发起投票'),
         actions: [
@@ -240,7 +241,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
           children: [
-            if (_rulesLocked) _Notice(text: '已有用户参与，为保证公平，只能修改补充说明和图片。'),
+            if (_rulesLocked) const _Notice(text: '已有用户参与，为保证公平，只能修改补充说明和图片。'),
             TextField(
               controller: _titleController,
               focusNode: _titleFocus,
@@ -253,11 +254,13 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                 labelText: '投票标题',
                 hintText: '清晰地提出一个问题',
                 errorText: _titleError,
+                counterText: '',
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             TextField(
               controller: _descriptionController,
               maxLength: 1000,
@@ -266,15 +269,17 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
               decoration: InputDecoration(
                 labelText: '补充说明（可选）',
                 alignLabelWithHint: true,
+                counterText: '',
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             _sectionTitle('图片（最多 3 张）'),
             const SizedBox(height: 8),
             SizedBox(
-              height: 82,
+              height: 68,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
@@ -292,22 +297,28 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                   if (_existingImages.length + _newImages.length < 3)
                     InkWell(
                       onTap: _pickImages,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                       child: Container(
-                        width: 82,
+                        width: 68,
                         decoration: BoxDecoration(
                           border:
                               Border.all(color: Theme.of(context).dividerColor),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.add_photo_alternate_outlined,
-                            color: _accent),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.add, size: 20, color: _accent),
+                            SizedBox(height: 2),
+                            Text('添加图片', style: TextStyle(fontSize: 12, color: _accent)),
+                          ],
+                        ),
                       ),
                     ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
             Row(children: [
               Expanded(child: _sectionTitle('投票选项')),
               Text('${_optionControllers.length}/10',
@@ -329,7 +340,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                     },
               itemBuilder: (context, index) => Padding(
                 key: ValueKey(_optionControllers[index]),
-                padding: const EdgeInsets.only(bottom: 9),
+                padding: const EdgeInsets.only(bottom: 6),
                 child: PollOptionEditor(
                   index: index,
                   controller: _optionControllers[index],
@@ -338,130 +349,143 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                   onDelete: () => setState(() {
                     final controller = _optionControllers.removeAt(index);
                     controller.dispose();
-                    if (_maxChoices > _optionControllers.length)
+                    if (_maxChoices > _optionControllers.length) {
                       _maxChoices = _optionControllers.length;
+                    }
                   }),
                 ),
               ),
             ),
             if (!_rulesLocked && _optionControllers.length < 10)
-              OutlinedButton.icon(
-                onPressed: () => setState(
-                    () => _optionControllers.add(TextEditingController())),
-                icon: const Icon(Icons.add),
-                label: const Text('添加选项（最多 10 项）'),
-              ),
-            const SizedBox(height: 20),
-            _sectionTitle('投票设置'),
-            const SizedBox(height: 4),
-            PollSettingRow(
-              icon: Icons.category_outlined,
-              title: '分类',
-              trailing: DropdownButton<String>(
-                value: _category,
-                onChanged: _rulesLocked
-                    ? null
-                    : (value) => setState(() => _category = value!),
-                items: const {
-                  'campus_life': '校园生活',
-                  'study': '学习',
-                  'activity': '活动',
-                  'other': '其他',
-                }
-                    .entries
-                    .map((entry) => DropdownMenuItem(
-                        value: entry.key, child: Text(entry.value)))
-                    .toList(),
-              ),
-            ),
-            PollSettingRow(
-              icon: Icons.check_circle_outline,
-              title: '选择方式',
-              trailing: SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'single', label: Text('单选')),
-                  ButtonSegment(value: 'multiple', label: Text('多选')),
-                ],
-                selected: {_selectionMode},
-                onSelectionChanged: _rulesLocked
-                    ? null
-                    : (values) => setState(() {
-                          _selectionMode = values.first;
-                          _maxChoices = _selectionMode == 'single' ? 1 : 2;
-                        }),
-              ),
-            ),
-            if (_selectionMode == 'multiple')
-              PollSettingRow(
-                icon: Icons.format_list_numbered,
-                title: '每人最多选择',
-                trailing: DropdownButton<int>(
-                  value: _maxChoices.clamp(2, _optionControllers.length),
-                  onChanged: _rulesLocked
-                      ? null
-                      : (value) => setState(() => _maxChoices = value!),
-                  items: List.generate(
-                          (_optionControllers.length - 1).clamp(1, 9),
-                          (index) => index + 2)
-                      .map((value) => DropdownMenuItem(
-                          value: value, child: Text('$value 项')))
-                      .toList(),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => setState(
+                      () => _optionControllers.add(TextEditingController())),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('添加选项'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: const Size(0, 36),
+                  ),
                 ),
               ),
-            PollSettingRow(
-              icon: Icons.schedule,
-              title: '截止时间',
-              subtitle:
-                  _durationHours == null ? _formatDate(_customEndsAt!) : null,
-              trailing: PopupMenuButton<int>(
-                enabled: !_rulesLocked,
-                onSelected: (value) {
-                  if (value == -1) {
-                    _pickCustomEnd();
-                  } else {
-                    setState(() => _durationHours = value);
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 1, child: Text('1 小时')),
-                  PopupMenuItem(value: 24, child: Text('1 天')),
-                  PopupMenuItem(value: 72, child: Text('3 天')),
-                  PopupMenuItem(value: 168, child: Text('7 天')),
-                  PopupMenuItem(value: -1, child: Text('自定义')),
+            const SizedBox(height: 14),
+            _sectionTitle('投票设置'),
+            const SizedBox(height: 7),
+            Container(
+              decoration: BoxDecoration(
+                color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : CampusTheme.softBorder,
+                ),
+              ),
+              child: Column(
+                children: [
+                  PollSettingRow(
+                    icon: Icons.category_outlined,
+                    title: '分类',
+                    trailing: DropdownButton<String>(
+                      value: _category,
+                      onChanged: _rulesLocked
+                          ? null
+                          : (value) => setState(() => _category = value!),
+                      items: const {
+                        'campus_life': '校园生活',
+                        'study': '学习',
+                        'activity': '活动',
+                        'other': '其他',
+                      }
+                          .entries
+                          .map((entry) => DropdownMenuItem(
+                              value: entry.key, child: Text(entry.value)))
+                          .toList(),
+                    ),
+                  ),
+                  PollSettingRow(
+                    icon: Icons.check_circle_outline,
+                    title: '选择方式',
+                    trailing: _buildSelectionControl(),
+                  ),
+                  if (_selectionMode == 'multiple')
+                    PollSettingRow(
+                      icon: Icons.format_list_numbered,
+                      title: '每人最多选择',
+                      trailing: DropdownButton<int>(
+                        value: _maxChoices.clamp(2, _optionControllers.length),
+                        onChanged: _rulesLocked
+                            ? null
+                            : (value) => setState(() => _maxChoices = value!),
+                        items: List.generate(
+                                (_optionControllers.length - 1).clamp(1, 9),
+                                (index) => index + 2)
+                            .map((value) => DropdownMenuItem(
+                                value: value, child: Text('$value 项')))
+                            .toList(),
+                      ),
+                    ),
+                  PollSettingRow(
+                    icon: Icons.schedule,
+                    title: '截止时间',
+                    subtitle:
+                        _durationHours == null ? _formatDate(_customEndsAt!) : null,
+                    trailing: PopupMenuButton<int>(
+                      enabled: !_rulesLocked,
+                      onSelected: (value) {
+                        if (value == -1) {
+                          _pickCustomEnd();
+                        } else {
+                          setState(() => _durationHours = value);
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 1, child: Text('1 小时')),
+                        PopupMenuItem(value: 24, child: Text('1 天')),
+                        PopupMenuItem(value: 72, child: Text('3 天')),
+                        PopupMenuItem(value: 168, child: Text('7 天')),
+                        PopupMenuItem(value: -1, child: Text('自定义')),
+                      ],
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text(_durationLabel()),
+                        const Icon(Icons.arrow_drop_down),
+                      ]),
+                    ),
+                  ),
+                  PollSettingRow(
+                    icon: Icons.bar_chart,
+                    title: '结果可见',
+                    trailing: DropdownButton<String>(
+                      value: _resultsVisibility,
+                      onChanged: _rulesLocked
+                          ? null
+                          : (value) => setState(() => _resultsVisibility = value!),
+                      items: const {
+                        'always': '始终可见',
+                        'after_vote': '投票后可见',
+                        'after_end': '结束后可见',
+                      }
+                          .entries
+                          .map((entry) => DropdownMenuItem(
+                              value: entry.key, child: Text(entry.value)))
+                          .toList(),
+                    ),
+                  ),
+                  PollSettingRow(
+                    icon: Icons.sync,
+                    title: '允许修改选择',
+                    showDivider: false,
+                    trailing: Switch(
+                      value: _allowChange,
+                      onChanged: _rulesLocked
+                          ? null
+                          : (value) => setState(() => _allowChange = value),
+                    ),
+                  ),
                 ],
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(_durationLabel()),
-                  const Icon(Icons.arrow_drop_down),
-                ]),
-              ),
-            ),
-            PollSettingRow(
-              icon: Icons.bar_chart,
-              title: '结果可见',
-              trailing: DropdownButton<String>(
-                value: _resultsVisibility,
-                onChanged: _rulesLocked
-                    ? null
-                    : (value) => setState(() => _resultsVisibility = value!),
-                items: const {
-                  'always': '始终可见',
-                  'after_vote': '投票后可见',
-                  'after_end': '结束后可见',
-                }
-                    .entries
-                    .map((entry) => DropdownMenuItem(
-                        value: entry.key, child: Text(entry.value)))
-                    .toList(),
-              ),
-            ),
-            PollSettingRow(
-              icon: Icons.sync,
-              title: '允许修改选择',
-              trailing: Switch(
-                value: _allowChange,
-                onChanged: _rulesLocked
-                    ? null
-                    : (value) => setState(() => _allowChange = value),
               ),
             ),
             const _Notice(text: '投票默认匿名，发起人只能看到汇总结果，无法查看具体用户选择。'),
@@ -471,13 +495,13 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
         child: SizedBox(
-          height: 48,
+          height: 46,
           child: FilledButton.icon(
             onPressed: _submitting ? null : _submit,
             style: FilledButton.styleFrom(
                 backgroundColor: _accent,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8))),
+                    borderRadius: BorderRadius.circular(12))),
             icon: _submitting
                 ? const SizedBox(
                     width: 18,
@@ -512,10 +536,66 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
 
   String _formatDate(DateTime value) =>
       '${value.month}月${value.day}日 ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+
+  Widget _buildSelectionControl() {
+    return Container(
+      height: 34,
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFDCE8E4)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildSegment('single', '单选', true),
+          _buildSegment('multiple', '多选', false),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSegment(String value, String label, bool isLeft) {
+    final isSelected = _selectionMode == value;
+    return GestureDetector(
+      onTap: _rulesLocked
+          ? null
+          : () => setState(() {
+                _selectionMode = value;
+                _maxChoices = _selectionMode == 'single' ? 1 : 2;
+              }),
+      child: Container(
+        width: 68,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? CampusTheme.primaryLight : Colors.transparent,
+          borderRadius: isLeft
+              ? const BorderRadius.horizontal(left: Radius.circular(7))
+              : const BorderRadius.horizontal(right: Radius.circular(7)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (isSelected) ...[
+              const Icon(Icons.check, size: 14, color: CampusTheme.primary),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                color: isSelected ? CampusTheme.primary : Theme.of(context).textTheme.bodyMedium?.color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _Notice extends StatelessWidget {
-  static const _noticeAccent = Color(0xFF7C3AED);
+  static const _noticeAccent = CampusTheme.primary;
   final String text;
   const _Notice({required this.text});
 
@@ -525,7 +605,7 @@ class _Notice extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF7C3AED).withValues(alpha: 0.08),
+        color: CampusTheme.primaryLight,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -546,9 +626,9 @@ class _ExistingImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _ImageFrame(
+        onRemove: onRemove,
         child: CachedNetworkImage(
             imageUrl: ApiConstants.fullUrl(image.url), fit: BoxFit.cover),
-        onRemove: onRemove,
       );
 }
 
@@ -559,6 +639,7 @@ class _NewImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _ImageFrame(
+        onRemove: onRemove,
         child: kIsWeb
             ? Image.network(image.path, fit: BoxFit.cover)
             : FutureBuilder<Uint8List>(
@@ -568,7 +649,6 @@ class _NewImage extends StatelessWidget {
                     : const Center(
                         child: CircularProgressIndicator(strokeWidth: 2)),
               ),
-        onRemove: onRemove,
       );
 }
 
@@ -580,11 +660,11 @@ class _ImageFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 82,
-      height: 82,
+      width: 68,
+      height: 68,
       margin: const EdgeInsets.only(right: 8),
       child: Stack(fit: StackFit.expand, children: [
-        ClipRRect(borderRadius: BorderRadius.circular(8), child: child),
+        ClipRRect(borderRadius: BorderRadius.circular(10), child: child),
         Positioned(
           right: 2,
           top: 2,

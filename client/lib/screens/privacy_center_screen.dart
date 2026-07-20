@@ -11,7 +11,7 @@ import '../providers/auth_provider.dart';
 import '../widgets/required_legal_consent_dialog.dart';
 import '../services/push_settings_service.dart';
 import 'legal_documents_screen.dart';
-
+import 'settings_screen.dart';
 class PrivacyCenterScreen extends StatefulWidget {
   final bool restricted;
 
@@ -410,32 +410,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          const _SectionTitle('数据权利请求'),
-          const SizedBox(height: 8),
-          Card(
-            child: Column(children: [
-              ListTile(
-                key: const ValueKey('create-privacy-request'),
-                leading: const Icon(Icons.edit_note_outlined),
-                title: const Text('申请更正或删除'),
-                subtitle: const Text('更正资料，或申请删除特定数据、内容'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _showRequestDialog,
-              ),
-              const Divider(height: 1, indent: 56),
-              ListTile(
-                key: const ValueKey('privacy-request-history'),
-                leading: const Icon(Icons.history_outlined),
-                title: const Text('查看处理记录'),
-                subtitle: Text(_loadingRequests
-                    ? '正在读取请求状态'
-                    : '共 ${_requests.length} 条记录'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _showRequestHistory,
-              ),
-            ]),
-          ),
-          const SizedBox(height: 20),
+
           if (restricted) ...[
             const _SectionTitle('授权管理'),
             const SizedBox(height: 8),
@@ -453,11 +428,17 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
           ] else ...[
             const _SectionTitle('授权管理'),
             const SizedBox(height: 8),
-            const Card(
+            Card(
               child: ListTile(
-                leading: Icon(Icons.tune_outlined),
-                title: Text('按功能管理授权'),
-                subtitle: Text('教务绑定、远程推送和本地提醒分别关闭或撤回'),
+                leading: const Icon(Icons.tune_outlined),
+                title: const Text('按功能管理授权'),
+                subtitle: const Text('教务绑定、远程推送和本地提醒分别关闭或撤回'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
               ),
             ),
             const SizedBox(height: 20),

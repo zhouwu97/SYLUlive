@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../../models/team_recruitment.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/team/team_ui_tokens.dart';
-
+import '../../widgets/cached_avatar.dart';
+import '../../config/api_constants.dart';
 class TeamRecruitmentCard extends StatelessWidget {
   final TeamRecruitment recruitment;
   final VoidCallback onTap;
@@ -112,16 +113,10 @@ class TeamRecruitmentCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Row(children: [
-                CircleAvatar(
+                CachedAvatar(
                   radius: 12,
-                  backgroundImage: recruitment.author.avatar.isEmpty
-                      ? null
-                      : NetworkImage(recruitment.author.avatar),
-                  child: recruitment.author.avatar.isEmpty
-                      ? Text(recruitment.author.name.isEmpty
-                          ? '?'
-                          : recruitment.author.name.substring(0, 1))
-                      : null,
+                  imageUrl: ApiConstants.fullUrl(recruitment.author.avatar),
+                  fallbackText: recruitment.author.name,
                 ),
                 const SizedBox(width: 7),
                 Expanded(

@@ -1,7 +1,7 @@
 name: shenliyuan
 description: 沈理校园 - 校园互助社交应用
 publish_to: 'none'
-version: 1.6.4+1604
+version: 1.6.6+1606
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -40,6 +40,7 @@ dependencies:
   jpush_flutter: ^3.4.5
   qr_flutter: ^4.1.0
   crypto: ^3.0.3
+  characters: ^1.4.1
   dio_cookie_manager: ^3.4.0
   cookie_jar: ^4.0.9
   encrypt: ^5.0.3
@@ -47,7 +48,6 @@ dependencies:
   html: ^0.15.6
   fast_gbk: ^1.0.0
   asn1lib: ^1.6.5
-  characters: ^1.4.1
 
   add_2_calendar: 3.0.1
   flutter_staggered_grid_view: ^0.7.0

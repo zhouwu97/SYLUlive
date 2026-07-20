@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_model_provider.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/gateway_result.dart';
@@ -17,10 +20,184 @@ import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_call_models.dar
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_call_validator.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_definitions.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_loop.dart';
+import 'package:shenliyuan/features/ai_runtime/tool_calling/openai_tool_calling_model.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_permission.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 
 void main() {
+  group('OpenAIToolCallingModel', () {
+    test('Responses API 使用安全函数名并解析 function_call', () async {
+      late RequestOptions captured;
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          captured = options;
+          return _jsonResponse(<String, dynamic>{
+            'output': <Object>[
+              <String, dynamic>{
+                'type': 'function_call',
+                'call_id': 'call-1',
+                'name': 'personal__academic__overview',
+                'arguments': '{}',
+              },
+              <String, dynamic>{
+                'type': 'function_call',
+                'call_id': 'call-ignored',
+                'name': 'personal__academic__overview',
+                'arguments': '{}',
+              },
+            ],
+          }, options);
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://example.com',
+          model: 'test-model',
+          wireApi: OpenAIWireApi.responses,
+        ),
+        apiKey: 'test-key',
+        dio: dio,
+      );
+
+      final turn = await model.nextTurn(
+        messages: const <ToolConversationMessage>[
+          ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '查看学业概览',
+          ),
+        ],
+        tools: <ToolDefinition>[
+          ToolDefinition(
+            id: AcademicOverviewSkill.skillId,
+            description: '读取学业概览',
+            parameters: const <String, dynamic>{'type': 'object'},
+          ),
+        ],
+      );
+
+      expect(captured.uri.path, '/responses');
+      final payload = Map<String, dynamic>.from(captured.data as Map);
+      expect((payload['tools'] as List).first['name'],
+          'personal__academic__overview');
+      expect(turn.toolCall?.tool, AcademicOverviewSkill.skillId);
+      expect(turn.toolCall?.id, 'call-1');
+    });
+
+    test('Responses API 回传 function_call_output 并解析最终文本', () async {
+      late RequestOptions captured;
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          captured = options;
+          return _jsonResponse(<String, dynamic>{
+            'output': <Object>[
+              <String, dynamic>{
+                'type': 'message',
+                'content': <Object>[
+                  <String, dynamic>{
+                    'type': 'output_text',
+                    'text': '已完成分析。',
+                  },
+                ],
+              },
+            ],
+          }, options);
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://example.com/v1',
+          model: 'test-model',
+          wireApi: OpenAIWireApi.responses,
+        ),
+        apiKey: 'test-key',
+        dio: dio,
+      );
+      final call = _academicCall('call-1');
+
+      final turn = await model.nextTurn(
+        messages: <ToolConversationMessage>[
+          const ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '查看学业概览',
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.assistant,
+            content: '',
+            toolCall: call,
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.tool,
+            content: '{"status":"success"}',
+            toolCallId: call.id,
+            toolCall: call,
+          ),
+        ],
+        tools: <ToolDefinition>[
+          ToolDefinition(
+            id: AcademicOverviewSkill.skillId,
+            description: '读取学业概览',
+            parameters: const <String, dynamic>{'type': 'object'},
+          ),
+        ],
+      );
+
+      final payload = Map<String, dynamic>.from(captured.data as Map);
+      final input = (payload['input'] as List).cast<Map>();
+      expect(input[1]['type'], 'function_call');
+      expect(input[2]['type'], 'function_call_output');
+      expect(input[2]['call_id'], 'call-1');
+      expect(turn.text, '已完成分析。');
+    });
+
+    test('自动模式在 Responses 明确不兼容时回退 Chat Completions', () async {
+      final paths = <String>[];
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          paths.add(options.uri.path);
+          if (options.uri.path.endsWith('/responses')) {
+            return Future<ResponseBody>.value(
+              ResponseBody.fromString(
+                '{"error":{"message":"not found"}}',
+                404,
+                headers: <String, List<String>>{
+                  Headers.contentTypeHeader: <String>['application/json'],
+                },
+              ),
+            );
+          }
+          return _jsonResponse(<String, dynamic>{
+            'choices': <Object>[
+              <String, dynamic>{
+                'message': <String, dynamic>{'content': '普通回答'},
+              },
+            ],
+          }, options);
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://api.deepseek.com',
+          model: 'deepseek-v4-pro',
+        ),
+        apiKey: 'test-key',
+        dio: dio,
+      );
+
+      final turn = await model.nextTurn(
+        messages: const <ToolConversationMessage>[
+          ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '你好',
+          ),
+        ],
+        tools: const <ToolDefinition>[],
+      );
+
+      expect(paths, <String>['/responses', '/chat/completions']);
+      expect(turn.text, '普通回答');
+    });
+  });
+
   group('LocalToolCallValidator', () {
     const validator = LocalToolCallValidator();
 
@@ -240,6 +417,21 @@ void main() {
       expect(outcome.warnings.single, contains('超时'));
     });
 
+    test('模型服务错误会原样反馈给界面', () async {
+      final model = _ScriptedModel(
+        const <ToolModelTurn>[],
+        turnError: const AIModelProviderException('请求协议与服务不兼容'),
+      );
+
+      final outcome = await _loop(model: model).run(
+        userMessage: '查看学业概览',
+        tools: buildStageSixToolDefinitions(),
+      );
+
+      expect(outcome.status, ToolLoopStatus.failed);
+      expect(outcome.warnings, <String>['请求协议与服务不兼容']);
+    });
+
     test('审计对象不包含个人数值和请求正文', () {
       final json = ToolAuditEntry(
         timestamp: DateTime.utc(2026, 7, 20),
@@ -261,6 +453,37 @@ void main() {
       expect(json.toString(), isNot(contains('content')));
     });
   });
+}
+
+class _CallbackAdapter implements HttpClientAdapter {
+  _CallbackAdapter(this.callback);
+
+  final Future<ResponseBody> Function(RequestOptions options) callback;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) {
+    return callback(options);
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+Future<ResponseBody> _jsonResponse(
+  Map<String, dynamic> data,
+  RequestOptions _,
+) async {
+  return ResponseBody.fromString(
+    jsonEncode(data),
+    200,
+    headers: <String, List<String>>{
+      Headers.contentTypeHeader: <String>['application/json'],
+    },
+  );
 }
 
 LocalToolLoop _loop({
@@ -334,11 +557,13 @@ class _ScriptedModel implements ToolCallingModel {
     this.turns, {
     this.kind = AIModelProviderKind.openAICompatible,
     this.onTurn,
+    this.turnError,
   });
 
   final List<ToolModelTurn> turns;
   final AIModelProviderKind kind;
   final void Function()? onTurn;
+  final Object? turnError;
   final List<ToolConversationMessage> receivedMessages =
       <ToolConversationMessage>[];
   int turnsRequested = 0;
@@ -359,6 +584,7 @@ class _ScriptedModel implements ToolCallingModel {
       ..clear()
       ..addAll(messages);
     onTurn?.call();
+    if (turnError != null) throw turnError!;
     return turns[turnsRequested++];
   }
 

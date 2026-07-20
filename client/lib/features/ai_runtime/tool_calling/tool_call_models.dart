@@ -7,6 +7,7 @@ class LocalToolCall {
     required String id,
     required String tool,
     required Map<String, dynamic> arguments,
+    this.legacyFunctionCall = false,
   })  : id = id.trim(),
         tool = tool.trim(),
         arguments = Map<String, dynamic>.unmodifiable(arguments);
@@ -14,6 +15,7 @@ class LocalToolCall {
   final String id;
   final String tool;
   final Map<String, dynamic> arguments;
+  final bool legacyFunctionCall;
 }
 
 class ToolDefinition {

@@ -1,4 +1,10 @@
-enum GatewayErrorCode { closed, accountMismatch, corrupted, unsupported }
+enum GatewayErrorCode {
+  closed,
+  accountMismatch,
+  corrupted,
+  unsupported,
+  refreshFailed,
+}
 
 /// 不携带个人字段的 Gateway 读取失败原因。
 class GatewayError {

@@ -32,7 +32,10 @@ class PersonalDataGatewayFactory {
   final AccountScopedSnapshotStore Function(PersonalAccountContext context)?
       _snapshotStoreBuilder;
 
-  PersonalDataGateway create(PersonalAccountContext context) {
+  PersonalDataGateway create(
+    PersonalAccountContext context, {
+    AcademicDataRefresher? refreshAcademicData,
+  }) {
     final snapshotStore = _snapshotStoreBuilder?.call(context) ??
         AesGcmAccountScopedSnapshotStore(appUserId: context.appUserId);
     final erkeStore = ErkeCacheStore(
@@ -72,7 +75,10 @@ class PersonalDataGatewayFactory {
         cacheStore: scheduleStore,
         needsResync: scheduleStore.needsResync,
       ),
-      academicAdapter: AcademicGatewayAdapter(cacheStore: academicStore),
+      academicAdapter: AcademicGatewayAdapter(
+        cacheStore: academicStore,
+        refreshData: refreshAcademicData,
+      ),
       cleanupCoordinator: _cleanupCoordinator,
     );
   }

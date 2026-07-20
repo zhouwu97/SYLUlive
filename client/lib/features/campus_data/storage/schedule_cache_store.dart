@@ -489,6 +489,9 @@ class ScheduleCacheStore {
       sourceAccountId: sourceAccountId,
     );
     if (snapshot == null) return <String, dynamic>{};
+    if (snapshot.schemaVersion != schemaVersion) {
+      throw const PersonalSnapshotStoreException('课表密文快照版本不受支持');
+    }
     final terms = snapshot.payload['terms'];
     if (terms is! Map) {
       throw const PersonalSnapshotStoreException('课表密文快照格式错误');

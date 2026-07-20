@@ -234,6 +234,9 @@ class AcademicCacheStore {
       sourceAccountId: sourceAccountId,
     );
     if (snapshot == null) return null;
+    if (snapshot.schemaVersion != schemaVersion) {
+      throw const PersonalSnapshotStoreException('成绩密文快照版本不受支持');
+    }
     return Map<String, dynamic>.from(snapshot.payload);
   }
 

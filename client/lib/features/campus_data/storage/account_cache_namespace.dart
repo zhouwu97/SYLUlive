@@ -30,4 +30,8 @@ abstract final class AccountCacheNamespace {
   static String physicalNeedsResync(String appUserId) {
     return 'physical/${fingerprint(appUserId)}/needs_resync/v2';
   }
+
+  static String scheduleNeedsResync(String appUserId) {
+    return 'schedule/${fingerprint(appUserId)}/needs_resync/v1';
+  }
 }

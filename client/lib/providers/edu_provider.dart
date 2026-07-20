@@ -8,6 +8,7 @@ import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_grade.dart';
+import '../utils/edu_semester_utils.dart';
 
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {
@@ -633,6 +634,48 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.ok(grades);
     }
     return OperationResult.fail(raw?.errorMessage ?? '获取成绩失败');
+  }
+
+  /// 为个人助手同步从入学至今的全部有效学期，并在加密仓库中记录完整性。
+  Future<OperationResult<int>> syncAllGrades() async {
+    final requestUserId = _userId;
+    final requestSourceAccountId = _studentId.trim();
+    if (requestUserId == null || requestSourceAccountId.isEmpty) {
+      return OperationResult.fail('请先完成教务绑定');
+    }
+    final terms = EduSemester.buildSemesterList(enrollmentYear);
+    var syncedTerms = 0;
+    String? lastError;
+    for (final term in terms) {
+      final result = await fetchGrades(term.year, term.semester);
+      if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+        return OperationResult.fail('用户已切换');
+      }
+      if (result.success) {
+        syncedTerms++;
+      } else {
+        lastError = result.errorMessage;
+        break;
+      }
+    }
+    if (syncedTerms == terms.length) {
+      final store = _academicCacheStoreFor(
+        appUserId: requestUserId,
+        sourceAccountId: requestSourceAccountId,
+      );
+      try {
+        await store?.markGradeSyncComplete();
+      } catch (error) {
+        debugPrint('保存成绩完整同步标记失败: ${error.runtimeType}');
+        return OperationResult.fail('成绩已获取，但保存加密成绩失败');
+      }
+      return OperationResult.ok(syncedTerms);
+    }
+    if (syncedTerms > 0) {
+      // 部分学期可用时仍返回已同步数量，Gateway 会标记为需要刷新并明确提示范围不完整。
+      return OperationResult.ok(syncedTerms);
+    }
+    return OperationResult.fail(lastError ?? '自动同步成绩失败');
   }
 
   Future<OperationResult<EduGradeDetail>> fetchGradeDetail(

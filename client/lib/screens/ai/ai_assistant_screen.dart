@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 
 import '../../features/ai_runtime/ai_feature_flags.dart';
-import '../../features/ai_runtime/ai_model_provider.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
 import '../../features/ai_runtime/deterministic/competition_fit_engine.dart';
 import '../../features/ai_runtime/deterministic/graduation_requirement_engine.dart';
@@ -184,6 +183,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         appUserId: appUserId,
         sourceAccountId: sourceAccountId,
       ),
+      refreshAcademicData: () async {
+        final result = await edu.syncAllGrades();
+        return result.success ? null : result.errorMessage ?? '自动同步成绩失败';
+      },
     );
     try {
       final registry = buildStageSevenSkillRegistry(
@@ -210,6 +213,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           auth.user?.id.toString(),
           edu.studentId,
         ),
+        skillTimeout: const Duration(seconds: 90),
       );
       final tools = buildStageSixToolDefinitions().where((tool) {
         if (tool.id.startsWith('personal.academic.') &&

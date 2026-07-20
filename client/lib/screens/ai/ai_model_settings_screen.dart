@@ -358,16 +358,17 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                         TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 ],
-                const SizedBox(height: 28),
-                FilledButton(
+                const SizedBox(height: 24),
+                FilledButton.icon(
                   onPressed: _saving ? null : _save,
-                  child: _saving
+                  icon: _saving
                       ? const SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('保存'),
+                      : const Icon(Icons.save_outlined),
+                  label: const Text('保存模型设置'),
                 ),
               ],
             ),

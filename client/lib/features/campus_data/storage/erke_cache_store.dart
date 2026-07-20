@@ -24,9 +24,8 @@ class ErkeCacheStore {
     required this.appUserId,
     required this.sourceAccountId,
     AccountScopedSnapshotStore? snapshotStore,
-  }) : _snapshotStore =
-           snapshotStore ??
-           AesGcmAccountScopedSnapshotStore(appUserId: appUserId);
+  }) : _snapshotStore = snapshotStore ??
+            AesGcmAccountScopedSnapshotStore(appUserId: appUserId);
 
   final String appUserId;
   final String sourceAccountId;
@@ -189,8 +188,7 @@ class ErkeCacheStore {
     ErkeSnapshot migrated;
     try {
       final envelope = jsonDecode(raw) as Map<String, dynamic>;
-      final matchesOwner =
-          envelope['app_user_id'] ==
+      final matchesOwner = envelope['app_user_id'] ==
               AccountCacheNamespace.fingerprint(appUserId) &&
           envelope['source_account_fingerprint'] ==
               AccountCacheNamespace.fingerprint(sourceAccountId) &&

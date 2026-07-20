@@ -22,7 +22,8 @@ class UnsupportedPersonalSnapshotFileBackend
   Future<void> deleteType({
     required String accountHash,
     required PersonalDataType type,
-  }) async => _unsupported();
+  }) async =>
+      _unsupported();
 
   @override
   Future<void> deleteUser(String accountHash) async => _unsupported();
@@ -31,12 +32,14 @@ class UnsupportedPersonalSnapshotFileBackend
   Future<Uint8List?> read({
     required String accountHash,
     required PersonalDataType type,
-  }) async => _unsupported();
+  }) async =>
+      _unsupported();
 
   @override
   Future<void> write({
     required String accountHash,
     required PersonalDataType type,
     required Uint8List bytes,
-  }) async => _unsupported();
+  }) async =>
+      _unsupported();
 }

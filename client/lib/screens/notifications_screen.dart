@@ -6,7 +6,8 @@ import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
-import 'post_detail_screen.dart';
+import '../models/post.dart';
+import '../utils/post_route.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -209,15 +210,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         }
 
         if (postId != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PostDetailScreen(
-                postId: postId,
-                targetReplyId: type == 'reply' ? relatedId : null,
-              ),
-            ),
-          );
+          try {
+            final response = await context.read<AuthProvider>().dio.get('/posts/$postId');
+            if (!mounted) return;
+            final post = Post.fromJson(Map<String, dynamic>.from(response.data as Map));
+            await Navigator.push(context, buildPostDetailRoute(post, targetReplyId: type == 'reply' ? relatedId : null));
+          } on DioException catch (error) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppFeedback.dioErrorMessage(error, fallback: '打开帖子失败'))));
+          }
         }
       },
       borderRadius: BorderRadius.circular(12),

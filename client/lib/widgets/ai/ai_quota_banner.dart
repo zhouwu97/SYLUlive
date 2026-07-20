@@ -31,30 +31,33 @@ class AiQuotaBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      decoration: BoxDecoration(
-        color: CampusTheme.primaryLight,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: CampusTheme.border),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.timelapse_rounded,
-              size: 18, color: CampusTheme.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '$_message · 每次最多 $maxCharacters 字',
-              style: const TextStyle(
-                color: CampusTheme.primary,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 8),
+      child: Container(
+        width: double.infinity,
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: CampusTheme.primaryLight,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.info_outline_rounded,
+                size: 18, color: CampusTheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '$_message · 每次最多 $maxCharacters 字',
+                style: const TextStyle(
+                  color: CampusTheme.primary,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

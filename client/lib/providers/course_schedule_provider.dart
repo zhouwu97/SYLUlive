@@ -7,6 +7,8 @@ import '../features/campus_data/storage/schedule_cache_store.dart';
 import '../services/home_widget_service.dart';
 import '../platform/platform_capabilities.dart';
 import '../models/course_term.dart';
+import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
+import '../features/campus_data/storage/schedule_cache_store.dart';
 
 /// 单个课程块，用于课表网格展示
 class CourseBlock {
@@ -141,7 +143,6 @@ class CourseScheduleProvider extends ChangeNotifier {
   String? _userId;
   String? _sourceAccountId;
   ScheduleCacheStore? _scheduleStore;
-  Future<void> _scheduleStoreReady = Future<void>.value();
   int _contextGeneration = 0;
   bool _isLoading = false;
   String? _errorMessage;
@@ -163,6 +164,14 @@ class CourseScheduleProvider extends ChangeNotifier {
   Set<int> _hiddenCourseIds = {};
 
   List<CourseArchive> _archives = [];
+  String get _archiveListKey =>
+      '$_archiveListKeyPrefix${_userId}_${selectedYear}_$selectedSemester';
+  String get _activeArchiveKey =>
+      '$_activeArchiveIdKeyPrefix${_userId}_${selectedYear}_$selectedSemester';
+
+  // 学期起始日期 key
+  String get _semesterStartKey =>
+      'semester_start_v2_${_userId}_${selectedYear}_$selectedSemester';
 
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -196,74 +205,58 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 兼容旧调用方：同一用户保留已确认的教务来源账号；新用户必须等待
   /// [syncSessionContext] 提供新的来源账号后才允许读写保险箱。
   void setUserId(String userId) {
-    final normalizedUserId = userId.trim();
-    if (normalizedUserId.isEmpty) {
+    final normalized = userId.trim();
+    if (normalized.isEmpty) {
       clearAllUserState();
       return;
     }
     syncSessionContext(
-      normalizedUserId,
-      normalizedUserId == _userId ? _sourceAccountId : null,
+      normalized,
+      normalized == _userId ? _sourceAccountId : null,
     );
   }
 
-  /// 同步当前认证用户和教务来源账号。
-  ///
-  /// 课表数据必须同时绑定两者；任一方变化都会同步清空内存，避免旧课程在
-  /// 新账号或新学号上下文中短暂显示。
+  /// 同时绑定 App 用户和教务来源学号，任一变化都使旧异步操作失效。
   void syncSessionContext(String? userId, String? sourceAccountId) {
-    final normalizedUserId = userId?.trim() ?? '';
-    final normalizedSourceAccountId = sourceAccountId?.trim() ?? '';
-    if (normalizedUserId.isEmpty) {
+    final normalizedUser = userId?.trim() ?? '';
+    final normalizedSource = sourceAccountId?.trim() ?? '';
+    if (normalizedUser.isEmpty) {
       clearAllUserState();
       return;
     }
-    if (_userId == normalizedUserId &&
-        _sourceAccountId == normalizedSourceAccountId) {
+    if (_userId == normalizedUser && _sourceAccountId == normalizedSource) {
       return;
     }
-
     _contextGeneration++;
-    debugPrint('课表账号上下文已切换，清理旧内存数据');
+    // 切换到了不同用户 → 立刻清空旧数据
     _courses = [];
     _gridData = {};
     _hiddenCourseIds = {};
     _archives = [];
     _errorMessage = null;
-    _isLoading = false;
-    _userId = normalizedUserId;
-    _sourceAccountId = normalizedSourceAccountId;
-    _currentTerm = CourseTerm.inferCurrentTerm();
-
-    _scheduleStore = normalizedSourceAccountId.isEmpty
+    _userId = normalizedUser;
+    _sourceAccountId = normalizedSource;
+    _scheduleStore = normalizedSource.isEmpty
         ? null
         : ScheduleCacheStore(
-            appUserId: normalizedUserId,
-            sourceAccountId: normalizedSourceAccountId,
-            snapshotStore: _snapshotStoreBuilder?.call(normalizedUserId),
+            appUserId: normalizedUser,
+            sourceAccountId: normalizedSource,
+            snapshotStore: _snapshotStoreBuilder?.call(normalizedUser),
           );
-    final store = _scheduleStore;
-    final generation = _contextGeneration;
-    _scheduleStoreReady = store == null
-        ? Future<void>.value()
-        : store.discardUnownedLegacy().catchError((Object error) {
-            debugPrint('清理旧课表明文失败: ${error.runtimeType}');
-          });
+    // 重置为默认学期
+    _currentTerm = CourseTerm.inferCurrentTerm();
 
-    if (store != null) {
-      _scheduleStoreReady.then((_) async {
-        if (generation != _contextGeneration ||
-            !identical(store, _scheduleStore)) {
-          return;
-        }
-        await loadSemesterStart();
-        await loadArchiveList();
-        if (generation == _contextGeneration &&
-            identical(store, _scheduleStore)) {
-          notifyListeners();
-        }
-      });
-    }
+    final generation = _contextGeneration;
+    final store = _scheduleStore;
+    (store?.discardUnownedLegacy() ?? Future<void>.value()).then((_) {
+      if (generation != _contextGeneration ||
+          !identical(store, _scheduleStore)) {
+        return;
+      }
+      loadSemesterStart();
+      loadArchiveList();
+      notifyListeners();
+    });
     notifyListeners();
   }
 
@@ -273,7 +266,6 @@ class CourseScheduleProvider extends ChangeNotifier {
     _userId = null;
     _sourceAccountId = null;
     _scheduleStore = null;
-    _scheduleStoreReady = Future<void>.value();
     _courses = [];
     _gridData = {};
     _hiddenCourseIds = {};
@@ -685,10 +677,50 @@ class CourseScheduleProvider extends ChangeNotifier {
     return fallback;
   }
 
+  Future<void> _loadHiddenCourses() async {
+    try {
+      final store = _scheduleStore;
+      if (store != null) {
+        final term = await store.readTerm(
+          year: selectedYear,
+          semester: selectedSemester,
+        );
+        _hiddenCourseIds = term?.hiddenCourseIds.toSet() ?? <int>{};
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_hiddenCoursesCacheKey);
+      if (jsonStr != null) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        _hiddenCourseIds = list.map((e) => e as int).toSet();
+      } else {
+        _hiddenCourseIds = {};
+      }
+    } catch (e) {
+      _hiddenCourseIds = {};
+    }
+  }
+
   Future<void> _saveHiddenCourses() async {
-    final operation = _captureOperationContext();
-    if (operation == null) return;
-    await _saveOperationHiddenCourses(operation, _hiddenCourseIds);
+    try {
+      if (_userId == null) return;
+      final store = _scheduleStore;
+      if (store != null) {
+        await store.writeHiddenCourseIds(
+          year: selectedYear,
+          semester: selectedSemester,
+          hiddenCourseIds: _hiddenCourseIds,
+        );
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _hiddenCoursesCacheKey,
+        jsonEncode(_hiddenCourseIds.toList()),
+      );
+    } catch (e) {
+      debugPrint('保存隐藏课程失败: $e');
+    }
   }
 
   /// 拉取课程。默认优先缓存。
@@ -706,8 +738,15 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (await _resolveOperationStore(operation) == null) return;
 
     if (isManualRefresh) {
-      await _clearOperationActiveArchive(operation);
-      if (!_isCurrentOperation(operation)) return;
+      final store = _scheduleStore;
+      if (store != null) {
+        await store.clearActiveArchive(
+          year: selectedYear,
+          semester: selectedSemester,
+        );
+      } else {
+        await prefs.remove(_activeArchiveKey);
+      }
     }
 
     // 保留刷新前的课程数据作为备份
@@ -740,9 +779,13 @@ class CourseScheduleProvider extends ChangeNotifier {
       return;
     }
 
-    final activeArchiveId =
-        (await _loadOperationSnapshot(operation))?.activeArchiveId;
-    if (!_isCurrentOperation(operation)) return;
+    final activeArchiveId = _scheduleStore == null
+        ? prefs.getString(_activeArchiveKey)
+        : (await _scheduleStore!.readTerm(
+            year: selectedYear,
+            semester: selectedSemester,
+          ))
+            ?.activeArchiveId;
     // 如果当前处于“查看存档”模式，且不是用户主动的手动刷新，则跳过后续的网络拉取，防止存档被覆盖
     if (activeArchiveId != null && !isManualRefresh) {
       debugPrint('当前处于课表存档模式，跳过后台静默同步');
@@ -850,33 +893,75 @@ class CourseScheduleProvider extends ChangeNotifier {
     Future.microtask(() => HomeWidgetService.syncCourseData(this));
   }
 
-  /// 保存课程到当前账号和来源账号绑定的 AES-GCM 保险箱。
-  Future<void> _saveToCache(List<CourseBlock> courses) async {
-    final operation = _captureOperationContext();
-    if (operation == null) return;
-    await _saveOperationCourses(operation, courses);
+  /// 保存课程到 SharedPreferences
+  Future<void> _saveToCache(String key, List<CourseBlock> courses) async {
+    try {
+      final store = _scheduleStore;
+      if (store != null) {
+        await store.writeCourses(
+          year: selectedYear,
+          semester: selectedSemester,
+          courses: courses.map((course) => course.toJson()).toList(),
+        );
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final json = jsonEncode(courses.map((c) => c.toJson()).toList());
+      await prefs.setString(key, json);
+      await prefs.setInt('${key}_ver', _cacheVersion);
+    } catch (e) {
+      debugPrint('缓存课程失败: $e');
+    }
   }
 
   /// 只从当前账号和来源账号绑定的 AES-GCM 快照读取课程。
   Future<List<CourseBlock>?> _loadFromCache() async {
     try {
-      final operation = _captureOperationContext();
-      if (operation == null) return null;
-      final snapshot = await _loadOperationSnapshot(operation);
-      if (!_isCurrentOperation(operation)) return null;
-      if (snapshot == null || snapshot.courses.isEmpty) return null;
-      return snapshot.courses.map(CourseBlock.fromJson).toList();
-    } catch (error) {
-      debugPrint('读取加密课程失败: ${error.runtimeType}');
+      final store = _scheduleStore;
+      if (store != null) {
+        final term = await store.readTerm(
+          year: selectedYear,
+          semester: selectedSemester,
+        );
+        return term?.courses.map(CourseBlock.fromJson).toList();
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final version = prefs.getInt('${key}_ver') ?? 0;
+      if (version < _cacheVersion) {
+        // 版本不匹配，清除旧缓存
+        await prefs.remove(key);
+        await prefs.setInt('${key}_ver', _cacheVersion);
+        return null;
+      }
+      final json = prefs.getString(key);
+      if (json == null || json.isEmpty) return null;
+      final list = jsonDecode(json) as List<dynamic>;
+      return list
+          .map((e) => CourseBlock.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('读取缓存课程失败: $e');
       return null;
     }
   }
 
   /// 清除当前学期的加密课程，但保留同学期的用户存档和隐藏状态。
   Future<void> clearCache() async {
-    final operation = _captureOperationContext();
-    if (operation == null) return;
-    await _clearOperationCourses(operation);
+    if (_userId == null) return;
+    try {
+      final store = _scheduleStore;
+      if (store != null) {
+        await store.clearCourses(
+          year: selectedYear,
+          semester: selectedSemester,
+        );
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_currentCacheKey);
+    } catch (e) {
+      debugPrint('清除缓存失败: $e');
+    }
   }
 
   String _parseDioError(DioException e) {
@@ -921,7 +1006,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     return course.startSection == section;
   }
 
-  /// 设置学期起始日期（周一），持久化到加密课表快照。
+  /// 设置学期起始日期（周一），账号上下文完整时写入加密保险箱。
   Future<void> setSemesterStart(DateTime date) async {
     final operation = _captureOperationContext();
     if (operation == null || operation.store == null) return;
@@ -936,20 +1021,39 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (!await _saveOperationSemesterStart(operation, start)) return;
     if (!_isCurrentOperation(operation)) return;
     _currentTerm = currentTerm.copyWith(startDate: start);
+
+    final store = _scheduleStore;
+    if (store != null) {
+      await store.writeSemesterStart(
+        year: selectedYear,
+        semester: selectedSemester,
+        semesterStart: start,
+      );
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_semesterStartKey, start.toIso8601String());
+    }
     notifyListeners();
   }
 
-  /// 从加密课表快照加载当前学期起始日期。
+  /// 从当前账号加密课表加载学期起始日期。
   Future<void> loadSemesterStart() async {
-    final operation = _captureOperationContext();
-    if (operation == null) return;
-    final snapshot = await _loadOperationSnapshot(operation);
-    if (!_isCurrentOperation(operation)) return;
-    final start = snapshot?.semesterStart;
-    _currentTerm = currentTerm.copyWith(
-      startDate:
-          start == null ? null : DateTime(start.year, start.month, start.day),
-    );
+    final store = _scheduleStore;
+    if (store != null) {
+      final term = await store.readTerm(
+        year: selectedYear,
+        semester: selectedSemester,
+      );
+      _currentTerm = currentTerm.copyWith(startDate: term?.semesterStart);
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final s = prefs.getString(_semesterStartKey);
+    if (s != null) {
+      _currentTerm = currentTerm.copyWith(startDate: DateTime.tryParse(s));
+    } else {
+      _currentTerm = currentTerm.copyWith(startDate: null); // 清除旧状态
+    }
   }
 
   /// 计算给定日期对应的教学周号（1-based），未设置则返回 null
@@ -1167,21 +1271,46 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   /// 从持久化存储加载存档列表
   Future<void> loadArchiveList() async {
-    final operation = _captureOperationContext();
-    if (operation == null) return;
-    final snapshot = await _loadOperationSnapshot(operation);
-    if (!_isCurrentOperation(operation)) return;
-    _archives = (snapshot?.archives ?? const <ScheduleArchiveSnapshot>[])
-        .map(
-          (archive) => CourseArchive(
-            id: archive.id,
-            name: archive.name,
-            createdAt: archive.createdAt.toLocal(),
-            courseCount: archive.courseCount,
-          ),
-        )
-        .toList(growable: false);
-    notifyListeners();
+    if (_userId == null) return;
+    try {
+      final store = _scheduleStore;
+      if (store != null) {
+        final term = await store.readTerm(
+          year: selectedYear,
+          semester: selectedSemester,
+        );
+        _archives = (term?.archives ?? const <ScheduleArchiveSnapshot>[])
+            .map(
+              (item) => CourseArchive(
+                id: item.id,
+                name: item.name,
+                createdAt: item.createdAt,
+                courseCount: item.courseCount,
+              ),
+            )
+            .toList();
+        notifyListeners();
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_archiveListKey);
+      if (jsonStr != null) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        _archives = list
+            .map((e) => CourseArchive.fromJson(e as Map<String, dynamic>))
+            .toList();
+        debugPrint(
+          'Schedule: Archive List Loaded. Archive Count: ${_archives.length} at ${DateTime.now()}',
+        );
+      } else {
+        _archives = [];
+        debugPrint('Schedule: Archive List is empty at ${DateTime.now()}');
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('加载存档列表失败: $e');
+      _archives = [];
+    }
   }
 
   /// 保存当前课表为新存档
@@ -1202,20 +1331,23 @@ class CourseScheduleProvider extends ChangeNotifier {
       courseCount: _courses.length,
     );
 
-    await store.saveArchive(
-      year: operation.year,
-      semester: operation.semester,
-      archive: ScheduleArchiveSnapshot(
-        id: archive.id,
-        name: archive.name,
-        createdAt: archive.createdAt,
-        courseCount: archive.courseCount,
-        courses:
-            _courses.map((course) => course.toJson()).toList(growable: false),
-      ),
-    );
-    if (!_isCurrentOperation(operation)) {
-      throw StateError('课表账号上下文已切换');
+    final coursesJson = jsonEncode(_courses.map((c) => c.toJson()).toList());
+    final store = _scheduleStore;
+    if (store != null) {
+      await store.saveArchive(
+        year: selectedYear,
+        semester: selectedSemester,
+        archive: ScheduleArchiveSnapshot(
+          id: id,
+          name: name,
+          createdAt: archive.createdAt,
+          courseCount: archive.courseCount,
+          courses: _courses.map((course) => course.toJson()).toList(),
+        ),
+      );
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('$_archiveDataKeyPrefix$id', coursesJson);
     }
     _archives.insert(0, archive);
     notifyListeners();
@@ -1247,20 +1379,25 @@ class CourseScheduleProvider extends ChangeNotifier {
       courseCount: courses.length,
     );
 
-    await store.saveArchive(
-      year: operation.year,
-      semester: operation.semester,
-      archive: ScheduleArchiveSnapshot(
-        id: archive.id,
-        name: archive.name,
-        createdAt: archive.createdAt,
-        courseCount: archive.courseCount,
-        courses:
-            courses.map((course) => course.toJson()).toList(growable: false),
-      ),
-    );
-    if (!_isCurrentOperation(operation)) {
-      throw StateError('课表账号上下文已切换');
+    final store = _scheduleStore;
+    if (store != null) {
+      await store.saveArchive(
+        year: selectedYear,
+        semester: selectedSemester,
+        archive: ScheduleArchiveSnapshot(
+          id: id,
+          name: name,
+          createdAt: archive.createdAt,
+          courseCount: archive.courseCount,
+          courses: courses.map((course) => course.toJson()).toList(),
+        ),
+      );
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        '$_archiveDataKeyPrefix$id',
+        jsonEncode(courses.map((c) => c.toJson()).toList()),
+      );
     }
 
     _archives.insert(0, archive);
@@ -1269,39 +1406,40 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   /// 载入指定存档
   Future<void> loadArchive(String archiveId) async {
-    final operation = _captureOperationContext();
-    if (operation == null) {
-      throw StateError('课表存档缺少有效的账号上下文');
-    }
-    final store = await _resolveOperationStore(operation);
-    if (store == null) {
-      throw StateError('课表存档缺少有效的账号上下文');
-    }
-    final snapshot = await _loadOperationSnapshot(operation);
-    if (!_isCurrentOperation(operation)) {
-      throw StateError('课表账号上下文已切换');
-    }
-    ScheduleArchiveSnapshot? archive;
-    for (final candidate
-        in snapshot?.archives ?? const <ScheduleArchiveSnapshot>[]) {
-      if (candidate.id == archiveId) {
-        archive = candidate;
-        break;
+    final store = _scheduleStore;
+    if (store != null) {
+      final term = await store.readTerm(
+        year: selectedYear,
+        semester: selectedSemester,
+      );
+      ScheduleArchiveSnapshot? archive;
+      for (final item in term?.archives ?? const <ScheduleArchiveSnapshot>[]) {
+        if (item.id == archiveId) {
+          archive = item;
+          break;
+        }
       }
+      if (archive == null) throw Exception('存档数据不存在');
+      _courses = archive.courses.map(CourseBlock.fromJson).toList();
+      await store.activateArchive(
+        year: selectedYear,
+        semester: selectedSemester,
+        archiveId: archiveId,
+      );
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('$_archiveDataKeyPrefix$archiveId');
+      if (jsonStr == null) throw Exception('存档数据不存在');
+      final List<dynamic> list = jsonDecode(jsonStr);
+      _courses = list
+          .map((e) => CourseBlock.fromJson(e as Map<String, dynamic>))
+          .toList();
+      await prefs.setString(_activeArchiveKey, archiveId);
     }
-    if (archive == null) throw Exception('课表存档数据不存在');
-
-    await store.activateArchive(
-      year: operation.year,
-      semester: operation.semester,
-      archiveId: archiveId,
-    );
-    if (!_isCurrentOperation(operation)) return;
-
-    _courses = archive.courses.map(CourseBlock.fromJson).toList();
     _buildGrid();
-    await _saveOperationCourses(operation, _courses);
-    if (!_isCurrentOperation(operation)) return;
+
+    // 覆盖到当前 cache key，让下次打开直接展示
+    await _saveToCache(_currentCacheKey, _courses);
     notifyListeners();
     _syncWidget();
   }
@@ -1319,6 +1457,20 @@ class CourseScheduleProvider extends ChangeNotifier {
     );
     if (!_isCurrentOperation(operation)) return;
     _archives.removeWhere((a) => a.id == archiveId);
+    await _saveArchiveList();
+
+    // 删除存档课程数据
+    final store = _scheduleStore;
+    if (store != null) {
+      await store.deleteArchive(
+        year: selectedYear,
+        semester: selectedSemester,
+        archiveId: archiveId,
+      );
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('$_archiveDataKeyPrefix$archiveId');
+    }
     notifyListeners();
   }
 
@@ -1335,16 +1487,29 @@ class CourseScheduleProvider extends ChangeNotifier {
       createdAt: old.createdAt,
       courseCount: old.courseCount,
     );
-    final store = await _resolveOperationStore(operation);
-    if (store == null) return;
-    await store.renameArchive(
-      year: operation.year,
-      semester: operation.semester,
-      archiveId: archiveId,
-      newName: newName,
-    );
-    if (!_isCurrentOperation(operation)) return;
-    _archives[idx] = renamed;
+    final store = _scheduleStore;
+    if (store != null) {
+      await store.renameArchive(
+        year: selectedYear,
+        semester: selectedSemester,
+        archiveId: archiveId,
+        newName: newName,
+      );
+    } else {
+      await _saveArchiveList();
+    }
     notifyListeners();
+  }
+
+  Future<void> _saveArchiveList() async {
+    if (_userId == null) return;
+    try {
+      if (_scheduleStore != null) return;
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = jsonEncode(_archives.map((a) => a.toJson()).toList());
+      await prefs.setString(_archiveListKey, jsonStr);
+    } catch (e) {
+      debugPrint('保存存档列表失败: $e');
+    }
   }
 }

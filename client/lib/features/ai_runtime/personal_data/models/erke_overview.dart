@@ -16,6 +16,21 @@ class ErkeCategoryOverview {
   final bool meetsNumerically;
 }
 
+/// 最近二课活动的最小化摘要，最多由上层 Skill 返回五条。
+class ErkeActivityOverview {
+  const ErkeActivityOverview({
+    required this.item,
+    required this.score,
+    required this.date,
+    required this.category,
+  });
+
+  final String item;
+  final double score;
+  final String date;
+  final String category;
+}
+
 /// 供后续 Skill 使用的二课概览，不包含原始缓存 JSON 或来源账号。
 class ErkeOverview {
   const ErkeOverview({
@@ -28,6 +43,7 @@ class ErkeOverview {
     this.latestActivityDate,
     this.selectedYear,
     this.selectedYearEarned,
+    this.recentActivities = const <ErkeActivityOverview>[],
   });
 
   final double? requiredTotal;
@@ -39,6 +55,7 @@ class ErkeOverview {
   final String? selectedYear;
   final double? selectedYearEarned;
   final List<ErkeCategoryOverview> categories;
+  final List<ErkeActivityOverview> recentActivities;
 
   factory ErkeOverview.fromPayload(Map<String, dynamic> payload) {
     _validatePayload(payload);
@@ -64,6 +81,18 @@ class ErkeOverview {
       if (latest == null || date.compareTo(latest) > 0) return date;
       return latest;
     });
+    final recentActivities = snapshot.activities
+        .map(
+          (activity) => ErkeActivityOverview(
+            item: activity.item.trim(),
+            score: activity.scoreValue,
+            date: activity.date.trim(),
+            category: activity.category.trim(),
+          ),
+        )
+        .where((activity) => activity.item.isNotEmpty)
+        .toList()
+      ..sort((left, right) => right.date.compareTo(left.date));
 
     return ErkeOverview(
       requiredTotal: graduation?.requiredTotal,
@@ -75,6 +104,9 @@ class ErkeOverview {
       selectedYear: yearly?.year,
       selectedYearEarned: yearly?.yearEarnedTotal,
       categories: categories,
+      recentActivities: List<ErkeActivityOverview>.unmodifiable(
+        recentActivities.take(5),
+      ),
     );
   }
 

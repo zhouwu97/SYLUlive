@@ -82,6 +82,9 @@ func evaluateFixedCase(testCase EvaluationCase) (bool, error) {
 		}
 		_, _, invalid := ValidateCitations(testCase.Answer, chunks)
 		return !invalid, nil
+	case "schedule_arguments":
+		_, err := DecodeScheduleWindowsArguments(testCase.Arguments)
+		return err == nil, nil
 	default:
 		return false, fmt.Errorf("unknown evaluation kind: %s", testCase.Kind)
 	}

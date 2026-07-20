@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // UserHandler 用户处理器
@@ -28,32 +29,35 @@ func publicUserResponse(user models.User) PublicUserResponse {
 
 // SelfUserResponse 仅用于当前登录用户，保留客户端刷新会话所需的账号和教务状态。
 type SelfUserResponse struct {
-	ID                 uint        `json:"id"`
-	StudentID          string      `json:"student_id"`
-	Nickname           string      `json:"nickname"`
-	Gender             string      `json:"gender"`
-	Avatar             string      `json:"avatar"`
-	Background         string      `json:"background"`
-	NightMode          bool        `json:"night_mode"`
-	CreditScore        int         `json:"credit_score"`
-	Role               models.Role `json:"role"`
-	AdminExp           int         `json:"admin_exp"`
-	Exp                int         `json:"exp"`
-	ReportCount        int         `json:"report_count"`
-	CreatedAt          time.Time   `json:"created_at"`
-	EduStudentID       string      `json:"edu_student_id"`
-	EduBound           bool        `json:"edu_bound"`
-	EduGrade           string      `json:"edu_grade"`
-	EduCollege         string      `json:"edu_college"`
-	EduMajor           string      `json:"edu_major"`
-	IsCheckedInToday   bool        `json:"is_checked_in_today"`
-	FollowersCount     int         `json:"followers_count"`
-	FollowingCount     int         `json:"following_count"`
-	TotalLikesReceived int         `json:"total_likes_received"`
-	IsFollowing        bool        `json:"is_following"`
+	ID                    uint        `json:"id"`
+	StudentID             string      `json:"student_id"`
+	Nickname              string      `json:"nickname"`
+	Gender                string      `json:"gender"`
+	Avatar                string      `json:"avatar"`
+	Background            string      `json:"background"`
+	NightMode             bool        `json:"night_mode"`
+	CreditScore           int         `json:"credit_score"`
+	Role                  models.Role `json:"role"`
+	AdminExp              int         `json:"admin_exp"`
+	Exp                   int         `json:"exp"`
+	ReportCount           int         `json:"report_count"`
+	CreatedAt             time.Time   `json:"created_at"`
+	EduStudentID          string      `json:"edu_student_id"`
+	EduBound              bool        `json:"edu_bound"`
+	EduGrade              string      `json:"edu_grade"`
+	EduCollege            string      `json:"edu_college"`
+	EduMajor              string      `json:"edu_major"`
+	IsCheckedInToday      bool        `json:"is_checked_in_today"`
+	FollowersCount        int         `json:"followers_count"`
+	FollowingCount        int         `json:"following_count"`
+	TotalLikesReceived    int         `json:"total_likes_received"`
+	IsFollowing           bool        `json:"is_following"`
+	LegalConsentsActive   bool        `json:"legal_consents_active"`
+	LegalConsentsRequired bool        `json:"legal_consents_required"`
+	PushEnabled           bool        `json:"push_enabled"`
 }
 
-func selfUserResponse(user models.User) SelfUserResponse {
+func selfUserResponse(user models.User, consentState models.LegalConsentState) SelfUserResponse {
 	return SelfUserResponse{
 		ID: user.ID, StudentID: user.StudentID, Nickname: user.Nickname, Gender: user.Gender,
 		Avatar: user.Avatar, Background: user.Background, NightMode: user.NightMode,
@@ -63,7 +67,22 @@ func selfUserResponse(user models.User) SelfUserResponse {
 		EduMajor: user.EduMajor, IsCheckedInToday: user.IsCheckedInToday,
 		FollowersCount: user.FollowersCount, FollowingCount: user.FollowingCount,
 		TotalLikesReceived: user.TotalLikesReceived, IsFollowing: user.IsFollowing,
+		LegalConsentsActive:   consentState == models.LegalConsentStateActive,
+		LegalConsentsRequired: consentState == models.LegalConsentStateRequired,
+		PushEnabled:           user.PushDataProcessingEnabled,
 	}
+}
+
+func selfUserResponseForDB(db *gorm.DB, user models.User) (SelfUserResponse, error) {
+	consentState, err := models.LegalConsentStateForUser(db, user)
+	if err != nil {
+		return SelfUserResponse{}, err
+	}
+	return selfUserResponse(user, consentState), nil
+}
+
+func (h *UserHandler) selfUserResponse(user models.User) (SelfUserResponse, error) {
+	return selfUserResponseForDB(h.db, user)
 }
 
 // NewUserHandler 创建用户处理器
@@ -91,7 +110,12 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	}
 	user.IsCheckedInToday = checkInCount > 0
 
-	c.JSON(http.StatusOK, selfUserResponse(user))
+	response, err := h.selfUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // UpdateProfileInput 更新资料输入
@@ -145,7 +169,12 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, selfUserResponse(user))
+	response, err := h.selfUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // UpdateAvatarInput 更新头像输入
@@ -207,7 +236,12 @@ func (h *UserHandler) UpdateBackground(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, selfUserResponse(user))
+	response, err := h.selfUserResponse(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // NightModeInput 夜间模式设置输入
@@ -603,12 +637,26 @@ type UpdateDeviceTokenInput struct {
 	DeviceToken string `json:"device_token"`
 }
 
+type UpdatePushSettingsInput struct {
+	Enabled        bool   `json:"enabled"`
+	InstallationID string `json:"installation_id"`
+	RegistrationID string `json:"registration_id"`
+	NoticeVersion  string `json:"notice_version"`
+}
+
 // UpdateDeviceToken 更新极光设备Token（用户登录时前端调用）
 func (h *UserHandler) UpdateDeviceToken(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	var input UpdateDeviceTokenInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(input.DeviceToken) != "" {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "请使用推送设置接口主动开启远程推送",
+			"code":  "push_settings_required",
+		})
 		return
 	}
 
@@ -625,4 +673,88 @@ func (h *UserHandler) UpdateDeviceToken(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "设备Token更新成功"})
+}
+
+// UpdatePushSettings 原子更新单活跃设备推送状态，避免多设备开启和关闭相互覆盖。
+func (h *UserHandler) UpdatePushSettings(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	var input UpdatePushSettingsInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		return
+	}
+
+	input.InstallationID = strings.TrimSpace(input.InstallationID)
+	input.RegistrationID = strings.TrimSpace(input.RegistrationID)
+	input.NoticeVersion = strings.TrimSpace(input.NoticeVersion)
+	if input.InstallationID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "installation_id 不能为空"})
+		return
+	}
+	if input.Enabled && (input.RegistrationID == "" || input.NoticeVersion == "") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "开启推送时 registration_id 和 notice_version 不能为空"})
+		return
+	}
+
+	ignored := false
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			return err
+		}
+		if input.Enabled && user.LegalConsentRevokedAt != nil {
+			return gorm.ErrInvalidData
+		}
+
+		if input.Enabled {
+			if err := tx.Model(&models.User{}).
+				Where("device_token = ? AND id <> ?", input.RegistrationID, userID).
+				Updates(map[string]interface{}{
+					"device_token":                 "",
+					"push_data_processing_enabled": false,
+					"push_installation_id":         "",
+					"push_notice_version":          "",
+					"push_enabled_at":              nil,
+				}).Error; err != nil {
+				return err
+			}
+			now := time.Now()
+			return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+				"push_data_processing_enabled": true,
+				"push_installation_id":         input.InstallationID,
+				"push_notice_version":          input.NoticeVersion,
+				"push_enabled_at":              &now,
+				"device_token":                 input.RegistrationID,
+			}).Error
+		}
+
+		if user.PushInstallationID != "" && user.PushInstallationID != input.InstallationID {
+			ignored = true
+			return nil
+		}
+		return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+			"push_data_processing_enabled": false,
+			"push_installation_id":         "",
+			"push_notice_version":          "",
+			"push_enabled_at":              nil,
+			"device_token":                 "",
+		}).Error
+	}); err != nil {
+		if err == gorm.ErrInvalidData {
+			c.JSON(http.StatusForbidden, gin.H{"error": "授权已撤销，请重新确认基础协议后再开启推送", "code": "legal_consent_required"})
+			return
+		}
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新推送设置失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "推送设置已更新",
+		"enabled": input.Enabled && !ignored,
+		"ignored": ignored,
+	})
 }

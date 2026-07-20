@@ -10,6 +10,7 @@ import (
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
+	"shenliyuan/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -177,7 +178,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		awards = append(awards, *globalAward)
 	}
 
-	if post.BoardID == models.BoardShuitie && post.PostType != "" {
+	if post.BoardID == models.BoardShuitie && post.ContentKind != models.PostContentKindPoll && post.PostType != "" {
 		var section models.WaterSection
 		if secErr := h.db.Where("slug = ?", post.PostType).First(&section).Error; secErr == nil && section.ID != 0 {
 			secAwarded, secAward, secErr := services.AwardDailySectionExp(h.db, userID.(uint), section.ID, section.Slug, section.Title, services.GlobalActionReplyDaily, services.GlobalExpReplyDaily, "reply", reply.ID)
@@ -199,7 +200,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 
 	// 发送通知（数据库 + 极光推送）
-	contentPreview := truncateRunes(input.Content, 80)
+	contentPreview := utils.TruncateGraphemes(input.Content, 80)
 	if input.ParentReplyID != nil {
 		// 回复别人的评论 → 通知被回复的评论作者
 		var parentReply models.Reply
@@ -280,14 +281,6 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
-}
-
-func truncateRunes(value string, limit int) string {
-	runes := []rune(value)
-	if len(runes) <= limit {
-		return value
-	}
-	return string(runes[:limit]) + "..."
 }
 
 // recalculatePostReplyStats 从有效回复重建帖子回复数及最后活跃时间；调用方必须提供事务。

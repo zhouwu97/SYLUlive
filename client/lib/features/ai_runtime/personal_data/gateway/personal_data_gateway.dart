@@ -1,4 +1,5 @@
 import '../models/academic_overview.dart';
+import '../models/academic_records.dart';
 import '../models/erke_overview.dart';
 import '../models/physical_overview.dart';
 import '../models/schedule_overview.dart';
@@ -16,6 +17,8 @@ abstract interface class PersonalDataGateway {
   });
 
   Future<GatewayResult<AcademicOverview>> getAcademicOverview();
+
+  Future<GatewayResult<AcademicRecords>> getAcademicRecords();
 
   Future<void> close();
 }

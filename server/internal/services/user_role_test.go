@@ -22,8 +22,8 @@ func TestUpdateUserRoleAndInvalidateTokenExpiresOldJWT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}); err != nil {
-		t.Fatalf("migrate user: %v", err)
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+		t.Fatalf("migrate user and legal consent: %v", err)
 	}
 
 	user := models.User{
@@ -100,8 +100,8 @@ func TestUpdateUserRoleAndInvalidateTokenDowngradeExpiresAdminJWT(t *testing.T) 
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}); err != nil {
-		t.Fatalf("migrate user: %v", err)
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+		t.Fatalf("migrate user and legal consent: %v", err)
 	}
 
 	user := models.User{

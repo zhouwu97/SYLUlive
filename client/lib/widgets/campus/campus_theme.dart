@@ -4,6 +4,10 @@ class CampusTheme {
   static const Color bg = Color(0xFFFFFAF4);
   static const Color darkBg = Color(0xFF111315);
 
+  static Color pageBackground(BuildContext context) {
+    return Theme.of(context).brightness == Brightness.dark ? darkBg : bg;
+  }
+
   static const Color card = Color(0xFFFFFFFF);
   static const Color darkCard = Color(0xFF1E2226);
 

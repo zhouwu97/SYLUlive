@@ -1,10 +1,11 @@
 """SQLAlchemy 数据库模型"""
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, select
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, select
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base
 from datetime import datetime
 
 from config import DATABASE_URL
+from services.course_cache_retirement import clear_legacy_course_cache
 
 Base = declarative_base()
 
@@ -27,6 +28,9 @@ async def init_db():
             user.cookie = None
             user.bound = False
         await session.commit()
+        deleted = await clear_legacy_course_cache(session)
+        if any(deleted.values()):
+            print(f"已清理退役课表缓存: {deleted}")
 
 
 async def get_db():
@@ -52,58 +56,3 @@ class EduUser(Base):
     bound = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
-
-class CourseRaw(Base):
-    """课程原始数据（从教务提取）"""
-    __tablename__ = "courses_raw"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(64), nullable=False, index=True)
-    year = Column(String(10), nullable=False)
-    semester = Column(Integer, nullable=False)  # 3=第一学期, 12=第二学期
-    raw_json = Column(Text, nullable=False)  # 原始JSON
-    fetched_at = Column(DateTime, default=datetime.now)
-
-    # 关系
-    custom = relationship("CourseCustom", back_populates="raw", uselist=False)
-
-
-class CourseCustom(Base):
-    """用户自定义课程数据"""
-    __tablename__ = "courses_custom"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(64), nullable=False, index=True)
-    course_code = Column(String(64), nullable=False)  # 用于关联原始数据
-    raw_id = Column(Integer, ForeignKey("courses_raw.id"), nullable=True)
-
-    # 学期隔离相关
-    year = Column(String(10), nullable=True, index=True)
-    semester = Column(Integer, nullable=True, index=True)
-    term_id = Column(String(32), nullable=True, index=True)
-
-    # 自定义信息
-    custom_name = Column(String(100), nullable=True)  # 自定义简称
-    color = Column(String(10), default="#4A90D9")  # 课程颜色
-    location_custom = Column(String(200), nullable=True)  # 自定义地点
-    note = Column(String(500), nullable=True)  # 备注
-
-    # 时间设置
-    class_duration = Column(Integer, default=45)  # 单课时长（分钟）
-    break_duration = Column(Integer, default=10)  # 课间休息（分钟）
-    weekday = Column(Integer, nullable=False)  # 周几 (1-7, 1=周一)
-    start_section = Column(Integer, nullable=False)  # 开始节次
-    end_section = Column(Integer, nullable=False)  # 结束节次
-    weeks = Column(Text, nullable=False)  # JSON数组 e.g. "[1,2,3,4,5]"
-
-    # 原始信息（用于显示）
-    original_name = Column(String(200), nullable=True)
-    original_location = Column(String(200), nullable=True)
-    teacher = Column(String(100), nullable=True)
-
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
-    # 关系
-    raw = relationship("CourseRaw", back_populates="custom")

@@ -70,10 +70,15 @@ class AIProviderSettingsStore {
     if (raw == null || raw.isEmpty) return null;
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! Map) return null;
-      return AIModelProviderConfig.fromJson(Map<String, dynamic>.from(decoded));
+      if (decoded is! Map) throw const FormatException('配置格式错误');
+      final config =
+          AIModelProviderConfig.fromJson(Map<String, dynamic>.from(decoded));
+      if (config.id != _providerConfigId) {
+        throw const FormatException('配置 ID 不匹配');
+      }
+      return config;
     } on FormatException {
-      return null;
+      throw const AIModelProviderException('模型配置无效，请重新配置');
     }
   }
 
@@ -139,8 +144,15 @@ class AIProviderSettingsStore {
   }
 
   Future<void> clear() async {
+    // 先删除密钥，避免普通配置已消失却留下不可见的安全存储项。
+    await _secureStore.delete(_apiKey);
     final preferences = await _preferencesLoader();
-    await preferences.remove(_configKey);
+    final removed = await preferences.remove(_configKey);
+    if (!removed) throw StateError('删除模型配置失败');
+  }
+
+  /// 清理配置缺失时遗留在安全存储中的密钥。
+  Future<void> clearApiKey() async {
     await _secureStore.delete(_apiKey);
   }
 

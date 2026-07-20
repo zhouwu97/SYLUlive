@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../features/ai_runtime/ai_model_provider.dart';
@@ -62,6 +64,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
   void dispose() {
     AccountSessionCleanupCoordinator.instance.unregister(this);
     _inputController.dispose();
+    unawaited(_controller.closeAccountContext());
     _controller.dispose();
     super.dispose();
   }

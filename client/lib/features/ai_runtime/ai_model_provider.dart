@@ -16,8 +16,9 @@ extension AIModelProviderKindLabel on AIModelProviderKind {
       };
 
   static AIModelProviderKind fromStorage(String? value) => switch (value) {
+        'campus_public' => AIModelProviderKind.campusPublic,
         'openai_compatible' => AIModelProviderKind.openAICompatible,
-        _ => AIModelProviderKind.campusPublic,
+        _ => throw const FormatException('未知模型服务类型'),
       };
 }
 
@@ -126,4 +127,7 @@ abstract interface class AIModelProvider {
 
   /// 只提交普通聊天消息；接口层不接受 Tool Calling 或用户私有数据。
   Future<AIModelChatResponse> complete(List<AIModelChatMessage> messages);
+
+  /// 终止当前 Provider 发起的请求或服务端 Run，不等待远端任务自然结束。
+  Future<void> cancelActiveRequest();
 }

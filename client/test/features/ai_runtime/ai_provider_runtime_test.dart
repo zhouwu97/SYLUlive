@@ -1,8 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_endpoint_policy.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_model_provider.dart';
+import 'package:shenliyuan/features/ai_runtime/ai_model_runtime.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_provider_storage.dart';
 import 'package:shenliyuan/features/ai_runtime/campus_public_provider.dart';
 import 'package:shenliyuan/features/ai_runtime/openai_compatible_provider.dart';
@@ -26,15 +30,23 @@ class _MemorySecureStore implements AIProviderSecureStore {
   Future<void> write(String key, String value) async => values[key] = value;
 }
 
+class _FailingDeleteSecureStore extends _MemorySecureStore {
+  @override
+  Future<void> delete(String key) => Future<void>.error(StateError('删除失败'));
+}
+
 class _CampusServiceStub extends AiAssistantService {
   _CampusServiceStub({
     required this.events,
     required this.finalRun,
+    this.eventStream,
   }) : super(Dio());
 
   final List<AiRunEvent> events;
   final AiRun finalRun;
+  final Stream<AiRunEvent>? eventStream;
   int getRunCalls = 0;
+  int cancelRunCalls = 0;
 
   @override
   Future<AiCapabilities> getCapabilities() async => const AiCapabilities(
@@ -70,12 +82,23 @@ class _CampusServiceStub extends AiAssistantService {
 
   @override
   Stream<AiRunEvent> streamRunEvents(String runId, {int lastEventId = 0}) =>
-      Stream<AiRunEvent>.fromIterable(events);
+      eventStream ?? Stream<AiRunEvent>.fromIterable(events);
 
   @override
   Future<AiRun> getRun(String runId) async {
     getRunCalls++;
     return finalRun;
+  }
+
+  @override
+  Future<AiRun> cancelRun(String runId) async {
+    cancelRunCalls++;
+    return AiRun(
+      id: runId,
+      conversationId: 'conversation-1',
+      state: 'cancelled',
+      lastEventSeq: 0,
+    );
   }
 }
 
@@ -174,6 +197,51 @@ void main() {
     expect(secureStore.values, isEmpty);
   });
 
+  test('未知 Provider 类型失败关闭，不回退到校园公益 AI', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final store = AIProviderSettingsStore(
+      appUserId: '10001',
+      secureStore: _MemorySecureStore(),
+    );
+    await store.saveCampusPublic();
+    final preferences = await SharedPreferences.getInstance();
+    final configKey = preferences
+        .getKeys()
+        .singleWhere((key) => key.startsWith('ai_provider_config/'));
+    await preferences.setString(
+        configKey,
+        jsonEncode(<String, String>{
+          'provider_config_id': 'default',
+          'kind': 'future_provider',
+          'endpoint': 'https://models.example.com/v1',
+          'model': 'test',
+        }));
+
+    await expectLater(
+      store.readConfig(),
+      throwsA(isA<AIModelProviderException>()),
+    );
+  });
+
+  test('密钥删除失败时保留普通配置供用户重试清理', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final secureStore = _FailingDeleteSecureStore();
+    final store = AIProviderSettingsStore(
+      appUserId: '10001',
+      secureStore: secureStore,
+    );
+    await store.saveOpenAICompatible(
+      endpoint: 'https://models.example.com/v1',
+      model: 'demo-chat',
+      apiKey: 'secret-key',
+    );
+
+    await expectLater(store.clear(), throwsA(isA<StateError>()));
+
+    expect((await store.readConfig())?.model, 'demo-chat');
+    expect(await store.readApiKey(), 'secret-key');
+  });
+
   group('CampusPublicProvider', () {
     test('SSE 意外结束时必须以 Run 最终状态确认答案', () async {
       final service = _CampusServiceStub(
@@ -226,9 +294,49 @@ void main() {
       expect(result.content, '完整回答');
       expect(service.getRunCalls, 0);
     });
+
+    test('取消当前公益 Run 会调用服务端取消接口', () async {
+      final events = StreamController<AiRunEvent>();
+      addTearDown(events.close);
+      final service = _CampusServiceStub(
+        events: const <AiRunEvent>[],
+        eventStream: events.stream,
+        finalRun: const AiRun(
+          id: 'run-1',
+          conversationId: 'conversation-1',
+          state: 'running',
+          lastEventSeq: 0,
+        ),
+      );
+      final provider = CampusPublicProvider(service);
+
+      final completion = provider.complete(const <AIModelChatMessage>[
+        AIModelChatMessage(
+          role: AIModelMessageRole.user,
+          content: '测试',
+        ),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      final completionExpectation = expectLater(
+        completion,
+        throwsA(isA<AIModelProviderException>()),
+      );
+
+      await provider.cancelActiveRequest();
+      expect(service.cancelRunCalls, 1);
+      await events.close();
+      await completionExpectation;
+    });
   });
 
   group('OpenAICompatibleProvider', () {
+    test('默认客户端设置连接、发送和接收超时', () {
+      final dio = OpenAICompatibleProvider.createDio();
+      expect(dio.options.connectTimeout, const Duration(seconds: 10));
+      expect(dio.options.sendTimeout, const Duration(seconds: 15));
+      expect(dio.options.receiveTimeout, const Duration(seconds: 60));
+    });
+
     test('能力探测直连 /models，并保留 HTTPS 基础路径', () async {
       final dio = Dio();
       late RequestOptions request;
@@ -344,5 +452,115 @@ void main() {
         throwsA(isA<AIModelProviderException>()),
       );
     });
+
+    test('取消当前请求会取消绑定的 CancelToken', () async {
+      final dio = Dio();
+      final requestSeen = Completer<CancelToken>();
+      final continueRequest = Completer<void>();
+      dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          requestSeen.complete(options.cancelToken!);
+          await continueRequest.future;
+          handler.resolve(Response<dynamic>(
+            requestOptions: options,
+            statusCode: 200,
+            data: <String, dynamic>{'data': <Object>[]},
+          ));
+        },
+      ));
+      final provider = OpenAICompatibleProvider(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://models.example.com/v1',
+          model: 'chat-model',
+        ),
+        apiKey: 'test-key',
+        dio: dio,
+      );
+
+      final discovery = provider.discoverCapabilities();
+      final token = await requestSeen.future;
+      await provider.cancelActiveRequest();
+      expect(token.isCancelled, isTrue);
+      continueRequest.complete();
+
+      await expectLater(
+        discovery,
+        throwsA(isA<AIModelProviderException>()),
+      );
+    });
+  });
+
+  test('聊天控制器关闭上下文时取消公益 Run 并限制内存历史', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final store = AIProviderSettingsStore(
+      appUserId: '10001',
+      secureStore: _MemorySecureStore(),
+    );
+    await store.saveCampusPublic();
+    final events = StreamController<AiRunEvent>();
+    addTearDown(events.close);
+    final service = _CampusServiceStub(
+      events: const <AiRunEvent>[],
+      eventStream: events.stream,
+      finalRun: const AiRun(
+        id: 'run-1',
+        conversationId: 'conversation-1',
+        state: 'running',
+        lastEventSeq: 0,
+      ),
+    );
+    final controller = AIModelChatController(
+      settingsStore: store,
+      providerFactory: AIModelProviderFactory(
+        settingsStore: store,
+        campusService: service,
+      ),
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+
+    final send = controller.send('测试');
+    await Future<void>.delayed(Duration.zero);
+    final close = controller.closeAccountContext();
+    expect(controller.messages, isEmpty);
+    expect(controller.sending, isFalse);
+    await close;
+    expect(service.cancelRunCalls, 1);
+    await events.close();
+    await send;
+
+    final completedService = _CampusServiceStub(
+      events: const <AiRunEvent>[
+        AiRunEvent(type: AiRunEventType.delta, text: '答'),
+        AiRunEvent(type: AiRunEventType.completed),
+      ],
+      finalRun: const AiRun(
+        id: 'run-1',
+        conversationId: 'conversation-1',
+        state: 'completed',
+        lastEventSeq: 2,
+      ),
+    );
+    final boundedController = AIModelChatController(
+      settingsStore: store,
+      providerFactory: AIModelProviderFactory(
+        settingsStore: store,
+        campusService: completedService,
+      ),
+    );
+    addTearDown(boundedController.dispose);
+    await boundedController.load();
+    final longMessage = List<String>.filled(8000, 'x').join();
+    for (var index = 0; index < 6; index++) {
+      await boundedController.send(longMessage);
+    }
+
+    expect(boundedController.messages.length, lessThanOrEqualTo(20));
+    expect(
+      boundedController.messages
+          .fold<int>(0, (sum, message) => sum + message.content.length),
+      lessThanOrEqualTo(40000),
+    );
   });
 }

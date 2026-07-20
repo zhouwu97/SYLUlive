@@ -1,4 +1,5 @@
-import 'package:dio/dio.dart';
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -36,6 +37,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
   bool _hasStoredApiKey = false;
   bool _hasStoredConfig = false;
   String? _error;
+  AIModelProvider? _probeProvider;
 
   @override
   void initState() {
@@ -45,43 +47,64 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
   }
 
   Future<void> _load() async {
+    AIModelProviderConfig? config;
+    String? loadError;
     try {
-      final config = await _store.readConfig();
-      final hasApiKey = await _store.hasApiKey();
-      if (!mounted) return;
-      setState(() {
-        _kind = config?.kind ?? AIModelProviderKind.campusPublic;
-        _endpointController.text = config?.endpoint ?? '';
-        _modelController.text = config?.model ?? '';
-        _hasStoredApiKey = hasApiKey;
-        _hasStoredConfig = config != null;
-      });
+      config = await _store.readConfig();
+    } on AIModelProviderException catch (error) {
+      loadError = error.message;
     } catch (_) {
-      if (mounted) setState(() => _error = '读取模型设置失败');
+      loadError = '读取模型设置失败';
+    }
+    bool hasApiKey = false;
+    try {
+      hasApiKey = await _store.hasApiKey();
+    } catch (_) {
+      loadError ??= '读取模型设置失败';
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _kind = config?.kind ?? AIModelProviderKind.campusPublic;
+          _endpointController.text = config?.endpoint ?? '';
+          _modelController.text = config?.model ?? '';
+          _hasStoredApiKey = hasApiKey;
+          _hasStoredConfig = config != null;
+          _error = loadError;
+          _loading = false;
+        });
+      }
     }
   }
 
   Future<void> _probeModels() async {
+    AIModelProvider? provider;
+    final kind = _kind;
+    final endpoint = _endpointController.text;
+    final model = _modelController.text;
+    final inputApiKey = _apiKeyController.text;
     setState(() {
       _probing = true;
       _error = null;
     });
     try {
-      final provider = _kind == AIModelProviderKind.campusPublic
-          ? CampusPublicProvider(AiAssistantService(getSharedDio()))
-          : OpenAICompatibleProvider(
-              config: AIModelProviderConfig(
-                kind: _kind,
-                endpoint: _endpointController.text,
-                model: _modelController.text,
-              ),
-              apiKey: _apiKeyController.text.isEmpty && _hasStoredApiKey
-                  ? (await _store.readApiKey() ?? '')
-                  : _apiKeyController.text,
-              dio: Dio(),
-            );
+      if (kind == AIModelProviderKind.campusPublic) {
+        provider = CampusPublicProvider(AiAssistantService(getSharedDio()));
+      } else {
+        final apiKey = inputApiKey.isEmpty && _hasStoredApiKey
+            ? (await _store.readApiKey() ?? '')
+            : inputApiKey;
+        if (!mounted) return;
+        provider = OpenAICompatibleProvider(
+          config: AIModelProviderConfig(
+            kind: kind,
+            endpoint: endpoint,
+            model: model,
+          ),
+          apiKey: apiKey,
+          dio: OpenAICompatibleProvider.createDio(),
+        );
+      }
+      _probeProvider = provider;
       final capabilities = await provider.discoverCapabilities();
       if (!mounted) return;
       setState(() {
@@ -101,6 +124,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
     } catch (_) {
       if (mounted) setState(() => _error = '无法探测模型能力');
     } finally {
+      if (identical(_probeProvider, provider)) _probeProvider = null;
       if (mounted) setState(() => _probing = false);
     }
   }
@@ -191,8 +215,28 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
     }
   }
 
+  Future<void> _clearResidualApiKey() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await _store.clearApiKey();
+      if (mounted) setState(() => _hasStoredApiKey = false);
+    } catch (_) {
+      if (mounted) setState(() => _error = '清除残留密钥失败');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   void dispose() {
+    final probeProvider = _probeProvider;
+    _probeProvider = null;
+    if (probeProvider != null) {
+      unawaited(probeProvider.cancelActiveRequest());
+    }
     _endpointController.dispose();
     _modelController.dispose();
     _apiKeyController.dispose();
@@ -218,6 +262,21 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
               children: [
+                if (!_hasStoredConfig && _hasStoredApiKey) ...[
+                  Text(
+                    '检测到残留密钥，请清除后再保存新的模型配置。',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _saving ? null : _clearResidualApiKey,
+                    icon: const Icon(Icons.key_off_rounded),
+                    label: const Text('清除残留密钥'),
+                  ),
+                  const SizedBox(height: 18),
+                ],
                 DropdownButtonFormField<AIModelProviderKind>(
                   key: ValueKey(_kind),
                   initialValue: _kind,
@@ -282,7 +341,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.travel_explore_rounded),
-                  label: const Text('探测能力'),
+                  label: const Text('测试连接并读取模型'),
                 ),
                 if (_models.isNotEmpty) ...[
                   const SizedBox(height: 10),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -14,7 +16,7 @@ class AIModelProviderFactory {
     Dio Function()? dioFactory,
   })  : _settingsStore = settingsStore,
         _campusService = campusService,
-        _dioFactory = dioFactory ?? Dio.new;
+        _dioFactory = dioFactory ?? OpenAICompatibleProvider.createDio;
 
   final AIProviderSettingsStore _settingsStore;
   final AiAssistantService _campusService;
@@ -44,6 +46,9 @@ class AIModelProviderFactory {
 /// 只接收本控制器的内存消息。切换配置或账号上下文关闭时会清空两者，
 /// 不会把自定义模型消息写入校园 AI 的会话接口。
 class AIModelChatController extends ChangeNotifier {
+  static const int _maxMessages = 20;
+  static const int _maxTotalMessageCharacters = 40000;
+
   AIModelChatController({
     required AIProviderSettingsStore settingsStore,
     required AIModelProviderFactory providerFactory,
@@ -70,24 +75,34 @@ class AIModelChatController extends ChangeNotifier {
   bool get isConfigured => _config != null;
 
   Future<void> load() async {
-    final generation = ++_generation;
+    final previousProvider = _discardContext();
+    final generation = _generation;
     _loading = true;
-    _sending = false;
-    _error = null;
-    _provider = null;
-    _messages.clear();
     _notify();
+    unawaited(_cancelProviderBestEffort(previousProvider));
     try {
-      _config = await _settingsStore.readConfig();
-      if (_config != null) {
-        _provider = await _providerFactory.create(_config!);
+      final config = await _settingsStore.readConfig();
+      if (generation != _generation) return;
+      AIModelProvider? provider;
+      if (config != null) {
+        provider = await _providerFactory.create(config);
+        if (generation != _generation) {
+          unawaited(_cancelProviderBestEffort(provider));
+          return;
+        }
       }
+      _config = config;
+      _provider = provider;
     } on AIModelProviderException catch (error) {
-      _config = null;
-      _error = error.message;
+      if (generation == _generation) {
+        _config = null;
+        _error = error.message;
+      }
     } catch (_) {
-      _config = null;
-      _error = '读取模型设置失败';
+      if (generation == _generation) {
+        _config = null;
+        _error = '读取模型设置失败';
+      }
     } finally {
       if (generation == _generation) {
         _loading = false;
@@ -132,6 +147,7 @@ class AIModelChatController extends ChangeNotifier {
       role: AIModelMessageRole.user,
       content: message,
     ));
+    _trimMessages();
     _sending = true;
     _error = null;
     _notify();
@@ -142,6 +158,7 @@ class AIModelChatController extends ChangeNotifier {
         role: AIModelMessageRole.assistant,
         content: result.content,
       ));
+      _trimMessages();
     } on AIModelProviderException catch (error) {
       if (generation == _generation) _error = error.message;
     } catch (_) {
@@ -160,8 +177,14 @@ class AIModelChatController extends ChangeNotifier {
     _notify();
   }
 
-  void closeAccountContext() {
+  Future<void> closeAccountContext() async {
+    final previousProvider = _discardContext();
+    await _cancelProviderBestEffort(previousProvider);
+  }
+
+  AIModelProvider? _discardContext() {
     _generation++;
+    final previousProvider = _provider;
     _messages.clear();
     _provider = null;
     _config = null;
@@ -169,6 +192,25 @@ class AIModelChatController extends ChangeNotifier {
     _sending = false;
     _error = null;
     _notify();
+    return previousProvider;
+  }
+
+  Future<void> _cancelProviderBestEffort(AIModelProvider? provider) async {
+    if (provider == null) return;
+    try {
+      await provider.cancelActiveRequest();
+    } catch (_) {
+      // 本地上下文已关闭，取消失败不能恢复旧请求。
+    }
+  }
+
+  void _trimMessages() {
+    var totalCharacters =
+        _messages.fold<int>(0, (sum, message) => sum + message.content.length);
+    while (_messages.length > _maxMessages ||
+        totalCharacters > _maxTotalMessageCharacters) {
+      totalCharacters -= _messages.removeAt(0).content.length;
+    }
   }
 
   void _notify() {
@@ -178,7 +220,8 @@ class AIModelChatController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _generation++;
+    final previousProvider = _discardContext();
+    unawaited(_cancelProviderBestEffort(previousProvider));
     super.dispose();
   }
 }

@@ -20,9 +20,24 @@ class AiHistoryTile extends StatelessWidget {
 
   String _formatTime(DateTime? time) {
     if (time == null) return '';
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final date = DateTime(time.year, time.month, time.day);
+    final diffDays = today.difference(date).inDays;
+
+    if (diffDays == 0) {
+      final hour = time.hour.toString().padLeft(2, '0');
+      final minute = time.minute.toString().padLeft(2, '0');
+      return '今天 $hour:$minute';
+    } else if (diffDays == 1) {
+      return '昨天';
+    } else if (diffDays < 7) {
+      return '$diffDays天前';
+    } else if (now.year == time.year) {
+      return '${time.month}月${time.day}日';
+    } else {
+      return '${time.year}年${time.month}月${time.day}日';
+    }
   }
 
   @override

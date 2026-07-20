@@ -5,6 +5,7 @@ import '../campus/campus_theme.dart';
 
 class AiInputComposer extends StatefulWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final int maxCharacters;
   final bool enabled;
   final bool running;
@@ -14,6 +15,7 @@ class AiInputComposer extends StatefulWidget {
   const AiInputComposer({
     super.key,
     required this.controller,
+    this.focusNode,
     required this.maxCharacters,
     required this.enabled,
     required this.running,
@@ -97,11 +99,14 @@ class _AiInputComposerState extends State<AiInputComposer> {
                   Expanded(
                     child: TextField(
                       controller: widget.controller,
+                      focusNode: widget.focusNode,
                       enabled: widget.enabled && !widget.running,
                       maxLines: 1,
                       textInputAction: TextInputAction.send,
                       onSubmitted: canSend ? (_) => _send() : null,
-                      onChanged: (_) => setState(() => _inlineError = null),
+                      onChanged: (_) {
+                        if (_inlineError != null) _inlineError = null;
+                      },
                       decoration: InputDecoration(
                         hintText: widget.enabled ? '问一个校园问题' : '基础设施测试中',
                         border: InputBorder.none,

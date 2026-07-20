@@ -5,7 +5,9 @@ import '../../providers/ai_assistant_provider.dart';
 import 'ai_history_tile.dart';
 
 class AiHistorySheet extends StatefulWidget {
-  const AiHistorySheet({super.key});
+  final VoidCallback? onFocusRequest;
+  
+  const AiHistorySheet({super.key, this.onFocusRequest});
 
   @override
   State<AiHistorySheet> createState() => _AiHistorySheetState();
@@ -61,6 +63,7 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
                             onPressed: () {
                               provider.startNewConversation();
                               Navigator.pop(context);
+                              widget.onFocusRequest?.call();
                             },
                             icon: const Icon(Icons.add_rounded, size: 22),
                             style: IconButton.styleFrom(
@@ -97,6 +100,7 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
                                       onPressed: () {
                                         provider.startNewConversation();
                                         Navigator.pop(context);
+                                        widget.onFocusRequest?.call();
                                       },
                                       child: const Text('开始新会话'),
                                     ),
@@ -113,15 +117,17 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
                                     conversation: conversation,
                                     isSelected: selected,
                                     isDeleting: _deletingId == conversation.id,
-                                    onTap: () {
+                                    onTap: () async {
                                       if (provider.isRunning) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(content: Text('请等待当前回答完成或先停止生成')),
                                         );
                                         return;
                                       }
-                                      provider.openConversation(conversation.id);
-                                      Navigator.pop(context);
+                                      await provider.openConversation(conversation.id);
+                                      if (mounted && provider.error == null) {
+                                        Navigator.pop(context);
+                                      }
                                     },
                                     onDelete: () async {
                                       final confirmed = await showDialog<bool>(

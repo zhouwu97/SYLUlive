@@ -115,10 +115,6 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 	if terminalReplayed {
 		return
 	}
-	current, err := h.runtime.GetRun(c.Request.Context(), userID, runID)
-	if err != nil || isTerminalAIRunState(current.State) {
-		return
-	}
 
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
@@ -130,15 +126,13 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 			if !open {
 				return
 			}
-			if event.Seq > 0 {
-				if event.Seq <= lastSent {
-					continue
-				}
-				lastSent = event.Seq
+			if event.Seq <= lastSent {
+				continue
 			}
 			if err := writeSSE(c.Writer, event); err != nil {
 				return
 			}
+			lastSent = event.Seq
 			flusher.Flush()
 			if isTerminalAIEvent(event.Type) {
 				return
@@ -158,13 +152,7 @@ func writeSSE(writer http.ResponseWriter, event ai.RunEvent) error {
 	if err != nil {
 		return err
 	}
-	if event.Seq > 0 {
-		_, err = fmt.Fprintf(writer, "id: %d\n", event.Seq)
-		if err != nil {
-			return err
-		}
-	}
-	_, err = fmt.Fprintf(writer, "event: %s\ndata: %s\n\n", event.Type, payload)
+	_, err = fmt.Fprintf(writer, "id: %d\nevent: %s\ndata: %s\n\n", event.Seq, event.Type, payload)
 	return err
 }
 
@@ -182,11 +170,6 @@ func parseLastEventID(value string) int64 {
 
 func isTerminalAIEvent(eventType string) bool {
 	return eventType == "run.completed" || eventType == "run.failed" || eventType == "run.cancelled"
-}
-
-func isTerminalAIRunState(state string) bool {
-	return state == models.AIRunStateCompleted || state == models.AIRunStateFailed ||
-		state == models.AIRunStateCancelled || state == models.AIRunStateExpired
 }
 
 type createAIConversationRequest struct {

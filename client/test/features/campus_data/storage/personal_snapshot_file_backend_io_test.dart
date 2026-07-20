@@ -318,7 +318,7 @@ void main() {
     );
   });
 
-  test('不同数据类型不因单个目标写入暂停而互相阻塞', () async {
+  test('不同数据类型会在共享保险箱队列中按入队顺序完成', () async {
     final backupMoved = Completer<void>();
     final allowWriteToContinue = Completer<void>();
     final writer = IoPersonalSnapshotFileBackend(
@@ -344,16 +344,22 @@ void main() {
     );
     await backupMoved.future;
 
-    await otherTypeWriter
+    var otherWriteCompleted = false;
+    final otherWrite = otherTypeWriter
         .write(
-          accountHash: _accountA,
-          type: PersonalDataType.physical,
-          bytes: Uint8List.fromList(<int>[3]),
-        )
-        .timeout(const Duration(seconds: 1));
+      accountHash: _accountA,
+      type: PersonalDataType.physical,
+      bytes: Uint8List.fromList(<int>[3]),
+    )
+        .then((_) {
+      otherWriteCompleted = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(otherWriteCompleted, isFalse);
 
     allowWriteToContinue.complete();
-    await blockedWrite;
+    await Future.wait<void>(<Future<void>>[blockedWrite, otherWrite])
+        .timeout(const Duration(seconds: 2));
     expect(
       await otherTypeWriter.read(
         accountHash: _accountA,
@@ -445,6 +451,107 @@ void main() {
       path.join(supportDirectory.path, 'personal_vault'),
     );
     expect(await vaultRoot.exists(), isFalse);
+  });
+
+  test('账号删除已入队后新读取会按顺序完成且不死锁', () async {
+    final backupMoved = Completer<void>();
+    final allowWriteToContinue = Completer<void>();
+    final deleteQueued = Completer<void>();
+    final writer = IoPersonalSnapshotFileBackend(
+      supportDirectoryLoader: () async => supportDirectory,
+      onBackupMoved: () async {
+        backupMoved.complete();
+        await allowWriteToContinue.future;
+      },
+    );
+    final deleter = IoPersonalSnapshotFileBackend(
+      supportDirectoryLoader: () async => supportDirectory,
+      onVaultOperationQueued: deleteQueued.complete,
+    );
+    final reader = IoPersonalSnapshotFileBackend(
+      supportDirectoryLoader: () async => supportDirectory,
+    );
+
+    await writer.write(
+      accountHash: _accountA,
+      type: PersonalDataType.erke,
+      bytes: Uint8List.fromList(<int>[1]),
+    );
+    final activeWrite = writer.write(
+      accountHash: _accountA,
+      type: PersonalDataType.erke,
+      bytes: Uint8List.fromList(<int>[2]),
+    );
+    await backupMoved.future;
+
+    final delete = deleter.deleteUser(_accountA);
+    await deleteQueued.future;
+    final read = reader.read(
+      accountHash: _accountA,
+      type: PersonalDataType.erke,
+    );
+
+    allowWriteToContinue.complete();
+    final results = await Future.wait<Object?>(<Future<Object?>>[
+      activeWrite.then<Object?>((_) => null),
+      delete.then<Object?>((_) => null),
+      read,
+    ]).timeout(const Duration(seconds: 2));
+    expect(results[2], isNull);
+  });
+
+  test('全量删除已入队后新写入会按顺序完成且不死锁', () async {
+    final backupMoved = Completer<void>();
+    final allowWriteToContinue = Completer<void>();
+    final deleteQueued = Completer<void>();
+    final writer = IoPersonalSnapshotFileBackend(
+      supportDirectoryLoader: () async => supportDirectory,
+      onBackupMoved: () async {
+        backupMoved.complete();
+        await allowWriteToContinue.future;
+      },
+    );
+    final deleter = IoPersonalSnapshotFileBackend(
+      supportDirectoryLoader: () async => supportDirectory,
+      onVaultOperationQueued: deleteQueued.complete,
+    );
+    final nextWriter = IoPersonalSnapshotFileBackend(
+      supportDirectoryLoader: () async => supportDirectory,
+    );
+
+    await writer.write(
+      accountHash: _accountA,
+      type: PersonalDataType.physical,
+      bytes: Uint8List.fromList(<int>[1]),
+    );
+    final activeWrite = writer.write(
+      accountHash: _accountA,
+      type: PersonalDataType.physical,
+      bytes: Uint8List.fromList(<int>[2]),
+    );
+    await backupMoved.future;
+
+    final delete = deleter.deleteAll();
+    await deleteQueued.future;
+    final nextWrite = nextWriter.write(
+      accountHash: _accountB,
+      type: PersonalDataType.erke,
+      bytes: Uint8List.fromList(<int>[3]),
+    );
+
+    allowWriteToContinue.complete();
+    await Future.wait<void>(<Future<void>>[
+      activeWrite,
+      delete,
+      nextWrite,
+    ]).timeout(const Duration(seconds: 2));
+    expect(
+      await nextWriter.read(
+        accountHash: _accountB,
+        type: PersonalDataType.erke,
+      ),
+      Uint8List.fromList(<int>[3]),
+    );
   });
 }
 

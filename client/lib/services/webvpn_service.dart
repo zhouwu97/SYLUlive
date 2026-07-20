@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -36,15 +35,6 @@ class WebVpnService {
       ),
     );
 
-    // [非常重要: 请勿删除此段代码]
-    // 学校 WebVPN (https://webvpn.sylu.edu.cn) 的证书经常存在链不完整或自签的问题，
-    // 导致哪怕是在真实的物理手机（生产环境）上也会频繁报 HandshakeException。
-    // 为了保证用户能正常登录，我们必须在全局（包括 Release 包）放行证书校验。
-    (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
-        (client) {
-      client.badCertificateCallback = (cert, host, port) => true; // 全局忽略证书校验，解决自签证书问题
-      return client;
-    };
     _dio.interceptors.add(CookieManager(_jar));
   }
 
@@ -116,7 +106,7 @@ class WebVpnService {
           ).firstMatch(html);
           if (casLinkMatch != null) {
             final casLink = casLinkMatch.group(1)!;
-            debugPrint('[VPN] 跟随CAS链接: $casLink');
+            debugPrint('[VPN] 跟随CAS链接');
             final decodedLink = casLink.replaceAll('&amp;', '&');
             nextUrl = _resolveUrl(decodedLink, url);
             continue;
@@ -158,9 +148,6 @@ class WebVpnService {
       }
     }
     debugPrint('[CAS] CAS页面Set-Cookie数量: ${setCookies?.length ?? 0}');
-    debugPrint(
-      '[CAS] 提取的Cookie名: ${casCookiesRaw.map((c) => c.split("=")[0]).toList()}',
-    );
 
     // 提取关键字段 — 打印完整的 input 列表辅助调试
     final allInputs = doc.querySelectorAll('input');
@@ -181,15 +168,11 @@ class WebVpnService {
     final lt = _extractValue(doc, 'lt') ?? '';
 
     debugPrint('[CAS] salt=<redacted> executionLength=${execution.length}');
-    debugPrint('[CAS] eventId=$eventId cllt=$cllt dllt=$dllt lt=$lt');
+    debugPrint('[CAS] 登录表单字段已解析');
 
     // AES 加密密码 — 注意: 密码字段名是 userPassword，但要提交为 password
     final encryptedPwd = _encryptPassword(password, salt);
     debugPrint('[CAS] 加密密码: <redacted>, length=${encryptedPwd.length}');
-
-    // 打印当前 Cookie
-    final cookies = await _jar.loadForRequest(Uri.parse(pageUrl));
-    debugPrint('[CAS] 当前Cookie: ${cookies.map((c) => c.name).toList()}');
 
     // 构造表单 — 严格对齐抓包，不能多字段
     final formData = <String, String>{
@@ -249,9 +232,7 @@ class WebVpnService {
       }
     }
     final cookieHeader = allCookies.join('; ');
-    debugPrint(
-      '[CAS] 最终Cookie名: ${allCookies.map((c) => c.split('=').first).toList()}',
-    );
+    debugPrint('[CAS] 登录请求Cookie数量: ${allCookies.length}');
 
     final loginResp = await _dio.post(
       action,
@@ -271,7 +252,6 @@ class WebVpnService {
     if (loginResp.statusCode == 401) {
       final body = loginResp.data.toString();
       debugPrint('[CAS] 401! bodyLength=${body.length}');
-      debugPrint('[CAS] 响应头名称: ${loginResp.headers.map.keys.toList()}');
       return false;
     }
 

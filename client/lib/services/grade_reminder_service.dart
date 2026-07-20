@@ -8,6 +8,7 @@ import '../config/api_constants.dart';
 import '../models/edu_grade.dart';
 import '../models/grade_reminder_snapshot.dart';
 import '../models/grade_reminder_status.dart';
+import '../platform/app_platform.dart';
 import 'keep_alive_service.dart';
 
 class GradeReminderService {
@@ -23,8 +24,8 @@ class GradeReminderService {
       FlutterLocalNotificationsPlugin();
   bool _notificationsInitialized = false;
 
-  bool get _isAndroid =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  /// 使用构建目标而非 Flutter 运行时平台；OHOS Flutter 当前会报告 Android。
+  bool get _isAndroid => AppPlatforms.current.isAndroid;
 
   Future<GradeReminderStatus> getStatus({String? userId}) async {
     if (!_isAndroid) return const GradeReminderStatus.unsupported();

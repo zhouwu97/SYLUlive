@@ -137,6 +137,7 @@ class CampusCalendarSource {
 class CampusSemester {
   final String id;
   final String name;
+  final int? eduSemesterCode;
   final DateTime startDate;
   final DateTime endDate;
   final List<TeachingWeek> teachingWeeks;
@@ -144,6 +145,7 @@ class CampusSemester {
   const CampusSemester({
     required this.id,
     required this.name,
+    required this.eduSemesterCode,
     required this.startDate,
     required this.endDate,
     required this.teachingWeeks,
@@ -153,6 +155,9 @@ class CampusSemester {
     return CampusSemester(
       id: _asString(json['id']),
       name: _asString(json['name']),
+      eduSemesterCode: json['edu_semester_code'] == null
+          ? null
+          : _asInt(json['edu_semester_code']),
       startDate: parseCalendarDate(_asString(json['start_date'])),
       endDate: parseCalendarDate(_asString(json['end_date'])),
       teachingWeeks: _asList(json['teaching_weeks'])
@@ -164,6 +169,7 @@ class CampusSemester {
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
+        if (eduSemesterCode != null) 'edu_semester_code': eduSemesterCode,
         'start_date': formatCalendarDate(startDate),
         'end_date': formatCalendarDate(endDate),
         'teaching_weeks': teachingWeeks.map((item) => item.toJson()).toList(),

@@ -1,0 +1,26 @@
+[Unit]
+Description=Shenliyuan Internal RAG Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shenliyuan-rag
+Group=shenliyuan-rag
+WorkingDirectory=/opt/shenliyuan/python-rag-service
+EnvironmentFile=/opt/shenliyuan/rag.env
+Environment=FASTEMBED_CACHE_PATH=/opt/shenliyuan/rag-models
+ExecStart=/opt/shenliyuan/python-rag-service/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18001 --workers 1
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=600
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/shenliyuan/rag-models
+MemoryMax=1400M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

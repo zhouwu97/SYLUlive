@@ -42,6 +42,10 @@ Python 服务对旧 `sync`、`local`、手动课程、自定义、更新和删�
 `ScheduleSkill`、`get_my_schedule_windows` Tool 和相应评测夹具均已移除。AI 能力响应
 继续保留 `schedule_windows: false`，不会意外对旧客户端宣称该能力可用。
 
+CI 保留既有 `python-edu-service-unchanged` Job ID，以免现有分支保护检查名失效；它不再
+把 Python 教务服务目录冻结为不可修改，而是持续拒绝旧课程 ORM、历史表引用和旧迁移脚本
+重新进入运行时代码。Python 的完整接口回归仍由 `edu-service` Job 执行。
+
 ## 历史数据清理
 
 Python 服务启动时会通过固定白名单依次清空：

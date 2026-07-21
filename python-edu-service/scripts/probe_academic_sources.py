@@ -27,7 +27,7 @@ if str(PROJECT_DIR) not in sys.path:
 from services.crawler import EduCrawler, LoginFailedError, NetworkError  # noqa: E402
 
 
-PROBE_VERSION = "academic-source-probe-v2"
+PROBE_VERSION = "academic-source-probe-v3"
 BASE_ORIGIN = "https://jxw.sylu.edu.cn"
 MENU_URL = f"{BASE_ORIGIN}/xtgl/index_initMenu.html"
 ACADEMIC_URL = f"{BASE_ORIGIN}/xsxy/xsxyqk_cxXsxyqkIndex.html"
@@ -48,10 +48,12 @@ MENU_KEYWORDS = (
 )
 SCRIPT_MARKERS = (
     "$.ajax",
+    "jQuery.ajax",
     "fetch(",
     ".DataTable(",
     ".dataTable(",
     ".load(",
+    ".loadJqGrid(",
 )
 SCRIPT_LITERAL_URL_PATTERNS = (
     r"fetch\s*\(\s*['\"]([^'\"]+)['\"]",
@@ -89,6 +91,7 @@ FIELD_PATTERNS = {
         "pyfah",
         "plan_id",
         "planid",
+        "jxzxjhxx_id",
     ),
     "contains_module_groups": (
         "培养模块",
@@ -104,6 +107,7 @@ FIELD_PATTERNS = {
         "毕业要求学分",
         "required_credits",
         "requirecredit",
+        "zdxf",
     ),
     "contains_earned_credits": (
         "已获得学分",
@@ -199,6 +203,7 @@ class RequestCandidate:
     method: str = "GET"
     parameter_names: tuple[str, ...] = ()
     form_data: dict[str, str] = field(default_factory=dict, repr=False)
+    parameter_controls: dict[str, str] = field(default_factory=dict, repr=False)
     discovered_from: tuple[str, ...] = ()
     kind: str = "dynamic"
     gnmkdm: str | None = None
@@ -295,6 +300,8 @@ def _deduplicate_candidates(
         )
         for name, value in candidate.form_data.items():
             current.form_data.setdefault(name, value)
+        for name, control_id in candidate.parameter_controls.items():
+            current.parameter_controls.setdefault(name, control_id)
         if current.kind != "menu" and candidate.kind == "menu":
             current.kind = "menu"
             current.name = candidate.name
@@ -305,13 +312,223 @@ def _deduplicate_candidates(
 
 
 def _script_method(script: str, start: int) -> str:
-    window = script[max(0, start - 240) : start + 360]
+    window = script[max(0, start - 240) : start + 1600]
     match = re.search(
-        r"(?:type|method)\s*:\s*['\"](GET|POST)['\"]",
+        r"(?:type|method|mType)\s*:\s*['\"](GET|POST)['\"]",
         window,
         flags=re.IGNORECASE,
     )
     return match.group(1).upper() if match else "GET"
+
+
+def _javascript_string_variables(script: str) -> dict[str, str]:
+    assignments = re.findall(
+        r"(?:^|[;\r\n])\s*(?:(?:var|let|const)\s+)?"
+        r"([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;\r\n]+)",
+        script,
+    )
+    variables: dict[str, str] = {"_path": ""}
+    pending = list(assignments)
+    for _ in range(len(pending) + 1):
+        remaining: list[tuple[str, str]] = []
+        changed = False
+        for name, expression in pending:
+            resolved = _resolve_javascript_string(expression, variables)
+            if resolved is None:
+                remaining.append((name, expression))
+                continue
+            variables[name] = resolved
+            changed = True
+        pending = remaining
+        if not changed:
+            break
+    return variables
+
+
+def _resolve_javascript_string(
+    expression: str, variables: Mapping[str, str]
+) -> str | None:
+    value = expression.strip().rstrip(";").strip()
+    if not value:
+        return None
+    parts = [part.strip() for part in value.split("+")]
+    resolved: list[str] = []
+    for part in parts:
+        if len(part) >= 2 and part[0] == part[-1] and part[0] in {"'", '"'}:
+            resolved.append(part[1:-1].replace(r"\/", "/"))
+        elif re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", part):
+            variable = variables.get(part)
+            if variable is None:
+                return None
+            resolved.append(variable)
+        else:
+            return None
+    return "".join(resolved)
+
+
+def _resolve_dynamic_url_expression(
+    expression: str,
+    script: str,
+    variables: Mapping[str, str],
+    *,
+    seen: frozenset[str] = frozenset(),
+) -> tuple[str, set[str]] | None:
+    direct = _resolve_javascript_string(expression, variables)
+    if direct is not None:
+        return direct, set()
+
+    value = expression.strip().rstrip(";").strip()
+    if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", value):
+        if value in seen:
+            return None
+        assignment_pattern = (
+            r"(?:^|[;\r\n])\s*(?:(?:var|let|const)\s+)?"
+            + re.escape(value)
+            + r"\s*=\s*([^;\r\n]+)"
+        )
+        for assigned in re.findall(assignment_pattern, script):
+            resolved = _resolve_dynamic_url_expression(
+                assigned,
+                script,
+                variables,
+                seen=seen | {value},
+            )
+            if resolved is not None:
+                return resolved
+        return None
+
+    output: list[str] = []
+    parameter_names: set[str] = set()
+    for part in (item.strip() for item in value.split("+")):
+        resolved_part = _resolve_javascript_string(part, variables)
+        if resolved_part is not None:
+            output.append(resolved_part)
+            continue
+        if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", part):
+            prefix = "".join(output)
+            query_match = re.search(r"[?&]([A-Za-z_][A-Za-z0-9_.-]*)=$", prefix)
+            if query_match:
+                parameter_names.add(query_match.group(1))
+                continue
+        return None
+    return "".join(output), parameter_names
+
+
+def _dynamic_url_references(script: str) -> list[tuple[int, str, str]]:
+    references: list[tuple[int, str, str]] = []
+    for call_name, pattern in (
+        ("fetch", r"fetch\s*\(\s*([^,\)\r\n]+)"),
+        ("load", r"\.load\s*\(\s*([^,\)\r\n]+)"),
+    ):
+        for match in re.finditer(pattern, script, flags=re.IGNORECASE):
+            references.append((match.start(), match.group(1).strip(), call_name))
+
+    for call_name, pattern in (
+        ("ajax", r"(?:\$|jQuery)\s*\.ajax\s*\("),
+        ("datatable", r"\.datatable\s*\("),
+        ("jqgrid_config", r"(?:\$|jQuery)\s*\.extend\s*\("),
+    ):
+        for match in re.finditer(pattern, script, flags=re.IGNORECASE):
+            window = script[match.end() : match.end() + 2000]
+            property_match = re.search(
+                r"(?:url|ajax)\s*:\s*([^,}\r\n]+)",
+                window,
+                flags=re.IGNORECASE,
+            )
+            if property_match:
+                references.append(
+                    (
+                        match.start(),
+                        property_match.group(1).strip(),
+                        call_name,
+                    )
+                )
+            elif call_name != "jqgrid_config":
+                references.append((match.start(), "", call_name))
+    return sorted(set(references))
+
+
+def _function_parameter_contract(
+    script: str, function_name: str
+) -> tuple[set[str], dict[str, str], dict[str, str]]:
+    match = re.search(
+        rf"function\s+{re.escape(function_name)}\s*\([^)]*\)\s*\{{"
+        r"(.*?)(?:\r?\n\s*\})",
+        script,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return set(), {}, {}
+    body = re.sub(r"/\*.*?\*/|//[^\r\n]*", "", match.group(1), flags=re.DOTALL)
+    names = set(re.findall(r"['\"]([A-Za-z_][A-Za-z0-9_.-]*)['\"]\s*:", body))
+    names.update(
+        re.findall(r"\[\s*['\"]([A-Za-z_][A-Za-z0-9_.-]*)['\"]\s*\]\s*=", body)
+    )
+    static_values = {
+        key: value
+        for key, value in re.findall(
+            r"['\"]([A-Za-z_][A-Za-z0-9_.-]*)['\"]\s*:\s*"
+            r"['\"]([^'\"]{0,200})['\"]",
+            body,
+        )
+    }
+    variable_controls = {
+        variable: control_id
+        for variable, control_id in re.findall(
+            r"(?:var|let|const)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*"
+            r"(?:jQuery|\$)\(\s*['\"]#([^'\"]+)['\"]\s*\)\.val\(\)",
+            body,
+        )
+    }
+    controls = {
+        key: control_id
+        for key, control_id in re.findall(
+            r"['\"]([A-Za-z_][A-Za-z0-9_.-]*)['\"]\s*:\s*"
+            r"(?:jQuery|\$)\(\s*['\"]#([^'\"]+)['\"]\s*\)\.val\(\)",
+            body,
+        )
+    }
+    controls.update(
+        {
+            key: control_id
+            for key, control_id in re.findall(
+                r"\[\s*['\"]([A-Za-z_][A-Za-z0-9_.-]*)['\"]\s*\]\s*=\s*"
+                r"(?:jQuery|\$)\(\s*['\"]#([^'\"]+)['\"]\s*\)\.val\(\)",
+                body,
+            )
+        }
+    )
+    for key, variable in re.findall(
+        r"['\"]([A-Za-z_][A-Za-z0-9_.-]*)['\"]\s*:\s*"
+        r"([A-Za-z_$][A-Za-z0-9_$]*)",
+        body,
+    ):
+        if variable in variable_controls:
+            controls[key] = variable_controls[variable]
+    return names, static_values, controls
+
+
+def _reference_parameter_contract(
+    script: str, start: int
+) -> tuple[set[str], dict[str, str], dict[str, str]]:
+    remaining = script[start : start + 4000]
+    end_match = re.search(r"\}\s*\)", remaining)
+    window = remaining[: end_match.end()] if end_match else remaining
+    names: set[str] = set()
+    static_values: dict[str, str] = {}
+    controls: dict[str, str] = {}
+    for function_name in re.findall(
+        r"(?:data|postData)\s*:\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(",
+        window,
+        flags=re.IGNORECASE,
+    ):
+        found_names, found_static, found_controls = _function_parameter_contract(
+            script, function_name
+        )
+        names.update(found_names)
+        static_values.update(found_static)
+        controls.update(found_controls)
+    return names, static_values, controls
 
 
 def discover_script_candidates(
@@ -320,75 +537,101 @@ def discover_script_candidates(
     *,
     source: str,
 ) -> list[RequestCandidate]:
-    data_blocks = re.findall(r"data\s*:\s*\{([^{}]{0,1000})\}", script)
-    parameter_names = tuple(
-        sorted(
-            set(
-                re.findall(
-                    r"\b([A-Za-z_][A-Za-z0-9_.-]*)\s*:",
-                    " ".join(data_blocks),
-                )
-            )
-        )
-    )
-    static_values = {
-        key: value
-        for block in data_blocks
-        for key, value in re.findall(
-            r"\b([A-Za-z_][A-Za-z0-9_.-]*)\s*:\s*['\"]([^'\"]{0,200})['\"]",
-            block,
-        )
-    }
+    variables = _javascript_string_variables(script)
     candidates: list[RequestCandidate] = []
-    for pattern in SCRIPT_LITERAL_URL_PATTERNS:
-        for match in re.finditer(pattern, script, flags=re.IGNORECASE):
-            url = _same_origin_url(match.group(1), base_url)
-            if not url:
-                continue
-            method = (
-                "GET"
-                if ".load" in match.group(0)
-                else _script_method(script, match.start())
+    for start, expression, call_name in _dynamic_url_references(script):
+        resolved_url = _resolve_dynamic_url_expression(expression, script, variables)
+        if resolved_url is None:
+            continue
+        raw_url, url_parameter_names = resolved_url
+        url = _same_origin_url(raw_url, base_url)
+        if not url:
+            continue
+        data_window = script[start : start + 2400]
+        data_blocks = (
+            re.findall(r"data\s*:\s*\{([^{}]{0,1000})\}", data_window)
+            if call_name in {"ajax", "datatable", "jqgrid_config"}
+            else []
+        )
+        parameter_names = set(
+            re.findall(r"\b([A-Za-z_][A-Za-z0-9_.-]*)\s*:", " ".join(data_blocks))
+        )
+        static_values = {
+            key: value
+            for block in data_blocks
+            for key, value in re.findall(
+                r"\b([A-Za-z_][A-Za-z0-9_.-]*)\s*:\s*"
+                r"['\"]([^'\"]{0,200})['\"]",
+                block,
             )
-            candidates.append(
-                RequestCandidate(
-                    name=f"脚本候选 {urlsplit(url).path}",
-                    url=url,
-                    method=method,
-                    parameter_names=_parameter_names(url, parameter_names),
-                    form_data=dict(static_values),
-                    discovered_from=(source,),
-                    gnmkdm=_gnmkdm(url, match.group(0)),
-                )
+        }
+        if call_name in {"ajax", "datatable", "jqgrid_config"}:
+            function_names, function_static, parameter_controls = (
+                _reference_parameter_contract(script, start)
             )
+        else:
+            function_names, function_static, parameter_controls = set(), {}, {}
+        parameter_names.update(function_names)
+        parameter_names.update(url_parameter_names)
+        static_values.update(function_static)
+        if call_name == "load":
+            method = "GET"
+        elif call_name == "jqgrid_config":
+            method = "POST"
+        else:
+            method = _script_method(script, start)
+        candidates.append(
+            RequestCandidate(
+                name=f"脚本候选 {urlsplit(url).path}",
+                url=url,
+                method=method,
+                parameter_names=_parameter_names(url, parameter_names),
+                form_data=dict(static_values),
+                parameter_controls=parameter_controls,
+                discovered_from=(source,),
+                gnmkdm=_gnmkdm(url, expression),
+            )
+        )
     return _deduplicate_candidates(candidates)
 
 
 def _unresolved_dynamic_reference_count(script: str) -> int:
-    expression_count = sum(
-        len(re.findall(pattern, script, flags=re.IGNORECASE))
-        for pattern in SCRIPT_EXPRESSION_URL_PATTERNS
+    variables = _javascript_string_variables(script)
+    return sum(
+        1
+        for _, expression, _ in _dynamic_url_references(script)
+        if _resolve_dynamic_url_expression(expression, script, variables) is None
     )
-    unresolved_calls = 0
-    for pattern in (r"fetch\s*\(", r"\.load\s*\("):
-        for match in re.finditer(pattern, script, flags=re.IGNORECASE):
-            argument = script[match.end() : match.end() + 200].lstrip()
-            if not argument.startswith(("'", '"')):
-                unresolved_calls += 1
 
-    for pattern in (r"\$\s*\.ajax\s*\(", r"\.datatable\s*\("):
-        for match in re.finditer(pattern, script, flags=re.IGNORECASE):
-            window = script[match.end() : match.end() + 1200]
-            property_match = re.search(
-                r"(?:url|ajax)\s*:\s*([^,}\r\n]+)",
-                window,
-                flags=re.IGNORECASE,
-            )
-            if not property_match or not property_match.group(1).lstrip().startswith(
-                ("'", '"')
-            ):
-                unresolved_calls += 1
-    return max(expression_count, unresolved_calls)
+
+def _select_business_script_paths(paths: Iterable[str]) -> list[str]:
+    normalized = sorted(
+        {
+            "/" + str(path).replace("\\", "/").lstrip("/")
+            for path in paths
+            if str(path).strip()
+        }
+    )
+    excluded_tokens = (
+        "/common/",
+        "/i18n/",
+        "/jquery",
+        "/plugins/",
+        "/zftal-ui",
+    )
+    preferred = [
+        path
+        for path in normalized
+        if "/js/comp/jwglxt/" in path.lower()
+        and not any(token in path.lower() for token in excluded_tokens)
+    ]
+    if preferred:
+        return preferred
+    return [
+        path
+        for path in normalized
+        if not any(token in path.lower() for token in excluded_tokens)
+    ]
 
 
 def _form_candidate(form: Any, base_url: str) -> RequestCandidate | None:
@@ -438,6 +681,23 @@ def _course_table_shape(soup: BeautifulSoup) -> tuple[bool, int]:
     return False, 0
 
 
+def _page_control_values(soup: BeautifulSoup) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for control in soup.select("input, select"):
+        if control.name == "select":
+            selected = control.select_one("option[selected]") or control.select_one(
+                "option"
+            )
+            value = str(selected.get("value") or "") if selected else ""
+        else:
+            value = str(control.get("value") or "")
+        for attribute in ("name", "id"):
+            name = str(control.get(attribute) or "").strip()
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", name):
+                values[name] = value
+    return values
+
+
 def analyze_html_structure(
     html: str, base_url: str
 ) -> tuple[dict[str, Any], list[RequestCandidate]]:
@@ -445,14 +705,7 @@ def analyze_html_structure(
     candidates: list[RequestCandidate] = []
     forms: list[dict[str, Any]] = []
     all_field_names: set[str] = set()
-    hidden_values: dict[str, str] = {}
-
-    for control in soup.select("input[type=hidden]"):
-        value = str(control.get("value") or "")
-        for attribute in ("name", "id"):
-            name = str(control.get(attribute) or "").strip()
-            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", name):
-                hidden_values[name] = value
+    control_values = _page_control_values(soup)
 
     for form in soup.select("form"):
         candidate = _form_candidate(form, base_url)
@@ -483,7 +736,11 @@ def analyze_html_structure(
         {
             path
             for script in soup.select("script[src]")
-            if (path := _source_path(str(script.get("src") or ""), base_url))
+            if (
+                path := _source_path(
+                    str(script.get("src") or "").replace("\\", "/"), base_url
+                )
+            )
         }
     )
     iframe_sources: set[str] = set()
@@ -531,8 +788,8 @@ def analyze_html_structure(
 
     for candidate in candidates:
         for name in candidate.parameter_names:
-            if name in hidden_values and name not in candidate.form_data:
-                candidate.form_data[name] = hidden_values[name]
+            if name in control_values and name not in candidate.form_data:
+                candidate.form_data[name] = control_values[name]
 
     raw_table_headers = {
         _normalize_text(cell.get_text(" ", strip=True))
@@ -620,16 +877,21 @@ def discover_menu_candidates(
             url = _same_origin_url(raw, base_url)
             if not url:
                 continue
+            gnmkdm = _gnmkdm(url, onclick)
+            form_data = {"layout": "default"}
+            if gnmkdm:
+                form_data["gnmkdm"] = gnmkdm
             found = True
             candidates.append(
                 RequestCandidate(
                     name=name,
                     url=url,
                     method="GET",
-                    parameter_names=_parameter_names(url),
+                    parameter_names=_parameter_names(url, form_data),
+                    form_data=form_data,
                     discovered_from=("menu",),
                     kind="menu",
-                    gnmkdm=_gnmkdm(url, onclick),
+                    gnmkdm=gnmkdm,
                 )
             )
         if not found:
@@ -830,14 +1092,15 @@ def summarize_response(
     )
     body = response.text or ""
     login_redirect = response.status_code in (302, 901) or "login_slogin" in body
-    parsed_json: Any = None
+    json_not_parsed = object()
+    parsed_json: Any = json_not_parsed
     if "json" in content_type or body.lstrip().startswith(("{", "[")):
         try:
             parsed_json = json.loads(body)
         except json.JSONDecodeError:
-            parsed_json = None
+            pass
 
-    if parsed_json is not None:
+    if parsed_json is not json_not_parsed:
         response_shape = _json_shape(parsed_json)
         field_names = _shape_field_names(response_shape)
         search_text = " ".join(sorted(field_names))
@@ -989,6 +1252,11 @@ def _is_safe_read_candidate(candidate: RequestCandidate) -> bool:
     return any(token in path for token in SAFE_READ_TOKENS)
 
 
+def _is_known_state_changing_candidate(candidate: RequestCandidate) -> bool:
+    parameter_names = {name.lower() for name in candidate.parameter_names}
+    return {"sfyd", "ydzt"}.issubset(parameter_names)
+
+
 def _allowed_post_path(value: str) -> str:
     parsed = urlsplit((value or "").strip())
     path = parsed.path
@@ -1008,15 +1276,39 @@ def _allowed_post_path(value: str) -> str:
 
 def _unresolved_parameter_names(candidate: RequestCandidate) -> list[str]:
     query = parse_qs(urlsplit(candidate.url).query, keep_blank_values=True)
-    supplied = {
-        key
-        for key, values in query.items()
-        if any(str(value).strip() for value in values)
-    }
-    supplied.update(
-        key for key, value in candidate.form_data.items() if str(value).strip()
-    )
+    supplied = set(query)
+    supplied.update(candidate.form_data)
     return sorted(set(candidate.parameter_names) - supplied)
+
+
+RUNTIME_BINDING_KEYS = frozenset({"jxzxjhxx_id", "pyfa_id", "plan_id", "planid"})
+
+
+def _response_runtime_bindings(response: httpx.Response) -> dict[str, str]:
+    try:
+        payload = response.json()
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    bindings: dict[str, str] = {}
+
+    def visit(value: Any) -> None:
+        if isinstance(value, Mapping):
+            for key, item in value.items():
+                normalized_key = str(key).lower()
+                if (
+                    normalized_key in RUNTIME_BINDING_KEYS
+                    and isinstance(item, (str, int))
+                    and str(item).strip()
+                ):
+                    bindings.setdefault(normalized_key, str(item))
+                elif isinstance(item, (Mapping, list)):
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(payload)
+    return bindings
 
 
 class AcademicSourceProbe:
@@ -1044,7 +1336,29 @@ class AcademicSourceProbe:
             },
         )
 
-    async def _request_candidate(self, candidate: RequestCandidate) -> dict[str, Any]:
+    async def _send_candidate(self, candidate: RequestCandidate) -> httpx.Response:
+        if candidate.method == "POST":
+            return await self.client.post(
+                candidate.url,
+                data=candidate.form_data,
+                headers={
+                    "Cookie": self._cookie,
+                    "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+                    "Referer": ACADEMIC_URL,
+                },
+            )
+        parsed = urlsplit(candidate.url)
+        query = {
+            key: values[-1]
+            for key, values in parse_qs(parsed.query, keep_blank_values=True).items()
+        }
+        query.update(candidate.form_data)
+        request_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+        return await self._get(request_url, params=query or None)
+
+    async def _request_candidate_with_response(
+        self, candidate: RequestCandidate
+    ) -> tuple[dict[str, Any], httpx.Response | None]:
         unresolved_parameters = _unresolved_parameter_names(candidate)
         base = {
             "name": candidate.name,
@@ -1062,52 +1376,49 @@ class AcademicSourceProbe:
         if candidate.method not in {"GET", "POST"} or any(
             token in path for token in MUTATION_TOKENS
         ):
-            return {**base, "verification_status": "skipped_not_proven_read_only"}
+            return (
+                {**base, "verification_status": "skipped_not_proven_read_only"},
+                None,
+            )
         if candidate.method == "POST":
             if candidate.source_url not in self._allowed_post_paths:
-                return {**base, "verification_status": "skipped_post_not_allowed"}
+                return (
+                    {**base, "verification_status": "skipped_post_not_allowed"},
+                    None,
+                )
         elif not _is_safe_read_candidate(candidate):
-            return {**base, "verification_status": "skipped_not_proven_read_only"}
+            return (
+                {**base, "verification_status": "skipped_not_proven_read_only"},
+                None,
+            )
         try:
-            if candidate.method == "POST":
-                response = await self.client.post(
-                    candidate.url,
-                    data=candidate.form_data,
-                    headers={
-                        "Cookie": self._cookie,
-                        "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
-                        "Referer": ACADEMIC_URL,
-                    },
-                )
-            else:
-                parsed = urlsplit(candidate.url)
-                query = {
-                    key: values[-1]
-                    for key, values in parse_qs(
-                        parsed.query, keep_blank_values=True
-                    ).items()
-                }
-                query.update(candidate.form_data)
-                request_url = urlunsplit(
-                    (parsed.scheme, parsed.netloc, parsed.path, "", "")
-                )
-                response = await self._get(request_url, params=query or None)
+            response = await self._send_candidate(candidate)
         except httpx.HTTPError as exc:
-            return {
+            return (
+                {
+                    **base,
+                    "verification_status": "request_failed",
+                    "error_type": type(exc).__name__,
+                },
+                None,
+            )
+        return (
+            {
                 **base,
-                "verification_status": "request_failed",
-                "error_type": type(exc).__name__,
-            }
-        return {
-            **base,
-            **summarize_response(
-                name=candidate.name,
-                source_url=candidate.source_url,
-                method=candidate.method,
-                parameter_names=candidate.parameter_names,
-                response=response,
-            ),
-        }
+                **summarize_response(
+                    name=candidate.name,
+                    source_url=candidate.source_url,
+                    method=candidate.method,
+                    parameter_names=candidate.parameter_names,
+                    response=response,
+                ),
+            },
+            response,
+        )
+
+    async def _request_candidate(self, candidate: RequestCandidate) -> dict[str, Any]:
+        result, _ = await self._request_candidate_with_response(candidate)
+        return result
 
     async def run(self, sample: Mapping[str, str | None]) -> dict[str, Any]:
         menu_response = await self._get(MENU_URL)
@@ -1123,7 +1434,7 @@ class AcademicSourceProbe:
         ):
             raise RuntimeError("学业情况页面会话无效，无法执行结构探测")
 
-        menu_structure, menu_page_candidates = analyze_html_structure(
+        menu_structure, _ = analyze_html_structure(
             menu_response.text, str(menu_response.url)
         )
         academic_structure, academic_candidates = analyze_html_structure(
@@ -1133,10 +1444,39 @@ class AcademicSourceProbe:
             menu_response.text, str(menu_response.url)
         )
 
+        menu_results: dict[tuple[str, str], dict[str, Any]] = {}
+        menu_shell_candidates: list[RequestCandidate] = []
+        menu_shell_script_paths: list[str] = []
+        page_control_values = _page_control_values(
+            BeautifulSoup(academic_response.text, "html.parser")
+        )
+        for candidate in menu_candidates:
+            result = await self._request_candidate(candidate)
+            menu_results[_candidate_key(candidate)] = result
+            if result.get("status_code") != 200 or result.get(
+                "verification_status"
+            ) in {"request_failed", "request_failed_status", "authentication_failed"}:
+                continue
+            try:
+                shell_response = await self._send_candidate(candidate)
+            except httpx.HTTPError:
+                continue
+            shell_structure, shell_candidates = analyze_html_structure(
+                shell_response.text, str(shell_response.url)
+            )
+            menu_shell_candidates.extend(shell_candidates)
+            menu_shell_script_paths.extend(shell_structure["script_sources"])
+            page_control_values.update(
+                _page_control_values(BeautifulSoup(shell_response.text, "html.parser"))
+            )
+
         external_script_candidates: list[RequestCandidate] = []
         external_scripts: list[dict[str, Any]] = []
-        page_script_paths = sorted(
-            set(academic_structure["script_sources"] + menu_structure["script_sources"])
+        page_script_paths = _select_business_script_paths(
+            [
+                *academic_structure["script_sources"],
+                *menu_shell_script_paths,
+            ]
         )
         for script_path in page_script_paths[:30]:
             script_url = _same_origin_url(script_path, BASE_ORIGIN)
@@ -1158,6 +1498,23 @@ class AcademicSourceProbe:
                 str(response.url),
                 source=f"external_script:{script_path}",
             )
+            for candidate in discovered:
+                for parameter_name in candidate.parameter_names:
+                    control_id = candidate.parameter_controls.get(parameter_name)
+                    if (
+                        control_id in page_control_values
+                        and parameter_name not in candidate.form_data
+                    ):
+                        candidate.form_data[parameter_name] = page_control_values[
+                            control_id
+                        ]
+                    if (
+                        parameter_name in page_control_values
+                        and parameter_name not in candidate.form_data
+                    ):
+                        candidate.form_data[parameter_name] = page_control_values[
+                            parameter_name
+                        ]
             external_script_candidates.extend(discovered)
             unresolved_references = _unresolved_dynamic_reference_count(response.text)
             script_body = response.text.lstrip().lower()
@@ -1180,14 +1537,42 @@ class AcademicSourceProbe:
                 }
             )
 
+        dynamic_endpoint_keys = {
+            (candidate.method, candidate.source_url)
+            for candidate in external_script_candidates
+        }
+        menu_shell_candidates = [
+            candidate
+            for candidate in menu_shell_candidates
+            if not (
+                candidate.discovered_from == ("form",)
+                and (candidate.method, candidate.source_url) in dynamic_endpoint_keys
+            )
+        ]
+
         candidates = _deduplicate_candidates(
             [
-                *menu_page_candidates,
                 *academic_candidates,
                 *menu_candidates,
+                *menu_shell_candidates,
                 *external_script_candidates,
             ]
         )
+        excluded_state_changing_candidates = [
+            {
+                "source_url": candidate.source_url,
+                "method": candidate.method,
+                "reason": "known_state_changing_request",
+                "parameter_names": list(candidate.parameter_names),
+            }
+            for candidate in candidates
+            if _is_known_state_changing_candidate(candidate)
+        ]
+        candidates = [
+            candidate
+            for candidate in candidates
+            if not _is_known_state_changing_candidate(candidate)
+        ]
         known_paths = {
             urlsplit(MENU_URL).path,
             urlsplit(ACADEMIC_URL).path,
@@ -1195,8 +1580,24 @@ class AcademicSourceProbe:
         candidates = [item for item in candidates if item.source_url not in known_paths]
         discovered_candidate_count = len(candidates)
         verified_requests = []
+        runtime_bindings: dict[str, str] = {}
         for candidate in candidates[:40]:
-            verified_requests.append(await self._request_candidate(candidate))
+            cached_menu_result = menu_results.get(_candidate_key(candidate))
+            if cached_menu_result is not None:
+                verified_requests.append(cached_menu_result)
+            else:
+                for parameter_name in candidate.parameter_names:
+                    runtime_value = runtime_bindings.get(parameter_name.lower())
+                    if runtime_value is not None and not candidate.form_data.get(
+                        parameter_name
+                    ):
+                        candidate.form_data[parameter_name] = runtime_value
+                result, response = await self._request_candidate_with_response(
+                    candidate
+                )
+                verified_requests.append(result)
+                if response is not None:
+                    runtime_bindings.update(_response_runtime_bindings(response))
 
         academic_summary = summarize_response(
             name="官方学业情况",
@@ -1289,6 +1690,7 @@ class AcademicSourceProbe:
             },
             "verified_requests": verified_requests,
             "unverified_candidates": unverified_candidates,
+            "excluded_state_changing_candidates": (excluded_state_changing_candidates),
             "unresolved_dynamic_reference_count": unresolved_dynamic_reference_count,
             "courses_empty_diagnosis": diagnosis,
             "probe_completeness": {
@@ -1318,6 +1720,7 @@ def diagnose_courses_empty(
             if request.get("source_url") != urlsplit(ACADEMIC_URL).path
             and request.get("stable_for_current_account") is True
             and request.get("contains_course_details") is True
+            and _is_academic_course_request(request)
         ),
         None,
     )
@@ -1337,9 +1740,10 @@ def diagnose_courses_empty(
         for request in verified_requests
         if request.get("source_url") != urlsplit(ACADEMIC_URL).path
         and request.get("kind") != "menu"
+        and _is_academic_course_request(request)
     ]
     has_markers = (
-        any(academic_structure.get("script_marker_counts", {}).values())
+        int(academic_structure.get("unresolved_dynamic_reference_count", 0)) > 0
         or bool(academic_structure.get("data_sources"))
         or bool(academic_structure.get("iframe_sources"))
         or bool(unresolved_candidates)
@@ -1355,6 +1759,16 @@ def diagnose_courses_empty(
         "unverified_candidate_count": len(unresolved_candidates),
         "verified_dynamic_source": None,
     }
+
+
+def _is_academic_course_request(request: Mapping[str, Any]) -> bool:
+    sources = [str(item) for item in request.get("discovered_from", [])]
+    if not sources:
+        return True
+    source_url = str(request.get("source_url") or "")
+    return source_url.startswith("/xsxy/") or any(
+        "cxxsxyqkindex.js" in source.lower() for source in sources
+    )
 
 
 def _graduation_complete(candidate: Mapping[str, Any]) -> bool:

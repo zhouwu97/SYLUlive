@@ -286,22 +286,6 @@ class AiAssistantProvider extends ChangeNotifier {
     }
   }
 
-  /// 退出或换号时先同步清空内存，再尽力取消服务端运行。
-  Future<void> closeAccountContext() async {
-    final runId = _run?.id;
-    _streamGeneration++;
-    _messages.clear();
-    _conversations.clear();
-    _conversationId = null;
-    _capabilities = null;
-    _quota = null;
-    _resetRunState();
-    _notify();
-
-    if (runId == null) return;
-    await _cancelRunBestEffort(runId);
-  }
-
   Future<void> reconnect() async {
     final runId = _run?.id;
     if (runId == null || isRunning) return;
@@ -551,6 +535,10 @@ class AiAssistantProvider extends ChangeNotifier {
         return '当前已发布资料不足，暂时无法回答这个问题';
       case 'rag_unavailable':
         return '政策资料服务暂时不可用，请稍后重试';
+      case 'provider_missing_citations':
+        return '回答未生成可核验来源，请重试';
+      case 'knowledge_validation_failed':
+        return '政策资料校验失败，请稍后重试';
       case 'server_restarted':
         return '服务刚刚恢复，本次回答未完成，请重新提问';
       case 'context_cancelled':
@@ -566,23 +554,10 @@ class AiAssistantProvider extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  /// 账号切换最多等待两秒，避免远端取消请求长时间挂起退出流程。
-  Future<void> _cancelRunBestEffort(String runId) async {
-    try {
-      await _service.cancelRun(runId).timeout(const Duration(seconds: 2));
-    } catch (_) {
-      // 本地上下文已经关闭，远端取消失败不能阻止退出。
-    }
-  }
-
   @override
   void dispose() {
-    final runId = _run?.id;
     _disposed = true;
     _streamGeneration++;
-    if (runId != null && isRunning) {
-      unawaited(_cancelRunBestEffort(runId));
-    }
     super.dispose();
   }
 }

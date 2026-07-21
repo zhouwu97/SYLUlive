@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/campus/campus_theme.dart';
+
 class AppTheme {
   // 主题色
   static const Color primaryColor = Color(0xFF6366F1);
@@ -29,7 +31,14 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      scaffoldBackgroundColor: brightness == Brightness.dark ? CampusTheme.darkBg : CampusTheme.bg,
+      canvasColor: brightness == Brightness.dark ? CampusTheme.darkBg : CampusTheme.bg,
       fontFamily: 'NotoSansCJKsc',
+      fontFamilyFallback: const [
+        'Noto Color Emoji',
+        'Segoe UI Emoji',
+        'Apple Color Emoji',
+      ],
       // 全局紧凑密度
       visualDensity: VisualDensity.compact,
       appBarTheme: AppBarTheme(

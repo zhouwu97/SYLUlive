@@ -96,6 +96,7 @@ func main() {
 	}
 
 	cfg := config.Load()
+	middleware.SetLegalConsentEnforcement(cfg.LegalConsentEnforcement)
 	appCtx, stopApp := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopApp()
 
@@ -146,8 +147,13 @@ func main() {
 		&models.UserLegalConsent{},
 
 		&models.PersonalDataRequest{},
+		&models.EduCredentialCleanupJob{},
 
 		&models.Post{},
+		&models.Poll{},
+		&models.PollOption{},
+		&models.PollBallot{},
+		&models.PollBallotChoice{},
 
 		&models.WaterSection{},
 
@@ -268,6 +274,35 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	// 新推送授权默认关闭，旧 Token 不得被视为用户已主动同意。
+	if err := db.Model(&models.User{}).
+		Where("push_data_processing_enabled = ?", false).
+		Updates(map[string]interface{}{
+			"device_token":         "",
+			"push_installation_id": "",
+			"push_notice_version":  "",
+			"push_enabled_at":      nil,
+		}).Error; err != nil {
+		log.Fatal("历史推送 Token 清理失败:", err)
+	}
+	// 旧客户端的一次性六项确认只保留为历史捆绑证据，不能升级成独立功能授权。
+	if err := db.Model(&models.UserLegalConsent{}).
+		Where("document IN ? AND acknowledgement_type <> ?", []string{
+			models.LegalDocumentCommunityRules,
+			models.LegalDocumentMinorProtection,
+			models.LegalDocumentContentComplaint,
+			models.LegalDocumentSDKDisclosure,
+		}, "rules_acceptance").
+		Updates(map[string]interface{}{
+			"acknowledgement_type": "legacy_bundled",
+			"scope":                "legacy",
+			"scene":                "migration",
+		}).Error; err != nil {
+		log.Fatal("历史捆绑授权标记失败:", err)
+	}
+	if err := models.BackfillLegacyMarketContacts(db); err != nil {
+		log.Fatal("历史集市联系方式回填失败:", err)
+	}
 
 	if err := models.EnsureExamPaperIndexes(db); err != nil {
 		log.Fatal("试卷索引迁移失败:", err)
@@ -318,12 +353,14 @@ func main() {
 	if err := ensurePostActivitySchema(db); err != nil {
 		log.Fatal("帖子活跃时间迁移失败:", err)
 	}
+	if err := models.EnsurePollSchema(db); err != nil {
+		log.Fatal("投票系统数据库约束未就绪:", err)
+	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
 	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
 	db.Exec(`UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`)
 	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
-	db.Exec(`UPDATE posts SET post_type = 'campus_life' WHERE board_id = ? AND (post_type IS NULL OR post_type = '')`, int(models.BoardShuitie))
 
 	// 全表统计回算不应阻塞服务启动；需要修复历史数据时使用独立运维任务执行。
 	log.Println("跳过启动期全表统计回算")
@@ -376,6 +413,10 @@ func main() {
 
 	})
 
+	// 法律页面无需登录和客户端版本头，供浏览器、下载页和分享页访问。
+	r.StaticFile("/terms", filepath.Join("static", "legal", "terms.html"))
+	r.StaticFile("/privacy", filepath.Join("static", "legal", "privacy.html"))
+
 	// 最低支持版本拦截位于 CORS 之后、业务路由之前。公开更新接口和迁移期
 	// 登录接口由中间件内部放行，避免用户在被拦截后无法获得新安装包。
 	r.Use(middleware.AppVersionMiddleware(
@@ -390,9 +431,11 @@ func main() {
 
 	userHandler := handlers.NewUserHandler(db)
 
-	privacyHandler := handlers.NewPrivacyHandler(db)
+	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
+	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
+	pollHandler := handlers.NewPollHandler(db)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
 	competitionHandler := handlers.NewCompetitionHandler(db)
 
@@ -639,6 +682,7 @@ func main() {
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
 		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
 	}
+	eduCredentialCleanupCron := tasks.StartEduCredentialCleanupCron(appCtx, eduCredentialCleanupJobs)
 
 	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。
 	appPublic := r.Group("/api/app")
@@ -731,7 +775,6 @@ func main() {
 	{
 
 		user.GET("/profile", userHandler.GetProfile)
-		user.POST("/legal-consents", authHandler.AcceptLegalConsents)
 
 		user.PUT("/profile", userHandler.UpdateProfile)
 
@@ -742,12 +785,17 @@ func main() {
 		user.PUT("/nightmode", userHandler.UpdateNightMode)
 
 		user.PUT("/device_token", userHandler.UpdateDeviceToken)
+		user.PUT("/push-settings", userHandler.UpdatePushSettings)
 
-		user.GET("/privacy/data", privacyHandler.ExportMyData)
-		// 保留旧导出路径，兼容已发布客户端。
+		user.POST("/legal-consents", authHandler.AcceptLegalConsents)
+		user.POST("/community-rules", authHandler.AcceptCommunityRules)
+		user.GET("/privacy/data", privacyHandler.GetMyData)
+		user.POST("/privacy/requests", privacyHandler.CreateRequest)
+		user.GET("/privacy/requests", privacyHandler.ListMyRequests)
 		user.GET("/privacy/export", privacyHandler.ExportMyData)
 		user.DELETE("/privacy/consents", privacyHandler.WithdrawConsent)
 		user.DELETE("/account", privacyHandler.CancelAccount)
+		user.DELETE("/edu-binding", privacyHandler.UnbindEdu)
 
 		user.GET("/invitations", invitationHandler.GetPending)
 
@@ -800,6 +848,13 @@ func main() {
 		user.POST("/:id/follow", userHandler.Follow)
 		user.DELETE("/:id/follow", userHandler.Unfollow)
 		user.GET("/:id/is-following", userHandler.IsFollowing)
+	}
+
+	privacyAdmin := r.Group("/api/admin/privacy")
+	privacyAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		privacyAdmin.GET("/requests", privacyHandler.ListRequestsForAdmin)
+		privacyAdmin.PUT("/requests/:id", privacyHandler.HandleRequest)
 	}
 
 	userOptional := r.Group("/api/user")
@@ -957,6 +1012,25 @@ func main() {
 		competitions.GET("/events", competitionHandler.ListEvents)
 		competitions.GET("/events/:id", competitionHandler.GetEvent)
 	}
+
+	// 投票公开读取使用可选鉴权，以返回当前用户的选择和结果权限。
+	pollsPublic := r.Group("/api/polls")
+	pollsPublic.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret))
+	{
+		pollsPublic.GET("", pollHandler.List)
+		pollsPublic.GET("/:id", pollHandler.Get)
+	}
+
+	pollsAuth := r.Group("/api/polls")
+	pollsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		pollsAuth.POST("", pollHandler.Create)
+		pollsAuth.PUT("/:id", pollHandler.Update)
+		pollsAuth.DELETE("/:id", pollHandler.Delete)
+		pollsAuth.PUT("/:id/ballot", pollHandler.PutBallot)
+		pollsAuth.POST("/:id/close", pollHandler.Close)
+	}
+	r.GET("/api/me/polls", middleware.AuthMiddleware(db, cfg.JWTSecret), pollHandler.ListMine)
 
 	postsAuth := r.Group("/api/posts")
 
@@ -1629,6 +1703,7 @@ func main() {
 	serveErr := serveUntilShutdown(appCtx, server, 10*time.Second)
 	stopApp()
 	examPaperStorageCron.Wait()
+	eduCredentialCleanupCron.Wait()
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
 	}

@@ -163,7 +163,7 @@ func (h *WaterModerationHandler) PinPost(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子已删除"})
 		return
 	}
-	if post.BoardID != models.BoardShuitie {
+	if post.BoardID != models.BoardShuitie || post.ContentKind == models.PostContentKindPoll {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只能置顶水帖版块帖子"})
 		return
 	}
@@ -362,7 +362,7 @@ func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子已删除"})
 		return
 	}
-	if post.BoardID != models.BoardShuitie {
+	if post.BoardID != models.BoardShuitie || post.ContentKind == models.PostContentKindPoll {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只能加精水帖版块帖子"})
 		return
 	}
@@ -528,7 +528,7 @@ func (h *WaterModerationHandler) DeletePost(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "帖子已被删除"})
 		return
 	}
-	if post.BoardID != models.BoardShuitie {
+	if post.BoardID != models.BoardShuitie || post.ContentKind == models.PostContentKindPoll {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只能管理水帖版块帖子"})
 		return
 	}
@@ -595,7 +595,7 @@ func (h *WaterModerationHandler) RestorePost(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
-	if post.BoardID != models.BoardShuitie {
+	if post.BoardID != models.BoardShuitie || post.ContentKind == models.PostContentKindPoll {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只能恢复水帖版块帖子"})
 		return
 	}

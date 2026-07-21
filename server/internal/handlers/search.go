@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"shenliyuan/internal/models"
 
@@ -65,6 +66,9 @@ func (h *SearchHandler) searchPosts(
 		Preload("Author").
 		Preload("Images").
 		Preload("Images.File")
+	if !supportsPollRequest(c) {
+		query = query.Where("content_kind <> ?", models.PostContentKindPoll)
+	}
 
 	if boardID := parsePositiveInt(c.Query("board"), 0); boardID > 0 {
 		query = query.Where("board_id = ?", boardID)
@@ -105,7 +109,7 @@ func (h *SearchHandler) searchPosts(
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "搜索帖子失败"})
 		return
 	}
-	h.postHandler.fillLikes(c, posts)
+	h.postHandler.hydratePosts(c, posts, time.Now())
 	c.JSON(http.StatusOK, gin.H{
 		"items": posts,
 		"total": total,

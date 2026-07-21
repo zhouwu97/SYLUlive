@@ -17,7 +17,9 @@ import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_time.dart';
+import '../utils/text_editing_helper.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/emoji/app_emoji_panel.dart';
 import 'image_viewer_screen.dart';
 
 class ChatDetailScreen extends StatefulWidget {
@@ -41,6 +43,7 @@ class ChatDetailScreen extends StatefulWidget {
 class _ChatDetailScreenState extends State<ChatDetailScreen>
     with WidgetsBindingObserver {
   final TextEditingController _textController = TextEditingController();
+  final FocusNode _inputFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   Timer? _refreshTimer;
   int? _conversationId;
@@ -51,6 +54,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   int _positionRequestVersion = 0;
   int? _syncedPlatformConversationId;
   double _lastKeyboardInset = 0;
+  double _lastKeyboardHeight = 280;
+  bool _showEmojiPanel = false;
   DateTime _lastMessageActivity = DateTime.now();
   final Map<int, GlobalKey> _messageKeys = {};
   MessageSendState? _sendState;
@@ -154,6 +159,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
+    _inputFocusNode.dispose();
     _textController.removeListener(_saveDraft);
     _textController.dispose();
     super.dispose();
@@ -177,6 +183,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
       final keyboardOpened = keyboardInset > _lastKeyboardInset;
       _lastKeyboardInset = keyboardInset;
+      if (keyboardInset > 0) {
+        _lastKeyboardHeight = keyboardInset.clamp(240.0, 320.0).toDouble();
+      }
       if (keyboardOpened) {
         _scrollToBottom(jump: true, stable: true);
       }
@@ -298,6 +307,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (!mounted) return;
     setState(() {
       _sendState = next;
+      if (next?.isBlocked ?? false) {
+        _showEmojiPanel = false;
+        _inputFocusNode.unfocus();
+      }
     });
   }
 
@@ -307,6 +320,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           widget.targetUser.id,
           _textController.text,
         );
+  }
+
+  void _toggleEmojiPanel() {
+    if (_sendState?.isBlocked ?? false) return;
+    if (_showEmojiPanel) {
+      setState(() => _showEmojiPanel = false);
+      _inputFocusNode.requestFocus();
+      _scrollToBottom(jump: true);
+      return;
+    }
+    _inputFocusNode.unfocus();
+    setState(() => _showEmojiPanel = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scrollToBottom(jump: true, stable: true);
+    });
+  }
+
+  void _insertEmoji(String emoji) {
+    if (_sendState?.isBlocked ?? false) return;
+    insertAtSelection(_textController, emoji);
+    _saveDraft();
+  }
+
+  double get _emojiPanelHeight {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    return _lastKeyboardHeight.clamp(220.0, screenHeight * 0.42).toDouble();
   }
 
   Future<void> _markReadAndClearNotifications(int conversationId) async {
@@ -432,30 +471,46 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
     final body = _buildConversationBody(provider, currentUserId, currentUser);
     if (widget.embedded) {
-      return Material(
-        color: Colors.transparent,
-        child: Column(
-          children: [
-            _buildEmbeddedHeader(),
-            Expanded(child: body),
-          ],
+      return PopScope(
+        canPop: !_showEmojiPanel,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop && _showEmojiPanel) {
+            setState(() => _showEmojiPanel = false);
+          }
+        },
+        child: Material(
+          color: Colors.transparent,
+          child: Column(
+            children: [
+              _buildEmbeddedHeader(),
+              Expanded(child: body),
+            ],
+          ),
         ),
       );
     }
 
-    return Scaffold(
-      resizeToAvoidBottomInset: false,
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: _buildTitle(),
-        backgroundColor:
-            isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-        foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
+    return PopScope(
+      canPop: !_showEmojiPanel,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _showEmojiPanel) {
+          setState(() => _showEmojiPanel = false);
+        }
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: _buildTitle(),
+          backgroundColor:
+              isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+          foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+        ),
+        body: body,
       ),
-      body: body,
     );
   }
 
@@ -923,7 +978,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                 Expanded(
                   child: TextField(
                     controller: _textController,
-                    onTap: _scrollToBottom,
+                    focusNode: _inputFocusNode,
+                    onTap: () {
+                      if (_showEmojiPanel) {
+                        setState(() => _showEmojiPanel = false);
+                      }
+                      _scrollToBottom();
+                    },
                     enabled: !blocked,
                     readOnly: blocked,
                     style: TextStyle(
@@ -957,6 +1018,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     ),
                   ),
                 ),
+                IconButton(
+                  tooltip: _showEmojiPanel ? '打开键盘' : '选择表情',
+                  onPressed: blocked ? null : _toggleEmojiPanel,
+                  icon: Icon(
+                    _showEmojiPanel
+                        ? Icons.keyboard_alt_outlined
+                        : Icons.sentiment_satisfied_alt_outlined,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 IconButton.filled(
                   onPressed: (sending || blocked) ? null : _sendMessage,
@@ -973,6 +1043,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                 ),
               ],
             ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            child: _showEmojiPanel && !blocked
+                ? SizedBox(
+                    height: _emojiPanelHeight,
+                    child: AppEmojiPanel(
+                      onEmojiSelected: _insertEmoji,
+                      onBackspace: () =>
+                          deletePreviousCharacter(_textController),
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
         ],
       ),

@@ -68,6 +68,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       color: Color(0xFFEE5C8A),
       url: 'https://job.sylu.edu.cn/',
     ),
+    _WebsiteDirectoryItem(
+      title: '蓝桥杯成绩',
+      subtitle: '竞赛成绩快速查询',
+      icon: Icons.military_tech_outlined,
+      color: Color(0xFF0EA5A4),
+      url: 'https://c16h22o4.github.io/',
+    ),
   ];
 
   @override
@@ -893,7 +900,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
       context,
       MaterialPageRoute(
         builder: (_) => PhysicalTestPage(
-          appUserId: widget.appUserId,
+          appUserId: context.read<AuthProvider>().user!.id.toString(),
           username: widget.username,
           password: pwd,
         ),

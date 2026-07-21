@@ -10,8 +10,13 @@ import '../utils/app_feedback.dart';
 
 class CheckInCalendarScreen extends StatefulWidget {
   final DateTime Function()? now;
+  final bool autoCheckIn;
 
-  const CheckInCalendarScreen({super.key, this.now});
+  const CheckInCalendarScreen({
+    super.key,
+    this.now,
+    this.autoCheckIn = false,
+  });
 
   @override
   State<CheckInCalendarScreen> createState() => _CheckInCalendarScreenState();
@@ -26,8 +31,20 @@ enum _CalendarDaySelection {
   today,
 }
 
+class _CheckInMonthSnapshot {
+  final Map<DateTime, CheckInDayRecord> records;
+  final int longestStreak;
+
+  const _CheckInMonthSnapshot({
+    required this.records,
+    required this.longestStreak,
+  });
+}
+
 class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   late DateTime _visibleMonth;
+  final Map<String, _CheckInMonthSnapshot> _monthCache = {};
+  final Map<String, Future<_CheckInMonthSnapshot>> _monthRequests = {};
   Map<DateTime, CheckInDayRecord> _records = const {};
   bool _loading = true;
   bool _checkingIn = false;
@@ -41,6 +58,8 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
   DateTime? _serverToday;
   DateTime? _selectedDate;
   _CalendarDaySelection? _selectedDaySelection;
+  bool _autoCheckInAttempted = false;
+  int _monthTransitionDirection = 0;
 
   DateTime get _deviceToday {
     final now = widget.now?.call() ?? DateTime.now();
@@ -64,10 +83,25 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
     _loadData();
   }
 
-  Future<void> _loadData({bool showLoading = true}) async {
+  Future<void> _loadData({
+    bool showLoading = true,
+    bool forceRefresh = false,
+  }) async {
     final requestedMonth = _visibleMonth;
+    final monthKey = _formatMonth(requestedMonth);
+    final cachedMonth = _monthCache[monthKey];
     final followsDeviceMonth =
         _serverToday == null && _sameMonth(requestedMonth, _deviceToday);
+    if (!forceRefresh && _serverToday != null && cachedMonth != null) {
+      setState(() {
+        _records = cachedMonth.records;
+        _longestStreak = cachedMonth.longestStreak;
+        _loading = false;
+        _errorMessage = null;
+      });
+      _prefetchAround(requestedMonth);
+      return;
+    }
     if (showLoading && mounted) {
       setState(() {
         _loading = true;
@@ -77,87 +111,190 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
 
     final auth = context.read<AuthProvider>();
     try {
-      final responses = await Future.wait([
-        auth.dio.get('/user/checkin/status'),
-        auth.dio.get(
-          '/user/checkin/calendar',
-          queryParameters: {'month': _formatMonth(requestedMonth)},
-        ),
-      ]);
+      final shouldLoadStatus = _serverToday == null || forceRefresh;
+      final Future<Response<dynamic>?> statusRequest = shouldLoadStatus
+          ? auth.dio.get('/user/checkin/status')
+          : Future<Response<dynamic>?>.value(null);
+      final monthRequest = _loadMonthSnapshot(
+        auth.dio,
+        requestedMonth,
+        forceRefresh: forceRefresh,
+      );
+      final statusResponse = await statusRequest;
+      final monthSnapshot = await monthRequest;
       if (!mounted || requestedMonth != _visibleMonth) return;
 
-      final status = Map<String, dynamic>.from(responses[0].data as Map);
-      final calendar = Map<String, dynamic>.from(responses[1].data as Map);
-      final serverToday = _parseDateOnly(status['check_in_date']) ?? _today;
+      final status = statusResponse?.data is Map
+          ? Map<String, dynamic>.from(statusResponse!.data as Map)
+          : null;
+      final serverToday = _parseDateOnly(status?['check_in_date']) ?? _today;
       if (followsDeviceMonth && !_sameMonth(requestedMonth, serverToday)) {
         setState(() {
           _serverToday = serverToday;
           _visibleMonth = DateTime(serverToday.year, serverToday.month);
-          _checkedInToday = status['checked_in'] == true;
-          _streakDays = _readInt(status['streak_days']);
-          _nextExp = _readInt(status['next_exp'], fallback: 1);
-          _makeupCards = _readInt(status['makeup_cards']);
+          _checkedInToday = status?['checked_in'] == true;
+          _streakDays = _readInt(status?['streak_days']);
+          _nextExp = _readInt(status?['next_exp'], fallback: 1);
+          _makeupCards = _readInt(status?['makeup_cards']);
           _records = const {};
         });
         await _loadData();
         return;
       }
-      final rawRecords = calendar['records'] as List<dynamic>? ?? const [];
-      final records = <DateTime, CheckInDayRecord>{};
-      for (final raw in rawRecords) {
-        final record = CheckInDayRecord.fromJson(
-          Map<String, dynamic>.from(raw as Map),
-        );
-        records[record.date] = record;
-      }
 
       setState(() {
         _serverToday = serverToday;
-        _checkedInToday = status['checked_in'] == true;
-        _streakDays = _readInt(status['streak_days']);
-        _nextExp = _readInt(status['next_exp'], fallback: 1);
-        _makeupCards = _readInt(status['makeup_cards']);
-        _longestStreak = _readInt(calendar['longest_streak']);
-        _records = records;
+        if (status != null) {
+          _checkedInToday = status['checked_in'] == true;
+          _streakDays = _readInt(status['streak_days']);
+          _nextExp = _readInt(status['next_exp'], fallback: 1);
+          _makeupCards = _readInt(status['makeup_cards']);
+        }
+        _longestStreak = monthSnapshot.longestStreak;
+        _records = monthSnapshot.records;
         if (_selectedMakeupDate != null &&
-            records.containsKey(_selectedMakeupDate)) {
+            monthSnapshot.records.containsKey(_selectedMakeupDate)) {
           _selectedDate = null;
           _selectedDaySelection = null;
         }
         _loading = false;
         _errorMessage = null;
       });
+      _prefetchAround(requestedMonth);
+      _maybeAutoCheckIn();
     } on DioException catch (error) {
       if (!mounted || requestedMonth != _visibleMonth) return;
-      setState(() {
-        _loading = false;
-        _errorMessage = AppFeedback.dioErrorMessage(
+      _handleLoadError(
+        requestedMonth,
+        AppFeedback.dioErrorMessage(
           error,
           fallback: '签到记录加载失败，请稍后重试',
-        );
-      });
+        ),
+      );
     } catch (_) {
       if (!mounted || requestedMonth != _visibleMonth) return;
-      setState(() {
-        _loading = false;
-        _errorMessage = '签到记录加载失败，请稍后重试';
-      });
+      _handleLoadError(requestedMonth, '签到记录加载失败，请稍后重试');
     }
   }
 
+  Future<_CheckInMonthSnapshot> _loadMonthSnapshot(
+    Dio dio,
+    DateTime month, {
+    bool forceRefresh = false,
+  }) async {
+    final key = _formatMonth(month);
+    if (!forceRefresh) {
+      final cached = _monthCache[key];
+      if (cached != null) return cached;
+      final activeRequest = _monthRequests[key];
+      if (activeRequest != null) return activeRequest;
+    }
+
+    final request = _requestMonthSnapshot(dio, month);
+    _monthRequests[key] = request;
+    try {
+      final snapshot = await request;
+      _monthCache[key] = snapshot;
+      return snapshot;
+    } finally {
+      if (identical(_monthRequests[key], request)) {
+        _monthRequests.remove(key);
+      }
+    }
+  }
+
+  Future<_CheckInMonthSnapshot> _requestMonthSnapshot(
+    Dio dio,
+    DateTime month,
+  ) async {
+    final response = await dio.get(
+      '/user/checkin/calendar',
+      queryParameters: {'month': _formatMonth(month)},
+    );
+    final calendar = Map<String, dynamic>.from(response.data as Map);
+    final rawRecords = calendar['records'] as List<dynamic>? ?? const [];
+    final records = <DateTime, CheckInDayRecord>{};
+    for (final raw in rawRecords) {
+      final record = CheckInDayRecord.fromJson(
+        Map<String, dynamic>.from(raw as Map),
+      );
+      records[record.date] = record;
+    }
+    return _CheckInMonthSnapshot(
+      records: records,
+      longestStreak: _readInt(calendar['longest_streak']),
+    );
+  }
+
+  void _prefetchAround(DateTime month) {
+    if (!mounted) return;
+    final dio = context.read<AuthProvider>().dio;
+    for (final offset in const [-1, -2, 1]) {
+      final target = DateTime(month.year, month.month + offset);
+      if (_isMonthAfter(target, _today)) continue;
+      unawaited(
+        _loadMonthSnapshot(dio, target).catchError(
+          (_) => _CheckInMonthSnapshot(
+            records: const {},
+            longestStreak: _longestStreak,
+          ),
+        ),
+      );
+    }
+  }
+
+  void _handleLoadError(DateTime requestedMonth, String message) {
+    final cached = _monthCache[_formatMonth(requestedMonth)];
+    setState(() {
+      _loading = false;
+      if (cached != null) {
+        _records = cached.records;
+        _longestStreak = cached.longestStreak;
+        _errorMessage = null;
+      } else {
+        _errorMessage = message;
+      }
+    });
+    if (cached != null) {
+      AppFeedback.showSnackBar(context, message, isError: true);
+    }
+  }
+
+  void _maybeAutoCheckIn() {
+    if (!widget.autoCheckIn ||
+        _autoCheckInAttempted ||
+        _checkedInToday ||
+        _loading) {
+      return;
+    }
+    _autoCheckInAttempted = true;
+    unawaited(_doCheckIn());
+  }
+
   Future<void> _changeMonth(int offset) async {
-    if (offset > 0 && _isCurrentMonth) return;
+    if (_loading || (offset > 0 && _isCurrentMonth)) return;
     final next = DateTime(
       _visibleMonth.year,
       _visibleMonth.month + offset,
     );
+    final cached = _monthCache[_formatMonth(next)];
     setState(() {
+      _monthTransitionDirection = offset;
       _visibleMonth = next;
-      _records = const {};
+      _records = cached?.records ?? const {};
+      _longestStreak = cached?.longestStreak ?? _longestStreak;
+      _loading = cached == null;
+      _errorMessage = null;
       _selectedDate = null;
       _selectedDaySelection = null;
     });
-    await _loadData();
+    await _loadData(showLoading: cached == null);
+  }
+
+  void _handleMonthSwipe(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity.abs() < 250) return;
+    _changeMonth(velocity > 0 ? -1 : 1);
   }
 
   void _selectCalendarDay(
@@ -252,7 +389,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         _selectedDate = null;
         _selectedDaySelection = null;
       });
-      await _loadData(showLoading: false);
+      await _loadData(showLoading: false, forceRefresh: true);
       unawaited(auth.refreshUser());
       if (!mounted) return;
       if (already) {
@@ -299,7 +436,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         _checkedInToday = true;
         _streakDays = streak;
       });
-      await _loadData(showLoading: false);
+      await _loadData(showLoading: false, forceRefresh: true);
       unawaited(auth.refreshUser());
       if (!mounted) return;
 
@@ -378,6 +515,63 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
     );
   }
 
+  Widget _buildMonthContent() {
+    final Widget content;
+    final String stateKey;
+    if (_loading) {
+      stateKey = 'loading';
+      content = const SizedBox(
+        height: 360,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    } else if (_errorMessage != null) {
+      stateKey = 'error';
+      content = _CalendarError(
+        message: _errorMessage!,
+        onRetry: _loadData,
+      );
+    } else {
+      stateKey = 'ready';
+      content = CheckInMonthCalendar(
+        month: _visibleMonth,
+        today: _today,
+        records: _records,
+        selectedDate: _selectedDate,
+        onDayTap: _handleCalendarDayTap,
+      );
+    }
+    final beginX = _monthTransitionDirection == 0
+        ? 0.0
+        : (_monthTransitionDirection > 0 ? 0.06 : -0.06);
+    return ClipRect(
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: Offset(beginX, 0),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+        child: KeyedSubtree(
+          key: ValueKey('${_formatMonth(_visibleMonth)}-$stateKey'),
+          child: content,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -430,7 +624,10 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         ),
       ),
       body: RefreshIndicator(
-        onRefresh: () => _loadData(showLoading: false),
+        onRefresh: () => _loadData(
+          showLoading: false,
+          forceRefresh: true,
+        ),
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -452,33 +649,25 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                           makeupCards: _makeupCards,
                         ),
                         const SizedBox(height: 20),
-                        _MonthHeader(
-                          month: _visibleMonth,
-                          canGoNext: !_isCurrentMonth,
-                          onPrevious: () => _changeMonth(-1),
-                          onNext: () => _changeMonth(1),
-                        ),
-                        const SizedBox(height: 10),
-                        if (_loading)
-                          const SizedBox(
-                            height: 360,
-                            child: Center(child: CircularProgressIndicator()),
-                          )
-                        else if (_errorMessage != null)
-                          _CalendarError(
-                            message: _errorMessage!,
-                            onRetry: _loadData,
-                          )
-                        else
-                          CheckInMonthCalendar(
-                            month: _visibleMonth,
-                            today: _today,
-                            records: _records,
-                            selectedDate: _selectedDate,
-                            onDayTap: _handleCalendarDayTap,
+                        GestureDetector(
+                          key: const ValueKey('check-in-month-swipe-area'),
+                          behavior: HitTestBehavior.opaque,
+                          onHorizontalDragEnd: _handleMonthSwipe,
+                          child: Column(
+                            children: [
+                              _MonthHeader(
+                                month: _visibleMonth,
+                                canGoNext: !_isCurrentMonth,
+                                onPrevious: () => _changeMonth(-1),
+                                onNext: () => _changeMonth(1),
+                              ),
+                              const SizedBox(height: 10),
+                              _buildMonthContent(),
+                              const SizedBox(height: 16),
+                              _CalendarLegend(theme: theme),
+                            ],
                           ),
-                        const SizedBox(height: 16),
-                        _CalendarLegend(theme: theme),
+                        ),
                       ],
                     ),
                   ),
@@ -797,10 +986,17 @@ class _MonthHeader extends StatelessWidget {
           icon: const Icon(Icons.chevron_left_rounded),
         ),
         Expanded(
-          child: Text(
-            '${month.year}年${month.month}月',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: Text(
+              '${month.year}年${month.month}月',
+              key: ValueKey(_formatMonth(month)),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
         ),
         IconButton(
@@ -1160,6 +1356,11 @@ DateTime? _parseDateOnly(dynamic value) {
 
 bool _sameMonth(DateTime left, DateTime right) {
   return left.year == right.year && left.month == right.month;
+}
+
+bool _isMonthAfter(DateTime left, DateTime right) {
+  return left.year > right.year ||
+      (left.year == right.year && left.month > right.month);
 }
 
 String _formatMonth(DateTime value) {

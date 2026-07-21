@@ -45,6 +45,8 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
       '/user/2' => {
           'id': 2,
           'nickname': '女生用户',
+          'legal_consents_active': true,
+          'legal_consents_required': false,
           'avatar': '',
           'background': '',
           'exp': 0,
@@ -59,6 +61,8 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
               'student_id': '20260002',
               'nickname': '新名字',
               'gender': '',
+              'legal_consents_active': true,
+              'legal_consents_required': false,
               'created_at': '2026-07-15T00:00:00Z',
               'background': 'http://example.com/bg.jpg',
             }
@@ -68,6 +72,8 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
                 'student_id': '20260002',
                 'nickname': '女生用户',
                 'gender': 'female',
+                'legal_consents_active': true,
+                'legal_consents_required': false,
                 'created_at': '2026-07-15T00:00:00Z',
                 'background': '',
               },
@@ -76,6 +82,8 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
           'student_id': '20260002',
           'nickname': '新名字',
           'gender': '',
+          'legal_consents_active': true,
+          'legal_consents_required': false,
           'created_at': '2026-07-15T00:00:00Z',
           'background': 'http://example.com/new_bg.jpg',
         },
@@ -87,11 +95,6 @@ class _ProfileRouteAdapter implements HttpClientAdapter {
         },
       _ => {'error': 'not found'},
     };
-    if (response is Map<String, dynamic> &&
-        (route == '/user/profile' || route == '/user/background')) {
-      response.putIfAbsent('legal_consents_active', () => true);
-      response.putIfAbsent('legal_consents_required', () => false);
-    }
     return ResponseBody.fromString(
       jsonEncode(response),
       statusCode,
@@ -171,9 +174,9 @@ void main() {
       'student_id': '20260002',
       'nickname': '女生用户',
       'gender': 'female',
-      'created_at': '2026-07-15T00:00:00Z',
       'legal_consents_active': true,
       'legal_consents_required': false,
+      'created_at': '2026-07-15T00:00:00Z',
     });
 
     await tester.pumpWidget(
@@ -226,9 +229,9 @@ void main() {
       'student_id': '20260002',
       'nickname': '女生用户',
       'gender': 'female',
-      'created_at': '2026-07-15T00:00:00Z',
       'legal_consents_active': true,
       'legal_consents_required': false,
+      'created_at': '2026-07-15T00:00:00Z',
     });
 
     await tester.pumpWidget(
@@ -272,6 +275,8 @@ void main() {
         'student_id': '20260002',
         'nickname': '未知性别用户',
         'gender': '',
+        'legal_consents_active': true,
+        'legal_consents_required': false,
         'created_at': '2026-07-15T00:00:00Z',
       },
     );
@@ -287,9 +292,9 @@ void main() {
       'student_id': '20260002',
       'nickname': '未知性别用户',
       'gender': '',
-      'created_at': '2026-07-15T00:00:00Z',
       'legal_consents_active': true,
       'legal_consents_required': false,
+      'created_at': '2026-07-15T00:00:00Z',
     });
 
     await tester.pumpWidget(
@@ -312,8 +317,7 @@ void main() {
 
     // 打开编辑页
     await tester.tap(find.text('编辑资料'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
     // 未知性别默认选中保密
     final secrecySegment = find.descendant(
@@ -332,12 +336,7 @@ void main() {
     // 点击保存
     await tester.tap(find.text('保存'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    for (var i = 0;
-        i < 10 && find.byType(SegmentedButton<String>).evaluate().isNotEmpty;
-        i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
+    await tester.pumpAndSettle();
 
     // 验证请求
     final profileRequests = adapter.requests
@@ -398,10 +397,10 @@ void main() {
       'student_id': '20260002',
       'nickname': '测试用户',
       'gender': 'male',
-      'created_at': '2026-07-15T00:00:00Z',
-      'background': '',
       'legal_consents_active': true,
       'legal_consents_required': false,
+      'created_at': '2026-07-15T00:00:00Z',
+      'background': '',
     });
 
     await tester.pumpWidget(
@@ -431,10 +430,10 @@ void main() {
       'student_id': '20260002',
       'nickname': '新名字',
       'gender': '',
-      'created_at': '2026-07-15T00:00:00Z',
-      'background': 'http://example.com/new_bg.jpg',
       'legal_consents_active': true,
       'legal_consents_required': false,
+      'created_at': '2026-07-15T00:00:00Z',
+      'background': 'http://example.com/new_bg.jpg',
     });
     await tester.pump();
 

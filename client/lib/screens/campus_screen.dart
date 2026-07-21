@@ -13,7 +13,6 @@ import '../utils/campus_asset_preloader.dart';
 
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/campus/campus_ai_entry_card.dart';
-import '../widgets/campus/campus_model_chat_entry_card.dart';
 import '../widgets/campus/campus_header.dart';
 import '../widgets/campus/campus_feature_notice_card.dart';
 import '../widgets/campus/campus_service_grid.dart';
@@ -22,7 +21,6 @@ import '../widgets/campus/campus_news_card.dart';
 
 import 'campus_article_detail_screen.dart';
 import 'ai/ai_assistant_screen.dart';
-import 'ai/ai_model_chat_screen.dart';
 import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
 import 'campus_map_tab_page.dart';
@@ -268,6 +266,7 @@ class _CampusScreenState extends State<CampusScreen>
                             AiAssistantScreen(
                               capabilities: _aiCapabilities!,
                               service: _aiService,
+                              dio: getSharedDio(),
                             ),
                           ),
                         ),
@@ -276,18 +275,6 @@ class _CampusScreenState extends State<CampusScreen>
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
                       index: _aiCapabilities == null ? 2 : 3,
-                      child: CampusModelChatEntryCard(
-                        isDark: isDark,
-                        onTap: appUserId == null
-                            ? null
-                            : () => _openPage(
-                                  AIModelChatScreen(appUserId: appUserId),
-                                ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 3 : 4,
                       child: CampusServiceGrid(
                         isDark: isDark,
                         onEduTap: () => _openPage(const EduScreen()),
@@ -301,7 +288,7 @@ class _CampusScreenState extends State<CampusScreen>
                     ),
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 4 : 5,
+                      index: _aiCapabilities == null ? 3 : 4,
                       child: CampusNewsSectionHeader(
                         isDark: isDark,
                         onCompetitionTap: () =>
@@ -316,7 +303,7 @@ class _CampusScreenState extends State<CampusScreen>
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 126),
                 sliver: SliverToBoxAdapter(
                   child: HomeTabRevealItem(
-                    index: _aiCapabilities == null ? 5 : 6,
+                    index: _aiCapabilities == null ? 4 : 5,
                     child: _buildRecentList(isDark),
                   ),
                 ),

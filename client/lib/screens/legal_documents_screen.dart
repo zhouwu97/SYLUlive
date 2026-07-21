@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../legal/legal_documents.dart';
-
+import '../widgets/campus/campus_theme.dart';
 class LegalDocumentsScreen extends StatelessWidget {
   final String? initialDocumentId;
 
@@ -17,11 +17,24 @@ class LegalDocumentsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
     final initial = initialDocumentId == null
         ? null
         : LegalDocuments.byId(initialDocumentId!);
     return Scaffold(
-      appBar: AppBar(title: Text(initial?.title ?? '协议与隐私政策')),
+      backgroundColor: bg,
+      appBar: AppBar(
+        backgroundColor: bg,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        title: Text(
+          initial?.title ?? '协议与隐私政策',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+      ),
       body: initial == null
           ? ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),

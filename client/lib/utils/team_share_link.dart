@@ -1,4 +1,4 @@
-/// 组队分享链接的统一生成与解析规则。
+/// 组队分享链接的统一生成与严格解析规则。
 class TeamShareLink {
   static const String domain = 'sylulive.online';
   static const String _webScheme = 'https';
@@ -22,22 +22,22 @@ class TeamShareLink {
     );
   }
 
-  /// 同时接受公开 HTTPS 链接与网页“打开 App”按钮使用的自定义协议。
+  /// 只接受固定域名、固定路径和单个正整数编号，避免把任意链接当作业务入口。
   static int? parseRecruitmentId(String raw) {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null) return null;
 
-    final segments = uri.pathSegments.where((part) => part.isNotEmpty).toList();
     String? rawId;
     if (uri.scheme == _webScheme &&
         uri.host == domain &&
-        segments.length == 2 &&
-        segments.first == 'team') {
-      rawId = segments.last;
+        uri.pathSegments.length == 2 &&
+        uri.pathSegments.first == 'team' &&
+        uri.queryParameters.isEmpty) {
+      rawId = uri.pathSegments[1];
     } else if (uri.scheme == _appScheme &&
         uri.host == 'team' &&
-        segments.length == 1) {
-      rawId = segments.single;
+        uri.pathSegments.length == 1) {
+      rawId = uri.pathSegments.single;
     }
 
     final recruitmentId = int.tryParse(rawId ?? '');

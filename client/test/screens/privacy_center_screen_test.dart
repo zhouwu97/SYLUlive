@@ -74,9 +74,7 @@ void main() {
 
     expect(find.text('查阅个人信息'), findsOneWidget);
     expect(find.text('导出个人数据'), findsOneWidget);
-    expect(find.text('数据权利请求'), findsOneWidget);
-    expect(find.text('申请更正或删除'), findsOneWidget);
-    expect(find.text('查看处理记录'), findsOneWidget);
+    expect(find.text('数据更正、删除与处理记录'), findsOneWidget);
     expect(find.text('撤销全部同意'), findsNothing);
     expect(find.text('重新授权'), findsNothing);
     expect(adapter.requestedPaths, contains('/user/privacy/requests'));
@@ -91,13 +89,11 @@ void main() {
     await tester.pumpWidget(_screen(provider, restricted: true));
     await tester.pumpAndSettle();
 
-    expect(find.text('授权已撤销，社区、教务、消息等功能已停止使用。'), findsOneWidget);
+    expect(find.text('授权已撤销'), findsOneWidget);
     expect(find.text('查阅个人信息'), findsOneWidget);
     expect(find.text('导出个人数据'), findsOneWidget);
     expect(find.text('重新授权'), findsOneWidget);
-    expect(find.text('数据权利请求'), findsOneWidget);
-    expect(find.text('申请更正或删除'), findsOneWidget);
-    expect(find.text('查看处理记录'), findsOneWidget);
+    expect(find.text('数据更正、删除与处理记录'), findsOneWidget);
     expect(find.text('撤销全部同意'), findsNothing);
     expect(find.byTooltip('退出登录'), findsOneWidget);
     expect(adapter.requestedPaths, contains('/user/privacy/requests'));

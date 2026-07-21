@@ -10,8 +10,9 @@ import 'package:share_plus/share_plus.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/required_legal_consent_dialog.dart';
 import '../services/push_settings_service.dart';
+import '../widgets/campus/campus_theme.dart';
 import 'legal_documents_screen.dart';
-import 'settings_screen.dart';
+
 class PrivacyCenterScreen extends StatefulWidget {
   final bool restricted;
 
@@ -27,34 +28,21 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   bool _loadingData = false;
   bool _exporting = false;
   bool _revoking = false;
-  bool _pushEnabled = false;
-  bool _pushLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadRequests();
-    PushSettingsService.isEnabled().then((enabled) {
-      if (mounted)
-        setState(() {
-          _pushEnabled = enabled;
-          _pushLoading = false;
-        });
-    });
   }
 
   Future<void> _loadRequests() async {
     try {
-      final response =
-          await context.read<AuthProvider>().dio.get('/user/privacy/requests');
+      final response = await context.read<AuthProvider>().dio.get('/user/privacy/requests');
       final items = response.data is Map ? response.data['items'] : null;
       if (mounted) {
         setState(() {
           _requests = items is List
-              ? items
-                  .whereType<Map>()
-                  .map((item) => Map<String, dynamic>.from(item))
-                  .toList()
+              ? items.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList()
               : const [];
           _loadingRequests = false;
         });
@@ -67,31 +55,83 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   Future<void> _showRequestDialog() async {
     var requestType = 'correction';
     final detailController = TextEditingController();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
+    
     final submitted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (_, setDialogState) => AlertDialog(
-          title: const Text('申请更正或删除'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            DropdownButtonFormField<String>(
-              initialValue: requestType,
-              items: const [
-                DropdownMenuItem(value: 'correction', child: Text('更正个人信息')),
-                DropdownMenuItem(value: 'deletion', child: Text('删除个人信息或内容')),
-              ],
-              onChanged: (value) =>
-                  setDialogState(() => requestType = value ?? 'correction'),
-            ),
-            TextField(
-                controller: detailController, maxLength: 500, maxLines: 3),
-          ]),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('申请更正或删除', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withValues(alpha: 0.05) : CampusTheme.bg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? Colors.white24 : CampusTheme.softBorder),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: requestType,
+                    isExpanded: true,
+                    icon: const Icon(Icons.arrow_drop_down_rounded),
+                    items: const [
+                      DropdownMenuItem(value: 'correction', child: Text('更正个人信息')),
+                      DropdownMenuItem(value: 'deletion', child: Text('删除个人信息或内容')),
+                    ],
+                    onChanged: (value) => setDialogState(() => requestType = value ?? 'correction'),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: detailController,
+                maxLength: 500,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: '补充详细说明（选填）',
+                  filled: true,
+                  fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : CampusTheme.bg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: isDark ? Colors.white24 : CampusTheme.softBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: isDark ? Colors.white24 : CampusTheme.softBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: accent),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('取消')),
+              onPressed: () => Navigator.pop(dialogContext, false),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).textTheme.bodyMedium?.color,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+              ),
+              child: const Text('取消', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('提交')),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+              ),
+              child: const Text('提交', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
           ],
         ),
       ),
@@ -101,13 +141,12 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
       return;
     }
     try {
-      await context
-          .read<AuthProvider>()
-          .dio
-          .post('/user/privacy/requests', data: {
+      if (!mounted) return;
+      await context.read<AuthProvider>().dio.post('/user/privacy/requests', data: {
         'request_type': requestType,
         'detail': detailController.text.trim(),
       });
+      if (!mounted) return;
       _showMessage('请求已提交');
       await _loadRequests();
     } on DioException catch (error) {
@@ -118,61 +157,44 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   }
 
   Future<void> _showRequestHistory() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+
     await showModalBottomSheet<void>(
       context: context,
-      builder: (_) => ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text('个人信息请求记录',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 12),
-          if (_requests.isEmpty)
-            const Text('暂无个人信息请求记录')
-          else
-            ..._requests.map((request) => ListTile(
-                  title: Text(request['request_type']?.toString() ?? '请求'),
-                  subtitle: Text(
-                      request['result']?.toString().isNotEmpty == true
-                          ? request['result'].toString()
-                          : request['status']?.toString() ?? 'pending'),
-                )),
-        ],
+      useSafeArea: true,
+      backgroundColor: bg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text('个人信息请求记录',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            if (_requests.isEmpty)
+              const Text('暂无个人信息请求记录')
+            else
+              ..._requests.map((request) => ListTile(
+                    title: Text(request['request_type']?.toString() ?? '请求'),
+                    subtitle: Text(
+                        request['result']?.toString().isNotEmpty == true
+                            ? request['result'].toString()
+                            : request['status']?.toString() ?? 'pending'),
+                  )),
+          ],
+        ),
       ),
     );
-  }
-
-  Future<void> _setPushEnabled(bool enabled) async {
-    if (_pushLoading) return;
-    setState(() => _pushLoading = true);
-    final auth = context.read<AuthProvider>();
-    if (enabled) {
-      final result = await PushSettingsService.enableAndRegister(auth);
-      if (mounted) {
-        setState(() {
-          _pushEnabled = true;
-          _pushLoading = false;
-        });
-        _showMessage(result.message);
-      }
-      return;
-    }
-    final result = await PushSettingsService.disable(auth);
-    if (!mounted) return;
-    setState(() => _pushLoading = false);
-    if (!result.success) {
-      _showMessage(result.errorMessage ?? '关闭远程推送失败');
-      return;
-    }
-    setState(() => _pushEnabled = false);
-    _showMessage('已关闭远程推送，课程和考试提醒不受影响');
   }
 
   Future<void> _showPersonalData() async {
     if (_loadingData) return;
     setState(() => _loadingData = true);
     try {
-      final response =
-          await context.read<AuthProvider>().dio.get('/user/privacy/data');
+      final response = await context.read<AuthProvider>().dio.get('/user/privacy/data');
       if (response.data is! Map) throw const FormatException('个人信息响应无效');
       if (!mounted) return;
       await Navigator.of(context).push(
@@ -195,8 +217,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final response =
-          await context.read<AuthProvider>().dio.get('/user/privacy/export');
+      final response = await context.read<AuthProvider>().dio.get('/user/privacy/export');
       final directory = await getTemporaryDirectory();
       final file = File('${directory.path}/shenliyuan-personal-data.json');
       await file.writeAsString(
@@ -257,8 +278,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     if (confirmed != true || password.isEmpty || !mounted) return;
 
     setState(() => _revoking = true);
-    final result =
-        await context.read<AuthProvider>().withdrawLegalConsents(password);
+    final result = await context.read<AuthProvider>().withdrawLegalConsents(password);
     if (!mounted) return;
     setState(() => _revoking = false);
     if (!result.success) {
@@ -301,7 +321,10 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
             onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('取消'),
           ),
-          FilledButton.tonal(
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('确认注销'),
           ),
@@ -320,6 +343,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
       return;
     }
     await PushSettingsService.clearLocal();
+    if (!mounted) return;
     _showMessage('账号已注销');
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
@@ -332,18 +356,166 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _showDataRightsSheet() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: bg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 16),
+              Container(
+                width: 32,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '数据权利',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              _PrivacyActionTile(
+                icon: Icons.edit_document,
+                title: '申请更正或删除',
+                subtitle: '提交隐私请求以更正或删除个人信息',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showRequestDialog();
+                },
+              ),
+              _PrivacyActionTile(
+                icon: Icons.history,
+                title: '查看处理记录',
+                subtitle: _loadingRequests ? '正在读取请求状态' : '共 ${_requests.length} 条记录',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showRequestHistory();
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showAuthorizationManagementSheet() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+    final auth = context.read<AuthProvider>();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: bg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 16),
+                  Container(
+                    width: 32,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '授权管理',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 16),
+                  _PrivacyActionTile(
+                    icon: Icons.school_outlined,
+                    title: '教务数据',
+                    subtitle: (auth.user?.eduBound ?? false) ? '已绑定' : '未绑定',
+                    trailing: const SizedBox.shrink(),
+                  ),
+                  _PrivacyActionTile(
+                    icon: Icons.alarm_on_outlined,
+                    title: '本地课程和考试提醒',
+                    subtitle: '本地提醒不依赖远程推送，可在课表和考试功能中分别管理',
+                    trailing: const SizedBox.shrink(),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.error,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          _withdrawConsent();
+                        },
+                        child: const Text('撤销全部同意'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget get _loadingWidget {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
+    return SizedBox.square(
+      dimension: 18,
+      child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final restricted =
-        widget.restricted || !(auth.user?.legalConsentsActive ?? true);
+    final restricted = widget.restricted || !(auth.user?.legalConsentsActive ?? true);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
 
     return Scaffold(
+      backgroundColor: bg,
       appBar: AppBar(
+        backgroundColor: bg,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         automaticallyImplyLeading: !widget.restricted,
         title: const Text('隐私与数据权利'),
         actions: [
@@ -356,124 +528,102 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 30),
+        physics: const BouncingScrollPhysics(),
         children: [
           if (restricted) ...[
             _RestrictedNotice(),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
           ],
-          const _SectionTitle('协议与说明'),
-          const SizedBox(height: 8),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.policy_outlined),
-              title: const Text('查看协议、隐私政策与第三方服务说明'),
-              subtitle: const Text('包含教务数据专项授权和投诉举报规则'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => LegalDocumentsScreen.open(context),
-            ),
+          
+          const _PrivacySectionTitle('协议与说明'),
+          const SizedBox(height: 10),
+          _PrivacySectionCard(
+            children: [
+              _PrivacyActionTile(
+                icon: Icons.policy_outlined,
+                title: '查看协议、隐私政策与第三方服务说明',
+                subtitle: '包含教务数据专项授权和投诉举报规则',
+                enabled: true,
+                onTap: () => LegalDocumentsScreen.open(context),
+              ),
+            ],
           ),
-          const SizedBox(height: 20),
-          const _SectionTitle('你的数据'),
-          const SizedBox(height: 8),
-          Card(
-            child: Column(
+          const SizedBox(height: 18),
+          
+          const _PrivacySectionTitle('你的数据'),
+          const SizedBox(height: 10),
+          _PrivacySectionCard(
+            children: [
+              _PrivacyActionTile(
+                key: const ValueKey('access-personal-data'),
+                icon: Icons.person_search_outlined,
+                title: '查阅个人信息',
+                subtitle: '直接查看账户资料、教务绑定和授权记录',
+                trailing: _loadingData ? _loadingWidget : null,
+                onTap: _loadingData ? null : _showPersonalData,
+              ),
+              const _PrivacyDivider(),
+              _PrivacyActionTile(
+                key: const ValueKey('export-personal-data'),
+                icon: Icons.ios_share_outlined,
+                title: '导出个人数据',
+                subtitle: '生成可分享 JSON，不含认证凭证',
+                trailing: _exporting ? _loadingWidget : null,
+                onTap: _exporting ? null : _exportData,
+              ),
+              const _PrivacyDivider(),
+              _PrivacyActionTile(
+                key: const ValueKey('create-privacy-request'),
+                icon: Icons.manage_accounts_outlined,
+                title: '数据更正、删除与处理记录',
+                subtitle: '提交隐私请求或查看处理进度',
+                onTap: _showDataRightsSheet,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+
+          const _PrivacySectionTitle('授权管理'),
+          const SizedBox(height: 10),
+          if (restricted)
+            _PrivacySectionCard(
               children: [
-                ListTile(
-                  key: const ValueKey('access-personal-data'),
-                  leading: const Icon(Icons.person_search_outlined),
-                  title: const Text('查阅个人信息'),
-                  subtitle: const Text('直接查看账户资料、教务绑定和授权记录'),
-                  trailing: _loadingData
-                      ? const SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.chevron_right),
-                  onTap: _loadingData ? null : _showPersonalData,
+                _PrivacyActionTile(
+                  key: const ValueKey('renew-legal-consents'),
+                  icon: Icons.verified_user_outlined,
+                  title: '重新授权',
+                  subtitle: '重新确认最新协议后恢复正常使用',
+                  onTap: _renewConsent,
                 ),
-                const Divider(height: 1, indent: 56),
-                ListTile(
-                  key: const ValueKey('export-personal-data'),
-                  leading: const Icon(Icons.ios_share_outlined),
-                  title: const Text('导出个人数据'),
-                  subtitle: const Text('生成可分享 JSON，不含认证凭证'),
-                  trailing: _exporting
-                      ? const SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.chevron_right),
-                  onTap: _exporting ? null : _exportData,
+              ],
+            )
+          else
+            _PrivacySectionCard(
+              children: [
+                _PrivacyActionTile(
+                  icon: Icons.tune_outlined,
+                  title: '按功能管理授权',
+                  subtitle: '教务绑定、远程推送和本地提醒分别管理',
+                  onTap: _showAuthorizationManagementSheet,
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
-          if (restricted) ...[
-            const _SectionTitle('授权管理'),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                key: const ValueKey('renew-legal-consents'),
-                leading: const Icon(Icons.verified_user_outlined),
-                title: const Text('重新授权'),
-                subtitle: const Text('重新确认最新协议后恢复正常使用'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _renewConsent,
+          const _PrivacySectionTitle('账号管理'),
+          const SizedBox(height: 10),
+          _PrivacySectionCard(
+            children: [
+              _PrivacyActionTile(
+                key: const ValueKey('cancel-account'),
+                icon: Icons.delete_forever_outlined,
+                title: '注销账号',
+                subtitle: '清除或匿名化账号资料，此操作不可恢复',
+                danger: true,
+                onTap: _showCancelAccountDialog,
               ),
-            ),
-            const SizedBox(height: 20),
-          ] else ...[
-            const _SectionTitle('授权管理'),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.tune_outlined),
-                title: const Text('按功能管理授权'),
-                subtitle: const Text('教务绑定、远程推送和本地提醒分别关闭或撤回'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-          const _SectionTitle('消息与通知'),
-          const SizedBox(height: 8),
-          Card(
-            child: SwitchListTile(
-              key: const ValueKey('push-data-processing'),
-              secondary: const Icon(Icons.notifications_active_outlined),
-              title: const Text('接收远程消息推送'),
-              subtitle: Text(widget.restricted
-                  ? '账号受限时仅可关闭推送并清理设备标识'
-                  : '默认关闭。开启后会向极光提供设备推送标识'),
-              value: _pushEnabled,
-              onChanged: _pushLoading || (widget.restricted && !_pushEnabled)
-                  ? null
-                  : _setPushEnabled,
-            ),
-          ),
-          const SizedBox(height: 20),
-          const _SectionTitle('账号管理'),
-          const SizedBox(height: 8),
-          Card(
-            child: ListTile(
-              key: const ValueKey('cancel-account'),
-              leading: Icon(
-                Icons.delete_forever_outlined,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              title: const Text('注销账号'),
-              subtitle: const Text('清除或匿名化账号身份资料，此操作不可恢复'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _showCancelAccountDialog,
-            ),
+            ],
           ),
         ],
       ),
@@ -484,19 +634,34 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
 class _RestrictedNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final errorColor = Theme.of(context).colorScheme.error;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
+        color: errorColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: errorColor.withValues(alpha: 0.3)),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.block_outlined, size: 20),
-          SizedBox(width: 10),
+          Icon(Icons.block_outlined, size: 20, color: errorColor),
+          const SizedBox(width: 10),
           Expanded(
-            child: Text('授权已撤销，社区、教务、消息等功能已停止使用。'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '授权已撤销',
+                  style: TextStyle(fontWeight: FontWeight.w600, color: errorColor, fontSize: 15),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '社区、教务、消息等依赖授权的功能已停止使用',
+                  style: TextStyle(fontSize: 13, color: errorColor),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -504,18 +669,182 @@ class _RestrictedNotice extends StatelessWidget {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
+class _PrivacySectionTitle extends StatelessWidget {
   final String text;
 
-  const _SectionTitle(this.text);
+  const _PrivacySectionTitle(this.text);
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 22,
+          decoration: BoxDecoration(
+            color: accent,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: onSurface,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PrivacySectionCard extends StatelessWidget {
+  final List<Widget> children;
+
+  const _PrivacySectionCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? CampusTheme.darkCard : CampusTheme.card;
+    final borderColor = isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: borderColor),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.035),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Material(
+          color: Colors.transparent,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivacyDivider extends StatelessWidget {
+  const _PrivacyDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final borderColor = isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
+
+    return Divider(
+      height: 1,
+      thickness: 1,
+      indent: 64,
+      endIndent: 16,
+      color: borderColor,
+    );
+  }
+}
+
+class _PrivacyActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool danger;
+  // ignore: unused_element_parameter
+  final bool enabled;
+
+  const _PrivacyActionTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.onTap,
+    this.danger = false,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
+    final subText = isDark ? Theme.of(context).colorScheme.onSurfaceVariant : CampusTheme.subText;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final errorColor = Theme.of(context).colorScheme.error;
+
+    final iconColor = danger ? errorColor : accent;
+
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 76),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 44,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Icon(icon, size: 27, color: iconColor),
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.3,
+                        color: subText,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing!,
+              ] else if (onTap != null) ...[
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right, size: 22, color: accent),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -594,8 +923,16 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
         : const <Map<String, dynamic>>[];
     final active = widget.data['legal_consents_active'] == true;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = CampusTheme.pageBackground(context);
+
     return Scaffold(
+      backgroundColor: bg,
       appBar: AppBar(
+        backgroundColor: bg,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         title: const Text('我的个人信息'),
         actions: [
           IconButton(
@@ -611,62 +948,61 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 30),
+        physics: const BouncingScrollPhysics(),
         children: [
           Row(
             children: [
-              const Expanded(child: _SectionTitle('账户资料')),
+              const Expanded(child: _PrivacySectionTitle('账户资料')),
               Chip(label: Text(active ? '授权有效' : '授权未生效')),
             ],
           ),
-          const SizedBox(height: 8),
-          Card(
-            child: Column(
-              children: _accountLabels.entries
-                  .where((entry) => account.containsKey(entry.key))
-                  .map(
-                    (entry) => _DataRow(
-                      label: entry.value,
-                      value: _formatValue(entry.key, account[entry.key]),
-                    ),
-                  )
-                  .toList(growable: false),
-            ),
+          const SizedBox(height: 10),
+          _PrivacySectionCard(
+            children: _accountLabels.entries
+                .where((entry) => account.containsKey(entry.key))
+                .map(
+                  (entry) => _DataRow(
+                    label: entry.value,
+                    value: _formatValue(entry.key, account[entry.key]),
+                  ),
+                )
+                .toList(growable: false),
           ),
-          const SizedBox(height: 20),
-          const _SectionTitle('授权记录'),
-          const SizedBox(height: 8),
+          const SizedBox(height: 18),
+          const _PrivacySectionTitle('授权记录'),
+          const SizedBox(height: 10),
           if (consents.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(14),
-                child: Text('暂无可显示的授权记录'),
-              ),
+            const _PrivacySectionCard(
+              children: [
+                Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Text('暂无可显示的授权记录'),
+                ),
+              ],
             )
           else
-            Card(
-              child: Column(
-                children: consents.map((consent) {
-                  final document = consent['document']?.toString() ?? '';
-                  final revoked = consent['revoked_at'] != null;
-                  return ListTile(
-                    dense: true,
-                    title: Text(_documentLabels[document] ?? document),
-                    subtitle: Text(
-                      '版本 ${consent['version'] ?? '-'} · ${revoked ? '已撤销' : '已同意'}',
-                    ),
-                    trailing: Icon(
-                      revoked
-                          ? Icons.remove_circle_outline
-                          : Icons.check_circle_outline,
-                      size: 20,
-                      color: revoked
-                          ? Theme.of(context).colorScheme.error
-                          : Theme.of(context).colorScheme.primary,
-                    ),
-                  );
-                }).toList(growable: false),
-              ),
+            _PrivacySectionCard(
+              children: consents.map((consent) {
+                final document = consent['document']?.toString() ?? '';
+                final revoked = consent['revoked_at'] != null;
+                return ListTile(
+                  dense: true,
+                  title: Text(_documentLabels[document] ?? document),
+                  subtitle: Text(
+                    '版本 ${consent['version'] ?? '-'} · ${revoked ? '已撤销' : '已同意'}',
+                  ),
+                  trailing: Icon(
+                    revoked
+                        ? Icons.remove_circle_outline
+                        : Icons.check_circle_outline,
+                    size: 20,
+                    color: revoked
+                        ? Theme.of(context).colorScheme.error
+                        : (isDark ? const Color(0xFF62CDBD) : CampusTheme.primary),
+                  ),
+                );
+              }).toList(growable: false),
             ),
           const SizedBox(height: 12),
           Text(
@@ -704,10 +1040,10 @@ class _DataRow extends StatelessWidget {
           SizedBox(
             width: 76,
             child: Text(
-              label,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+               label,
+               style: TextStyle(
+                 color: Theme.of(context).colorScheme.onSurfaceVariant,
+               ),
             ),
           ),
           const SizedBox(width: 10),

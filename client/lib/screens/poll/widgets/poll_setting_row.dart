@@ -37,7 +37,7 @@ class PollSettingRow extends StatelessWidget {
                     children: [
                       Text(title,
                           style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w600,
+                              fontSize: 14, fontWeight: FontWeight.normal,
                               color: Color(0xFF1F2328))),
                       if (subtitle != null) ...[
                         const SizedBox(height: 2),

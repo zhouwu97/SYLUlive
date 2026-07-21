@@ -39,20 +39,26 @@ class PollOptionEditor extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 10),
         Expanded(
-          child: SizedBox(
-            height: 44,
-            child: TextField(
-              controller: controller,
-              enabled: enabled,
-              maxLength: 50,
-              decoration: InputDecoration(
-                hintText: '请输入选项',
-                counterText: '',
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          child: TextField(
+            controller: controller,
+            enabled: enabled,
+            maxLength: 50,
+            decoration: InputDecoration(
+              hintText: '请输入选项',
+              counterText: '',
+              filled: true,
+              isDense: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CampusTheme.border, width: 1),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CampusTheme.primary, width: 1),
               ),
             ),
           ),

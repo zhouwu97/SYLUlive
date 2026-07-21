@@ -22,6 +22,7 @@ import '../services/grade_reminder_service.dart';
 import '../models/diagnostic_log_entry.dart';
 import '../services/keep_alive_service.dart';
 import '../services/wallpaper_prefetch_service.dart';
+import '../services/push_settings_service.dart';
 import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
 
@@ -42,11 +43,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
   KeepAliveStatus _keepAliveStatus = const KeepAliveStatus.unsupported();
   bool _keepAliveBusy = false;
   bool _hideRecentsBusy = false;
+  bool _pushEnabled = false; 
+  bool _pushLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadKeepAliveStatus();
+    _loadPushState();
+  }
+
+  Future<void> _loadPushState() async {
+    final enabled = await PushSettingsService.isEnabled();
+    if (mounted) {
+      setState(() {
+        _pushEnabled = enabled;
+        _pushLoading = false;
+      });
+    }
+  }
+
+  Future<void> _setPushEnabled(bool enabled) async {
+    if (_pushLoading) return;
+    setState(() => _pushLoading = true);
+    final auth = context.read<AuthProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    
+    if (enabled) {
+      final result = await PushSettingsService.enableAndRegister(auth);
+      if (mounted) {
+        setState(() {
+          _pushEnabled = true;
+          _pushLoading = false;
+        });
+        messenger.showSnackBar(SnackBar(content: Text(result.message)));
+      }
+      return;
+    }
+    
+    final result = await PushSettingsService.disable(auth);
+    if (!mounted) return;
+    setState(() => _pushLoading = false);
+    
+    if (!result.success) {
+      messenger.showSnackBar(SnackBar(content: Text(result.errorMessage ?? '关闭远程推送失败')));
+      return;
+    }
+    
+    setState(() => _pushEnabled = false);
+    messenger.showSnackBar(const SnackBar(content: Text('已关闭远程推送，课程和考试提醒不受影响')));
   }
 
   Future<void> _loadKeepAliveStatus() async {
@@ -371,6 +416,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: themeProvider.predictiveBack,
                 onChanged: (v) => themeProvider.setPredictiveBack(v),
                 activeColor: Theme.of(context).primaryColor,
+              ),
+            ),
+            isDark: isDark,
+          ),
+        ),
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.notifications_none_rounded,
+            iconColor: Colors.blueAccent,
+            title: '接收远程消息推送',
+            subtitle: '默认关闭，开启后会向极光提供设备推送标识',
+            trailing: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: _pushEnabled,
+                onChanged: _pushLoading ? null : _setPushEnabled,
+                activeThumbColor: Theme.of(context).primaryColor,
               ),
             ),
             isDark: isDark,

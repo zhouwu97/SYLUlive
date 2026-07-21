@@ -14,10 +14,13 @@ import '../services/grade_reminder_service.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
+import '../widgets/edu_grade/grade_gpa_hero_card.dart';
+import '../widgets/edu_grade/academic_course_item.dart';
 import 'edu_grade_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
 
-// GradeViewMode removed
+/// 成绩中心的三个一级视图。毕业预警在阶段 2A 只提供入口和空状态。
+enum _GradeSection { term, overview, graduationWarning }
 
 class EduGradeScreen extends StatefulWidget {
   final String? initialYear;
@@ -52,6 +55,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   EduAcademicSituation? _academicSituation;
   bool _isAcademicLoading = false;
   String? _academicError;
+  _GradeSection _section = _GradeSection.term;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -75,6 +79,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
   @override
   Future<bool> switchToGradeSemester(String year, int semester) async {
+    if (_section != _GradeSection.term) {
+      setState(() => _section = _GradeSection.term);
+    }
     if (year == _selectedYear && semester == _selectedSemester) {
       final grades = await _refreshGrades();
       return grades != null;
@@ -103,6 +110,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _activeFilter = '全部';
         _errorMessage = null;
         _academicError = null;
+        _section = _GradeSection.term;
         _pageState = GradePageState.loading;
         _isInitialLoading = true;
         _isRefreshing = false;
@@ -126,6 +134,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           if (!mounted || _lastUserId != capturedUserId) return;
           await _initSemesterAndLoad(capturedUserId);
         }
+
         initFlow();
       } else {
         unawaited(
@@ -528,12 +537,224 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   Widget _buildBody() {
     return CustomScrollView(
       slivers: [
-        ..._buildTermContent(),
+        SliverToBoxAdapter(child: _buildSectionTabs()),
+        ...switch (_section) {
+          _GradeSection.term => _buildTermContent(),
+          _GradeSection.overview => _buildAcademicContent(),
+          _GradeSection.graduationWarning => _buildGraduationWarningContent(),
+        },
       ],
     );
   }
 
-  // Academic content builders removed
+  Widget _buildSectionTabs() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: SegmentedButton<_GradeSection>(
+        segments: const [
+          ButtonSegment<_GradeSection>(
+            value: _GradeSection.term,
+            label: Text('本学期'),
+            icon: Icon(Icons.calendar_month_outlined, size: 17),
+          ),
+          ButtonSegment<_GradeSection>(
+            value: _GradeSection.overview,
+            label: Text('学业总览'),
+            icon: Icon(Icons.insights_outlined, size: 17),
+          ),
+          ButtonSegment<_GradeSection>(
+            value: _GradeSection.graduationWarning,
+            label: Text('毕业预警'),
+            icon: Icon(Icons.warning_amber_outlined, size: 17),
+          ),
+        ],
+        selected: <_GradeSection>{_section},
+        onSelectionChanged: (selection) {
+          if (selection.isEmpty || selection.first == _section) return;
+          setState(() => _section = selection.first);
+        },
+        style: SegmentedButton.styleFrom(
+          selectedBackgroundColor: accent.withValues(alpha: isDark ? 0.2 : 0.1),
+          selectedForegroundColor: accent,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildAcademicContent() {
+    final situation = _academicSituation;
+    final totalCredits = situation?.courses.fold<double>(
+      0,
+      (sum, course) => sum + course.credits,
+    );
+    final passedCredits = situation?.courses
+        .where((course) => course.effectivePassed == true)
+        .fold<double>(0, (sum, course) => sum + course.credits);
+    final failedCredits = situation?.courses
+        .where((course) => course.effectivePassed == false)
+        .fold<double>(0, (sum, course) => sum + course.credits);
+    return [
+      SliverToBoxAdapter(
+        child: GradeGpaHeroCard(
+          situation: situation,
+          isLoading: _isAcademicLoading,
+          errorMessage: _academicError,
+          onRetry: _refreshAcademicSituation,
+        ),
+      ),
+      if (situation != null)
+        SliverToBoxAdapter(
+          child: _buildCreditOverview(
+            totalCredits: totalCredits ?? 0,
+            passedCredits: passedCredits ?? 0,
+            failedCredits: failedCredits ?? 0,
+          ),
+        ),
+      if (situation != null && situation.courses.isNotEmpty) ...[
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Text(
+              '课程明细',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : const Color(0xFF1F2328),
+              ),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => AcademicCourseItem(
+                course: situation.courses[index],
+              ),
+              childCount: situation.courses.length,
+            ),
+          ),
+        ),
+      ] else if (!_isAcademicLoading && _academicError == null)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(32, 30, 32, 50),
+            child: Text(
+              '暂无学业课程明细',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        ),
+      const SliverToBoxAdapter(child: SizedBox(height: 32)),
+    ];
+  }
+
+  Widget _buildCreditOverview({
+    required double totalCredits,
+    required double passedCredits,
+    required double failedCredits,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
+    final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF737A80);
+    String formatCredits(double value) => value.toStringAsFixed(
+          value.truncateToDouble() == value ? 0 : 1,
+        );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '学分概览',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: titleColor,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _creditMetric('课程记录', formatCredits(totalCredits), subColor),
+              _creditMetric('已通过', formatCredits(passedCredits), subColor),
+              _creditMetric('未通过', formatCredits(failedCredits), subColor),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _creditMetric(String label, String value, Color subColor) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$value 学分',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 3),
+          Text(label, style: TextStyle(fontSize: 12, color: subColor)),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildGraduationWarningContent() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFFFFC46B) : const Color(0xFFB86B00);
+    final secondary = isDark ? Colors.grey.shade400 : const Color(0xFF737A80);
+    return [
+      SliverFillRemaining(
+        hasScrollBody: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(32, 58, 32, 70),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.shield_outlined, size: 36, color: accent),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                '毕业预警',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '毕业预警功能正在建设中',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15, color: secondary),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '当前仅提供页面入口，暂未接入预警数据。',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: secondary),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
 
   List<Widget> _buildTermContent() {
     return [

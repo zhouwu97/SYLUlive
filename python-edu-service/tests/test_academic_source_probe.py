@@ -7,6 +7,7 @@ from scripts.probe_academic_sources import (
     ACADEMIC_URL,
     AcademicSourceProbe,
     RequestCandidate,
+    _allowed_post_path,
     _assert_no_credentials,
     _is_safe_read_candidate,
     _safe_alias,
@@ -59,6 +60,7 @@ def test_html_probe_extracts_structure_without_values():
     assert summary["course_table_present"] is True
     assert summary["course_data_row_count"] == 0
     assert summary["script_marker_counts"]["$.ajax"] == 1
+    assert summary["unresolved_dynamic_reference_count"] == 0
     assert "/xsxy/course_cxList.html" in paths
     assert "/xsxy/summary_cxList.html" in paths
     assert "/xsxy/module_cxList.html" in paths
@@ -133,6 +135,11 @@ def test_response_summary_only_keeps_json_shape_and_business_flags():
     assert summary["contains_earned_credits"] is True
     assert summary["contains_remaining_credits"] is True
     assert summary["contains_course_details"] is True
+    assert summary["has_non_empty_required_credits"] is True
+    assert summary["has_non_empty_earned_credits"] is True
+    assert summary["has_non_empty_remaining_credits"] is True
+    assert summary["has_non_empty_module_record"] is True
+    assert summary["has_non_empty_course_record"] is True
     assert summary["stable_for_current_account"] is True
     assert "private-plan-123" not in serialized
     assert "2024123456" not in serialized
@@ -176,6 +183,34 @@ def test_response_summary_redacts_data_shaped_json_keys_and_table_headers():
         json_summary["response_shape"]["children"]["items"]["redacted_key_count"] == 2
     )
     assert html_summary["response_shape"]["table_headers"] == ["课程名称"]
+
+
+def test_html_business_evidence_requires_and_accepts_non_empty_rows():
+    summary = summarize_response(
+        name="毕业完成度候选",
+        source_url="/bysh/query.html",
+        method="GET",
+        parameter_names=(),
+        response=_response(
+            """
+              <table>
+                <tr>
+                  <th>模块名称</th><th>要求学分</th><th>已修学分</th>
+                  <th>剩余学分</th><th>课程名称</th>
+                </tr>
+                <tr><td>专业模块</td><td>40</td><td>35</td><td>5</td><td>课程值</td></tr>
+              </table>
+            """
+        ),
+    )
+
+    assert summary["has_non_empty_required_credits"] is True
+    assert summary["has_non_empty_earned_credits"] is True
+    assert summary["has_non_empty_remaining_credits"] is True
+    assert summary["has_non_empty_module_record"] is True
+    assert summary["has_non_empty_course_record"] is True
+    assert "专业模块" not in json.dumps(summary, ensure_ascii=False)
+    assert "课程值" not in json.dumps(summary, ensure_ascii=False)
 
 
 def test_structure_signature_ignores_json_array_length():
@@ -266,7 +301,7 @@ def test_courses_empty_recognizes_data_source_without_ajax_marker():
 
 def _sample_report(sample_id: str, cohort: str, major: str, content_type: str):
     return {
-        "probe_version": "academic-source-probe-v1",
+        "probe_version": "academic-source-probe-v2",
         "sample": {
             "id": sample_id,
             "cohort_alias": cohort,
@@ -285,6 +320,11 @@ def _sample_report(sample_id: str, cohort: str, major: str, content_type: str):
                 "contains_earned_credits": True,
                 "contains_remaining_credits": True,
                 "contains_course_details": True,
+                "has_non_empty_required_credits": True,
+                "has_non_empty_earned_credits": True,
+                "has_non_empty_remaining_credits": True,
+                "has_non_empty_module_record": True,
+                "has_non_empty_course_record": True,
             }
         ],
         "probe_completeness": {"complete": True, "blockers": []},
@@ -300,6 +340,14 @@ def test_cross_sample_summary_requires_coverage_before_route_decision():
     assert result["route"] is None
 
 
+def test_cross_sample_summary_rejects_legacy_probe_reports():
+    report = _sample_report("sample-a", "cohort-a", "major-a", "application/json")
+    report["probe_version"] = "academic-source-probe-v1"
+
+    with pytest.raises(ValueError, match="报告版本不一致"):
+        build_cross_sample_summary([report])
+
+
 @pytest.mark.parametrize(
     ("content_type", "expected_route"),
     (("application/json", "A"), ("text/html", "B")),
@@ -311,6 +359,9 @@ def test_cross_sample_summary_selects_verified_official_route(
         _sample_report("sample-a", "cohort-a", "major-a", content_type),
         _sample_report("sample-b", "cohort-b", "major-b", content_type),
     ]
+    for report in reports:
+        report["verified_requests"][0]["contains_course_details"] = False
+        report["verified_requests"][0]["has_non_empty_course_record"] = False
 
     result = build_cross_sample_summary(reports)
 
@@ -351,6 +402,148 @@ def test_cross_sample_summary_does_not_use_route_c_with_probe_blockers():
     assert result["all_probes_complete"] is False
 
 
+@pytest.mark.parametrize(
+    ("body", "content_type", "forbidden_route"),
+    (
+        (
+            json.dumps(
+                {
+                    "modules": [
+                        {
+                            "module_name": None,
+                            "required_credits": None,
+                            "earned_credits": None,
+                            "remaining_credits": None,
+                            "course_name": "仅用于内存证据",
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+            "application/json",
+            "A",
+        ),
+        (
+            """
+              <table><tr>
+                <th>模块名称</th><th>要求学分</th><th>已修学分</th>
+                <th>剩余学分</th><th>课程名称</th>
+              </tr></table>
+            """,
+            "text/html",
+            "B",
+        ),
+    ),
+)
+def test_empty_business_values_cannot_select_official_route(
+    body, content_type, forbidden_route
+):
+    response_summary = summarize_response(
+        name="毕业完成度候选",
+        source_url="/bysh/query.html",
+        method="GET",
+        parameter_names=(),
+        response=_response(body, content_type),
+    )
+    reports = [
+        _sample_report("sample-a", "cohort-a", "major-a", content_type),
+        _sample_report("sample-b", "cohort-b", "major-b", content_type),
+    ]
+    for report in reports:
+        report["verified_requests"] = [dict(response_summary)]
+
+    result = build_cross_sample_summary(reports)
+
+    assert response_summary["stable_for_current_account"] is True
+    assert response_summary["has_non_empty_required_credits"] is False
+    assert response_summary["has_non_empty_earned_credits"] is False
+    assert response_summary["has_non_empty_remaining_credits"] is False
+    assert result["route"] != forbidden_route
+    assert result["stable_sources"][0]["graduation_fields_complete"] is False
+
+
+@pytest.mark.asyncio
+async def test_non_menu_skipped_candidate_blocks_route_c():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/xtgl/index_initMenu.html":
+            return httpx.Response(200, text="<main>首页</main>", request=request)
+        return httpx.Response(
+            200,
+            text='<iframe src="/opaque/process.html"></iframe>',
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        first = await AcademicSourceProbe(client, "JSESSIONID=secret").run(
+            {
+                "id": "sample-a",
+                "cohort_alias": "cohort-a",
+                "major_alias": "major-a",
+                "college_alias": "college-a",
+            }
+        )
+    second = json.loads(json.dumps(first))
+    second["sample"] = {
+        "id": "sample-b",
+        "cohort_alias": "cohort-b",
+        "major_alias": "major-b",
+        "college_alias": "college-b",
+    }
+
+    result = build_cross_sample_summary([first, second])
+
+    assert "candidate_not_verified_read_only" in first["probe_completeness"]["blockers"]
+    assert first["unverified_candidates"] == [
+        {
+            "source_url": "/opaque/process.html",
+            "method": "GET",
+            "verification_status": "skipped_not_proven_read_only",
+            "unresolved_parameters": [],
+        }
+    ]
+    assert result["decision_status"] == "INCONCLUSIVE"
+    assert result["route"] is None
+
+
+@pytest.mark.asyncio
+async def test_dynamic_expression_url_blocks_route_c():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/xtgl/index_initMenu.html":
+            return httpx.Response(200, text="<main>首页</main>", request=request)
+        return httpx.Response(
+            200,
+            text="<script>fetch(buildUrl(planId));</script>",
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        first = await AcademicSourceProbe(client, "JSESSIONID=secret").run(
+            {
+                "id": "sample-a",
+                "cohort_alias": "cohort-a",
+                "major_alias": "major-a",
+                "college_alias": "college-a",
+            }
+        )
+    second = json.loads(json.dumps(first))
+    second["sample"] = {
+        "id": "sample-b",
+        "cohort_alias": "cohort-b",
+        "major_alias": "major-b",
+        "college_alias": "college-b",
+    }
+
+    result = build_cross_sample_summary([first, second])
+
+    assert first["unresolved_dynamic_reference_count"] == 1
+    assert (
+        "dynamic_request_reference_unresolved"
+        in first["probe_completeness"]["blockers"]
+    )
+    assert result["decision_status"] == "INCONCLUSIVE"
+    assert result["route"] is None
+
+
 @pytest.mark.asyncio
 async def test_unresolved_candidate_parameters_prevent_complete_probe():
     def handler(request: httpx.Request) -> httpx.Response:
@@ -373,7 +566,11 @@ async def test_unresolved_candidate_parameters_prevent_complete_probe():
         return httpx.Response(200, json={"items": []}, request=request)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        report = await AcademicSourceProbe(client, "JSESSIONID=secret").run(
+        report = await AcademicSourceProbe(
+            client,
+            "JSESSIONID=secret",
+            allowed_post_paths=("/xsxy/course_cxList.html",),
+        ).run(
             {
                 "id": "sample-a",
                 "cohort_alias": "cohort-a",
@@ -429,6 +626,18 @@ def test_aliases_and_final_secret_guard_reject_personal_identifiers():
         _assert_no_credentials({"value": "cookie-secret"}, ("cookie-secret",))
 
 
+def test_allowed_post_path_requires_exact_non_mutating_path():
+    assert _allowed_post_path("/xsxy/course_cxList.html") == (
+        "/xsxy/course_cxList.html"
+    )
+    with pytest.raises(ValueError):
+        _allowed_post_path("/xsxy/course_save.html")
+    with pytest.raises(ValueError):
+        _allowed_post_path("/xsxy/course_cxList.html?plan_id=private")
+    with pytest.raises(ValueError):
+        _allowed_post_path("https://evil.example/query")
+
+
 @pytest.mark.asyncio
 async def test_candidate_verification_skips_mutation_without_network_request():
     requested = []
@@ -438,7 +647,11 @@ async def test_candidate_verification_skips_mutation_without_network_request():
         return httpx.Response(200, text="ok", request=request)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        probe = AcademicSourceProbe(client, "JSESSIONID=secret")
+        probe = AcademicSourceProbe(
+            client,
+            "JSESSIONID=secret",
+            allowed_post_paths=("/bysh/bysh_save.html",),
+        )
         result = await probe._request_candidate(
             RequestCandidate(
                 name="保存",
@@ -449,6 +662,36 @@ async def test_candidate_verification_skips_mutation_without_network_request():
 
     assert result["verification_status"] == "skipped_not_proven_read_only"
     assert requested == []
+
+
+@pytest.mark.asyncio
+async def test_post_candidate_requires_exact_manual_allow_path():
+    requested = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append((request.method, request.url.path))
+        return httpx.Response(200, json={"items": []}, request=request)
+
+    candidate = RequestCandidate(
+        name="课程查询",
+        url="https://jxw.sylu.edu.cn/xsxy/opaqueEndpoint.html",
+        method="POST",
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        skipped = await AcademicSourceProbe(
+            client, "JSESSIONID=secret"
+        )._request_candidate(candidate)
+        allowed = await AcademicSourceProbe(
+            client,
+            "JSESSIONID=secret",
+            allowed_post_paths=("/xsxy/opaqueEndpoint.html",),
+        )._request_candidate(candidate)
+
+    assert skipped["verification_status"] == "skipped_post_not_allowed"
+    assert allowed["verification_status"] == (
+        "responded_without_verified_business_fields"
+    )
+    assert requested == [("POST", "/xsxy/opaqueEndpoint.html")]
 
 
 @pytest.mark.asyncio
@@ -473,8 +716,11 @@ async def test_candidate_parameters_are_sent_but_not_exposed(method):
         form_data={"plan_id": "private-plan-123"},
     )
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        allowed_post_paths = ("/xsxy/course_cxList.html",) if method == "POST" else ()
         result = await AcademicSourceProbe(
-            client, "JSESSIONID=cookie-secret"
+            client,
+            "JSESSIONID=cookie-secret",
+            allowed_post_paths=allowed_post_paths,
         )._request_candidate(candidate)
 
     if method == "GET":
@@ -530,7 +776,11 @@ async def test_external_script_is_fetched_before_dynamic_candidate_verification(
         return httpx.Response(404, request=request)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        report = await AcademicSourceProbe(client, "JSESSIONID=secret").run(
+        report = await AcademicSourceProbe(
+            client,
+            "JSESSIONID=secret",
+            allowed_post_paths=("/xsxy/course_cxList.html",),
+        ).run(
             {
                 "id": "sample-a",
                 "cohort_alias": "cohort-a",
@@ -591,7 +841,11 @@ async def test_full_probe_flow_verifies_menu_and_dynamic_course_source():
         transport=httpx.MockTransport(handler),
         follow_redirects=False,
     ) as client:
-        probe = AcademicSourceProbe(client, "JSESSIONID=cookie-secret")
+        probe = AcademicSourceProbe(
+            client,
+            "JSESSIONID=cookie-secret",
+            allowed_post_paths=("/xsxy/course_cxList.html",),
+        )
         report = await probe.run(
             {
                 "id": "sample-a",

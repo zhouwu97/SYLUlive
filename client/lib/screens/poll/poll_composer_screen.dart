@@ -335,7 +335,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
             ]),
             const SizedBox(height: 10),
             SizedBox(
-              height: 84,
+              height: 108,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
@@ -355,7 +355,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                       onTap: _pickImages,
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
-                        width: 84,
+                        width: 108,
                         decoration: BoxDecoration(
                           color: Colors.white,
                           border: Border.all(color: CampusTheme.primary.withValues(alpha: 0.3)),
@@ -364,9 +364,9 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                         child: const Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.add, size: 28, color: _accent),
-                            SizedBox(height: 4),
-                            Text('添加图片', style: TextStyle(fontSize: 12, color: _accent)),
+                            Icon(Icons.add, size: 34, color: _accent),
+                            SizedBox(height: 6),
+                            Text('添加图片', style: TextStyle(fontSize: 13, color: _accent)),
                           ],
                         ),
                       ),
@@ -737,8 +737,8 @@ class _ImageFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 84,
-      height: 84,
+      width: 108,
+      height: 108,
       margin: const EdgeInsets.only(right: 12),
       child: Stack(fit: StackFit.expand, children: [
         ClipRRect(borderRadius: BorderRadius.circular(10), child: child),

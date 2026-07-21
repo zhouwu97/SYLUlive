@@ -9,39 +9,7 @@ import 'skill_result_serializer.dart';
 import 'tool_call_models.dart';
 import 'tool_call_validator.dart';
 import 'tool_permission.dart';
-
-abstract interface class ToolPreviewMetadataSource {
-  Future<List<ToolDataPreviewItem>> describe(
-    Set<PersonalDataType> dataTypes,
-  );
-}
-
-class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
-  const DefaultToolPreviewMetadataSource();
-
-  static const Map<PersonalDataType, String> _labels =
-      <PersonalDataType, String>{
-    PersonalDataType.schedule: '所请求时间范围内的课表',
-    PersonalDataType.academic: '最小化学业数据',
-    PersonalDataType.physical: '最近体测概览',
-    PersonalDataType.erke: '二课概览',
-    PersonalDataType.studentProfile: '年级、学院、专业和本次竞赛目标',
-  };
-
-  @override
-  Future<List<ToolDataPreviewItem>> describe(
-    Set<PersonalDataType> dataTypes,
-  ) async {
-    return dataTypes
-        .map(
-          (type) => ToolDataPreviewItem(
-            dataType: type,
-            label: _labels[type] ?? type.storageValue,
-          ),
-        )
-        .toList(growable: false);
-  }
-}
+import 'tool_preview_metadata.dart';
 
 /// 本地 Tool 编排器。模型只能提出调用，校验、授权和执行均由客户端完成。
 class LocalToolLoop {
@@ -199,14 +167,21 @@ class LocalToolLoop {
           }
         }
 
+        final previewMetadata = await _previewMetadataSource.describe(
+          ToolPreviewRequest(
+            toolId: call.tool,
+            validatedInput: validated.input,
+            dataTypes: dataTypes,
+          ),
+        );
         final preview = ToolPermissionPreview(
           toolId: call.tool,
           sensitivity: sensitivity,
           providerKind: _model.providerKind,
           destination: _model.destinationLabel,
-          dataItems: await _previewMetadataSource.describe(dataTypes),
-          excludedDataLabels: _excludedLabels(dataTypes),
-          outputFields: _outputFields(call.tool),
+          dataItems: previewMetadata.inputItems,
+          excludedDataLabels: previewMetadata.excludedDataLabels,
+          outputFields: previewMetadata.outputFields,
         );
         final permission = await _permissionManager.authorize(preview);
         if (permission == ToolPermissionDecision.denied) {
@@ -342,42 +317,4 @@ class LocalToolLoop {
     }
     return result;
   }
-
-  List<String> _excludedLabels(Set<PersonalDataType> included) {
-    if (included.contains(PersonalDataType.studentProfile)) {
-      return const <String>[
-        '课程成绩',
-        'GPA',
-        '学分',
-        '挂科记录',
-        '完整成绩原始响应',
-      ];
-    }
-    const labels = <PersonalDataType, String>{
-      PersonalDataType.schedule: '其他日期课表',
-      PersonalDataType.academic: '完整成绩原始响应',
-      PersonalDataType.physical: '体测以外健康信息',
-      PersonalDataType.erke: '未请求的二课明细',
-      PersonalDataType.studentProfile: '年级、学院、专业和竞赛目标',
-    };
-    return PersonalDataType.values
-        .where((type) => !included.contains(type))
-        .map((type) => labels[type]!)
-        .toList(growable: false);
-  }
-
-  List<String> _outputFields(String toolId) => switch (toolId) {
-        'personal.schedule.today' => <String>['课程、时间、地点、空闲时段'],
-        'personal.schedule.week' => <String>['本周课程、时间、地点'],
-        'personal.academic.overview' => <String>['课程数量、覆盖学期、缺失状态'],
-        'personal.physical.overview' => <String>['最近学年、总分、项目结果'],
-        'personal.erke.overview' => <String>['总分、分类完成度、最近活动'],
-        'personal.competition.fit' => <String>[
-            '赛事适配状态',
-            '适配评分',
-            '匹配理由',
-            '强推荐门槛状态',
-          ],
-        _ => <String>['公开检索结果'],
-      };
 }

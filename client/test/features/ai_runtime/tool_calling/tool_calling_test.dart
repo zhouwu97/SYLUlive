@@ -17,15 +17,20 @@ import 'package:shenliyuan/features/ai_runtime/personal_data/models/schedule_ove
 import 'package:shenliyuan/features/ai_runtime/skills/academic_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/competition_search_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/deterministic_skills.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/erke_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill_registry.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/physical_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/skill_execution_context.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/today_schedule_skill.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/week_schedule_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_call_models.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_call_validator.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_definitions.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_loop.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/openai_tool_calling_model.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_permission.dart';
+import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_preview_metadata.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 
 void main() {
@@ -600,7 +605,10 @@ void main() {
       final preview = prompt.lastPreview!;
       expect(
           preview.dataItems.single.dataType, PersonalDataType.studentProfile);
-      expect(preview.dataItems.single.label, '年级、学院、专业和本次竞赛目标');
+      expect(
+        preview.dataItems.single.label,
+        '年级、学院、专业和本次竞赛目标（人工智能）',
+      );
       expect(preview.dataItems.single.label, isNot('公开检索结果'));
       expect(
           preview.excludedDataLabels,
@@ -622,6 +630,132 @@ void main() {
       expect(audit.entries.single.dataTypes,
           const <PersonalDataType>{PersonalDataType.studentProfile});
       expect(source.profileReads, 1);
+    });
+
+    test('工具级授权元数据准确描述 GPA 和运动计划输入输出', () async {
+      const source = DefaultToolPreviewMetadataSource();
+      final gpa = await source.describe(
+        const ToolPreviewRequest(
+          toolId: AcademicGpaSkill.skillId,
+          validatedInput: EmptyDeterministicInput(),
+          dataTypes: <PersonalDataType>{PersonalDataType.academic},
+        ),
+      );
+      expect(gpa.inputItems.single.label, contains('课程成绩'));
+      expect(gpa.inputItems.single.label, isNot('最小化学业数据'));
+      expect(gpa.outputFields, contains('GPA'));
+      expect(gpa.excludedDataLabels, contains('教务密码'));
+
+      final fitness = await source.describe(
+        const ToolPreviewRequest(
+          toolId: FitnessWeeklyPlanSkill.skillId,
+          validatedInput: FitnessWeeklyPlanInput(
+            heightMeters: 1.75,
+            weightKg: 65,
+            reportsDiscomfort: true,
+          ),
+          dataTypes: <PersonalDataType>{
+            PersonalDataType.schedule,
+            PersonalDataType.physical,
+          },
+        ),
+      );
+      expect(
+        fitness.inputItems.map((item) => item.label),
+        contains('用户主动填写的身高、体重、不适状态'),
+      );
+      expect(fitness.outputFields, contains('安全提示'));
+      await expectLater(
+        source.describe(
+          const ToolPreviewRequest(
+            toolId: 'unknown.tool',
+            validatedInput: EmptyDeterministicInput(),
+            dataTypes: <PersonalDataType>{},
+          ),
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('全部 Tool 定义均有与数据权限一致的授权元数据', () async {
+      const source = DefaultToolPreviewMetadataSource();
+      const validator = LocalToolCallValidator();
+      const dataTypesByTool = <String, Set<PersonalDataType>>{
+        TodayScheduleSkill.skillId: <PersonalDataType>{
+          PersonalDataType.schedule,
+        },
+        WeekScheduleSkill.skillId: <PersonalDataType>{
+          PersonalDataType.schedule,
+        },
+        AcademicOverviewSkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+        },
+        PhysicalOverviewSkill.skillId: <PersonalDataType>{
+          PersonalDataType.physical,
+        },
+        ErkeOverviewSkill.skillId: <PersonalDataType>{
+          PersonalDataType.erke,
+        },
+        CompetitionSearchSkill.skillId: <PersonalDataType>{},
+        AcademicGpaSkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+        },
+        AcademicCreditSummarySkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+        },
+        AcademicFailureRiskSkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+        },
+        GraduationReadinessSkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+          PersonalDataType.erke,
+        },
+        CompetitionFitSkill.skillId: <PersonalDataType>{
+          PersonalDataType.studentProfile,
+        },
+        FitnessWeeklyPlanSkill.skillId: <PersonalDataType>{
+          PersonalDataType.schedule,
+          PersonalDataType.physical,
+        },
+      };
+      final definitions = buildStageSixToolDefinitions();
+      expect(
+        definitions.map((definition) => definition.id).toSet(),
+        dataTypesByTool.keys.toSet(),
+      );
+
+      for (final definition in definitions) {
+        final arguments = definition.id == CompetitionSearchSkill.skillId
+            ? <String, dynamic>{'keyword': '人工智能'}
+            : <String, dynamic>{};
+        final validated = validator.validate(
+          LocalToolCall(
+            id: 'preview-${definition.id}',
+            tool: definition.id,
+            arguments: arguments,
+          ),
+        );
+        final metadata = await source.describe(
+          ToolPreviewRequest(
+            toolId: definition.id,
+            validatedInput: validated.input,
+            dataTypes: dataTypesByTool[definition.id]!,
+          ),
+        );
+        expect(metadata.outputFields, isNotEmpty, reason: definition.id);
+        expect(metadata.excludedDataLabels, isNotEmpty, reason: definition.id);
+      }
+
+      await expectLater(
+        source.describe(
+          const ToolPreviewRequest(
+            toolId: AcademicGpaSkill.skillId,
+            validatedInput: EmptyDeterministicInput(),
+            dataTypes: <PersonalDataType>{PersonalDataType.schedule},
+          ),
+        ),
+        throwsStateError,
+      );
     });
 
     test('教务账号代际变化会在竞赛适配读取画像前取消', () async {

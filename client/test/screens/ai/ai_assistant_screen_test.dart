@@ -121,6 +121,60 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('A 账号的个人历史'), findsNothing);
   });
+
+  testWidgets('公共与个人模式使用独立输入上限并随模式立即更新', (tester) async {
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: FakeAuthProvider(),
+          ),
+          ChangeNotifierProvider<EduProvider>.value(
+            value: FakeEduProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          home: AiAssistantScreen(
+            service: FakeAiAssistantService(),
+            dio: Dio(),
+            capabilities: AiCapabilities.fromJson(const {}),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('0/20'), findsOneWidget);
+
+    await tester.tap(find.text('个人助手'));
+    await tester.pumpAndSettle();
+    expect(find.text('0/8000'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '二十一字符以上的个人助手问题仍然应该允许发送');
+    await tester.pump();
+    final personalSend = tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.arrow_upward_rounded),
+    );
+    expect(personalSend.onPressed, isNotNull);
+
+    await tester.enterText(
+      find.byType(TextField),
+      List<String>.filled(8001, 'x').join(),
+    );
+    await tester.pump();
+    expect(find.text('8001/8000'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.arrow_upward_rounded),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    await tester.tap(find.text('校园问答'));
+    await tester.pump();
+    expect(find.text('8001/20'), findsOneWidget);
+  });
 }
 
 User _user(int id) => User(

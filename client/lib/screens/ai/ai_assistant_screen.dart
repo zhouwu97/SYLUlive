@@ -9,7 +9,10 @@ import '../../features/ai_runtime/ai_provider_storage.dart';
 import '../../features/ai_runtime/deterministic/competition_fit_engine.dart';
 import '../../features/ai_runtime/deterministic/graduation_requirement_engine.dart';
 import '../../features/ai_runtime/personal_data/gateway/personal_account_context.dart';
+import '../../features/ai_runtime/personal_data/gateway/personal_data_gateway.dart';
 import '../../features/ai_runtime/personal_data/gateway/personal_data_gateway_impl.dart';
+import '../../features/ai_runtime/personal_data/gateway/unavailable_personal_data_gateway.dart';
+import '../../features/ai_runtime/personal_session/personal_conversation_store.dart';
 import '../../features/ai_runtime/personal_session/personal_session_epoch.dart';
 import '../../features/ai_runtime/skills/competition_search_skill.dart';
 import '../../features/ai_runtime/skills/deterministic_skills.dart';
@@ -51,12 +54,15 @@ class AiAssistantScreen extends StatefulWidget {
   final AiCapabilities capabilities;
   final AiAssistantService service;
   final Dio dio;
+  final PersonalConversationStore Function(String accountKey)?
+      personalConversationStoreFactory;
 
   const AiAssistantScreen({
     super.key,
     required this.capabilities,
     required this.service,
     required this.dio,
+    this.personalConversationStoreFactory,
   });
 
   @override
@@ -68,6 +74,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _inputFocusNode = FocusNode();
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
+  final List<PersonalConversationEntry> _personalConversationEntries =
+      <PersonalConversationEntry>[];
   final AIFeatureFlagStore _featureFlags = AIFeatureFlagStore();
   bool _personalMode = false;
   bool _personalSending = false;
@@ -78,6 +86,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   OpenAIToolCallingModel? _activeToolModel;
   ToolPermissionManager? _permissionManager;
   String? _permissionAccountKey;
+  PersonalConversationStore? _personalConversationStore;
+  String? _loadedConversationAccountKey;
+  bool _personalHistoryLoading = false;
   final PersonalSessionEpoch _personalSessionEpoch = PersonalSessionEpoch();
   AuthProvider? _authProvider;
   EduProvider? _eduProvider;
@@ -135,8 +146,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final changed = _personalSessionEpoch.synchronizeAccount(
       _currentPersonalAccountKey(),
     );
-    if (!changed) return;
-    _resetPersonalSessionForAccountChange();
+    if (changed) _resetPersonalSessionForAccountChange();
+    _ensurePersonalHistoryLoaded();
   }
 
   void _resetPersonalSessionForAccountChange() {
@@ -149,12 +160,16 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     _clearPersonalPermissions();
     setState(() {
       _personalMessages.clear();
+      _personalConversationEntries.clear();
       _personalEvidence = const <SkillEvidence>[];
       _personalError = null;
       _personalNeedsModelConfiguration = false;
       _personalSending = false;
+      _personalHistoryLoading = false;
       _inputController.clear();
     });
+    _personalConversationStore = null;
+    _loadedConversationAccountKey = null;
   }
 
   bool _isCurrentPersonalRequest(PersonalRequestEpoch request) =>
@@ -177,6 +192,118 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     _permissionManager = null;
     _permissionAccountKey = null;
   }
+
+  void _ensurePersonalHistoryLoaded() {
+    final appUserId = _authProvider?.user?.id.toString() ?? '';
+    final accountKey = _personalSessionEpoch.accountKey ?? '';
+    if (appUserId.isEmpty ||
+        accountKey.isEmpty ||
+        _loadedConversationAccountKey == accountKey) {
+      return;
+    }
+    final requestEpoch = _personalSessionEpoch.capture();
+    final store = widget.personalConversationStoreFactory?.call(accountKey) ??
+        PersonalConversationStore(accountKey: accountKey);
+    _personalConversationStore = store;
+    _loadedConversationAccountKey = accountKey;
+    _personalHistoryLoading = true;
+    unawaited(_loadPersonalHistory(store, requestEpoch));
+  }
+
+  Future<void> _loadPersonalHistory(
+    PersonalConversationStore store,
+    PersonalRequestEpoch requestEpoch,
+  ) async {
+    final entries = await store.read();
+    if (!_isCurrentPersonalRequest(requestEpoch) ||
+        !identical(_personalConversationStore, store)) {
+      return;
+    }
+    final assistantEntries = entries
+        .where((item) => item.message.role == AiMessageRole.assistant)
+        .toList(growable: false);
+    setState(() {
+      _personalHistoryLoading = false;
+      _personalConversationEntries
+        ..clear()
+        ..addAll(entries);
+      _personalMessages
+        ..clear()
+        ..addAll(entries.map((item) => item.message));
+      _personalEvidence = assistantEntries.isEmpty
+          ? const <SkillEvidence>[]
+          : assistantEntries.last.evidence;
+    });
+  }
+
+  Future<void> _persistPersonalHistory() async {
+    final store = _personalConversationStore;
+    if (store == null) return;
+    final entries = List<PersonalConversationEntry>.of(
+      _personalConversationEntries,
+    );
+    try {
+      await store.replace(entries);
+    } catch (_) {
+      // 会话仍保留在当前页面内存中，安全存储失败不影响本轮回答。
+    }
+  }
+
+  void _trimPersonalConversation() {
+    var characters = _personalConversationEntries.fold<int>(
+      0,
+      (sum, item) => sum + item.message.content.length,
+    );
+    while (_personalConversationEntries.length >
+            PersonalConversationStore.maximumMessages ||
+        (_personalConversationEntries.isNotEmpty &&
+            characters > PersonalConversationStore.maximumCharacters)) {
+      final removed = _personalConversationEntries.removeAt(0);
+      characters -= removed.message.content.length;
+      _personalMessages.removeWhere((item) => item.id == removed.message.id);
+    }
+  }
+
+  Future<void> _clearPersonalConversation() async {
+    final cancellation = _toolCancellation;
+    final model = _activeToolModel;
+    final store = _personalConversationStore;
+    _personalSessionEpoch.invalidate();
+    _toolCancellation = null;
+    _activeToolModel = null;
+    cancellation?.cancel();
+    unawaited(model?.cancel());
+    _clearPersonalPermissions();
+    setState(() {
+      _personalMessages.clear();
+      _personalConversationEntries.clear();
+      _personalEvidence = const <SkillEvidence>[];
+      _personalError = null;
+      _personalNeedsModelConfiguration = false;
+      _personalSending = false;
+      _inputController.clear();
+    });
+    if (store != null) {
+      try {
+        await store.clear();
+      } catch (_) {
+        if (mounted) setState(() => _personalError = '清空个人会话失败，请稍后重试');
+      }
+    }
+  }
+
+  List<ToolConversationMessage> _personalConversationHistory() =>
+      _personalConversationEntries
+          .where((item) => item.message.status == AiMessageStatus.completed)
+          .map(
+            (item) => ToolConversationMessage(
+              role: item.message.role == AiMessageRole.user
+                  ? ToolMessageRole.user
+                  : ToolMessageRole.assistant,
+              content: item.message.content,
+            ),
+          )
+          .toList(growable: false);
 
   void _submit(String message) {
     if (_personalMode) {
@@ -201,7 +328,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   Future<void> _submitPersonal(String rawMessage) async {
     final message = rawMessage.trim();
-    if (message.isEmpty || _personalSending) return;
+    if (message.isEmpty || _personalSending || _personalHistoryLoading) return;
     final requestEpoch = _personalSessionEpoch.capture();
     final flags = await _featureFlags.readAll();
     if (!_isCurrentPersonalRequest(requestEpoch)) return;
@@ -218,8 +345,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final edu = _eduProvider!;
     final appUserId = auth.user?.id.toString() ?? '';
     final sourceAccountId = edu.studentId.trim();
-    if (appUserId.isEmpty || sourceAccountId.isEmpty) {
-      setState(() => _personalError = '请先登录并完成教务绑定');
+    if (appUserId.isEmpty) {
+      setState(() => _personalError = '请先登录 App 账号');
       return;
     }
     OpenAIToolCallingModel model;
@@ -247,34 +374,42 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       return;
     }
     _activeToolModel = model;
+    final conversationHistory = _personalConversationHistory();
+    final userMessage = AiChatMessage(
+      id: 'user-$requestId',
+      requestId: requestId,
+      role: AiMessageRole.user,
+      content: message,
+      status: AiMessageStatus.completed,
+      createdAt: now,
+    );
     setState(() {
       _personalSending = true;
       _personalError = null;
       _personalNeedsModelConfiguration = false;
       _personalEvidence = const <SkillEvidence>[];
-      _personalMessages.add(
-        AiChatMessage(
-          id: 'user-$requestId',
-          requestId: requestId,
-          role: AiMessageRole.user,
-          content: message,
-          status: AiMessageStatus.completed,
-          createdAt: now,
-        ),
+      _personalMessages.add(userMessage);
+      _personalConversationEntries.add(
+        PersonalConversationEntry(message: userMessage),
       );
+      _trimPersonalConversation();
       _inputController.clear();
     });
+    await _persistPersonalHistory();
 
-    final gateway = PersonalDataGatewayFactory().create(
-      PersonalAccountContext(
-        appUserId: appUserId,
-        sourceAccountId: sourceAccountId,
-      ),
-      refreshAcademicData: () async {
-        final result = await edu.syncAllGrades();
-        return result.success ? null : result.errorMessage ?? '自动同步成绩失败';
-      },
-    );
+    final hasEduAccount = sourceAccountId.isNotEmpty;
+    final PersonalDataGateway gateway = hasEduAccount
+        ? PersonalDataGatewayFactory().create(
+            PersonalAccountContext(
+              appUserId: appUserId,
+              sourceAccountId: sourceAccountId,
+            ),
+            refreshAcademicData: () async {
+              final result = await edu.syncAllGrades();
+              return result.success ? null : result.errorMessage ?? '自动同步成绩失败';
+            },
+          )
+        : const UnavailablePersonalDataGateway();
     if (!mounted || !_personalSessionEpoch.owns(requestEpoch, requestId)) {
       await gateway.close();
       await model.cancel();
@@ -303,6 +438,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         skillTimeout: const Duration(seconds: 90),
       );
       final tools = buildStageSixToolDefinitions().where((tool) {
+        if (!hasEduAccount &&
+            (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)) {
+          return false;
+        }
         if (tool.id.startsWith('personal.academic.') &&
             flags[AIFeatureFlag.academicEngine] != true) {
           return false;
@@ -313,26 +452,41 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         }
         return true;
       }).toList(growable: false);
+      final unavailableToolReasons = <String, String>{
+        if (!hasEduAccount)
+          for (final tool in buildStageSixToolDefinitions())
+            if (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)
+              tool.id: '需要绑定教务后才能读取年级、学院、专业或个人校园数据',
+      };
       final outcome = await loop.run(
         userMessage: message,
         tools: tools,
+        conversationHistory: conversationHistory,
+        unavailableToolReasons: unavailableToolReasons,
         cancellationToken: cancellation,
       );
       if (!_personalSessionEpoch.owns(requestEpoch, requestId)) return;
       if (outcome.status == ToolLoopStatus.completed) {
+        final assistantMessage = AiChatMessage(
+          id: 'assistant-$requestId',
+          requestId: requestId,
+          role: AiMessageRole.assistant,
+          content: outcome.answer,
+          status: AiMessageStatus.completed,
+          createdAt: DateTime.now(),
+        );
         setState(() {
-          _personalMessages.add(
-            AiChatMessage(
-              id: 'assistant-$requestId',
-              requestId: requestId,
-              role: AiMessageRole.assistant,
-              content: outcome.answer,
-              status: AiMessageStatus.completed,
-              createdAt: DateTime.now(),
+          _personalMessages.add(assistantMessage);
+          _personalConversationEntries.add(
+            PersonalConversationEntry(
+              message: assistantMessage,
+              evidence: outcome.evidence,
             ),
           );
+          _trimPersonalConversation();
           _personalEvidence = outcome.evidence;
         });
+        await _persistPersonalHistory();
       } else {
         setState(() {
           _personalError = outcome.warnings.isEmpty
@@ -381,12 +535,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   Future<void> _checkPersonalConfiguration() async {
     final requestEpoch = _personalSessionEpoch.capture();
     final auth = _authProvider!;
-    final edu = _eduProvider!;
     final appUserId = auth.user?.id.toString() ?? '';
-    if (appUserId.isEmpty || edu.studentId.trim().isEmpty) {
+    if (appUserId.isEmpty) {
       if (mounted && _personalMode) {
         setState(() {
-          _personalError = '请先登录并完成教务绑定';
+          _personalError = '请先登录 App 账号';
           _personalNeedsModelConfiguration = false;
         });
       }
@@ -566,6 +719,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     onPressed: _showConversations,
                     icon: const Icon(Icons.history_rounded),
                   ),
+                if (_personalMode && _personalMessages.isNotEmpty)
+                  IconButton(
+                    tooltip: '新建个人会话',
+                    onPressed: _clearPersonalConversation,
+                    icon: const Icon(Icons.note_add_outlined),
+                  ),
                 AppActionPopupMenu(
                   icon: const Icon(Icons.settings_outlined),
                   entries: const <Object>[
@@ -678,7 +837,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   focusNode: _inputFocusNode,
                   maxCharacters: capabilities.maxMessageChars,
                   enabled: _personalMode
-                      ? !_personalSending
+                      ? !_personalSending && !_personalHistoryLoading
                       : capabilities.chatEnabled && quota.remaining > 0,
                   running:
                       _personalMode ? _personalSending : provider.isRunning,

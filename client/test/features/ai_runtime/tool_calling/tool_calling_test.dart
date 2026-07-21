@@ -8,12 +8,14 @@ import 'package:shenliyuan/features/ai_runtime/ai_model_provider.dart';
 import 'package:shenliyuan/features/ai_runtime/deterministic/competition_fit_engine.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/gateway_result.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/personal_data_gateway.dart';
+import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/unavailable_personal_data_gateway.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/academic_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/academic_records.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/erke_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/physical_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/schedule_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/academic_overview_skill.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/competition_search_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/deterministic_skills.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill_registry.dart';
@@ -358,6 +360,92 @@ void main() {
   });
 
   group('LocalToolLoop', () {
+    test('第二轮请求会携带已完成的用户和助手历史', () async {
+      final model = _ScriptedModel(
+        const <ToolModelTurn>[ToolModelTurn.finalAnswer('继续回答')],
+      );
+      final outcome = await _loop(model: model).run(
+        userMessage: '那第二项呢？',
+        tools: buildStageSixToolDefinitions(),
+        conversationHistory: const <ToolConversationMessage>[
+          ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '我想提升人工智能能力',
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.assistant,
+            content: '可以先参加基础赛事。',
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.tool,
+            content: '不得进入历史的原始 Tool Result',
+          ),
+        ],
+      );
+
+      expect(outcome.status, ToolLoopStatus.completed);
+      expect(
+        model.receivedMessages.map((item) => item.content),
+        containsAllInOrder(<String>[
+          '我想提升人工智能能力',
+          '可以先参加基础赛事。',
+          '那第二项呢？',
+        ]),
+      );
+      expect(
+        model.receivedMessages.map((item) => item.content),
+        isNot(contains('不得进入历史的原始 Tool Result')),
+      );
+    });
+
+    test('未绑定教务时公开竞赛搜索仍可执行', () async {
+      final source = _CompetitionSearchSource();
+      final model = _ScriptedModel(<ToolModelTurn>[
+        ToolModelTurn.call(
+          LocalToolCall(
+            id: 'search-1',
+            tool: CompetitionSearchSkill.skillId,
+            arguments: const <String, dynamic>{'keyword': '人工智能'},
+          ),
+        ),
+        const ToolModelTurn.finalAnswer('找到公开竞赛。'),
+      ]);
+      final outcome = await _loop(
+        model: model,
+        gateway: const UnavailablePersonalDataGateway(),
+        registry: PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
+          CompetitionSearchSkill(source),
+        ]),
+      ).run(
+        userMessage: '搜索人工智能竞赛',
+        tools: buildStageSixToolDefinitions()
+            .where((item) => item.id == CompetitionSearchSkill.skillId)
+            .toList(),
+      );
+
+      expect(outcome.status, ToolLoopStatus.completed);
+      expect(source.searches, 1);
+    });
+
+    test('未绑定教务时请求学业工具返回明确绑定说明', () async {
+      final model = _ScriptedModel(<ToolModelTurn>[
+        ToolModelTurn.call(_academicCall('academic-unavailable')),
+      ]);
+      final outcome = await _loop(
+        model: model,
+        gateway: const UnavailablePersonalDataGateway(),
+      ).run(
+        userMessage: '查看我的学业情况',
+        tools: const <ToolDefinition>[],
+        unavailableToolReasons: const <String, String>{
+          AcademicOverviewSkill.skillId: '需要绑定教务后才能读取学业数据',
+        },
+      );
+
+      expect(outcome.status, ToolLoopStatus.rejected);
+      expect(outcome.warnings, <String>['需要绑定教务后才能读取学业数据']);
+    });
+
     test('授权后执行最小化 Skill 并把证据回传模型', () async {
       final model = _ScriptedModel(<ToolModelTurn>[
         ToolModelTurn.call(_academicCall('call-1')),
@@ -651,7 +739,7 @@ Future<ResponseBody> _jsonResponse(
 
 LocalToolLoop _loop({
   required _ScriptedModel model,
-  _Gateway? gateway,
+  PersonalDataGateway? gateway,
   _AuditSink? audit,
   _Prompt? prompt,
   PersonalSkillRegistry? registry,
@@ -678,6 +766,20 @@ LocalToolLoop _loop({
     accountGeneration: generation ?? () => 1,
     skillTimeout: timeout,
   );
+}
+
+class _CompetitionSearchSource implements CompetitionSearchSource {
+  int searches = 0;
+
+  @override
+  Future<CompetitionSearchPage> search(CompetitionSearchInput input) async {
+    searches++;
+    return CompetitionSearchPage(
+      events: const [],
+      total: 0,
+      fetchedAt: DateTime.utc(2026, 7, 21),
+    );
+  }
 }
 
 LocalToolCall _academicCall(String id) => LocalToolCall(

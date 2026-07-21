@@ -30,7 +30,10 @@ python scripts/probe_academic_sources.py run \
 ```
 
 默认输出到 `private-probe-output/`。该目录已加入仓库根 `.gitignore`，脚本还会在输出目录内生成独立 `.gitignore`。
-本次安全收口后的报告版本为 `academic-source-probe-v2`；旧版 v1 报告不能参与 v2 多样本路线判定。
+真实页面适配后的报告版本为 `academic-source-probe-v3`；旧版 v1/v2 报告不能参与 v3 多样本路线判定。
+
+v3 会按教务菜单契约自动携带 `gnmkdm` 与 `layout=default`，并在菜单页面打开后继续检查页面专属业务脚本。脚本扫描优先限定在 `/js/comp/jwglxt/`，支持 `jQuery.ajax`、JqGrid 配置和字符串变量拼接；公共组件脚本不会作为毕业数据候选扫描。
+探针识别到明确会修改“已读/不再提示”状态的请求时只记录路径、方法、参数名和排除原因，不会发出该请求，也不会把已确认的写操作误当成未验证只读数据源。
 
 输出只包含：
 

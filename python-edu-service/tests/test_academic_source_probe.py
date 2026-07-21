@@ -10,10 +10,13 @@ from scripts.probe_academic_sources import (
     _allowed_post_path,
     _assert_no_credentials,
     _is_safe_read_candidate,
+    _response_runtime_bindings,
     _safe_alias,
+    _select_business_script_paths,
     analyze_html_structure,
     build_cross_sample_summary,
     diagnose_courses_empty,
+    discover_script_candidates,
     discover_menu_candidates,
     render_cross_sample_report,
     summarize_response,
@@ -84,7 +87,127 @@ def test_menu_candidates_keep_menu_contract_and_require_url():
     assert candidates[0].name == "毕业审核"
     assert candidates[0].gnmkdm == "N900101"
     assert candidates[0].source_url == "/bysh/bysh_cxIndex.html"
+    assert candidates[0].parameter_names == ("gnmkdm", "layout")
+    assert candidates[0].form_data == {
+        "gnmkdm": "N900101",
+        "layout": "default",
+    }
     assert {item["name"] for item in without_url} == {"培养方案", "毕业预警"}
+
+
+def test_script_candidates_resolve_concatenated_paths_and_ignore_plain_url_fields():
+    script = r"""
+      var _path = "/jxzxjhgl";
+      var url1 = _path + "/jxzxjhkcxx_cxJxzxjhkcxxIndex.html?doType=query";
+      var unrelated = {url: config.avatar};
+      $.ajax({url: url1, type: "POST", data: {jxzxjhxx_id: planId}});
+    """
+
+    candidates = discover_script_candidates(
+        script,
+        ACADEMIC_URL,
+        source="external_script:/js/comp/jwglxt/jxzxjhck.js",
+    )
+    summary, _ = analyze_html_structure(f"<script>{script}</script>", ACADEMIC_URL)
+
+    assert len(candidates) == 1
+    assert candidates[0].source_url == ("/jxzxjhgl/jxzxjhkcxx_cxJxzxjhkcxxIndex.html")
+    assert candidates[0].method == "POST"
+    assert "jxzxjhxx_id" in candidates[0].parameter_names
+    assert summary["unresolved_dynamic_reference_count"] == 0
+
+
+def test_real_jquery_and_jqgrid_patterns_keep_request_parameters():
+    script = r"""
+      function paramterMap(){
+        return {
+          // "xh_id": $("#xh_id").val(),
+          "bynd": $("#bynd").val(),
+          "doType": "query"
+        };
+      }
+      var url1 = _path + "/bygl/bysh_cxByshjgHcIndex.html";
+      jQuery.ajax({url: url1, data: paramterMap(), type: "post"});
+
+      function planParams(){
+        return {"jg_id": jQuery("#jg_id").val()};
+      }
+      var grid = $.extend({}, BaseJqGrid, {
+        postData: planParams(),
+        url: _path + "/jxzxjhgl/query.html?doType=query"
+      });
+      var unrelated = $.extend({}, defaults);
+    """
+
+    candidates = discover_script_candidates(script, ACADEMIC_URL, source="fixture")
+
+    assert [(item.method, item.source_url) for item in candidates] == [
+        ("POST", "/bygl/bysh_cxByshjgHcIndex.html"),
+        ("POST", "/jxzxjhgl/query.html"),
+    ]
+    assert candidates[0].parameter_names == ("bynd", "doType")
+    assert candidates[0].form_data == {"doType": "query"}
+    assert candidates[0].parameter_controls == {"bynd": "bynd"}
+    assert candidates[1].parameter_names == ("doType", "jg_id")
+    assert candidates[1].parameter_controls == {"jg_id": "jg_id"}
+
+
+def test_dynamic_query_value_becomes_parameterized_candidate():
+    script = r"""
+      function openPlan(id) {
+        $.ajax({
+          type: "POST",
+          url: _path + "/jxzxjhgl/detail_cxList.html?jxzxjhxx_id=" + id
+        });
+      }
+    """
+
+    candidates = discover_script_candidates(script, ACADEMIC_URL, source="fixture")
+
+    assert len(candidates) == 1
+    assert candidates[0].source_url == "/jxzxjhgl/detail_cxList.html"
+    assert candidates[0].parameter_names == ("jxzxjhxx_id",)
+
+
+def test_runtime_binding_extraction_is_limited_to_plan_identifiers():
+    response = _response(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "jxzxjhxx_id": "private-plan-id",
+                        "student_id": "must-not-bind",
+                        "course_name": "must-not-bind",
+                    }
+                ]
+            }
+        ),
+        "application/json",
+    )
+
+    assert _response_runtime_bindings(response) == {"jxzxjhxx_id": "private-plan-id"}
+
+
+def test_unresolved_count_only_tracks_dynamic_request_contexts():
+    summary, _ = analyze_html_structure(
+        "<script>var config = {url: basePath + '/avatar'};</script>",
+        ACADEMIC_URL,
+    )
+
+    assert summary["unresolved_dynamic_reference_count"] == 0
+
+
+def test_business_script_filter_normalizes_paths_and_drops_common_assets():
+    selected = _select_business_script_paths(
+        [
+            r"\js\comp\jwglxt\bygl\bysh.js",
+            "/js/common/jquery.js",
+            "/js/plugins/bootstrap.js",
+            "/js/i18n/messages.js",
+        ]
+    )
+
+    assert selected == ["/js/comp/jwglxt/bygl/bysh.js"]
 
 
 def test_menu_duplicate_without_url_does_not_block_verified_same_name():
@@ -144,6 +267,39 @@ def test_response_summary_only_keeps_json_shape_and_business_flags():
     assert "private-plan-123" not in serialized
     assert "2024123456" not in serialized
     assert "高等数学" not in serialized
+
+
+def test_response_summary_preserves_valid_json_null_shape():
+    summary = summarize_response(
+        name="毕业审核查询",
+        source_url="/bygl/bysh_cxByshjgHcIndex.html",
+        method="POST",
+        parameter_names=("bynd", "doType"),
+        response=_response("null", "application/json"),
+    )
+
+    assert summary["content_type"] == "application/json"
+    assert summary["response_shape"] == {"type": "NoneType"}
+    assert summary["verification_status"] == (
+        "responded_without_verified_business_fields"
+    )
+
+
+def test_execution_plan_field_aliases_are_structural_evidence():
+    summary = summarize_response(
+        name="执行计划",
+        source_url="/jxzxjhgl/query.html",
+        method="POST",
+        parameter_names=(),
+        response=_response(
+            json.dumps({"items": [{"jxzxjhxx_id": "private", "zdxf": 160}]}),
+            "application/json",
+        ),
+    )
+
+    assert summary["contains_plan_id"] is True
+    assert summary["contains_required_credits"] is True
+    assert summary["has_non_empty_required_credits"] is True
 
 
 def test_response_summary_redacts_data_shaped_json_keys_and_table_headers():
@@ -261,6 +417,7 @@ def test_courses_empty_requires_verified_response_before_claiming_dynamic_source
         "course_table_present": False,
         "course_data_row_count": 0,
         "script_marker_counts": {"$.ajax": 1},
+        "unresolved_dynamic_reference_count": 1,
     }
     unresolved = diagnose_courses_empty(structure, [])
     verified = diagnose_courses_empty(
@@ -301,7 +458,7 @@ def test_courses_empty_recognizes_data_source_without_ajax_marker():
 
 def _sample_report(sample_id: str, cohort: str, major: str, content_type: str):
     return {
-        "probe_version": "academic-source-probe-v2",
+        "probe_version": "academic-source-probe-v3",
         "sample": {
             "id": sample_id,
             "cohort_alias": cohort,
@@ -342,7 +499,7 @@ def test_cross_sample_summary_requires_coverage_before_route_decision():
 
 def test_cross_sample_summary_rejects_legacy_probe_reports():
     report = _sample_report("sample-a", "cohort-a", "major-a", "application/json")
-    report["probe_version"] = "academic-source-probe-v1"
+    report["probe_version"] = "academic-source-probe-v2"
 
     with pytest.raises(ValueError, match="报告版本不一致"):
         build_cross_sample_summary([report])
@@ -542,6 +699,56 @@ async def test_dynamic_expression_url_blocks_route_c():
     )
     assert result["decision_status"] == "INCONCLUSIVE"
     assert result["route"] is None
+
+
+@pytest.mark.asyncio
+async def test_known_read_state_mutation_is_reported_without_request_or_blocker():
+    requested = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append((request.method, request.url.path))
+        if request.url.path == "/xtgl/index_initMenu.html":
+            return httpx.Response(200, text="<main>首页</main>", request=request)
+        if request.url.path == "/xsxy/xsxyqk_cxXsxyqkIndex.html":
+            return httpx.Response(
+                200,
+                text="""
+                  <script>
+                    jQuery.ajax({
+                      url: '/xyyjgl/xyyj_cxZjxgsfyd.html',
+                      type: 'POST',
+                      data: {ydzt: flag, sfyd: '1'}
+                    });
+                  </script>
+                """,
+                request=request,
+            )
+        raise AssertionError(f"不应请求状态变更候选：{request.url.path}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        report = await AcademicSourceProbe(client, "JSESSIONID=secret").run(
+            {
+                "id": "sample-a",
+                "cohort_alias": "cohort-a",
+                "major_alias": "major-a",
+                "college_alias": "college-a",
+            }
+        )
+
+    assert requested == [
+        ("GET", "/xtgl/index_initMenu.html"),
+        ("GET", "/xsxy/xsxyqk_cxXsxyqkIndex.html"),
+    ]
+    assert report["excluded_state_changing_candidates"] == [
+        {
+            "source_url": "/xyyjgl/xyyj_cxZjxgsfyd.html",
+            "method": "POST",
+            "reason": "known_state_changing_request",
+            "parameter_names": ["sfyd", "ydzt"],
+        }
+    ]
+    assert report["probe_completeness"] == {"complete": True, "blockers": []}
+    assert report["courses_empty_diagnosis"]["result"] == "no_course_source_found"
 
 
 @pytest.mark.asyncio
@@ -799,6 +1006,105 @@ async def test_external_script_is_fetched_before_dynamic_candidate_verification(
     assert report["probe_completeness"]["complete"] is True
     assert "private-plan-123" not in serialized
     assert "不落盘课程" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_menu_shell_uses_contract_and_discovers_page_specific_script():
+    requests = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(
+            (
+                request.method,
+                request.url.path,
+                dict(request.url.params),
+                (await request.aread()).decode(),
+            )
+        )
+        if request.url.path == "/xtgl/index_initMenu.html":
+            return httpx.Response(
+                200,
+                text=(
+                    '<a href="/bygl/bysh_cxByshjgHcIndex.html?gnmkdm=N105508">'
+                    "毕业审核</a>"
+                ),
+                request=request,
+            )
+        if request.url.path == "/xsxy/xsxyqk_cxXsxyqkIndex.html":
+            return httpx.Response(200, text="<main>学业汇总</main>", request=request)
+        if request.method == "POST" and request.url.path == (
+            "/bygl/bysh_cxByshjgHcIndex.html"
+        ):
+            return httpx.Response(
+                200,
+                text="null",
+                headers={"content-type": "application/json"},
+                request=request,
+            )
+        if request.url.path == "/bygl/bysh_cxByshjgHcIndex.html":
+            assert dict(request.url.params) == {
+                "gnmkdm": "N105508",
+                "layout": "default",
+            }
+            return httpx.Response(
+                200,
+                text="""
+                  <select id="bynd"><option value="2026" selected>年度</option></select>
+                  <script src="/js/common/jquery.js"></script>
+                  <script src="/js/comp/jwglxt/bygl/bysh.js"></script>
+                """,
+                request=request,
+            )
+        if request.url.path == "/js/comp/jwglxt/bygl/bysh.js":
+            return httpx.Response(
+                200,
+                text="""
+                  var _path = "/bygl";
+                  var queryUrl = _path + "/bysh_cxByshjgHcIndex.html";
+                  $.ajax({
+                    url: queryUrl,
+                    type: "POST",
+                    data: {bynd: $("#bynd").val(), doType: "query"}
+                  });
+                """,
+                headers={"content-type": "application/javascript"},
+                request=request,
+            )
+        return httpx.Response(404, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        report = await AcademicSourceProbe(
+            client,
+            "JSESSIONID=secret",
+            allowed_post_paths=("/bygl/bysh_cxByshjgHcIndex.html",),
+        ).run(
+            {
+                "id": "sample-a",
+                "cohort_alias": "cohort-a",
+                "major_alias": "major-a",
+                "college_alias": "college-a",
+            }
+        )
+
+    post = next(
+        item
+        for item in report["verified_requests"]
+        if item["method"] == "POST"
+        and item["source_url"] == "/bygl/bysh_cxByshjgHcIndex.html"
+    )
+    assert post["parameters_complete"] is True
+    assert post["response_shape"] == {"type": "NoneType"}
+    assert report["external_scripts"] == [
+        {
+            "source_url": "/js/comp/jwglxt/bygl/bysh.js",
+            "status_code": 200,
+            "content_type": "application/javascript",
+            "candidate_count": 1,
+            "unresolved_dynamic_reference_count": 0,
+            "verification_status": "verified",
+        }
+    ]
+    assert report["probe_completeness"] == {"complete": True, "blockers": []}
 
 
 @pytest.mark.asyncio

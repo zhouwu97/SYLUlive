@@ -2,7 +2,6 @@ import 'package:shenliyuan/utils/private_message_notification.dart';
 
 enum NotificationOpenType {
   reply,
-  marketPost,
 }
 
 class NotificationOpenTarget {
@@ -53,14 +52,6 @@ class NotificationOpenTarget {
           type: NotificationOpenType.reply,
           postId: postId,
           replyId: replyId,
-          createdAt: now ?? DateTime.now(),
-        );
-
-      case 'market_post':
-        if (postId == null) return null;
-        return NotificationOpenTarget(
-          type: NotificationOpenType.marketPost,
-          postId: postId,
           createdAt: now ?? DateTime.now(),
         );
 

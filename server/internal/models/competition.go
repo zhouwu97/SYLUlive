@@ -37,6 +37,8 @@ type CompetitionEvent struct {
 	SchoolRecognitionStatus string `gorm:"size:32;index" json:"school_recognition_status"`
 	SchoolRecognitionGrade  string `gorm:"size:16;index" json:"school_recognition_grade"`
 
+	// CompetitionRating 表示赛事本身的价值评级；RecommendationLevel 仅保留给旧客户端兼容。
+	CompetitionRating    string `gorm:"size:8;index" json:"competition_rating"`
 	RecommendationLevel  string `gorm:"size:8;index" json:"recommendation_level"`
 	ImportanceScore      int    `gorm:"default:0;index" json:"importance_score"`
 	RecommendationReason string `gorm:"size:1000" json:"recommendation_reason"`

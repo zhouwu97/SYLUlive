@@ -323,6 +323,9 @@ func main() {
 	if err := models.EnsureConversationIndexes(db); err != nil {
 		log.Fatal("私信索引迁移失败:", err)
 	}
+	if err := models.ApplyCompetitionRatingMigration(db); err != nil {
+		log.Fatal("竞赛评级字段迁移失败:", err)
+	}
 	if err := models.VerifyCompetitionCalendarDedupMigration(db); err != nil {
 		log.Fatal("竞赛计划数据约束未就绪:", err)
 	}

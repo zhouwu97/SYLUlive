@@ -30,6 +30,7 @@ class CompetitionEvent {
   final String competitionLevel;
   final String schoolRecognitionStatus;
   final String schoolRecognitionGrade;
+  final String competitionRating;
   final String recommendationLevel;
   final int importanceScore;
   final String recommendationReason;
@@ -78,6 +79,7 @@ class CompetitionEvent {
     this.competitionLevel = '',
     this.schoolRecognitionStatus = '',
     this.schoolRecognitionGrade = '',
+    this.competitionRating = '',
     this.recommendationLevel = '',
     this.importanceScore = 0,
     this.recommendationReason = '',
@@ -120,6 +122,15 @@ class CompetitionEvent {
 
   factory CompetitionEvent.fromJson(Map<String, dynamic> json) {
     final rawTimeStatus = json['time_status'];
+    final rawCompetitionRating = '${json['competition_rating'] ?? ''}'.trim();
+    final rawRecommendationLevel =
+        '${json['recommendation_level'] ?? ''}'.trim();
+    final competitionRating = rawCompetitionRating.isNotEmpty
+        ? rawCompetitionRating
+        : rawRecommendationLevel;
+    final recommendationLevel = rawRecommendationLevel.isNotEmpty
+        ? rawRecommendationLevel
+        : rawCompetitionRating;
     return CompetitionEvent(
       id: json['id'] ?? 0,
       title: json['title'] ?? '',
@@ -131,7 +142,8 @@ class CompetitionEvent {
       competitionLevel: json['competition_level'] ?? '',
       schoolRecognitionStatus: json['school_recognition_status'] ?? '',
       schoolRecognitionGrade: json['school_recognition_grade'] ?? '',
-      recommendationLevel: json['recommendation_level'] ?? '',
+      competitionRating: competitionRating,
+      recommendationLevel: recommendationLevel,
       importanceScore: json['importance_score'] ?? 0,
       recommendationReason: json['recommendation_reason'] ?? '',
       manualRating: (json['manual_rating'] as num?)?.toDouble(),
@@ -245,6 +257,7 @@ class CompetitionEvent {
       'competition_level': competitionLevel,
       'school_recognition_status': schoolRecognitionStatus,
       'school_recognition_grade': schoolRecognitionGrade,
+      'competition_rating': competitionRating,
       'recommendation_level': recommendationLevel,
       'importance_score': importanceScore,
       'recommendation_reason': recommendationReason,

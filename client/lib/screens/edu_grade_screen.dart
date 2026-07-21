@@ -16,11 +16,11 @@ import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
 import '../widgets/edu_grade/grade_gpa_hero_card.dart';
 import '../widgets/edu_grade/academic_course_item.dart';
+import '../widgets/edu_grade/academic_credit_overview.dart';
+import '../widgets/edu_grade/grade_center_section_tabs.dart';
+import '../widgets/edu_grade/graduation_warning_empty_state.dart';
 import 'edu_grade_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
-
-/// 成绩中心的三个一级视图。毕业预警在阶段 2A 只提供入口和空状态。
-enum _GradeSection { term, overview, graduationWarning }
 
 class EduGradeScreen extends StatefulWidget {
   final String? initialYear;
@@ -55,9 +55,12 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   EduAcademicSituation? _academicSituation;
   bool _isAcademicLoading = false;
   String? _academicError;
-  _GradeSection _section = _GradeSection.term;
+  GradeCenterSection _section = GradeCenterSection.term;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ScrollController _termScrollController = ScrollController();
+  final ScrollController _overviewScrollController = ScrollController();
+  final ScrollController _warningScrollController = ScrollController();
 
   EduProvider? _eduProvider;
 
@@ -70,6 +73,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   @override
   void dispose() {
     GradeScreenRegistry.unregister(this);
+    _termScrollController.dispose();
+    _overviewScrollController.dispose();
+    _warningScrollController.dispose();
     super.dispose();
   }
 
@@ -79,9 +85,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
   @override
   Future<bool> switchToGradeSemester(String year, int semester) async {
-    if (_section != _GradeSection.term) {
-      setState(() => _section = _GradeSection.term);
-    }
+    _switchSection(GradeCenterSection.term, scrollToTop: true);
     if (year == _selectedYear && semester == _selectedSemester) {
       final grades = await _refreshGrades();
       return grades != null;
@@ -93,7 +97,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final eduProvider = context.read<EduProvider>();
-    final authProvider = context.read<AuthProvider>();
+    final authProvider = context.watch<AuthProvider>();
     final currentUserId = authProvider.user?.id.toString();
 
     if (_eduProvider != eduProvider || _lastUserId != currentUserId) {
@@ -110,12 +114,13 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _activeFilter = '全部';
         _errorMessage = null;
         _academicError = null;
-        _section = _GradeSection.term;
+        _section = GradeCenterSection.term;
         _pageState = GradePageState.loading;
         _isInitialLoading = true;
         _isRefreshing = false;
         _isAcademicLoading = true;
       });
+      _resetSectionScrollPositions();
 
       if (currentUserId != null) {
         // 捕获局部变量防止异步期间 _lastUserId 变化
@@ -535,69 +540,79 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   Widget _buildBody() {
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(child: _buildSectionTabs()),
-        ...switch (_section) {
-          _GradeSection.term => _buildTermContent(),
-          _GradeSection.overview => _buildAcademicContent(),
-          _GradeSection.graduationWarning => _buildGraduationWarningContent(),
-        },
+    return Column(
+      children: [
+        GradeCenterSectionTabs(
+          selected: _section,
+          onChanged: _switchSection,
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _section.index,
+            children: [
+              CustomScrollView(
+                key: const ValueKey('grade_term_scroll_view'),
+                controller: _termScrollController,
+                slivers: _buildTermContent(),
+              ),
+              CustomScrollView(
+                key: const ValueKey('grade_overview_scroll_view'),
+                controller: _overviewScrollController,
+                slivers: _buildAcademicContent(),
+              ),
+              CustomScrollView(
+                key: const ValueKey('grade_warning_scroll_view'),
+                controller: _warningScrollController,
+                slivers: const [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: GraduationWarningEmptyState(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildSectionTabs() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: SegmentedButton<_GradeSection>(
-        segments: const [
-          ButtonSegment<_GradeSection>(
-            value: _GradeSection.term,
-            label: Text('本学期'),
-            icon: Icon(Icons.calendar_month_outlined, size: 17),
-          ),
-          ButtonSegment<_GradeSection>(
-            value: _GradeSection.overview,
-            label: Text('学业总览'),
-            icon: Icon(Icons.insights_outlined, size: 17),
-          ),
-          ButtonSegment<_GradeSection>(
-            value: _GradeSection.graduationWarning,
-            label: Text('毕业预警'),
-            icon: Icon(Icons.warning_amber_outlined, size: 17),
-          ),
-        ],
-        selected: <_GradeSection>{_section},
-        onSelectionChanged: (selection) {
-          if (selection.isEmpty || selection.first == _section) return;
-          setState(() => _section = selection.first);
-        },
-        style: SegmentedButton.styleFrom(
-          selectedBackgroundColor: accent.withValues(alpha: isDark ? 0.2 : 0.1),
-          selectedForegroundColor: accent,
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        ),
-      ),
-    );
+  void _switchSection(
+    GradeCenterSection section, {
+    bool scrollToTop = false,
+  }) {
+    if (_section != section) {
+      setState(() => _section = section);
+    }
+    if (scrollToTop) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _jumpToTop(_controllerFor(section));
+      });
+    }
+  }
+
+  ScrollController _controllerFor(GradeCenterSection section) {
+    return switch (section) {
+      GradeCenterSection.term => _termScrollController,
+      GradeCenterSection.overview => _overviewScrollController,
+      GradeCenterSection.graduationWarning => _warningScrollController,
+    };
+  }
+
+  void _resetSectionScrollPositions() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _jumpToTop(_termScrollController);
+      _jumpToTop(_overviewScrollController);
+      _jumpToTop(_warningScrollController);
+    });
+  }
+
+  void _jumpToTop(ScrollController controller) {
+    if (controller.hasClients) controller.jumpTo(0);
   }
 
   List<Widget> _buildAcademicContent() {
     final situation = _academicSituation;
-    final totalCredits = situation?.courses.fold<double>(
-      0,
-      (sum, course) => sum + course.credits,
-    );
-    final passedCredits = situation?.courses
-        .where((course) => course.effectivePassed == true)
-        .fold<double>(0, (sum, course) => sum + course.credits);
-    final failedCredits = situation?.courses
-        .where((course) => course.effectivePassed == false)
-        .fold<double>(0, (sum, course) => sum + course.credits);
     return [
       SliverToBoxAdapter(
         child: GradeGpaHeroCard(
@@ -609,11 +624,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       ),
       if (situation != null)
         SliverToBoxAdapter(
-          child: _buildCreditOverview(
-            totalCredits: totalCredits ?? 0,
-            passedCredits: passedCredits ?? 0,
-            failedCredits: failedCredits ?? 0,
-          ),
+          child: AcademicCreditOverview(situation: situation),
         ),
       if (situation != null && situation.courses.isNotEmpty) ...[
         SliverToBoxAdapter(
@@ -654,105 +665,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           ),
         ),
       const SliverToBoxAdapter(child: SizedBox(height: 32)),
-    ];
-  }
-
-  Widget _buildCreditOverview({
-    required double totalCredits,
-    required double passedCredits,
-    required double failedCredits,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
-    final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF737A80);
-    String formatCredits(double value) => value.toStringAsFixed(
-          value.truncateToDouble() == value ? 0 : 1,
-        );
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '学分概览',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: titleColor,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _creditMetric('课程记录', formatCredits(totalCredits), subColor),
-              _creditMetric('已通过', formatCredits(passedCredits), subColor),
-              _creditMetric('未通过', formatCredits(failedCredits), subColor),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _creditMetric(String label, String value, Color subColor) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$value 学分',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 3),
-          Text(label, style: TextStyle(fontSize: 12, color: subColor)),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _buildGraduationWarningContent() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = isDark ? const Color(0xFFFFC46B) : const Color(0xFFB86B00);
-    final secondary = isDark ? Colors.grey.shade400 : const Color(0xFF737A80);
-    return [
-      SliverFillRemaining(
-        hasScrollBody: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(32, 58, 32, 70),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.shield_outlined, size: 36, color: accent),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                '毕业预警',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                '毕业预警功能正在建设中',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, color: secondary),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '当前仅提供页面入口，暂未接入预警数据。',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: secondary),
-              ),
-            ],
-          ),
-        ),
-      ),
     ];
   }
 

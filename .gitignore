@@ -74,6 +74,7 @@ flutter_*.log
 # Python 测试与探测输出
 .pytest_cache/
 python-edu-service/tools/*/output/
+/python-edu-service/private-probe-output/
 
 # 本地临时说明与误提交二进制
 /before-low-conflict-cleanup.txt

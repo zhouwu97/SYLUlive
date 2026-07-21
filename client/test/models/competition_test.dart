@@ -30,4 +30,42 @@ void main() {
       expect(event.strongRecommendationReady, isFalse);
     });
   });
+
+  group('CompetitionEvent rating compatibility', () {
+    test('新旧评级同时存在时分别保留', () {
+      final event = CompetitionEvent.fromJson(<String, dynamic>{
+        'id': 9,
+        'title': '迁移中赛事',
+        'competition_rating': 'A',
+        'recommendation_level': 'B+',
+      });
+
+      expect(event.competitionRating, 'A');
+      expect(event.recommendationLevel, 'B+');
+    });
+
+    test('仅有旧字段时为新评级提供兼容值', () {
+      final event = CompetitionEvent.fromJson(<String, dynamic>{
+        'id': 10,
+        'title': '旧响应赛事',
+        'competition_rating': ' ',
+        'recommendation_level': 'B',
+      });
+
+      expect(event.competitionRating, 'B');
+      expect(event.recommendationLevel, 'B');
+      expect(event.toJson()['competition_rating'], 'B');
+    });
+
+    test('仅有新字段时旧属性仍可读取', () {
+      final event = CompetitionEvent.fromJson(<String, dynamic>{
+        'id': 11,
+        'title': '新响应赛事',
+        'competition_rating': 'S',
+      });
+
+      expect(event.competitionRating, 'S');
+      expect(event.recommendationLevel, 'S');
+    });
+  });
 }

@@ -8,11 +8,13 @@ import (
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
 	CompetitionCalendarDedupMigrationVersion = "20260710_01_competition_calendar_official_unique"
 	CompetitionOfficialUniqueIndex           = "idx_user_competition_official_active_unique"
+	CompetitionRatingMigrationVersion        = "20260721_01_competition_rating_backfill"
 )
 
 type AppSchemaMigration struct {
@@ -37,6 +39,35 @@ type CompetitionDedupReport struct {
 	DuplicateRows int                         `json:"duplicate_rows"`
 	AffectedUsers int                         `json:"affected_users"`
 	Groups        []CompetitionDuplicateGroup `json:"groups"`
+}
+
+// ApplyCompetitionRatingMigration 将旧赛事等级复制到新字段，迁移可重复执行且不会覆盖新值。
+func ApplyCompetitionRatingMigration(db *gorm.DB) error {
+	if err := db.AutoMigrate(&AppSchemaMigration{}); err != nil {
+		return err
+	}
+	var applied int64
+	if err := db.Model(&AppSchemaMigration{}).
+		Where("version = ?", CompetitionRatingMigrationVersion).Count(&applied).Error; err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&CompetitionEvent{}).
+			Where("(competition_rating IS NULL OR TRIM(competition_rating) = '') AND TRIM(recommendation_level) <> ''").
+			UpdateColumn("competition_rating", gorm.Expr("recommendation_level"))
+		if result.Error != nil {
+			return result.Error
+		}
+		details, _ := json.Marshal(map[string]interface{}{"backfilled_rows": result.RowsAffected})
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&AppSchemaMigration{
+			Version:   CompetitionRatingMigrationVersion,
+			AppliedAt: time.Now(),
+			Details:   datatypes.JSON(details),
+		}).Error
+	})
 }
 
 func InspectCompetitionCalendarDuplicates(db *gorm.DB) (CompetitionDedupReport, error) {

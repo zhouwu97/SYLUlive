@@ -80,6 +80,17 @@ func TestCompetitionEventDTOMarksUnverifiedEvidencePending(t *testing.T) {
 	}
 }
 
+func TestCompetitionEventDTOProvidesBidirectionalRatingCompatibility(t *testing.T) {
+	legacyDTO := competitionEventDTO(models.CompetitionEvent{RecommendationLevel: "A"})
+	if legacyDTO.CompetitionRating != "A" || legacyDTO.RecommendationLevel != "A" {
+		t.Fatalf("legacy dto ratings: new=%q old=%q", legacyDTO.CompetitionRating, legacyDTO.RecommendationLevel)
+	}
+	currentDTO := competitionEventDTO(models.CompetitionEvent{CompetitionRating: "S"})
+	if currentDTO.CompetitionRating != "S" || currentDTO.RecommendationLevel != "S" {
+		t.Fatalf("current dto ratings: new=%q old=%q", currentDTO.CompetitionRating, currentDTO.RecommendationLevel)
+	}
+}
+
 func TestCompetitionOverviewBoundsUseShanghaiNaturalDays(t *testing.T) {
 	location, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {
@@ -176,6 +187,51 @@ func TestRecommendationLevelValidation(t *testing.T) {
 	}
 	if _, err := normalizeRecommendationLevel("A+"); err == nil {
 		t.Fatal("expected invalid recommendation level to fail")
+	}
+}
+
+func TestEventFromInputPrefersCompetitionRatingAndDualWrites(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	category := models.CompetitionCategory{Name: "计算机", Slug: "computer_ai", IsActive: true}
+	if err := db.Create(&category).Error; err != nil {
+		t.Fatal(err)
+	}
+	event, err := NewCompetitionHandler(db).eventFromInput(competitionEventInput{
+		Title: "评级兼容赛事", PrimaryCategoryID: category.ID,
+		CompetitionRating: "A", RecommendationLevel: "B+",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.CompetitionRating != "A" || event.RecommendationLevel != "A" {
+		t.Fatalf("ratings: new=%q old=%q", event.CompetitionRating, event.RecommendationLevel)
+	}
+}
+
+func TestCompetitionRatingFiltersSupportNewAndLegacyQueryParameters(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	events := []models.CompetitionEvent{
+		{Title: "新字段赛事", CompetitionRating: "S", RecommendationLevel: "B", Status: "published"},
+		{Title: "旧字段赛事", RecommendationLevel: "A", Status: "published"},
+	}
+	if err := db.Create(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	handler := NewCompetitionHandler(db)
+	for parameter, value := range map[string]string{
+		"competition_rating":   "S",
+		"recommendation_level": "A",
+	} {
+		context, _ := gin.CreateTestContext(httptest.NewRecorder())
+		context.Request = httptest.NewRequest(http.MethodGet, "/?"+parameter+"="+value, nil)
+		var count int64
+		query := handler.applyEventFilters(context, db.Model(&models.CompetitionEvent{}))
+		if err := query.Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("%s=%s count=%d want=1", parameter, value, count)
+		}
 	}
 }
 

@@ -45,6 +45,11 @@ type CompetitionEventDTO struct {
 }
 
 func competitionEventDTO(event models.CompetitionEvent) CompetitionEventDTO {
+	rating := effectiveCompetitionRating(event)
+	event.CompetitionRating = rating
+	if strings.TrimSpace(event.RecommendationLevel) == "" {
+		event.RecommendationLevel = rating
+	}
 	evidenceStatus := "pending"
 	if event.IsVerified {
 		evidenceStatus = "verified"
@@ -78,6 +83,7 @@ type competitionEventInput struct {
 	CompetitionLevel        string   `json:"competition_level"`
 	SchoolRecognitionStatus string   `json:"school_recognition_status"`
 	SchoolRecognitionGrade  string   `json:"school_recognition_grade"`
+	CompetitionRating       string   `json:"competition_rating"`
 	RecommendationLevel     string   `json:"recommendation_level"`
 	ImportanceScore         int      `json:"importance_score"`
 	RecommendationReason    string   `json:"recommendation_reason"`
@@ -149,6 +155,13 @@ var entryYearPattern = regexp.MustCompile(`(?:19|20)\d{2}`)
 
 var recommendationRanks = map[string]int{
 	"S": 8, "A": 7, "B+": 6, "B": 5, "B-": 4, "C": 3, "D": 2, "E": 1,
+}
+
+func effectiveCompetitionRating(event models.CompetitionEvent) string {
+	if rating := strings.TrimSpace(event.CompetitionRating); rating != "" {
+		return rating
+	}
+	return strings.TrimSpace(event.RecommendationLevel)
 }
 
 type competitionProfile struct {
@@ -499,8 +512,10 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 		if fitRank[left.FitLevel] != fitRank[right.FitLevel] {
 			return fitRank[left.FitLevel] > fitRank[right.FitLevel]
 		}
-		if recommendationRanks[left.RecommendationLevel] != recommendationRanks[right.RecommendationLevel] {
-			return recommendationRanks[left.RecommendationLevel] > recommendationRanks[right.RecommendationLevel]
+		leftRating := effectiveCompetitionRating(left)
+		rightRating := effectiveCompetitionRating(right)
+		if recommendationRanks[leftRating] != recommendationRanks[rightRating] {
+			return recommendationRanks[leftRating] > recommendationRanks[rightRating]
 		}
 		if left.ImportanceScore != right.ImportanceScore {
 			return left.ImportanceScore > right.ImportanceScore
@@ -592,10 +607,17 @@ func (h *CompetitionHandler) applyEventFilters(c *gin.Context, query *gorm.DB) *
 		query = query.Joins("JOIN competition_categories cc ON cc.id = competition_events.primary_category_id").
 			Where("cc.slug = ?", slug)
 	}
-	for _, key := range []string{"school_recognition_status", "school_recognition_grade", "recommendation_level", "source_channel", "competition_level", "time_status", "time_precision"} {
+	for _, key := range []string{"school_recognition_status", "school_recognition_grade", "source_channel", "competition_level", "time_status", "time_precision"} {
 		if value := strings.TrimSpace(c.Query(key)); value != "" {
 			query = query.Where(key+" IN ?", strings.Split(value, ","))
 		}
+	}
+	ratingFilter := strings.TrimSpace(c.Query("competition_rating"))
+	if ratingFilter == "" {
+		ratingFilter = strings.TrimSpace(c.Query("recommendation_level"))
+	}
+	if ratingFilter != "" {
+		query = query.Where("COALESCE(NULLIF(competition_rating, ''), recommendation_level) IN ?", strings.Split(ratingFilter, ","))
 	}
 	if c.Query("is_featured") != "" {
 		query = query.Where("is_featured = ?", c.Query("is_featured") == "true")
@@ -737,7 +759,11 @@ func parseAdminFilterFromQuery(c *gin.Context) adminCompetitionFilter {
 		CategorySlug:      strings.TrimSpace(c.Query("category_slug")),
 		Keyword:           strings.TrimSpace(strings.ToLower(c.Query("keyword"))),
 	}
-	if recStr := strings.TrimSpace(c.Query("recommendation_level")); recStr != "" {
+	recStr := strings.TrimSpace(c.Query("competition_rating"))
+	if recStr == "" {
+		recStr = strings.TrimSpace(c.Query("recommendation_level"))
+	}
+	if recStr != "" {
 		filter.RecommendationLevels = strings.Split(recStr, ",")
 	}
 	return filter
@@ -759,7 +785,7 @@ func applyAdminCompetitionFilter(query *gorm.DB, filter adminCompetitionFilter, 
 	}
 
 	if len(filter.RecommendationLevels) > 0 {
-		query = query.Where("recommendation_level IN ?", filter.RecommendationLevels)
+		query = query.Where("COALESCE(NULLIF(competition_rating, ''), recommendation_level) IN ?", filter.RecommendationLevels)
 	}
 
 	switch filter.MaintenanceStatus {
@@ -888,7 +914,11 @@ func (h *CompetitionHandler) eventFromInput(input competitionEventInput) (models
 		return models.CompetitionEvent{}, fmt.Errorf("请选择主分类")
 	}
 	now := time.Now()
-	recommendationLevel, err := normalizeRecommendationLevel(input.RecommendationLevel)
+	ratingInput := input.CompetitionRating
+	if strings.TrimSpace(ratingInput) == "" {
+		ratingInput = input.RecommendationLevel
+	}
+	competitionRating, err := normalizeRecommendationLevel(ratingInput)
 	if err != nil {
 		return models.CompetitionEvent{}, err
 	}
@@ -911,7 +941,8 @@ func (h *CompetitionHandler) eventFromInput(input competitionEventInput) (models
 		Title: input.Title, Subtitle: input.Subtitle, Summary: input.Summary, Description: input.Description,
 		PrimaryCategoryID: categoryID, Tags: jsonArray(input.Tags), CompetitionLevel: input.CompetitionLevel,
 		SchoolRecognitionStatus: input.SchoolRecognitionStatus, SchoolRecognitionGrade: input.SchoolRecognitionGrade,
-		RecommendationLevel: recommendationLevel, ImportanceScore: input.ImportanceScore,
+		CompetitionRating: competitionRating, RecommendationLevel: competitionRating,
+		ImportanceScore:      input.ImportanceScore,
 		RecommendationReason: input.RecommendationReason, IsFeatured: input.IsFeatured, IsVerified: input.IsVerified,
 		Organizer: input.Organizer, HostUnit: input.HostUnit, UndertakeUnit: input.UndertakeUnit,
 		TargetAudience: input.TargetAudience, EligibleEntryYears: jsonArray(entryYears),
@@ -2056,11 +2087,16 @@ func (h *CompetitionHandler) normalizeImportPayload(payload map[string]interface
 			importString(item, "source_note") == "" {
 			warnings = append(warnings, gin.H{"index": i, "field": "source_note", "message": "学校认定为已认定时建议填写来源说明"})
 		}
-		recommendation, recommendationErr := normalizeRecommendationLevel(importString(item, "recommendation_level"))
+		ratingInput := importString(item, "competition_rating")
+		if ratingInput == "" {
+			ratingInput = importString(item, "recommendation_level")
+		}
+		recommendation, recommendationErr := normalizeRecommendationLevel(ratingInput)
 		if recommendationErr != nil {
-			errors = append(errors, gin.H{"index": i, "field": "recommendation_level", "message": recommendationErr.Error()})
+			errors = append(errors, gin.H{"index": i, "field": "competition_rating", "message": recommendationErr.Error()})
 			hasError = true
 		} else {
+			normalized["competition_rating"] = recommendation
 			normalized["recommendation_level"] = recommendation
 		}
 		entryYears, entryYearsOK := stringArrayFromImportField(item["eligible_entry_years"])

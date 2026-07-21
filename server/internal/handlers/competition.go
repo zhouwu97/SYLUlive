@@ -31,6 +31,42 @@ func NewCompetitionHandler(db *gorm.DB) *CompetitionHandler {
 	return &CompetitionHandler{db: db}
 }
 
+// CompetitionGovernanceDTO 描述赛事治理状态，不复用旧推荐等级推导人工结论。
+type CompetitionGovernanceDTO struct {
+	ManualRating              *float64 `json:"manual_rating"`
+	EvidenceStatus            string   `json:"evidence_status"`
+	StrongRecommendationReady bool     `json:"strong_recommendation_ready"`
+}
+
+// CompetitionEventDTO 在保持现有扁平响应兼容的同时补齐治理字段。
+type CompetitionEventDTO struct {
+	models.CompetitionEvent
+	CompetitionGovernanceDTO
+}
+
+func competitionEventDTO(event models.CompetitionEvent) CompetitionEventDTO {
+	evidenceStatus := "pending"
+	if event.IsVerified {
+		evidenceStatus = "verified"
+	}
+	return CompetitionEventDTO{
+		CompetitionEvent: event,
+		CompetitionGovernanceDTO: CompetitionGovernanceDTO{
+			ManualRating:              nil,
+			EvidenceStatus:            evidenceStatus,
+			StrongRecommendationReady: false,
+		},
+	}
+}
+
+func competitionEventDTOs(events []models.CompetitionEvent) []CompetitionEventDTO {
+	result := make([]CompetitionEventDTO, len(events))
+	for index, event := range events {
+		result[index] = competitionEventDTO(event)
+	}
+	return result
+}
+
 type competitionEventInput struct {
 	Title                   string   `json:"title"`
 	Subtitle                string   `json:"subtitle"`
@@ -437,7 +473,7 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 		pageSize = 20
 	}
 	if !ready {
-		c.JSON(http.StatusOK, gin.H{"profile_ready": false, "items": []models.CompetitionEvent{}, "total": 0, "page": page, "page_size": pageSize})
+		c.JSON(http.StatusOK, gin.H{"profile_ready": false, "items": []CompetitionEventDTO{}, "total": 0, "page": page, "page_size": pageSize})
 		return
 	}
 	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory").Where("status = ?", "published")
@@ -487,7 +523,7 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 	if finish > total {
 		finish = total
 	}
-	c.JSON(http.StatusOK, gin.H{"profile_ready": true, "items": matched[start:finish], "total": total, "page": page, "page_size": pageSize})
+	c.JSON(http.StatusOK, gin.H{"profile_ready": true, "items": competitionEventDTOs(matched[start:finish]), "total": total, "page": page, "page_size": pageSize})
 }
 
 func (h *CompetitionHandler) AdminCompetitionAudienceOptions(c *gin.Context) {
@@ -544,7 +580,7 @@ func (h *CompetitionHandler) ListEvents(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取比赛列表失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": events, "total": total, "page": page, "page_size": pageSize})
+	c.JSON(http.StatusOK, gin.H{"items": competitionEventDTOs(events), "total": total, "page": page, "page_size": pageSize})
 }
 
 func (h *CompetitionHandler) applyEventFilters(c *gin.Context, query *gorm.DB) *gorm.DB {
@@ -594,7 +630,7 @@ func (h *CompetitionHandler) GetEvent(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "比赛不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, event)
+	c.JSON(http.StatusOK, competitionEventDTO(event))
 }
 
 func (h *CompetitionHandler) AdminCreateCategory(c *gin.Context) {
@@ -686,7 +722,7 @@ func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items":       events,
+		"items":       competitionEventDTOs(events),
 		"total":       total,
 		"page":        page,
 		"page_size":   pageSize,
@@ -779,7 +815,7 @@ func (h *CompetitionHandler) AdminCreateEvent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建比赛失败"})
 		return
 	}
-	c.JSON(http.StatusCreated, event)
+	c.JSON(http.StatusCreated, competitionEventDTO(event))
 }
 
 func (h *CompetitionHandler) AdminUpdateEvent(c *gin.Context) {

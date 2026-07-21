@@ -25,6 +25,7 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
     PersonalDataType.academic: '最小化学业数据',
     PersonalDataType.physical: '最近体测概览',
     PersonalDataType.erke: '二课概览',
+    PersonalDataType.studentProfile: '年级、学院、专业和本次竞赛目标',
   };
 
   @override
@@ -294,11 +295,21 @@ class LocalToolLoop {
   }
 
   List<String> _excludedLabels(Set<PersonalDataType> included) {
+    if (included.contains(PersonalDataType.studentProfile)) {
+      return const <String>[
+        '课程成绩',
+        'GPA',
+        '学分',
+        '挂科记录',
+        '完整成绩原始响应',
+      ];
+    }
     const labels = <PersonalDataType, String>{
       PersonalDataType.schedule: '其他日期课表',
       PersonalDataType.academic: '完整成绩原始响应',
       PersonalDataType.physical: '体测以外健康信息',
       PersonalDataType.erke: '未请求的二课明细',
+      PersonalDataType.studentProfile: '年级、学院、专业和竞赛目标',
     };
     return PersonalDataType.values
         .where((type) => !included.contains(type))
@@ -312,6 +323,12 @@ class LocalToolLoop {
         'personal.academic.overview' => <String>['课程数量、覆盖学期、缺失状态'],
         'personal.physical.overview' => <String>['最近学年、总分、项目结果'],
         'personal.erke.overview' => <String>['总分、分类完成度、最近活动'],
+        'personal.competition.fit' => <String>[
+            '赛事适配状态',
+            '适配评分',
+            '匹配理由',
+            '强推荐门槛状态',
+          ],
         _ => <String>['公开检索结果'],
       };
 }

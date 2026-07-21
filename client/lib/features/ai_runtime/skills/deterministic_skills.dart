@@ -206,8 +206,17 @@ class CompetitionFitOutput {
   final List<CompetitionFitResult> items;
 }
 
+class CompetitionFitInput {
+  const CompetitionFitInput({this.goals = const <String>[]});
+
+  static const int maximumGoals = 5;
+  static const int maximumGoalLength = 32;
+
+  final List<String> goals;
+}
+
 class CompetitionFitSkill
-    implements PersonalSkill<EmptyDeterministicInput, CompetitionFitOutput> {
+    implements PersonalSkill<CompetitionFitInput, CompetitionFitOutput> {
   CompetitionFitSkill(this._source, [CompetitionFitEngine? engine])
       : _engine = engine ?? CompetitionFitEngine();
   static const String skillId = 'personal.competition.fit';
@@ -219,31 +228,33 @@ class CompetitionFitSkill
   SkillSensitivity get sensitivity => SkillSensitivity.medium;
   @override
   Set<PersonalDataType> get requiredDataTypes =>
-      const <PersonalDataType>{PersonalDataType.academic};
+      const <PersonalDataType>{PersonalDataType.studentProfile};
 
   @override
   Future<SkillResult<CompetitionFitOutput>> execute(
-    EmptyDeterministicInput input,
+    CompetitionFitInput input,
     SkillExecutionContext context,
   ) async {
-    final academic = await context.getAcademicRecords();
-    final failure = gatewayFailure<CompetitionFitOutput, AcademicRecords>(
-      academic,
-      dataLabel: '学业画像',
+    final baseProfile = await _source.currentProfile();
+    final profile = StudentCompetitionProfile(
+      grade: baseProfile.grade,
+      college: baseProfile.college,
+      major: baseProfile.major,
+      goals: input.goals,
     );
-    if (failure != null) return failure;
     final ranked = _engine.rank(
       await _source.candidates(),
-      await _source.currentProfile(),
+      profile,
     );
     return SkillResult<CompetitionFitOutput>(
       value: CompetitionFitOutput(ranked),
       status: SkillStatus.success,
       evidence: <SkillEvidence>[
-        gatewayEvidence(
-          academic,
-          dataType: PersonalDataType.academic,
-          scope: '竞赛适配所需最小化学业画像',
+        SkillEvidence(
+          source: '本地教务绑定资料',
+          scope: '年级、学院、专业和本次竞赛目标',
+          dataType: PersonalDataType.studentProfile,
+          fetchedAt: context.now(),
         ),
       ],
       containsPersonalData: true,

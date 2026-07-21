@@ -30,6 +30,17 @@ void main() {
       expect(target, isNull);
     });
 
+    test('应该忽略已停用的集市广播通知', () {
+      final message = {
+        'extras': {
+          'type': 'market_post',
+          'post_id': 123,
+        }
+      };
+
+      expect(NotificationOpenTarget.parse(message), isNull);
+    });
+
     test('相同目标的判断机制正确 (hasSameDestination)', () {
       final t1 = NotificationOpenTarget(
         type: NotificationOpenType.reply,

@@ -27,7 +27,7 @@ void main() {
       final now = DateTime(2026, 1, 1, 12, 0, 0);
 
       final target = NotificationOpenTarget(
-        type: NotificationOpenType.marketPost,
+        type: NotificationOpenType.reply,
         postId: 1,
         createdAt: now,
       );

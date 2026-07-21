@@ -33,6 +33,9 @@ class CompetitionEvent {
   final String recommendationLevel;
   final int importanceScore;
   final String recommendationReason;
+  final double? manualRating;
+  final String evidenceStatus;
+  final bool strongRecommendationReady;
   final String organizer;
   final String hostUnit;
   final String targetAudience;
@@ -78,6 +81,9 @@ class CompetitionEvent {
     this.recommendationLevel = '',
     this.importanceScore = 0,
     this.recommendationReason = '',
+    this.manualRating,
+    this.evidenceStatus = 'pending',
+    this.strongRecommendationReady = false,
     this.organizer = '',
     this.hostUnit = '',
     this.targetAudience = '',
@@ -128,6 +134,9 @@ class CompetitionEvent {
       recommendationLevel: json['recommendation_level'] ?? '',
       importanceScore: json['importance_score'] ?? 0,
       recommendationReason: json['recommendation_reason'] ?? '',
+      manualRating: (json['manual_rating'] as num?)?.toDouble(),
+      evidenceStatus: json['evidence_status'] ?? 'pending',
+      strongRecommendationReady: json['strong_recommendation_ready'] == true,
       organizer: json['organizer'] ?? '',
       hostUnit: json['host_unit'] ?? '',
       targetAudience: json['target_audience'] ?? '',

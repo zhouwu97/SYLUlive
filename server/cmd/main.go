@@ -303,6 +303,13 @@ func main() {
 	if err := models.BackfillLegacyMarketContacts(db); err != nil {
 		log.Fatal("历史集市联系方式回填失败:", err)
 	}
+	removedMarketNotifications, err := models.PurgeLegacyMarketPostNotifications(db)
+	if err != nil {
+		log.Fatal("历史集市广播通知清理失败:", err)
+	}
+	if removedMarketNotifications > 0 {
+		log.Printf("已清理 %d 条历史集市广播通知", removedMarketNotifications)
+	}
 
 	if err := models.EnsureExamPaperIndexes(db); err != nil {
 		log.Fatal("试卷索引迁移失败:", err)

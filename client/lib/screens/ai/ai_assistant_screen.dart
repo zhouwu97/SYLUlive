@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 
 import '../../features/ai_runtime/ai_feature_flags.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
+import '../../features/ai_runtime/personal_ai_runtime_limits.dart';
 import '../../features/ai_runtime/deterministic/competition_fit_engine.dart';
 import '../../features/ai_runtime/deterministic/graduation_requirement_engine.dart';
 import '../../features/ai_runtime/personal_data/gateway/personal_account_context.dart';
@@ -329,6 +330,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   Future<void> _submitPersonal(String rawMessage) async {
     final message = rawMessage.trim();
     if (message.isEmpty || _personalSending || _personalHistoryLoading) return;
+    if (!PersonalAIRuntimeLimits.acceptsInput(message)) {
+      setState(() {
+        _personalError =
+            '个人助手单条消息不能超过 ${PersonalAIRuntimeLimits.maximumInputCharacters} 个字符';
+      });
+      return;
+    }
     final requestEpoch = _personalSessionEpoch.capture();
     final flags = await _featureFlags.readAll();
     if (!_isCurrentPersonalRequest(requestEpoch)) return;
@@ -708,6 +716,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         builder: (context, provider, _) {
           final capabilities = provider.capabilities ?? widget.capabilities;
           final quota = provider.quota ?? capabilities.quota;
+          final maxInputCharacters = _personalMode
+              ? PersonalAIRuntimeLimits.maximumInputCharacters
+              : capabilities.maxMessageChars;
           return Scaffold(
             backgroundColor: CampusTheme.pageBackground(context),
             appBar: AppPageAppBar(
@@ -835,7 +846,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 AiInputComposer(
                   controller: _inputController,
                   focusNode: _inputFocusNode,
-                  maxCharacters: capabilities.maxMessageChars,
+                  maxCharacters: maxInputCharacters,
                   enabled: _personalMode
                       ? !_personalSending && !_personalHistoryLoading
                       : capabilities.chatEnabled && quota.remaining > 0,

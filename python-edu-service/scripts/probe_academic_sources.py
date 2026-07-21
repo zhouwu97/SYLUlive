@@ -27,7 +27,7 @@ if str(PROJECT_DIR) not in sys.path:
 from services.crawler import EduCrawler, LoginFailedError, NetworkError  # noqa: E402
 
 
-PROBE_VERSION = "academic-source-probe-v1"
+PROBE_VERSION = "academic-source-probe-v2"
 BASE_ORIGIN = "https://jxw.sylu.edu.cn"
 MENU_URL = f"{BASE_ORIGIN}/xtgl/index_initMenu.html"
 ACADEMIC_URL = f"{BASE_ORIGIN}/xsxy/xsxyqk_cxXsxyqkIndex.html"
@@ -52,6 +52,16 @@ SCRIPT_MARKERS = (
     ".DataTable(",
     ".dataTable(",
     ".load(",
+)
+SCRIPT_LITERAL_URL_PATTERNS = (
+    r"fetch\s*\(\s*['\"]([^'\"]+)['\"]",
+    r"\.load\s*\(\s*['\"]([^'\"]+)['\"]",
+    r"(?:url|ajax)\s*:\s*['\"]([^'\"]+)['\"]",
+)
+SCRIPT_EXPRESSION_URL_PATTERNS = (
+    r"fetch\s*\(\s*(?!['\"])[^\s)]",
+    r"\.load\s*\(\s*(?!['\"])[^\s)]",
+    r"(?:url|ajax)\s*:\s*(?!['\"])[A-Za-z_$]",
 )
 SAFE_READ_TOKENS = ("cx", "query", "list", "index", "view", "get")
 MUTATION_TOKENS = (
@@ -310,11 +320,6 @@ def discover_script_candidates(
     *,
     source: str,
 ) -> list[RequestCandidate]:
-    patterns = (
-        r"fetch\s*\(\s*['\"]([^'\"]+)['\"]",
-        r"\.load\s*\(\s*['\"]([^'\"]+)['\"]",
-        r"(?:url|ajax)\s*:\s*['\"]([^'\"]+)['\"]",
-    )
     data_blocks = re.findall(r"data\s*:\s*\{([^{}]{0,1000})\}", script)
     parameter_names = tuple(
         sorted(
@@ -335,7 +340,7 @@ def discover_script_candidates(
         )
     }
     candidates: list[RequestCandidate] = []
-    for pattern in patterns:
+    for pattern in SCRIPT_LITERAL_URL_PATTERNS:
         for match in re.finditer(pattern, script, flags=re.IGNORECASE):
             url = _same_origin_url(match.group(1), base_url)
             if not url:
@@ -357,6 +362,33 @@ def discover_script_candidates(
                 )
             )
     return _deduplicate_candidates(candidates)
+
+
+def _unresolved_dynamic_reference_count(script: str) -> int:
+    expression_count = sum(
+        len(re.findall(pattern, script, flags=re.IGNORECASE))
+        for pattern in SCRIPT_EXPRESSION_URL_PATTERNS
+    )
+    unresolved_calls = 0
+    for pattern in (r"fetch\s*\(", r"\.load\s*\("):
+        for match in re.finditer(pattern, script, flags=re.IGNORECASE):
+            argument = script[match.end() : match.end() + 200].lstrip()
+            if not argument.startswith(("'", '"')):
+                unresolved_calls += 1
+
+    for pattern in (r"\$\s*\.ajax\s*\(", r"\.datatable\s*\("):
+        for match in re.finditer(pattern, script, flags=re.IGNORECASE):
+            window = script[match.end() : match.end() + 1200]
+            property_match = re.search(
+                r"(?:url|ajax)\s*:\s*([^,}\r\n]+)",
+                window,
+                flags=re.IGNORECASE,
+            )
+            if not property_match or not property_match.group(1).lstrip().startswith(
+                ("'", '"')
+            ):
+                unresolved_calls += 1
+    return max(expression_count, unresolved_calls)
 
 
 def _form_candidate(form: Any, base_url: str) -> RequestCandidate | None:
@@ -518,6 +550,9 @@ def analyze_html_structure(
         marker: sum(script.count(marker) for script in inline_scripts)
         for marker in SCRIPT_MARKERS
     }
+    unresolved_dynamic_reference_count = sum(
+        _unresolved_dynamic_reference_count(script) for script in inline_scripts
+    )
     signature_payload = {
         "forms": forms,
         "table_headers": table_headers,
@@ -526,6 +561,7 @@ def analyze_html_structure(
         "iframes": sorted(iframe_sources),
         "data_sources": sorted(data_sources),
         "markers": marker_counts,
+        "unresolved_dynamic_reference_count": unresolved_dynamic_reference_count,
     }
     structure_signature = hashlib.sha256(
         json.dumps(signature_payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
@@ -543,6 +579,7 @@ def analyze_html_structure(
         "redacted_table_header_count": redacted_table_header_count,
         "inline_script_count": len(inline_scripts),
         "script_marker_counts": marker_counts,
+        "unresolved_dynamic_reference_count": unresolved_dynamic_reference_count,
         "gnmkdm_values": sorted(
             {
                 value
@@ -683,6 +720,102 @@ def _contains_pattern(search_text: str, patterns: Sequence[str]) -> bool:
     return any(pattern.lower() in lowered for pattern in patterns)
 
 
+def _is_non_empty_business_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() not in {
+            "",
+            "-",
+            "--",
+            "null",
+            "none",
+            "暂无",
+            "无",
+        }
+    if isinstance(value, Mapping):
+        return any(_is_non_empty_business_value(item) for item in value.values())
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return any(_is_non_empty_business_value(item) for item in value)
+    return True
+
+
+def _json_has_non_empty_field(value: Any, patterns: Sequence[str]) -> bool:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if _contains_pattern(str(key), patterns) and _is_non_empty_business_value(
+                item
+            ):
+                return True
+        return any(_json_has_non_empty_field(item, patterns) for item in value.values())
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return any(_json_has_non_empty_field(item, patterns) for item in value)
+    return False
+
+
+def _json_has_non_empty_module_record(value: Any) -> bool:
+    module_patterns = (
+        *FIELD_PATTERNS["contains_module_groups"],
+        "modules",
+        "module_list",
+    )
+    return _json_has_non_empty_field(value, module_patterns)
+
+
+def _html_has_non_empty_credit(soup: BeautifulSoup, patterns: Sequence[str]) -> bool:
+    for table in soup.select("table"):
+        rows = table.select("tr")
+        for index, row in enumerate(rows):
+            cells = row.select("th,td")
+            matching_columns = [
+                column
+                for column, cell in enumerate(cells)
+                if _contains_pattern(
+                    _normalize_text(cell.get_text(" ", strip=True)), patterns
+                )
+            ]
+            if not matching_columns:
+                continue
+            for data_row in rows[index + 1 :]:
+                values = data_row.select("th,td")
+                if any(
+                    column < len(values)
+                    and re.fullmatch(
+                        r"[-+]?\d+(?:\.\d+)?",
+                        _normalize_text(values[column].get_text(" ", strip=True)),
+                    )
+                    for column in matching_columns
+                ):
+                    return True
+    text = _normalize_text(soup.get_text(" ", strip=True))
+    return any(
+        re.search(
+            rf"{re.escape(pattern)}[^0-9]{{0,24}}[-+]?\d+(?:\.\d+)?",
+            text,
+            flags=re.IGNORECASE,
+        )
+        is not None
+        for pattern in patterns
+    )
+
+
+def _html_has_non_empty_module_record(soup: BeautifulSoup) -> bool:
+    patterns = FIELD_PATTERNS["contains_module_groups"]
+    for table in soup.select("table"):
+        rows = table.select("tr")
+        for index, row in enumerate(rows):
+            header = _normalize_text(row.get_text(" ", strip=True))
+            if not _contains_pattern(header, patterns):
+                continue
+            if any(
+                _normalize_text(item.get_text(" ", strip=True)).lower()
+                not in {"", "-", "--", "暂无", "无数据"}
+                for item in rows[index + 1 :]
+            ):
+                return True
+    return False
+
+
 def summarize_response(
     *,
     name: str,
@@ -709,6 +842,21 @@ def summarize_response(
         field_names = _shape_field_names(response_shape)
         search_text = " ".join(sorted(field_names))
         course_details = _json_has_course_records(parsed_json)
+        non_empty_evidence = {
+            "has_non_empty_required_credits": _json_has_non_empty_field(
+                parsed_json, FIELD_PATTERNS["contains_required_credits"]
+            ),
+            "has_non_empty_earned_credits": _json_has_non_empty_field(
+                parsed_json, FIELD_PATTERNS["contains_earned_credits"]
+            ),
+            "has_non_empty_remaining_credits": _json_has_non_empty_field(
+                parsed_json, FIELD_PATTERNS["contains_remaining_credits"]
+            ),
+            "has_non_empty_module_record": _json_has_non_empty_module_record(
+                parsed_json
+            ),
+            "has_non_empty_course_record": course_details,
+        }
         academic_summary = _contains_pattern(search_text, ACADEMIC_SUMMARY_TOKENS)
         structure_signature = hashlib.sha256(
             json.dumps(
@@ -719,9 +867,8 @@ def summarize_response(
         ).hexdigest()
     else:
         html_summary, _ = analyze_html_structure(body, urljoin(BASE_ORIGIN, source_url))
-        visible_text = _normalize_text(
-            BeautifulSoup(body, "html.parser").get_text(" ", strip=True)
-        )
+        soup = BeautifulSoup(body, "html.parser")
+        visible_text = _normalize_text(soup.get_text(" ", strip=True))
         structural_text = " ".join(
             html_summary["field_names"] + html_summary["table_headers"] + [visible_text]
         )
@@ -735,7 +882,20 @@ def summarize_response(
             "redacted_table_header_count": html_summary["redacted_table_header_count"],
         }
         search_text = structural_text
-        course_details = _html_has_course_records(BeautifulSoup(body, "html.parser"))
+        course_details = _html_has_course_records(soup)
+        non_empty_evidence = {
+            "has_non_empty_required_credits": _html_has_non_empty_credit(
+                soup, FIELD_PATTERNS["contains_required_credits"]
+            ),
+            "has_non_empty_earned_credits": _html_has_non_empty_credit(
+                soup, FIELD_PATTERNS["contains_earned_credits"]
+            ),
+            "has_non_empty_remaining_credits": _html_has_non_empty_credit(
+                soup, FIELD_PATTERNS["contains_remaining_credits"]
+            ),
+            "has_non_empty_module_record": _html_has_non_empty_module_record(soup),
+            "has_non_empty_course_record": course_details,
+        }
         academic_summary = _contains_pattern(search_text, ACADEMIC_SUMMARY_TOKENS)
         structure_signature = html_summary["structure_signature"]
 
@@ -782,6 +942,7 @@ def summarize_response(
         "response_shape": response_shape,
         "structure_signature": structure_signature,
         **flags,
+        **non_empty_evidence,
         "stable_for_current_account": stable_for_current_account,
         "verification_status": verification_status,
     }
@@ -828,6 +989,23 @@ def _is_safe_read_candidate(candidate: RequestCandidate) -> bool:
     return any(token in path for token in SAFE_READ_TOKENS)
 
 
+def _allowed_post_path(value: str) -> str:
+    parsed = urlsplit((value or "").strip())
+    path = parsed.path
+    if (
+        not path.startswith("/")
+        or parsed.scheme
+        or parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or any(token in path.lower() for token in MUTATION_TOKENS)
+    ):
+        raise ValueError(
+            "--allow-post 必须是无查询参数、无写操作关键词的教务站内绝对路径"
+        )
+    return path
+
+
 def _unresolved_parameter_names(candidate: RequestCandidate) -> list[str]:
     query = parse_qs(urlsplit(candidate.url).query, keep_blank_values=True)
     supplied = {
@@ -842,9 +1020,16 @@ def _unresolved_parameter_names(candidate: RequestCandidate) -> list[str]:
 
 
 class AcademicSourceProbe:
-    def __init__(self, client: httpx.AsyncClient, cookie: str):
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        cookie: str,
+        *,
+        allowed_post_paths: Iterable[str] = (),
+    ):
         self.client = client
         self._cookie = cookie
+        self._allowed_post_paths = frozenset(allowed_post_paths)
 
     async def _get(
         self, url: str, *, params: Mapping[str, str] | None = None
@@ -873,7 +1058,15 @@ class AcademicSourceProbe:
             "parameters_complete": not unresolved_parameters,
             "unresolved_parameters": unresolved_parameters,
         }
-        if not _is_safe_read_candidate(candidate):
+        path = candidate.source_url.lower()
+        if candidate.method not in {"GET", "POST"} or any(
+            token in path for token in MUTATION_TOKENS
+        ):
+            return {**base, "verification_status": "skipped_not_proven_read_only"}
+        if candidate.method == "POST":
+            if candidate.source_url not in self._allowed_post_paths:
+                return {**base, "verification_status": "skipped_post_not_allowed"}
+        elif not _is_safe_read_candidate(candidate):
             return {**base, "verification_status": "skipped_not_proven_read_only"}
         try:
             if candidate.method == "POST":
@@ -966,6 +1159,14 @@ class AcademicSourceProbe:
                 source=f"external_script:{script_path}",
             )
             external_script_candidates.extend(discovered)
+            unresolved_references = _unresolved_dynamic_reference_count(response.text)
+            script_body = response.text.lstrip().lower()
+            if "login_slogin" in response.text:
+                script_verification_status = "authentication_failed"
+            elif script_body.startswith(("<!doctype html", "<html")):
+                script_verification_status = "unexpected_html_response"
+            else:
+                script_verification_status = "verified"
             external_scripts.append(
                 {
                     "source_url": script_path,
@@ -974,6 +1175,8 @@ class AcademicSourceProbe:
                         ";", 1
                     )[0],
                     "candidate_count": len(discovered),
+                    "unresolved_dynamic_reference_count": unresolved_references,
+                    "verification_status": script_verification_status,
                 }
             )
 
@@ -1007,6 +1210,27 @@ class AcademicSourceProbe:
         verified_menu_candidates = [
             item for item in verified_requests if item.get("kind") == "menu"
         ] + menu_without_url
+        unverified_candidates = [
+            {
+                "source_url": item.get("source_url"),
+                "method": item.get("method"),
+                "verification_status": item.get("verification_status"),
+                "unresolved_parameters": item.get("unresolved_parameters", []),
+            }
+            for item in verified_requests
+            if str(item.get("verification_status", "")).startswith("skipped_")
+            or item.get("verification_status")
+            in {"request_failed", "request_failed_status", "authentication_failed"}
+            or item.get("parameters_complete") is False
+        ]
+        unresolved_dynamic_reference_count = (
+            int(academic_structure.get("unresolved_dynamic_reference_count", 0))
+            + int(menu_structure.get("unresolved_dynamic_reference_count", 0))
+            + sum(
+                int(item.get("unresolved_dynamic_reference_count", 0))
+                for item in external_scripts
+            )
+        )
         probe_blockers = []
         if menu_without_url:
             probe_blockers.append("menu_candidate_without_url")
@@ -1023,13 +1247,14 @@ class AcademicSourceProbe:
         if any(item.get("parameters_complete") is False for item in verified_requests):
             probe_blockers.append("candidate_parameters_unresolved")
         if any(
-            item.get("verification_status") == "skipped_not_proven_read_only"
-            and item.get("kind") == "menu"
+            str(item.get("verification_status", "")).startswith("skipped_")
             for item in verified_requests
         ):
-            probe_blockers.append("menu_candidate_not_proven_read_only")
+            probe_blockers.append("candidate_not_verified_read_only")
+        if unresolved_dynamic_reference_count > 0:
+            probe_blockers.append("dynamic_request_reference_unresolved")
         if any(
-            item.get("verification_status") == "request_failed"
+            item.get("verification_status") != "verified"
             or int(item.get("status_code", 0)) != 200
             for item in external_scripts
         ):
@@ -1051,6 +1276,7 @@ class AcademicSourceProbe:
                 "menu_page": urlsplit(MENU_URL).path,
                 "same_origin_only": True,
                 "candidate_limit": 40,
+                "allowed_post_paths": sorted(self._allowed_post_paths),
             },
             "academic_page_structure": academic_structure,
             "menu_page_structure": menu_structure,
@@ -1062,6 +1288,8 @@ class AcademicSourceProbe:
                 "truncated": discovered_candidate_count > 40,
             },
             "verified_requests": verified_requests,
+            "unverified_candidates": unverified_candidates,
+            "unresolved_dynamic_reference_count": unresolved_dynamic_reference_count,
             "courses_empty_diagnosis": diagnosis,
             "probe_completeness": {
                 "complete": not probe_blockers,
@@ -1130,16 +1358,23 @@ def diagnose_courses_empty(
 
 
 def _graduation_complete(candidate: Mapping[str, Any]) -> bool:
-    return all(
+    has_required_fields_and_values = all(
         candidate.get(key) is True
         for key in (
             "contains_module_groups",
             "contains_required_credits",
             "contains_earned_credits",
             "contains_remaining_credits",
-            "contains_course_details",
+            "has_non_empty_required_credits",
+            "has_non_empty_earned_credits",
+            "has_non_empty_remaining_credits",
         )
     )
+    has_detail_record = (
+        candidate.get("has_non_empty_module_record") is True
+        or candidate.get("has_non_empty_course_record") is True
+    )
+    return has_required_fields_and_values and has_detail_record
 
 
 def build_cross_sample_summary(reports: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -1298,6 +1533,17 @@ def render_cross_sample_report(
             if item.get("stable_for_current_account") is True
         }
     )
+    unverified_candidates = sorted(
+        {
+            (
+                str(item.get("method") or "-"),
+                str(item.get("source_url") or "-"),
+                str(item.get("verification_status") or "unknown"),
+            )
+            for report in reports
+            for item in report.get("unverified_candidates", [])
+        }
+    )
     diagnoses = [
         (
             str(report.get("sample", {}).get("id") or "unknown"),
@@ -1334,6 +1580,12 @@ def render_cross_sample_report(
         ]
         or ["- 未发现含业务字段的已验证请求"]
     )
+    lines.extend(
+        [
+            f"- 未验证候选：`{method} {path}`，`{status}`"
+            for method, path, status in unverified_candidates
+        ]
+    )
     lines.extend(["", "## 4. courses=[] 原因"])
     lines.extend(f"- `{sample_id}`：`{result}`" for sample_id, result in diagnoses)
     lines.extend(
@@ -1352,7 +1604,7 @@ def render_cross_sample_report(
             "",
             "## 7. 隐私和安全检查",
             "- 未保存 Cookie、密码、学号、姓名、身份证号、完整 HTML 或响应字段值。",
-            "- 只验证同源且通过只读路径白名单的请求；疑似写操作不会发出。",
+            "- GET 仅验证同源只读候选；POST 只有精确路径经 `--allow-post` 明确授权后才会发出。",
             "",
             "## 8. 最终路线 A / B / C",
             f"- `{route}`",
@@ -1414,7 +1666,11 @@ async def _run_probe(args: argparse.Namespace) -> int:
         cookie = await crawler.login(student_id, password)
         password_secret = password
         password = ""
-        probe = AcademicSourceProbe(crawler.client, cookie)
+        probe = AcademicSourceProbe(
+            crawler.client,
+            cookie,
+            allowed_post_paths=args.allow_post,
+        )
         report = await probe.run(sample)
 
     cookie_values = tuple(
@@ -1480,6 +1736,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--college-alias", help="匿名学院标签，如 college-a")
     run_parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     run_parser.add_argument("--timeout", type=float, default=20.0)
+    run_parser.add_argument(
+        "--allow-post",
+        action="append",
+        default=[],
+        type=_allowed_post_path,
+        metavar="PATH",
+        help="人工确认只读后允许执行的 POST 绝对路径；可重复指定",
+    )
     run_parser.add_argument("--overwrite", action="store_true")
 
     merge_parser = subparsers.add_parser("merge", help="合并多个脱敏样本并判定 A/B/C")

@@ -191,6 +191,26 @@ void main() {
       expect(result.status, CompetitionFitStatus.possiblySuitable);
       expect(result.strongRecommendationAllowed, isFalse);
     });
+
+    test('相同基础画像下匹配赛事标签的目标会提高评分', () {
+      const candidate = CompetitionCandidate(
+        id: '1',
+        title: '人工智能竞赛',
+        tags: <String>['人工智能'],
+        importanceScore: 50,
+      );
+      const withoutGoal = StudentCompetitionProfile(
+        grade: '2024',
+        college: '信息科学与工程学院',
+        major: '计算机科学与技术',
+      );
+      final baseline = CompetitionFitEngine()
+          .rank(const <CompetitionCandidate>[candidate], withoutGoal).single;
+      final targeted = CompetitionFitEngine()
+          .rank(const <CompetitionCandidate>[candidate], profile).single;
+
+      expect(targeted.score, baseline.score + 5);
+    });
   });
 
   group('FitnessWeeklyPlanEngine', () {

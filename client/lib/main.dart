@@ -431,20 +431,6 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
         ),
       );
       return;
-
-    case NotificationOpenType.marketPost:
-      final postId = target.postId;
-      if (postId == null) return;
-
-      navigator.push(
-        MaterialPageRoute(
-          builder: (_) => PostDetailScreen(
-            postId: postId,
-            isMarket: true,
-          ),
-        ),
-      );
-      return;
   }
 }
 

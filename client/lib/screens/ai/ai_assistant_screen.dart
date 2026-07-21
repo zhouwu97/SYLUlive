@@ -76,6 +76,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   List<SkillEvidence> _personalEvidence = const <SkillEvidence>[];
   ToolLoopCancellationToken? _toolCancellation;
   OpenAIToolCallingModel? _activeToolModel;
+  ToolPermissionManager? _permissionManager;
+  String? _permissionAccountKey;
   final PersonalSessionEpoch _personalSessionEpoch = PersonalSessionEpoch();
   AuthProvider? _authProvider;
   EduProvider? _eduProvider;
@@ -144,6 +146,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     _activeToolModel = null;
     cancellation?.cancel();
     unawaited(model?.cancel());
+    _clearPersonalPermissions();
     setState(() {
       _personalMessages.clear();
       _personalEvidence = const <SkillEvidence>[];
@@ -156,6 +159,24 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   bool _isCurrentPersonalRequest(PersonalRequestEpoch request) =>
       mounted && _personalSessionEpoch.isCurrent(request);
+
+  ToolPermissionManager _permissionManagerFor(String accountKey) {
+    if (_permissionManager == null || _permissionAccountKey != accountKey) {
+      _permissionManager?.clearSession();
+      _permissionAccountKey = accountKey;
+      _permissionManager = ToolPermissionManager(
+        prompt: FlutterToolPermissionPrompt(context),
+        accountKey: accountKey,
+      );
+    }
+    return _permissionManager!;
+  }
+
+  void _clearPersonalPermissions() {
+    _permissionManager?.clearSession();
+    _permissionManager = null;
+    _permissionAccountKey = null;
+  }
 
   void _submit(String message) {
     if (_personalMode) {
@@ -274,9 +295,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         registry: registry,
         executionContext: SkillExecutionContext(personalDataGateway: gateway),
         model: model,
-        permissionManager: ToolPermissionManager(
-          prompt: FlutterToolPermissionPrompt(context),
-        ),
+        permissionManager: _permissionManagerFor(requestEpoch.accountKey),
         auditSink: LocalToolAuditStore(
           accountFingerprint: AccountCacheNamespace.fingerprint(appUserId),
         ),
@@ -517,6 +536,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       MaterialPageRoute<bool>(builder: (_) => page),
     );
     if (saved == true && value == 'model' && mounted) {
+      _clearPersonalPermissions();
       setState(() {
         _personalError = null;
         _personalNeedsModelConfiguration = false;
@@ -580,6 +600,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 AiModeSwitch(
                   isPersonalMode: _personalMode,
                   onModeChanged: (selected) {
+                    if (!selected) _clearPersonalPermissions();
                     setState(() {
                       _personalMode = selected;
                       if (selected) {

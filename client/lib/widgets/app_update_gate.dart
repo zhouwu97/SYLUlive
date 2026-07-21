@@ -152,8 +152,7 @@ class _OptionalUpdateDialog extends StatelessWidget {
     return AlertDialog(
       title: Row(
         children: [
-          Icon(Icons.system_update_alt_rounded,
-              color: Theme.of(context).colorScheme.primary),
+          Image.asset('assets/images/mingfeng.png', width: 24, height: 24),
           const SizedBox(width: 10),
           Expanded(child: Text('发现新版本 ${info.latestVersionName}')),
         ],
@@ -202,10 +201,15 @@ class AppUpdateScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    Icons.system_update_rounded,
-                    size: 48,
-                    color: theme.colorScheme.primary,
+                  UnconstrainedBox(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.asset(
+                        'assets/images/mingfeng.png',
+                        width: 64,
+                        height: 64,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 20),
                   Text(
@@ -213,7 +217,7 @@ class AppUpdateScreen extends StatelessWidget {
                         ? '正在检查更新'
                         : info == null
                             ? '需要更新应用'
-                            : info.title,
+                            : info.title.replaceAll('神理院', '沈理校园'),
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineSmall,
                   ),

@@ -790,9 +790,7 @@ class EduProvider extends ChangeNotifier {
     });
   }
 
-  Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation({
-    bool forceRefresh = false,
-  }) async {
+  Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation() async {
     final requestUserId = _userId;
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
@@ -802,7 +800,7 @@ class EduProvider extends ChangeNotifier {
     Future<Response<dynamic>> request() {
       return _authDio.post(
         '/edu/academic-situation',
-        data: {'force_refresh': forceRefresh},
+        data: const <String, dynamic>{},
       );
     }
 

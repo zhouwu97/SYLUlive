@@ -1,5 +1,11 @@
 class EduAcademicSituation {
   final bool success;
+  final String sourceKind;
+  final String sourceUrl;
+  final String parserVersion;
+  final DateTime? capturedAt;
+  final DateTime? officialUpdatedAt;
+  final String? structureSignature;
   final double? allGpa;
   final double? degreeGpa;
   final int totalCourses;
@@ -12,12 +18,19 @@ class EduAcademicSituation {
   final int degreeFailedCourses;
   final int degreeNotStartedCourses;
   final int degreeInProgressCourses;
+  final String coursesStatus;
   final List<EduAcademicCourse> courses;
+  final String? errorCode;
   final String? message;
-  final DateTime? updatedAt;
 
   const EduAcademicSituation({
     required this.success,
+    required this.sourceKind,
+    required this.sourceUrl,
+    required this.parserVersion,
+    required this.capturedAt,
+    required this.officialUpdatedAt,
+    required this.structureSignature,
     required this.allGpa,
     required this.degreeGpa,
     required this.totalCourses,
@@ -30,14 +43,21 @@ class EduAcademicSituation {
     required this.degreeFailedCourses,
     required this.degreeNotStartedCourses,
     required this.degreeInProgressCourses,
+    required this.coursesStatus,
     required this.courses,
+    required this.errorCode,
     required this.message,
-    required this.updatedAt,
   });
 
   factory EduAcademicSituation.fromJson(Map<String, dynamic> json) {
     return EduAcademicSituation(
       success: json['success'] == true,
+      sourceKind: (json['source_kind'] ?? '').toString(),
+      sourceUrl: (json['source_url'] ?? '').toString(),
+      parserVersion: (json['parser_version'] ?? '').toString(),
+      capturedAt: _parseDateTime(json['captured_at'] ?? json['updated_at']),
+      officialUpdatedAt: _parseDateTime(json['official_updated_at']),
+      structureSignature: _emptyToNull(json['structure_signature']),
       allGpa: _tryParseDouble(json['all_gpa']),
       degreeGpa: _tryParseDouble(json['degree_gpa']),
       totalCourses: _parseInt(json['total_courses']),
@@ -50,12 +70,13 @@ class EduAcademicSituation {
       degreeFailedCourses: _parseInt(json['degree_failed_courses']),
       degreeNotStartedCourses: _parseInt(json['degree_not_started_courses']),
       degreeInProgressCourses: _parseInt(json['degree_in_progress_courses']),
+      coursesStatus: (json['courses_status'] ?? 'not_present').toString(),
       courses: (json['courses'] as List? ?? const [])
           .whereType<Map>()
           .map((m) => EduAcademicCourse.fromJson(Map<String, dynamic>.from(m)))
           .toList(),
+      errorCode: _emptyToNull(json['error_code']),
       message: _emptyToNull(json['message']),
-      updatedAt: _parseDateTime(json['updated_at']),
     );
   }
 }

@@ -2,12 +2,13 @@
 import asyncio
 import base64
 import binascii
+import hashlib
 import json
 import logging
 import random
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Tuple
 from dataclasses import dataclass
 
@@ -20,6 +21,8 @@ from cryptography.hazmat.backends import default_backend
 from config import INDEX_URL, COURSE_URL, GRADE_URL
 
 ACADEMIC_SITUATION_URL = "https://jxw.sylu.edu.cn/xsxy/xsxyqk_cxXsxyqkIndex.html"
+ACADEMIC_SITUATION_SOURCE_PATH = "/xsxy/xsxyqk_cxXsxyqkIndex.html"
+ACADEMIC_SITUATION_PARSER_VERSION = "academic-situation-v2"
 STUDENT_INFO_URL = "https://jxw.sylu.edu.cn/xsxxxggl/xsgrxxwh_cxXsgrxx.html"
 INDEX_INIT_MENU_URL = f"{INDEX_URL}/index_initMenu.html"
 
@@ -965,39 +968,147 @@ def parse_academic_situation_html(html: str) -> dict:
     """解析官方“学生学业情况查询”HTML。"""
     soup = BeautifulSoup(html or "", "html.parser")
     plain_text = _normalize_text(soup.get_text(" ", strip=True))
+    captured_at = datetime.now(timezone.utc).isoformat()
+    structure_signature = _academic_structure_signature(soup)
+
+    all_gpa_labels = [
+        "当前所有课程平均学分绩点",
+        "所有课程平均学分绩点",
+        "当前所有课程GPA",
+    ]
+    degree_gpa_labels = [
+        "当前学位课程平均学分绩点",
+        "当前学位课平均学分绩点",
+        "学位课程平均学分绩点",
+        "学位课平均学分绩点",
+        "当前学位课程GPA",
+        "当前学位课GPA",
+        "学位课GPA",
+    ]
+
+    if _looks_like_login_page(html) or not plain_text:
+        return _academic_structure_failure(captured_at, structure_signature)
+
+    all_gpa = _extract_gpa_value_any(plain_text, all_gpa_labels)
+    degree_gpa = _extract_gpa_value_any(plain_text, degree_gpa_labels)
     total_part, degree_part = _split_academic_summary(plain_text)
+
+    counts = {
+        "total_courses": _find_int_optional(
+            total_part, r"计划总课程(?:为)?\s*(\d+)\s*门"
+        ),
+        "passed_courses": _find_int_optional(total_part, r"通过\s*(\d+)\s*门"),
+        "failed_courses": _find_int_optional(total_part, r"未通过\s*(\d+)\s*门"),
+        "not_started_courses": _find_int_optional(total_part, r"未修\s*(\d+)\s*门"),
+        "in_progress_courses": _find_int_optional(total_part, r"在读\s*(\d+)\s*门"),
+        "degree_total_courses": _find_int_optional(
+            degree_part, r"计划学位课程(?:为)?\s*(\d+)\s*门"
+        ),
+        "degree_passed_courses": _find_int_optional(
+            degree_part, r"通过\s*(\d+)\s*门"
+        ),
+        "degree_failed_courses": _find_int_optional(
+            degree_part, r"未通过\s*(\d+)\s*门"
+        ),
+        "degree_not_started_courses": _find_int_optional(
+            degree_part, r"未修\s*(\d+)\s*门"
+        ),
+        "degree_in_progress_courses": _find_int_optional(
+            degree_part, r"在读\s*(\d+)\s*门"
+        ),
+    }
+
+    compact_text = _compact_text(plain_text)
+    has_all_gpa_anchor = any(_compact_text(label) in compact_text for label in all_gpa_labels)
+    has_degree_gpa_anchor = any(
+        _compact_text(label) in compact_text for label in degree_gpa_labels
+    )
+    has_count_anchor = "计划总课程" in compact_text and any(
+        label in compact_text for label in ("通过", "未通过", "未修", "在读")
+    )
+    has_parsed_gpa = all_gpa is not None or degree_gpa is not None
+    has_parsed_count = any(value is not None for value in counts.values())
+
+    if not (
+        has_all_gpa_anchor
+        and has_degree_gpa_anchor
+        and has_count_anchor
+        and has_parsed_gpa
+        and has_parsed_count
+    ):
+        return _academic_structure_failure(captured_at, structure_signature)
+
+    courses, courses_status = _parse_academic_courses(soup)
 
     return {
         "success": True,
         "source": "academic_situation",
-        "all_gpa": _extract_gpa_value_any(plain_text, [
-            "当前所有课程平均学分绩点",
-            "所有课程平均学分绩点",
-            "当前所有课程GPA",
-        ]),
-        "degree_gpa": _extract_gpa_value_any(plain_text, [
-            "当前学位课程平均学分绩点",
-            "当前学位课平均学分绩点",
-            "学位课程平均学分绩点",
-            "学位课平均学分绩点",
-            "当前学位课程GPA",
-            "当前学位课GPA",
-            "学位课GPA",
-        ]),
-        "total_courses": _find_int(total_part, r"计划总课程(?:为)?\s*(\d+)\s*门"),
-        "passed_courses": _find_int(total_part, r"通过\s*(\d+)\s*门"),
-        "failed_courses": _find_int(total_part, r"未通过\s*(\d+)\s*门"),
-        "not_started_courses": _find_int(total_part, r"未修\s*(\d+)\s*门"),
-        "in_progress_courses": _find_int(total_part, r"在读\s*(\d+)\s*门"),
-        "degree_total_courses": _find_int(degree_part, r"计划学位课程(?:为)?\s*(\d+)\s*门"),
-        "degree_passed_courses": _find_int(degree_part, r"通过\s*(\d+)\s*门"),
-        "degree_failed_courses": _find_int(degree_part, r"未通过\s*(\d+)\s*门"),
-        "degree_not_started_courses": _find_int(degree_part, r"未修\s*(\d+)\s*门"),
-        "degree_in_progress_courses": _find_int(degree_part, r"在读\s*(\d+)\s*门"),
-        "courses": _parse_academic_courses(html),
+        "source_kind": "official_academic_situation",
+        "source_url": ACADEMIC_SITUATION_SOURCE_PATH,
+        "parser_version": ACADEMIC_SITUATION_PARSER_VERSION,
+        "captured_at": captured_at,
+        "official_updated_at": None,
+        "structure_signature": structure_signature,
+        "all_gpa": all_gpa,
+        "degree_gpa": degree_gpa,
+        **counts,
+        "courses_status": courses_status,
+        "courses": courses,
+        "error_code": None,
         "message": None,
-        "updated_at": datetime.now().isoformat(),
     }
+
+
+def _academic_structure_failure(captured_at: str, structure_signature: str) -> dict:
+    return {
+        "success": False,
+        "source": "academic_situation",
+        "source_kind": "official_academic_situation",
+        "source_url": ACADEMIC_SITUATION_SOURCE_PATH,
+        "parser_version": ACADEMIC_SITUATION_PARSER_VERSION,
+        "captured_at": captured_at,
+        "official_updated_at": None,
+        "structure_signature": structure_signature,
+        "all_gpa": None,
+        "degree_gpa": None,
+        "total_courses": None,
+        "passed_courses": None,
+        "failed_courses": None,
+        "not_started_courses": None,
+        "in_progress_courses": None,
+        "degree_total_courses": None,
+        "degree_passed_courses": None,
+        "degree_failed_courses": None,
+        "degree_not_started_courses": None,
+        "degree_in_progress_courses": None,
+        "courses_status": "parse_failed",
+        "courses": [],
+        "error_code": "ACADEMIC_SITUATION_STRUCTURE_CHANGED",
+        "message": "学业情况页面结构发生变化",
+    }
+
+
+def _academic_structure_signature(soup: BeautifulSoup) -> str:
+    tag_sequence = [tag.name for tag in soup.find_all(True, limit=300)]
+    table_headers = [
+        _normalize_text(cell.get_text(" ", strip=True))
+        for cell in soup.select("table th")
+        if _normalize_text(cell.get_text(" ", strip=True))
+    ]
+    script_sources = [
+        str(script.get("src") or "").split("?", 1)[0]
+        for script in soup.select("script[src]")
+    ]
+    parts = [
+        f"forms:{len(soup.select('form'))}",
+        f"tables:{len(soup.select('table'))}",
+        f"scripts:{len(soup.select('script'))}",
+        f"iframes:{len(soup.select('iframe'))}",
+        "tags:" + ",".join(tag_sequence),
+        "headers:" + "|".join(table_headers),
+        "scriptsrc:" + "|".join(script_sources),
+    ]
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
 def _looks_like_login_page(html: str) -> bool:
@@ -1098,23 +1209,51 @@ def _extract_gpa_value(text: str, label: str) -> Optional[float]:
         return None
 
 
-def _find_int(text: str, pattern: str) -> int:
+def _find_int_optional(text: str, pattern: str) -> Optional[int]:
     match = re.search(pattern, text)
     if not match:
-        return 0
+        return None
     try:
         return int(match.group(1))
     except (TypeError, ValueError):
-        return 0
+        return None
 
 
-def _parse_academic_courses(html: str) -> List[dict]:
-    soup = BeautifulSoup(html or "", "html.parser")
+def _parse_academic_courses(soup: BeautifulSoup) -> Tuple[List[dict], str]:
     for table in soup.select("table"):
+        header_index = _academic_course_header_index(table)
+        if header_index < 0:
+            continue
         parsed = _parse_academic_course_table(table)
         if parsed:
-            return parsed
-    return []
+            return parsed, "available"
+        data_rows = table.select("tr")[header_index + 1:]
+        has_data = any(
+            _normalize_text(row.get_text(" ", strip=True)) for row in data_rows
+        )
+        return [], "parse_failed" if has_data else "empty"
+
+    if _has_dynamic_course_source(soup):
+        return [], "dynamic_source_unresolved"
+    return [], "not_present"
+
+
+def _academic_course_header_index(table) -> int:
+    for index, tr in enumerate(table.select("tr")):
+        cells = [_normalize_text(cell.get_text(" ", strip=True)) for cell in tr.select("th,td")]
+        if "课程名称" in cells and "最大成绩" in cells and "修读状态" in cells:
+            return index
+    return -1
+
+
+def _has_dynamic_course_source(soup: BeautifulSoup) -> bool:
+    if soup.select("iframe, [data-url], [data-ajax], [data-source]"):
+        return True
+    script_text = " ".join(script.get_text(" ", strip=True) for script in soup.select("script"))
+    return any(
+        marker in script_text
+        for marker in ("$.ajax", "fetch(", ".DataTable(", ".load(")
+    )
 
 
 def _parse_academic_course_table(table) -> List[dict]:

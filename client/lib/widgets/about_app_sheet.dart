@@ -14,7 +14,8 @@ class AboutAppSheet extends StatefulWidget {
 
 class _AboutAppSheetState extends State<AboutAppSheet> {
   String _currentVersion = '加载中...';
-  static const String _authorEmail = '3170305904@qq.com';
+  static const String _pureHomozygoteEmail = '3170305904@qq.com';
+  static const String _scoreDropperEmail = '2350016823@qq.com';
 
   @override
   void initState() {
@@ -458,37 +459,26 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                 ),
               ),
               const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: valuePanelColor,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: valueBorderColor),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.alternate_email_rounded,
-                        size: 18, color: accent),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _authorEmail,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
-                          color: titleColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              _buildAuthorEmailRow(
+                context: context,
+                dialogContext: dialogContext,
+                author: '纯合子',
+                email: _pureHomozygoteEmail,
+                titleColor: titleColor,
+                labelColor: labelColor,
+                panelColor: valuePanelColor,
+                borderColor: valueBorderColor,
+              ),
+              const SizedBox(height: 10),
+              _buildAuthorEmailRow(
+                context: context,
+                dialogContext: dialogContext,
+                author: '掉分员',
+                email: _scoreDropperEmail,
+                titleColor: titleColor,
+                labelColor: labelColor,
+                panelColor: valuePanelColor,
+                borderColor: valueBorderColor,
               ),
               const SizedBox(height: 12),
               Text(
@@ -507,33 +497,101 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('知道了'),
             ),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: accent,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Clipboard.setData(const ClipboardData(text: _authorEmail));
-                Navigator.pop(dialogContext); // 关闭对话框
-                Navigator.pop(context); // 关闭 AboutAppSheet
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('邮箱已复制到剪贴板'),
-                    behavior: SnackBarBehavior.floating,
-                    margin: const EdgeInsets.all(16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.copy_rounded, size: 16),
-              label: const Text('复制邮箱'),
-            ),
           ],
         );
       },
     );
+  }
+
+  Widget _buildAuthorEmailRow({
+    required BuildContext context,
+    required BuildContext dialogContext,
+    required String author,
+    required String email,
+    required Color titleColor,
+    required Color labelColor,
+    required Color panelColor,
+    required Color borderColor,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+      decoration: BoxDecoration(
+        color: panelColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.alternate_email_rounded,
+            size: 18,
+            color: Colors.orange,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  author,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: labelColor,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    email,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: titleColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: '复制$author邮箱',
+            onPressed: () =>
+                _copyAuthorEmail(context, dialogContext, author, email),
+            icon: const Icon(Icons.copy_rounded, size: 20),
+            color: Colors.orange,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _copyAuthorEmail(
+    BuildContext context,
+    BuildContext dialogContext,
+    String author,
+    String email,
+  ) async {
+    await Clipboard.setData(ClipboardData(text: email));
+    if (dialogContext.mounted) Navigator.pop(dialogContext);
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('$author的邮箱已复制到剪贴板'),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 }

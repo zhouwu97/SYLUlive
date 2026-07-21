@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/campus/campus_theme.dart';
 
 class PollOptionEditor extends StatelessWidget {
   final int index;
@@ -22,13 +23,23 @@ class PollOptionEditor extends StatelessWidget {
       key: ValueKey(controller),
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        SizedBox(
-          width: 30,
-          child: Text('${index + 1}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: Color(0xFF7C3AED), fontWeight: FontWeight.w700)),
+        Container(
+          width: 28,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: CampusTheme.primaryLight,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            '${index + 1}',
+            style: const TextStyle(
+              color: CampusTheme.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
+        const SizedBox(width: 10),
         Expanded(
           child: TextField(
             controller: controller,
@@ -37,23 +48,36 @@ class PollOptionEditor extends StatelessWidget {
             decoration: InputDecoration(
               hintText: '请输入选项',
               counterText: '',
+              filled: true,
               isDense: true,
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(7)),
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CampusTheme.border, width: 1),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CampusTheme.primary, width: 1),
+              ),
             ),
           ),
         ),
         SizedBox(
-          width: 44,
-          height: 44,
+          width: 36,
+          height: 36,
           child: IconButton(
             tooltip: '删除选项',
             onPressed: enabled && canDelete ? onDelete : null,
-            icon: const Icon(Icons.remove_circle_outline, size: 21),
+            icon: Icon(
+              Icons.remove_circle_outline, 
+              size: 21,
+              color: enabled && canDelete ? const Color(0xFFE54848).withValues(alpha: 0.8) : Colors.grey,
+            ),
           ),
         ),
         if (enabled)
-          const Icon(Icons.drag_handle, size: 20, color: Colors.grey),
+          const Icon(Icons.drag_handle, size: 18, color: Colors.grey),
       ],
     );
   }

@@ -10,6 +10,7 @@ import '../../features/ai_runtime/deterministic/competition_fit_engine.dart';
 import '../../features/ai_runtime/deterministic/graduation_requirement_engine.dart';
 import '../../features/ai_runtime/personal_data/gateway/personal_account_context.dart';
 import '../../features/ai_runtime/personal_data/gateway/personal_data_gateway_impl.dart';
+import '../../features/ai_runtime/personal_session/personal_session_epoch.dart';
 import '../../features/ai_runtime/skills/competition_search_skill.dart';
 import '../../features/ai_runtime/skills/deterministic_skills.dart';
 import '../../features/ai_runtime/skills/personal_skill.dart';
@@ -75,6 +76,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   List<SkillEvidence> _personalEvidence = const <SkillEvidence>[];
   ToolLoopCancellationToken? _toolCancellation;
   OpenAIToolCallingModel? _activeToolModel;
+  final PersonalSessionEpoch _personalSessionEpoch = PersonalSessionEpoch();
+  AuthProvider? _authProvider;
+  EduProvider? _eduProvider;
 
   @override
   void initState() {
@@ -87,7 +91,25 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = context.read<AuthProvider>();
+    final edu = context.read<EduProvider>();
+    if (!identical(_authProvider, auth)) {
+      _authProvider?.removeListener(_handleAccountContextChanged);
+      _authProvider = auth..addListener(_handleAccountContextChanged);
+    }
+    if (!identical(_eduProvider, edu)) {
+      _eduProvider?.removeListener(_handleAccountContextChanged);
+      _eduProvider = edu..addListener(_handleAccountContextChanged);
+    }
+    _synchronizePersonalAccount();
+  }
+
+  @override
   void dispose() {
+    _authProvider?.removeListener(_handleAccountContextChanged);
+    _eduProvider?.removeListener(_handleAccountContextChanged);
     _toolCancellation?.cancel();
     unawaited(_activeToolModel?.cancel());
     _inputFocusNode.dispose();
@@ -95,6 +117,45 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     _provider.dispose();
     super.dispose();
   }
+
+  String _currentPersonalAccountKey() {
+    final appUserId = _authProvider?.user?.id.toString() ?? '';
+    final sourceAccountId = _eduProvider?.studentId.trim() ?? '';
+    return '$appUserId::$sourceAccountId';
+  }
+
+  void _handleAccountContextChanged() {
+    if (!mounted) return;
+    _synchronizePersonalAccount();
+  }
+
+  void _synchronizePersonalAccount() {
+    final changed = _personalSessionEpoch.synchronizeAccount(
+      _currentPersonalAccountKey(),
+    );
+    if (!changed) return;
+    _resetPersonalSessionForAccountChange();
+  }
+
+  void _resetPersonalSessionForAccountChange() {
+    final cancellation = _toolCancellation;
+    final model = _activeToolModel;
+    _toolCancellation = null;
+    _activeToolModel = null;
+    cancellation?.cancel();
+    unawaited(model?.cancel());
+    setState(() {
+      _personalMessages.clear();
+      _personalEvidence = const <SkillEvidence>[];
+      _personalError = null;
+      _personalNeedsModelConfiguration = false;
+      _personalSending = false;
+      _inputController.clear();
+    });
+  }
+
+  bool _isCurrentPersonalRequest(PersonalRequestEpoch request) =>
+      mounted && _personalSessionEpoch.isCurrent(request);
 
   void _submit(String message) {
     if (_personalMode) {
@@ -120,8 +181,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   Future<void> _submitPersonal(String rawMessage) async {
     final message = rawMessage.trim();
     if (message.isEmpty || _personalSending) return;
+    final requestEpoch = _personalSessionEpoch.capture();
     final flags = await _featureFlags.readAll();
-    if (!mounted) return;
+    if (!_isCurrentPersonalRequest(requestEpoch)) return;
     if (const <AIFeatureFlag>[
       AIFeatureFlag.personalGateway,
       AIFeatureFlag.personalSkills,
@@ -131,8 +193,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       setState(() => _personalError = '个人助手当前已由安全开关关闭');
       return;
     }
-    final auth = context.read<AuthProvider>();
-    final edu = context.read<EduProvider>();
+    final auth = _authProvider!;
+    final edu = _eduProvider!;
     final appUserId = auth.user?.id.toString() ?? '';
     final sourceAccountId = edu.studentId.trim();
     if (appUserId.isEmpty || sourceAccountId.isEmpty) {
@@ -145,7 +207,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         settingsStore: AIProviderSettingsStore(appUserId: appUserId),
       );
     } catch (error) {
-      if (mounted) {
+      if (_isCurrentPersonalRequest(requestEpoch)) {
         setState(() {
           _personalError = error.toString();
           _personalNeedsModelConfiguration = true;
@@ -153,13 +215,17 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       }
       return;
     }
-    if (!mounted) {
+    if (!_isCurrentPersonalRequest(requestEpoch)) {
+      await model.cancel();
+      return;
+    }
+    final now = DateTime.now();
+    final requestId = now.microsecondsSinceEpoch.toString();
+    if (!_personalSessionEpoch.activate(requestEpoch, requestId)) {
       await model.cancel();
       return;
     }
     _activeToolModel = model;
-    final now = DateTime.now();
-    final requestId = now.microsecondsSinceEpoch.toString();
     setState(() {
       _personalSending = true;
       _personalError = null;
@@ -188,6 +254,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         return result.success ? null : result.errorMessage ?? '自动同步成绩失败';
       },
     );
+    if (!mounted || !_personalSessionEpoch.owns(requestEpoch, requestId)) {
+      await gateway.close();
+      await model.cancel();
+      return;
+    }
+    final cancellation = ToolLoopCancellationToken();
+    _toolCancellation = cancellation;
     try {
       final registry = buildStageSevenSkillRegistry(
         competitionSearchSource: DioCompetitionSearchSource(widget.dio),
@@ -197,8 +270,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           edu,
         ),
       );
-      final cancellation = ToolLoopCancellationToken();
-      _toolCancellation = cancellation;
       final loop = LocalToolLoop(
         registry: registry,
         executionContext: SkillExecutionContext(personalDataGateway: gateway),
@@ -209,10 +280,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         auditSink: LocalToolAuditStore(
           accountFingerprint: AccountCacheNamespace.fingerprint(appUserId),
         ),
-        accountGeneration: () => Object.hash(
-          auth.user?.id.toString(),
-          edu.studentId,
-        ),
+        accountGeneration: () => _personalSessionEpoch.generation,
         skillTimeout: const Duration(seconds: 90),
       );
       final tools = buildStageSixToolDefinitions().where((tool) {
@@ -231,7 +299,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         tools: tools,
         cancellationToken: cancellation,
       );
-      if (!mounted) return;
+      if (!_personalSessionEpoch.owns(requestEpoch, requestId)) return;
       if (outcome.status == ToolLoopStatus.completed) {
         setState(() {
           _personalMessages.add(
@@ -254,7 +322,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (_personalSessionEpoch.owns(requestEpoch, requestId)) {
         setState(() {
           _personalError = error is Exception
               ? error.toString().replaceFirst('Exception: ', '')
@@ -264,11 +332,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       }
     } finally {
       await gateway.close();
-      if (mounted) {
+      if (_personalSessionEpoch.release(requestEpoch, requestId) && mounted) {
         setState(() {
           _personalSending = false;
-          _toolCancellation = null;
-          _activeToolModel = null;
+          if (identical(_toolCancellation, cancellation)) {
+            _toolCancellation = null;
+          }
+          if (identical(_activeToolModel, model)) {
+            _activeToolModel = null;
+          }
         });
       }
     }
@@ -288,8 +360,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   Future<void> _checkPersonalConfiguration() async {
-    final auth = context.read<AuthProvider>();
-    final edu = context.read<EduProvider>();
+    final requestEpoch = _personalSessionEpoch.capture();
+    final auth = _authProvider!;
+    final edu = _eduProvider!;
     final appUserId = auth.user?.id.toString() ?? '';
     if (appUserId.isEmpty || edu.studentId.trim().isEmpty) {
       if (mounted && _personalMode) {
@@ -305,14 +378,16 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         settingsStore: AIProviderSettingsStore(appUserId: appUserId),
       );
       await model.cancel();
-      if (mounted && _personalMode && _personalNeedsModelConfiguration) {
+      if (_isCurrentPersonalRequest(requestEpoch) &&
+          _personalMode &&
+          _personalNeedsModelConfiguration) {
         setState(() {
           _personalError = null;
           _personalNeedsModelConfiguration = false;
         });
       }
     } catch (error) {
-      if (mounted && _personalMode) {
+      if (_isCurrentPersonalRequest(requestEpoch) && _personalMode) {
         setState(() {
           _personalError = error.toString();
           _personalNeedsModelConfiguration = true;

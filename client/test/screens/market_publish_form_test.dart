@@ -27,6 +27,8 @@ class _FakePostProvider extends Fake
     implements PostProvider {
   int createPostCalls = 0;
   String? lastContent;
+  String? lastContactType;
+  String? lastContact;
   List<String>? lastMarketTags;
 
   @override
@@ -37,6 +39,7 @@ class _FakePostProvider extends Fake
     String? postType,
     int? waterTagId,
     double? price,
+    String? contactType,
     String? contact,
     List<int>? fileIds,
     List<String>? marketTags,
@@ -46,6 +49,8 @@ class _FakePostProvider extends Fake
   }) async {
     createPostCalls++;
     lastContent = content;
+    lastContactType = contactType;
+    lastContact = contact;
     lastMarketTags = marketTags;
     return const CreatePostResult(success: true);
   }
@@ -78,6 +83,21 @@ Widget _buildMarketForm({
 }
 
 void main() {
+  Future<void> fillRequiredMarketFields(WidgetTester tester) async {
+    await tester.enterText(find.byType(TextFormField).at(0), '出一台显示器');
+    await tester.enterText(find.byType(TextFormField).at(1), '99');
+    await tester.enterText(find.byType(TextFormField).at(2), '成色很好，无坏点');
+  }
+
+  Future<void> selectContactType(WidgetTester tester, String label) async {
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('market-contact-type')));
+    await tester.tap(find.byKey(const ValueKey('market-contact-type')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(label).last);
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('发布商品时把点亮的描述选项作为 marketTags 提交', (tester) async {
     final postProvider = _FakePostProvider();
 
@@ -94,10 +114,66 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(2), '成色很好，无坏点');
     await tester.tap(find.text('发布出售').last);
     await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 2));
 
     expect(postProvider.createPostCalls, 1);
     expect(postProvider.lastContent, '成色很好，无坏点');
     expect(postProvider.lastMarketTags, ['自提']);
+  });
+
+  testWidgets('选择微信并输入账号后提交结构化联系方式', (tester) async {
+    final postProvider = _FakePostProvider();
+    await tester.pumpWidget(_buildMarketForm(postProvider: postProvider));
+    await tester.pumpAndSettle();
+
+    await fillRequiredMarketFields(tester);
+    await selectContactType(tester, '微信');
+    await tester.enterText(
+      find.byKey(const ValueKey('market-contact-value')),
+      'wx_123',
+    );
+    await tester.tap(find.text('发布出售').last);
+    await tester.pumpAndSettle();
+
+    expect(postProvider.createPostCalls, 1);
+    expect(postProvider.lastContactType, 'wechat');
+    expect(postProvider.lastContact, 'wx_123');
+  });
+
+  testWidgets('输入账号但未选择类型时阻止提交', (tester) async {
+    final postProvider = _FakePostProvider();
+    await tester.pumpWidget(_buildMarketForm(postProvider: postProvider));
+    await tester.pumpAndSettle();
+
+    await fillRequiredMarketFields(tester);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('market-contact-value')),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('market-contact-value')),
+      'wx_123',
+    );
+    await tester.tap(find.text('发布出售').last);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(postProvider.createPostCalls, 0);
+    expect(find.text('请选择联系方式类型'), findsOneWidget);
+  });
+
+  testWidgets('选择类型但未输入账号时阻止提交', (tester) async {
+    final postProvider = _FakePostProvider();
+    await tester.pumpWidget(_buildMarketForm(postProvider: postProvider));
+    await tester.pumpAndSettle();
+
+    await fillRequiredMarketFields(tester);
+    await selectContactType(tester, '微信');
+    await tester.tap(find.text('发布出售').last);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(postProvider.createPostCalls, 0);
+    expect(find.text('请输入微信号'), findsWidgets);
   });
 
   testWidgets('编辑商品时回填已选择的描述选项', (tester) async {
@@ -124,5 +200,59 @@ void main() {
         const Color(0xFFFF7A45));
     expect(tester.widget<Text>(find.text('急出')).style?.color,
         const Color(0xFF747B82));
+  });
+
+  testWidgets('编辑商品时回填联系方式类型和账号', (tester) async {
+    final post = Post(
+      id: 2,
+      title: '显示器',
+      content: '成色很好',
+      boardId: 2,
+      authorId: 1,
+      postType: 'sell',
+      price: 99,
+      contactType: 'wechat',
+      contact: 'wx_123',
+      createdAt: DateTime(2026, 7, 3),
+    );
+
+    await tester.pumpWidget(
+      _buildMarketForm(form: MarketPublishForm(editingPost: post)),
+    );
+    await tester.pumpAndSettle();
+
+    final selector = tester.widget<DropdownButtonFormField<String>>(
+      find.byKey(const ValueKey('market-contact-type')),
+    );
+    final input = tester.widget<TextFormField>(
+      find.byKey(const ValueKey('market-contact-value')),
+    );
+    expect(selector.initialValue, 'wechat');
+    expect(input.controller?.text, 'wx_123');
+  });
+
+  testWidgets('只修改联系方式类型也会触发草稿保护', (tester) async {
+    final post = Post(
+      id: 3,
+      title: '显示器',
+      content: '成色很好',
+      boardId: 2,
+      authorId: 1,
+      postType: 'sell',
+      price: 99,
+      contactType: 'wechat',
+      contact: '123456789',
+      createdAt: DateTime(2026, 7, 3),
+    );
+
+    await tester.pumpWidget(
+      _buildMarketForm(form: MarketPublishForm(editingPost: post)),
+    );
+    await tester.pumpAndSettle();
+    await selectContactType(tester, 'QQ');
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+
+    expect(find.text('放弃编辑？'), findsOneWidget);
   });
 }

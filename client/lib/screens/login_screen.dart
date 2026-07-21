@@ -61,28 +61,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool get _isGraduateRegister => _isRegister && _registerMode == 'graduate';
 
-  bool get _generalConsentsAccepted =>
+  bool get _hasRequiredRegistrationConsents =>
       _userAgreementAccepted &&
       _privacyPolicyAccepted &&
-      _communityRulesAccepted &&
-      _minorProtectionAccepted &&
-      _contentComplaintAccepted &&
-      _sdkDisclosureAccepted;
-
-  bool get _hasRequiredRegistrationConsents =>
-      _generalConsentsAccepted &&
       (_isGraduateRegister || _eduDataConsentAccepted);
-
-  void _setGeneralConsents(bool value) {
-    setState(() {
-      _userAgreementAccepted = value;
-      _privacyPolicyAccepted = value;
-      _communityRulesAccepted = value;
-      _minorProtectionAccepted = value;
-      _contentComplaintAccepted = value;
-      _sdkDisclosureAccepted = value;
-    });
-  }
 
   RegistrationConsents get _registrationConsents => RegistrationConsents(
         userAgreementAccepted: _userAgreementAccepted,
@@ -693,8 +675,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ? (_isGraduateRegister ? 'QQ号' : '学号')
                                     : '学号 / QQ',
                                 icon: Icons.person_outline,
-                                helperText:
-                                    _isRegister ? null : '在校生用学号登录，毕业人员用 QQ 登录',
+                                helperText: _isRegister
+                                    ? (_isGraduateRegister
+                                        ? '仅毕业人员使用 QQ 注册'
+                                        : '仅在校生使用学号注册')
+                                    : '在校生用学号登录，毕业人员用 QQ 登录',
                               ).copyWith(counterText: ''),
                               validator: (v) {
                                 if (v == null || v.isEmpty) {
@@ -710,7 +695,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
 
                             if (_isRegister) ...[
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
                               TextFormField(
                                 controller: _nicknameController,
                                 decoration: _inputDecoration(
@@ -720,7 +705,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   helperText: '将显示在帖子和评论中',
                                 ),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
                               if (_registerMode == 'campus')
                                 TextFormField(
                                   controller: _eduPasswordController,
@@ -791,7 +776,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                             ],
 
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 16),
                             TextFormField(
                               controller: _appPasswordController,
                               obscureText: _obscureAppPassword,
@@ -917,130 +902,81 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildConsentSection(BuildContext context, Color subText) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = Theme.of(context).colorScheme.primary;
-    final border =
-        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFECE4DA);
-    final panelColor = isDark
-        ? Colors.white.withValues(alpha: 0.035)
-        : const Color(0xFFFFFCF8);
-
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: panelColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Checkbox(
-                key: const ValueKey('registration-general-consents'),
-                value: _generalConsentsAccepted,
-                onChanged: (checked) => _setGeneralConsents(checked ?? false),
-                visualDensity: VisualDensity.compact,
-              ),
-              const SizedBox(width: 2),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      '阅读并同意注册服务协议',
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '含用户协议、隐私政策等 6 项',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        height: 1.3,
-                        color: subText,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                key: const ValueKey('registration-general-consents-details'),
-                tooltip: '查看全部注册服务协议',
-                onPressed: () => LegalDocumentsScreen.open(context),
-                icon: const Icon(Icons.chevron_right),
-                color: subText,
-              ),
-            ],
+    return Column(
+      key: const ValueKey('registration-consent-panel'),
+      children: [
+        _buildConsentItem(
+          context,
+          checkboxKey: const ValueKey('registration-user-agreement'),
+          value: _userAgreementAccepted,
+          title: '我已阅读并同意《用户协议》',
+          documentId: 'user_agreement',
+          onChanged: (value) => setState(() => _userAgreementAccepted = value),
+        ),
+        _buildConsentItem(
+          context,
+          checkboxKey: const ValueKey('registration-privacy-policy'),
+          value: _privacyPolicyAccepted,
+          title: '我已阅读并同意《隐私政策》',
+          documentId: 'privacy_policy',
+          onChanged: (value) => setState(() => _privacyPolicyAccepted = value),
+        ),
+        if (!_isGraduateRegister) ...[
+          const SizedBox(height: 4),
+          _buildConsentItem(
+            context,
+            checkboxKey: const ValueKey('registration-edu-consent'),
+            value: _eduDataConsentAccepted,
+            title: '我同意《教务数据专项授权》',
+            documentId: 'edu_data_consent',
+            onChanged: (value) =>
+                setState(() => _eduDataConsentAccepted = value),
+            emphasize: true,
           ),
-          if (!_isGraduateRegister) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              child: Divider(height: 1, color: border),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: isDark ? 0.09 : 0.07),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Checkbox(
-                    key: const ValueKey('registration-edu-consent'),
-                    value: _eduDataConsentAccepted,
-                    onChanged: (checked) => setState(
-                        () => _eduDataConsentAccepted = checked ?? false),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  const SizedBox(width: 2),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 9),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '同意教务数据专项授权',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: accent,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '用于身份核验及教务功能，可随时撤回',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              height: 1.35,
-                              color: subText,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    key: const ValueKey('registration-edu-consent-details'),
-                    tooltip: '查看教务数据专项授权',
-                    onPressed: () => LegalDocumentsScreen.open(
-                      context,
-                      documentId: 'edu_data_consent',
-                    ),
-                    icon: const Icon(Icons.chevron_right),
-                    color: accent,
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
-      ),
+        const SizedBox(height: 4),
+        Text(
+          '社区规则在首次发布、评论、私信、集市或组队写操作前单独确认；其他说明可在文档中心随时查看。',
+          style: TextStyle(fontSize: 11, height: 1.4, color: subText),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConsentItem(
+    BuildContext context, {
+    required Key checkboxKey,
+    required bool value,
+    required String title,
+    required String documentId,
+    required ValueChanged<bool> onChanged,
+    bool emphasize = false,
+  }) {
+    final color = emphasize ? Theme.of(context).colorScheme.primary : null;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Checkbox(
+          key: checkboxKey,
+          value: value,
+          onChanged: (checked) => onChanged(checked ?? false),
+          visualDensity: VisualDensity.compact,
+        ),
+        Expanded(
+          child: TextButton(
+            style: TextButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+              foregroundColor: color,
+            ),
+            onPressed: () => LegalDocumentsScreen.open(
+              context,
+              documentId: documentId,
+            ),
+            child: Text(title, style: const TextStyle(fontSize: 12.5)),
+          ),
+        ),
+      ],
     );
   }
 }

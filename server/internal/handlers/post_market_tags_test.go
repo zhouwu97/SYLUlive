@@ -23,13 +23,14 @@ func TestCreateMarketPostStoresAllowedTagsFromMultipartForm(t *testing.T) {
 	user := createMarketTagsTestUser(t, db, "20260003")
 
 	body, contentType := buildMultipartFields(t, map[string]string{
-		"board_id":    "2",
-		"title":       "显示器",
-		"content":     "成色很好，无坏点",
-		"post_type":   "sell",
-		"price":       "99",
-		"contact":     "站内私信",
-		"market_tags": "自提,乱传,急出",
+		"board_id":     "2",
+		"title":        "显示器",
+		"content":      "成色很好，无坏点",
+		"post_type":    "sell",
+		"price":        "99",
+		"contact":      "wx_contact",
+		"contact_type": "wechat",
+		"market_tags":  "自提,乱传,急出",
 	})
 
 	gin.SetMode(gin.TestMode)
@@ -129,12 +130,13 @@ func TestUpdateMarketPostStoresTagsFromMultipartForm(t *testing.T) {
 	post := createMarketTagsTestPost(t, db, user.ID, "可小刀")
 
 	body, contentType := buildMultipartFields(t, map[string]string{
-		"title":       "显示器",
-		"content":     "成色很好，无坏点",
-		"post_type":   "sell",
-		"price":       "88",
-		"contact":     "站内私信",
-		"market_tags": "自提,乱传,急出",
+		"title":        "显示器",
+		"content":      "成色很好，无坏点",
+		"post_type":    "sell",
+		"price":        "88",
+		"contact":      "wx_contact",
+		"contact_type": "wechat",
+		"market_tags":  "自提,乱传,急出",
 	})
 
 	gin.SetMode(gin.TestMode)
@@ -238,7 +240,8 @@ func updateMarketTags(
 	form.Set("content", "成色很好，无坏点")
 	form.Set("post_type", "sell")
 	form.Set("price", "88")
-	form.Set("contact", "站内私信")
+	form.Set("contact", "wx_contact")
+	form.Set("contact_type", "wechat")
 	form.Set("market_tags", tags)
 
 	recorder := httptest.NewRecorder()

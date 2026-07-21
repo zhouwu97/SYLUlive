@@ -483,7 +483,6 @@ class AuthProvider extends ChangeNotifier {
               (errorCode == 'legal_consent_withdrawn' ||
                   errorCode == 'legal_consent_required') &&
               _token != null) {
-            // 服务端状态优先，旧的本地会话会立即切换到对应的授权门禁。
             _applyLegalConsentRestriction(
               required: errorCode == 'legal_consent_required',
             );
@@ -547,11 +546,13 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('解析本地认证信息失败: $e');
     }
     _initialized = true;
-    await KeepAliveService.instance.syncAuthToken(_token);
-    await GradeReminderService.instance.syncRuntimeConfig(
-      userId: _user?.id.toString(),
-    );
-    await GradeReminderService.instance.ensureScheduledIfEnabled();
+    if (_user?.legalConsentsActive ?? false) {
+      await KeepAliveService.instance.syncAuthToken(_token);
+      await GradeReminderService.instance.syncRuntimeConfig(
+        userId: _user?.id.toString(),
+      );
+      await GradeReminderService.instance.ensureScheduledIfEnabled();
+    }
     notifyListeners();
   }
 
@@ -566,6 +567,8 @@ class AuthProvider extends ChangeNotifier {
         userId: candidate.user.id.toString(),
       );
       await GradeReminderService.instance.ensureScheduledIfEnabled();
+    } else {
+      await _clearConsentDependentLocalData(candidate.user);
     }
   }
 
@@ -578,12 +581,6 @@ class AuthProvider extends ChangeNotifier {
     required String studentId,
     required String eduPassword,
   }) async {
-    if (!candidate.user.legalConsentsActive) {
-      await _saveAuthCandidate(candidate);
-      _commitAuthSession(candidate);
-      await _clearConsentDependentLocalData(candidate.user);
-      return;
-    }
     final oldEduPassword = await _credentialStore.readEduPassword(studentId);
     await _saveEduPassword(studentId, eduPassword);
     try {
@@ -635,9 +632,7 @@ class AuthProvider extends ChangeNotifier {
       await _sessionCleanupCoordinator.closeCurrentSession();
     }
     _commitAuthSession(candidate);
-    if (!candidate.user.legalConsentsActive) {
-      await _clearConsentDependentLocalData(candidate.user);
-    } else if (prefetchWallpaper) {
+    if (prefetchWallpaper && candidate.user.legalConsentsActive) {
       _onAuthenticated();
     }
   }
@@ -781,34 +776,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// 立即撤销全部法律文件授权，并保留当前会话用于查阅本人数据。
-  Future<AuthResult> withdrawLegalConsents(String password) async {
-    if (!isLoggedIn) return AuthResult.failure('当前未登录');
-    _isLoading = true;
-    notifyListeners();
-    try {
-      await _dio.delete(
-        '/user/privacy/consents',
-        data: {'password': password, 'confirmed': true},
-      );
-      await _applyLegalConsentRestriction(required: false);
-      _isLoading = false;
-      notifyListeners();
-      return AuthResult.success();
-    } on DioException catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      return AuthResult.failure(
-        _parseDioError(e),
-        statusCode: e.response?.statusCode,
-      );
-    } catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      return AuthResult.failure('撤销同意失败: $e');
-    }
-  }
-
+  /// 确认最新法律文件，并以服务端返回的授权状态更新本地会话。
   Future<AuthResult> acceptRequiredLegalConsents({
     required bool includeEduDataConsent,
   }) async {
@@ -854,6 +822,34 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// 立即撤销全部法律文件授权，并保留当前会话办理隐私权利与账号注销。
+  Future<AuthResult> withdrawLegalConsents(String password) async {
+    if (!isLoggedIn) return AuthResult.failure('当前未登录');
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _dio.delete(
+        '/user/privacy/consents',
+        data: {'password': password, 'confirmed': true},
+      );
+      await _applyLegalConsentRestriction(required: false);
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.success();
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure(
+        _parseDioError(e),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      return AuthResult.failure('撤销同意失败: $e');
+    }
+  }
+
   Future<void> _applyLegalConsentRestriction({required bool required}) async {
     if (_applyingConsentRestriction || _user == null || _token == null) return;
     if (!_user!.legalConsentsActive &&
@@ -878,7 +874,7 @@ class AuthProvider extends ChangeNotifier {
       );
       _user = nextUser;
       _sessionGeneration++;
-      await _clearConsentDependentLocalData(nextUser);
+      await _clearConsentDependentLocalData(currentUser);
       notifyListeners();
     } catch (e) {
       debugPrint('同步授权受限状态失败: $e');
@@ -1315,6 +1311,31 @@ class AuthProvider extends ChangeNotifier {
       );
     } catch (e) {
       debugPrint('更新设备Token失败: ${e.runtimeType}');
+    }
+  }
+
+  /// 原子更新单活跃设备的远程推送设置。
+  Future<AuthResult> updatePushSettings({
+    required bool enabled,
+    required String installationId,
+    required String registrationId,
+    required String noticeVersion,
+  }) async {
+    if (!isLoggedIn) return AuthResult.failure('请先登录');
+    try {
+      await _dio.put(
+        '/user/push-settings',
+        data: {
+          'enabled': enabled,
+          'installation_id': installationId,
+          'registration_id': registrationId,
+          'notice_version': noticeVersion,
+        },
+      );
+      return AuthResult.success();
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
     }
   }
 

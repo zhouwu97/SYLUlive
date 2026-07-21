@@ -318,7 +318,7 @@ void main() {
         jsonDecode(box.get('board_777_time__')!) as Map<String, dynamic>;
     final cachedAuthor = ((stored['posts'] as List).single
         as Map<String, dynamic>)['author'] as Map<String, dynamic>;
-    expect(stored['schema_version'], 4);
+    expect(stored['schema_version'], 6);
     expect(cachedAuthor.containsKey('student_id'), isFalse);
     expect(cachedAuthor['credit_score'], 88);
     expect(cachedAuthor.containsKey('report_count'), isFalse);
@@ -888,7 +888,7 @@ void main() {
     await provider.refresh(boardId: 1, sort: 'all');
 
     expect(requests.length, 1);
-    expect(requests.first.queryParameters['feed_version'], 2);
+    expect(requests.first.queryParameters['feed_version'], 3);
     expect(provider.pinnedPostsFor(1, sort: 'all').length, 1);
     expect(provider.pinnedPostsFor(1, sort: 'all').first.id, 2);
   });
@@ -940,37 +940,43 @@ void main() {
     expect(provider.postsFor(1, sort: 'all').first.id, 3);
   });
 
-  test('clearLegacyCache removes schema 3, empty string, and corrupt json but keeps schema 4', () async {
+  test(
+      'clearLegacyCache removes schema 3, empty string, and corrupt json but keeps schema 6',
+      () async {
     final box = await Hive.openBox<String>('post_cache');
-    
+
     // Insert corrupt json
     await box.put('corrupt', '{corrupt: true');
-    
+
     // Insert empty string
     await box.put('empty', '');
-    
+
     // Insert schema 3 data
-    await box.put('schema3', jsonEncode({
-      'schema_version': 3,
-      'algorithm_version': 'home_all_v2',
-      'saved_at': DateTime.now().toUtc().toIso8601String(),
-      'posts': [],
-    }));
-    
-    // Insert valid schema 4 data
-    await box.put('schema4', jsonEncode({
-      'schema_version': 4,
-      'algorithm_version': 'home_time_v2',
-      'saved_at': DateTime.now().toUtc().toIso8601String(),
-      'posts': [],
-    }));
+    await box.put(
+        'schema3',
+        jsonEncode({
+          'schema_version': 3,
+          'algorithm_version': 'home_all_v2',
+          'saved_at': DateTime.now().toUtc().toIso8601String(),
+          'posts': [],
+        }));
+
+    // Insert valid schema 6 data
+    await box.put(
+      'schema6',
+        jsonEncode({
+          'schema_version': 6,
+          'algorithm_version': 'home_time_v2',
+          'saved_at': DateTime.now().toUtc().toIso8601String(),
+          'posts': [],
+        }));
 
     final deletedCount = await PostCacheService.clearLegacyCache();
-    
+
     expect(deletedCount, 3);
     expect(box.get('corrupt'), isNull);
     expect(box.get('empty'), isNull);
     expect(box.get('schema3'), isNull);
-    expect(box.get('schema4'), isNotNull);
+    expect(box.get('schema6'), isNotNull);
   });
 }

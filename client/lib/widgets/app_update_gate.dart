@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -25,19 +27,18 @@ class _AppUpdateGateState extends State<AppUpdateGate>
     with WidgetsBindingObserver {
   bool _optionalDialogVisible = false;
   int? _presentedOptionalVersion;
+  Timer? _optionalRetryTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<AppUpdateCoordinator>().initialize();
-    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _optionalRetryTimer?.cancel();
     super.dispose();
   }
 
@@ -85,7 +86,16 @@ class _AppUpdateGateState extends State<AppUpdateGate>
       return;
     }
     final dialogContext = widget.navigatorKey.currentState?.overlay?.context;
-    if (dialogContext == null) return;
+    if (dialogContext == null) {
+      _presentedOptionalVersion = null;
+      _retryOptionalDialogLater();
+      return;
+    }
+    final navigator = widget.navigatorKey.currentState;
+    if (navigator == null || navigator.canPop()) {
+      _retryOptionalDialogLater();
+      return;
+    }
     _optionalDialogVisible = true;
     final action = await showDialog<_OptionalUpdateAction>(
       context: dialogContext,
@@ -113,6 +123,13 @@ class _AppUpdateGateState extends State<AppUpdateGate>
         await coordinator.deferOptionalUpdate();
     }
   }
+
+  void _retryOptionalDialogLater() {
+    _optionalRetryTimer ??= Timer(const Duration(seconds: 2), () {
+      _optionalRetryTimer = null;
+      _showOptionalDialog();
+    });
+  }
 }
 
 enum _OptionalUpdateAction { later, ignore, update }
@@ -135,8 +152,7 @@ class _OptionalUpdateDialog extends StatelessWidget {
     return AlertDialog(
       title: Row(
         children: [
-          Icon(Icons.system_update_alt_rounded,
-              color: Theme.of(context).colorScheme.primary),
+          Image.asset('assets/images/mingfeng.png', width: 24, height: 24),
           const SizedBox(width: 10),
           Expanded(child: Text('发现新版本 ${info.latestVersionName}')),
         ],
@@ -156,7 +172,7 @@ class _OptionalUpdateDialog extends StatelessWidget {
   }
 }
 
-/// 全屏更新页，覆盖冷启动检查、强制更新、下载、校验完成和唤起安装器的状态。
+/// 全屏更新页，仅覆盖强制更新、下载、校验完成和唤起安装器的状态。
 class AppUpdateScreen extends StatelessWidget {
   final AppUpdateCoordinator coordinator;
 
@@ -185,10 +201,15 @@ class AppUpdateScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    Icons.system_update_rounded,
-                    size: 48,
-                    color: theme.colorScheme.primary,
+                  UnconstrainedBox(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.asset(
+                        'assets/images/mingfeng.png',
+                        width: 64,
+                        height: 64,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 20),
                   Text(
@@ -196,7 +217,7 @@ class AppUpdateScreen extends StatelessWidget {
                         ? '正在检查更新'
                         : info == null
                             ? '需要更新应用'
-                            : info.title,
+                            : info.title.replaceAll('神理院', '沈理校园'),
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineSmall,
                   ),
@@ -292,7 +313,7 @@ class AppUpdateScreen extends StatelessWidget {
       case AppUpdatePhase.installing:
         return '已打开系统安装器';
       case AppUpdatePhase.required:
-        return canDownload ? '立即更新' : '重新检查';
+        return canDownload ? '下载更新' : '重新检查';
       case AppUpdatePhase.initializing:
       case AppUpdatePhase.checking:
         return '正在检查';

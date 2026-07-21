@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/theme_provider.dart';
+import '../features/campus_data/storage/physical_cache_store.dart';
 import '../features/physical/physical_percentile_models.dart';
 import '../features/physical/physical_percentile_service.dart';
 import '../features/campus_data/storage/physical_cache_store.dart';
@@ -58,7 +59,6 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   // year → {total_grade, total_score, scores[]}
   final Map<String, _YearData> _yearData = {};
 
-  bool _showQr = false;
   String _testCode = '';
   int _displayMode = 0; // 0: 成绩, 1: 得分, 2: 评级
 
@@ -112,7 +112,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final academicYear = now.month >= 9 ? now.year + 1 : now.year;
     final currentYearStr = academicYear.toString();
     // 服务端的 school_date 可能返回旧年份，不要直接信任
-    if (mounted)
+    if (mounted) {
       setState(() {
         _currentYear = _yearData[currentYearStr] != null
             ? currentYearStr // 当前学年有数据，优先用
@@ -121,6 +121,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 orElse: () => currentYearStr, // 都没数据，用当前学年
               );
       });
+    }
 
     // 如果选中年份没有缓存，自动拉取；优先拉取当前年份
     if (_yearData[_currentYear] == null) {

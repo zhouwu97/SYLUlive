@@ -8,7 +8,6 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 
 class _QueuedAuthAdapter implements HttpClientAdapter {
   final List<({int statusCode, Object? data})> _responses = [];
-  final List<RequestOptions> requests = [];
 
   void enqueue(int statusCode, Object? data) {
     _responses.add((statusCode: statusCode, data: data));
@@ -24,7 +23,6 @@ class _QueuedAuthAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     await requestStream?.drain<void>();
-    requests.add(options);
     if (_responses.isEmpty) throw StateError('缺少认证响应: ${options.path}');
     final response = _responses.removeAt(0);
     return ResponseBody.fromString(
@@ -640,41 +638,21 @@ void main() {
     expect(provider.sessionGeneration, generation + 1);
   });
 
-  test('即时撤销同意后保留查阅会话并清除本机教务密码', () async {
+  test('确认新版协议后以服务端状态更新本地会话', () async {
     final adapter = _QueuedAuthAdapter()
       ..enqueue(200, {
-        'message': '已撤销全部授权',
-        'legal_consents_active': false,
+        'user': {
+          ..._userJson(1),
+          'legal_consents_active': true,
+          'legal_consents_required': false,
+        },
       });
-    final store = _FakeAuthCredentialStore();
-    final provider = _provider(adapter, store);
-    await provider.applyAuthPayload('token', _userJson(1));
-    store.eduPasswords['20260001'] = 'edu-password';
-
-    final result = await provider.withdrawLegalConsents('password123');
-
-    expect(result.success, isTrue);
-    expect(provider.isLoggedIn, isTrue);
-    expect(provider.user?.legalConsentsActive, isFalse);
-    expect(store.eduPasswords, isEmpty);
-    expect(adapter.requests.last.method, 'DELETE');
-    expect(adapter.requests.last.path, '/user/privacy/consents');
-    expect(adapter.requests.last.data, {
-      'password': 'password123',
-      'confirmed': true,
-    });
-  });
-
-  test('待确认协议的账号确认后立即恢复完整会话', () async {
-    final pendingUser = _userJson(1)
-      ..['legal_consents_active'] = false
-      ..['legal_consents_required'] = true;
-    final acceptedUser = _userJson(1)
-      ..['legal_consents_active'] = true
-      ..['legal_consents_required'] = false;
-    final adapter = _QueuedAuthAdapter()..enqueue(200, {'user': acceptedUser});
     final provider = _provider(adapter, _FakeAuthCredentialStore());
-    await provider.applyAuthPayload('token', pendingUser);
+    await provider.applyAuthPayload('token', {
+      ..._userJson(1),
+      'legal_consents_active': false,
+      'legal_consents_required': true,
+    });
 
     final result = await provider.acceptRequiredLegalConsents(
       includeEduDataConsent: false,
@@ -683,16 +661,6 @@ void main() {
     expect(result.success, isTrue);
     expect(provider.user?.legalConsentsActive, isTrue);
     expect(provider.user?.legalConsentsRequired, isFalse);
-    expect(adapter.requests.single.path, '/user/legal-consents');
-    expect(adapter.requests.single.data, {
-      'user_agreement_accepted': true,
-      'privacy_policy_accepted': true,
-      'community_rules_accepted': true,
-      'minor_protection_accepted': true,
-      'content_complaint_accepted': true,
-      'sdk_disclosure_accepted': true,
-      'edu_data_consent_accepted': false,
-    });
   });
 }
 

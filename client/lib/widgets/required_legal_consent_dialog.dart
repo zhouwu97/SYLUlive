@@ -17,6 +17,7 @@ Future<void> showRequiredLegalConsentDialog(
   );
 }
 
+// RequiredLegalConsentDialog 阻止旧用户在确认最新法律文件前进入业务功能。
 class RequiredLegalConsentDialog extends StatefulWidget {
   final bool requiresEduDataConsent;
 
@@ -95,12 +96,11 @@ class _RequiredLegalConsentDialogState
                 value: _generalAccepted,
                 onChanged: _submitting
                     ? null
-                    : (value) => setState(
-                          () => _generalAccepted = value ?? false,
-                        ),
+                    : (value) =>
+                        setState(() => _generalAccepted = value ?? false),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
-                title: const Text('我已阅读并同意用户协议、隐私政策等 6 项说明'),
+                title: const Text('我已阅读并确认用户协议和隐私政策'),
               ),
               if (widget.requiresEduDataConsent)
                 CheckboxListTile(
@@ -108,9 +108,8 @@ class _RequiredLegalConsentDialogState
                   value: _eduAccepted,
                   onChanged: _submitting
                       ? null
-                      : (value) => setState(
-                            () => _eduAccepted = value ?? false,
-                          ),
+                      : (value) =>
+                          setState(() => _eduAccepted = value ?? false),
                   contentPadding: EdgeInsets.zero,
                   controlAffinity: ListTileControlAffinity.leading,
                   title: const Text('我已阅读并同意教务数据专项授权'),

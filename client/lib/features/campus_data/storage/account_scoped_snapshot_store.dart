@@ -75,10 +75,10 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
         const FlutterPersonalSnapshotSecureStore(),
     PersonalSnapshotFileBackend? fileBackend,
     Uint8List Function(int length)? randomBytes,
-  }) : _accountHash = _validateAccount(appUserId),
-       _secureStore = secureStore,
-       _fileBackend = fileBackend ?? createPersonalSnapshotFileBackend(),
-       _randomBytes = randomBytes ?? _secureRandomBytes;
+  })  : _accountHash = _validateAccount(appUserId),
+        _secureStore = secureStore,
+        _fileBackend = fileBackend ?? createPersonalSnapshotFileBackend(),
+        _randomBytes = randomBytes ?? _secureRandomBytes;
 
   static const int encryptionVersion = 1;
   static const int envelopeVersion = 1;
@@ -407,8 +407,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
   }
 
   void _validateEnvelope(Map<String, dynamic> envelope, PersonalDataType type) {
-    final valid =
-        envelope['envelope_version'] == envelopeVersion &&
+    final valid = envelope['envelope_version'] == envelopeVersion &&
         envelope['encryption_version'] == encryptionVersion &&
         envelope['account_hash'] == _accountHash &&
         envelope['data_type'] == type.storageValue &&
@@ -420,8 +419,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
   }
 
   void _validateRecord(Map<String, dynamic> record, PersonalDataType type) {
-    final valid =
-        record['app_user_id'] == _accountHash &&
+    final valid = record['app_user_id'] == _accountHash &&
         record['data_type'] == type.storageValue &&
         record['schema_version'] is int &&
         (record['schema_version'] as int) > 0 &&

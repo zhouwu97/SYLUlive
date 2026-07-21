@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +59,75 @@ var allowedMarketTags = map[string]struct{}{
 	"可送宿舍楼下": {},
 	"可小刀":    {},
 	"急出":     {},
+}
+
+var (
+	marketWeChatPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+	marketQQPattern     = regexp.MustCompile(`^[0-9]+$`)
+	marketPhonePattern  = regexp.MustCompile(`^[0-9 +\-]+$`)
+)
+
+func normalizeMarketContact(
+	boardID models.BoardID,
+	contactType string,
+	contact string,
+) (models.MarketContactType, string, error) {
+	if boardID != models.BoardMarket {
+		return "", "", nil
+	}
+
+	contactType = strings.TrimSpace(strings.ToLower(contactType))
+	contact = strings.TrimSpace(contact)
+	if contactType == "" && contact == "" {
+		return "", "", nil
+	}
+	if contactType == "" {
+		// 旧客户端只提交 contact；缺失类型时沿用历史数据解析规则。
+		legacyType, legacyContact := models.ParseLegacyMarketContact(contact)
+		return legacyType, legacyContact, nil
+	}
+
+	var normalizedType models.MarketContactType
+	var emptyMessage string
+	var pattern *regexp.Regexp
+	switch models.MarketContactType(contactType) {
+	case models.MarketContactTypeWeChat:
+		normalizedType = models.MarketContactTypeWeChat
+		emptyMessage = "请输入微信号"
+		pattern = marketWeChatPattern
+	case models.MarketContactTypeQQ:
+		normalizedType = models.MarketContactTypeQQ
+		emptyMessage = "请输入QQ号"
+		pattern = marketQQPattern
+	case models.MarketContactTypePhone:
+		normalizedType = models.MarketContactTypePhone
+		emptyMessage = "请输入电话号码"
+		pattern = marketPhonePattern
+	default:
+		return "", "", fmt.Errorf("不支持的联系方式类型")
+	}
+
+	if contact == "" {
+		return "", "", fmt.Errorf("%s", emptyMessage)
+	}
+	if utf8.RuneCountInString(contact) > 100 {
+		return "", "", fmt.Errorf("联系方式不能超过100个字符")
+	}
+	if !pattern.MatchString(contact) {
+		return "", "", fmt.Errorf("%s格式不正确", marketContactTypeName(normalizedType))
+	}
+	return normalizedType, contact, nil
+}
+
+func marketContactTypeName(contactType models.MarketContactType) string {
+	switch contactType {
+	case models.MarketContactTypeWeChat:
+		return "微信号"
+	case models.MarketContactTypeQQ:
+		return "QQ号"
+	default:
+		return "电话号码"
+	}
 }
 
 func normalizeWaterPostType(boardID models.BoardID, postType string) (string, error) {
@@ -136,6 +206,19 @@ func applyPostTypeFilter(query *gorm.DB, requestedBoardID *models.BoardID, postT
 	return query.Where("post_type = ?", postType)
 }
 
+func supportsPollRequest(c *gin.Context) bool {
+	feedVersion, _ := strconv.Atoi(c.Query("feed_version"))
+	if feedVersion >= 3 {
+		return true
+	}
+	for _, capability := range strings.Split(c.Query("capabilities"), ",") {
+		if strings.TrimSpace(capability) == "poll_v1" {
+			return true
+		}
+	}
+	return false
+}
+
 // GetList 获取帖子列表
 func (h *PostHandler) GetList(c *gin.Context) {
 	boardIDStr := c.Query("board")
@@ -144,6 +227,11 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	sort := c.DefaultQuery("sort", "time")
 	sinceStr := c.Query("since")
 	feedVersion, _ := strconv.Atoi(c.Query("feed_version"))
+	supportsPoll := supportsPollRequest(c)
+	genericFeedKind := "generic"
+	if supportsPoll {
+		genericFeedKind = "generic_poll_v1"
+	}
 
 	scene := c.Query("scene") // refresh 或 loadmore
 	sessionID := c.Query("session_id")
@@ -172,7 +260,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		sinceStr == ""
 
 	if isHomeFeedV2 {
-		h.getHomeFeedV2(c, sort, scene, sessionID, page, limit, offset, now)
+		h.getHomeFeedV2(c, sort, scene, sessionID, page, limit, offset, now, feedVersion >= 3)
 		return
 	}
 
@@ -193,7 +281,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if scene == "loadmore" && sessionID != "" {
 		if val, ok := ActiveSnapshots.Load(sessionID); ok {
 			snapshot := val.(Snapshot)
-			if time.Now().Before(snapshot.ExpiredAt) && snapshot.FeedKind == "generic" {
+			if time.Now().Before(snapshot.ExpiredAt) && snapshot.FeedKind == genericFeedKind {
 				// 计算切片边界
 				end := offset + limit
 				if offset < len(snapshot.PostIDs) {
@@ -247,6 +335,9 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		Where("posts.status != ?", models.PostStatusDeleted).
 		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
 		Preload("Author").Preload("Images").Preload("Images.File")
+	if !supportsPoll {
+		query = query.Where("posts.content_kind <> ?", models.PostContentKindPoll)
+	}
 
 	if boardIDStr != "" {
 		boardID, err := strconv.Atoi(boardIDStr)
@@ -444,6 +535,9 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		snapshotQuery := h.db.Model(&models.Post{}).
 			Where("posts.status != ?", models.PostStatusDeleted).
 			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
+		if !supportsPoll {
+			snapshotQuery = snapshotQuery.Where("posts.content_kind <> ?", models.PostContentKindPoll)
+		}
 		if boardIDStr != "" {
 			boardID, err := strconv.Atoi(boardIDStr)
 			if err == nil {
@@ -489,7 +583,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			PostIDs:   allIDs,
 			ExpiredAt: time.Now().Add(10 * time.Minute),
 			Sort:      sort,
-			FeedKind:  "generic",
+			FeedKind:  genericFeedKind,
 		})
 
 		// 自动销毁
@@ -740,7 +834,7 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 	authorSectionSet := map[userSectionKey]struct{}{}
 	requireFill := false
 	for _, p := range posts {
-		if p.BoardID != models.BoardShuitie || p.PostType == "" {
+		if p.BoardID != models.BoardShuitie || p.ContentKind == models.PostContentKindPoll || p.PostType == "" {
 			continue
 		}
 		requireFill = true
@@ -773,7 +867,7 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 	// 第二阶段：组装实际的 (author, section) 二元组
 	authorSectionSet = map[userSectionKey]struct{}{}
 	for _, p := range posts {
-		if p.BoardID != models.BoardShuitie || p.PostType == "" {
+		if p.BoardID != models.BoardShuitie || p.ContentKind == models.PostContentKindPoll || p.PostType == "" {
 			continue
 		}
 		sec, ok := sectionBySlug[p.PostType]
@@ -826,7 +920,7 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 	// 第五阶段：按帖子回填
 	for i := range posts {
 		p := &posts[i]
-		if p.BoardID != models.BoardShuitie || p.PostType == "" {
+		if p.BoardID != models.BoardShuitie || p.ContentKind == models.PostContentKindPoll || p.PostType == "" {
 			continue
 		}
 		sec, ok := sectionBySlug[p.PostType]
@@ -856,8 +950,13 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 }
 
 // getHomeFeedV2 返回独立置顶和普通首页帖子；普通快照不会包含有效置顶。
-func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID string, page, limit, offset int, now time.Time) {
+func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID string, page, limit, offset int, now time.Time, supportsPoll bool) {
 	feed := services.NewHomeFeedService(h.db)
+	feedKind := "home_v2"
+	if supportsPoll {
+		feed = services.NewHomeFeedServiceWithPoll(h.db)
+		feedKind = "home_v3_poll"
+	}
 	pinned, err := feed.PinnedPosts(now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
@@ -868,6 +967,12 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 	if sortName == "time" {
 		algorithm = "home_time_v2"
 	}
+	if supportsPoll {
+		algorithm = "home_all_v3_poll"
+		if sortName == "time" {
+			algorithm = "home_time_v3_poll"
+		}
+	}
 	if sortName == "all" && scene == "loadmore" {
 		value, ok := ActiveSnapshots.Load(sessionID)
 		if !ok {
@@ -875,7 +980,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			return
 		}
 		snapshot := value.(Snapshot)
-		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm || snapshot.FeedKind != "home_v2" {
+		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm || snapshot.FeedKind != feedKind {
 			ActiveSnapshots.Delete(sessionID)
 			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
 			return
@@ -888,14 +993,19 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			return
 		}
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all", FeedKind: "home_v2"})
+		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all", FeedKind: feedKind})
 		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
 	} else {
 		var normal []models.Post
 		err = h.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
 			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
 			Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now).
-			Order("created_at DESC").Limit(500).Find(&normal).Error
+			Scopes(func(db *gorm.DB) *gorm.DB {
+				if supportsPoll {
+					return db
+				}
+				return db.Where("content_kind <> ?", models.PostContentKindPoll)
+			}).Order("created_at DESC").Limit(500).Find(&normal).Error
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 			return
@@ -1037,6 +1147,7 @@ type CreatePostInput struct {
 	PostType        string  `form:"post_type"`
 	Price           float64 `form:"price"`
 	Contact         string  `form:"contact"`
+	ContactType     string  `form:"contact_type"`
 	MarketTags      string  `form:"market_tags"`
 	WaterTagID      *uint   `form:"water_tag_id"`
 	TeamNeededCount int     `form:"team_needed_count"`
@@ -1070,6 +1181,10 @@ func (h *PostHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if models.BoardID(input.BoardID) == models.BoardShuitie && strings.TrimSpace(input.PostType) == "poll" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "poll_requires_poll_api", "error": "请使用投票发布接口"})
+		return
+	}
 
 	var user models.User
 	if err := h.db.Select("id", "edu_bound").First(&user, userID).Error; err != nil {
@@ -1086,6 +1201,15 @@ func (h *PostHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的水帖分类"})
 		return
 	}
+	contactType, contact, err := normalizeMarketContact(
+		models.BoardID(input.BoardID),
+		input.ContactType,
+		input.Contact,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// 先创建帖子
 	now := time.Now()
@@ -1095,8 +1219,10 @@ func (h *PostHandler) Create(c *gin.Context) {
 		BoardID:        models.BoardID(input.BoardID),
 		AuthorID:       userID.(uint),
 		PostType:       normalizedType,
+		ContentKind:    models.PostContentKindNormal,
 		Price:          input.Price,
-		Contact:        input.Contact,
+		ContactType:    contactType,
+		Contact:        contact,
 		MarketTags:     normalizeMarketTags(input.MarketTags),
 		Status:         models.PostStatusNormal,
 		CreatedAt:      now,
@@ -1291,6 +1417,7 @@ type UpdatePostInput struct {
 	PostType        string  `form:"post_type"`
 	Price           float64 `form:"price"`
 	Contact         string  `form:"contact"`
+	ContactType     string  `form:"contact_type"`
 	MarketTags      string  `form:"market_tags"`
 	WaterTagID      *uint   `form:"water_tag_id"`
 	TeamNeededCount int     `form:"team_needed_count"`
@@ -1329,6 +1456,9 @@ func (h *PostHandler) Update(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&post, id).Error; err != nil {
 			return fmt.Errorf("post_not_found")
 		}
+		if post.ContentKind == models.PostContentKindPoll {
+			return fmt.Errorf("poll_requires_poll_api")
+		}
 
 		// 只有作者或管理员可以更新
 		if post.AuthorID != userID.(uint) && role != "admin" && role != "super_admin" {
@@ -1352,14 +1482,30 @@ func (h *PostHandler) Update(c *gin.Context) {
 		if err != nil {
 			return fmt.Errorf("invalid_post_type")
 		}
+		var contactType models.MarketContactType
+		var contact string
+		if post.BoardID == models.BoardMarket &&
+			post.ContactType == models.MarketContactTypeOther &&
+			models.MarketContactType(strings.TrimSpace(input.ContactType)) == models.MarketContactTypeOther &&
+			strings.TrimSpace(input.Contact) == post.Contact {
+			// 历史 other 类型只允许原样保留；修改账号时必须选择结构化类型。
+			contactType = models.MarketContactTypeOther
+			contact = post.Contact
+		} else {
+			contactType, contact, err = normalizeMarketContact(post.BoardID, input.ContactType, input.Contact)
+			if err != nil {
+				return err
+			}
+		}
 
 		updates := map[string]interface{}{
-			"title":       input.Title,
-			"content":     input.Content,
-			"post_type":   normalizedType,
-			"price":       input.Price,
-			"contact":     input.Contact,
-			"market_tags": normalizeMarketTags(input.MarketTags),
+			"title":        input.Title,
+			"content":      input.Content,
+			"post_type":    normalizedType,
+			"price":        input.Price,
+			"contact_type": contactType,
+			"contact":      contact,
+			"market_tags":  normalizeMarketTags(input.MarketTags),
 		}
 
 		var isOriginalTeam bool
@@ -1497,6 +1643,8 @@ func (h *PostHandler) Update(c *gin.Context) {
 		switch err.Error() {
 		case "post_not_found":
 			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		case "poll_requires_poll_api":
+			c.JSON(http.StatusBadRequest, gin.H{"code": "poll_requires_poll_api", "error": "投票内容请使用投票编辑接口"})
 		case "unauthorized":
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权限"})
 		case "user_not_found":
@@ -1569,6 +1717,10 @@ func (h *PostHandler) UpdateStatus(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
+	if post.ContentKind == models.PostContentKindPoll {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "poll_requires_poll_api", "error": "投票状态不能通过普通帖子接口修改"})
+		return
+	}
 	if post.AuthorID != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "只能修改自己的发布"})
 		return
@@ -1614,6 +1766,10 @@ func (h *PostHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
 		return
 	}
+	if post.ContentKind == models.PostContentKindPoll {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "poll_requires_poll_api", "error": "投票内容请使用投票删除接口"})
+		return
+	}
 
 	// 只有作者或管理员可以删除
 	if post.AuthorID != userID.(uint) && role != "admin" && role != "super_admin" {
@@ -1656,12 +1812,15 @@ func (h *PostHandler) hydratePosts(c *gin.Context, posts []models.Post, now time
 	h.fillWaterSectionFeaturedState(posts)
 	h.fillWaterSectionAuthorMeta(posts)
 	h.fillTeamRecruitmentMeta(c, posts, now)
+	if supportsPollRequest(c) {
+		_ = services.NewPollService(h.db).HydratePollPosts(posts, contextUserID(c))
+	}
 }
 
 func (h *PostHandler) fillTeamRecruitmentMeta(c *gin.Context, posts []models.Post, now time.Time) {
 	var teamPostIDs []uint
 	for _, p := range posts {
-		if p.BoardID == models.BoardShuitie {
+		if p.BoardID == models.BoardShuitie && p.ContentKind != models.PostContentKindPoll {
 			teamPostIDs = append(teamPostIDs, p.ID)
 		}
 	}

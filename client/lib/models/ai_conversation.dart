@@ -1,12 +1,14 @@
 class AiConversation {
   final String id;
   final String title;
+  final String lastMessagePreview;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
   const AiConversation({
     required this.id,
     required this.title,
+    this.lastMessagePreview = '',
     this.createdAt,
     this.updatedAt,
   });
@@ -15,6 +17,7 @@ class AiConversation {
     return AiConversation(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '新会话',
+      lastMessagePreview: json['last_message_preview']?.toString() ?? '',
       createdAt:
           DateTime.tryParse(json['created_at']?.toString() ?? '')?.toLocal(),
       updatedAt:

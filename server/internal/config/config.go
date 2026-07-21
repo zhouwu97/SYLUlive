@@ -62,6 +62,7 @@ type Config struct {
 	AllowMissingVersionHeaders  bool   // 缺失 X-App-Version-* 头时是否放行（阶段 D 使用）
 	AppReleaseUseAccelRedirect  bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
 	AppReleaseAccelPrefix       string // X-Accel-Redirect 路径前缀
+	LegalConsentEnforcement     string // 法律协议门禁模式：off、soft、hard
 }
 
 const (
@@ -239,6 +240,13 @@ func Load() *Config {
 	if appReleaseAccelPrefix == "" {
 		appReleaseAccelPrefix = "/_internal/app-releases/"
 	}
+	legalConsentEnforcement := strings.ToLower(strings.TrimSpace(os.Getenv("LEGAL_CONSENT_ENFORCEMENT")))
+	if legalConsentEnforcement == "" {
+		legalConsentEnforcement = "soft"
+	}
+	if legalConsentEnforcement != "off" && legalConsentEnforcement != "soft" && legalConsentEnforcement != "hard" {
+		panic(fmt.Errorf("LEGAL_CONSENT_ENFORCEMENT 只能是 off、soft 或 hard"))
+	}
 
 	aiEnabled := envBool("AI_ENABLED", false)
 	aiInternalTestOnly := envBool("AI_INTERNAL_TEST_ONLY", true)
@@ -329,6 +337,7 @@ func Load() *Config {
 		AllowMissingVersionHeaders:  allowMissingVersionHeaders,
 		AppReleaseUseAccelRedirect:  appReleaseUseAccelRedirect,
 		AppReleaseAccelPrefix:       appReleaseAccelPrefix,
+		LegalConsentEnforcement:     legalConsentEnforcement,
 	}
 }
 

@@ -48,6 +48,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -q .
+      - run: python -m pytest -q
+
+  rag-service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python-rag-service
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - run: pip install -r requirements-test.txt
       - run: python -m compileall -q .
       - run: python -m pytest -q
@@ -71,24 +87,21 @@ jobs:
       - run: flutter test --reporter compact
 
   python-edu-service-unchanged:
-    # 保留既有 Job ID，避免分支保护检查名失效。阶段 4B.1 后不再冻结目录，
-    # 改为持续阻止已退役的服务器课表缓存实现回归。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Ensure retired server course cache stays disabled
-        run: |
-          test ! -e python-edu-service/scripts/migrate_course_terms.py
-          if rg -n --glob '*.py' \
-            'courses_(raw|custom)|\bCourseRaw\b|\bCourseCustom\b' \
-            python-edu-service \
-            --glob '!python-edu-service/tests/**' \
-            --glob '!python-edu-service/services/course_cache_retirement.py'; then
-            echo "已退役的服务器课表缓存实现不能重新引入"
-            exit 1
-          fi
+      - name: Ensure python edu service is unchanged in pull request
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git diff --exit-code "${BASE_SHA}...HEAD" -- python-edu-service
+      - name: Ensure python edu service is unchanged on push
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+        run: git diff --exit-code "${BASE_SHA}...HEAD" -- python-edu-service
 
   pgvector-integration:
     runs-on: ubuntu-latest

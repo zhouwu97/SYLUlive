@@ -125,6 +125,7 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         
         handlePrivateMessageIntent(intent)
+        handleDeepLink(intent)
         
         createHighPriorityNotificationChannels()
         applyExcludeFromRecents(KeepAliveForegroundService.isHideRecentsEnabled(this))
@@ -168,7 +169,7 @@ class MainActivity : FlutterActivity() {
         if (handleDeepLink(intent)) dispatchPendingDeepLink()
     }
 
-    /** 将链接推送给 Flutter，但保留原生队列，避免热启动时通道尚未就绪导致丢链。 */
+    /** Flutter 通道就绪后转发链接；由 Dart 明确确认后再清除队列。 */
     private fun dispatchPendingDeepLink() {
         val link = pendingDeepLink ?: return
         flutterEngine?.let { engine ->
@@ -413,10 +414,17 @@ class MainActivity : FlutterActivity() {
                     if (userId.isNullOrBlank()) {
                         result.error("INVALID_ALIAS", "userId 不能为空", null)
                     } else {
-                        KeepAliveForegroundService.syncAlias(this, userId)
-                        KeepAliveForegroundService.reconcileAliasState(this)
-                        result.success(true)
+                        val synced = KeepAliveForegroundService.syncAlias(this, userId)
+                        if (synced) {
+                            KeepAliveForegroundService.reconcileAliasState(this)
+                        }
+                        result.success(synced)
                     }
+                }
+                "setPushOptIn" -> {
+                    val enabled = call.argument<Boolean>("enabled") == true
+                    KeepAliveForegroundService.setPushOptIn(this, enabled)
+                    result.success(true)
                 }
                 "clearAlias" -> {
                     val gen = KeepAliveForegroundService.markAliasPendingDelete(this)
@@ -712,18 +720,20 @@ class MainActivity : FlutterActivity() {
         return false
     }
 
-    /** 只转发清单中声明的组队链接，具体 ID 合法性由 Dart 侧统一校验。 */
+    /** 仅转发受清单约束且携带正整数编号的组队链接。 */
     private fun isTeamShareLink(data: Uri?): Boolean {
         if (data == null) return false
-        val segments = data.pathSegments.filter { it.isNotBlank() }
         return when {
             data.scheme == "https" &&
                 data.host == "sylulive.online" &&
-                segments.size == 2 &&
-                segments.first() == "team" -> true
+                data.pathSegments.size == 2 &&
+                data.pathSegments.firstOrNull() == "team" ->
+                data.queryParameterNames.isEmpty() &&
+                    data.pathSegments[1].toLongOrNull()?.let { it > 0L } == true
             data.scheme == "sylulive" &&
                 data.host == "team" &&
-                segments.size == 1 -> true
+                data.pathSegments.size == 1 ->
+                data.pathSegments.single().toLongOrNull()?.let { it > 0L } == true
             else -> false
         }
     }
@@ -804,8 +814,12 @@ class MainActivity : FlutterActivity() {
     private fun getPushDiagnostics(): Map<String, Any?> {
         val info = mutableMapOf<String, Any?>()
 
-        // RegistrationID
-        val rid = JPushInterface.getRegistrationID(this)
+        // 未主动启用推送时不读取 RegistrationID。
+        val rid = if (KeepAliveForegroundService.isPushEnabled(this)) {
+            JPushInterface.getRegistrationID(this)
+        } else {
+            ""
+        }
         info["registrationId"] = rid.ifBlank { null }
 
         // 系统通知总权限

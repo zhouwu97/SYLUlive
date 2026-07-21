@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
+import '../config/market_contact_type.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
@@ -1954,17 +1955,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        _buildAuthorCard(p, isDark),
-                        if (p.contact.isNotEmpty) ...[
-                          const SizedBox(height: 24),
-                          GestureDetector(
-                            onTap: () {
-                              Clipboard.setData(ClipboardData(text: p.contact));
-                              AppFeedback.showSnackBar(context, '联系方式已复制到剪贴板');
-                            },
-                            child: _buildContactChip(p.contact, isDark),
-                          ),
-                        ],
+                        _buildMarketSellerRow(p, isDark),
                         if (_canUseOwnerMarketActions()) ...[
                           const SizedBox(height: 24),
                           _buildOwnerMarketActions(isDark),
@@ -2102,17 +2093,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        _buildAuthorCard(p, isDark),
-                        if (p.contact.isNotEmpty) ...[
-                          const SizedBox(height: 24),
-                          GestureDetector(
-                            onTap: () {
-                              Clipboard.setData(ClipboardData(text: p.contact));
-                              AppFeedback.showSnackBar(context, '联系方式已复制到剪贴板');
-                            },
-                            child: _buildContactChip(p.contact, isDark),
-                          ),
-                        ],
+                        _buildMarketSellerRow(p, isDark),
                         if (_canUseOwnerMarketActions()) ...[
                           const SizedBox(height: 24),
                           _buildOwnerMarketActions(isDark),
@@ -3228,15 +3209,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 联系方式（集市复用） ----
+  Widget _buildMarketSellerRow(Post post, bool isDark) {
+    final contact = post.contact.trim();
+    final contactLabel = marketContactTypeLabel(post.contactType);
+    final sellerName = post.author?.nickname.trim().isNotEmpty == true
+        ? post.author!.nickname.trim()
+        : '卖家';
 
-  Widget _buildContactChip(String contact, bool isDark) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      key: const ValueKey('market-seller-row'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF222731) : const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.06)
@@ -3245,79 +3230,79 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              Icons.alternate_email_rounded,
-              size: 20,
-              color: Theme.of(context).primaryColor,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: post.author == null
+                ? null
+                : () => _openAuthorHome(post.author!.id),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CachedAvatar(
+                  radius: 20,
+                  imageUrl: post.author?.avatar.isNotEmpty == true
+                      ? ApiConstants.fullUrl(post.author!.avatar)
+                      : null,
+                  fallbackText: sellerName,
+                ),
+                const SizedBox(width: 10),
+              ],
             ),
           ),
-          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '联系方式',
+                  sellerName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? Colors.white54 : Colors.grey[500],
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : Colors.black87,
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  contact,
+                  '诚信 ${post.author?.creditScore ?? 100}% · ${_formatTime(post.createdAt)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.3,
-                    color: isDark ? Colors.white : Colors.black87,
+                    fontSize: 11,
+                    color: isDark ? Colors.white54 : Colors.grey[600],
                   ),
                 ),
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: isDark ? Colors.white10 : Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: isDark
-                  ? []
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+          if (contact.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            TextButton.icon(
+              key: const ValueKey('market-contact-copy'),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: contact));
+                if (!mounted) return;
+                AppFeedback.showSnackBar(
+                  context,
+                  marketContactCopiedMessage(post.contactType),
+                );
+              },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: Icon(marketContactTypeIcon(post.contactType), size: 16),
+              label: Text(
+                '$contactLabel · 复制',
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+              ),
             ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.copy_rounded,
-                  size: 14,
-                  color: isDark ? Colors.white70 : Colors.black54,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '一键复制',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white70 : Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ],
         ],
       ),
     );

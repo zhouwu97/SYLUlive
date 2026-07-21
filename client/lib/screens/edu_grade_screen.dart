@@ -16,6 +16,7 @@ import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
 import '../widgets/edu_grade/grade_gpa_hero_card.dart';
 import '../widgets/edu_grade/academic_course_item.dart';
+import '../widgets/edu_grade/academic_course_status_state.dart';
 import '../widgets/edu_grade/academic_credit_overview.dart';
 import '../widgets/edu_grade/grade_center_section_tabs.dart';
 import '../widgets/edu_grade/graduation_warning_empty_state.dart';
@@ -652,15 +653,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             ),
           ),
         ),
-      ] else if (!_isAcademicLoading && _academicError == null)
-        const SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(32, 30, 32, 50),
-            child: Text(
-              '暂无学业课程明细',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
+      ] else if (situation != null && !_isAcademicLoading)
+        SliverToBoxAdapter(
+          child: AcademicCourseStatusState(
+            status: situation.coursesStatus,
           ),
         ),
       const SliverToBoxAdapter(child: SizedBox(height: 32)),

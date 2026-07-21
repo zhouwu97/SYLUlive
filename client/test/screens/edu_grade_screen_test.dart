@@ -279,9 +279,41 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('暂无可汇总的课程学分数据'), findsOneWidget);
-    expect(find.text('暂无学业课程明细'), findsOneWidget);
+    expect(find.text('当前学业页面不提供课程明细'), findsOneWidget);
     expect(find.text('官方 GPA 获取失败'), findsNothing);
   });
+
+  final courseStatusCases = <String, String>{
+    'available': '高等数学',
+    'empty': '教务系统当前未返回课程明细',
+    'not_present': '当前学业页面不提供课程明细',
+    'dynamic_source_unresolved': '课程明细可能通过其他接口加载，暂未完成识别',
+    'parse_failed': '课程明细结构发生变化，暂时无法展示',
+  };
+
+  for (final entry in courseStatusCases.entries) {
+    testWidgets('课程明细状态 ${entry.key} 展示准确内容', (tester) async {
+      await _pumpGradeScreen(
+        tester,
+        edu: _FakeEduProvider(
+          academicSituation: _academicSituationWithStatus(entry.key),
+        ),
+      );
+      await tester.tap(find.text('学业总览'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(entry.value), findsOneWidget);
+      if (entry.key == 'parse_failed') {
+        expect(
+          find.byKey(
+            const ValueKey('academic_course_status_parse_failed'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+      }
+    });
+  }
 
   testWidgets('学业总览错误状态不会与课程明细重复显示', (tester) async {
     await _pumpGradeScreen(
@@ -294,7 +326,7 @@ void main() {
     expect(find.text('官方 GPA 获取失败'), findsOneWidget);
     expect(find.text('测试学业情况错误'), findsOneWidget);
     expect(find.text('课程明细'), findsNothing);
-    expect(find.text('暂无学业课程明细'), findsNothing);
+    expect(find.text('暂无可展示的课程明细'), findsNothing);
   });
 
   testWidgets('学业页面结构变化时只显示错误，不展示全零概览', (tester) async {
@@ -312,7 +344,7 @@ void main() {
     expect(find.text('学业情况页面结构发生变化'), findsOneWidget);
     expect(find.text('计划'), findsNothing);
     expect(find.text('课程列表学分'), findsNothing);
-    expect(find.text('暂无学业课程明细'), findsNothing);
+    expect(find.text('暂无可展示的课程明细'), findsNothing);
   });
 }
 
@@ -396,6 +428,7 @@ EduAcademicSituation _sampleAcademicSituation() {
     'failed_courses': 1,
     'in_progress_courses': 1,
     'not_started_courses': 1,
+    'courses_status': 'available',
     'courses': [
       _academicCourse('高等数学', 4, effectivePassed: true),
       _academicCourse('大学物理', 3, effectivePassed: false),
@@ -409,6 +442,23 @@ EduAcademicSituation _sampleAcademicSituation() {
 EduAcademicSituation _emptyAcademicSituation() {
   return EduAcademicSituation.fromJson({
     'success': true,
+    'courses_status': 'not_present',
+    'courses': const <Object>[],
+  });
+}
+
+EduAcademicSituation _academicSituationWithStatus(String status) {
+  if (status == 'available') return _sampleAcademicSituation();
+  return EduAcademicSituation.fromJson({
+    'success': true,
+    'all_gpa': 3.52,
+    'degree_gpa': 3.68,
+    'total_courses': 5,
+    'passed_courses': 1,
+    'failed_courses': 1,
+    'in_progress_courses': 1,
+    'not_started_courses': 1,
+    'courses_status': status,
     'courses': const <Object>[],
   });
 }

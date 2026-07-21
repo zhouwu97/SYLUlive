@@ -154,6 +154,42 @@ def test_missing_course_count_region_fails_closed():
     assert result["passed_courses"] is None
 
 
+def test_single_missing_course_count_fails_closed():
+    html = _valid_summary().replace("未通过 1 门", "", 1)
+
+    result = parse_academic_situation_html(html)
+
+    assert result["success"] is False
+    assert result["failed_courses"] is None
+    assert result["total_courses"] is None
+    assert result["error_code"] == "ACADEMIC_SITUATION_STRUCTURE_CHANGED"
+
+
+def test_missing_passed_count_does_not_reuse_failed_count():
+    html = _valid_summary().replace("通过 51 门 ", "", 1)
+
+    result = parse_academic_situation_html(html)
+
+    assert result["success"] is False
+    assert result["passed_courses"] is None
+    assert result["failed_courses"] is None
+
+
+def test_partial_course_counts_fail_closed():
+    html = """
+      当前所有课程平均学分绩点（GPA）：2.61728
+      当前学位课程平均学分绩点（GPA）：1.96826
+      计划总课程 101 门 通过 51 门 未通过 1 门 未修 43 门 在读 6 门
+    """
+
+    result = parse_academic_situation_html(html)
+
+    assert result["success"] is False
+    assert result["total_courses"] is None
+    assert result["degree_total_courses"] is None
+    assert result["courses_status"] == "parse_failed"
+
+
 def test_courses_status_distinguishes_unresolved_dynamic_source():
     html = f"""
       <div>{_valid_summary()}</div>

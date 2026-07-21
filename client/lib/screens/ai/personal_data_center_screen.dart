@@ -33,17 +33,18 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   Future<List<_VaultStatus>> _load() async {
     if (widget.appUserId.trim().isEmpty ||
         widget.sourceAccountId.trim().isEmpty) {
-      return PersonalDataType.values
+      return snapshotBackedPersonalDataTypes
           .map((type) => _VaultStatus(type: type))
           .toList();
     }
     final store = AesGcmAccountScopedSnapshotStore(appUserId: widget.appUserId);
     final result = <_VaultStatus>[];
-    for (final type in PersonalDataType.values) {
+    for (final type in snapshotBackedPersonalDataTypes) {
       final source = switch (type) {
         PersonalDataType.academic || PersonalDataType.schedule => 'edu',
         PersonalDataType.physical => 'physical',
         PersonalDataType.erke => 'erke',
+        PersonalDataType.studentProfile => throw StateError('基础画像不属于保险箱快照'),
       };
       try {
         final snapshot = await store.read(
@@ -129,6 +130,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
       PersonalDataType.academic => '成绩',
       PersonalDataType.physical => '体测',
       PersonalDataType.erke => '二课',
+      PersonalDataType.studentProfile => '学生基础画像',
     };
     final state = status.corrupted
         ? '密文校验失败'

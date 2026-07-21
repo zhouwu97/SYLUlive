@@ -55,7 +55,6 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
         'personal.academic.credit_summary': '确定性统计已修、通过和未通过学分',
         'personal.academic.failure_risk': '列出未通过和无法确认的课程',
         'personal.graduation.readiness': '按已审核培养方案生成毕业清单',
-        'personal.competition.fit': '按资格和证据门槛计算竞赛适配度',
       }.entries.map(
             (entry) => ToolDefinition(
               id: entry.key,
@@ -63,6 +62,20 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
               parameters: _object(const <String, dynamic>{}),
             ),
           ),
+      ToolDefinition(
+        id: 'personal.competition.fit',
+        description: '按资格、基础画像、目标和证据门槛计算竞赛适配度',
+        parameters: _object(<String, dynamic>{
+          'goals': const <String, dynamic>{
+            'type': 'array',
+            'items': <String, dynamic>{
+              'type': 'string',
+              'maxLength': 32,
+            },
+            'maxItems': 5,
+          },
+        }),
+      ),
       ToolDefinition(
         id: 'personal.fitness.weekly_plan',
         description: '根据课表和体测概览生成有安全限制的本周运动计划',

@@ -1,4 +1,12 @@
-enum PersonalDataType { academic, schedule, physical, erke }
+enum PersonalDataType { academic, schedule, physical, erke, studentProfile }
+
+/// 实际写入加密保险箱的数据类型；studentProfile 仅用于授权和审计。
+const snapshotBackedPersonalDataTypes = <PersonalDataType>[
+  PersonalDataType.academic,
+  PersonalDataType.schedule,
+  PersonalDataType.physical,
+  PersonalDataType.erke,
+];
 
 extension PersonalDataTypeStorage on PersonalDataType {
   String get storageValue => switch (this) {
@@ -6,6 +14,7 @@ extension PersonalDataTypeStorage on PersonalDataType {
         PersonalDataType.schedule => 'schedule',
         PersonalDataType.physical => 'physical',
         PersonalDataType.erke => 'erke',
+        PersonalDataType.studentProfile => 'student_profile',
       };
 
   static PersonalDataType fromStorage(String value) => switch (value) {
@@ -13,6 +22,7 @@ extension PersonalDataTypeStorage on PersonalDataType {
         'schedule' => PersonalDataType.schedule,
         'physical' => PersonalDataType.physical,
         'erke' => PersonalDataType.erke,
+        'student_profile' => PersonalDataType.studentProfile,
         _ => throw const FormatException('未知个人数据类型'),
       };
 }

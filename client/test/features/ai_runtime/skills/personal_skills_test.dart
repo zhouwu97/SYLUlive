@@ -7,6 +7,8 @@ import 'package:shenliyuan/features/ai_runtime/personal_data/models/academic_rec
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/erke_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/physical_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/schedule_overview.dart';
+import 'package:shenliyuan/features/ai_runtime/deterministic/competition_fit_engine.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/deterministic_skills.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skills.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/models/competition.dart';
@@ -409,6 +411,73 @@ void main() {
     expect(page.total, 1);
     expect(page.fetchedAt, fetchedAt);
   });
+
+  test('竞赛适配只读取基础画像且无成绩缓存时仍可运行', () async {
+    final source = _FakeCompetitionFitSource(
+      candidatesValue: const <CompetitionCandidate>[
+        CompetitionCandidate(
+          id: 'ai',
+          title: '人工智能竞赛',
+          tags: <String>['人工智能'],
+          importanceScore: 60,
+        ),
+      ],
+      profileValue: const StudentCompetitionProfile(
+        grade: '2024',
+        college: '信息科学与工程学院',
+        major: '计算机科学与技术',
+      ),
+    );
+    final skill = CompetitionFitSkill(source);
+
+    final result = await skill.execute(
+      const CompetitionFitInput(goals: <String>['人工智能']),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(skill.requiredDataTypes,
+        const <PersonalDataType>{PersonalDataType.studentProfile});
+    expect(result.status, SkillStatus.success);
+    expect(result.containsPersonalData, isTrue);
+    expect(result.value?.items.single.score, 65);
+    expect(result.evidence.single.source, '本地教务绑定资料');
+    expect(result.evidence.single.scope, '年级、学院、专业和本次竞赛目标');
+    expect(result.evidence.single.dataType, PersonalDataType.studentProfile);
+    expect(gateway.academicRecordReads, 0);
+    expect(gateway.totalReads, 0);
+  });
+
+  test('竞赛适配空目标仍按资格和报名状态排序', () async {
+    final source = _FakeCompetitionFitSource(
+      candidatesValue: const <CompetitionCandidate>[
+        CompetitionCandidate(
+          id: 'open',
+          title: '开放报名竞赛',
+          importanceScore: 40,
+          registrationOpen: true,
+          schoolRecognitionStatus: '学校认定',
+        ),
+      ],
+      profileValue: const StudentCompetitionProfile(
+        grade: '2024',
+        college: '信息科学与工程学院',
+        major: '计算机科学与技术',
+      ),
+    );
+
+    final result = await CompetitionFitSkill(source).execute(
+      const CompetitionFitInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.success);
+    expect(result.value?.items.single.score, 70);
+    expect(gateway.totalReads, 0);
+  });
 }
 
 GatewayResult<T> _available<T>(T data, {required DateTime fetchedAt}) =>
@@ -441,11 +510,16 @@ class _FakeGateway implements PersonalDataGateway {
   int physicalReads = 0;
   int scheduleReads = 0;
   int academicReads = 0;
+  int academicRecordReads = 0;
   DateTime? lastScheduleStart;
   DateTime? lastScheduleEnd;
 
   int get totalReads =>
-      erkeReads + physicalReads + scheduleReads + academicReads;
+      erkeReads +
+      physicalReads +
+      scheduleReads +
+      academicReads +
+      academicRecordReads;
 
   @override
   Future<void> close() async {}
@@ -457,8 +531,13 @@ class _FakeGateway implements PersonalDataGateway {
   }
 
   @override
-  Future<GatewayResult<AcademicRecords>> getAcademicRecords() =>
-      throw UnimplementedError();
+  Future<GatewayResult<AcademicRecords>> getAcademicRecords() async {
+    academicRecordReads++;
+    return GatewayResult<AcademicRecords>(
+      status: GatewayStatus.missing,
+      source: PersonalDataSource.none,
+    );
+  }
 
   @override
   Future<GatewayResult<ErkeOverview>> getErkeOverview() async {
@@ -499,6 +578,30 @@ class _FakeCompetitionSource implements CompetitionSearchSource {
           total: 0,
           fetchedAt: DateTime.utc(2026, 7, 20),
         );
+  }
+}
+
+class _FakeCompetitionFitSource implements CompetitionFitDataSource {
+  _FakeCompetitionFitSource({
+    required this.candidatesValue,
+    required this.profileValue,
+  });
+
+  final List<CompetitionCandidate> candidatesValue;
+  final StudentCompetitionProfile profileValue;
+  int candidateReads = 0;
+  int profileReads = 0;
+
+  @override
+  Future<List<CompetitionCandidate>> candidates() async {
+    candidateReads++;
+    return candidatesValue;
+  }
+
+  @override
+  Future<StudentCompetitionProfile> currentProfile() async {
+    profileReads++;
+    return profileValue;
   }
 }
 

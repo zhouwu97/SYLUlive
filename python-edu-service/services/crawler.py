@@ -997,7 +997,9 @@ def parse_academic_situation_html(html: str) -> dict:
         "total_courses": _find_int_optional(
             total_part, r"计划总课程(?:为)?\s*(\d+)\s*门"
         ),
-        "passed_courses": _find_int_optional(total_part, r"通过\s*(\d+)\s*门"),
+        "passed_courses": _find_int_optional(
+            total_part, r"(?<!未)通过\s*(\d+)\s*门"
+        ),
         "failed_courses": _find_int_optional(total_part, r"未通过\s*(\d+)\s*门"),
         "not_started_courses": _find_int_optional(total_part, r"未修\s*(\d+)\s*门"),
         "in_progress_courses": _find_int_optional(total_part, r"在读\s*(\d+)\s*门"),
@@ -1005,7 +1007,7 @@ def parse_academic_situation_html(html: str) -> dict:
             degree_part, r"计划学位课程(?:为)?\s*(\d+)\s*门"
         ),
         "degree_passed_courses": _find_int_optional(
-            degree_part, r"通过\s*(\d+)\s*门"
+            degree_part, r"(?<!未)通过\s*(\d+)\s*门"
         ),
         "degree_failed_courses": _find_int_optional(
             degree_part, r"未通过\s*(\d+)\s*门"
@@ -1027,14 +1029,14 @@ def parse_academic_situation_html(html: str) -> dict:
         label in compact_text for label in ("通过", "未通过", "未修", "在读")
     )
     has_parsed_gpa = all_gpa is not None or degree_gpa is not None
-    has_parsed_count = any(value is not None for value in counts.values())
+    has_complete_counts = all(value is not None for value in counts.values())
 
     if not (
         has_all_gpa_anchor
         and has_degree_gpa_anchor
         and has_count_anchor
         and has_parsed_gpa
-        and has_parsed_count
+        and has_complete_counts
     ):
         return _academic_structure_failure(captured_at, structure_signature)
 

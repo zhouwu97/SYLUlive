@@ -512,6 +512,10 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
+        backgroundColor: bg,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         automaticallyImplyLeading: !widget.restricted,
         title: const Text('隐私与数据权利'),
         actions: [
@@ -929,12 +933,7 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        toolbarHeight: 54,
-        centerTitle: true,
-        title: const Text(
-          '我的个人信息',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-        ),
+        title: const Text('我的个人信息'),
         actions: [
           IconButton(
             tooltip: '保存副本',

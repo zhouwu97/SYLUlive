@@ -61,6 +61,7 @@ class _FakeAuthProvider extends AuthProvider {
 class _FakeEduProvider extends EduProvider {
   final _LoadMode gradeMode;
   final _LoadMode academicMode;
+  final String academicErrorMessage;
   final List<EduGrade> grades;
   final EduAcademicSituation academicSituation;
   final Completer<OperationResult<List<EduGrade>>> _pendingGrades =
@@ -71,6 +72,7 @@ class _FakeEduProvider extends EduProvider {
   _FakeEduProvider({
     this.gradeMode = _LoadMode.data,
     this.academicMode = _LoadMode.data,
+    this.academicErrorMessage = '测试学业情况错误',
     List<EduGrade>? grades,
     EduAcademicSituation? academicSituation,
   })  : grades = grades ?? _sampleGrades(),
@@ -120,13 +122,11 @@ class _FakeEduProvider extends EduProvider {
   }
 
   @override
-  Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation({
-    bool forceRefresh = false,
-  }) async {
+  Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation() async {
     return switch (academicMode) {
       _LoadMode.data => OperationResult.ok(academicSituation),
       _LoadMode.empty => OperationResult.ok(_emptyAcademicSituation()),
-      _LoadMode.error => OperationResult.fail('测试学业情况错误'),
+      _LoadMode.error => OperationResult.fail(academicErrorMessage),
       _LoadMode.loading => OperationResult.fail('测试不支持学业情况挂起'),
     };
   }
@@ -294,6 +294,24 @@ void main() {
     expect(find.text('官方 GPA 获取失败'), findsOneWidget);
     expect(find.text('测试学业情况错误'), findsOneWidget);
     expect(find.text('课程明细'), findsNothing);
+    expect(find.text('暂无学业课程明细'), findsNothing);
+  });
+
+  testWidgets('学业页面结构变化时只显示错误，不展示全零概览', (tester) async {
+    await _pumpGradeScreen(
+      tester,
+      edu: _FakeEduProvider(
+        academicMode: _LoadMode.error,
+        academicErrorMessage: '学业情况页面结构发生变化',
+      ),
+    );
+    await tester.tap(find.text('学业总览'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('官方 GPA 获取失败'), findsOneWidget);
+    expect(find.text('学业情况页面结构发生变化'), findsOneWidget);
+    expect(find.text('计划'), findsNothing);
+    expect(find.text('课程列表学分'), findsNothing);
     expect(find.text('暂无学业课程明细'), findsNothing);
   });
 }

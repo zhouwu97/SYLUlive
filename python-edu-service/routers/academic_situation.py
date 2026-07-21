@@ -54,7 +54,10 @@ async def get_academic_situation(
         raise HTTPException(status_code=401, detail=str(e))
     except Exception as e:
         return AcademicSituationResponse(
-            success=False, message=f"学业情况解析失败: {e}",
+            success=False,
+            error_code="ACADEMIC_SITUATION_PARSE_FAILED",
+            courses_status="parse_failed",
+            message=f"学业情况解析失败: {e}",
         )
 
     return AcademicSituationResponse(**payload)

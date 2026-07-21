@@ -229,8 +229,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
 
     final gen = ++_academicRequestGeneration;
-    final result =
-        await provider.fetchAcademicSituation(forceRefresh: forceRefresh);
+    final result = await provider.fetchAcademicSituation();
 
     if (!mounted || _academicRequestGeneration != gen) return;
 
@@ -612,7 +611,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   List<Widget> _buildAcademicContent() {
-    final situation = _academicSituation;
+    final situation = _academicError == null ? _academicSituation : null;
     return [
       SliverToBoxAdapter(
         child: GradeGpaHeroCard(

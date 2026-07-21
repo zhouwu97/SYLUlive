@@ -385,6 +385,7 @@ void main() {
 
     test('失败的学业情况响应不会写入加密快照', () async {
       final dio = Dio();
+      Object? academicRequestData;
       dio.interceptors.add(
         InterceptorsWrapper(
           onRequest: (options, handler) {
@@ -402,13 +403,17 @@ void main() {
               return;
             }
             if (options.path == '/edu/academic-situation') {
+              academicRequestData = options.data;
               handler.resolve(
                 Response(
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
                     'success': false,
-                    'message': '教务数据暂不可用',
+                    'error_code': 'ACADEMIC_SITUATION_STRUCTURE_CHANGED',
+                    'message': '学业情况页面结构发生变化',
+                    'parser_version': 'academic-situation-v2',
+                    'courses_status': 'parse_failed',
                   },
                 ),
               );
@@ -424,6 +429,14 @@ void main() {
       final result = await value.fetchAcademicSituation();
 
       expect(result.success, isFalse);
+      expect(result.errorMessage, '学业情况页面结构发生变化');
+      expect(academicRequestData, isA<Map<String, dynamic>>());
+      expect(
+        (academicRequestData! as Map<String, dynamic>).containsKey(
+          'force_refresh',
+        ),
+        isFalse,
+      );
       final store = AcademicCacheStore(
         appUserId: 'user_academic',
         sourceAccountId: '2403130233',

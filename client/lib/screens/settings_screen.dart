@@ -538,7 +538,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.privacy_tip_outlined,
             iconColor: Colors.teal,
             title: '隐私与数据权利',
-            subtitle: '查看协议、导出数据、提交请求或注销账号',
+            subtitle: '查看协议、导出数据或注销账号',
             isDark: isDark,
             onTap: authProvider.isLoggedIn
                 ? () => Navigator.of(context).push(

@@ -39,6 +39,47 @@ func newCompetitionTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestCompetitionEventDTOExposesFailClosedGovernanceContract(t *testing.T) {
+	event := models.CompetitionEvent{
+		ID:                  7,
+		Title:               "已核验赛事",
+		RecommendationLevel: "S",
+		ImportanceScore:     100,
+		IsVerified:          true,
+	}
+	dto := competitionEventDTO(event)
+	if dto.ManualRating != nil {
+		t.Fatal("不得从旧推荐等级或重要分推导人工评分")
+	}
+	if dto.EvidenceStatus != "verified" {
+		t.Fatalf("evidence_status=%q want=verified", dto.EvidenceStatus)
+	}
+	if dto.StrongRecommendationReady {
+		t.Fatal("缺少独立审核字段时必须禁止强推荐")
+	}
+
+	encoded, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"manual_rating", "evidence_status", "strong_recommendation_ready"} {
+		if _, exists := payload[key]; !exists {
+			t.Fatalf("响应缺少治理字段 %s", key)
+		}
+	}
+}
+
+func TestCompetitionEventDTOMarksUnverifiedEvidencePending(t *testing.T) {
+	dto := competitionEventDTO(models.CompetitionEvent{Title: "待核验赛事"})
+	if dto.EvidenceStatus != "pending" {
+		t.Fatalf("evidence_status=%q want=pending", dto.EvidenceStatus)
+	}
+}
+
 func TestCompetitionOverviewBoundsUseShanghaiNaturalDays(t *testing.T) {
 	location, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {

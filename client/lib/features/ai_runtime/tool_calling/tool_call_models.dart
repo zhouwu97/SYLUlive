@@ -91,6 +91,7 @@ class ToolPermissionPreview {
   ToolPermissionPreview({
     required this.toolId,
     required this.sensitivity,
+    required this.providerKind,
     required this.destination,
     required List<ToolDataPreviewItem> dataItems,
     required List<String> excludedDataLabels,
@@ -101,6 +102,7 @@ class ToolPermissionPreview {
 
   final String toolId;
   final SkillSensitivity sensitivity;
+  final AIModelProviderKind providerKind;
   final String destination;
   final List<ToolDataPreviewItem> dataItems;
   final List<String> excludedDataLabels;

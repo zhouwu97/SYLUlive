@@ -186,6 +186,7 @@ class LocalToolLoop {
         final preview = ToolPermissionPreview(
           toolId: call.tool,
           sensitivity: sensitivity,
+          providerKind: _model.providerKind,
           destination: _model.destinationLabel,
           dataItems: await _previewMetadataSource.describe(dataTypes),
           excludedDataLabels: _excludedLabels(dataTypes),

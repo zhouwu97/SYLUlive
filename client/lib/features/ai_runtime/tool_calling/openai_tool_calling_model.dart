@@ -71,8 +71,11 @@ class OpenAIToolCallingModel implements ToolCallingModel {
   AIModelProviderKind get providerKind => AIModelProviderKind.openAICompatible;
 
   @override
-  String get destinationLabel =>
-      _config.model.trim().isEmpty ? '用户配置的 OpenAI 兼容模型' : _config.model.trim();
+  String get destinationLabel {
+    final model = _config.model.trim();
+    final target = _baseEndpoint.origin;
+    return model.isEmpty ? target : '$target · $model';
+  }
 
   /// 用不含个人数据的固定函数验证服务是否真正支持 Tool Calling。
   Future<void> probeToolCalling() async {

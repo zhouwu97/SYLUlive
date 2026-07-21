@@ -12,17 +12,22 @@ abstract interface class ToolPermissionPrompt {
 }
 
 class ToolPermissionManager {
-  ToolPermissionManager({required ToolPermissionPrompt prompt})
-      : _prompt = prompt;
+  ToolPermissionManager({
+    required ToolPermissionPrompt prompt,
+    required String accountKey,
+  })  : _prompt = prompt,
+        _accountKey = accountKey;
 
   final ToolPermissionPrompt _prompt;
+  final String _accountKey;
   final Set<String> _sessionGrants = <String>{};
 
   Future<ToolPermissionDecision> authorize(
       ToolPermissionPreview preview) async {
     if (!preview.containsPersonalData) return ToolPermissionDecision.allowOnce;
+    final grantKey = _grantKey(preview);
     if (preview.sensitivity == SkillSensitivity.low &&
-        _sessionGrants.contains(preview.toolId)) {
+        _sessionGrants.contains(grantKey)) {
       return ToolPermissionDecision.allowSession;
     }
     final decision = await _prompt.request(preview);
@@ -31,12 +36,19 @@ class ToolPermissionManager {
       return ToolPermissionDecision.allowOnce;
     }
     if (decision == ToolPermissionDecision.allowSession) {
-      _sessionGrants.add(preview.toolId);
+      _sessionGrants.add(grantKey);
     }
     return decision;
   }
 
   void clearSession() => _sessionGrants.clear();
+
+  String _grantKey(ToolPermissionPreview preview) => <String>[
+        _accountKey,
+        preview.providerKind.storageValue,
+        preview.destination,
+        preview.toolId,
+      ].join('\u001f');
 }
 
 class ToolAuditEntry {

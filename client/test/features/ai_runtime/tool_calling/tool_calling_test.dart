@@ -312,7 +312,10 @@ void main() {
   group('ToolPermissionManager', () {
     test('低敏感允许会话复用，中敏感强制降级为仅本次', () async {
       final prompt = _Prompt(ToolPermissionDecision.allowSession);
-      final manager = ToolPermissionManager(prompt: prompt);
+      final manager = ToolPermissionManager(
+        prompt: prompt,
+        accountKey: 'app-a::edu-a',
+      );
       final low = _preview(SkillSensitivity.low);
       expect(
         await manager.authorize(low),
@@ -328,6 +331,29 @@ void main() {
         await manager.authorize(_preview(SkillSensitivity.medium)),
         ToolPermissionDecision.allowOnce,
       );
+      expect(
+        await manager.authorize(_preview(SkillSensitivity.medium)),
+        ToolPermissionDecision.allowOnce,
+      );
+      expect(prompt.count, 3);
+    });
+
+    test('会话授权按模型目标隔离且清空后失效', () async {
+      final prompt = _Prompt(ToolPermissionDecision.allowSession);
+      final manager = ToolPermissionManager(
+        prompt: prompt,
+        accountKey: 'app-a::edu-a',
+      );
+
+      await manager.authorize(_preview(SkillSensitivity.low));
+      await manager.authorize(
+        _preview(SkillSensitivity.low, destination: 'provider-b'),
+      );
+      expect(prompt.count, 2);
+
+      manager.clearSession();
+      await manager.authorize(_preview(SkillSensitivity.low));
+      expect(prompt.count, 3);
     });
   });
 
@@ -644,8 +670,10 @@ LocalToolLoop _loop({
       clock: () => DateTime.utc(2026, 7, 20),
     ),
     model: model,
-    permissionManager:
-        ToolPermissionManager(prompt: prompt ?? _Prompt(decision)),
+    permissionManager: ToolPermissionManager(
+      prompt: prompt ?? _Prompt(decision),
+      accountKey: 'app-a::edu-a',
+    ),
     auditSink: audit ?? _AuditSink(),
     accountGeneration: generation ?? () => 1,
     skillTimeout: timeout,
@@ -665,11 +693,15 @@ LocalToolCall _competitionCall(String id, Map<String, dynamic> arguments) =>
       arguments: arguments,
     );
 
-ToolPermissionPreview _preview(SkillSensitivity sensitivity) =>
+ToolPermissionPreview _preview(
+  SkillSensitivity sensitivity, {
+  String destination = 'test',
+}) =>
     ToolPermissionPreview(
       toolId: 'test',
       sensitivity: sensitivity,
-      destination: 'test',
+      providerKind: AIModelProviderKind.openAICompatible,
+      destination: destination,
       dataItems: const <ToolDataPreviewItem>[
         ToolDataPreviewItem(
           dataType: PersonalDataType.academic,

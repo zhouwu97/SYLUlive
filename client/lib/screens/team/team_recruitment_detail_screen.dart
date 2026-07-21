@@ -14,6 +14,7 @@ import '../chat_detail_screen.dart';
 import '../../widgets/team/team_ui_tokens.dart';
 import 'team_application_manage_screen.dart';
 import 'team_recruitment_create_screen.dart';
+import '../../widgets/cached_avatar.dart';
 
 class TeamRecruitmentDetailScreen extends StatefulWidget {
   final int recruitmentId;
@@ -206,15 +207,11 @@ class _TeamRecruitmentDetailScreenState
                         fontWeight: FontWeight.w900)),
                 const SizedBox(height: 12),
                 Row(children: [
-                  CircleAvatar(
-                      backgroundImage: item.author.avatar.isEmpty
-                          ? null
-                          : NetworkImage(item.author.avatar),
-                      child: item.author.avatar.isEmpty
-                          ? Text(item.author.name.isEmpty
-                              ? '?'
-                              : item.author.name.substring(0, 1))
-                          : null),
+                  CachedAvatar(
+                    radius: 20,
+                    imageUrl: ApiConstants.fullUrl(item.author.avatar),
+                    fallbackText: item.author.name,
+                  ),
                   const SizedBox(width: 9),
                   Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

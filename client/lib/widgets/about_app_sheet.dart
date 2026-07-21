@@ -115,7 +115,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '一款为沈理人写的开源校园工具',
+                        '一款为沈理学生写的开源校园工具',
                         style: TextStyle(
                           fontSize: 13,
                           color: subText,
@@ -514,7 +514,8 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               ),
               onPressed: () {
                 Clipboard.setData(const ClipboardData(text: _authorEmail));
-                Navigator.pop(dialogContext);
+                Navigator.pop(dialogContext); // 关闭对话框
+                Navigator.pop(context); // 关闭 AboutAppSheet
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: const Text('邮箱已复制到剪贴板'),

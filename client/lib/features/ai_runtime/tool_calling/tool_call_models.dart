@@ -75,13 +75,13 @@ enum ToolPermissionDecision { allowOnce, allowSession, denied }
 
 class ToolDataPreviewItem {
   const ToolDataPreviewItem({
-    required this.dataType,
+    this.dataType,
     required this.label,
     this.fetchedAt,
     this.isStale = false,
   });
 
-  final PersonalDataType dataType;
+  final PersonalDataType? dataType;
   final String label;
   final DateTime? fetchedAt;
   final bool isStale;

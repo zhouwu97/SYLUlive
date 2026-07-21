@@ -267,12 +267,12 @@ class FitnessWeeklyPlanInput {
     this.weekContaining,
     this.heightMeters,
     this.weightKg,
-    this.reportsDiscomfort = false,
+    this.reportsDiscomfort,
   });
   final DateTime? weekContaining;
   final double? heightMeters;
   final double? weightKg;
-  final bool reportsDiscomfort;
+  final bool? reportsDiscomfort;
 }
 
 class FitnessWeeklyPlanOutput {
@@ -334,7 +334,7 @@ class FitnessWeeklyPlanSkill
       heightMeters: input.heightMeters,
       weightKg: input.weightKg,
       physicalOverviewAvailable: physical.hasData,
-      reportsDiscomfort: input.reportsDiscomfort,
+      reportsDiscomfort: input.reportsDiscomfort ?? false,
     );
     return SkillResult<FitnessWeeklyPlanOutput>(
       value: FitnessWeeklyPlanOutput(plan),

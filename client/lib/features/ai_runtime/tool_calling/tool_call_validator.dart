@@ -172,10 +172,10 @@ class LocalToolCallValidator {
     );
     final height = arguments['height_meters'];
     final weight = arguments['weight_kg'];
-    final discomfort = arguments['reports_discomfort'] ?? false;
+    final discomfort = arguments['reports_discomfort'];
     if (height != null && height is! num ||
         weight != null && weight is! num ||
-        discomfort is! bool) {
+        discomfort != null && discomfort is! bool) {
       throw const ToolCallValidationException('运动计划参数无效');
     }
     final heightValue = (height as num?)?.toDouble();

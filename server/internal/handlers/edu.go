@@ -506,11 +506,6 @@ type GradeDetailInput struct {
 	StudentGradeID string `json:"student_grade_id"`
 }
 
-// AcademicSituationInput 学业情况查询输入
-type AcademicSituationInput struct {
-	ForceRefresh bool `json:"force_refresh"`
-}
-
 // GetGrades 获取成绩（通过Python服务访问教务系统）
 func (h *EduHandler) GetGrades(c *gin.Context) {
 	userID, _ := c.Get("user_id")
@@ -576,12 +571,6 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 		return
 	}
 
-	var input AcademicSituationInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
 	client := resty.New()
 	client.SetTimeout(45 * time.Second)
 
@@ -590,8 +579,7 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
 		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
-			"user_id":       fmt.Sprintf("%d", userID),
-			"force_refresh": input.ForceRefresh,
+			"user_id": fmt.Sprintf("%d", userID),
 		}).
 		Post(strings.TrimRight(EduServiceConfig.BaseURL, "/") + "/api/edu/academic-situation/")
 

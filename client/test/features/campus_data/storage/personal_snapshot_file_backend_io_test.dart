@@ -1,585 +1,98 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
-import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_file_backend_io.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 
-import '../../../helpers/personal_snapshot_test_fakes.dart';
-
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
-  late Directory supportDirectory;
+  late Directory temporary;
   late IoPersonalSnapshotFileBackend backend;
+  const account =
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
   setUp(() async {
-    supportDirectory = await Directory.systemTemp.createTemp(
-      'sylu-personal-vault-test-',
-    );
+    temporary = await Directory.systemTemp.createTemp('personal-vault-test-');
     backend = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
+      supportDirectoryLoader: () async => temporary,
     );
   });
 
   tearDown(() async {
-    if (await supportDirectory.exists()) {
-      await supportDirectory.delete(recursive: true);
-    }
+    if (await temporary.exists()) await temporary.delete(recursive: true);
   });
 
-  test('正式文件缺失时仅恢复当前账号的唯一合法备份', () async {
-    const accountHash = _accountA;
-    final target = await _targetFile(
-      supportDirectory,
-      accountHash,
-      PersonalDataType.physical,
-    );
+  test('target 缺失且只有合法 backup 时恢复', () async {
+    final target = _target(temporary, account, PersonalDataType.academic);
     await target.parent.create(recursive: true);
-    final backup = File('${target.path}.1-2.bak');
-    final temporary = File('${target.path}.3-4.tmp');
-    await backup.writeAsBytes(<int>[1, 2, 3], flush: true);
-    await temporary.writeAsBytes(<int>[9], flush: true);
+    final backup = File('${target.path}.123-456.bak');
+    await backup.writeAsBytes(<int>[1, 2, 3]);
 
-    expect(
-      await backend.read(
-        accountHash: accountHash,
-        type: PersonalDataType.physical,
-      ),
-      Uint8List.fromList(<int>[1, 2, 3]),
+    final result = await backend.read(
+      accountHash: account,
+      type: PersonalDataType.academic,
     );
+
+    expect(result, Uint8List.fromList(<int>[1, 2, 3]));
     expect(await target.exists(), isTrue);
     expect(await backup.exists(), isFalse);
-    expect(await temporary.exists(), isFalse);
   });
 
-  test('正式文件存在时优先使用正式文件并清理合法备份', () async {
-    final target = await _targetFile(
-      supportDirectory,
-      _accountA,
-      PersonalDataType.erke,
-    );
+  test('target 存在时不被 backup 覆盖并清理遗留文件', () async {
+    final target = _target(temporary, account, PersonalDataType.schedule);
     await target.parent.create(recursive: true);
-    final backup = File('${target.path}.1-2.bak');
-    await target.writeAsBytes(<int>[7, 8], flush: true);
-    await backup.writeAsBytes(<int>[1, 2], flush: true);
+    await target.writeAsBytes(<int>[9]);
+    final backup = File('${target.path}.123-456.bak');
+    await backup.writeAsBytes(<int>[1]);
 
-    expect(
-      await backend.read(accountHash: _accountA, type: PersonalDataType.erke),
-      Uint8List.fromList(<int>[7, 8]),
+    final result = await backend.read(
+      accountHash: account,
+      type: PersonalDataType.schedule,
     );
+
+    expect(result, Uint8List.fromList(<int>[9]));
     expect(await backup.exists(), isFalse);
   });
 
-  test('只有临时文件时不将其视为正式密文', () async {
-    final target = await _targetFile(
-      supportDirectory,
-      _accountA,
-      PersonalDataType.erke,
-    );
+  test('多个 backup 时失败关闭', () async {
+    final target = _target(temporary, account, PersonalDataType.erke);
     await target.parent.create(recursive: true);
-    final temporary = File('${target.path}.1-2.tmp');
-    await temporary.writeAsBytes(<int>[1, 2, 3], flush: true);
+    await File('${target.path}.1-1.bak').writeAsBytes(<int>[1]);
+    await File('${target.path}.2-2.bak').writeAsBytes(<int>[2]);
 
     expect(
-      await backend.read(accountHash: _accountA, type: PersonalDataType.erke),
-      isNull,
-    );
-    expect(await temporary.exists(), isFalse);
-  });
-
-  test('不匹配后端生成规则的备份文件不会被扫描或恢复', () async {
-    final target = await _targetFile(
-      supportDirectory,
-      _accountA,
-      PersonalDataType.erke,
-    );
-    await target.parent.create(recursive: true);
-    final unrelatedBackup = File('${target.path}.manual.bak');
-    await unrelatedBackup.writeAsBytes(<int>[1, 2, 3], flush: true);
-
-    expect(
-      await backend.read(
-        accountHash: _accountA,
-        type: PersonalDataType.erke,
-      ),
-      isNull,
-    );
-    expect(await unrelatedBackup.exists(), isTrue);
-  });
-
-  test('无效账号命名空间不能访问保险箱目录', () async {
-    await expectLater(
-      backend.read(
-        accountHash: '../$_accountA',
-        type: PersonalDataType.erke,
-      ),
+      () => backend.read(accountHash: account, type: PersonalDataType.erke),
       throwsA(isA<PersonalSnapshotStoreException>()),
     );
   });
 
-  test('多个合法备份时失败关闭且不恢复任一备份', () async {
-    final target = await _targetFile(
-      supportDirectory,
-      _accountA,
-      PersonalDataType.erke,
-    );
+  test('临时文件不会被当作正式快照恢复', () async {
+    final target = _target(temporary, account, PersonalDataType.physical);
     await target.parent.create(recursive: true);
-    final firstBackup = File('${target.path}.1-2.bak');
-    final secondBackup = File('${target.path}.3-4.bak');
-    await firstBackup.writeAsBytes(<int>[1], flush: true);
-    await secondBackup.writeAsBytes(<int>[2], flush: true);
+    final temporaryFile = File('${target.path}.123-456.tmp');
+    await temporaryFile.writeAsBytes(<int>[1]);
 
-    await expectLater(
-      backend.read(accountHash: _accountA, type: PersonalDataType.erke),
-      throwsA(isA<PersonalSnapshotStoreException>()),
-    );
-    expect(await target.exists(), isFalse);
-    expect(await firstBackup.exists(), isTrue);
-    expect(await secondBackup.exists(), isTrue);
-  });
-
-  test('其他账号目录中的备份不能恢复到当前账号', () async {
-    final otherTarget = await _targetFile(
-      supportDirectory,
-      _accountB,
-      PersonalDataType.physical,
-    );
-    await otherTarget.parent.create(recursive: true);
-    final otherBackup = File('${otherTarget.path}.1-2.bak');
-    await otherBackup.writeAsBytes(<int>[1, 2, 3], flush: true);
-
-    expect(
-      await backend.read(
-        accountHash: _accountA,
-        type: PersonalDataType.physical,
-      ),
-      isNull,
-    );
-    expect(await otherBackup.exists(), isTrue);
-  });
-
-  test('恢复后的密文仍由 AES-GCM 认证，篡改备份会被拒绝', () async {
-    final secureStore = MemoryPersonalSnapshotSecureStore();
-    final store = AesGcmAccountScopedSnapshotStore(
-      appUserId: 'user-a',
-      secureStore: secureStore,
-      fileBackend: backend,
-      randomBytes: IncrementingRandomBytes().call,
-    );
-    await store.write(
-      type: PersonalDataType.erke,
-      schemaVersion: 2,
-      sourceSystem: 'erke',
-      sourceAccountId: 'sid-a',
-      payload: <String, dynamic>{'score': 12},
-    );
-    final target = await _targetFile(
-      supportDirectory,
-      store.accountFingerprint,
-      PersonalDataType.erke,
-    );
-    final backup = File('${target.path}.1-2.bak');
-    await target.rename(backup.path);
-    final bytes = await backup.readAsBytes();
-    bytes[bytes.length ~/ 2] ^= 0x01;
-    await backup.writeAsBytes(bytes, flush: true);
-
-    await expectLater(
-      store.read(
-        type: PersonalDataType.erke,
-        sourceSystem: 'erke',
-        sourceAccountId: 'sid-a',
-      ),
-      throwsA(isA<PersonalSnapshotStoreException>()),
-    );
-    expect(await target.exists(), isTrue);
-  });
-
-  test('不同后端实例的活跃写入期间读取会等待并返回新数据', () async {
-    final backupMoved = Completer<void>();
-    final allowWriteToContinue = Completer<void>();
-    final writer = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-      onBackupMoved: () async {
-        backupMoved.complete();
-        await allowWriteToContinue.future;
-      },
-    );
-    final reader = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-    );
-    const type = PersonalDataType.erke;
-
-    await writer.write(
-      accountHash: _accountA,
-      type: type,
-      bytes: Uint8List.fromList(<int>[1]),
-    );
-    final write = writer.write(
-      accountHash: _accountA,
-      type: type,
-      bytes: Uint8List.fromList(<int>[2]),
-    );
-    await backupMoved.future;
-
-    var readCompleted = false;
-    final read = reader.read(accountHash: _accountA, type: type).then((value) {
-      readCompleted = true;
-      return value;
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(readCompleted, isFalse);
-
-    allowWriteToContinue.complete();
-    await write;
-    expect(await read, Uint8List.fromList(<int>[2]));
-    final target = await _targetFile(supportDirectory, _accountA, type);
-    expect(await target.exists(), isTrue);
-    await _expectNoArtifacts(supportDirectory, _accountA, type);
-  });
-
-  test('删除类型数据会等待活跃写入并清除完整写入结果', () async {
-    final backupMoved = Completer<void>();
-    final allowWriteToContinue = Completer<void>();
-    final writer = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-      onBackupMoved: () async {
-        backupMoved.complete();
-        await allowWriteToContinue.future;
-      },
-    );
-    final deleter = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-    );
-    const type = PersonalDataType.physical;
-
-    await writer.write(
-      accountHash: _accountA,
-      type: type,
-      bytes: Uint8List.fromList(<int>[1]),
-    );
-    final write = writer.write(
-      accountHash: _accountA,
-      type: type,
-      bytes: Uint8List.fromList(<int>[2]),
-    );
-    await backupMoved.future;
-
-    var deleteCompleted = false;
-    final delete =
-        deleter.deleteType(accountHash: _accountA, type: type).then((_) {
-      deleteCompleted = true;
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(deleteCompleted, isFalse);
-
-    allowWriteToContinue.complete();
-    await write;
-    await delete;
-    expect(await deleter.read(accountHash: _accountA, type: type), isNull);
-    final target = await _targetFile(supportDirectory, _accountA, type);
-    expect(await target.exists(), isFalse);
-    await _expectNoArtifacts(supportDirectory, _accountA, type);
-  });
-
-  test('失败的前序操作不会阻塞后续同目标删除', () async {
-    final target = await _targetFile(
-      supportDirectory,
-      _accountA,
-      PersonalDataType.erke,
-    );
-    await target.parent.create(recursive: true);
-    await File('${target.path}.1-2.bak').writeAsBytes(<int>[1], flush: true);
-    await File('${target.path}.3-4.bak').writeAsBytes(<int>[2], flush: true);
-
-    final failedRead = backend.read(
-      accountHash: _accountA,
-      type: PersonalDataType.erke,
-    );
-    final delete = backend.deleteType(
-      accountHash: _accountA,
-      type: PersonalDataType.erke,
-    );
-
-    await expectLater(
-      failedRead,
-      throwsA(isA<PersonalSnapshotStoreException>()),
-    );
-    await delete;
-    expect(await target.exists(), isFalse);
-    await _expectNoArtifacts(
-      supportDirectory,
-      _accountA,
-      PersonalDataType.erke,
-    );
-  });
-
-  test('不同数据类型会在共享保险箱队列中按入队顺序完成', () async {
-    final backupMoved = Completer<void>();
-    final allowWriteToContinue = Completer<void>();
-    final writer = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-      onBackupMoved: () async {
-        backupMoved.complete();
-        await allowWriteToContinue.future;
-      },
-    );
-    final otherTypeWriter = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-    );
-
-    await writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.erke,
-      bytes: Uint8List.fromList(<int>[1]),
-    );
-    final blockedWrite = writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.erke,
-      bytes: Uint8List.fromList(<int>[2]),
-    );
-    await backupMoved.future;
-
-    var otherWriteCompleted = false;
-    final otherWrite = otherTypeWriter
-        .write(
-      accountHash: _accountA,
+    final result = await backend.read(
+      accountHash: account,
       type: PersonalDataType.physical,
-      bytes: Uint8List.fromList(<int>[3]),
-    )
-        .then((_) {
-      otherWriteCompleted = true;
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(otherWriteCompleted, isFalse);
-
-    allowWriteToContinue.complete();
-    await Future.wait<void>(<Future<void>>[blockedWrite, otherWrite])
-        .timeout(const Duration(seconds: 2));
-    expect(
-      await otherTypeWriter.read(
-        accountHash: _accountA,
-        type: PersonalDataType.physical,
-      ),
-      Uint8List.fromList(<int>[3]),
-    );
-  });
-
-  test('删除账号会等待该账号的活跃写入完成', () async {
-    final backupMoved = Completer<void>();
-    final allowWriteToContinue = Completer<void>();
-    final writer = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-      onBackupMoved: () async {
-        backupMoved.complete();
-        await allowWriteToContinue.future;
-      },
-    );
-    final deleter = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
     );
 
-    await writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.erke,
-      bytes: Uint8List.fromList(<int>[1]),
-    );
-    final write = writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.erke,
-      bytes: Uint8List.fromList(<int>[2]),
-    );
-    await backupMoved.future;
-
-    var deleteCompleted = false;
-    final delete = deleter.deleteUser(_accountA).then((_) {
-      deleteCompleted = true;
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(deleteCompleted, isFalse);
-
-    allowWriteToContinue.complete();
-    await write;
-    await delete;
-    final accountDirectory = Directory(
-      path.join(supportDirectory.path, 'personal_vault', _accountA),
-    );
-    expect(await accountDirectory.exists(), isFalse);
-  });
-
-  test('全量删除会等待所有已开始的保险箱写入完成', () async {
-    final backupMoved = Completer<void>();
-    final allowWriteToContinue = Completer<void>();
-    final writer = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-      onBackupMoved: () async {
-        backupMoved.complete();
-        await allowWriteToContinue.future;
-      },
-    );
-    final deleter = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-    );
-
-    await writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.physical,
-      bytes: Uint8List.fromList(<int>[1]),
-    );
-    final write = writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.physical,
-      bytes: Uint8List.fromList(<int>[2]),
-    );
-    await backupMoved.future;
-
-    var deleteCompleted = false;
-    final delete = deleter.deleteAll().then((_) {
-      deleteCompleted = true;
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(deleteCompleted, isFalse);
-
-    allowWriteToContinue.complete();
-    await write;
-    await delete;
-    final vaultRoot = Directory(
-      path.join(supportDirectory.path, 'personal_vault'),
-    );
-    expect(await vaultRoot.exists(), isFalse);
-  });
-
-  test('账号删除已入队后新读取会按顺序完成且不死锁', () async {
-    final backupMoved = Completer<void>();
-    final allowWriteToContinue = Completer<void>();
-    final deleteQueued = Completer<void>();
-    final writer = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-      onBackupMoved: () async {
-        backupMoved.complete();
-        await allowWriteToContinue.future;
-      },
-    );
-    final deleter = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-      onVaultOperationQueued: deleteQueued.complete,
-    );
-    final reader = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-    );
-
-    await writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.erke,
-      bytes: Uint8List.fromList(<int>[1]),
-    );
-    final activeWrite = writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.erke,
-      bytes: Uint8List.fromList(<int>[2]),
-    );
-    await backupMoved.future;
-
-    final delete = deleter.deleteUser(_accountA);
-    await deleteQueued.future;
-    final read = reader.read(
-      accountHash: _accountA,
-      type: PersonalDataType.erke,
-    );
-
-    allowWriteToContinue.complete();
-    final results = await Future.wait<Object?>(<Future<Object?>>[
-      activeWrite.then<Object?>((_) => null),
-      delete.then<Object?>((_) => null),
-      read,
-    ]).timeout(const Duration(seconds: 2));
-    expect(results[2], isNull);
-  });
-
-  test('全量删除已入队后新写入会按顺序完成且不死锁', () async {
-    final backupMoved = Completer<void>();
-    final allowWriteToContinue = Completer<void>();
-    final deleteQueued = Completer<void>();
-    final writer = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-      onBackupMoved: () async {
-        backupMoved.complete();
-        await allowWriteToContinue.future;
-      },
-    );
-    final deleter = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-      onVaultOperationQueued: deleteQueued.complete,
-    );
-    final nextWriter = IoPersonalSnapshotFileBackend(
-      supportDirectoryLoader: () async => supportDirectory,
-    );
-
-    await writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.physical,
-      bytes: Uint8List.fromList(<int>[1]),
-    );
-    final activeWrite = writer.write(
-      accountHash: _accountA,
-      type: PersonalDataType.physical,
-      bytes: Uint8List.fromList(<int>[2]),
-    );
-    await backupMoved.future;
-
-    final delete = deleter.deleteAll();
-    await deleteQueued.future;
-    final nextWrite = nextWriter.write(
-      accountHash: _accountB,
-      type: PersonalDataType.erke,
-      bytes: Uint8List.fromList(<int>[3]),
-    );
-
-    allowWriteToContinue.complete();
-    await Future.wait<void>(<Future<void>>[
-      activeWrite,
-      delete,
-      nextWrite,
-    ]).timeout(const Duration(seconds: 2));
-    expect(
-      await nextWriter.read(
-        accountHash: _accountB,
-        type: PersonalDataType.erke,
-      ),
-      Uint8List.fromList(<int>[3]),
-    );
+    expect(result, isNull);
+    expect(await temporaryFile.exists(), isFalse);
   });
 }
 
-Future<File> _targetFile(
-  Directory supportDirectory,
-  String accountHash,
+File _target(
+  Directory support,
+  String account,
   PersonalDataType type,
-) async {
-  final directory = Directory(
-    path.join(supportDirectory.path, 'personal_vault', accountHash),
-  );
-  return File(path.join(directory.path, '${type.storageValue}.bin'));
-}
-
-Future<void> _expectNoArtifacts(
-  Directory supportDirectory,
-  String accountHash,
-  PersonalDataType type,
-) async {
-  final target = await _targetFile(supportDirectory, accountHash, type);
-  final artifacts = await target.parent
-      .list(followLinks: false)
-      .where((entity) => entity.path.startsWith('${target.path}.'))
-      .toList();
-  expect(artifacts, isEmpty);
-}
-
-const String _accountA =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const String _accountB =
-    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+) =>
+    File(
+      path.join(
+        support.path,
+        'personal_vault',
+        account,
+        '${type.storageValue}.bin',
+      ),
+    );

@@ -195,9 +195,23 @@ func (h *AIRuntimeHandler) CreateConversation(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"conversation": conversation})
 }
 
+type aiConversationListItem struct {
+	ID                 string    `json:"id"`
+	Title              string    `json:"title"`
+	LastMessagePreview string    `json:"last_message_preview"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
 func (h *AIRuntimeHandler) ListConversations(c *gin.Context) {
-	var conversations []models.AIConversation
-	if err := h.db.WithContext(c.Request.Context()).Where("user_id = ?", c.GetUint("user_id")).Order("updated_at DESC").Limit(100).Find(&conversations).Error; err != nil {
+	var conversations []aiConversationListItem
+	if err := h.db.WithContext(c.Request.Context()).
+		Table("ai_conversations c").
+		Select("c.id, c.title, c.created_at, c.updated_at, COALESCE((SELECT m.content FROM ai_conversation_messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1), '') AS last_message_preview").
+		Where("c.user_id = ?", c.GetUint("user_id")).
+		Order("c.updated_at DESC").
+		Limit(100).
+		Find(&conversations).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": "ai_conversation_list_failed", "message": "读取会话失败"})
 		return
 	}
@@ -308,6 +322,8 @@ func writeAIRuntimeError(c *gin.Context, err error) {
 			status = http.StatusTooManyRequests
 		case "ai_budget_exceeded":
 			status = http.StatusPaymentRequired
+		case "idempotency_key_conflict":
+			status = http.StatusConflict
 		case "invalid_client_request_id", "invalid_conversation_id", "invalid_run_id":
 			status = http.StatusBadRequest
 		}

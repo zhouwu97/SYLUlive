@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -20,9 +21,54 @@ func newUserPrivacyTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open database: %v", err)
 	}
 	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.CheckIn{}); err != nil {
-		t.Fatalf("migrate user privacy dependencies: %v", err)
+		t.Fatalf("migrate users: %v", err)
 	}
 	return db
+}
+
+func TestUpdatePushSettingsKeepsActiveDeviceWhenAnotherInstallationDisables(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newUserPrivacyTestDB(t)
+	user := models.User{StudentID: "push-user", PasswordHash: "hash"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	handler := NewUserHandler(db)
+
+	call := func(body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodPut, "/api/user/push-settings", strings.NewReader(body))
+		context.Request.Header.Set("Content-Type", "application/json")
+		context.Set("user_id", user.ID)
+		handler.UpdatePushSettings(context)
+		return recorder
+	}
+
+	if recorder := call(`{"enabled":true,"installation_id":"device-a","registration_id":"rid-a","notice_version":"v1"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("enable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if recorder := call(`{"enabled":false,"installation_id":"device-b","registration_id":"","notice_version":"v1"}`); recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"ignored":true`) {
+		t.Fatalf("inactive disable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var updated models.User
+	if err := db.First(&updated, user.ID).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if !updated.PushDataProcessingEnabled || updated.PushInstallationID != "device-a" || updated.DeviceToken != "rid-a" {
+		t.Fatalf("inactive device cleared active push state: %#v", updated)
+	}
+
+	if recorder := call(`{"enabled":false,"installation_id":"device-a","registration_id":"","notice_version":"v1"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("active disable status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if err := db.First(&updated, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if updated.PushDataProcessingEnabled || updated.PushInstallationID != "" || updated.DeviceToken != "" {
+		t.Fatalf("active device did not clear push state: %#v", updated)
+	}
 }
 
 func TestUserProfileResponsesEnforcePrivacyBoundary(t *testing.T) {

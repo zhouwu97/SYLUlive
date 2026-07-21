@@ -405,19 +405,19 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 			return
 
 		}
-		consentState, err := models.LegalConsentStateForUser(h.db, updatedUser)
-		if err != nil {
+
+		response, responseErr := selfUserResponseForDB(h.db, updatedUser)
+		if responseErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
 			return
 		}
-
 		c.JSON(http.StatusOK, gin.H{
 
 			"message": "已同意邀请，你已成为管理员",
 
 			"token": token,
 
-			"user": selfUserResponse(updatedUser, consentState),
+			"user": response,
 		})
 
 		return

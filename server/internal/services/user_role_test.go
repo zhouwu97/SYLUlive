@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -24,7 +23,7 @@ func TestUpdateUserRoleAndInvalidateTokenExpiresOldJWT(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
-		t.Fatalf("migrate user: %v", err)
+		t.Fatalf("migrate user and legal consent: %v", err)
 	}
 
 	user := models.User{
@@ -36,7 +35,6 @@ func TestUpdateUserRoleAndInvalidateTokenExpiresOldJWT(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	grantRequiredLegalConsentsForRoleTest(t, db, user)
 
 	const secret = "test-secret"
 	oldToken, err := middleware.GenerateToken(user.ID, string(models.RoleUser), user.TokenVersion, secret)
@@ -103,7 +101,7 @@ func TestUpdateUserRoleAndInvalidateTokenDowngradeExpiresAdminJWT(t *testing.T) 
 		t.Fatalf("open db: %v", err)
 	}
 	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
-		t.Fatalf("migrate user: %v", err)
+		t.Fatalf("migrate user and legal consent: %v", err)
 	}
 
 	user := models.User{
@@ -115,7 +113,6 @@ func TestUpdateUserRoleAndInvalidateTokenDowngradeExpiresAdminJWT(t *testing.T) 
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	grantRequiredLegalConsentsForRoleTest(t, db, user)
 
 	const secret = "test-secret"
 	oldAdminToken, err := middleware.GenerateToken(user.ID, string(models.RoleAdmin), user.TokenVersion, secret)
@@ -146,21 +143,5 @@ func TestUpdateUserRoleAndInvalidateTokenDowngradeExpiresAdminJWT(t *testing.T) 
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("old admin token after downgrade status=%d body=%s", w.Code, w.Body.String())
-	}
-}
-
-func grantRequiredLegalConsentsForRoleTest(t *testing.T, db *gorm.DB, user models.User) {
-	t.Helper()
-	acceptedAt := time.Now()
-	for _, document := range models.RequiredLegalDocuments(user.EduBound) {
-		consent := models.UserLegalConsent{
-			UserID:     user.ID,
-			Document:   document,
-			Version:    models.LegalDocumentVersion,
-			AcceptedAt: acceptedAt,
-		}
-		if err := db.Create(&consent).Error; err != nil {
-			t.Fatalf("create legal consent %s: %v", document, err)
-		}
 	}
 }

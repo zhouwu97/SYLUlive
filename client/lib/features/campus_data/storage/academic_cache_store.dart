@@ -92,6 +92,7 @@ class AcademicVaultSnapshot {
     required this.expiresAt,
     required this.isStale,
     this.situation,
+    this.isGradeSyncComplete = false,
   }) : terms = Map<String, AcademicTermSnapshot>.unmodifiable(terms);
 
   final Map<String, AcademicTermSnapshot> terms;
@@ -99,6 +100,7 @@ class AcademicVaultSnapshot {
   final DateTime? expiresAt;
   final bool isStale;
   final AcademicSituationSnapshot? situation;
+  final bool isGradeSyncComplete;
 }
 
 /// 成绩数据只在网络请求成功后直接写入 AES-GCM 保险箱，不创建明文迁移链路。
@@ -170,6 +172,7 @@ class AcademicCacheStore {
             : AcademicSituationSnapshot.fromPayload(
                 Map<String, dynamic>.from(rawSituation as Map),
               ),
+        isGradeSyncComplete: payload['grade_sync_complete'] == true,
       );
     } on FormatException {
       throw const PersonalSnapshotStoreException('成绩密文快照格式错误');
@@ -218,6 +221,16 @@ class AcademicCacheStore {
     });
   }
 
+  /// 只有所有有效学期均成功请求后才写入完成标记，防止局部成绩被当成完整 GPA 数据。
+  Future<void> markGradeSyncComplete() async {
+    _validateNamespace();
+    await _serializeMutation(() async {
+      final payload = await _readPayload() ?? _emptyPayload();
+      payload['grade_sync_complete'] = true;
+      await _writePayload(payload);
+    });
+  }
+
   Future<void> clearAll() async {
     _validateNamespace();
     await _serializeMutation(
@@ -243,6 +256,7 @@ class AcademicCacheStore {
   Map<String, dynamic> _emptyPayload() => <String, dynamic>{
         'grade_terms': <String, dynamic>{},
         'academic_situation': null,
+        'grade_sync_complete': false,
       };
 
   Future<void> _writePayload(Map<String, dynamic> payload) async {

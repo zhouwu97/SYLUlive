@@ -1,9 +1,43 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/screens/home_screen.dart';
 import 'package:shenliyuan/widgets/home_tab_reveal.dart';
 
 void main() {
+  test('帖子首屏完成后才开始更新检查', () async {
+    final feedCompleter = Completer<void>();
+    var updateCheckStarted = false;
+
+    final startup = loadInitialFeedBeforeUpdateCheck(
+      loadInitialFeed: () => feedCompleter.future,
+      initializeUpdateCheck: () async {
+        updateCheckStarted = true;
+      },
+    );
+
+    await Future<void>.delayed(Duration.zero);
+    expect(updateCheckStarted, isFalse);
+
+    feedCompleter.complete();
+    await startup;
+    expect(updateCheckStarted, isTrue);
+  });
+
+  test('帖子首屏失败后仍执行更新检查', () async {
+    var updateCheckStarted = false;
+
+    await loadInitialFeedBeforeUpdateCheck(
+      loadInitialFeed: () => Future<void>.error(StateError('load failed')),
+      initializeUpdateCheck: () async {
+        updateCheckStarted = true;
+      },
+    );
+
+    expect(updateCheckStarted, isTrue);
+  });
+
   double revealTranslationY(WidgetTester tester, Key childKey) {
     final transforms = tester.widgetList<Transform>(
       find.ancestor(

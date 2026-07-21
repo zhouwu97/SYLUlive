@@ -5,6 +5,7 @@ import '../providers/water_section_provider.dart';
 import '../models/water_section.dart';
 import '../widgets/water_section/section_avatar.dart';
 import 'water_category_feed_route.dart';
+import 'poll/poll_center_screen.dart';
 
 class WaterSectionDirectoryScreen extends StatefulWidget {
   const WaterSectionDirectoryScreen({super.key});
@@ -42,6 +43,8 @@ class _WaterSectionDirectoryScreenState
           s.subtitle.toLowerCase().contains(query) ||
           s.description.toLowerCase().contains(query);
     }).toList();
+    final showPollEntry = _searchQuery.isEmpty ||
+        const ['投票', '选择', '意见', '调查'].any(_searchQuery.contains);
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -51,8 +54,9 @@ class _WaterSectionDirectoryScreenState
             _buildHeader(isDark),
             _buildSearchBar(isDark),
             if (_searchQuery.isEmpty) _buildMyFollows(isDark, allSections),
+            if (showPollEntry) _buildPollEntry(isDark),
             _buildAllSectionsHeader(isDark, displaySections.length),
-            if (displaySections.isEmpty && _searchQuery.isNotEmpty)
+            if (displaySections.isEmpty && _searchQuery.isNotEmpty && !showPollEntry)
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(
@@ -81,6 +85,51 @@ class _WaterSectionDirectoryScreenState
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPollEntry(bool isDark) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PollCenterScreen())),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF251D3A) : const Color(0xFFF5EEFF),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFF7C3AED).withValues(alpha: 0.18)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('特殊版块', style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54)),
+              const SizedBox(height: 8),
+              Row(children: [
+                const CircleAvatar(backgroundColor: Color(0xFFE9D5FF), child: Icon(Icons.poll_outlined, color: Color(0xFF7C3AED))),
+                const SizedBox(width: 12),
+                const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('校园投票', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 3), Text('参与校园话题、选择与意见征集', style: TextStyle(fontSize: 12))])),
+                const Icon(Icons.chevron_right, color: Color(0xFF7C3AED)),
+              ]),
+              const SizedBox(height: 8),
+              Wrap(spacing: 4, children: [
+                _pollShortcut('推荐', 'recommend'),
+                _pollShortcut('最新', 'latest'),
+                _pollShortcut('即将结束', 'ending'),
+              ]),
+              const SizedBox(height: 4),
+              Text('特殊版块 · 独立发布模式', style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : Colors.black45)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pollShortcut(String label, String sort) {
+    return TextButton(
+      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PollCenterScreen(initialSort: sort))),
+      child: Text(label),
     );
   }
 

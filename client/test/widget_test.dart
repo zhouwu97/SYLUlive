@@ -22,7 +22,7 @@ void main() {
           navigatorKey: navigatorKey,
           home: AppUpdateGate(
             navigatorKey: navigatorKey,
-            child: const Scaffold(body: Center(child: Text('原有开屏内容'))),
+            child: Scaffold(body: Center(child: Text('原有开屏内容'))),
           ),
         ),
       ),

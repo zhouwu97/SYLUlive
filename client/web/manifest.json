@@ -1,11 +1,11 @@
 {
-    "name": "沈理校园",
-    "short_name": "沈理校园",
+    "name": "shenliyuan",
+    "short_name": "shenliyuan",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#fbfaf6",
-    "theme_color": "#28796c",
-    "description": "沈阳理工大学校园生活服务平台",
+    "background_color": "#0175C2",
+    "theme_color": "#0175C2",
+    "description": "A new Flutter project.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

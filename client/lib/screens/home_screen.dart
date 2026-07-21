@@ -9,10 +9,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/api_constants.dart';
 import '../main.dart';
+import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/app_update_coordinator.dart';
 import '../utils/app_motion.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
@@ -27,8 +29,22 @@ import 'course_schedule_screen.dart';
 import 'campus_screen.dart';
 import 'profile_screen.dart';
 import 'create_post_screen.dart';
-import 'login_screen.dart';
+import 'poll/poll_composer_screen.dart';
+import 'publish/publish_type_sheet.dart';
 import 'image_viewer_screen.dart';
+
+/// 首页首屏请求结束后再检查更新，避免更新状态覆盖开屏与帖子加载过程。
+Future<void> loadInitialFeedBeforeUpdateCheck({
+  required Future<void> Function() loadInitialFeed,
+  required Future<void> Function() initializeUpdateCheck,
+}) async {
+  try {
+    await loadInitialFeed();
+  } catch (error) {
+    debugPrint('首页帖子首次加载失败，继续执行更新检查: $error');
+  }
+  await initializeUpdateCheck();
+}
 
 class HomeScreen extends StatefulWidget {
   final int initialTab;
@@ -62,6 +78,7 @@ class HomeTabKeepAliveStage extends StatelessWidget {
 class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   int _currentIndex = 0;
+  bool _publishOpening = false;
   final GlobalKey _contentKey = GlobalKey(debugLabel: 'homeContentStack');
   late final Set<int> _visitedTabs;
   final Map<int, Widget> _tabPages = {};
@@ -76,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen>
   double _mainSwipeDx = 0;
   Timer? _announcementTimer;
   Timer? _announcementRetryTimer;
+  Timer? _initialUpdateFallbackTimer;
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
   bool _announcementDialogOpen = false;
@@ -166,7 +184,22 @@ class _HomeScreenState extends State<HomeScreen>
   void _bootstrapHome() {
     final auth = context.read<AuthProvider>();
 
-    // 1. Current tab data is already loading naturally because the widget is in the tree.
+    final postProvider = context.read<PostProvider>();
+    final updateCoordinator = context.read<AppUpdateCoordinator>();
+    _initialUpdateFallbackTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        unawaited(updateCoordinator.startDeferredInitialCheck());
+      }
+    });
+    unawaited(loadInitialFeedBeforeUpdateCheck(
+      loadInitialFeed: () => postProvider.loadPosts(boardId: 1, sort: 'all'),
+      initializeUpdateCheck: () {
+        _initialUpdateFallbackTimer?.cancel();
+        return updateCoordinator.startDeferredInitialCheck();
+      },
+    ));
+
+    // 1. 当前页仍按原逻辑加载；相同的帖子请求由 PostProvider 自动合并。
 
     // 2. Delay lightweight badges (notices unread-count, messages unread-count)
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -203,6 +236,7 @@ class _HomeScreenState extends State<HomeScreen>
     _contentTabController.dispose();
     _announcementTimer?.cancel();
     _announcementRetryTimer?.cancel();
+    _initialUpdateFallbackTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -1617,27 +1651,53 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  void _openCreatePost(BuildContext context) {
+  Future<void> _showPublishTypeSheet(BuildContext context) async {
+    if (_publishOpening) return;
     final auth = context.read<AuthProvider>();
     final postProvider = context.read<PostProvider>();
     if (!auth.isLoggedIn) {
       Navigator.pushNamed(context, '/login');
       return;
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const CreatePostScreen(boardId: 1)),
-    ).then((_) {
-      if (mounted) {
-        unawaited(
-          Future.wait([
-            postProvider.refresh(boardId: 1, sort: 'time'),
-            postProvider.refresh(boardId: 1, sort: 'all'),
-            postProvider.refresh(boardId: 1, sort: 'featured'),
-          ]),
+    _publishOpening = true;
+    try {
+      final type = await PublishTypeSheet.show(context);
+      if (!mounted || type == null) return;
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => type == PublishType.poll
+              ? const PollComposerScreen()
+              : const CreatePostScreen(boardId: 1),
+        ),
+      );
+      if (!mounted) return;
+      if (result is Post && result.isPoll) {
+        ExpAward? globalAward;
+        for (final award in result.expAwards) {
+          if (award.scope == 'global') {
+            globalAward = award;
+            break;
+          }
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(globalAward == null
+                ? '投票发布成功'
+                : '投票发布成功 · 全站经验 +${globalAward.exp}'),
+          ),
         );
       }
-    });
+      if (result != null) {
+        unawaited(Future.wait([
+          postProvider.refresh(boardId: 1, sort: 'time'),
+          postProvider.refresh(boardId: 1, sort: 'all'),
+          postProvider.refresh(boardId: 1, sort: 'featured'),
+        ]));
+      }
+    } finally {
+      _publishOpening = false;
+    }
   }
 
   @override
@@ -1697,7 +1757,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 child: FloatingActionButton(
                   heroTag: 'home_fab',
-                  onPressed: () => _openCreatePost(context),
+                  onPressed: () => _showPublishTypeSheet(context),
                   backgroundColor: const Color(0xFF16A34A),
                   elevation: 4,
                   shape: const CircleBorder(),

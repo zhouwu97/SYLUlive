@@ -11,8 +11,8 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/glass_container.dart';
-import '../widgets/post_card.dart';
-import 'post_detail_screen.dart';
+import '../widgets/community_post_card.dart';
+import '../utils/post_route.dart';
 import 'user_home_screen.dart';
 
 class SearchResultsScreen extends StatefulWidget {
@@ -121,6 +121,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           'sort': _sort,
           'page': page,
           'limit': _pageSize,
+          'capabilities': 'poll_v1',
           if (_type == 'posts') 'board': widget.boardId,
         },
       );
@@ -374,18 +375,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildPostItem(Post post) {
-    return PostCard(
+    return CommunityPostCard(
       post: post,
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PostDetailScreen(
-            postId: post.id,
-            isMarket: post.boardId == 2,
-            initialPost: post,
-          ),
-        ),
-      ),
+      onTap: () => Navigator.push(context, buildPostDetailRoute(post, isMarket: post.boardId == 2)),
     );
   }
 

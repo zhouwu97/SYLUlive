@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -20,11 +21,29 @@ type cachedSessionState struct {
 	expiresAt         time.Time
 }
 
-var sessionStateCache = struct {
+var tokenVersionCache = struct {
 	sync.Mutex
 	values map[uint]cachedSessionState
 }{
 	values: make(map[uint]cachedSessionState),
+}
+
+const (
+	LegalConsentEnforcementOff  = "off"
+	LegalConsentEnforcementSoft = "soft"
+	LegalConsentEnforcementHard = "hard"
+)
+
+var legalConsentEnforcement = LegalConsentEnforcementSoft
+
+// SetLegalConsentEnforcement 配置授权门禁模式；生产默认 soft，避免新后端立即阻断旧客户端。
+func SetLegalConsentEnforcement(mode string) {
+	switch mode {
+	case LegalConsentEnforcementOff, LegalConsentEnforcementSoft, LegalConsentEnforcementHard:
+		legalConsentEnforcement = mode
+	default:
+		legalConsentEnforcement = LegalConsentEnforcementSoft
+	}
 }
 
 // Claims JWT声明
@@ -57,7 +76,7 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
-		// 会话状态同时承载令牌版本和授权撤销状态，避免业务接口各自遗漏校验。
+		// 会话状态同时承载令牌版本和授权状态，避免业务接口分别遗漏校验。
 		state, err := getCachedSessionState(db, claims.UserID)
 		if err != nil {
 			writeAPIError(c, http.StatusUnauthorized, "authentication_required", "用户不存在")
@@ -72,20 +91,57 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 
 		c.Set("user_id", claims.UserID)
 		c.Set("role", claims.Role)
-		if state.legalConsentState != models.LegalConsentStateActive && !isLegalConsentExemptRequest(c) {
-			if state.legalConsentState == models.LegalConsentStateRequired {
-				writeAPIError(c, http.StatusForbidden, "legal_consent_required", "请先阅读并同意协议与隐私政策")
-			} else {
-				writeAPIError(c, http.StatusForbidden, "legal_consent_withdrawn", "你已撤销同意，当前功能不可用")
+		if legalConsentEnforcement == LegalConsentEnforcementHard && isCommunityWriteRequest(c) {
+			var accepted int64
+			if err := db.Model(&models.UserLegalConsent{}).
+				Where("user_id = ? AND document = ? AND version = ? AND revoked_at IS NULL AND acknowledgement_type = ?", claims.UserID, models.LegalDocumentCommunityRules, models.LegalDocumentVersion, "rules_acceptance").
+				Count(&accepted).Error; err != nil {
+				writeAPIError(c, http.StatusInternalServerError, "legal_consent_lookup_failed", "读取社区规则确认状态失败")
+				c.Abort()
+				return
 			}
-			c.Abort()
-			return
+			if accepted == 0 {
+				writeAPIError(c, http.StatusForbidden, "community_rules_required", "请先确认社区规则")
+				c.Abort()
+				return
+			}
+		}
+		if state.legalConsentState != models.LegalConsentStateActive && !isLegalConsentExemptRequest(c) {
+			switch legalConsentEnforcement {
+			case LegalConsentEnforcementHard:
+				if state.legalConsentState == models.LegalConsentStateRequired {
+					writeAPIError(c, http.StatusForbidden, "legal_consent_required", "请先确认最新协议与隐私政策")
+				} else {
+					writeAPIError(c, http.StatusForbidden, "legal_consent_withdrawn", "授权已撤销，当前功能不可用")
+				}
+				c.Abort()
+				return
+			case LegalConsentEnforcementSoft:
+				log.Printf("[LEGAL_CONSENT_SOFT] user_id=%d method=%s route=%s state=%s client_version=%q", claims.UserID, c.Request.Method, c.Request.URL.Path, state.legalConsentState, clientVersion(c))
+			}
 		}
 		c.Next()
 	}
 }
 
-// OptionalAuthMiddleware 可选JWT认证中间件（解析用户信息但不拦截）
+func isCommunityWriteRequest(c *gin.Context) bool {
+	if c.Request.Method != http.MethodPost && c.Request.Method != http.MethodPut &&
+		c.Request.Method != http.MethodPatch && c.Request.Method != http.MethodDelete {
+		return false
+	}
+	path := c.Request.URL.Path
+	for _, prefix := range []string{
+		"/api/posts", "/api/replies", "/api/messages/", "/api/team/",
+		"/api/water/team/", "/api/posts/", "/api/market",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// OptionalAuthMiddleware 可选JWT认证中间件。hard 模式下未授权用户访问公开接口时按匿名处理。
 func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString := tokenFromRequest(c)
@@ -96,9 +152,15 @@ func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 				return []byte(jwtSecret), nil
 			})
 			if err == nil && token.Valid {
-				// 撤销同意的账号访问公开接口时按匿名用户处理。
 				if state, err := getCachedSessionState(db, claims.UserID); err == nil {
-					if state.tokenVersion == claims.TokenVersion && state.legalConsentState == models.LegalConsentStateActive {
+					if state.tokenVersion != claims.TokenVersion {
+						c.Next()
+						return
+					}
+					if state.legalConsentState != models.LegalConsentStateActive && legalConsentEnforcement == LegalConsentEnforcementSoft {
+						log.Printf("[LEGAL_CONSENT_SOFT] optional user_id=%d method=%s route=%s state=%s client_version=%q", claims.UserID, c.Request.Method, c.Request.URL.Path, state.legalConsentState, clientVersion(c))
+					}
+					if legalConsentEnforcement != LegalConsentEnforcementHard || state.legalConsentState == models.LegalConsentStateActive {
 						c.Set("user_id", claims.UserID)
 						c.Set("role", claims.Role)
 					}
@@ -116,12 +178,12 @@ func getCachedTokenVersion(db *gorm.DB, userID uint) (int, error) {
 
 func getCachedSessionState(db *gorm.DB, userID uint) (cachedSessionState, error) {
 	now := time.Now()
-	sessionStateCache.Lock()
-	if cached, ok := sessionStateCache.values[userID]; ok && now.Before(cached.expiresAt) {
-		sessionStateCache.Unlock()
+	tokenVersionCache.Lock()
+	if cached, ok := tokenVersionCache.values[userID]; ok && now.Before(cached.expiresAt) {
+		tokenVersionCache.Unlock()
 		return cached, nil
 	}
-	sessionStateCache.Unlock()
+	tokenVersionCache.Unlock()
 
 	var user models.User
 	if err := db.Select("id", "token_version", "legal_consent_revoked_at", "edu_bound").First(&user, userID).Error; err != nil {
@@ -137,9 +199,9 @@ func getCachedSessionState(db *gorm.DB, userID uint) (cachedSessionState, error)
 		legalConsentState: legalConsentState,
 		expiresAt:         now.Add(tokenVersionCacheTTL),
 	}
-	sessionStateCache.Lock()
-	sessionStateCache.values[userID] = state
-	sessionStateCache.Unlock()
+	tokenVersionCache.Lock()
+	tokenVersionCache.values[userID] = state
+	tokenVersionCache.Unlock()
 	return state, nil
 }
 
@@ -149,23 +211,51 @@ func clearTokenVersionCacheForTest() {
 
 // InvalidateTokenVersionCache 清除指定用户的令牌版本缓存。
 func InvalidateTokenVersionCache(userID uint) {
-	sessionStateCache.Lock()
+	tokenVersionCache.Lock()
 	if userID == 0 {
-		sessionStateCache.values = make(map[uint]cachedSessionState)
+		tokenVersionCache.values = make(map[uint]cachedSessionState)
 	} else {
-		delete(sessionStateCache.values, userID)
+		delete(tokenVersionCache.values, userID)
 	}
-	sessionStateCache.Unlock()
+	tokenVersionCache.Unlock()
 }
 
-// 授权受限账号仍可查阅数据、完成协议确认、注销账号或退出登录。
+// isLegalConsentExemptRequest 使用精确的 Method + Path 白名单，受限账号仅可办理隐私权利和退出操作。
 func isLegalConsentExemptRequest(c *gin.Context) bool {
-	path := c.Request.URL.Path
-	return strings.HasPrefix(path, "/api/user/privacy/") ||
-		path == "/api/user/profile" ||
-		path == "/api/user/legal-consents" ||
-		path == "/api/user/account" ||
-		path == "/api/logout"
+	method, path := c.Request.Method, c.Request.URL.Path
+	switch {
+	case method == http.MethodGet && path == "/api/user/profile":
+		return true
+	case method == http.MethodGet && path == "/api/user/privacy/data":
+		return true
+	case method == http.MethodGet && path == "/api/user/privacy/export":
+		return true
+	case method == http.MethodGet && path == "/api/user/privacy/requests":
+		return true
+	case method == http.MethodPost && path == "/api/user/privacy/requests":
+		return true
+	case method == http.MethodPost && path == "/api/user/legal-consents":
+		return true
+	case method == http.MethodDelete && path == "/api/user/privacy/consents":
+		return true
+	case method == http.MethodDelete && path == "/api/user/account":
+		return true
+	case method == http.MethodDelete && path == "/api/user/edu-binding":
+		return true
+	case method == http.MethodPut && path == "/api/user/push-settings":
+		return true
+	case method == http.MethodPost && path == "/api/logout":
+		return true
+	default:
+		return false
+	}
+}
+
+func clientVersion(c *gin.Context) string {
+	if version := strings.TrimSpace(c.GetHeader("X-App-Version")); version != "" {
+		return version
+	}
+	return strings.TrimSpace(c.GetHeader("User-Agent"))
 }
 
 func tokenFromRequest(c *gin.Context) string {

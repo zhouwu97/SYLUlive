@@ -13,30 +13,42 @@ void main() {
     test('解析 HTTPS 与自定义协议链接', () {
       expect(
         TeamShareLink.parseRecruitmentId(
-          'https://sylulive.online/team/42?from=share',
+          'https://sylulive.online/team/42',
         ),
         42,
       );
       expect(TeamShareLink.parseRecruitmentId('sylulive://team/99'), 99);
     });
 
-    test('拒绝非目标域名、额外路径和非法 ID', () {
-      expect(
-        TeamShareLink.parseRecruitmentId('https://example.com/team/42'),
-        isNull,
-      );
+    test('拒绝非目标域名、额外参数、路径和非法 ID', () {
       expect(
         TeamShareLink.parseRecruitmentId(
-          'https://sylulive.online/team/42/extra',
+          'https://example.com/share/team/?id=42',
         ),
         isNull,
       );
       expect(
-        TeamShareLink.parseRecruitmentId('https://sylulive.online/team/0'),
+        TeamShareLink.parseRecruitmentId(
+          'https://sylulive.online/share/team/?id=42&source=share',
+        ),
         isNull,
       );
-      expect(TeamShareLink.parseRecruitmentId('sylulive://team/not-a-number'),
-          isNull);
+      expect(
+        TeamShareLink.parseRecruitmentId(
+          'https://sylulive.online/team/42?id=42',
+        ),
+        isNull,
+      );
+      expect(
+        TeamShareLink.parseRecruitmentId(
+          'https://sylulive.online/team/0',
+        ),
+        isNull,
+      );
+      expect(
+        TeamShareLink.parseRecruitmentId('sylulive://team/not-a-number'),
+        isNull,
+      );
     });
 
     test('生成链接时拒绝非正整数 ID', () {

@@ -30,7 +30,9 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 	uid := userID.(uint)
 
 	var count int64
-	if err := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Count(&count).Error; err != nil {
+	if err := h.db.Model(&models.Notification{}).
+		Where("user_id = ? AND is_read = ? AND type <> ?", uid, false, models.RetiredNotificationTypeMarketPost).
+		Count(&count).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读数量失败"})
 		return
 	}
@@ -46,7 +48,7 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 	uid := userID.(uint)
 
 	var notifications []models.Notification
-	if err := h.db.Where("user_id = ?", uid).
+	if err := h.db.Where("user_id = ? AND type <> ?", uid, models.RetiredNotificationTypeMarketPost).
 		Order("created_at desc").
 		Limit(100).
 		Find(&notifications).Error; err != nil {
@@ -260,39 +262,6 @@ func CreateReplyNotificationFull(jpushAppKey, jpushMasterSecret string, db *gorm
 	}
 	SendJPushNotification(jpushAppKey, jpushMasterSecret, db, toUserID, fromUserID, replyID, postID, content)
 	return nil
-}
-
-// CreateMarketPostNotification 集市发帖通知（发给所有用户，除了作者自己）
-func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price float64, authorID uint) {
-	var users []models.User
-	if err := db.Select("id").Where("id != ?", authorID).Find(&users).Error; err != nil {
-		log.Printf("[DB_WARN] CreateMarketPostNotification Find users failed: %v", err)
-		return
-	}
-
-	titlePreview := textutils.TruncateGraphemes(title, 50)
-	content := titlePreview
-	if price > 0 {
-		content = fmt.Sprintf("%s  ¥%.2f", titlePreview, price)
-	}
-
-	notifications := make([]models.Notification, 0, len(users))
-	for _, user := range users {
-		notifications = append(notifications, models.Notification{
-			UserID:    user.ID,
-			Type:      "market_post",
-			Content:   content,
-			RelatedID: postID,
-			PostID:    postID,
-			FromUID:   authorID,
-			IsRead:    false,
-		})
-	}
-	if len(notifications) > 0 {
-		if err := db.CreateInBatches(&notifications, 200).Error; err != nil {
-			log.Printf("[DB_ERROR] CreateMarketPostNotification batch insert failed: %v", err)
-		}
-	}
 }
 
 // CreateFeaturedApplicationResultNotification 创建精华申请结果通知

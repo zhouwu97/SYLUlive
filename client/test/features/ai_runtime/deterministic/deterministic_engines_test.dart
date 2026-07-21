@@ -130,6 +130,49 @@ void main() {
       expect(result.strongRecommendationAllowed, isFalse);
     });
 
+    test('空资格数组表示不限且允许通过资格判断', () {
+      final result = CompetitionFitEngine().rank(
+        const <CompetitionCandidate>[
+          CompetitionCandidate(
+            id: '1',
+            title: '不限年级学院专业的竞赛',
+            eligibleGrades: <String>[],
+            eligibleColleges: <String>[],
+            eligibleMajors: <String>[],
+            evidenceStatus: 'verified',
+            strongRecommendationReady: true,
+          ),
+        ],
+        profile,
+      ).single;
+
+      expect(result.status, CompetitionFitStatus.eligible);
+      expect(result.strongRecommendationAllowed, isTrue);
+    });
+
+    test('非空资格限制但用户属性缺失时保留未知态', () {
+      const incompleteProfile = StudentCompetitionProfile(
+        grade: '',
+        college: '信息科学与工程学院',
+        major: '计算机科学与技术',
+      );
+      final result = CompetitionFitEngine().rank(
+        const <CompetitionCandidate>[
+          CompetitionCandidate(
+            id: '1',
+            title: '限定年级的竞赛',
+            eligibleGrades: <String>['2024'],
+            evidenceStatus: 'verified',
+            strongRecommendationReady: true,
+          ),
+        ],
+        incompleteProfile,
+      ).single;
+
+      expect(result.status, CompetitionFitStatus.eligibilityUnknown);
+      expect(result.strongRecommendationAllowed, isFalse);
+    });
+
     test('strong_recommendation_ready=false 时禁止强推荐', () {
       final result = CompetitionFitEngine().rank(
         const <CompetitionCandidate>[

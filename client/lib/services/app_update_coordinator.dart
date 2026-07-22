@@ -9,6 +9,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../models/app_update_info.dart';
 import '../platform/app_installer.dart';
 import '../platform/app_platform.dart';
+import '../platform/contracts/update_action.dart';
+import '../platform/platform_capabilities.dart';
 import 'app_update_api.dart';
 import 'app_update_cache.dart';
 import 'app_update_download_service.dart';
@@ -307,10 +309,28 @@ class AppUpdateCoordinator extends ChangeNotifier {
   /// 用户返回后可点击“继续安装”，无需重下 APK。
   Future<void> downloadOrInstall() async {
     final info = _info;
+    if (info == null || !info.updateAvailable || info.downloadUrl.isEmpty) {
+      _errorMessage = '更新包信息不完整，请重新检查';
+      _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
+      notifyListeners();
+      return;
+    }
+
+    if (PlatformCapabilities.current.supportsMarketUpdate) {
+      try {
+        final action = AppUpdateAction.current(_installer);
+        await action.execute(info, null);
+      } catch (error) {
+        _errorMessage = _errorText(error);
+        _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
+        notifyListeners();
+      }
+      return;
+    }
+
     final downloadedApk = _downloadedApk;
     if (downloadedApk != null && await downloadedApk.exists()) {
-      final matchesCurrentInfo = info != null &&
-          _downloadedVersionCode == info.latestVersionCode &&
+      final matchesCurrentInfo = _downloadedVersionCode == info.latestVersionCode &&
           _downloadedSha256 == info.sha256.toLowerCase();
       if (_phase == AppUpdatePhase.readyToInstall || matchesCurrentInfo) {
         await installReadyPackage();
@@ -320,12 +340,6 @@ class AppUpdateCoordinator extends ChangeNotifier {
       _downloadedApk = null;
       _downloadedVersionCode = null;
       _downloadedSha256 = null;
-    }
-    if (info == null || !info.updateAvailable || info.downloadUrl.isEmpty) {
-      _errorMessage = '更新包信息不完整，请重新检查';
-      _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
-      notifyListeners();
-      return;
     }
 
     _downloadCancelToken = CancelToken();

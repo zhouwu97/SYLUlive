@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../services/account_session_cleanup_coordinator.dart';
 import '../platform/app_platform.dart';
+import '../platform/contracts/secure_store.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -226,35 +227,34 @@ class _SharedPreferencesStore implements PreferenceStore {
 /// 通过鸿蒙 Asset Store Kit 持久化登录令牌和教务密码。
 ///
 /// 原生端不设置“卸载后保留”标记，删除应用会一并清除这些凭据。
-class _OhosAuthCredentialStore implements AuthCredentialStore {
-  static const _channel = MethodChannel('shenliyuan/secure_storage');
+class _PlatformAuthCredentialStore implements AuthCredentialStore {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
 
-  const _OhosAuthCredentialStore();
+  final AppSecureStore _store = AppSecureStore.current();
 
   @override
   Future<StoredAuthCredentials> read() async {
     return StoredAuthCredentials(
-      token: await _read(_tokenKey),
-      userJson: await _read(_userKey),
+      token: await _store.read(_tokenKey),
+      userJson: await _store.read(_userKey),
     );
   }
 
   @override
   Future<void> write({required String token, required String userJson}) async {
-    final oldToken = await _read(_tokenKey);
-    final oldUserJson = await _read(_userKey);
+    final oldToken = await _store.read(_tokenKey);
+    final oldUserJson = await _store.read(_userKey);
     try {
-      await _write(_tokenKey, token);
-      await _write(_userKey, userJson);
+      await _store.write(_tokenKey, token);
+      await _store.write(_userKey, userJson);
     } catch (error, stackTrace) {
       try {
         await _restore(_tokenKey, oldToken);
         await _restore(_userKey, oldUserJson);
       } catch (rollbackError) {
         throw AuthCredentialConsistencyException(
-          message: '回滚鸿蒙认证信息失败，持久化凭据可能不一致',
+          message: '回滚认证信息失败，持久化凭据可能不一致',
           operationError: error,
           rollbackError: rollbackError,
         );
@@ -265,135 +265,31 @@ class _OhosAuthCredentialStore implements AuthCredentialStore {
 
   @override
   Future<void> clear() async {
-    await _delete(_tokenKey);
-    await _delete(_userKey);
-  }
-
-  @override
-  Future<void> writeEduPassword(String studentId, String password) {
-    return _write('edu_pwd_$studentId', password);
-  }
-
-  @override
-  Future<String?> readEduPassword(String studentId) {
-    return _read('edu_pwd_$studentId');
-  }
-
-  @override
-  Future<void> deleteEduPassword(String studentId) {
-    return _delete('edu_pwd_$studentId');
-  }
-
-  Future<String?> _read(String key) {
-    return _channel.invokeMethod<String>('read', {'key': key});
-  }
-
-  Future<void> _write(String key, String value) {
-    return _channel.invokeMethod<void>('write', {'key': key, 'value': value});
-  }
-
-  Future<void> _delete(String key) {
-    return _channel.invokeMethod<void>('delete', {'key': key});
-  }
-
-  Future<void> _restore(String key, String? value) {
-    return value == null ? _delete(key) : _write(key, value);
-  }
-}
-
-class _PlatformAuthCredentialStore implements AuthCredentialStore {
-  static const _tokenKey = 'auth_token';
-  static const _userKey = 'auth_user';
-
-  @override
-  Future<StoredAuthCredentials> read() async {
-    if (kIsWeb) {
-      return (await _preferenceStore()).read();
-    }
-    const storage = FlutterSecureStorage();
-    return StoredAuthCredentials(
-      token: await storage.read(key: _tokenKey),
-      userJson: await storage.read(key: _userKey),
-    );
-  }
-
-  @override
-  Future<void> write({required String token, required String userJson}) async {
-    if (kIsWeb) {
-      return (await _preferenceStore()).write(
-        token: token,
-        userJson: userJson,
-      );
-    }
-    const storage = FlutterSecureStorage();
-    final oldToken = await storage.read(key: _tokenKey);
-    final oldUserJson = await storage.read(key: _userKey);
-    try {
-      await storage.write(key: _tokenKey, value: token);
-      await storage.write(key: _userKey, value: userJson);
-    } catch (error, stackTrace) {
-      await _restoreSecureValue(storage, _tokenKey, oldToken);
-      await _restoreSecureValue(storage, _userKey, oldUserJson);
-      Error.throwWithStackTrace(error, stackTrace);
-    }
-  }
-
-  @override
-  Future<void> clear() async {
-    if (kIsWeb) {
-      return (await _preferenceStore()).clear();
-    }
-    const storage = FlutterSecureStorage();
-    await storage.delete(key: _tokenKey);
-    await storage.delete(key: _userKey);
+    await _store.delete(_tokenKey);
+    await _store.delete(_userKey);
   }
 
   @override
   Future<void> writeEduPassword(String studentId, String password) async {
-    if (kIsWeb) {
-      return (await _preferenceStore()).writeEduPassword(studentId, password);
-    }
-    const storage = FlutterSecureStorage();
-    await storage.write(key: 'edu_pwd_$studentId', value: password);
+    await _store.write('edu_pwd_$studentId', password);
   }
 
   @override
   Future<String?> readEduPassword(String studentId) async {
-    final key = 'edu_pwd_$studentId';
-    if (kIsWeb) {
-      return (await _preferenceStore()).readEduPassword(studentId);
-    }
-    const storage = FlutterSecureStorage();
-    return storage.read(key: key);
+    return _store.read('edu_pwd_$studentId');
   }
 
   @override
   Future<void> deleteEduPassword(String studentId) async {
-    final key = 'edu_pwd_$studentId';
-    if (kIsWeb) {
-      return (await _preferenceStore()).deleteEduPassword(studentId);
-    }
-    const storage = FlutterSecureStorage();
-    await storage.delete(key: key);
+    await _store.delete('edu_pwd_$studentId');
   }
 
-  Future<void> _restoreSecureValue(
-    FlutterSecureStorage storage,
-    String key,
-    String? value,
-  ) async {
+  Future<void> _restore(String key, String? value) async {
     if (value == null) {
-      await storage.delete(key: key);
+      await _store.delete(key);
     } else {
-      await storage.write(key: key, value: value);
+      await _store.write(key, value);
     }
-  }
-
-  Future<PreferenceAuthCredentialStore> _preferenceStore() async {
-    final preferences = await SharedPreferences.getInstance();
-    return PreferenceAuthCredentialStore(
-      _SharedPreferencesStore(preferences),
-    );
   }
 }
 
@@ -433,12 +329,8 @@ class AuthProvider extends ChangeNotifier {
     bool loadStoredAuth = true,
     VoidCallback? onAuthenticated,
     AccountSessionCleanupCoordinator? sessionCleanupCoordinator,
-  })  : _credentialStore = credentialStore ??
-            (AppPlatforms.current.isOhos
-                ? const _OhosAuthCredentialStore()
-                : _PlatformAuthCredentialStore()),
-        _usesPlatformCredentialStore =
-            credentialStore == null && !AppPlatforms.current.isOhos,
+  })  : _credentialStore = credentialStore ?? _PlatformAuthCredentialStore(),
+        _usesPlatformCredentialStore = credentialStore == null,
         _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start,
         _sessionCleanupCoordinator = sessionCleanupCoordinator ??
             AccountSessionCleanupCoordinator.instance {

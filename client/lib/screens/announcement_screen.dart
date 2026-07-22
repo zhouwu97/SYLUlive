@@ -5,7 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../platform/contracts/external_navigator.dart';
 
 import '../config/api_constants.dart';
 import '../models/announcement.dart' as model;
@@ -682,8 +682,8 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
 
   Future<void> _openUrl(String url) async {
     final uri = Uri.tryParse(url);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (uri != null) {
+      await ExternalNavigator.current().open(uri);
     }
   }
 }

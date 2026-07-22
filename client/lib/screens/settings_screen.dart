@@ -25,6 +25,7 @@ import '../services/wallpaper_prefetch_service.dart';
 import '../services/push_settings_service.dart';
 import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
+import '../platform/platform_capabilities.dart';
 
 import '../widgets/about_app_sheet.dart';
 import 'diagnostic_log_screen.dart';
@@ -90,7 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     
-    setState(() => _pushEnabled = false);
+    if (mounted) setState(() => _pushEnabled = false);
     messenger.showSnackBar(const SnackBar(content: Text('已关闭远程推送，课程和考试提醒不受影响')));
   }
 
@@ -421,23 +422,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             isDark: isDark,
           ),
         ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.notifications_none_rounded,
-            iconColor: Colors.blueAccent,
-            title: '接收远程消息推送',
-            subtitle: '默认关闭，开启后会向极光提供设备推送标识',
-            trailing: Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: _pushEnabled,
-                onChanged: _pushLoading ? null : _setPushEnabled,
-                activeThumbColor: Theme.of(context).primaryColor,
+        if (PlatformCapabilities.current.supportsJPush)
+          _buildSettingsRow(
+            child: _buildSettingsTile(
+              icon: Icons.notifications_none_rounded,
+              iconColor: Colors.blueAccent,
+              title: '接收远程消息推送',
+              subtitle: '默认关闭，开启后会向极光提供设备推送标识',
+              trailing: Transform.scale(
+                scale: 0.8,
+                child: Switch(
+                  value: _pushEnabled,
+                  onChanged: _pushLoading ? null : _setPushEnabled,
+                  activeThumbColor: Theme.of(context).primaryColor,
+                ),
               ),
+              isDark: isDark,
             ),
-            isDark: isDark,
           ),
-        ),
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.battery_saver,
@@ -514,16 +516,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.troubleshoot,
-            iconColor: Colors.teal,
-            title: '推送诊断',
-            subtitle: '查看极光推送、权限与渠道状态',
-            isDark: isDark,
-            onTap: () => _showPushDiagnostics(context, isDark),
+        if (PlatformCapabilities.current.supportsJPush)
+          _buildSettingsRow(
+            child: _buildSettingsTile(
+              icon: Icons.troubleshoot,
+              iconColor: Colors.teal,
+              title: '推送诊断',
+              subtitle: '查看极光推送、权限与渠道状态',
+              isDark: isDark,
+              onTap: () => _showPushDiagnostics(context, isDark),
+            ),
           ),
-        ),
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.lock,

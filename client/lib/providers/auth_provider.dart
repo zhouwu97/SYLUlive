@@ -8,7 +8,7 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../services/account_session_cleanup_coordinator.dart';
@@ -231,7 +231,7 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
 
-  final AppSecureStore _store = AppSecureStore.current();
+  final AppSecretStore _store = AppSecretStore.current();
 
   @override
   Future<StoredAuthCredentials> read() async {

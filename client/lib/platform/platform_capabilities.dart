@@ -9,7 +9,8 @@ class PlatformCapabilities {
     required this.platform,
     required this.supportsJPush,
     required this.supportsSystemNotification,
-    required this.supportsSecureStorage,
+    required this.supportsPersistentStorage,
+    required this.supportsSensitiveSecretStorage,
     required this.supportsMarketUpdate,
     required this.supportsNativeWidget,
     required this.supportsLiveView,
@@ -22,7 +23,8 @@ class PlatformCapabilities {
   final AppPlatform platform;
   final bool supportsJPush;
   final bool supportsSystemNotification;
-  final bool supportsSecureStorage;
+  final bool supportsPersistentStorage;
+  final bool supportsSensitiveSecretStorage;
   final bool supportsMarketUpdate;
   final bool supportsNativeWidget;
   final bool supportsLiveView;
@@ -39,7 +41,8 @@ class PlatformCapabilities {
             platform: AppPlatform.android,
             supportsJPush: true,
             supportsSystemNotification: true,
-            supportsSecureStorage: true,
+            supportsPersistentStorage: true,
+            supportsSensitiveSecretStorage: true,
             supportsMarketUpdate: false,
             supportsNativeWidget: true,
             supportsLiveView: false,
@@ -52,8 +55,9 @@ class PlatformCapabilities {
             platform: AppPlatform.ohos,
             supportsJPush: false,
             supportsSystemNotification: false,
-            supportsSecureStorage: true,
-            supportsMarketUpdate: true,
+            supportsPersistentStorage: true,
+            supportsSensitiveSecretStorage: true,
+            supportsMarketUpdate: false,
             supportsNativeWidget: false,
             supportsLiveView: false,
             supportsScanKit: false,
@@ -65,7 +69,8 @@ class PlatformCapabilities {
             platform: platform,
             supportsJPush: false,
             supportsSystemNotification: false,
-            supportsSecureStorage: true,
+            supportsPersistentStorage: true,
+            supportsSensitiveSecretStorage: false,
             supportsMarketUpdate: false,
             supportsNativeWidget: false,
             supportsLiveView: false,

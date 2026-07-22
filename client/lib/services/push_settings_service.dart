@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../platform/contracts/push_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../platform/app_platform.dart';
@@ -34,8 +34,7 @@ class PushSettingsService {
   static const _aliasChannel = MethodChannel(
     'shenliyuan/private_message_notifications',
   );
-  static final FlutterLocalNotificationsPlugin _permissionPlugin =
-      FlutterLocalNotificationsPlugin();
+  static final PushClient _pushClient = PushClient.current();
   static RemotePushRegistration? _registrationHandler;
   static Future<RemotePushEnableResult>? _registrationFuture;
   static String? _registrationUserId;
@@ -147,29 +146,7 @@ class PushSettingsService {
   /// 仅在用户主动开启远程推送时请求系统权限，冷启动初始化不弹权限框。
   static Future<bool> requestSystemNotificationPermission() async {
     if (!PlatformCapabilities.current.supportsJPush) return false;
-    const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      iOS: DarwinInitializationSettings(
-        requestAlertPermission: false,
-        requestBadgePermission: false,
-        requestSoundPermission: false,
-      ),
-    );
-    await _permissionPlugin.initialize(settings);
-    if (!AppPlatforms.current.isAndroid && !AppPlatforms.current.isWeb) {
-        final ios = _permissionPlugin.resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>();
-        return await ios?.requestPermissions(
-                alert: true, badge: true, sound: true) ??
-            true;
-    }
-    final android = _permissionPlugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (android != null) {
-      // Android 12 及以下没有运行时通知权限，插件返回 null 代表无需申请。
-      return await android.requestNotificationsPermission() ?? true;
-    }
-    return true;
+    return await _pushClient.requestSystemNotificationPermission();
   }
 
   static Future<AuthResult> disable(AuthProvider auth) async {

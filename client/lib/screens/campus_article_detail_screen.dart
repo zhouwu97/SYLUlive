@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../platform/contracts/external_navigator.dart';
 
 import '../main.dart';
 import '../models/campus_article.dart';
@@ -89,12 +89,12 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       return;
     }
     try {
-      final opened = await launchUrl(
-        Uri.parse(url),
-        mode: LaunchMode.externalApplication,
-      );
-      if (!opened && mounted) {
-        AppFeedback.showSnackBar(context, '无法打开浏览器', isError: true);
+      final uri = Uri.parse(url);
+      final opened = await ExternalNavigator.current().open(uri);
+      if (!opened) {
+        if (context.mounted) {
+          AppFeedback.showSnackBar(context, '无法打开浏览器', isError: true);
+        }
       }
     } catch (e) {
       if (mounted) {

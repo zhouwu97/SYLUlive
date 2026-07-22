@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../../../platform/contracts/secure_store.dart';
+import '../../../platform/contracts/blob_store.dart';
 
 import '../../campus_data/storage/account_cache_namespace.dart';
 import '../../campus_data/storage/personal_snapshot_models.dart';
@@ -89,9 +89,9 @@ class PersonalConversationEntry {
 class PersonalConversationStore {
   PersonalConversationStore({
     required String accountKey,
-    AppSecureStore? secureStore,
+    EncryptedBlobStore? blobStore,
   })  : _accountFingerprint = AccountCacheNamespace.fingerprint(accountKey),
-        _secureStore = secureStore ?? AppSecureStore.current() {
+        _blobStore = blobStore ?? EncryptedBlobStore(namespace: 'ai_history_$accountKey') {
     if (_accountFingerprint.isEmpty) {
       throw ArgumentError.value(accountKey, 'accountKey');
     }
@@ -102,14 +102,14 @@ class PersonalConversationStore {
   static const int _schemaVersion = 1;
 
   final String _accountFingerprint;
-  final AppSecureStore _secureStore;
+  final EncryptedBlobStore _blobStore;
   Future<void> _pendingWrite = Future<void>.value();
 
   String get _storageKey => 'ai_personal_conversations/$_accountFingerprint/v1';
 
   Future<List<PersonalConversationEntry>> read() async {
     try {
-      final raw = await _secureStore.read(_storageKey);
+      final raw = await _blobStore.read(_storageKey);
       if (raw == null || raw.isEmpty) {
         return const <PersonalConversationEntry>[];
       }
@@ -138,7 +138,7 @@ class PersonalConversationStore {
     });
     _pendingWrite = _pendingWrite
         .catchError((_) {})
-        .then((_) => _secureStore.write(_storageKey, encoded));
+        .then((_) => _blobStore.write(_storageKey, encoded));
     return _pendingWrite;
   }
 

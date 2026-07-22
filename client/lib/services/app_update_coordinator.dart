@@ -324,7 +324,7 @@ class AppUpdateCoordinator extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _currentAction ??= AppUpdateAction.current(_installer, _downloadService);
+      _currentAction ??= AppUpdateAction.current(info, _installer, _downloadService);
       final result = await _currentAction!.execute(
         info,
         existingApk: _currentAction!.readyApk,

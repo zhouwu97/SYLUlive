@@ -21,25 +21,35 @@ abstract interface class AppPreferencesStore {
   Set<String> getKeys();
 
   static AppPreferencesStore? _instance;
+  static Future<AppPreferencesStore>? _loading;
 
-  static Future<AppPreferencesStore> getInstance() async {
-    if (_instance != null) return _instance!;
-    
+  static Future<AppPreferencesStore> getInstance() {
+    if (_instance != null) return Future.value(_instance!);
+    return _loading ??= _create().catchError((Object error) {
+      _loading = null;
+      throw error;
+    });
+  }
+
+  static Future<AppPreferencesStore> _create() async {
+    AppPreferencesStore store;
     if (AppPlatforms.current == AppPlatform.ohos) {
-      final store = OhosPreferencesStore();
-      await store.init();
-      _instance = store;
+      final ohosStore = OhosPreferencesStore();
+      await ohosStore.init();
+      store = ohosStore;
     } else {
       final prefs = await SharedPreferences.getInstance();
-      _instance = AndroidPreferencesStore(prefs);
+      store = AndroidPreferencesStore(prefs);
     }
-    return _instance!;
+    _instance = store;
+    return store;
   }
 
   /// 供测试使用：设置模拟的初始值
   static void setMockInitialValues(Map<String, Object> values) {
     SharedPreferences.setMockInitialValues(values);
     _instance = null;
+    _loading = null;
   }
 }
 
@@ -97,15 +107,15 @@ class OhosPreferencesStore implements AppPreferencesStore {
   OhosPreferencesStore();
 
   Future<void> init() async {
-    try {
-      final all = await _channel.invokeMethod<Map<dynamic, dynamic>>('getAll');
-      if (all != null) {
-        _cache.clear();
-        for (final entry in all.entries) {
-          _cache[entry.key as String] = entry.value;
-        }
+    final all = await _channel.invokeMethod<Map<dynamic, dynamic>>('getAll');
+    if (all != null) {
+      _cache.clear();
+      for (final entry in all.entries) {
+        _cache[entry.key as String] = entry.value;
       }
-    } catch (_) {}
+    } else {
+      throw StateError('Failed to initialize OhosPreferencesStore: getAll returned null');
+    }
   }
 
   @override
@@ -113,9 +123,9 @@ class OhosPreferencesStore implements AppPreferencesStore {
 
   @override
   Future<bool> setString(String key, String value) async {
-    _cache[key] = value;
     try {
       await _channel.invokeMethod<void>('setString', {'key': key, 'value': value});
+      _cache[key] = value;
       return true;
     } catch (_) {
       return false;
@@ -127,9 +137,9 @@ class OhosPreferencesStore implements AppPreferencesStore {
 
   @override
   Future<bool> setBool(String key, bool value) async {
-    _cache[key] = value;
     try {
       await _channel.invokeMethod<void>('setBool', {'key': key, 'value': value});
+      _cache[key] = value;
       return true;
     } catch (_) {
       return false;
@@ -137,13 +147,16 @@ class OhosPreferencesStore implements AppPreferencesStore {
   }
 
   @override
-  int? getInt(String key) => _cache[key] as int?;
+  int? getInt(String key) {
+    final value = _cache[key];
+    return value is num ? value.toInt() : null;
+  }
 
   @override
   Future<bool> setInt(String key, int value) async {
-    _cache[key] = value;
     try {
       await _channel.invokeMethod<void>('setInt', {'key': key, 'value': value});
+      _cache[key] = value;
       return true;
     } catch (_) {
       return false;
@@ -151,13 +164,16 @@ class OhosPreferencesStore implements AppPreferencesStore {
   }
 
   @override
-  double? getDouble(String key) => _cache[key] as double?;
+  double? getDouble(String key) {
+    final value = _cache[key];
+    return value is num ? value.toDouble() : null;
+  }
 
   @override
   Future<bool> setDouble(String key, double value) async {
-    _cache[key] = value;
     try {
       await _channel.invokeMethod<void>('setDouble', {'key': key, 'value': value});
+      _cache[key] = value;
       return true;
     } catch (_) {
       return false;
@@ -165,13 +181,16 @@ class OhosPreferencesStore implements AppPreferencesStore {
   }
 
   @override
-  List<String>? getStringList(String key) => (_cache[key] as List<dynamic>?)?.cast<String>();
+  List<String>? getStringList(String key) {
+    final list = _cache[key] as List<dynamic>?;
+    return list?.cast<String>().toList();
+  }
 
   @override
   Future<bool> setStringList(String key, List<String> value) async {
-    _cache[key] = value;
     try {
       await _channel.invokeMethod<void>('setStringList', {'key': key, 'value': value});
+      _cache[key] = value;
       return true;
     } catch (_) {
       return false;
@@ -180,9 +199,9 @@ class OhosPreferencesStore implements AppPreferencesStore {
 
   @override
   Future<bool> remove(String key) async {
-    _cache.remove(key);
     try {
       await _channel.invokeMethod<void>('remove', {'key': key});
+      _cache.remove(key);
       return true;
     } catch (_) {
       return false;
@@ -191,9 +210,9 @@ class OhosPreferencesStore implements AppPreferencesStore {
 
   @override
   Future<bool> clear() async {
-    _cache.clear();
     try {
       await _channel.invokeMethod<void>('clear');
+      _cache.clear();
       return true;
     } catch (_) {
       return false;
@@ -229,7 +248,10 @@ class MemoryPreferencesStore implements AppPreferencesStore {
   }
 
   @override
-  int? getInt(String key) => _values[key] as int?;
+  int? getInt(String key) {
+    final value = _values[key];
+    return value is num ? value.toInt() : null;
+  }
 
   @override
   Future<bool> setInt(String key, int value) async {
@@ -238,7 +260,10 @@ class MemoryPreferencesStore implements AppPreferencesStore {
   }
 
   @override
-  double? getDouble(String key) => _values[key] as double?;
+  double? getDouble(String key) {
+    final value = _values[key];
+    return value is num ? value.toDouble() : null;
+  }
 
   @override
   Future<bool> setDouble(String key, double value) async {
@@ -247,7 +272,10 @@ class MemoryPreferencesStore implements AppPreferencesStore {
   }
 
   @override
-  List<String>? getStringList(String key) => _values[key] as List<String>?;
+  List<String>? getStringList(String key) {
+    final list = _values[key] as List<dynamic>?;
+    return list?.cast<String>().toList();
+  }
 
   @override
   Future<bool> setStringList(String key, List<String> value) async {

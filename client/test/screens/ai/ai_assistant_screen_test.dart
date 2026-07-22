@@ -67,6 +67,12 @@ void main() {
     expect(find.text('校园问答'), findsWidgets);
     expect(find.text('个人助手'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
+
+    await tester.tap(find.text('个人助手'));
+    await tester.pumpAndSettle();
+    expect(find.text('竞赛搜索'), findsOneWidget);
+    expect(find.text('竞赛建议'), findsNothing);
+    expect(find.text('毕业清单'), findsNothing);
   });
 
   testWidgets('个人历史在页面重建后恢复且切换账号立即隔离', (tester) async {

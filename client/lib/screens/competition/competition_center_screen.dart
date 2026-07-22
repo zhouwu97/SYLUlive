@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../platform/contracts/external_navigator.dart';
 
+import '../../config/beta_release_policy.dart';
 import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
@@ -71,7 +72,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   final Set<String> _sources = {};
   int? _calendarCount;
 
-  String _studentFocusFilter = 'recommended';
+  String _studentFocusFilter = 'all';
 
   @override
   void initState() {
@@ -205,7 +206,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         _stateLoading = false;
         _stateError = null;
         if (!_profileReady && _studentFocusFilter == 'fit') {
-          _studentFocusFilter = 'recommended';
+          _studentFocusFilter = 'all';
         }
       });
     } catch (error) {
@@ -284,7 +285,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       if (_searchController.text.trim().isNotEmpty)
         'keyword': _searchController.text.trim(),
       if (_categorySlug != null) 'category_slug': _categorySlug,
-      if (_recommendations.isNotEmpty)
+      if (BetaReleasePolicy.competitionRecommendations &&
+          _recommendations.isNotEmpty)
         'recommendation_level': _recommendations.join(','),
       if (_recognitions.isNotEmpty)
         'school_recognition_status': _recognitions.join(','),
@@ -293,7 +295,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
     switch (_studentFocusFilter) {
       case 'recommended':
-        if (_recommendations.isEmpty) {
+        if (BetaReleasePolicy.competitionRecommendations &&
+            _recommendations.isEmpty) {
           params['recommendation_level'] = 'S,A,B+';
         }
         break;
@@ -323,7 +326,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       _recommendations.clear();
       _recognitions.clear();
       _sources.clear();
-      _studentFocusFilter = 'recommended';
+      _studentFocusFilter = 'all';
     });
     _loadEvents(reset: true);
   }
@@ -337,7 +340,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           .firstOrNull;
       if (category != null) parts.add(category.name);
     }
-    parts.addAll(_recommendations.map((e) => '$e推荐'));
+    if (BetaReleasePolicy.competitionRecommendations) {
+      parts.addAll(_recommendations.map((e) => '$e推荐'));
+    }
     parts.addAll(_recognitions.map(competitionRecognitionLabel));
     parts.addAll(_sources.map(_sourceLabel));
     if (parts.isEmpty) return '全部比赛';
@@ -618,10 +623,11 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
   Widget _buildStudentFocusTabs(bool isDark) {
     final tabs = [
-      ('recommended', '推荐'),
+      ('all', '全部'),
+      if (BetaReleasePolicy.competitionRecommendations) ('recommended', '推荐'),
       ('deadline', '临近截止'),
       ('recognized', '学校认定'),
-      if (_profileReady) ('fit', '适合我'),
+      if (BetaReleasePolicy.aiCompetitionFit && _profileReady) ('fit', '适合我'),
       ('pending', '时间待公布'),
     ];
     return Padding(
@@ -756,8 +762,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         return '适合我';
       case 'pending':
         return '时间待公布';
-      default:
+      case 'recommended':
         return '推荐关注';
+      default:
+        return '比赛目录';
     }
   }
 
@@ -773,6 +781,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       isAdding: _addingEventIds.contains(event.id),
       onAddPlan: () => _copyToCalendar(event.id),
       onJoinedTap: _openCalendar,
+      showRecommendations: BetaReleasePolicy.competitionRecommendations,
     );
   }
 
@@ -887,6 +896,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         categories: _categories,
         categorySlug: _categorySlug,
         recommendations: _recommendations,
+        showRecommendations: BetaReleasePolicy.competitionRecommendations,
         recognitions: _recognitions,
         sources: _sources,
       ),
@@ -1018,12 +1028,14 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            _detailChip('${event.recommendationLevel}推荐'),
+                            if (BetaReleasePolicy.competitionRecommendations)
+                              _detailChip('${event.recommendationLevel}推荐'),
                             _detailChip(event.primaryCategory?.name ?? '未分类'),
                             _detailChip(_competitionTimeState(event).label),
                           ],
                         ),
-                        if (event.recommendationReason.isNotEmpty) ...[
+                        if (BetaReleasePolicy.competitionRecommendations &&
+                            event.recommendationReason.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           Text(
                             event.recommendationReason,
@@ -1050,7 +1062,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                       ],
                     ),
                     _detailCard(
-                      title: '参赛价值',
+                      title: '参赛信息',
                       children: [
                         _detailInfo(
                           '学校认定',
@@ -1058,8 +1070,10 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                               event.schoolRecognitionStatus),
                         ),
                         _detailInfo('学校等级', event.schoolRecognitionGrade),
-                        _detailInfo('推荐等级', event.recommendationLevel),
-                        _detailInfo('推荐理由', event.recommendationReason),
+                        if (BetaReleasePolicy.competitionRecommendations) ...[
+                          _detailInfo('推荐等级', event.recommendationLevel),
+                          _detailInfo('推荐理由', event.recommendationReason),
+                        ],
                         _detailInfo('适合对象', _rawValue('target_audience')),
                         _detailInfo('参赛形式', _rawValue('participation_type')),
                       ],
@@ -1094,14 +1108,15 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                     ),
                     if (event.officialUrl.isNotEmpty)
                       OutlinedButton.icon(
-                        onPressed: () =>
-                            ExternalNavigator.current().open(Uri.parse(event.officialUrl)),
+                        onPressed: () => ExternalNavigator.current()
+                            .open(Uri.parse(event.officialUrl)),
                         icon: const Icon(Icons.open_in_new),
                         label: const Text('打开官网'),
                       ),
                     if (event.noticeUrl.isNotEmpty)
                       OutlinedButton.icon(
-                        onPressed: () => ExternalNavigator.current().open(Uri.parse(event.noticeUrl)),
+                        onPressed: () => ExternalNavigator.current()
+                            .open(Uri.parse(event.noticeUrl)),
                         icon: const Icon(Icons.article_outlined),
                         label: const Text('查看通知'),
                       ),
@@ -1212,6 +1227,7 @@ class _CompetitionFilterSheet extends StatefulWidget {
   final Set<String> recommendations;
   final Set<String> recognitions;
   final Set<String> sources;
+  final bool showRecommendations;
 
   const _CompetitionFilterSheet({
     required this.categories,
@@ -1219,6 +1235,7 @@ class _CompetitionFilterSheet extends StatefulWidget {
     required this.recommendations,
     required this.recognitions,
     required this.sources,
+    required this.showRecommendations,
   });
 
   @override
@@ -1311,11 +1328,17 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
                         ),
                       ],
                     ),
-                    _sheetMulti(
-                      '推荐程度',
-                      {'S': 'S强烈推荐', 'A': 'A推荐', 'B': 'B可参加', 'C': 'C兴趣'},
-                      _recommendations,
-                    ),
+                    if (widget.showRecommendations)
+                      _sheetMulti(
+                        '推荐程度',
+                        {
+                          'S': 'S强烈推荐',
+                          'A': 'A推荐',
+                          'B': 'B可参加',
+                          'C': 'C兴趣',
+                        },
+                        _recommendations,
+                      ),
                     _sheetMulti(
                       '学校认定',
                       {

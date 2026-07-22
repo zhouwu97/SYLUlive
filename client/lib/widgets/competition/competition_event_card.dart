@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../config/beta_release_policy.dart';
 import '../../models/competition.dart';
 import 'competition_admin_event_card.dart';
 import 'competition_student_event_card.dart';
@@ -46,6 +47,7 @@ class CompetitionEventCard extends StatelessWidget {
       onTap: onTap,
       onAddPlan: onAddPlan,
       onJoinedTap: onTap,
+      showRecommendations: BetaReleasePolicy.competitionRecommendations,
     );
   }
 }

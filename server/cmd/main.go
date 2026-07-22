@@ -850,6 +850,7 @@ func main() {
 		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
 		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
 		user.PUT("/competition-preference", competitionHandler.PutCompetitionPreference)
+		user.GET("/competition-capability-profile", competitionHandler.GetCompetitionCapabilityProfile)
 		user.GET("/competition-awards", competitionHandler.ListCompetitionAwards)
 		user.POST("/competition-awards/evidence", competitionHandler.UploadCompetitionAwardEvidence)
 		user.POST("/competition-awards", competitionHandler.CreateCompetitionAward)

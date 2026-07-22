@@ -61,11 +61,43 @@ type UploadHandler struct {
 
 // NewUploadHandler 创建上传处理器
 func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB) *UploadHandler {
+	SetCompetitionUploadDir(uploadDir)
 	return &UploadHandler{
 		db:        db,
 		uploadDir: uploadDir,
 		maxSize:   maxSize,
 	}
+}
+
+// ServePublic 提供普通上传文件；竞赛证明材料必须通过带鉴权的专用接口读取。
+func (h *UploadHandler) ServePublic(c *gin.Context) {
+	relative := strings.TrimPrefix(filepath.ToSlash(c.Param("filepath")), "/")
+	if relative == "" || strings.Contains(relative, "..") {
+		c.Status(http.StatusNotFound)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+	path := "/uploads/" + relative
+	var file models.File
+	if err := h.db.Where("path = ?", path).First(&file).Error; err != nil {
+		c.Status(http.StatusNotFound)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+	var evidenceCount int64
+	if err := h.db.Model(&models.CompetitionAwardEvidence{}).
+		Where("file_id = ?", file.ID).Count(&evidenceCount).Error; err != nil {
+		c.Status(http.StatusInternalServerError)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+	if evidenceCount > 0 {
+		// 对私密材料返回 404，避免匿名请求探测文件是否存在。
+		c.Status(http.StatusNotFound)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+	serveStoredFile(c, file)
 }
 
 // Upload 上传文件

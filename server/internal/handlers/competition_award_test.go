@@ -215,7 +215,7 @@ func TestCompetitionAwardRequiresAuthentication(t *testing.T) {
 	}
 }
 
-func TestCompetitionAwardUpdateResetsVerification(t *testing.T) {
+func TestCompetitionAwardVerifiedOnlyAllowsVisibilityUpdate(t *testing.T) {
 	db := newCompetitionTestDB(t)
 	award := models.UserCompetitionAward{
 		UserID: 61, CompetitionTitle: "已核验赛事", CompetitionYear: time.Now().Year(),
@@ -230,9 +230,22 @@ func TestCompetitionAwardUpdateResetsVerification(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := NewCompetitionHandler(db)
-	response := competitionAwardRequest(t, handler.UpdateCompetitionAward, http.MethodPut, "/api/user/competition-awards/1", validCompetitionAwardBody(time.Now().Year()), 61, award.ID)
+	changedCore := competitionAwardRequest(t, handler.UpdateCompetitionAward, http.MethodPut, "/api/user/competition-awards/1", validCompetitionAwardBody(time.Now().Year()), 61, award.ID)
+	if changedCore.Code != http.StatusConflict {
+		t.Fatalf("changed core status=%d body=%s", changedCore.Code, changedCore.Body.String())
+	}
+	visibilityOnly := strings.Replace(validCompetitionAwardBody(time.Now().Year()), `"competition_title":"程序设计竞赛"`, `"competition_title":"已核验赛事"`, 1)
+	visibilityOnly = strings.Replace(visibilityOnly, `"track_name":"软件应用"`, `"track_name":""`, 1)
+	visibilityOnly = strings.Replace(visibilityOnly, `"award_name":"省级二等奖"`, `"award_name":"一等奖"`, 1)
+	visibilityOnly = strings.Replace(visibilityOnly, `"award_level":"省级"`, `"award_level":""`, 1)
+	visibilityOnly = strings.Replace(visibilityOnly, `"competition_stage":"provincial"`, `"competition_stage":"national"`, 1)
+	visibilityOnly = strings.Replace(visibilityOnly, `"role":"developer"`, `"role":"developer"`, 1)
+	visibilityOnly = strings.Replace(visibilityOnly, `"skill_tags":["Python","算法"]`, `"skill_tags":[]`, 1)
+	visibilityOnly = strings.Replace(visibilityOnly, `"contribution_summary":"负责核心模块"`, `"contribution_summary":""`, 1)
+	visibilityOnly = strings.Replace(visibilityOnly, `"visibility":"private"`, `"visibility":"profile"`, 1)
+	response := competitionAwardRequest(t, handler.UpdateCompetitionAward, http.MethodPut, "/api/user/competition-awards/1", visibilityOnly, 61, award.ID)
 	updated := decodeCompetitionAward(t, response)
-	if response.Code != http.StatusOK || updated.VerificationStatus != "self_reported" || updated.VerifiedBy != nil || updated.VerifiedAt != nil || updated.VerificationNote != "" {
-		t.Fatalf("updated verification=%+v", updated)
+	if response.Code != http.StatusOK || updated.VerificationStatus != "verified" || updated.VerifiedBy == nil || updated.VerifiedAt == nil || updated.VerificationNote != "材料一致" || updated.Visibility != "profile" {
+		t.Fatalf("updated verification=%+v body=%s", updated, response.Body.String())
 	}
 }

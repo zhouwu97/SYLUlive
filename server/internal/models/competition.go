@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"gorm.io/datatypes"
@@ -154,6 +155,75 @@ type UserCompetitionAward struct {
 }
 
 func (UserCompetitionAward) TableName() string { return "user_competition_awards" }
+
+// CompetitionAwardVerificationLog 记录竞赛经历每一次核验状态变化，日志只增不改。
+type CompetitionAwardVerificationLog struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	AwardID    uint      `gorm:"not null;index" json:"award_id"`
+	UserID     uint      `gorm:"not null;index" json:"user_id"`
+	OperatorID *uint     `gorm:"index" json:"operator_id,omitempty"`
+	FromStatus string    `gorm:"size:24;not null" json:"from_status"`
+	ToStatus   string    `gorm:"size:24;not null;index" json:"to_status"`
+	Note       string    `gorm:"size:500" json:"note"`
+	CreatedAt  time.Time `gorm:"index" json:"created_at"`
+}
+
+func (CompetitionAwardVerificationLog) TableName() string {
+	return "competition_award_verification_logs"
+}
+
+// CompetitionAwardEvidence 将文件标记为竞赛证明材料。映射保留后，旧公开地址也不能绕过权限校验。
+type CompetitionAwardEvidence struct {
+	ID        uint      `gorm:"primaryKey" json:"-"`
+	AwardID   uint      `gorm:"not null;uniqueIndex:idx_award_evidence" json:"award_id"`
+	FileID    uint      `gorm:"not null;uniqueIndex:idx_award_evidence;index" json:"file_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (CompetitionAwardEvidence) TableName() string { return "competition_award_evidences" }
+
+// CompetitionAwardEvidenceAccessLog 记录审核人员读取私密证明材料的行为。
+type CompetitionAwardEvidenceAccessLog struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	AwardID   uint      `gorm:"not null;index" json:"award_id"`
+	FileID    uint      `gorm:"not null;index" json:"file_id"`
+	ViewerID  uint      `gorm:"not null;index" json:"viewer_id"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+}
+
+func (CompetitionAwardEvidenceAccessLog) TableName() string {
+	return "competition_award_evidence_access_logs"
+}
+
+// BackfillCompetitionAwardEvidence 为 7A 已有记录补齐私密材料映射，可重复执行。
+func BackfillCompetitionAwardEvidence(db *gorm.DB) error {
+	var awards []UserCompetitionAward
+	if err := db.Unscoped().Select("id", "evidence_file_ids").Find(&awards).Error; err != nil {
+		return err
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, award := range awards {
+			var fileIDs []uint
+			if len(award.EvidenceFileIDs) == 0 {
+				continue
+			}
+			if err := json.Unmarshal(award.EvidenceFileIDs, &fileIDs); err != nil {
+				return err
+			}
+			for _, fileID := range fileIDs {
+				if fileID == 0 {
+					continue
+				}
+				mapping := CompetitionAwardEvidence{AwardID: award.ID, FileID: fileID}
+				if err := tx.Where("award_id = ? AND file_id = ?", award.ID, fileID).
+					FirstOrCreate(&mapping).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
 
 type CompetitionEventAttachment struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`

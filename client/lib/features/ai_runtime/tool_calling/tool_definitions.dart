@@ -55,6 +55,11 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
         description: '读取用户明确授权的竞赛目标和结构化能力画像',
         parameters: _object(const <String, dynamic>{}),
       ),
+      ToolDefinition(
+        id: 'explain_competition_matches',
+        description: '读取并解释平台已有的确定性“适合我”排序，不重新评分',
+        parameters: _object(const <String, dynamic>{}),
+      ),
       ...<String, String>{
         'personal.academic.gpa': '按固定公式计算 GPA 并列出纳入和排除课程',
         'personal.academic.credit_summary': '确定性统计已修、通过和未通过学分',
@@ -67,17 +72,6 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
               parameters: _object(const <String, dynamic>{}),
             ),
           ),
-      ToolDefinition(
-        id: 'personal.competition.fit',
-        description: '按资格、基础画像、目标和证据门槛计算竞赛适配度',
-        parameters: _object(<String, dynamic>{
-          'goals': const <String, dynamic>{
-            'type': 'array',
-            'items': <String, dynamic>{'type': 'string', 'maxLength': 32},
-            'maxItems': 5,
-          },
-        }),
-      ),
       ToolDefinition(
         id: 'personal.fitness.weekly_plan',
         description: '根据课表和体测概览生成有安全限制的本周运动计划',

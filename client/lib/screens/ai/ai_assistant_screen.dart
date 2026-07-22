@@ -8,7 +8,6 @@ import '../../config/beta_release_policy.dart';
 import '../../features/ai_runtime/ai_feature_flags.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
 import '../../features/ai_runtime/personal_ai_runtime_limits.dart';
-import '../../features/ai_runtime/deterministic/competition_fit_engine.dart';
 import '../../features/ai_runtime/deterministic/graduation_requirement_engine.dart';
 import '../../features/ai_runtime/personal_data/gateway/personal_account_context.dart';
 import '../../features/ai_runtime/personal_data/gateway/personal_data_gateway.dart';
@@ -432,8 +431,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         competitionSearchSource: DioCompetitionSearchSource(widget.dio),
         competitionCapabilityProfileSource:
             DioCompetitionCapabilityProfileSource(widget.dio),
+        competitionMatchExplanationSource:
+            DioCompetitionMatchExplanationSource(widget.dio),
         graduationRuleProvider: const _NoVerifiedRuleProvider(),
-        competitionFitDataSource: _DioCompetitionFitDataSource(widget.dio, edu),
       );
       final loop = LocalToolLoop(
         registry: registry,
@@ -448,7 +448,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       );
       final tools = buildStageSixToolDefinitions().where((tool) {
         if (!hasEduAccount &&
-            tool.id != CompetitionCapabilityProfileSkill.skillId &&
+            !competitionAdvisorAccountIndependentSkillIds.contains(tool.id) &&
             (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)) {
           return false;
         }
@@ -460,7 +460,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             flags[AIFeatureFlag.graduationAssistant] != true) {
           return false;
         }
-        if (tool.id == CompetitionFitSkill.skillId &&
+        if (tool.id == ExplainCompetitionMatchesSkill.skillId &&
             flags[AIFeatureFlag.competitionFit] != true) {
           return false;
         }
@@ -469,7 +469,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       final unavailableToolReasons = <String, String>{
         if (!hasEduAccount)
           for (final tool in buildStageSixToolDefinitions())
-            if (tool.id != CompetitionCapabilityProfileSkill.skillId &&
+            if (!competitionAdvisorAccountIndependentSkillIds
+                    .contains(tool.id) &&
                 (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false))
               tool.id: '需要绑定教务后才能读取年级、学院、专业或个人校园数据',
       };
@@ -886,63 +887,4 @@ class _NoVerifiedRuleProvider implements GraduationRuleProvider {
 
   @override
   Future<CurriculumRulePackage?> currentRules() async => null;
-}
-
-class _DioCompetitionFitDataSource implements CompetitionFitDataSource {
-  _DioCompetitionFitDataSource(this._dio, this._edu);
-
-  final Dio _dio;
-  final EduProvider _edu;
-
-  @override
-  Future<List<CompetitionCandidate>> candidates() async {
-    final response = await _dio.get<dynamic>(
-      '/competitions/events',
-      queryParameters: const <String, dynamic>{'page': 1, 'page_size': 20},
-    );
-    if (response.data is! Map) return const <CompetitionCandidate>[];
-    final items = (response.data as Map)['items'];
-    if (items is! List) return const <CompetitionCandidate>[];
-    return items.whereType<Map>().map((raw) {
-      final map = Map<String, dynamic>.from(raw);
-      return CompetitionCandidate(
-        id: map['id']?.toString() ?? '',
-        title: map['title']?.toString() ?? '',
-        eligibleGrades: _strings(
-          map['eligible_grades'] ?? map['eligible_entry_years'],
-        ),
-        eligibleColleges: _strings(map['eligible_colleges']),
-        eligibleMajors: _strings(map['eligible_majors']),
-        schoolRecognitionStatus:
-            map['school_recognition_status']?.toString() ?? '',
-        schoolRecognitionGrade:
-            map['school_recognition_grade']?.toString() ?? '',
-        importanceScore: (map['importance_score'] as num?)?.toInt() ?? 0,
-        manualRating: (map['manual_rating'] as num?)?.toDouble(),
-        evidenceStatus: map['evidence_status']?.toString() ?? '',
-        strongRecommendationReady: map['strong_recommendation_ready'] == true,
-        registrationOpen: map['registration_open'] == true,
-        tags: _strings(map['tags']),
-      );
-    }).toList(growable: false);
-  }
-
-  @override
-  Future<StudentCompetitionProfile> currentProfile() async {
-    return StudentCompetitionProfile(
-      grade: _edu.grade,
-      college: _edu.college,
-      major: _edu.major,
-    );
-  }
-
-  static List<String> _strings(Object? value) {
-    if (value is List) {
-      return value
-          .map((item) => item.toString().trim())
-          .where((item) => item.isNotEmpty)
-          .toList(growable: false);
-    }
-    return const <String>[];
-  }
 }

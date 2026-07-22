@@ -61,7 +61,10 @@ class LocalToolCallValidator {
           call.arguments,
           const EmptyCompetitionAdvisorInput(),
         ),
-      CompetitionFitSkill.skillId => _competitionFit(call.arguments),
+      ExplainCompetitionMatchesSkill.skillId => _empty(
+          call.arguments,
+          const EmptyCompetitionAdvisorInput(),
+        ),
       AcademicGpaSkill.skillId ||
       AcademicCreditSummarySkill.skillId ||
       AcademicFailureRiskSkill.skillId ||
@@ -131,29 +134,6 @@ class LocalToolCallValidator {
       categorySlug: category,
       limit: limit.toInt(),
     );
-  }
-
-  Object _competitionFit(Map<String, dynamic> arguments) {
-    _requireOnly(arguments, const <String>{'goals'});
-    final rawGoals = arguments['goals'];
-    if (rawGoals == null) return const CompetitionFitInput();
-    if (rawGoals is! List ||
-        rawGoals.length > CompetitionFitInput.maximumGoals) {
-      throw const ToolCallValidationException('竞赛目标参数无效');
-    }
-    final normalized = <String>{};
-    for (final rawGoal in rawGoals) {
-      if (rawGoal is! String) {
-        throw const ToolCallValidationException('竞赛目标必须是字符串');
-      }
-      final goal = rawGoal.trim();
-      if (goal.isEmpty) continue;
-      if (goal.length > CompetitionFitInput.maximumGoalLength) {
-        throw const ToolCallValidationException('单项竞赛目标过长');
-      }
-      normalized.add(goal);
-    }
-    return CompetitionFitInput(goals: normalized.toList(growable: false));
   }
 
   Object _empty(Map<String, dynamic> arguments, Object input) {

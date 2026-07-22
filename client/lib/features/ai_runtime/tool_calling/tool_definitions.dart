@@ -1,4 +1,5 @@
 import 'tool_call_models.dart';
+import '../skills/competition_plan_action_skill.dart';
 
 /// 与本地 Validator 同源维护的固定 Tool Schema，模型不能动态新增能力。
 List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
@@ -59,6 +60,19 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
         id: 'explain_competition_matches',
         description: '读取并解释平台已有的确定性“适合我”排序，不重新评分',
         parameters: _object(const <String, dynamic>{}),
+      ),
+      ToolDefinition(
+        id: DraftAddCompetitionToPlanSkill.skillId,
+        description: '基于服务端确定性推荐创建一个待用户确认的竞赛计划草稿，不会直接加入计划',
+        parameters: _object(
+          <String, dynamic>{
+            'event_id': const <String, dynamic>{
+              'type': 'integer',
+              'minimum': 1,
+            },
+          },
+          required: const <String>['event_id'],
+        ),
       ),
       ...<String, String>{
         'personal.academic.gpa': '按固定公式计算 GPA 并列出纳入和排除课程',

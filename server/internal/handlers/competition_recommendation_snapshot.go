@@ -29,6 +29,22 @@ func (h *CompetitionHandler) createCompetitionRecommendationSnapshot(
 	eventID uint,
 	now time.Time,
 ) (models.CompetitionRecommendationSnapshot, CompetitionEventDTO, error) {
+	snapshot, dto, err := h.buildCompetitionRecommendationSnapshot(tx, userID, eventID, now)
+	if err != nil {
+		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, err
+	}
+	if err := tx.Create(&snapshot).Error; err != nil {
+		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, err
+	}
+	return snapshot, dto, nil
+}
+
+func (h *CompetitionHandler) buildCompetitionRecommendationSnapshot(
+	tx *gorm.DB,
+	userID uint,
+	eventID uint,
+	now time.Time,
+) (models.CompetitionRecommendationSnapshot, CompetitionEventDTO, error) {
 	var user models.User
 	if err := tx.First(&user, userID).Error; err != nil {
 		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, errCompetitionProfileUnavailable
@@ -88,9 +104,6 @@ func (h *CompetitionHandler) createCompetitionRecommendationSnapshot(
 		CapabilityHash:    hashCompetitionSnapshotValue(capabilityProfile),
 		EventCriticalHash: competitionEventCriticalHash(event),
 		CreatedAt:         now, ExpiresAt: now.Add(competitionRecommendationSnapshotTTL),
-	}
-	if err := tx.Create(&snapshot).Error; err != nil {
-		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, err
 	}
 	return snapshot, competitionEventDTO(event), nil
 }

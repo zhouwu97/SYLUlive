@@ -270,6 +270,8 @@ func main() {
 		&models.CompetitionImportBatch{},
 		&models.UserCompetitionPreference{},
 		&models.CompetitionRecommendationSnapshot{},
+		&models.AIActionDraft{},
+		&models.AIActionAuditLog{},
 		&models.UserCompetitionAward{},
 		&models.CompetitionAwardVerificationLog{},
 		&models.CompetitionAwardEvidenceFile{},
@@ -884,6 +886,9 @@ func main() {
 		user.POST("/competition-awards/:id/cancel-verification", competitionHandler.CancelCompetitionAwardVerification)
 		user.GET("/competition-awards/:id/evidence/:file_id", competitionHandler.DownloadOwnCompetitionAwardEvidence)
 		user.GET("/competitions/fit", competitionHandler.ListFitEvents)
+		user.GET("/ai-action-drafts/:id", competitionHandler.GetAIActionDraft)
+		user.POST("/ai-action-drafts/:id/confirm", competitionHandler.ConfirmAIActionDraft)
+		user.POST("/ai-action-drafts/:id/cancel", competitionHandler.CancelAIActionDraft)
 		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
 		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)
 		user.GET("/collaboration-applications/received", postHandler.GetMyCollaborationApplicationsReceived)
@@ -1722,6 +1727,7 @@ func main() {
 	{
 		aiCapabilities.GET("/capabilities", aiCapabilitiesHandler.Get)
 		aiCapabilities.GET("/tools/competition-capability-profile", competitionHandler.GetAICompetitionCapabilityProfile)
+		aiCapabilities.POST("/action-drafts/competition-plan", competitionHandler.CreateCompetitionPlanActionDraft)
 	}
 	if aiRuntimeHandler != nil {
 		aiProtected := r.Group("/api/ai")

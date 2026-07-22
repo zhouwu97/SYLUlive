@@ -104,6 +104,48 @@ type AIToolCall struct {
 
 func (AIToolCall) TableName() string { return "ai_tool_calls" }
 
+// AIActionDraft 是 AI 可创建、但只能由所属用户确认的操作草稿。
+// 第一版仅支持将单个官方赛事加入竞赛计划。
+type AIActionDraft struct {
+	ID     uint `gorm:"primaryKey" json:"id"`
+	UserID uint `gorm:"not null;index;uniqueIndex:idx_ai_action_draft_user_key,priority:1" json:"-"`
+
+	ActionType string `gorm:"size:64;not null;index" json:"action_type"`
+	Status     string `gorm:"size:24;not null;index" json:"status"`
+
+	CompetitionEventID       uint `gorm:"not null;index" json:"competition_event_id"`
+	RecommendationSnapshotID uint `gorm:"not null;index" json:"recommendation_snapshot_id"`
+
+	PayloadHash    string `gorm:"size:64;not null" json:"-"`
+	IdempotencyKey string `gorm:"size:100;not null;uniqueIndex:idx_ai_action_draft_user_key,priority:2" json:"-"`
+
+	CreatedAt   time.Time  `json:"created_at"`
+	ExpiresAt   time.Time  `gorm:"not null;index" json:"expires_at"`
+	ConfirmedAt *time.Time `json:"confirmed_at,omitempty"`
+	ExecutedAt  *time.Time `json:"executed_at,omitempty"`
+	CancelledAt *time.Time `json:"cancelled_at,omitempty"`
+
+	ResultResourceType string `gorm:"size:64" json:"result_resource_type,omitempty"`
+	ResultResourceID   *uint  `gorm:"index" json:"result_resource_id,omitempty"`
+	FailureReason      string `gorm:"size:200" json:"failure_reason,omitempty"`
+}
+
+func (AIActionDraft) TableName() string { return "ai_action_drafts" }
+
+// AIActionAuditLog 只记录草稿状态动作，不保存完整 AI 对话或个人画像。
+type AIActionAuditLog struct {
+	ID      uint `gorm:"primaryKey" json:"id"`
+	DraftID uint `gorm:"not null;index" json:"draft_id"`
+	UserID  uint `gorm:"not null;index" json:"user_id"`
+
+	Action          string    `gorm:"size:32;not null;index" json:"action"`
+	CreatedAt       time.Time `gorm:"index" json:"created_at"`
+	ClientRequestID string    `gorm:"size:100" json:"client_request_id,omitempty"`
+	Result          string    `gorm:"size:100" json:"result"`
+}
+
+func (AIActionAuditLog) TableName() string { return "ai_action_audit_logs" }
+
 // AIQuotaEntry 同时承担并发占位和滚动窗口计数；失败且尚未生成的请求会被释放。
 type AIQuotaEntry struct {
 	ID         uint64     `gorm:"primaryKey" json:"-"`

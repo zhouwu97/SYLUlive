@@ -57,10 +57,14 @@ func (h *CompetitionHandler) GetCompetitionCapabilityProfile(c *gin.Context) {
 }
 
 func (h *CompetitionHandler) loadCompetitionCapabilityProfile(userID uint) (competitionCapabilityProfileResponse, error) {
+	return h.loadCompetitionCapabilityProfileWithDB(h.db, userID)
+}
+
+func (h *CompetitionHandler) loadCompetitionCapabilityProfileWithDB(db *gorm.DB, userID uint) (competitionCapabilityProfileResponse, error) {
 	profile := emptyCompetitionCapabilityProfile()
 
 	var preference models.UserCompetitionPreference
-	if err := h.db.Where("user_id = ?", userID).First(&preference).Error; err == nil {
+	if err := db.Where("user_id = ?", userID).First(&preference).Error; err == nil {
 		profile.PreferenceConfigured = true
 		profile.Goals = decodeStringArray(preference.Goals)
 		profile.DirectionTags = decodeStringArray(preference.DirectionTags)
@@ -72,7 +76,7 @@ func (h *CompetitionHandler) loadCompetitionCapabilityProfile(userID uint) (comp
 	}
 
 	var awards []models.UserCompetitionAward
-	if err := h.db.
+	if err := db.
 		Where("user_id = ? AND verification_status IN ?", userID, []string{"verified", "self_reported"}).
 		Order("id ASC").
 		Find(&awards).Error; err != nil {

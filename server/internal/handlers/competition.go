@@ -928,7 +928,8 @@ func (h *CompetitionHandler) AdminUpdateEvent(c *gin.Context) {
 	}
 	event.ID = id
 	event.UpdatedBy = userID
-	if err := h.db.Model(&models.CompetitionEvent{}).Where("id = ?", id).Updates(event).Error; err != nil {
+	if err := h.db.Model(&models.CompetitionEvent{}).Where("id = ?", id).
+		Updates(event).UpdateColumn("version", gorm.Expr("version + 1")).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新比赛失败"})
 		return
 	}

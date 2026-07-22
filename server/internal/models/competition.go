@@ -121,6 +121,32 @@ type UserCompetitionPreference struct {
 
 func (UserCompetitionPreference) TableName() string { return "user_competition_preferences" }
 
+// CompetitionRecommendationSnapshot 记录 AI 提议操作时所依据的确定性推荐结果。
+// 快照只保存解释与重新校验所需字段，不保存证明材料、审核信息或完整能力画像。
+type CompetitionRecommendationSnapshot struct {
+	ID     uint `gorm:"primaryKey" json:"id"`
+	UserID uint `gorm:"not null;index" json:"-"`
+
+	EventID      uint   `gorm:"not null;index" json:"event_id"`
+	EventVersion int    `gorm:"not null" json:"event_version"`
+	EventTitle   string `gorm:"size:200;not null" json:"event_title"`
+
+	PersonalizedScore  *int           `json:"personalized_score"`
+	RecommendationTier string         `gorm:"size:24" json:"recommendation_tier"`
+	FitReasons         datatypes.JSON `gorm:"not null" json:"fit_reasons"`
+
+	PreferenceUpdatedAt *time.Time `json:"preference_updated_at,omitempty"`
+	CapabilityHash      string     `gorm:"size:64;not null" json:"-"`
+	EventCriticalHash   string     `gorm:"size:64;not null" json:"-"`
+
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `gorm:"not null;index" json:"expires_at"`
+}
+
+func (CompetitionRecommendationSnapshot) TableName() string {
+	return "competition_recommendation_snapshots"
+}
+
 // UserCompetitionAward 保存用户私有的竞赛经历和材料核验状态。
 type UserCompetitionAward struct {
 	ID     uint `gorm:"primaryKey" json:"id"`

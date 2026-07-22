@@ -50,12 +50,14 @@ class AiAssistantScreen extends StatefulWidget {
   final AiCapabilities capabilities;
   final AiAssistantService service;
   final Dio dio;
+  final bool initialPersonalMode;
 
   const AiAssistantScreen({
     super.key,
     required this.capabilities,
     required this.service,
     required this.dio,
+    this.initialPersonalMode = false,
   });
 
   @override
@@ -68,7 +70,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final FocusNode _inputFocusNode = FocusNode();
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final AIFeatureFlagStore _featureFlags = AIFeatureFlagStore();
-  bool _personalMode = false;
+  late bool _personalMode;
   bool _personalSending = false;
   String? _personalError;
   bool _personalNeedsModelConfiguration = false;
@@ -79,6 +81,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   @override
   void initState() {
     super.initState();
+    _personalMode = widget.initialPersonalMode;
     _provider = AiAssistantProvider(
       widget.service,
       initialCapabilities: widget.capabilities,

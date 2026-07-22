@@ -41,7 +41,7 @@ class CampusModelChatEntryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '普通聊天',
+                      '个人 AI 助手',
                       style: TextStyle(
                         color: foreground,
                         fontSize: 16,
@@ -50,7 +50,7 @@ class CampusModelChatEntryCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '校园公益 AI 或已配置的兼容模型',
+                      '本机个人数据与已配置的兼容模型',
                       style: TextStyle(
                         color: isDark ? Colors.white60 : CampusTheme.subText,
                         fontSize: 13,

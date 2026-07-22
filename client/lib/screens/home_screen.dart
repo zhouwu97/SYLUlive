@@ -815,9 +815,10 @@ class _HomeScreenState extends State<HomeScreen>
                           final link = href?.trim();
                           if (link == null || link.isEmpty) return;
                           final uri = Uri.tryParse(link);
+                          if (uri == null) return;
                           final opened = await ExternalNavigator.current().open(uri);
-                        if (!opened && mounted) {
-                        }
+                          if (!opened && mounted) {
+                          }
                         },
                         styleSheet: MarkdownStyleSheet(
                           p: TextStyle(

@@ -232,26 +232,33 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   static const _userKey = 'auth_user';
 
   final AppSecretStore _store = AppSecretStore.current();
+  final Future<SharedPreferences> _prefsFuture = SharedPreferences.getInstance();
 
   @override
   Future<StoredAuthCredentials> read() async {
+    final prefs = await _prefsFuture;
     return StoredAuthCredentials(
       token: await _store.read(_tokenKey),
-      userJson: await _store.read(_userKey),
+      userJson: prefs.getString(_userKey),
     );
   }
 
   @override
   Future<void> write({required String token, required String userJson}) async {
+    final prefs = await _prefsFuture;
     final oldToken = await _store.read(_tokenKey);
-    final oldUserJson = await _store.read(_userKey);
+    final oldUserJson = prefs.getString(_userKey);
     try {
       await _store.write(_tokenKey, token);
-      await _store.write(_userKey, userJson);
+      await prefs.setString(_userKey, userJson);
     } catch (error, stackTrace) {
       try {
         await _restore(_tokenKey, oldToken);
-        await _restore(_userKey, oldUserJson);
+        if (oldUserJson == null) {
+          await prefs.remove(_userKey);
+        } else {
+          await prefs.setString(_userKey, oldUserJson);
+        }
       } catch (rollbackError) {
         throw AuthCredentialConsistencyException(
           message: '回滚认证信息失败，持久化凭据可能不一致',
@@ -265,8 +272,9 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
 
   @override
   Future<void> clear() async {
+    final prefs = await _prefsFuture;
     await _store.delete(_tokenKey);
-    await _store.delete(_userKey);
+    await prefs.remove(_userKey);
   }
 
   @override

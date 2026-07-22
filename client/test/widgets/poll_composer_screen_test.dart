@@ -15,7 +15,7 @@ void main() {
     expect(find.text('投票选项'), findsOneWidget);
     expect(find.byType(TextField), findsWidgets);
     await tester.drag(find.byType(ListView).first, const Offset(0, -700));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text('投票设置'), findsOneWidget);
     expect(find.byIcon(Icons.add), findsWidgets);
   });

@@ -5,7 +5,6 @@ import 'package:dio/dio.dart';
 import 'package:shenliyuan/screens/ai/ai_assistant_screen.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_session/personal_conversation_store.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
-import 'package:shenliyuan/platform/contracts/secure_store.dart';
 import 'package:shenliyuan/platform/contracts/blob_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
@@ -186,7 +185,7 @@ User _user(int id) => User(
       createdAt: DateTime.utc(2026, 7, 21),
     );
 
-class _FakeBlobStore implements EncryptedBlobStore {
+class _FakeBlobStore implements AppBlobStore {
   final Map<String, String> values = <String, String>{};
 
   @override

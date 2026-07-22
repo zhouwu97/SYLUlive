@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:pointycastle/export.dart';
-import '../../platform/contracts/secure_store.dart';
+import '../../../platform/contracts/secure_store.dart';
 
 import 'account_cache_namespace.dart';
 import 'personal_snapshot_file_backend.dart';

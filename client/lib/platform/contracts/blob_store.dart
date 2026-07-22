@@ -5,16 +5,23 @@ import 'package:path_provider/path_provider.dart';
 
 import 'secure_store.dart';
 
+abstract interface class AppBlobStore {
+  Future<String?> read(String key);
+  Future<void> write(String key, String value);
+  Future<void> delete(String key);
+}
+
 /// 针对大文本（大于1024字节）的加密存储。
 /// 使用 AppSecretStore 保存随机生成的 AES 密钥，并将加密后的密文存储到沙盒私有文件中。
-class EncryptedBlobStore {
+class EncryptedBlobStore implements AppBlobStore {
   final AppSecretStore _secretStore;
   final String _namespace;
 
   EncryptedBlobStore({
     AppSecretStore? secretStore,
-    this._namespace = 'default',
-  }) : _secretStore = secretStore ?? AppSecretStore.current();
+    String namespace = 'default',
+  }) : _secretStore = secretStore ?? AppSecretStore.current(),
+       _namespace = namespace;
 
   String get _keyStoreName => 'blob_aes_key_$_namespace';
 
@@ -39,6 +46,7 @@ class EncryptedBlobStore {
     return File('${vaultDir.path}/$safeKey.enc');
   }
 
+  @override
   Future<void> write(String key, String value) async {
     final aesKey = await _getOrCreateKey();
     final iv = enc.IV.fromSecureRandom(16);
@@ -49,9 +57,13 @@ class EncryptedBlobStore {
     // 我们需要将 IV 和密文一起保存
     final combined = iv.base64 + ':' + encrypted.base64;
     final file = await _getFile(key);
-    await file.writeAsString(combined);
+    final tempFile = File('${file.path}.tmp');
+    
+    await tempFile.writeAsString(combined, flush: true);
+    await tempFile.rename(file.path);
   }
 
+  @override
   Future<String?> read(String key) async {
     final file = await _getFile(key);
     if (!await file.exists()) {
@@ -59,7 +71,7 @@ class EncryptedBlobStore {
     }
     final content = await file.readAsString();
     final parts = content.split(':');
-    if (parts.length != 2) return null;
+    if (parts.length != 2) throw const FormatException('Invalid blob format');
 
     final aesKey = await _getOrCreateKey();
     final iv = enc.IV.fromBase64(parts[0]);
@@ -68,15 +80,33 @@ class EncryptedBlobStore {
     final encrypter = enc.Encrypter(enc.AES(aesKey, mode: enc.AESMode.gcm));
     try {
       return encrypter.decrypt(encryptedData, iv: iv);
-    } catch (_) {
-      return null;
+    } catch (e) {
+      throw FormatException('Decryption failed: $e');
     }
   }
 
+  @override
   Future<void> delete(String key) async {
     final file = await _getFile(key);
     if (await file.exists()) {
       await file.delete();
     }
+  }
+}
+
+class MemoryBlobStore implements AppBlobStore {
+  final Map<String, String> values = {};
+
+  @override
+  Future<String?> read(String key) async => values[key];
+
+  @override
+  Future<void> write(String key, String value) async {
+    values[key] = value;
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    values.remove(key);
   }
 }

@@ -455,20 +455,14 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
 
   void _launchCloudGenshin(BuildContext context) async {
     String url;
-    LaunchMode mode;
-
     if (kIsWeb) {
       url = 'https://ys.mihoyo.com/cloud/';
-      mode = LaunchMode.platformDefault;
     } else if (Platform.isAndroid) {
       url = 'https://ys.mihoyo.com/cloud/';
-      mode = LaunchMode.externalApplication;
     } else if (Platform.isIOS) {
       url = 'https://apps.apple.com/cn/app/id1569029742';
-      mode = LaunchMode.externalApplication;
     } else {
       url = 'https://ys.mihoyo.com/cloud/';
-      mode = LaunchMode.externalApplication;
     }
 
     final uri = Uri.parse(url);

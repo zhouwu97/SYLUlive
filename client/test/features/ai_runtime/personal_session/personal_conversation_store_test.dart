@@ -3,17 +3,18 @@ import 'package:shenliyuan/features/ai_runtime/personal_session/personal_convers
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/models/ai_chat_message.dart';
+import 'package:shenliyuan/platform/contracts/blob_store.dart';
 
 void main() {
   test('个人历史按账号隔离并恢复证据摘要', () async {
-    final secure = _MemoryConversationSecureStore();
+    final secure = _MemoryPersonalConversationSecureStore();
     final accountA = PersonalConversationStore(
       accountKey: 'app-a::edu-a',
-      secureStore: secure,
+      blobStore: secure,
     );
     final accountB = PersonalConversationStore(
       accountKey: 'app-b::edu-b',
-      secureStore: secure,
+      blobStore: secure,
     );
     await accountA.replace(<PersonalConversationEntry>[
       _entry(
@@ -36,10 +37,10 @@ void main() {
   });
 
   test('历史结构不保存 Tool 调用、参数或原始结果', () async {
-    final secure = _MemoryConversationSecureStore();
+    final secure = _MemoryPersonalConversationSecureStore();
     final store = PersonalConversationStore(
       accountKey: 'app-a::edu-a',
-      secureStore: secure,
+      blobStore: secure,
     );
     await store.replace(<PersonalConversationEntry>[
       _entry('请总结我的结果', AiMessageRole.user),
@@ -54,10 +55,10 @@ void main() {
   });
 
   test('历史限制为最近十轮和总字符上限', () async {
-    final secure = _MemoryConversationSecureStore();
+    final secure = _MemoryPersonalConversationSecureStore();
     final store = PersonalConversationStore(
       accountKey: 'app-a::edu-a',
-      secureStore: secure,
+      blobStore: secure,
     );
     await store.replace(List<PersonalConversationEntry>.generate(
       30,
@@ -87,8 +88,7 @@ PersonalConversationEntry _entry(
       evidence: evidence,
     );
 
-class _MemoryConversationSecureStore
-    implements PersonalConversationSecureStore {
+class _MemoryPersonalConversationSecureStore implements AppBlobStore {
   final Map<String, String> values = <String, String>{};
 
   @override

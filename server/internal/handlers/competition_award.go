@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/models"
 )
@@ -149,7 +150,10 @@ func (h *CompetitionHandler) CreateCompetitionAward(c *gin.Context) {
 		if err := tx.Create(&award).Error; err != nil {
 			return err
 		}
-		return activateCompetitionAwardFiles(tx, normalized.EvidenceFileIDs)
+		if err := activateCompetitionAwardFiles(tx, normalized.EvidenceFileIDs); err != nil {
+			return err
+		}
+		return registerCompetitionAwardEvidence(tx, award.ID, normalized.EvidenceFileIDs)
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存竞赛经历失败"})
 		return
@@ -180,6 +184,19 @@ func (h *CompetitionHandler) UpdateCompetitionAward(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if award.VerificationStatus == "pending" || award.VerificationStatus == "verified" {
+		if competitionAwardCoreChanged(award, normalized) {
+			c.JSON(http.StatusConflict, gin.H{"error": "核验中或已核验的经历只能修改可见范围"})
+			return
+		}
+		if err := h.db.Model(&award).Update("visibility", normalized.Visibility).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新竞赛经历失败"})
+			return
+		}
+		award.Visibility = normalized.Visibility
+		c.JSON(http.StatusOK, competitionAwardResponseFromModel(award))
+		return
+	}
 	updates := map[string]interface{}{
 		"competition_event_id": normalized.CompetitionEventID,
 		"competition_title":    normalized.CompetitionTitle, "track_name": normalized.TrackName,
@@ -188,14 +205,15 @@ func (h *CompetitionHandler) UpdateCompetitionAward(c *gin.Context) {
 		"role": normalized.Role, "skill_tags": jsonArray(normalized.SkillTags),
 		"contribution_summary": normalized.ContributionSummary,
 		"evidence_file_ids":    uintJSONArray(normalized.EvidenceFileIDs), "visibility": normalized.Visibility,
-		"verification_status": "self_reported", "verification_note": "",
-		"verified_by": nil, "verified_at": nil,
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&award).Updates(updates).Error; err != nil {
 			return err
 		}
-		return activateCompetitionAwardFiles(tx, normalized.EvidenceFileIDs)
+		if err := activateCompetitionAwardFiles(tx, normalized.EvidenceFileIDs); err != nil {
+			return err
+		}
+		return registerCompetitionAwardEvidence(tx, award.ID, normalized.EvidenceFileIDs)
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新竞赛经历失败"})
 		return
@@ -362,4 +380,55 @@ func activateCompetitionAwardFiles(tx *gorm.DB, fileIDs []uint) error {
 	return tx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
 		"status": "active", "claimed_at": &now,
 	}).Error
+}
+
+func registerCompetitionAwardEvidence(tx *gorm.DB, awardID uint, fileIDs []uint) error {
+	for _, fileID := range fileIDs {
+		mapping := models.CompetitionAwardEvidence{AwardID: awardID, FileID: fileID}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&mapping).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func competitionAwardCoreChanged(award models.UserCompetitionAward, input competitionAwardInput) bool {
+	return !equalUintPointers(award.CompetitionEventID, input.CompetitionEventID) ||
+		award.CompetitionTitle != input.CompetitionTitle || award.TrackName != input.TrackName ||
+		award.CompetitionYear != input.CompetitionYear || award.AwardName != input.AwardName ||
+		award.AwardLevel != input.AwardLevel || award.CompetitionStage != input.CompetitionStage ||
+		award.Role != input.Role || award.ContributionSummary != input.ContributionSummary ||
+		!equalStrings(decodeStringArray(award.SkillTags), input.SkillTags) ||
+		!equalUints(decodeUintArray(award.EvidenceFileIDs), input.EvidenceFileIDs)
+}
+
+func equalUintPointers(left, right *uint) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalUints(left, right []uint) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

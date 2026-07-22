@@ -265,6 +265,9 @@ func main() {
 		&models.CompetitionImportBatch{},
 		&models.UserCompetitionPreference{},
 		&models.UserCompetitionAward{},
+		&models.CompetitionAwardVerificationLog{},
+		&models.CompetitionAwardEvidence{},
+		&models.CompetitionAwardEvidenceAccessLog{},
 		&models.CampusCalendar{},
 		&models.AIKnowledgeDocument{},
 		&models.AIKnowledgeAuditLog{},
@@ -275,6 +278,9 @@ func main() {
 
 		log.Fatal("数据库迁移失败:", err)
 
+	}
+	if err := models.BackfillCompetitionAwardEvidence(db); err != nil {
+		log.Fatal("竞赛证明材料隐私映射回填失败:", err)
 	}
 	// 新推送授权默认关闭，旧 Token 不得被视为用户已主动同意。
 	if err := db.Model(&models.User{}).
@@ -743,7 +749,7 @@ func main() {
 
 	// 静态文件服务
 
-	r.Static("/uploads", cfg.UploadDir)
+	r.GET("/uploads/*filepath", uploadHandler.ServePublic)
 
 	// 认证路由
 
@@ -841,6 +847,9 @@ func main() {
 		user.POST("/competition-awards", competitionHandler.CreateCompetitionAward)
 		user.PUT("/competition-awards/:id", competitionHandler.UpdateCompetitionAward)
 		user.DELETE("/competition-awards/:id", competitionHandler.DeleteCompetitionAward)
+		user.POST("/competition-awards/:id/submit-verification", competitionHandler.SubmitCompetitionAwardVerification)
+		user.POST("/competition-awards/:id/cancel-verification", competitionHandler.CancelCompetitionAwardVerification)
+		user.GET("/competition-awards/:id/evidence/:file_id", competitionHandler.DownloadOwnCompetitionAwardEvidence)
 		user.GET("/competitions/fit", competitionHandler.ListFitEvents)
 		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
 		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)
@@ -1330,6 +1339,11 @@ func main() {
 	{
 
 		adminSuper.POST("/promote", invitationHandler.DirectPromote)
+		adminSuper.GET("/competition-awards/verifications", competitionHandler.ListCompetitionAwardVerifications)
+		adminSuper.GET("/competition-awards/verifications/:id", competitionHandler.GetCompetitionAwardVerification)
+		adminSuper.POST("/competition-awards/verifications/:id/approve", competitionHandler.ApproveCompetitionAwardVerification)
+		adminSuper.POST("/competition-awards/verifications/:id/reject", competitionHandler.RejectCompetitionAwardVerification)
+		adminSuper.GET("/competition-awards/verifications/:id/evidence/:file_id", competitionHandler.DownloadAdminCompetitionAwardEvidence)
 
 	}
 

@@ -159,7 +159,9 @@ func TestWithdrawConsentQueuesEduCredentialCleanupWithoutWaitingForRemoteService
 	if err := db.First(&updated, user.ID).Error; err != nil {
 		t.Fatalf("load user: %v", err)
 	}
-	if updated.LegalConsentRevokedAt == nil || updated.EduBound || updated.EduStudentID != "" || updated.EduCookie != "" {
+	if updated.LegalConsentRevokedAt == nil || updated.EduBound || updated.EduAuthorized ||
+		updated.EduSessionState != "revoked" || updated.EduCookie != "" || updated.EduPassword != "" ||
+		updated.StudentID != "2026000001" || updated.EduStudentID != "2026000001" || updated.EduCollege != "测试学院" {
 		t.Fatalf("local revoke was not committed: %#v", updated)
 	}
 	var job models.EduCredentialCleanupJob

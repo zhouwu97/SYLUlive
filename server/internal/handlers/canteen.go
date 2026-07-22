@@ -395,14 +395,14 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 	var user models.User
-	if err := h.db.Select("id", "edu_bound").First(&user, userID).Error; err != nil {
+	if err := h.db.Select("id", "student_verified_at", "edu_bound").First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "登录状态无效，请重新登录",
 			"code":  "authentication_required",
 		})
 		return
 	}
-	if !user.EduBound {
+	if !user.IsStudentVerified() {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "请先绑定教务账号后评价",
 			"code":  "edu_binding_required",

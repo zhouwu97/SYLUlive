@@ -228,11 +228,11 @@ func (h *ExamPaperHandler) currentExamPaperUser(c *gin.Context) (models.User, bo
 		return models.User{}, false
 	}
 	var user models.User
-	if err := h.db.Select("id", "role", "edu_bound", "nickname", "avatar", "exp").First(&user, userID).Error; err != nil {
+	if err := h.db.Select("id", "role", "student_verified_at", "edu_bound", "nickname", "avatar", "exp").First(&user, userID).Error; err != nil {
 		writeExamPaperError(c, http.StatusUnauthorized, "authentication_required", "登录用户不存在")
 		return models.User{}, false
 	}
-	if !isExamPaperAdmin(user) && !user.EduBound {
+	if !isExamPaperAdmin(user) && !user.IsStudentVerified() {
 		writeExamPaperError(c, http.StatusForbidden, "edu_verification_required", "完成教务认证后才能使用试卷库")
 		return models.User{}, false
 	}

@@ -456,7 +456,7 @@ func profileFromUser(user models.User, now time.Time) (competitionProfile, bool)
 		College:   normalizeAcademicName(user.EduCollege),
 		Major:     normalizeAcademicName(user.EduMajor),
 	}
-	return profile, user.EduBound && profile.EntryYear != "" && profile.College != "" && profile.Major != ""
+	return profile, user.IsStudentVerified() && profile.EntryYear != "" && profile.College != "" && profile.Major != ""
 }
 
 func (h *CompetitionHandler) GetUserCompetitionState(c *gin.Context) {
@@ -604,7 +604,9 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 
 func (h *CompetitionHandler) AdminCompetitionAudienceOptions(c *gin.Context) {
 	var users []models.User
-	if err := h.db.Select("edu_grade", "edu_college", "edu_major").Where("edu_bound = ?", true).Find(&users).Error; err != nil {
+	if err := h.db.Select("edu_grade", "edu_college", "edu_major").
+		Where("student_verified_at IS NOT NULL OR edu_bound = ?", true).
+		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取画像选项失败"})
 		return
 	}

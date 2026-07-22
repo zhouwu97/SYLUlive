@@ -50,6 +50,14 @@ async def execute_with_session_refresh(
     锁内 commit 保证后续请求拿到的是最新 Cookie,避免并发重登风暴。
     """
 
+    # 主动退出或撤销授权的账号绝不能触发静默重登。
+    if getattr(edu_user, "authorized", None) is False:
+        raise CookieLapseError("教务授权已撤销，请重新授权", "EDU_AUTHORIZATION_REVOKED")
+    if getattr(edu_user, "session_state", "") == "logged_out":
+        raise CookieLapseError("教务会话已退出，请手动重新登录", "EDU_SESSION_LOGGED_OUT")
+    if getattr(edu_user, "auto_relogin", None) is False:
+        raise CookieLapseError("教务会话不允许自动恢复，请手动重新登录", "EDU_SESSION_EXPIRED")
+
     async def _attempt_fresh(cookie: str) -> T:
         async with EduCrawler(timeout=timeout) as crawler:
             try:
@@ -113,6 +121,7 @@ async def execute_with_session_refresh(
 
         # 锁内持久化，保证后续请求能看到最新 Cookie
         edu_user.cookie = encrypt_credential(new_cookie)
+        edu_user.session_state = "active"
         await db.commit()
         await db.refresh(edu_user)
         refreshed_cookie = new_cookie

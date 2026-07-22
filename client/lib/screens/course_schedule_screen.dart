@@ -446,7 +446,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+        // 课表路由由 GlobalBackgroundWrapper 提供页面背景，保持透明以展示自定义壁纸。
+        backgroundColor: Colors.transparent,
         body: SafeArea(
           bottom: false,
           child: Consumer<AuthProvider>(

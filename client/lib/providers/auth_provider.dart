@@ -234,11 +234,11 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   static const _userKey = 'auth_user';
 
   final AppSecretStore _store = AppSecretStore.current();
-  final Future<AppPreferencesStore> _prefsFuture = AppPreferencesStore.getInstance();
+  Future<AppPreferencesStore> get _prefs => AppPreferencesStore.getInstance();
 
   @override
   Future<StoredAuthCredentials> read() async {
-    final prefs = await _prefsFuture;
+    final prefs = await _prefs;
     return StoredAuthCredentials(
       token: await _store.read(_tokenKey),
       userJson: prefs.getString(_userKey),
@@ -247,7 +247,7 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
 
   @override
   Future<void> write({required String token, required String userJson}) async {
-    final prefs = await _prefsFuture;
+    final prefs = await _prefs;
     final oldToken = await _store.read(_tokenKey);
     final oldUserJson = prefs.getString(_userKey);
     try {
@@ -276,11 +276,9 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
 
   @override
   Future<void> clear() async {
-    final prefs = await _prefsFuture;
+    final prefs = await _prefs;
     await _store.delete(_tokenKey);
-    if (!await prefs.remove(_userKey)) {
-      throw StateError('清除认证用户偏好数据失败');
-    }
+    await prefs.remove(_userKey);
   }
 
   @override
@@ -336,6 +334,7 @@ class AuthProvider extends ChangeNotifier {
   int get sessionGeneration => _sessionGeneration;
   Dio get dio => _dio;
   PersistCookieJar? _cookieJar;
+  Future<void>? _sessionExpiryFuture;
 
   AuthProvider(
     this._dio, {
@@ -368,12 +367,22 @@ class AuthProvider extends ChangeNotifier {
 
           if (status == 401 && _token != null) {
             if (isEduApi) {
-              // 教务登录态失效，不代表 App 登录失效
+              // 教务会话失效不导致 App 登录失效
               handler.next(error);
               return;
             }
 
-            // 无效令牌，自动登出
+            // 非教务接口，判定为 App 401
+            final isTargetError = errorCode == 'invalid_token' ||
+                errorCode == 'token_version_expired' ||
+                errorCode == 'authentication_required';
+
+            if (errorCode != null && !isTargetError) {
+              // 其他 401（比如密码错误等）不清除会话
+              handler.next(error);
+              return;
+            }
+
             debugPrint('检测到 App 401，自动登出');
             // 统一走 _clearLocalSession，与手动退出相同路径
             // 不 await — 拦截器内部不能阻塞
@@ -424,28 +433,44 @@ class AuthProvider extends ChangeNotifier {
         ignoreExpires: true,
         storage: FileStorage('$appDocPath/.cookies/'),
       );
-      _dio.interceptors.add(CookieManager(_cookieJar!));
+      // 禁止向原生 Dio 添加 CookieManager，仅依赖 Bearer Token，并清除过期的旧 Cookie
+      await _cookieJar!.deleteAll();
     }
   }
 
   Future<void> _loadStoredAuth() async {
     try {
       if (_usesPlatformCredentialStore) await _initCookieJar();
-      final stored = await _credentialStore.read();
-      if (stored.token != null && stored.userJson != null) {
-        final decoded = jsonDecode(stored.userJson!);
-        if (decoded is! Map) {
-          throw const FormatException('本地用户信息不是对象');
-        }
-        final candidate = _authSessionCandidate(
-          stored.token,
-          Map<String, dynamic>.from(decoded),
-        );
-        _commitAuthSession(candidate);
-        if (candidate.user.legalConsentsActive) {
-          _onAuthenticated();
-        } else {
-          await _clearConsentDependentLocalData(candidate.user);
+      final prefs = await AppPreferencesStore.getInstance();
+      
+      if (prefs.getBool('auth_force_logged_out') == true) {
+        await _clearStoredAuth();
+        await prefs.remove('auth_force_logged_out');
+      } else {
+        final stored = await _credentialStore.read();
+        
+        if (stored.token != null && stored.userJson != null) {
+          final decoded = jsonDecode(stored.userJson!);
+          if (decoded is! Map) {
+            throw const FormatException('本地用户信息不是对象');
+          }
+          final candidate = _authSessionCandidate(
+            stored.token!,
+            Map<String, dynamic>.from(decoded),
+          );
+          _commitAuthSession(candidate);
+          if (candidate.user.legalConsentsActive) {
+            _onAuthenticated();
+          } else {
+            await _clearConsentDependentLocalData(candidate.user);
+          }
+        } else if (stored.token != null && stored.userJson == null) {
+          final success = await _recoverUserWithToken(stored.token!);
+          if (!success) {
+            await _clearStoredAuth();
+          }
+        } else if (stored.token == null && stored.userJson != null) {
+          await _clearStoredAuth();
         }
       }
     } catch (e) {
@@ -460,6 +485,28 @@ class AuthProvider extends ChangeNotifier {
       await GradeReminderService.instance.ensureScheduledIfEnabled();
     }
     notifyListeners();
+  }
+
+  Future<bool> _recoverUserWithToken(String token) async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: ApiConfig.baseUrl,
+        headers: {'Authorization': 'Bearer $token'},
+        connectTimeout: const Duration(seconds: 10),
+      ));
+      final response = await dio.get('/user/profile');
+      if (response.statusCode == 200 && response.data != null) {
+        final userJson = Map<String, dynamic>.from(response.data);
+        final candidate = _authSessionCandidate(token, userJson);
+        await _saveAuthCandidate(candidate);
+        _commitAuthSession(candidate);
+        _onAuthenticated();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('恢复用户状态失败: $e');
+    }
+    return false;
   }
 
   Future<void> _saveAuthCandidate(_AuthSessionCandidate candidate) async {
@@ -807,26 +854,49 @@ class AuthProvider extends ChangeNotifier {
     required bool clearPushAlias,
     bool closeAccountContext = true,
   }) async {
-    if (closeAccountContext) {
-      await _sessionCleanupCoordinator.closeCurrentSession();
-    }
     final hadSession = _token != null || _user != null;
     final oldUserId = _user?.id.toString();
-    if (oldUserId != null) {
-      await GradeReminderService.instance.clearForUser(oldUserId);
-    }
-    if (!kIsWeb && _cookieJar != null) {
-      await _cookieJar!.deleteAll();
-    }
-    await _clearStoredAuth();
-    if (clearPushAlias) {
-      await _clearPushAlias();
-    }
+
+    // 1. 立即清空内存，通知 UI 已退出
     _token = null;
     _user = null;
     if (hadSession) _sessionGeneration++;
     _applyAuthHeader();
     notifyListeners();
+
+    if (closeAccountContext) {
+      try {
+        await _sessionCleanupCoordinator.closeCurrentSession();
+      } catch (e) {
+        debugPrint('关闭账号上下文失败: $e');
+      }
+    }
+    
+    // 2. 写入墓碑，防止下一次启动恢复旧 token
+    try {
+      final prefs = await AppPreferencesStore.getInstance();
+      await prefs.setBool('auth_force_logged_out', true);
+    } catch (_) {}
+
+    // 3. 尽力清理持久数据
+    if (oldUserId != null) {
+      try {
+        await GradeReminderService.instance.clearForUser(oldUserId);
+      } catch (_) {}
+    }
+    if (!kIsWeb && _cookieJar != null) {
+      try {
+        await _cookieJar!.deleteAll();
+      } catch (_) {}
+    }
+    try {
+      await _clearStoredAuth();
+    } catch (e) {
+      debugPrint('清理持久化认证信息失败: $e');
+    }
+    if (clearPushAlias) {
+      await _clearPushAlias();
+    }
   }
 
   /// 清除极光推送 Alias，防止退出后仍收到前用户私信通知

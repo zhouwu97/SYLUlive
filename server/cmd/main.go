@@ -103,6 +103,9 @@ func main() {
 	// 确保上传目录存在
 
 	os.MkdirAll(cfg.UploadDir, 0755)
+	if err := os.MkdirAll(cfg.CompetitionAwardEvidenceDir, 0o700); err != nil {
+		log.Fatal("创建竞赛证明材料私有目录失败:", err)
+	}
 
 	// 确保 APK 发布根目录与 .tmp 已就绪，避免后续上传 Handler 在缺目录时报错。
 	os.MkdirAll(filepath.Join(cfg.AppReleaseDir, "android", "stable", ".tmp"), 0755)
@@ -266,6 +269,7 @@ func main() {
 		&models.UserCompetitionPreference{},
 		&models.UserCompetitionAward{},
 		&models.CompetitionAwardVerificationLog{},
+		&models.CompetitionAwardEvidenceFile{},
 		&models.CompetitionAwardEvidence{},
 		&models.CompetitionAwardEvidenceAccessLog{},
 		&models.CampusCalendar{},
@@ -278,9 +282,6 @@ func main() {
 
 		log.Fatal("数据库迁移失败:", err)
 
-	}
-	if err := models.BackfillCompetitionAwardEvidence(db); err != nil {
-		log.Fatal("竞赛证明材料隐私映射回填失败:", err)
 	}
 	// 新推送授权默认关闭，旧 Token 不得被视为用户已主动同意。
 	if err := db.Model(&models.User{}).
@@ -448,7 +449,12 @@ func main() {
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	pollHandler := handlers.NewPollHandler(db)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
-	competitionHandler := handlers.NewCompetitionHandler(db)
+	competitionHandler, competitionHandlerErr := handlers.NewCompetitionHandlerWithEvidenceStorage(
+		db, cfg.CompetitionAwardEvidenceDir, cfg.MaxFileSize,
+	)
+	if competitionHandlerErr != nil {
+		log.Fatal("初始化竞赛证明材料私有存储失败:", competitionHandlerErr)
+	}
 
 	waterSectionHandler := handlers.NewWaterSectionHandler(db)
 	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
@@ -750,6 +756,7 @@ func main() {
 	// 静态文件服务
 
 	r.GET("/uploads/*filepath", uploadHandler.ServePublic)
+	r.HEAD("/uploads/*filepath", uploadHandler.ServePublic)
 
 	// 认证路由
 
@@ -844,6 +851,7 @@ func main() {
 		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
 		user.PUT("/competition-preference", competitionHandler.PutCompetitionPreference)
 		user.GET("/competition-awards", competitionHandler.ListCompetitionAwards)
+		user.POST("/competition-awards/evidence", competitionHandler.UploadCompetitionAwardEvidence)
 		user.POST("/competition-awards", competitionHandler.CreateCompetitionAward)
 		user.PUT("/competition-awards/:id", competitionHandler.UpdateCompetitionAward)
 		user.DELETE("/competition-awards/:id", competitionHandler.DeleteCompetitionAward)

@@ -1,14 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../lib/services/emoji_recent_service.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   test('stores recent Emoji in newest-first order and removes duplicates',
       () async {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     final service = EmojiRecentService(
-      preferencesLoader: SharedPreferences.getInstance,
+      preferencesLoader: AppPreferencesStore.getInstance,
     );
 
     await service.record('😀');
@@ -18,15 +19,15 @@ void main() {
     expect(await service.load(), ['😀', '❤️']);
 
     final reloadedService = EmojiRecentService(
-      preferencesLoader: SharedPreferences.getInstance,
+      preferencesLoader: AppPreferencesStore.getInstance,
     );
     expect(await reloadedService.load(), ['😀', '❤️']);
   });
 
   test('keeps at most 32 recent Emoji', () async {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     final service = EmojiRecentService(
-      preferencesLoader: SharedPreferences.getInstance,
+      preferencesLoader: AppPreferencesStore.getInstance,
     );
 
     for (var index = 0; index < 40; index++) {

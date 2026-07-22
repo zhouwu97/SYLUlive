@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_platform.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 class SecretTooLargeException implements Exception {
   final int size;
@@ -77,7 +78,7 @@ class OhosAssetSecretStore implements AppSecretStore {
 class WebSecretStore implements AppSecretStore {
   @override
   Future<String?> read(String key) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     return prefs.getString(key);
   }
 
@@ -86,13 +87,13 @@ class WebSecretStore implements AppSecretStore {
     if (utf8.encode(value).length > 1024) {
       throw SecretTooLargeException(utf8.encode(value).length);
     }
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setString(key, value);
   }
 
   @override
   Future<void> delete(String key) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.remove(key);
   }
 }

@@ -19,7 +19,9 @@ export default class OhosExternalNavigatorPlugin implements FlutterPlugin, Metho
   }
 
   onAttachedToEngine(binding: FlutterPluginBinding): void {
-    this.context = binding.getApplicationContext() as common.UIAbilityContext;
+    if (!this.context) {
+      this.context = binding.getApplicationContext() as common.UIAbilityContext;
+    }
     this.channel = new MethodChannel(binding.getBinaryMessenger(), 'shenliyuan/external_navigator');
     this.channel.setMethodCallHandler(this);
   }
@@ -33,8 +35,9 @@ export default class OhosExternalNavigatorPlugin implements FlutterPlugin, Metho
   }
 
   onMethodCall(call: MethodCall, result: MethodResult): void {
-    if (call.method === 'open') {
-      const url = call.args as string;
+    if (call.method === 'openUrl') {
+      const args = call.args as Record<string, Object>;
+      const url = args['url'] as string;
       if (!url) {
         result.error('INVALID_URL', 'URL cannot be empty', null);
         return;

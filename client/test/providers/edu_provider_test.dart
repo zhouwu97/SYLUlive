@@ -2,12 +2,13 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
 
 import '../helpers/personal_snapshot_test_fakes.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +21,7 @@ void main() {
   late IncrementingRandomBytes vaultRandom;
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     secureStore.clear();
     vaultSecureStore = MemoryPersonalSnapshotSecureStore();
     vaultFiles = MemoryPersonalSnapshotFileBackend();
@@ -505,7 +506,7 @@ void main() {
     });
 
     test('clearLocalSession clears local edu state and saved keys', () async {
-      SharedPreferences.setMockInitialValues({
+      AppPreferencesStore.setMockInitialValues({
         'edu_bound_user_a': true,
         'edu_student_id_user_a': ' 2403130233 ',
         'edu_grade_user_a': '2024',
@@ -579,7 +580,7 @@ void main() {
       expect(p.getCachedGrades('2025', 3), isNull);
       expect(secureStore.containsKey('edu_pwd_2403130233'), false);
 
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       for (final key in [
         'edu_bound_user_a',
         'edu_student_id_user_a',

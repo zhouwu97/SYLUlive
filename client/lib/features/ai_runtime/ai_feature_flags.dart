@@ -1,4 +1,5 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 enum AIFeatureFlag {
   chat,
@@ -24,10 +25,10 @@ extension AIFeatureFlagKey on AIFeatureFlag {
 
 class AIFeatureFlagStore {
   AIFeatureFlagStore({
-    Future<SharedPreferences> Function()? preferencesLoader,
-  }) : _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
+    Future<AppPreferencesStore> Function()? preferencesLoader,
+  }) : _preferencesLoader = preferencesLoader ?? AppPreferencesStore.getInstance;
 
-  final Future<SharedPreferences> Function() _preferencesLoader;
+  final Future<AppPreferencesStore> Function() _preferencesLoader;
 
   Future<bool> isEnabled(AIFeatureFlag flag) async {
     final preferences = await _preferencesLoader();

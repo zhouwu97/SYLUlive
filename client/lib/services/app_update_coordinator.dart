@@ -335,12 +335,15 @@ class AppUpdateCoordinator extends ChangeNotifier {
         },
       );
 
-      if (result == AppUpdateActionResult.needPermission) {
+      if (result == AppUpdateActionResult.permissionRequired) {
         _errorMessage = '请在系统设置中允许“沈理校园”安装未知应用';
         _phase = AppUpdatePhase.readyToInstall;
-      } else if (result == AppUpdateActionResult.success) {
+      } else if (result == AppUpdateActionResult.installerOpened) {
         _errorMessage = null;
         _phase = AppUpdatePhase.installing;
+      } else if (result == AppUpdateActionResult.externalStoreOpened) {
+        _errorMessage = null;
+        _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.allowed;
       }
       notifyListeners();
     } catch (error) {

@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_cache_namespace.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
@@ -9,6 +8,8 @@ import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 
 import '../../../helpers/personal_snapshot_test_fakes.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -18,7 +19,7 @@ void main() {
   late IncrementingRandomBytes random;
 
   setUp(() {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
     secureStore = MemoryPersonalSnapshotSecureStore();
     files = MemoryPersonalSnapshotFileBackend();
     random = IncrementingRandomBytes();
@@ -114,7 +115,7 @@ void main() {
   });
 
   test('未带来源账号的旧课表只清理并标记重新同步', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
+    AppPreferencesStore.setMockInitialValues(<String, Object>{
       'course_cache_v5_app-user-a_2026_3': '[{"name":"旧课表"}]',
       'course_cache_v5_app-user-a_2026_3_ver': 5,
       'course_hidden_v5_app-user-a_2026_3': '[7]',
@@ -132,7 +133,7 @@ void main() {
 
     await store.discardUnownedLegacy();
 
-    final preferences = await SharedPreferences.getInstance();
+    final preferences = await AppPreferencesStore.getInstance();
     expect(
       preferences.containsKey('course_cache_v5_app-user-a_2026_3'),
       isFalse,

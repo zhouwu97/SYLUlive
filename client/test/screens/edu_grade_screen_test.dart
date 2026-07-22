@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/models/edu_academic_situation.dart';
 import 'package:shenliyuan/models/edu_grade.dart';
 import 'package:shenliyuan/models/user.dart';
@@ -15,6 +14,8 @@ import 'package:shenliyuan/screens/edu_grade_screen.dart';
 import 'package:shenliyuan/utils/edu_semester_utils.dart';
 import 'package:shenliyuan/utils/grade_screen_registry.dart';
 import 'package:shenliyuan/widgets/edu_grade/grade_empty_state.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 enum _LoadMode { data, empty, error, loading }
 
@@ -144,7 +145,7 @@ void main() {
   const gradeReminderChannel = MethodChannel('shenliyuan/grade_reminders');
 
   setUp(() {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(gradeReminderChannel, (call) async => null);
   });

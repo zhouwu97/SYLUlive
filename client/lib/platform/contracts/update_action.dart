@@ -11,9 +11,9 @@ import '../../services/app_update_download_service.dart';
 import 'dart:io';
 
 enum AppUpdateActionResult {
-  success,
-  needPermission,
-  failed,
+  installerOpened,
+  permissionRequired,
+  externalStoreOpened,
 }
 
 abstract interface class AppUpdateAction {
@@ -76,7 +76,7 @@ class OhosMarketUpdateAction implements AppUpdateAction {
     if (!opened) {
       throw StateError('无法打开应用市场或链接，请手动更新');
     }
-    return AppUpdateActionResult.success;
+    return AppUpdateActionResult.externalStoreOpened;
   }
 }
 
@@ -122,14 +122,14 @@ class AndroidApkUpdateAction implements AppUpdateAction {
     // 2. Check Permission
     if (!await _installer.canInstallPackages()) {
       await _installer.openInstallPermissionSettings();
-      return AppUpdateActionResult.needPermission;
+      return AppUpdateActionResult.permissionRequired;
     }
 
     // 3. Install
     try {
       await _installer.installApk(apk);
       _downloadedApk = null;
-      return AppUpdateActionResult.success;
+      return AppUpdateActionResult.installerOpened;
     } on PlatformException catch (e) {
       throw StateError(e.message ?? '无法打开系统安装器');
     }

@@ -28,6 +28,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
   String? _error;
   int _loadSerial = 0;
   final Set<int> _deleting = {};
+  final Set<int> _changingVerification = {};
 
   @override
   void initState() {
@@ -44,6 +45,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
         _loading = true;
         _error = null;
         _deleting.clear();
+        _changingVerification.clear();
       });
       _load();
     }
@@ -125,6 +127,61 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
       }
     } finally {
       if (mounted) setState(() => _deleting.remove(award.id));
+    }
+  }
+
+  Future<void> _changeVerification(
+    CompetitionAward award, {
+    required bool submit,
+  }) async {
+    if (_changingVerification.contains(award.id)) return;
+    if (submit && award.evidenceFileIds.isEmpty) {
+      AppFeedback.showSnackBar(context, '请先编辑经历并上传至少一份证明材料', isError: true);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(submit ? '提交材料核验？' : '取消材料核验？'),
+        content: Text(
+            submit ? '提交后，比赛信息和证明材料在核验完成前不可修改。' : '取消后将恢复为“本人填写”，你可以继续修改材料。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('返回'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(submit ? '确认提交' : '确认取消'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _changingVerification.add(award.id));
+    try {
+      final action = submit ? 'submit-verification' : 'cancel-verification';
+      await widget.dio.post('/user/competition-awards/${award.id}/$action');
+      if (!mounted) return;
+      await _load();
+      if (mounted) {
+        AppFeedback.showSnackBar(
+          context,
+          submit ? '材料已提交核验' : '已取消材料核验',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(
+          context,
+          error is DioException
+              ? AppFeedback.dioErrorMessage(error, fallback: '核验状态更新失败')
+              : '核验状态更新失败',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _changingVerification.remove(award.id));
     }
   }
 
@@ -230,6 +287,8 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
                           ))
                       .toList(),
                 ),
+                const SizedBox(height: 10),
+                _verificationContent(award, isDark),
               ],
             ),
           ),
@@ -251,6 +310,91 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
                     PopupMenuItem(value: 'delete', child: Text('删除')),
                   ],
                 ),
+        ],
+      ),
+    );
+  }
+
+  Widget _verificationContent(CompetitionAward award, bool isDark) {
+    final busy = _changingVerification.contains(award.id);
+    switch (award.verificationStatus) {
+      case 'pending':
+        return _statusPanel(
+          isDark,
+          '核验期间核心信息暂不可修改。',
+          OutlinedButton(
+            key: Key('competition-award-cancel-${award.id}'),
+            onPressed:
+                busy ? null : () => _changeVerification(award, submit: false),
+            child: Text(busy ? '处理中' : '取消核验'),
+          ),
+        );
+      case 'verified':
+        return _statusPanel(
+          isDark,
+          '平台仅核验提交材料与填写信息是否一致，不代表学校教务或官方认证。',
+          null,
+        );
+      case 'rejected':
+        return _statusPanel(
+          isDark,
+          award.verificationNote.trim().isEmpty
+              ? '材料核验未通过，请修改后重新提交。'
+              : '原因：${award.verificationNote}',
+          Wrap(
+            spacing: 8,
+            children: [
+              OutlinedButton(
+                onPressed: () => _openEditor(award),
+                child: const Text('修改材料'),
+              ),
+              FilledButton(
+                key: Key('competition-award-resubmit-${award.id}'),
+                onPressed: busy
+                    ? null
+                    : () => _changeVerification(award, submit: true),
+                child: Text(busy ? '提交中' : '重新提交'),
+              ),
+            ],
+          ),
+        );
+      default:
+        return _statusPanel(
+          isDark,
+          '该经历尚未经过平台材料核验。',
+          FilledButton(
+            key: Key('competition-award-submit-${award.id}'),
+            onPressed:
+                busy ? null : () => _changeVerification(award, submit: true),
+            child: Text(busy ? '提交中' : '提交材料核验'),
+          ),
+        );
+    }
+  }
+
+  Widget _statusPanel(bool isDark, String message, Widget? action) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: CompetitionUiTokens.accentSoft(isDark),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            message,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: CompetitionUiTokens.subColor(isDark),
+            ),
+          ),
+          if (action != null) ...[
+            const SizedBox(height: 8),
+            action,
+          ],
         ],
       ),
     );

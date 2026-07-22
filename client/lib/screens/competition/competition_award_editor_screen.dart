@@ -44,6 +44,11 @@ class _CompetitionAwardEditorScreenState
   bool _eventsLoading = true;
   List<CompetitionEvent> _events = const [];
 
+  bool get _coreLocked {
+    final status = widget.initial?.verificationStatus;
+    return status == 'pending' || status == 'verified';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -97,7 +102,7 @@ class _CompetitionAwardEditorScreenState
   }
 
   Future<void> _pickEvidence() async {
-    if (_uploading || _evidenceFileIds.length >= 6) return;
+    if (_coreLocked || _uploading || _evidenceFileIds.length >= 6) return;
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
       allowMultiple: true,
@@ -140,6 +145,7 @@ class _CompetitionAwardEditorScreenState
   }
 
   void _toggleSkill(String value) {
+    if (_coreLocked) return;
     setState(() {
       if (_skills.remove(value)) return;
       if (_skills.length >= 12) {
@@ -238,15 +244,20 @@ class _CompetitionAwardEditorScreenState
                       ],
                       selected: {_manualCompetition},
                       showSelectedIcon: false,
-                      onSelectionChanged: (value) => setState(() {
-                        _manualCompetition = value.first;
-                        if (_manualCompetition) _competitionEventId = null;
-                      }),
+                      onSelectionChanged: _coreLocked
+                          ? null
+                          : (value) => setState(() {
+                                _manualCompetition = value.first;
+                                if (_manualCompetition) {
+                                  _competitionEventId = null;
+                                }
+                              }),
                     ),
                   ),
                   const SizedBox(height: 12),
                   if (_manualCompetition)
-                    _textField(_titleController, '比赛名称', maxLength: 200)
+                    _textField(_titleController, '比赛名称',
+                        maxLength: 200, enabled: !_coreLocked)
                   else
                     DropdownButtonFormField<int>(
                       key: const Key('competition-award-event'),
@@ -279,7 +290,7 @@ class _CompetitionAwardEditorScreenState
                           ),
                         ),
                       ],
-                      onChanged: _eventsLoading
+                      onChanged: _eventsLoading || _coreLocked
                           ? null
                           : (value) {
                               CompetitionEvent? event;
@@ -298,10 +309,12 @@ class _CompetitionAwardEditorScreenState
                             },
                     ),
                   const SizedBox(height: 12),
-                  _textField(_trackController, '赛道（选填）', maxLength: 100),
+                  _textField(_trackController, '赛道（选填）',
+                      maxLength: 100, enabled: !_coreLocked),
                   const SizedBox(height: 12),
                   _textField(_yearController, '比赛年份',
-                      keyboardType: TextInputType.number),
+                      keyboardType: TextInputType.number,
+                      enabled: !_coreLocked),
                 ],
               ),
             ),
@@ -310,18 +323,22 @@ class _CompetitionAwardEditorScreenState
               isDark,
               Column(
                 children: [
-                  _textField(_awardController, '奖项名称', maxLength: 100),
+                  _textField(_awardController, '奖项名称',
+                      maxLength: 100, enabled: !_coreLocked),
                   const SizedBox(height: 12),
-                  _textField(_awardLevelController, '奖项级别（选填）', maxLength: 50),
+                  _textField(_awardLevelController, '奖项级别（选填）',
+                      maxLength: 50, enabled: !_coreLocked),
                   const SizedBox(height: 12),
                   _dropdown('竞赛阶段', _stage, competitionAwardStageLabels,
-                      (value) => setState(() => _stage = value)),
+                      (value) => setState(() => _stage = value),
+                      enabled: !_coreLocked),
                   const SizedBox(height: 12),
                   _dropdown('承担角色', _role, competitionAwardRoleLabels,
-                      (value) => setState(() => _role = value)),
+                      (value) => setState(() => _role = value),
+                      enabled: !_coreLocked),
                   const SizedBox(height: 12),
                   _textField(_contributionController, '贡献描述（选填）',
-                      maxLength: 1000, maxLines: 4),
+                      maxLength: 1000, maxLines: 4, enabled: !_coreLocked),
                 ],
               ),
             ),
@@ -335,7 +352,8 @@ class _CompetitionAwardEditorScreenState
                     .map((skill) => FilterChip(
                           label: Text(skill),
                           selected: _skills.contains(skill),
-                          onSelected: (_) => _toggleSkill(skill),
+                          onSelected:
+                              _coreLocked ? null : (_) => _toggleSkill(skill),
                         ))
                     .toList(),
               ),
@@ -348,7 +366,9 @@ class _CompetitionAwardEditorScreenState
                 children: [
                   OutlinedButton.icon(
                     key: const Key('competition-award-evidence'),
-                    onPressed: _uploading || _evidenceFileIds.length >= 6
+                    onPressed: _coreLocked ||
+                            _uploading ||
+                            _evidenceFileIds.length >= 6
                         ? null
                         : _pickEvidence,
                     icon: _uploading
@@ -366,8 +386,10 @@ class _CompetitionAwardEditorScreenState
                         _evidenceFileIds.length,
                         (index) => InputChip(
                           label: Text('材料 ${index + 1}'),
-                          onDeleted: () =>
-                              setState(() => _evidenceFileIds.removeAt(index)),
+                          onDeleted: _coreLocked
+                              ? null
+                              : () => setState(
+                                  () => _evidenceFileIds.removeAt(index)),
                         ),
                       ),
                     ),
@@ -427,9 +449,7 @@ class _CompetitionAwardEditorScreenState
     final status = competitionAwardStatusLabels[
             widget.initial?.verificationStatus ?? 'self_reported'] ??
         competitionAwardStatusLabels['self_reported']!;
-    final resetsVerification =
-        widget.initial?.verificationStatus == 'verified' ||
-            widget.initial?.verificationStatus == 'pending';
+    final locked = _coreLocked;
     return Container(
       key: const Key('competition-award-verification-banner'),
       margin: const EdgeInsets.only(bottom: 20),
@@ -446,9 +466,11 @@ class _CompetitionAwardEditorScreenState
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              resetsVerification
-                  ? '当前状态：$status。修改后将恢复为“本人填写”，需要重新提交材料核验。'
-                  : '当前状态：$status',
+              locked
+                  ? '当前状态：$status。核心信息和证明材料暂不可修改，仅可调整可见范围。'
+                  : widget.initial?.verificationStatus == 'rejected'
+                      ? '当前状态：$status。可修改信息和材料，保存后再重新提交核验。'
+                      : '当前状态：$status',
               style: TextStyle(
                 fontSize: 13,
                 height: 1.4,
@@ -483,12 +505,14 @@ class _CompetitionAwardEditorScreenState
     int? maxLength,
     int maxLines = 1,
     TextInputType? keyboardType,
+    bool enabled = true,
   }) =>
       TextFormField(
         controller: controller,
         maxLength: maxLength,
         maxLines: maxLines,
         keyboardType: keyboardType,
+        enabled: enabled,
         decoration: InputDecoration(
             labelText: label, border: const OutlineInputBorder()),
         validator: (value) {
@@ -501,12 +525,9 @@ class _CompetitionAwardEditorScreenState
         },
       );
 
-  DropdownButtonFormField<String> _dropdown(
-    String label,
-    String value,
-    Map<String, String> options,
-    ValueChanged<String> onChanged,
-  ) =>
+  DropdownButtonFormField<String> _dropdown(String label, String value,
+          Map<String, String> options, ValueChanged<String> onChanged,
+          {bool enabled = true}) =>
       DropdownButtonFormField<String>(
         initialValue: value,
         decoration: InputDecoration(
@@ -515,8 +536,10 @@ class _CompetitionAwardEditorScreenState
             .map((entry) =>
                 DropdownMenuItem(value: entry.key, child: Text(entry.value)))
             .toList(),
-        onChanged: (value) {
-          if (value != null) onChanged(value);
-        },
+        onChanged: enabled
+            ? (value) {
+                if (value != null) onChanged(value);
+              }
+            : null,
       );
 }

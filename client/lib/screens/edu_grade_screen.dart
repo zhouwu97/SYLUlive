@@ -17,12 +17,12 @@ import '../widgets/edu_grade/grade_gpa_hero_card.dart';
 import '../widgets/edu_grade/academic_course_item.dart';
 import '../widgets/edu_grade/academic_course_status_state.dart';
 import '../widgets/edu_grade/academic_credit_overview.dart';
+import '../widgets/edu_grade/academic_privacy_notice.dart';
 import '../widgets/edu_grade/grade_center_section_tabs.dart';
 import '../widgets/edu_grade/graduation_warning_empty_state.dart';
 import 'edu_grade_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
 
 class EduGradeScreen extends StatefulWidget {
   final String? initialYear;
@@ -139,15 +139,34 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         Future<void> initFlow() async {
           await eduProvider.ensureStatusLoaded();
           if (!mounted || _lastUserId != capturedUserId) return;
+          if (!eduProvider.isBound) {
+            _showUnavailableState('请先绑定教务账号');
+            return;
+          }
           await _initSemesterAndLoad(capturedUserId);
         }
 
         initFlow();
       } else {
+        _showUnavailableState('请先登录后查看成绩');
         unawaited(
             GradeReminderService.instance.syncRuntimeConfig(userId: null));
       }
     }
+  }
+
+  void _showUnavailableState(String message) {
+    if (!mounted) return;
+    setState(() {
+      _grades = const <EduGrade>[];
+      _academicSituation = null;
+      _pageState = GradePageState.error;
+      _errorMessage = message;
+      _academicError = message;
+      _isInitialLoading = false;
+      _isRefreshing = false;
+      _isAcademicLoading = false;
+    });
   }
 
   Future<void> _initSemesterAndLoad(String userId) async {
@@ -660,6 +679,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             status: situation.coursesStatus,
           ),
         ),
+      const SliverToBoxAdapter(child: AcademicPrivacyNotice()),
       const SliverToBoxAdapter(child: SizedBox(height: 32)),
     ];
   }

@@ -16,7 +16,6 @@ import 'package:shenliyuan/utils/grade_screen_registry.dart';
 import 'package:shenliyuan/widgets/edu_grade/grade_empty_state.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 enum _LoadMode { data, empty, error, loading }
 
 class _MemoryAuthCredentialStore implements AuthCredentialStore {
@@ -63,17 +62,20 @@ class _FakeEduProvider extends EduProvider {
   final _LoadMode gradeMode;
   final _LoadMode academicMode;
   final String academicErrorMessage;
+  final bool bound;
   final List<EduGrade> grades;
   final EduAcademicSituation academicSituation;
-  final Completer<OperationResult<List<EduGrade>>> _pendingGrades =
-      Completer<OperationResult<List<EduGrade>>>();
+  final List<Completer<OperationResult<List<EduGrade>>>> _pendingGrades = [];
 
   String? activeUserId;
+  int fetchGradesCallCount = 0;
+  bool holdRefreshAfterInitial = false;
 
   _FakeEduProvider({
     this.gradeMode = _LoadMode.data,
     this.academicMode = _LoadMode.data,
     this.academicErrorMessage = '测试学业情况错误',
+    this.bound = true,
     List<EduGrade>? grades,
     EduAcademicSituation? academicSituation,
   })  : grades = grades ?? _sampleGrades(),
@@ -81,7 +83,7 @@ class _FakeEduProvider extends EduProvider {
         super(Dio());
 
   @override
-  bool get isBound => true;
+  bool get isBound => bound;
 
   @override
   int get enrollmentYear => 2024;
@@ -105,12 +107,24 @@ class _FakeEduProvider extends EduProvider {
     String year,
     int semester,
   ) {
+    fetchGradesCallCount++;
+    if (holdRefreshAfterInitial && fetchGradesCallCount > 1) {
+      final pending = Completer<OperationResult<List<EduGrade>>>();
+      _pendingGrades.add(pending);
+      return pending.future;
+    }
     return switch (gradeMode) {
       _LoadMode.data => Future.value(OperationResult.ok(grades)),
       _LoadMode.empty => Future.value(OperationResult.ok(const <EduGrade>[])),
       _LoadMode.error => Future.value(OperationResult.fail('测试成绩错误')),
-      _LoadMode.loading => _pendingGrades.future,
+      _LoadMode.loading => _newPendingGradeRequest(),
     };
+  }
+
+  Future<OperationResult<List<EduGrade>>> _newPendingGradeRequest() {
+    final pending = Completer<OperationResult<List<EduGrade>>>();
+    _pendingGrades.add(pending);
+    return pending.future;
   }
 
   @override
@@ -133,9 +147,18 @@ class _FakeEduProvider extends EduProvider {
   }
 
   void finishPendingGrades() {
-    if (!_pendingGrades.isCompleted) {
-      _pendingGrades.complete(OperationResult.fail('测试结束'));
+    for (final pending in _pendingGrades) {
+      if (!pending.isCompleted) {
+        pending.complete(OperationResult.fail('测试结束'));
+      }
     }
+  }
+
+  void completePendingGrade(
+    int index,
+    OperationResult<List<EduGrade>> result,
+  ) {
+    _pendingGrades[index].complete(result);
   }
 }
 
@@ -173,8 +196,9 @@ void main() {
     await tester.tap(find.text('毕业预警'));
     await tester.pumpAndSettle();
 
-    expect(find.text('暂无毕业预警数据'), findsOneWidget);
-    expect(find.textContaining('暂未接入预警数据'), findsOneWidget);
+    expect(find.text('功能验证中'), findsOneWidget);
+    expect(find.textContaining('暂不能作为毕业资格判断依据'), findsOneWidget);
+    expect(find.textContaining('暂不支持：毕业风险'), findsOneWidget);
     expect(find.textContaining('高风险'), findsNothing);
 
     providers.edu.finishPendingGrades();
@@ -206,7 +230,7 @@ void main() {
     final warningScroll =
         find.byKey(const ValueKey('grade_warning_scroll_view'));
     expect(_scrollPosition(tester, warningScroll).pixels, 0);
-    expect(find.text('暂无毕业预警数据'), findsOneWidget);
+    expect(find.text('功能验证中'), findsOneWidget);
   });
 
   testWidgets('成绩深链返回学期成绩视图并滚动到顶部', (tester) async {
@@ -232,14 +256,14 @@ void main() {
 
     await tester.tap(find.text('毕业预警'));
     await tester.pumpAndSettle();
-    expect(find.text('暂无毕业预警数据'), findsOneWidget);
+    expect(find.text('功能验证中'), findsOneWidget);
 
     auth.switchUser(_user(2));
     await tester.pumpAndSettle();
 
     expect(providers.edu.activeUserId, '2');
     expect(find.text('离散数学'), findsOneWidget);
-    expect(find.text('暂无毕业预警数据'), findsNothing);
+    expect(find.text('功能验证中'), findsNothing);
   });
 
   testWidgets('成绩加载状态只显示一个状态组件', (tester) async {
@@ -347,6 +371,117 @@ void main() {
     expect(find.text('课程列表学分'), findsNothing);
     expect(find.text('暂无可展示的课程明细'), findsNothing);
   });
+
+  testWidgets('未登录和未绑定教务均结束加载并显示明确错误', (tester) async {
+    await _pumpGradeScreen(
+      tester,
+      auth: _FakeAuthProvider(null),
+    );
+    expect(find.text('成绩加载失败'), findsOneWidget);
+    expect(find.text('请先登录后查看成绩'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await _pumpGradeScreen(
+      tester,
+      edu: _FakeEduProvider(bound: false),
+    );
+    expect(find.text('成绩加载失败'), findsOneWidget);
+    expect(find.text('请先绑定教务账号'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  for (final message in const <String>[
+    '教务登录状态已失效，请重新绑定',
+    '教务网络连接失败',
+    'Python 教务服务暂时不可用',
+    '学业情况页面结构发生变化',
+  ]) {
+    testWidgets('学业总览失败关闭：$message', (tester) async {
+      await _pumpGradeScreen(
+        tester,
+        edu: _FakeEduProvider(
+          academicMode: _LoadMode.error,
+          academicErrorMessage: message,
+        ),
+      );
+      await tester.tap(find.text('学业总览'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(message), findsOneWidget);
+      expect(find.text('课程列表学分'), findsNothing);
+      expect(find.text('0.00'), findsNothing);
+    });
+  }
+
+  testWidgets('学业总览展示隐私与毕业审核边界', (tester) async {
+    await _pumpGradeScreen(tester);
+    await tester.tap(find.text('学业总览'));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('grade_overview_scroll_view')),
+      const Offset(0, -1000),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('学业数据来自学校教务系统'), findsOneWidget);
+    expect(find.textContaining('不代表学校毕业审核结论'), findsOneWidget);
+  });
+
+  testWidgets('旧用户请求返回时不会写入新用户页面', (tester) async {
+    final auth = _FakeAuthProvider(_user(1));
+    final edu = _FakeEduProvider(gradeMode: _LoadMode.loading);
+    await _pumpGradeScreen(tester, auth: auth, edu: edu, settle: false);
+    await tester.pump();
+
+    auth.switchUser(_user(2));
+    await tester.pump();
+    edu.completePendingGrade(
+      0,
+      OperationResult.ok([_grade('旧账号课程', grade: '99')]),
+    );
+    await tester.pump();
+    expect(find.text('旧账号课程'), findsNothing);
+
+    edu.completePendingGrade(
+      1,
+      OperationResult.ok([_grade('新账号课程', grade: '88')]),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('新账号课程'), findsOneWidget);
+  });
+
+  testWidgets('连续点击刷新只发出一个进行中的请求', (tester) async {
+    final edu = _FakeEduProvider()..holdRefreshAfterInitial = true;
+    await _pumpGradeScreen(tester, edu: edu);
+    expect(edu.fetchGradesCallCount, 1);
+
+    await tester.tap(find.byTooltip('成绩管理'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('刷新成绩'));
+    await tester.pump();
+    await tester.tap(find.text('刷新成绩'));
+    await tester.pump();
+    expect(edu.fetchGradesCallCount, 2);
+
+    edu.finishPendingGrades();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('初始历史学期参数能够切换并加载', (tester) async {
+    final current = EduSemester.current();
+    final historicalYear = '${int.parse(current.year) - 1}';
+    await _pumpGradeScreen(
+      tester,
+      screen: EduGradeScreen(
+        initialYear: historicalYear,
+        initialSemester: EduSemester.first,
+      ),
+    );
+
+    expect(find.textContaining(historicalYear), findsWidgets);
+    expect(find.text('离散数学'), findsOneWidget);
+  });
 }
 
 class _TestProviders {
@@ -361,6 +496,7 @@ Future<_TestProviders> _pumpGradeScreen(
   _FakeAuthProvider? auth,
   _FakeEduProvider? edu,
   bool settle = true,
+  EduGradeScreen screen = const EduGradeScreen(),
 }) async {
   final testAuth = auth ?? _FakeAuthProvider(_user(1));
   final testEdu = edu ?? _FakeEduProvider();
@@ -376,7 +512,7 @@ Future<_TestProviders> _pumpGradeScreen(
         ChangeNotifierProvider<AuthProvider>.value(value: testAuth),
         ChangeNotifierProvider<EduProvider>.value(value: testEdu),
       ],
-      child: const MaterialApp(home: EduGradeScreen()),
+      child: MaterialApp(home: screen),
     ),
   );
   if (settle) await tester.pumpAndSettle();

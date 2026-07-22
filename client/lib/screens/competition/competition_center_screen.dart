@@ -23,6 +23,7 @@ import '../../widgets/competition/competition_batch_selection_bar.dart';
 import '../../widgets/competition/competition_batch_confirm_dialog.dart';
 import '../../widgets/competition/competition_batch_action_sheet.dart';
 import 'competition_calendar_item_detail_screen.dart';
+import 'competition_award_screen.dart';
 import 'competition_preference_screen.dart';
 
 import 'competition_admin_center_screen.dart';
@@ -459,6 +460,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       _buildSearchAndFilters(isDark),
       _buildStudentOverview(isDark),
       _buildPreferenceEntry(isDark),
+      _buildAwardEntry(isDark),
       _buildStudentFocusTabs(isDark),
       _buildSectionTitle(
         title: _studentFocusTitle,
@@ -726,6 +728,93 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     if (mounted && context.read<AuthProvider>().user?.id == accountID) {
       await _loadPreference();
     }
+  }
+
+  Widget _buildAwardEntry(bool isDark) {
+    final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        14,
+      ),
+      child: Material(
+        color: CompetitionUiTokens.cardBg(isDark),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+        ),
+        child: InkWell(
+          key: const Key('competition-award-entry'),
+          onTap: _openCompetitionAwards,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.workspace_premium_outlined,
+                  color: CompetitionUiTokens.accent(isDark),
+                  size: 21,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '我的竞赛经历',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: CompetitionUiTokens.titleColor(isDark),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        isLoggedIn ? '记录参赛、获奖和团队贡献' : '登录后管理你的私有竞赛档案',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: CompetitionUiTokens.subColor(isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: CompetitionUiTokens.subColor(isDark),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCompetitionAwards() async {
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+    }
+    final accountID = auth.user?.id;
+    if (accountID == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CompetitionAwardScreen(
+          dio: auth.dio,
+          accountKey: accountID,
+        ),
+      ),
+    );
   }
 
   Widget _buildStatBand(

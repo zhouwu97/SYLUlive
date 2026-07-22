@@ -293,7 +293,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     final auth = context.read<AuthProvider>();
     await showRequiredLegalConsentDialog(
       context,
-      requiresEduDataConsent: auth.user?.eduBound ?? false,
+      requiresEduDataConsent: auth.user?.eduAuthorized ?? false,
     );
   }
 
@@ -455,7 +455,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                   _PrivacyActionTile(
                     icon: Icons.school_outlined,
                     title: '教务数据',
-                    subtitle: (auth.user?.eduBound ?? false) ? '已绑定' : '未绑定',
+                    subtitle: (auth.user?.eduAuthorized ?? false) ? '已授权' : '未授权',
                     trailing: const SizedBox.shrink(),
                   ),
                   _PrivacyActionTile(

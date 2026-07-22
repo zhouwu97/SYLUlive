@@ -45,7 +45,8 @@ class EduUser(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(64), unique=True, nullable=False, index=True)
-    student_id = Column(String(20), nullable=False)
+    # 学号是已验证学生身份在教务服务中的唯一镜像，不能被两个 user_id 复用。
+    student_id = Column(String(20), unique=True, nullable=False, index=True)
     name = Column(String(50), nullable=True)  # 姓名
     encrypted_password = Column(Text, nullable=True)  # AES-GCM 密文
     raw_password = Column(Text, nullable=True)  # 仅用于识别并清理历史明文列
@@ -53,6 +54,13 @@ class EduUser(Base):
     grade = Column(String(20), nullable=True)
     college = Column(String(100), nullable=True)
     major = Column(String(100), nullable=True)
+    # bound 仅供旧调用方兼容，语义与 authorized 保持一致。
     bound = Column(Boolean, default=False)
+    authorized = Column(Boolean, default=False, nullable=False)
+    session_state = Column(String(20), default="unbound", nullable=False)
+    auto_relogin = Column(Boolean, default=True, nullable=False)
+    authorized_at = Column(DateTime, nullable=True)
+    logged_out_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

@@ -30,6 +30,7 @@ import '../platform/platform_capabilities.dart';
 import '../widgets/about_app_sheet.dart';
 import 'diagnostic_log_screen.dart';
 import 'privacy_center_screen.dart';
+import 'account_security_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -44,7 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   KeepAliveStatus _keepAliveStatus = const KeepAliveStatus.unsupported();
   bool _keepAliveBusy = false;
   bool _hideRecentsBusy = false;
-  bool _pushEnabled = false; 
+  bool _pushEnabled = false;
   bool _pushLoading = true;
 
   @override
@@ -69,7 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _pushLoading = true);
     final auth = context.read<AuthProvider>();
     final messenger = ScaffoldMessenger.of(context);
-    
+
     if (enabled) {
       final result = await PushSettingsService.enableAndRegister(auth);
       if (mounted) {
@@ -81,18 +82,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       return;
     }
-    
+
     final result = await PushSettingsService.disable(auth);
     if (!mounted) return;
     setState(() => _pushLoading = false);
-    
+
     if (!result.success) {
-      messenger.showSnackBar(SnackBar(content: Text(result.errorMessage ?? '关闭远程推送失败')));
+      messenger.showSnackBar(
+          SnackBar(content: Text(result.errorMessage ?? '关闭远程推送失败')));
       return;
     }
-    
+
     if (mounted) setState(() => _pushEnabled = false);
-    messenger.showSnackBar(const SnackBar(content: Text('已关闭远程推送，课程和考试提醒不受影响')));
+    messenger
+        .showSnackBar(const SnackBar(content: Text('已关闭远程推送，课程和考试提醒不受影响')));
   }
 
   Future<void> _loadKeepAliveStatus() async {
@@ -284,6 +287,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 外观模式
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.security_outlined,
+            iconColor: Colors.blue,
+            title: '账号与安全',
+            subtitle: '管理学号、邮箱、登录方式和教务连接',
+            isDark: isDark,
+            onTap: authProvider.isLoggedIn
+                ? () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const AccountSecurityScreen(),
+                      ),
+                    )
+                : null,
+          ),
+        ),
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.light_mode,

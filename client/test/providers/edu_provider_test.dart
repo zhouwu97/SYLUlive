@@ -9,7 +9,6 @@ import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dar
 import '../helpers/personal_snapshot_test_fakes.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const secureStorageChannel =
@@ -114,6 +113,20 @@ void main() {
                 ),
               );
             }
+            return;
+          }
+          if (options.path == '/edu/authorization' &&
+              options.method == 'DELETE') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: const <String, dynamic>{
+                  'edu_authorized': false,
+                  'edu_session_state': 'revoked',
+                },
+              ),
+            );
             return;
           }
           // Default: pass through (will fail if unexpected)
@@ -505,6 +518,36 @@ void main() {
       expect(grades[0].isPassed, true); // 64.7 >= 60
     });
 
+    test('revokeAuthorization clears in-memory and encrypted edu snapshots',
+        () async {
+      provider = createProvider(responseData: [
+        {
+          'name': '数据结构',
+          'grade': '90',
+          'credits': 4,
+          'gpa': 4.0,
+          'is_degree': true,
+        },
+      ]);
+
+      await setBoundUser(provider, 'user_revoke');
+      await provider.fetchGrades('2025', 3);
+      final store = AcademicCacheStore(
+        appUserId: 'user_revoke',
+        sourceAccountId: '2403130233',
+        snapshotStore: createSnapshotStore('user_revoke'),
+      );
+      expect(await store.readSnapshot(), isNotNull);
+
+      final result = await provider.revokeAuthorization();
+
+      expect(result.success, isTrue);
+      expect(provider.isAuthorized, isFalse);
+      expect(provider.sessionState, 'revoked');
+      expect(provider.getCachedGrades('2025', 3), isNull);
+      expect(await store.readSnapshot(), isNull);
+    });
+
     test('clearLocalSession clears local edu state and saved keys', () async {
       AppPreferencesStore.setMockInitialValues({
         'edu_bound_user_a': true,
@@ -514,7 +557,6 @@ void main() {
         'edu_major_user_a': '软件工程',
         'edu_last_semester_user_a': '2025_3',
       });
-      secureStore['edu_pwd_2403130233'] = 'old-password';
 
       final dio = Dio();
       dio.interceptors.add(
@@ -578,7 +620,6 @@ void main() {
       expect(p.isLoading, false);
       expect(p.isStatusLoaded, false);
       expect(p.getCachedGrades('2025', 3), isNull);
-      expect(secureStore.containsKey('edu_pwd_2403130233'), false);
 
       final prefs = await AppPreferencesStore.getInstance();
       for (final key in [

@@ -146,6 +146,8 @@ func main() {
 	if err := db.AutoMigrate(
 
 		&models.User{},
+		&models.EmailVerificationChallenge{},
+		&models.AccountSecurityAuditLog{},
 
 		&models.UserLegalConsent{},
 
@@ -437,13 +439,29 @@ func main() {
 		cfg.AllowMissingVersionHeaders,
 	))
 
+	// 初始化跨服务和邮件配置。生产身份数据迁移仍由显式 SQL 完成。
+	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+	handlers.EduServiceConfig.Token = cfg.EduServiceToken
+	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
+	handlers.VerifyCodeConfig.SMTPPort = cfg.SMTPPort
+	handlers.VerifyCodeConfig.SMTPUser = cfg.SMTPUser
+	handlers.VerifyCodeConfig.SMTPPass = cfg.SMTPPass
+	handlers.VerifyCodeConfig.SMTPFrom = cfg.SMTPFrom
+	emailVerification := services.NewEmailVerificationService(
+		db,
+		services.NewSMTPVerificationMailer(services.SMTPConfig{
+			Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.SMTPFrom,
+		}),
+		cfg.JWTSecret,
+		time.Now,
+	)
+
 	// 初始化处理器
 
-	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
+	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
+	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
 
 	userHandler := handlers.NewUserHandler(db)
-
-	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
@@ -533,7 +551,7 @@ func main() {
 		cfg.AppReleaseAccelPrefix,
 	)
 
-	eduHandler := handlers.NewEduHandler(db)
+	eduHandler := handlers.NewEduHandlerWithLifecycle(db, cfg.JWTSecret, eduCredentialCleanupJobs)
 
 	teacherHandler := handlers.NewTeacherHandler(db)
 
@@ -551,21 +569,6 @@ func main() {
 	erkeHandler := handlers.NewErkeHandler(db)
 
 	lotteryHandler := handlers.NewLotteryHandler(db)
-
-	// 初始化教务服务配置
-
-	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
-	handlers.EduServiceConfig.Token = cfg.EduServiceToken
-
-	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
-
-	handlers.VerifyCodeConfig.SMTPPort = cfg.SMTPPort
-
-	handlers.VerifyCodeConfig.SMTPUser = cfg.SMTPUser
-
-	handlers.VerifyCodeConfig.SMTPPass = cfg.SMTPPass
-
-	handlers.VerifyCodeConfig.SMTPFrom = cfg.SMTPFrom
 
 	handlers.SetMajorLogDB(db)
 
@@ -770,6 +773,10 @@ func main() {
 
 		auth.POST("/register", authHandler.Register)
 
+		auth.POST("/register/email/code", authHandler.RequestEmailRegistrationCode)
+
+		auth.POST("/register/email", authHandler.RegisterWithEmail)
+
 		auth.POST("/login", authHandler.Login)
 
 		auth.POST("/login_edu", authHandler.LoginEdu)
@@ -777,6 +784,12 @@ func main() {
 		auth.POST("/register_with_edu", authHandler.RegisterWithEdu)
 
 		auth.POST("/forgot_password", authHandler.ForgotPassword)
+
+		auth.POST("/password/email/code", authHandler.RequestEmailPasswordResetCode)
+
+		auth.POST("/password/email/reset", authHandler.ResetPasswordByEmail)
+
+		auth.POST("/password/edu/reset", authHandler.ForgotPassword)
 
 		auth.POST("/change_password", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.ChangePassword)
 
@@ -801,6 +814,14 @@ func main() {
 		user.PUT("/background", userHandler.UpdateBackground)
 
 		user.PUT("/nightmode", userHandler.UpdateNightMode)
+
+		user.GET("/account-security", authHandler.GetAccountSecurity)
+
+		user.POST("/email/code", authHandler.RequestUserEmailCode)
+
+		user.PUT("/email", authHandler.UpdateUserEmail)
+
+		user.DELETE("/email", authHandler.DeleteUserEmail)
 
 		user.PUT("/device_token", userHandler.UpdateDeviceToken)
 		user.PUT("/push-settings", userHandler.UpdatePushSettings)
@@ -1375,6 +1396,12 @@ func main() {
 		edu.POST("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.BindEdu)
 
 		edu.DELETE("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.UnbindEdu)
+
+		edu.POST("/session/logout", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.LogoutEduSession)
+
+		edu.POST("/session/resume", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.ResumeEduSession)
+
+		edu.DELETE("/authorization", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.RevokeEduAuthorization)
 
 		edu.POST("/courses", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCourses)
 

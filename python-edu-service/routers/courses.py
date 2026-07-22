@@ -53,11 +53,13 @@ async def fetch_courses(
     )
     edu_user = result.scalar_one_or_none()
 
-    if not edu_user or not edu_user.bound:
-        raise HTTPException(status_code=400, detail="请先绑定教务账号")
+    if not edu_user or not edu_user.authorized:
+        raise HTTPException(status_code=409, detail={"code": "EDU_AUTHORIZATION_REVOKED", "message": "教务授权已撤销，请重新授权"})
+    if edu_user.session_state == "logged_out":
+        raise HTTPException(status_code=409, detail={"code": "EDU_SESSION_LOGGED_OUT", "message": "教务会话已退出，请手动重新登录"})
 
     if not edu_user.cookie:
-        raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定")
+        raise HTTPException(status_code=401, detail={"code": "EDU_SESSION_EXPIRED", "message": "教务会话已过期，请重新登录"})
 
     try:
         raw_courses = await execute_with_session_refresh(

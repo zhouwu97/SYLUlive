@@ -64,7 +64,7 @@ func LegalConsentStateForUser(db *gorm.DB, user User) (LegalConsentState, error)
 		return LegalConsentStateRevoked, nil
 	}
 
-	documents := RequiredLegalDocuments(user.EduBound)
+	documents := RequiredLegalDocuments(user.IsEduAuthorized())
 	var acceptedCount int64
 	if err := db.Model(&UserLegalConsent{}).
 		Where("user_id = ? AND version = ? AND revoked_at IS NULL AND document IN ?", user.ID, LegalDocumentVersion, documents).

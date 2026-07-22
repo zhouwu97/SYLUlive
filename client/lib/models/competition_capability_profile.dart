@@ -23,6 +23,7 @@ class CompetitionCapabilityCount {
 
 class CompetitionCapabilityProfile {
   final bool preferenceConfigured;
+  final List<String> goals;
   final int verifiedAwardCount;
   final int selfReportedAwardCount;
   final List<CompetitionCapabilityCount> skillSummary;
@@ -34,6 +35,7 @@ class CompetitionCapabilityProfile {
 
   const CompetitionCapabilityProfile({
     required this.preferenceConfigured,
+    required this.goals,
     required this.verifiedAwardCount,
     required this.selfReportedAwardCount,
     required this.skillSummary,
@@ -63,6 +65,7 @@ class CompetitionCapabilityProfile {
 
     return CompetitionCapabilityProfile(
       preferenceConfigured: json['preference_configured'] == true,
+      goals: strings('goals'),
       verifiedAwardCount: (json['verified_award_count'] as num?)?.toInt() ?? 0,
       selfReportedAwardCount:
           (json['self_reported_award_count'] as num?)?.toInt() ?? 0,

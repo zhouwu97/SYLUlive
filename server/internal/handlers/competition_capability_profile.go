@@ -21,6 +21,7 @@ type competitionCapabilityCount struct {
 
 type competitionCapabilityProfileResponse struct {
 	PreferenceConfigured   bool                         `json:"preference_configured"`
+	Goals                  []string                     `json:"goals"`
 	VerifiedAwardCount     int                          `json:"verified_award_count"`
 	SelfReportedAwardCount int                          `json:"self_reported_award_count"`
 	SkillSummary           []competitionCapabilityCount `json:"skill_summary"`
@@ -33,6 +34,7 @@ type competitionCapabilityProfileResponse struct {
 
 func emptyCompetitionCapabilityProfile() competitionCapabilityProfileResponse {
 	return competitionCapabilityProfileResponse{
+		Goals:          []string{},
 		SkillSummary:   []competitionCapabilityCount{},
 		RoleSummary:    []competitionCapabilityCount{},
 		DirectionTags:  []string{},
@@ -60,6 +62,7 @@ func (h *CompetitionHandler) loadCompetitionCapabilityProfile(userID uint) (comp
 	var preference models.UserCompetitionPreference
 	if err := h.db.Where("user_id = ?", userID).First(&preference).Error; err == nil {
 		profile.PreferenceConfigured = true
+		profile.Goals = decodeStringArray(preference.Goals)
 		profile.DirectionTags = decodeStringArray(preference.DirectionTags)
 		profile.PreferredRoles = decodeStringArray(preference.PreferredRoles)
 		profile.WeeklyHours = preference.WeeklyHours

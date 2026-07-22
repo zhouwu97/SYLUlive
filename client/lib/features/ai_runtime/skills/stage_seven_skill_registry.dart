@@ -1,4 +1,5 @@
 import 'competition_search_skill.dart';
+import 'competition_advisor_skills.dart';
 import 'deterministic_skills.dart';
 import 'personal_skill.dart';
 import 'personal_skill_registry.dart';
@@ -12,6 +13,8 @@ PersonalSkillRegistry buildStageSevenSkillRegistry({
   required CompetitionSearchSource competitionSearchSource,
   required GraduationRuleProvider graduationRuleProvider,
   required CompetitionFitDataSource competitionFitDataSource,
+  required CompetitionCapabilityProfileSource
+      competitionCapabilityProfileSource,
 }) {
   return PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
     TodayScheduleSkill(),
@@ -20,6 +23,7 @@ PersonalSkillRegistry buildStageSevenSkillRegistry({
     PhysicalOverviewSkill(),
     ErkeOverviewSkill(),
     CompetitionSearchSkill(competitionSearchSource),
+    CompetitionCapabilityProfileSkill(competitionCapabilityProfileSource),
     AcademicGpaSkill(),
     AcademicCreditSummarySkill(),
     AcademicFailureRiskSkill(),

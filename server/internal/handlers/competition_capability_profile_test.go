@@ -30,7 +30,7 @@ func TestCompetitionCapabilityProfileReturnsStableEmptyStructure(t *testing.T) {
 	if profile.PreferenceConfigured || profile.VerifiedAwardCount != 0 || profile.SelfReportedAwardCount != 0 {
 		t.Fatalf("empty profile=%+v", profile)
 	}
-	if profile.SkillSummary == nil || profile.RoleSummary == nil || profile.DirectionTags == nil || profile.PreferredRoles == nil {
+	if profile.Goals == nil || profile.SkillSummary == nil || profile.RoleSummary == nil || profile.DirectionTags == nil || profile.PreferredRoles == nil {
 		t.Fatalf("empty arrays must not be null: %+v", profile)
 	}
 }
@@ -38,7 +38,7 @@ func TestCompetitionCapabilityProfileReturnsStableEmptyStructure(t *testing.T) {
 func TestCompetitionCapabilityProfileSeparatesEvidenceAndFiltersStatuses(t *testing.T) {
 	db := newCompetitionTestDB(t)
 	preference := models.UserCompetitionPreference{
-		UserID: 72, Goals: datatypes.JSON(`[]`), DirectionTags: datatypes.JSON(`["程序设计","数据分析"]`),
+		UserID: 72, Goals: datatypes.JSON(`["ability","exploration"]`), DirectionTags: datatypes.JSON(`["程序设计","数据分析"]`),
 		SkillTags: datatypes.JSON(`["Python"]`), PreferredRoles: datatypes.JSON(`["developer"]`),
 		WeeklyHours: 7, AcceptLongTermTraining: true, ExperienceLevel: "participated",
 	}
@@ -62,6 +62,9 @@ func TestCompetitionCapabilityProfileSeparatesEvidenceAndFiltersStatuses(t *test
 	profile := capabilityProfileRequest(t, NewCompetitionHandler(db), 72)
 	if !profile.PreferenceConfigured || profile.WeeklyHours != 7 || !profile.AcceptLongTermTraining {
 		t.Fatalf("preference fields=%+v", profile)
+	}
+	if strings.Join(profile.Goals, ",") != "ability,exploration" {
+		t.Fatalf("goals=%+v", profile.Goals)
 	}
 	if profile.VerifiedAwardCount != 1 || profile.SelfReportedAwardCount != 0 {
 		t.Fatalf("award counts=%+v", profile)

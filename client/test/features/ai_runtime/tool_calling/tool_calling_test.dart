@@ -16,6 +16,7 @@ import 'package:shenliyuan/features/ai_runtime/personal_data/models/physical_ove
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/schedule_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/academic_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/competition_search_skill.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/competition_advisor_skills.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/deterministic_skills.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/erke_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill.dart';
@@ -697,6 +698,9 @@ void main() {
           PersonalDataType.erke,
         },
         CompetitionSearchSkill.skillId: <PersonalDataType>{},
+        CompetitionCapabilityProfileSkill.skillId: <PersonalDataType>{
+          PersonalDataType.studentProfile,
+        },
         AcademicGpaSkill.skillId: <PersonalDataType>{
           PersonalDataType.academic,
         },

@@ -1,6 +1,7 @@
 import '../../campus_data/storage/personal_snapshot_models.dart';
 import '../skills/academic_overview_skill.dart';
 import '../skills/competition_search_skill.dart';
+import '../skills/competition_advisor_skills.dart';
 import '../skills/deterministic_skills.dart';
 import '../skills/erke_overview_skill.dart';
 import '../skills/physical_overview_skill.dart';
@@ -42,11 +43,7 @@ abstract interface class ToolPreviewMetadataSource {
 class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
   const DefaultToolPreviewMetadataSource();
 
-  static const _credentials = <String>[
-    '教务密码',
-    'Cookie',
-    'API Key',
-  ];
+  static const _credentials = <String>['教务密码', 'Cookie', 'API Key'];
 
   @override
   Future<ToolPermissionPreviewMetadata> describe(
@@ -59,6 +56,7 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
       PhysicalOverviewSkill.skillId => _physicalOverview(),
       ErkeOverviewSkill.skillId => _erkeOverview(),
       CompetitionSearchSkill.skillId => _competitionSearch(),
+      CompetitionCapabilityProfileSkill.skillId => _competitionCapability(),
       AcademicGpaSkill.skillId => _gpa(),
       AcademicCreditSummarySkill.skillId => _creditSummary(),
       AcademicFailureRiskSkill.skillId => _failureRisk(),
@@ -157,6 +155,22 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
         output: const <String>['公开赛事名称、摘要、分类、报名时间和官方链接'],
       );
 
+  ToolPermissionPreviewMetadata _competitionCapability() => _metadata(
+        inputItems: const <ToolDataPreviewItem>[
+          ToolDataPreviewItem(
+            dataType: PersonalDataType.studentProfile,
+            label: '已授权的竞赛目标、偏好及分级经历汇总',
+          ),
+        ],
+        excluded: const <String>[
+          '证明材料及文件地址',
+          '核验备注、审核员和访问日志',
+          '成绩、GPA和毕业风险',
+          ..._credentials,
+        ],
+        output: const <String>['竞赛目标和方向偏好', '投入时间和偏好角色', '已核验与本人填写的技能、角色及经历数量'],
+      );
+
   ToolPermissionPreviewMetadata _gpa() => _metadata(
         inputItems: const <ToolDataPreviewItem>[
           ToolDataPreviewItem(
@@ -165,12 +179,7 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
           ),
         ],
         excluded: const <String>['姓名', '不需要的个人资料', ..._credentials],
-        output: const <String>[
-          'GPA',
-          '纳入课程和学分',
-          '排除课程及原因',
-          '无法解析项',
-        ],
+        output: const <String>['GPA', '纳入课程和学分', '排除课程及原因', '无法解析项'],
       );
 
   ToolPermissionPreviewMetadata _creditSummary() => _metadata(
@@ -181,13 +190,7 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
           ),
         ],
         excluded: const <String>['姓名', '不需要的个人资料', ..._credentials],
-        output: const <String>[
-          '已修学分',
-          '通过学分',
-          '未通过学分',
-          '必修未通过学分',
-          '未知学分',
-        ],
+        output: const <String>['已修学分', '通过学分', '未通过学分', '必修未通过学分', '未知学分'],
       );
 
   ToolPermissionPreviewMetadata _failureRisk() => _metadata(
@@ -204,22 +207,12 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
   ToolPermissionPreviewMetadata _graduationReadiness() => _metadata(
         inputItems: const <ToolDataPreviewItem>[
           ToolDataPreviewItem(
-            dataType: PersonalDataType.academic,
-            label: '成绩记录',
-          ),
-          ToolDataPreviewItem(
-            dataType: PersonalDataType.erke,
-            label: '二课概览',
-          ),
+              dataType: PersonalDataType.academic, label: '成绩记录'),
+          ToolDataPreviewItem(dataType: PersonalDataType.erke, label: '二课概览'),
           ToolDataPreviewItem(label: '已审核培养方案规则'),
         ],
         excluded: const <String>['未审核政策推断', '姓名', ..._credentials],
-        output: const <String>[
-          '毕业要求完成状态',
-          '学分缺口',
-          '阻断项',
-          '数据不足警告',
-        ],
+        output: const <String>['毕业要求完成状态', '学分缺口', '阻断项', '数据不足警告'],
       );
 
   ToolPermissionPreviewMetadata _competitionFit(Object input) {
@@ -240,12 +233,7 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
         '完整成绩原始响应',
         ..._credentials,
       ],
-      output: const <String>[
-        '赛事适配状态',
-        '适配评分',
-        '匹配理由',
-        '强推荐门槛状态',
-      ],
+      output: const <String>['赛事适配状态', '适配评分', '匹配理由', '强推荐门槛状态'],
     );
   }
 

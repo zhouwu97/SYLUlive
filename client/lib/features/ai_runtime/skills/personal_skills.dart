@@ -1,5 +1,6 @@
 export 'academic_overview_skill.dart';
 export 'competition_search_skill.dart';
+export 'competition_advisor_skills.dart';
 export 'erke_overview_skill.dart';
 export 'personal_skill.dart';
 export 'personal_skill_registry.dart';

@@ -12,6 +12,7 @@ import 'package:shenliyuan/features/ai_runtime/skills/deterministic_skills.dart'
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skills.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/models/competition.dart';
+import 'package:shenliyuan/models/competition_capability_profile.dart';
 
 void main() {
   final fetchedAt = DateTime.utc(2026, 7, 20, 8, 30);
@@ -478,6 +479,91 @@ void main() {
     expect(result.value?.items.single.score, 70);
     expect(gateway.totalReads, 0);
   });
+
+  test('竞赛能力画像保留目标和已核验、自报分组且不读取教务 Gateway', () async {
+    final skill = CompetitionCapabilityProfileSkill(
+      _FakeCapabilityProfileSource(
+        CompetitionCapabilityProfile.fromJson(<String, dynamic>{
+          'preference_configured': true,
+          'goals': <String>['ability'],
+          'verified_award_count': 2,
+          'self_reported_award_count': 1,
+          'skill_summary': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'skill': 'Python',
+              'verified_count': 1,
+              'self_reported_count': 1,
+            },
+          ],
+          'role_summary': <Map<String, dynamic>>[],
+          'direction_tags': <String>['数据分析'],
+          'preferred_roles': <String>['developer'],
+          'weekly_hours': 7,
+          'accept_long_term_training': true,
+        }),
+      ),
+    );
+
+    final result = await skill.execute(
+      const EmptyCompetitionAdvisorInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.success);
+    expect(result.value?.goals, <String>['ability']);
+    expect(result.value?.verifiedAwardCount, 2);
+    expect(result.value?.skillSummary.single.selfReportedCount, 1);
+    expect(result.evidence.single.source, '神理校园竞赛档案');
+    expect(result.evidence.single.dataType, PersonalDataType.studentProfile);
+    expect(gateway.totalReads, 0);
+  });
+
+  test('竞赛能力画像专项授权关闭时明确拒绝而非返回空画像', () async {
+    final result = await CompetitionCapabilityProfileSkill(
+      _DeniedCapabilityProfileSource(),
+    ).execute(
+      const EmptyCompetitionAdvisorInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.denied);
+    expect(result.value, isNull);
+    expect(result.warnings.single, '用户尚未授权读取竞赛能力画像');
+  });
+
+  test('竞赛能力画像数据源只调用专项 AI 接口并识别 403', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.path, '/ai/tools/competition-capability-profile');
+          expect(options.queryParameters, isEmpty);
+          handler.reject(
+            DioException.badResponse(
+              statusCode: 403,
+              requestOptions: options,
+              response: Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 403,
+                data: const <String, dynamic>{
+                  'code': 'competition_capability_profile_access_denied',
+                },
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    await expectLater(
+      DioCompetitionCapabilityProfileSource(dio).load(),
+      throwsA(isA<CompetitionCapabilityAccessDeniedException>()),
+    );
+  });
 }
 
 GatewayResult<T> _available<T>(T data, {required DateTime fetchedAt}) =>
@@ -602,6 +688,24 @@ class _FakeCompetitionFitSource implements CompetitionFitDataSource {
   Future<StudentCompetitionProfile> currentProfile() async {
     profileReads++;
     return profileValue;
+  }
+}
+
+class _FakeCapabilityProfileSource
+    implements CompetitionCapabilityProfileSource {
+  _FakeCapabilityProfileSource(this.value);
+
+  final CompetitionCapabilityProfile value;
+
+  @override
+  Future<CompetitionCapabilityProfile> load() async => value;
+}
+
+class _DeniedCapabilityProfileSource
+    implements CompetitionCapabilityProfileSource {
+  @override
+  Future<CompetitionCapabilityProfile> load() async {
+    throw const CompetitionCapabilityAccessDeniedException();
   }
 }
 

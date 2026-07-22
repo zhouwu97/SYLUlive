@@ -9,6 +9,7 @@ import '../../widgets/competition/competition_admin_event_card.dart';
 import '../../widgets/competition/competition_empty_state.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import 'competition_admin_import_screen.dart';
+import 'competition_award_verification_admin_screen.dart';
 import 'competition_official_event_editor_screen.dart';
 
 import '../../widgets/competition/competition_batch_action_sheet.dart';
@@ -16,6 +17,8 @@ import '../../widgets/competition/competition_batch_confirm_dialog.dart';
 import '../../widgets/competition/competition_batch_selection_bar.dart';
 
 enum _AdminSelectionScope { none, page, allMatching }
+
+bool canVerifyCompetitionAwards(String? role) => role == 'super_admin';
 
 class CompetitionAdminCenterScreen extends StatefulWidget {
   const CompetitionAdminCenterScreen({super.key});
@@ -176,6 +179,9 @@ class _CompetitionAdminCenterScreenState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
+    final canVerifyAwards = canVerifyCompetitionAwards(
+      context.watch<AuthProvider>().user?.role,
+    );
 
     return Scaffold(
       backgroundColor: pageBg,
@@ -188,6 +194,21 @@ class _CompetitionAdminCenterScreenState
           '竞赛库管理',
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
+        actions: [
+          if (canVerifyAwards)
+            IconButton(
+              key: const Key('competition-award-verification-entry'),
+              tooltip: '经历核验',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => CompetitionAwardVerificationAdminScreen(
+                    dio: _dio,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.fact_check_outlined),
+            ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _load,

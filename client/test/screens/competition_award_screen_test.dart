@@ -52,6 +52,7 @@ Map<String, dynamic> _award({
   int id = 1,
   String title = '中国大学生计算机设计大赛',
   String status = 'self_reported',
+  String note = '',
 }) {
   return {
     'id': id,
@@ -62,6 +63,7 @@ Map<String, dynamic> _award({
     'competition_stage': 'provincial',
     'role': 'developer',
     'verification_status': status,
+    'verification_note': note,
     'visibility': 'private',
     'evidence_file_ids': [987654],
   };
@@ -92,6 +94,67 @@ void main() {
     expect(find.text('可见范围：仅自己'), findsNWidgets(2));
     expect(find.textContaining('987654'), findsNothing);
     expect(find.textContaining('证明材料'), findsNothing);
+  });
+
+  testWidgets('展示四种核验状态、驳回原因和平台核验声明', (tester) async {
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final dio = _dio(_AwardAdapter((_) => _jsonResponse({
+          'items': [
+            _award(id: 1),
+            _award(id: 2, status: 'pending'),
+            _award(id: 3, status: 'verified'),
+            _award(
+              id: 4,
+              status: 'rejected',
+              note: '证明材料无法确认奖项等级',
+            ),
+          ],
+        })));
+    await tester.pumpWidget(_app(dio));
+    await tester.pumpAndSettle();
+
+    expect(find.text('状态：本人填写'), findsOneWidget);
+    expect(find.text('状态：材料待核验'), findsOneWidget);
+    expect(find.text('状态：平台已核验'), findsOneWidget);
+    expect(find.text('状态：核验未通过'), findsOneWidget);
+    expect(find.textContaining('不代表学校教务或官方认证'), findsOneWidget);
+    expect(find.textContaining('证明材料无法确认奖项等级'), findsOneWidget);
+    expect(find.text('取消核验'), findsOneWidget);
+    expect(find.text('重新提交'), findsOneWidget);
+  });
+
+  testWidgets('提交核验二次确认且连续点击只发送一次', (tester) async {
+    final pending = Completer<ResponseBody>();
+    var listCount = 0;
+    var submitCount = 0;
+    final dio = _dio(_AwardAdapter((options) {
+      if (options.method == 'POST') {
+        submitCount++;
+        return pending.future;
+      }
+      listCount++;
+      return _jsonResponse({
+        'items': [_award(id: 7)]
+      });
+    }));
+    await tester.pumpWidget(_app(dio));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('competition-award-submit-7')));
+    await tester.pumpAndSettle();
+    expect(find.text('提交材料核验？'), findsOneWidget);
+    expect(submitCount, 0);
+    await tester.tap(find.text('确认提交'));
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(submitCount, 1);
+    expect(listCount, 1);
+
+    pending.complete(_jsonResponse({'verification_status': 'pending'}));
+    await tester.pumpAndSettle();
+    expect(listCount, 2);
   });
 
   testWidgets('账号变化时立即清空旧经历', (tester) async {

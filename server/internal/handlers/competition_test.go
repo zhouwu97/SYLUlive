@@ -33,6 +33,7 @@ func newCompetitionTestDB(t *testing.T) *gorm.DB {
 		&models.User{}, &models.CompetitionCategory{}, &models.CompetitionEvent{},
 		&models.UserCompetitionCalendar{}, &models.UserCompetitionCalendarItem{},
 		&models.CompetitionImportBatch{}, &models.UserCompetitionPreference{},
+		&models.UserCompetitionAward{}, &models.File{}, &models.FileUploadGrant{},
 	); err != nil {
 		t.Fatal(err)
 	}

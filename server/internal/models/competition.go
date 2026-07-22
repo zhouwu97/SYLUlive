@@ -96,6 +96,28 @@ type CompetitionEvent struct {
 
 func (CompetitionEvent) TableName() string { return "competition_events" }
 
+// UserCompetitionPreference 保存用户当前的竞赛目标与投入偏好，每个用户只保留一份。
+type UserCompetitionPreference struct {
+	ID     uint `gorm:"primaryKey" json:"id"`
+	UserID uint `gorm:"not null;uniqueIndex" json:"user_id"`
+
+	Goals          datatypes.JSON `gorm:"not null" json:"goals"`
+	DirectionTags  datatypes.JSON `gorm:"not null" json:"direction_tags"`
+	SkillTags      datatypes.JSON `gorm:"not null" json:"skill_tags"`
+	PreferredRoles datatypes.JSON `gorm:"not null" json:"preferred_roles"`
+
+	WeeklyHours            int  `gorm:"not null;default:0" json:"weekly_hours"`
+	AcceptLongTermTraining bool `gorm:"not null;default:false" json:"accept_long_term_training"`
+
+	CareerDirection string `gorm:"size:80" json:"career_direction"`
+	ExperienceLevel string `gorm:"size:20;not null;default:'beginner'" json:"experience_level"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (UserCompetitionPreference) TableName() string { return "user_competition_preferences" }
+
 type CompetitionEventAttachment struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	EventID   uint      `gorm:"not null;index" json:"event_id"`

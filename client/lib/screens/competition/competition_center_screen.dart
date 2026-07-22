@@ -10,6 +10,7 @@ import '../../platform/contracts/external_navigator.dart';
 
 import '../../config/beta_release_policy.dart';
 import '../../models/competition.dart';
+import '../../models/competition_preference.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/competition_batch_action_payload.dart';
@@ -22,6 +23,7 @@ import '../../widgets/competition/competition_batch_selection_bar.dart';
 import '../../widgets/competition/competition_batch_confirm_dialog.dart';
 import '../../widgets/competition/competition_batch_action_sheet.dart';
 import 'competition_calendar_item_detail_screen.dart';
+import 'competition_preference_screen.dart';
 
 import 'competition_admin_center_screen.dart';
 
@@ -64,6 +66,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   int _eventTotal = 0;
   int _currentPage = 1;
   int _requestSerial = 0;
+  int _preferenceRequestSerial = 0;
   bool _hasMore = false;
   bool _profileReady = false;
   String? _categorySlug;
@@ -71,6 +74,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   final Set<String> _recognitions = {};
   final Set<String> _sources = {};
   int? _calendarCount;
+  CompetitionPreference? _competitionPreference;
+  bool _preferenceLoading = false;
+  String? _preferenceError;
+  int? _sessionGeneration;
 
   String _studentFocusFilter = 'all';
 
@@ -81,6 +88,21 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
     _loadAll();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final generation = context.watch<AuthProvider>().sessionGeneration;
+    if (_sessionGeneration == null) {
+      _sessionGeneration = generation;
+    } else if (_sessionGeneration != generation) {
+      _sessionGeneration = generation;
+      _competitionPreference = null;
+      _preferenceError = null;
+      _loadUserState();
+      _loadPreference();
+    }
   }
 
   @override
@@ -98,7 +120,47 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       _loadOverview(),
       _loadEvents(reset: true),
       _loadUserState(),
+      _loadPreference(),
     ]);
+  }
+
+  Future<void> _loadPreference() async {
+    final request = ++_preferenceRequestSerial;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      if (mounted) {
+        setState(() {
+          _competitionPreference = null;
+          _preferenceLoading = false;
+          _preferenceError = null;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _preferenceLoading = true;
+        _preferenceError = null;
+      });
+    }
+    try {
+      final response = await auth.dio.get('/user/competition-preference');
+      if (!mounted || request != _preferenceRequestSerial) return;
+      setState(() {
+        _competitionPreference = CompetitionPreference.fromJson(
+          Map<String, dynamic>.from(response.data as Map),
+        );
+        _preferenceLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || request != _preferenceRequestSerial) return;
+      setState(() {
+        _preferenceLoading = false;
+        _preferenceError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '竞赛目标加载失败')
+            : '竞赛目标数据解析失败';
+      });
+    }
   }
 
   void _onSearchChanged() {
@@ -396,6 +458,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     return [
       _buildSearchAndFilters(isDark),
       _buildStudentOverview(isDark),
+      _buildPreferenceEntry(isDark),
       _buildStudentFocusTabs(isDark),
       _buildSectionTitle(
         title: _studentFocusTitle,
@@ -558,6 +621,111 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildPreferenceEntry(bool isDark) {
+    final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
+    final preference = _competitionPreference;
+    String title = '完善竞赛目标';
+    String subtitle = '让“适合我”更符合你的方向';
+    if (!isLoggedIn) {
+      subtitle = '登录后设置你的参赛方向和投入时间';
+    } else if (_preferenceLoading && preference == null) {
+      subtitle = '正在读取你的竞赛目标';
+    } else if (_preferenceError != null && preference == null) {
+      subtitle = '读取失败，点击重试';
+    } else if (preference?.configured == true) {
+      title = '我的竞赛目标';
+      final parts = <String>[];
+      if (preference!.goals.isNotEmpty) {
+        parts.add(competitionGoalLabels[preference.goals.first] ??
+            preference.goals.first);
+      }
+      if (preference.directionTags.isNotEmpty) {
+        parts.add(preference.directionTags.first);
+      }
+      parts.add(competitionWeeklyHourLabels[preference.weeklyHours] ??
+          '每周 ${preference.weeklyHours} 小时');
+      subtitle = parts.join(' · ');
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        14,
+      ),
+      child: Material(
+        color: CompetitionUiTokens.cardBg(isDark),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+        ),
+        child: InkWell(
+          onTap: _preferenceError != null && preference == null
+              ? _loadPreference
+              : _openCompetitionPreference,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(Icons.flag_outlined,
+                    color: CompetitionUiTokens.accent(isDark), size: 21),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: CompetitionUiTokens.titleColor(isDark))),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: CompetitionUiTokens.subColor(isDark)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right_rounded,
+                    color: CompetitionUiTokens.subColor(isDark)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCompetitionPreference() async {
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+    }
+    final accountID = auth.user?.id;
+    if (accountID == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CompetitionPreferenceScreen(
+          dio: auth.dio,
+          accountKey: accountID,
+        ),
+      ),
+    );
+    if (mounted && context.read<AuthProvider>().user?.id == accountID) {
+      await _loadPreference();
+    }
   }
 
   Widget _buildStatBand(

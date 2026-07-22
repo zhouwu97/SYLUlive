@@ -1,49 +1,29 @@
 import 'dart:convert';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../platform/contracts/secure_store.dart';
 import '../campus_data/storage/account_cache_namespace.dart';
 import 'ai_endpoint_policy.dart';
 import 'ai_model_provider.dart';
 
-abstract interface class AIProviderSecureStore {
-  Future<String?> read(String key);
-  Future<void> write(String key, String value);
-  Future<void> delete(String key);
-}
 
-class FlutterAIProviderSecureStore implements AIProviderSecureStore {
-  const FlutterAIProviderSecureStore();
-
-  static const FlutterSecureStorage _storage = FlutterSecureStorage();
-
-  @override
-  Future<String?> read(String key) => _storage.read(key: key);
-
-  @override
-  Future<void> write(String key, String value) =>
-      _storage.write(key: key, value: value);
-
-  @override
-  Future<void> delete(String key) => _storage.delete(key: key);
-}
 
 /// 配置和密钥分开存储，避免 SharedPreferences 备份或日志泄露 API Key。
 class AIProviderSettingsStore {
   AIProviderSettingsStore({
     required String appUserId,
     String providerConfigId = 'default',
-    AIProviderSecureStore secureStore = const FlutterAIProviderSecureStore(),
+    AppSecureStore? secureStore,
     Future<SharedPreferences> Function()? preferencesLoader,
   })  : _accountHash = _accountHashFor(appUserId),
         _providerConfigId = _providerConfigIdFor(providerConfigId),
-        _secureStore = secureStore,
+        _secureStore = secureStore ?? AppSecureStore.current(),
         _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
 
   final String _accountHash;
   final String _providerConfigId;
-  final AIProviderSecureStore _secureStore;
+  final AppSecureStore _secureStore;
   final Future<SharedPreferences> Function() _preferencesLoader;
 
   String get _configKey =>

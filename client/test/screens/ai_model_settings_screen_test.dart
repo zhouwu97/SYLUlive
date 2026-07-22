@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_model_provider.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_provider_storage.dart';
 import 'package:shenliyuan/screens/ai/ai_model_settings_screen.dart';
+import 'package:shenliyuan/platform/contracts/secure_store.dart';
 
 void main() {
   test('旧配置缺少 wire_api 时默认自动识别', () {
@@ -61,7 +62,7 @@ void main() {
   });
 }
 
-class _MemoryProviderSecureStore implements AIProviderSecureStore {
+class _MemoryProviderSecureStore implements AppSecureStore {
   final Map<String, String> _values = <String, String>{};
 
   @override

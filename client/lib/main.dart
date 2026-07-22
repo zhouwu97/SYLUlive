@@ -307,7 +307,7 @@ Future<void> main() async {
 }
 
 /// 极光推送初始化
-var jpush = JPush.newJPush();
+late final JPush jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
@@ -592,6 +592,7 @@ Future<RemotePushEnableResult> setupJPush(AuthProvider authProvider) async {
 }
 
 Future<void> _initializePrivateMessageNotifications() async {
+  if (!PlatformCapabilities.current.supportsSystemNotification) return;
   if (_privateMessageNotificationsReady) return;
   const android = AndroidInitializationSettings('@mipmap/ic_launcher');
   const darwin = DarwinInitializationSettings(

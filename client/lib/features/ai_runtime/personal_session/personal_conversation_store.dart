@@ -1,34 +1,13 @@
 import 'dart:convert';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../../platform/contracts/secure_store.dart';
 
 import '../../campus_data/storage/account_cache_namespace.dart';
 import '../../campus_data/storage/personal_snapshot_models.dart';
 import '../../../models/ai_chat_message.dart';
 import '../skills/personal_skill.dart';
 
-abstract interface class PersonalConversationSecureStore {
-  Future<String?> read(String key);
-  Future<void> write(String key, String value);
-  Future<void> delete(String key);
-}
 
-class FlutterPersonalConversationSecureStore
-    implements PersonalConversationSecureStore {
-  const FlutterPersonalConversationSecureStore();
-
-  static const FlutterSecureStorage _storage = FlutterSecureStorage();
-
-  @override
-  Future<String?> read(String key) => _storage.read(key: key);
-
-  @override
-  Future<void> write(String key, String value) =>
-      _storage.write(key: key, value: value);
-
-  @override
-  Future<void> delete(String key) => _storage.delete(key: key);
-}
 
 class PersonalConversationEntry {
   PersonalConversationEntry({
@@ -110,10 +89,9 @@ class PersonalConversationEntry {
 class PersonalConversationStore {
   PersonalConversationStore({
     required String accountKey,
-    PersonalConversationSecureStore secureStore =
-        const FlutterPersonalConversationSecureStore(),
+    AppSecureStore? secureStore,
   })  : _accountFingerprint = AccountCacheNamespace.fingerprint(accountKey),
-        _secureStore = secureStore {
+        _secureStore = secureStore ?? AppSecureStore.current() {
     if (_accountFingerprint.isEmpty) {
       throw ArgumentError.value(accountKey, 'accountKey');
     }
@@ -124,7 +102,7 @@ class PersonalConversationStore {
   static const int _schemaVersion = 1;
 
   final String _accountFingerprint;
-  final PersonalConversationSecureStore _secureStore;
+  final AppSecureStore _secureStore;
   Future<void> _pendingWrite = Future<void>.value();
 
   String get _storageKey => 'ai_personal_conversations/$_accountFingerprint/v1';

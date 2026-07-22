@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:shenliyuan/screens/ai/ai_assistant_screen.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_session/personal_conversation_store.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
+import 'package:shenliyuan/platform/contracts/secure_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/models/ai_capabilities.dart';
@@ -185,7 +186,7 @@ User _user(int id) => User(
     );
 
 class _MemoryConversationSecureStore
-    implements PersonalConversationSecureStore {
+    implements AppSecureStore {
   final Map<String, String> values = <String, String>{};
 
   @override

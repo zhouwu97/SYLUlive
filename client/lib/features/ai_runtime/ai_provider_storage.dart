@@ -1,30 +1,31 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../platform/contracts/secure_store.dart';
 import '../campus_data/storage/account_cache_namespace.dart';
 import 'ai_endpoint_policy.dart';
 import 'ai_model_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 
 
-/// 配置和密钥分开存储，避免 SharedPreferences 备份或日志泄露 API Key。
+
+/// 配置和密钥分开存储，避免 AppPreferencesStore 备份或日志泄露 API Key。
 class AIProviderSettingsStore {
   AIProviderSettingsStore({
     required String appUserId,
     String providerConfigId = 'default',
     AppSecretStore? secureStore,
-    Future<SharedPreferences> Function()? preferencesLoader,
+    Future<AppPreferencesStore> Function()? preferencesLoader,
   })  : _accountHash = _accountHashFor(appUserId),
         _providerConfigId = _providerConfigIdFor(providerConfigId),
         _secureStore = secureStore ?? AppSecretStore.current(),
-        _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
+        _preferencesLoader = preferencesLoader ?? AppPreferencesStore.getInstance;
 
   final String _accountHash;
   final String _providerConfigId;
   final AppSecretStore _secureStore;
-  final Future<SharedPreferences> Function() _preferencesLoader;
+  final Future<AppPreferencesStore> Function() _preferencesLoader;
 
   String get _configKey =>
       'ai_provider_config/$_accountHash/$_providerConfigId';

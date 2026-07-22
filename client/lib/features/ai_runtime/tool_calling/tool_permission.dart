@@ -1,11 +1,12 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../campus_data/storage/personal_snapshot_models.dart';
 import '../ai_model_provider.dart';
 import '../skills/personal_skill.dart';
 import 'tool_call_models.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 abstract interface class ToolPermissionPrompt {
   Future<ToolPermissionDecision> request(ToolPermissionPreview preview);
@@ -85,12 +86,12 @@ abstract interface class ToolAuditSink {
 class LocalToolAuditStore implements ToolAuditSink {
   LocalToolAuditStore({
     required this.accountFingerprint,
-    Future<SharedPreferences> Function()? preferencesLoader,
-  }) : _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
+    Future<AppPreferencesStore> Function()? preferencesLoader,
+  }) : _preferencesLoader = preferencesLoader ?? AppPreferencesStore.getInstance;
 
   static const int _maximumEntries = 100;
   final String accountFingerprint;
-  final Future<SharedPreferences> Function() _preferencesLoader;
+  final Future<AppPreferencesStore> Function() _preferencesLoader;
 
   String get _key => 'ai_tool_audit/$accountFingerprint/v1';
 

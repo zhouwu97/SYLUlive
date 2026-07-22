@@ -1,10 +1,11 @@
 import 'dart:async';
 
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'account_cache_namespace.dart';
 import 'account_scoped_snapshot_store.dart';
 import 'personal_snapshot_models.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 已验证来源账号的单学期课表快照。
 ///
@@ -190,17 +191,17 @@ class ScheduleVaultSnapshot {
 
 /// 课表个人数据存储。
 ///
-/// 旧 SharedPreferences 课表键不含来源学号，因此无法可靠证明归属。本类只会
+/// 旧 AppPreferencesStore 课表键不含来源学号，因此无法可靠证明归属。本类只会
 /// 清理这些键并设置重新同步标记，绝不把它们迁入当前来源账号的保险箱。
 class ScheduleCacheStore {
   ScheduleCacheStore({
     required this.appUserId,
     required this.sourceAccountId,
     AccountScopedSnapshotStore? snapshotStore,
-    Future<SharedPreferences> Function()? preferencesLoader,
+    Future<AppPreferencesStore> Function()? preferencesLoader,
   })  : _snapshotStore = snapshotStore ??
             AesGcmAccountScopedSnapshotStore(appUserId: appUserId),
-        _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
+        _preferencesLoader = preferencesLoader ?? AppPreferencesStore.getInstance;
 
   static const int schemaVersion = 1;
   static const Duration _expiry = Duration(days: 14);
@@ -211,7 +212,7 @@ class ScheduleCacheStore {
   final String appUserId;
   final String sourceAccountId;
   final AccountScopedSnapshotStore _snapshotStore;
-  final Future<SharedPreferences> Function() _preferencesLoader;
+  final Future<AppPreferencesStore> Function() _preferencesLoader;
 
   bool get _hasValidNamespace =>
       appUserId.trim().isNotEmpty && sourceAccountId.trim().isNotEmpty;
@@ -551,7 +552,7 @@ class ScheduleCacheStore {
     );
   }
 
-  Future<void> _markNeedsResync(SharedPreferences preferences) {
+  Future<void> _markNeedsResync(AppPreferencesStore preferences) {
     return preferences.setBool(
       AccountCacheNamespace.scheduleNeedsResync(appUserId),
       true,

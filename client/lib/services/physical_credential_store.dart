@@ -1,16 +1,17 @@
-import 'package:shared_preferences/shared_preferences.dart';
 import '../platform/contracts/secure_store.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-/// 保存体测密码，并将旧版 SharedPreferences 明文凭证一次性迁移出去。
+
+/// 保存体测密码，并将旧版 AppPreferencesStore 明文凭证一次性迁移出去。
 class PhysicalCredentialStore {
   PhysicalCredentialStore({
     AppSecretStore? secureStore,
-    Future<SharedPreferences> Function()? preferencesLoader,
+    Future<AppPreferencesStore> Function()? preferencesLoader,
   })  : _secureStore = secureStore ?? AppSecretStore.current(),
-        _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
+        _preferencesLoader = preferencesLoader ?? AppPreferencesStore.getInstance;
 
   final AppSecretStore _secureStore;
-  final Future<SharedPreferences> Function() _preferencesLoader;
+  final Future<AppPreferencesStore> Function() _preferencesLoader;
 
   static const String _securePrefix = 'secure_physical_test_pwd_';
   static const String _legacyPrefix = 'sylu_physical_test_pwd_';

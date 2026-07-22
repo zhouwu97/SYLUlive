@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/platform/contracts/secure_store.dart';
 
 import '../features/campus_data/storage/academic_cache_store.dart';
@@ -9,6 +8,8 @@ import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
 import '../models/edu_grade.dart';
 import '../utils/edu_semester_utils.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {
@@ -162,7 +163,7 @@ class EduProvider extends ChangeNotifier {
   Future<void> _deleteEduPassword(String studentId) async {
     final key = _eduPasswordKey(studentId);
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       await prefs.remove(key);
     } else {
       final storage = AppSecretStore.current();
@@ -326,7 +327,7 @@ class EduProvider extends ChangeNotifier {
 
   /// 保存绑定状态 — 使用显式 userId，不从可变字段读取
   Future<void> _saveBoundStatusFor(String userId) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool('edu_bound_$userId', _isBound);
     await prefs.setString('edu_student_id_$userId', _studentId);
     await prefs.setString('edu_grade_$userId', _grade);
@@ -336,7 +337,7 @@ class EduProvider extends ChangeNotifier {
 
   /// 读取绑定状态 — 使用显式 userId
   Future<bool> _loadBoundStatusFor(String userId) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     _studentId = prefs.getString('edu_student_id_$userId') ?? '';
     _grade = prefs.getString('edu_grade_$userId') ?? '';
     _college = prefs.getString('edu_college_$userId') ?? '';
@@ -345,7 +346,7 @@ class EduProvider extends ChangeNotifier {
   }
 
   Future<void> _clearBoundStatusFor(String userId) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.remove('edu_bound_$userId');
     await prefs.remove('edu_student_id_$userId');
     await prefs.remove('edu_grade_$userId');
@@ -371,7 +372,7 @@ class EduProvider extends ChangeNotifier {
   Future<void> _saveEduPassword(String studentId, String password) async {
     final key = _eduPasswordKey(studentId);
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       await prefs.setString(key, password);
     } else {
       final storage = AppSecretStore.current();
@@ -382,7 +383,7 @@ class EduProvider extends ChangeNotifier {
   Future<String?> _loadEduPassword(String studentId) async {
     final key = _eduPasswordKey(studentId);
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       return prefs.getString(key);
     } else {
       final storage = AppSecretStore.current();
@@ -478,8 +479,8 @@ class EduProvider extends ChangeNotifier {
         _errorMessage = null;
         _statusLoaded = true;
 
-        // 清除 SharedPreferences 中该用户的教务信息
-        final prefs = await SharedPreferences.getInstance();
+        // 清除 AppPreferencesStore 中该用户的教务信息
+        final prefs = await AppPreferencesStore.getInstance();
         await prefs.setBool('edu_bound_$currentUserId', false);
         await prefs.remove('edu_student_id_$currentUserId');
         await prefs.remove('edu_grade_$currentUserId');

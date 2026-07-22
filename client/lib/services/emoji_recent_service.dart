@@ -1,21 +1,22 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 共享的最近使用 Emoji 存储，不区分私信和评论页面。
 class EmojiRecentService {
   EmojiRecentService({
-    Future<SharedPreferences> Function()? preferencesLoader,
-  }) : _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
+    Future<AppPreferencesStore> Function()? preferencesLoader,
+  }) : _preferencesLoader = preferencesLoader ?? AppPreferencesStore.getInstance;
 
   static final EmojiRecentService instance = EmojiRecentService();
 
   static const String _storageKey = 'emoji_recent_v1';
   static const int maxRecentCount = 32;
 
-  final Future<SharedPreferences> Function() _preferencesLoader;
-  Future<SharedPreferences>? _loadingPreferences;
+  final Future<AppPreferencesStore> Function() _preferencesLoader;
+  Future<AppPreferencesStore>? _loadingPreferences;
   List<String>? _cache;
 
-  Future<SharedPreferences> get _preferences =>
+  Future<AppPreferencesStore> get _preferences =>
       _loadingPreferences ??= _preferencesLoader();
 
   Future<List<String>> load() async {

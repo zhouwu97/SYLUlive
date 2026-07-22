@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
@@ -28,6 +27,8 @@ import '../widgets/course/course_term_switch_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
 import '../widgets/course/course_semester_start_picker.dart';
 import '../widgets/campus/campus_theme.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
@@ -1624,7 +1625,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   Future<void> _loadSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
 
       // 关键路径：不涉及原生通道的高耗时操作，仅读取本地配置
       if (!mounted) return;
@@ -1674,12 +1675,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   Future<void> _saveOpacity(double v) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setDouble(_scheduleOpacityKey, v);
   }
 
   Future<void> _saveSlotHeight(double v) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setDouble(_scheduleSlotHeightKey, v);
   }
 
@@ -2697,7 +2698,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     String name,
   ) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       // 在 provider 中定义的常量：_archiveDataKeyPrefix = 'course_archive_data_v1_'
       final jsonStr = prefs.getString('course_archive_data_v1_$archiveId');
       if (jsonStr == null) throw Exception('存档数据不存在');

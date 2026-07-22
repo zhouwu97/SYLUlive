@@ -2,11 +2,12 @@ import 'dart:math';
 
 import 'package:flutter/services.dart';
 import '../platform/contracts/push_client.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../platform/app_platform.dart';
 import '../platform/platform_capabilities.dart';
 import '../providers/auth_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 class RemotePushEnableResult {
   final bool permissionGranted;
@@ -39,7 +40,7 @@ class PushSettingsService {
   static Future<RemotePushEnableResult>? _registrationFuture;
   static String? _registrationUserId;
 
-  static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
+  static Future<AppPreferencesStore> _prefs() => AppPreferencesStore.getInstance();
 
   static Future<bool> isEnabled() async {
     if (!PlatformCapabilities.current.supportsJPush) return false;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 enum AppBackgroundMode {
   clean,
@@ -181,7 +182,7 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> _loadTheme() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
       _backgroundImage = prefs.getString(_backgroundImageKey);
       _landscapeBackgroundImage = prefs.getString(_landscapeBackgroundImageKey);
@@ -208,7 +209,7 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> _setBackgroundMode(AppBackgroundMode mode) async {
     _backgroundMode = mode;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setString(_backgroundModeKey, _backgroundModeToString(mode));
     notifyListeners();
   }
@@ -225,14 +226,14 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> toggleTheme() async {
     _isDarkMode = !_isDarkMode;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_nightModeKey, _isDarkMode);
     notifyListeners();
   }
 
   Future<void> setDarkMode(bool value) async {
     _isDarkMode = value;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_nightModeKey, value);
     notifyListeners();
   }
@@ -244,7 +245,7 @@ class ThemeProvider extends ChangeNotifier {
     _backgroundImage = imageUrl;
     _backgroundFillScreen =
         imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_backgroundImageKey, imageUrl);
       await prefs.setBool(_backgroundFillScreenKey, _backgroundFillScreen);
@@ -267,7 +268,7 @@ class ThemeProvider extends ChangeNotifier {
     _landscapeBackgroundImage = imageUrl;
     _landscapeBackgroundFillScreen =
         imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_landscapeBackgroundImageKey, imageUrl);
       await prefs.setBool(
@@ -288,35 +289,35 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> setBackgroundBlur(double blur) async {
     _backgroundBlur = blur.clamp(0, 30);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setDouble(_backgroundBlurKey, _backgroundBlur);
     notifyListeners();
   }
 
   Future<void> setComponentOpacity(double value) async {
     _componentOpacity = value.clamp(0.0, 1.0);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setDouble(_componentOpacityKey, _componentOpacity);
     notifyListeners();
   }
 
   Future<void> setLiquidGlass(bool value) async {
     _liquidGlass = value;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_liquidGlassKey, value);
     notifyListeners();
   }
 
   Future<void> setFloatingNavBar(bool value) async {
     _floatingNavBar = value;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_floatingNavBarKey, value);
     notifyListeners();
   }
 
   Future<void> setPredictiveBack(bool value) async {
     _predictiveBack = value;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_predictiveBackKey, value);
     notifyListeners();
   }
@@ -327,7 +328,7 @@ class ThemeProvider extends ChangeNotifier {
     _backgroundFillScreen = false;
     _landscapeBackgroundFillScreen = false;
     _backgroundMode = AppBackgroundMode.clean;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.remove(_backgroundImageKey);
     await prefs.remove(_landscapeBackgroundImageKey);
     await prefs.remove(_backgroundFillScreenKey);
@@ -341,14 +342,14 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> setStartOnTimetable(bool v) async {
     _startOnTimetable = v;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_startOnTimetableKey, v);
     notifyListeners();
   }
 
   Future<void> setMarketIsListView(bool v) async {
     _marketIsListView = v;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_marketIsListViewKey, v);
     notifyListeners();
   }

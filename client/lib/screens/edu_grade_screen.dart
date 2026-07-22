@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/edu_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/edu_academic_situation.dart';
@@ -22,6 +21,8 @@ import '../widgets/edu_grade/grade_center_section_tabs.dart';
 import '../widgets/edu_grade/graduation_warning_empty_state.dart';
 import 'edu_grade_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 class EduGradeScreen extends StatefulWidget {
   final String? initialYear;
@@ -151,7 +152,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
   Future<void> _initSemesterAndLoad(String userId) async {
     // Load persisted semester
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final savedKey = 'edu_last_semester_$userId';
     final saved = prefs.getString(savedKey);
 
@@ -444,7 +445,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   void _saveSelectedSemesterFor(String userId, String year, int semester) {
-    SharedPreferences.getInstance().then((prefs) {
+    AppPreferencesStore.getInstance().then((prefs) {
       prefs.setString('edu_last_semester_$userId', '${year}_$semester');
     });
     unawaited(

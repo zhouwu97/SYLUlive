@@ -32,7 +32,7 @@ func newCompetitionTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{}, &models.CompetitionCategory{}, &models.CompetitionEvent{},
 		&models.UserCompetitionCalendar{}, &models.UserCompetitionCalendarItem{},
-		&models.CompetitionImportBatch{},
+		&models.CompetitionImportBatch{}, &models.UserCompetitionPreference{},
 	); err != nil {
 		t.Fatal(err)
 	}

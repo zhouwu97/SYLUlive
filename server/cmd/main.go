@@ -263,6 +263,7 @@ func main() {
 		&models.CalendarShareSnapshot{},
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
+		&models.UserCompetitionPreference{},
 		&models.CampusCalendar{},
 		&models.AIKnowledgeDocument{},
 		&models.AIKnowledgeAuditLog{},
@@ -833,6 +834,8 @@ func main() {
 		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
 		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
 		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
+		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
+		user.PUT("/competition-preference", competitionHandler.PutCompetitionPreference)
 		user.GET("/competitions/fit", competitionHandler.ListFitEvents)
 		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
 		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)

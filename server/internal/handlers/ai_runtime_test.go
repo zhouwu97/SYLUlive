@@ -41,8 +41,6 @@ func TestParseLastEventIDSupportsRunPrefix(t *testing.T) {
 	}
 }
 
-
-
 func TestDeleteConversationRetainsConsumedQuotaLedger(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
@@ -121,7 +119,7 @@ func TestListConversationsWithPreview(t *testing.T) {
 	require.NoError(t, db.Create(&models.AIConversationMessage{
 		ID: "1", ConversationID: c1, Role: "user", Content: "Hello C1", CreatedAt: time.Now(),
 	}).Error)
-	
+
 	c2 := uuid.NewString()
 	require.NoError(t, db.Create(&models.AIConversation{ID: c2, UserID: userID, Title: "C2", UpdatedAt: time.Now().Add(time.Second)}).Error)
 	require.NoError(t, db.Create(&models.AIConversationMessage{

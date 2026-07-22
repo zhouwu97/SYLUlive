@@ -264,6 +264,7 @@ func main() {
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
 		&models.UserCompetitionPreference{},
+		&models.UserCompetitionAward{},
 		&models.CampusCalendar{},
 		&models.AIKnowledgeDocument{},
 		&models.AIKnowledgeAuditLog{},
@@ -836,6 +837,10 @@ func main() {
 		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
 		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
 		user.PUT("/competition-preference", competitionHandler.PutCompetitionPreference)
+		user.GET("/competition-awards", competitionHandler.ListCompetitionAwards)
+		user.POST("/competition-awards", competitionHandler.CreateCompetitionAward)
+		user.PUT("/competition-awards/:id", competitionHandler.UpdateCompetitionAward)
+		user.DELETE("/competition-awards/:id", competitionHandler.DeleteCompetitionAward)
 		user.GET("/competitions/fit", competitionHandler.ListFitEvents)
 		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
 		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)

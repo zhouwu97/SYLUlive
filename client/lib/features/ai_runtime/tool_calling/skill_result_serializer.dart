@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../models/competition_capability_profile.dart';
 import '../../campus_data/storage/personal_snapshot_models.dart';
 import '../skills/academic_overview_skill.dart';
 import '../skills/competition_search_skill.dart';
@@ -135,6 +136,34 @@ class SkillResultSerializer {
                 )
                 .toList(),
             'data_updated_at': _time(output.dataUpdatedAt),
+          },
+        CompetitionCapabilityProfile output => <String, dynamic>{
+            'preference_configured': output.preferenceConfigured,
+            'goals': output.goals,
+            'verified_award_count': output.verifiedAwardCount,
+            'self_reported_award_count': output.selfReportedAwardCount,
+            'skill_summary': output.skillSummary
+                .map(
+                  (item) => <String, dynamic>{
+                    'skill': item.value,
+                    'verified_count': item.verifiedCount,
+                    'self_reported_count': item.selfReportedCount,
+                  },
+                )
+                .toList(),
+            'role_summary': output.roleSummary
+                .map(
+                  (item) => <String, dynamic>{
+                    'role': item.value,
+                    'verified_count': item.verifiedCount,
+                    'self_reported_count': item.selfReportedCount,
+                  },
+                )
+                .toList(),
+            'direction_tags': output.directionTags,
+            'preferred_roles': output.preferredRoles,
+            'weekly_hours': output.weeklyHours,
+            'accept_long_term_training': output.acceptLongTermTraining,
           },
         AcademicGpaOutput output => <String, dynamic>{
             'formula_version': output.result.formulaVersion,

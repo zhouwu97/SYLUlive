@@ -15,7 +15,7 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
         parameters: _object(<String, dynamic>{
           'week_containing': <String, dynamic>{
             'type': 'string',
-            'format': 'date',
+            'format': 'date'
           },
         }),
       ),
@@ -50,6 +50,11 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
           required: const <String>['keyword'],
         ),
       ),
+      ToolDefinition(
+        id: 'get_competition_capability_profile',
+        description: '读取用户明确授权的竞赛目标和结构化能力画像',
+        parameters: _object(const <String, dynamic>{}),
+      ),
       ...<String, String>{
         'personal.academic.gpa': '按固定公式计算 GPA 并列出纳入和排除课程',
         'personal.academic.credit_summary': '确定性统计已修、通过和未通过学分',
@@ -68,10 +73,7 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
         parameters: _object(<String, dynamic>{
           'goals': const <String, dynamic>{
             'type': 'array',
-            'items': <String, dynamic>{
-              'type': 'string',
-              'maxLength': 32,
-            },
+            'items': <String, dynamic>{'type': 'string', 'maxLength': 32},
             'maxItems': 5,
           },
         }),

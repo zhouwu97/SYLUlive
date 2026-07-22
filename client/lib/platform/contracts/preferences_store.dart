@@ -111,7 +111,12 @@ class OhosPreferencesStore implements AppPreferencesStore {
     if (all != null) {
       _cache.clear();
       for (final entry in all.entries) {
-        _cache[entry.key as String] = entry.value;
+        final value = entry.value;
+        if (value is List) {
+          _cache[entry.key as String] = List<String>.unmodifiable(value.cast<String>());
+        } else {
+          _cache[entry.key as String] = value;
+        }
       }
     } else {
       throw StateError('Failed to initialize OhosPreferencesStore: getAll returned null');
@@ -190,7 +195,7 @@ class OhosPreferencesStore implements AppPreferencesStore {
   Future<bool> setStringList(String key, List<String> value) async {
     try {
       await _channel.invokeMethod<void>('setStringList', {'key': key, 'value': value});
-      _cache[key] = value;
+      _cache[key] = List<String>.unmodifiable(value);
       return true;
     } catch (_) {
       return false;

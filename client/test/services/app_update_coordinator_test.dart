@@ -44,6 +44,8 @@ AppUpdateInfo _noneInfo() => AppUpdateInfo(
       fileSize: 0,
       sha256: '',
       downloadUrl: '',
+      deliveryMode: AppUpdateDeliveryMode.directPackage,
+      actionUrl: '',
       publishedAt: null,
       checkAfterSeconds: 21600,
     );
@@ -61,7 +63,9 @@ AppUpdateInfo _requiredInfo() => AppUpdateInfo(
       fileSize: 1024,
       sha256:
           '0000000000000000000000000000000000000000000000000000000000000000',
-      downloadUrl: 'https://example.com/update.apk',
+      downloadUrl: 'https://example.com/app.apk',
+      deliveryMode: AppUpdateDeliveryMode.directPackage,
+      actionUrl: '',
       publishedAt: null,
       checkAfterSeconds: 21600,
     );

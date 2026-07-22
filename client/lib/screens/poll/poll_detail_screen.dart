@@ -103,13 +103,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
   }
 
   Future<void> _sendReply() async {
-    if (_sending) return;
-    if (!context.read<AuthProvider>().isLoggedIn) {
-      AppFeedback.showSnackBar(context, '请先登录');
-      return;
-    }
     final text = _replyController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _sending || !context.read<AuthProvider>().isLoggedIn) return;
     setState(() => _sending = true);
     try {
       final response = await context.read<AuthProvider>().dio.post('/posts/${_post!.id}/replies', data: FormData.fromMap({'content': text}));

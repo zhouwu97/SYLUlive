@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
@@ -16,6 +15,8 @@ import '../widgets/rating_detail/ranking_tokens.dart';
 import 'canteen_detail_screen.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 class TeacherRateScreen extends StatefulWidget {
   const TeacherRateScreen({super.key});
@@ -44,7 +45,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   }
 
   Future<void> _checkDisclaimer() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final hasShown = prefs.getBool('has_shown_teacher_disclaimer') ?? false;
     if (!hasShown) {
       if (mounted) setState(() => _showDisclaimer = true);
@@ -257,7 +258,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             GestureDetector(
               onTap: () async {
                 if (mounted) setState(() => _showDisclaimer = false);
-                final prefs = await SharedPreferences.getInstance();
+                final prefs = await AppPreferencesStore.getInstance();
                 await prefs.setBool('has_shown_teacher_disclaimer', true);
               },
               child: Icon(Icons.close,

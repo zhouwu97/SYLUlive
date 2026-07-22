@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../lib/services/emoji_recent_service.dart';
 import '../../../lib/widgets/emoji/app_emoji_panel.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   testWidgets('selects Emoji and exposes complete-character delete action',
       (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     final service = EmojiRecentService(
-      preferencesLoader: SharedPreferences.getInstance,
+      preferencesLoader: AppPreferencesStore.getInstance,
     );
     String? selected;
     var deleted = false;
@@ -40,11 +41,11 @@ void main() {
   });
 
   testWidgets('lays out without overflow in narrow dark mode', (tester) async {
-    SharedPreferences.setMockInitialValues({
+    AppPreferencesStore.setMockInitialValues({
       'emoji_recent_v1': ['👨‍👩‍👧‍👦', '❤️', '👍🏻'],
     });
     final service = EmojiRecentService(
-      preferencesLoader: SharedPreferences.getInstance,
+      preferencesLoader: AppPreferencesStore.getInstance,
     );
     tester.view.physicalSize = const Size(320, 240);
     tester.view.devicePixelRatio = 1;

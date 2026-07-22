@@ -1,8 +1,9 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_update_info.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 缓存的更新策略与最后一次成功检查时间。
 class AppUpdateCacheEntry {
@@ -22,7 +23,7 @@ class AppUpdateCache {
   static const _ignoredVersionCodeKey = 'app_update_ignored_version_code_v1';
 
   Future<AppUpdateCacheEntry?> read() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final raw = prefs.getString(_entryKey);
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -44,7 +45,7 @@ class AppUpdateCache {
   }
 
   Future<void> write(AppUpdateInfo info, DateTime checkedAt) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setString(
       _entryKey,
       jsonEncode({
@@ -55,17 +56,17 @@ class AppUpdateCache {
   }
 
   Future<bool> isOptionalVersionIgnored(int versionCode) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     return prefs.getInt(_ignoredVersionCodeKey) == versionCode;
   }
 
   Future<void> ignoreOptionalVersion(int versionCode) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setInt(_ignoredVersionCodeKey, versionCode);
   }
 
   Future<void> clearIgnoredVersionWhenChanged(int versionCode) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final ignored = prefs.getInt(_ignoredVersionCodeKey);
     if (ignored != null && ignored != versionCode) {
       await prefs.remove(_ignoredVersionCodeKey);

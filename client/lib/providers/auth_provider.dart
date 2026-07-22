@@ -20,6 +20,8 @@ import '../services/wallpaper_prefetch_service.dart';
 import '../services/keep_alive_service.dart';
 import '../services/grade_reminder_service.dart';
 import '../widgets/auth_expired_overlay.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 认证结果，包含成功状态和错误信息
 class AuthResult {
@@ -208,7 +210,7 @@ class PreferenceAuthCredentialStore implements AuthCredentialStore {
 }
 
 class _SharedPreferencesStore implements PreferenceStore {
-  final SharedPreferences _preferences;
+  final AppPreferencesStore _preferences;
 
   const _SharedPreferencesStore(this._preferences);
 
@@ -232,7 +234,7 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   static const _userKey = 'auth_user';
 
   final AppSecretStore _store = AppSecretStore.current();
-  final Future<SharedPreferences> _prefsFuture = SharedPreferences.getInstance();
+  final Future<AppPreferencesStore> _prefsFuture = AppPreferencesStore.getInstance();
 
   @override
   Future<StoredAuthCredentials> read() async {

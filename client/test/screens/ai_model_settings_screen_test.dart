@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_model_provider.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_provider_storage.dart';
 import 'package:shenliyuan/screens/ai/ai_model_settings_screen.dart';
 import 'package:shenliyuan/platform/contracts/secure_store.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   test('旧配置缺少 wire_api 时默认自动识别', () {
@@ -19,7 +20,7 @@ void main() {
   });
 
   test('保存后会持久化所选请求协议', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
     final store = AIProviderSettingsStore(
       appUserId: '10001',
       secureStore: _MemoryProviderSecureStore(),
@@ -35,7 +36,7 @@ void main() {
   });
 
   testWidgets('校园公益旧配置会引导用户配置个人助手模型', (tester) async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
     final store = AIProviderSettingsStore(
       appUserId: '10001',
       secureStore: _MemoryProviderSecureStore(),

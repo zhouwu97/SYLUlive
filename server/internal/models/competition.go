@@ -92,6 +92,9 @@ type CompetitionEvent struct {
 
 	FitLevel   string   `gorm:"-" json:"fit_level,omitempty"`
 	FitReasons []string `gorm:"-" json:"fit_reasons,omitempty"`
+	// PersonalizedScore 与赛事人工评级完全独立，仅在“适合我”响应中赋值。
+	PersonalizedScore  *int   `gorm:"-" json:"personalized_score,omitempty"`
+	RecommendationTier string `gorm:"-" json:"recommendation_tier,omitempty"`
 }
 
 func (CompetitionEvent) TableName() string { return "competition_events" }

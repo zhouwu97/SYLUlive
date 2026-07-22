@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../../models/competition_capability_profile.dart';
+import '../../../models/competition_action_draft.dart';
 import '../../campus_data/storage/personal_snapshot_models.dart';
 import '../skills/academic_overview_skill.dart';
 import '../skills/competition_search_skill.dart';
@@ -186,6 +187,18 @@ class SkillResultSerializer {
                     })
                 .toList(),
             'data_updated_at': _time(output.fetchedAt),
+          },
+        CompetitionPlanActionDraft output => <String, dynamic>{
+            'draft_id': output.id,
+            'action_type': output.actionType,
+            'status': output.status,
+            'expires_at': output.expiresAt.toUtc().toIso8601String(),
+            'event': output.toJson()['event'],
+            'confirmation_required': true,
+            'warnings': const <String>[
+              '这是待确认草稿，确认时服务端会重新校验',
+              '不会自动报名，也不代表学校确认参赛资格或政策收益',
+            ],
           },
         AcademicGpaOutput output => <String, dynamic>{
             'formula_version': output.result.formulaVersion,

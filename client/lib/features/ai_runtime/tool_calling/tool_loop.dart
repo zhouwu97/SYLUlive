@@ -83,6 +83,7 @@ class LocalToolLoop {
     ];
     final seenCalls = <String>{};
     final evidence = <SkillEvidence>[];
+    final actionArtifacts = <SkillActionArtifact>[];
     var personalSkillCount = 0;
     var toolRounds = 0;
 
@@ -108,6 +109,7 @@ class LocalToolLoop {
                 : ToolLoopStatus.completed,
             answer: answer,
             evidence: List<SkillEvidence>.unmodifiable(evidence),
+            actionArtifacts: List<SkillActionArtifact>.unmodifiable(actionArtifacts),
           );
         }
 
@@ -217,6 +219,9 @@ class LocalToolLoop {
         }
         final serialized = _serializer.serialize(result);
         evidence.addAll(result.evidence);
+        if (result.value is SkillActionArtifact) {
+          actionArtifacts.add(result.value! as SkillActionArtifact);
+        }
         if (serialized.length > maximumResultCharacters) {
           await _audit(call.tool, permission, dataTypes, 'result_too_large');
           return const ToolLoopOutcome(

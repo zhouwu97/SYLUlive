@@ -16,6 +16,7 @@ import 'package:shenliyuan/features/ai_runtime/personal_data/models/schedule_ove
 import 'package:shenliyuan/features/ai_runtime/skills/academic_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/competition_search_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/competition_advisor_skills.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/competition_plan_action_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/deterministic_skills.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/erke_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill.dart';
@@ -300,6 +301,7 @@ void main() {
         <String>{
           CompetitionCapabilityProfileSkill.skillId,
           ExplainCompetitionMatchesSkill.skillId,
+          DraftAddCompetitionToPlanSkill.skillId,
         },
       );
     });
@@ -744,6 +746,9 @@ void main() {
         ExplainCompetitionMatchesSkill.skillId: <PersonalDataType>{
           PersonalDataType.studentProfile,
         },
+        DraftAddCompetitionToPlanSkill.skillId: <PersonalDataType>{
+          PersonalDataType.studentProfile,
+        },
         FitnessWeeklyPlanSkill.skillId: <PersonalDataType>{
           PersonalDataType.schedule,
           PersonalDataType.physical,
@@ -756,9 +761,15 @@ void main() {
       );
 
       for (final definition in definitions) {
-        final arguments = definition.id == CompetitionSearchSkill.skillId
-            ? <String, dynamic>{'keyword': '人工智能'}
-            : <String, dynamic>{};
+        final arguments = switch (definition.id) {
+          CompetitionSearchSkill.skillId => <String, dynamic>{
+              'keyword': '人工智能'
+            },
+          DraftAddCompetitionToPlanSkill.skillId => <String, dynamic>{
+              'event_id': 1
+            },
+          _ => <String, dynamic>{},
+        };
         final validated = validator.validate(
           LocalToolCall(
             id: 'preview-${definition.id}',

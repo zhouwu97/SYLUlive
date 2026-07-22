@@ -17,6 +17,7 @@ import '../../features/ai_runtime/personal_session/personal_conversation_store.d
 import '../../features/ai_runtime/personal_session/personal_session_epoch.dart';
 import '../../features/ai_runtime/skills/competition_search_skill.dart';
 import '../../features/ai_runtime/skills/competition_advisor_skills.dart';
+import '../../features/ai_runtime/skills/competition_plan_action_skill.dart';
 import '../../features/ai_runtime/skills/deterministic_skills.dart';
 import '../../features/ai_runtime/skills/personal_skill.dart';
 import '../../features/ai_runtime/skills/skill_execution_context.dart';
@@ -30,6 +31,7 @@ import '../../features/ai_runtime/tool_calling/tool_permission_dialog.dart';
 import '../../features/campus_data/storage/account_cache_namespace.dart';
 import '../../models/ai_capabilities.dart';
 import '../../models/ai_chat_message.dart';
+import '../../models/competition_action_draft.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/ai_assistant_provider.dart';
 import '../../providers/edu_provider.dart';
@@ -51,13 +53,14 @@ import 'personal_data_center_screen.dart';
 import '../../widgets/ai/ai_history_sheet.dart';
 import '../../widgets/ai/ai_app_bar_title.dart';
 import '../../widgets/ai/ai_mode_switch.dart';
+import '../competition/competition_center_screen.dart';
 
 class AiAssistantScreen extends StatefulWidget {
   final AiCapabilities capabilities;
   final AiAssistantService service;
   final Dio dio;
   final PersonalConversationStore Function(String accountKey)?
-      personalConversationStoreFactory;
+  personalConversationStoreFactory;
 
   const AiAssistantScreen({
     super.key,
@@ -204,7 +207,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       return;
     }
     final requestEpoch = _personalSessionEpoch.capture();
-    final store = widget.personalConversationStoreFactory?.call(accountKey) ??
+    final store =
+        widget.personalConversationStoreFactory?.call(accountKey) ??
         PersonalConversationStore(accountKey: accountKey);
     _personalConversationStore = store;
     _loadedConversationAccountKey = accountKey;
@@ -431,8 +435,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         competitionSearchSource: DioCompetitionSearchSource(widget.dio),
         competitionCapabilityProfileSource:
             DioCompetitionCapabilityProfileSource(widget.dio),
-        competitionMatchExplanationSource:
-            DioCompetitionMatchExplanationSource(widget.dio),
+        competitionMatchExplanationSource: DioCompetitionMatchExplanationSource(
+          widget.dio,
+        ),
+        competitionPlanActionSource: DioCompetitionPlanActionSource(widget.dio),
         graduationRuleProvider: const _NoVerifiedRuleProvider(),
       );
       final loop = LocalToolLoop(
@@ -446,31 +452,36 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         accountGeneration: () => _personalSessionEpoch.generation,
         skillTimeout: const Duration(seconds: 90),
       );
-      final tools = buildStageSixToolDefinitions().where((tool) {
-        if (!hasEduAccount &&
-            !competitionAdvisorAccountIndependentSkillIds.contains(tool.id) &&
-            (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)) {
-          return false;
-        }
-        if (tool.id.startsWith('personal.academic.') &&
-            flags[AIFeatureFlag.academicEngine] != true) {
-          return false;
-        }
-        if (tool.id == GraduationReadinessSkill.skillId &&
-            flags[AIFeatureFlag.graduationAssistant] != true) {
-          return false;
-        }
-        if (tool.id == ExplainCompetitionMatchesSkill.skillId &&
-            flags[AIFeatureFlag.competitionFit] != true) {
-          return false;
-        }
-        return true;
-      }).toList(growable: false);
+      final tools = buildStageSixToolDefinitions()
+          .where((tool) {
+            if (!hasEduAccount &&
+                !competitionAdvisorAccountIndependentSkillIds.contains(
+                  tool.id,
+                ) &&
+                (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)) {
+              return false;
+            }
+            if (tool.id.startsWith('personal.academic.') &&
+                flags[AIFeatureFlag.academicEngine] != true) {
+              return false;
+            }
+            if (tool.id == GraduationReadinessSkill.skillId &&
+                flags[AIFeatureFlag.graduationAssistant] != true) {
+              return false;
+            }
+            if (tool.id == ExplainCompetitionMatchesSkill.skillId &&
+                flags[AIFeatureFlag.competitionFit] != true) {
+              return false;
+            }
+            return true;
+          })
+          .toList(growable: false);
       final unavailableToolReasons = <String, String>{
         if (!hasEduAccount)
           for (final tool in buildStageSixToolDefinitions())
-            if (!competitionAdvisorAccountIndependentSkillIds
-                    .contains(tool.id) &&
+            if (!competitionAdvisorAccountIndependentSkillIds.contains(
+                  tool.id,
+                ) &&
                 (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false))
               tool.id: '需要绑定教务后才能读取年级、学院、专业或个人校园数据',
       };
@@ -490,6 +501,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           content: outcome.answer,
           status: AiMessageStatus.completed,
           createdAt: DateTime.now(),
+          actionDrafts: outcome.actionArtifacts
+              .whereType<CompetitionPlanActionDraft>()
+              .toList(growable: false),
         );
         setState(() {
           _personalMessages.add(assistantMessage);
@@ -536,12 +550,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   String _toolStatusMessage(ToolLoopStatus status) => switch (status) {
-        ToolLoopStatus.permissionDenied => '已取消个人数据授权',
-        ToolLoopStatus.cancelled => '请求已取消',
-        ToolLoopStatus.rejected => '请求未通过本地安全校验',
-        ToolLoopStatus.failed => '个人助手执行失败',
-        ToolLoopStatus.completed => '',
-      };
+    ToolLoopStatus.permissionDenied => '已取消个人数据授权',
+    ToolLoopStatus.cancelled => '请求已取消',
+    ToolLoopStatus.rejected => '请求未通过本地安全校验',
+    ToolLoopStatus.failed => '个人助手执行失败',
+    ToolLoopStatus.completed => '',
+  };
 
   Future<void> _cancelPersonal() async {
     _toolCancellation?.cancel();
@@ -593,14 +607,112 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       barrierColor: Colors.black.withValues(alpha: 0.28),
       builder: (sheetContext) =>
           ChangeNotifierProvider<AiAssistantProvider>.value(
-        value: _provider,
-        child: AiHistorySheet(
-          onFocusRequest: () {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _inputFocusNode.requestFocus();
-            });
-          },
-        ),
+            value: _provider,
+            child: AiHistorySheet(
+              onFocusRequest: () {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _inputFocusNode.requestFocus();
+                });
+              },
+            ),
+          ),
+    );
+  }
+
+  Future<void> _confirmCompetitionDraft(
+    CompetitionPlanActionDraft draft,
+  ) async {
+    if (!draft.isPending || draft.isExpired) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('确认加入计划？'),
+        content: const Text('加入后会出现在我的计划中，不会自动报名，也不代表学校确认参赛资格。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('确认加入'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final requestEpoch = _personalSessionEpoch.capture();
+    try {
+      final updated = await DioCompetitionPlanActionSource(
+        widget.dio,
+      ).confirm(draft.id);
+      if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      _replaceCompetitionDraft(updated);
+      await _persistPersonalHistory();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已加入我的竞赛计划')));
+      }
+    } on CompetitionPlanActionException catch (error) {
+      if (!_isCurrentPersonalRequest(requestEpoch)) return;
+      if (error.draft != null) {
+        _replaceCompetitionDraft(error.draft!);
+        await _persistPersonalHistory();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (_isCurrentPersonalRequest(requestEpoch)) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('加入计划失败，请稍后重试')));
+      }
+    }
+  }
+
+  void _replaceCompetitionDraft(CompetitionPlanActionDraft updated) {
+    setState(() {
+      for (var index = 0; index < _personalMessages.length; index++) {
+        final message = _personalMessages[index];
+        if (!message.actionDrafts.any((item) => item.id == updated.id)) {
+          continue;
+        }
+        _personalMessages[index] = message.copyWith(
+          actionDrafts: message.actionDrafts
+              .map((item) => item.id == updated.id ? updated : item)
+              .toList(growable: false),
+        );
+      }
+      for (
+        var index = 0;
+        index < _personalConversationEntries.length;
+        index++
+      ) {
+        final entry = _personalConversationEntries[index];
+        if (!entry.message.actionDrafts.any((item) => item.id == updated.id)) {
+          continue;
+        }
+        _personalConversationEntries[index] = PersonalConversationEntry(
+          message: entry.message.copyWith(
+            actionDrafts: entry.message.actionDrafts
+                .map((item) => item.id == updated.id ? updated : item)
+                .toList(growable: false),
+          ),
+          evidence: entry.evidence,
+        );
+      }
+    });
+  }
+
+  void _openCompetitionDetail(int eventId) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CompetitionDetailScreen(eventId: eventId),
       ),
     );
   }
@@ -659,7 +771,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
       children: [
         for (final message in _personalMessages)
-          AiMessageCard(message: message),
+          AiMessageCard(
+            message: message,
+            onConfirmDraft: _confirmCompetitionDraft,
+            onViewCompetition: _openCompetitionDetail,
+          ),
         if (_personalEvidence.isNotEmpty)
           AiEvidenceCard(evidence: _personalEvidence),
         if (_personalSending) const AiTypingStatus(status: '正在本地校验并执行已授权能力'),
@@ -690,23 +806,23 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       'model' => AIModelSettingsScreen(appUserId: appUserId),
       'flags' => const AIFeatureSettingsScreen(),
       'data' => PersonalDataCenterScreen(
-          appUserId: appUserId,
-          sourceAccountId: edu.studentId,
-        ),
+        appUserId: appUserId,
+        sourceAccountId: edu.studentId,
+      ),
       'graduation' => GraduationChecklistScreen(
-          readiness: GraduationReadiness(
-            policyId: 'unknown',
-            items: const <GraduationRequirementItem>[
-              GraduationRequirementItem(
-                id: 'policy',
-                label: '培养方案',
-                state: RequirementState.blocked,
-                summary: '请先通过个人助手加载已审核的适用培养方案',
-              ),
-            ],
-            warnings: const <String>['当前没有可执行的已审核政策规则'],
-          ),
+        readiness: GraduationReadiness(
+          policyId: 'unknown',
+          items: const <GraduationRequirementItem>[
+            GraduationRequirementItem(
+              id: 'policy',
+              label: '培养方案',
+              state: RequirementState.blocked,
+              summary: '请先通过个人助手加载已审核的适用培养方案',
+            ),
+          ],
+          warnings: const <String>['当前没有可执行的已审核政策规则'],
         ),
+      ),
       _ => const AIFeatureSettingsScreen(),
     };
     final saved = await Navigator.of(
@@ -810,56 +926,55 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   child: _personalMode
                       ? _buildPersonalBody()
                       : provider.messages.isEmpty
-                          ? ListView(
-                              children: [
-                                AiEmptyState(
-                                  chatEnabled: capabilities.chatEnabled,
-                                  quickPrompts: provider.quickPrompts,
-                                  onPromptSelected: (prompt) {
-                                    _inputController.text = prompt;
-                                    _inputController.selection =
-                                        TextSelection.collapsed(
+                      ? ListView(
+                          children: [
+                            AiEmptyState(
+                              chatEnabled: capabilities.chatEnabled,
+                              quickPrompts: provider.quickPrompts,
+                              onPromptSelected: (prompt) {
+                                _inputController.text = prompt;
+                                _inputController.selection =
+                                    TextSelection.collapsed(
                                       offset: prompt.length,
                                     );
-                                  },
-                                ),
-                                if (provider.error != null)
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                    ),
-                                    child: AiErrorCard(
-                                      message: provider.error!,
-                                      actionLabel:
-                                          provider.canRetry ? '重试' : '重新连接',
-                                      onAction: provider.canRetry
-                                          ? provider.retryLast
-                                          : provider.reconnect,
-                                    ),
-                                  ),
-                              ],
-                            )
-                          : ListView(
-                              padding:
-                                  const EdgeInsets.fromLTRB(16, 10, 16, 18),
-                              children: [
-                                for (final message in provider.messages)
-                                  AiMessageCard(message: message),
-                                if (provider.isRunning)
-                                  AiTypingStatus(
-                                    status: provider.friendlyRunStatus,
-                                  ),
-                                if (provider.error != null)
-                                  AiErrorCard(
-                                    message: provider.error!,
-                                    actionLabel:
-                                        provider.canRetry ? '重试' : '重新连接',
-                                    onAction: provider.canRetry
-                                        ? provider.retryLast
-                                        : provider.reconnect,
-                                  ),
-                              ],
+                              },
                             ),
+                            if (provider.error != null)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: AiErrorCard(
+                                  message: provider.error!,
+                                  actionLabel: provider.canRetry
+                                      ? '重试'
+                                      : '重新连接',
+                                  onAction: provider.canRetry
+                                      ? provider.retryLast
+                                      : provider.reconnect,
+                                ),
+                              ),
+                          ],
+                        )
+                      : ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+                          children: [
+                            for (final message in provider.messages)
+                              AiMessageCard(message: message),
+                            if (provider.isRunning)
+                              AiTypingStatus(
+                                status: provider.friendlyRunStatus,
+                              ),
+                            if (provider.error != null)
+                              AiErrorCard(
+                                message: provider.error!,
+                                actionLabel: provider.canRetry ? '重试' : '重新连接',
+                                onAction: provider.canRetry
+                                    ? provider.retryLast
+                                    : provider.reconnect,
+                              ),
+                          ],
+                        ),
                 ),
                 AiInputComposer(
                   controller: _inputController,
@@ -868,8 +983,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   enabled: _personalMode
                       ? !_personalSending && !_personalHistoryLoading
                       : capabilities.chatEnabled && quota.remaining > 0,
-                  running:
-                      _personalMode ? _personalSending : provider.isRunning,
+                  running: _personalMode
+                      ? _personalSending
+                      : provider.isRunning,
                   onSend: _submit,
                   onCancel: _personalMode ? _cancelPersonal : provider.cancel,
                 ),

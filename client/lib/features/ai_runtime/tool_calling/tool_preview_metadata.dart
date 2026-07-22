@@ -8,6 +8,7 @@ import '../skills/physical_overview_skill.dart';
 import '../skills/schedule_skill_models.dart';
 import '../skills/today_schedule_skill.dart';
 import '../skills/week_schedule_skill.dart';
+import '../skills/competition_plan_action_skill.dart';
 import 'tool_call_models.dart';
 
 class ToolPreviewRequest {
@@ -58,6 +59,7 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
       CompetitionSearchSkill.skillId => _competitionSearch(),
       CompetitionCapabilityProfileSkill.skillId => _competitionCapability(),
       ExplainCompetitionMatchesSkill.skillId => _competitionMatches(),
+      DraftAddCompetitionToPlanSkill.skillId => _competitionPlanDraft(),
       AcademicGpaSkill.skillId => _gpa(),
       AcademicCreditSummarySkill.skillId => _creditSummary(),
       AcademicFailureRiskSkill.skillId => _failureRisk(),
@@ -189,6 +191,22 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
           '赛事人工评级和学校认定状态',
           '报名时间状态和准备建议所需事实',
         ],
+      );
+
+  ToolPermissionPreviewMetadata _competitionPlanDraft() => _metadata(
+        inputItems: const <ToolDataPreviewItem>[
+          ToolDataPreviewItem(
+            dataType: PersonalDataType.studentProfile,
+            label: '用户已授权的竞赛画像和服务端适配结果',
+          ),
+        ],
+        excluded: const <String>[
+          '证明材料、核验备注和审核员信息',
+          '成绩、GPA、毕业和保研政策收益',
+          '自动报名、批量加入、组队申请和核验提交',
+          ..._credentials,
+        ],
+        output: const <String>['赛事预览', '现有匹配分数、档位和理由', '待确认草稿状态'],
       );
 
   ToolPermissionPreviewMetadata _gpa() => _metadata(

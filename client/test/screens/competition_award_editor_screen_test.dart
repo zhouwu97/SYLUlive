@@ -167,7 +167,7 @@ void main() {
     expect(find.text('服务器拒绝保存'), findsOneWidget);
   });
 
-  testWidgets('编辑已核验经历会提示状态回退并发送 PUT', (tester) async {
+  testWidgets('已核验经历锁定核心字段且仅保存可见范围', (tester) async {
     final adapter = _EditorAdapter((options, _) {
       if (options.method == 'GET') return _jsonResponse({'items': []});
       return _jsonResponse({'id': 8});
@@ -186,16 +186,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('当前状态：平台已核验'), findsOneWidget);
-    expect(find.textContaining('恢复为“本人填写”'), findsOneWidget);
-    await tester.enterText(
+    expect(find.textContaining('核心信息和证明材料暂不可修改'), findsOneWidget);
+    final awardField = tester.widget<TextFormField>(
       find.widgetWithText(TextFormField, '奖项名称'),
-      '特等奖',
     );
+    expect(awardField.enabled, isFalse);
     await tester.tap(find.byKey(const Key('competition-award-save')));
     await tester.pumpAndSettle();
 
     expect(adapter.putCount, 1);
-    expect(adapter.putBodies.single['award_name'], '特等奖');
+    expect(adapter.putBodies.single['award_name'], '一等奖');
     expect(
         adapter.putBodies.single.containsKey('verification_status'), isFalse);
   });

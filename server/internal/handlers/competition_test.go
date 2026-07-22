@@ -33,6 +33,7 @@ func newCompetitionTestDB(t *testing.T) *gorm.DB {
 		&models.User{}, &models.CompetitionCategory{}, &models.CompetitionEvent{},
 		&models.UserCompetitionCalendar{}, &models.UserCompetitionCalendarItem{},
 		&models.CompetitionImportBatch{}, &models.UserCompetitionPreference{},
+		&models.CompetitionRecommendationSnapshot{},
 		&models.UserCompetitionAward{}, &models.File{}, &models.FileUploadGrant{},
 		&models.CompetitionAwardVerificationLog{}, &models.CompetitionAwardEvidenceFile{},
 		&models.CompetitionAwardEvidence{},

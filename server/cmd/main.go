@@ -269,6 +269,7 @@ func main() {
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
 		&models.UserCompetitionPreference{},
+		&models.CompetitionRecommendationSnapshot{},
 		&models.UserCompetitionAward{},
 		&models.CompetitionAwardVerificationLog{},
 		&models.CompetitionAwardEvidenceFile{},

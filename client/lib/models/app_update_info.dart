@@ -15,6 +15,27 @@ enum AppUpdateType {
   required,
 }
 
+/// 客户端应用更新的交付模式。
+enum AppUpdateDeliveryMode {
+  /// 直接下发 APK（或其他包体），客户端负责下载和安装。
+  directPackage,
+
+  /// 外部市场跳转，例如鸿蒙 AppGallery。
+  externalMarket,
+}
+
+AppUpdateDeliveryMode _parseDeliveryMode(dynamic value) {
+  if (value is String) {
+    switch (value) {
+      case 'direct_package':
+        return AppUpdateDeliveryMode.directPackage;
+      case 'external_market':
+        return AppUpdateDeliveryMode.externalMarket;
+    }
+  }
+  return AppUpdateDeliveryMode.directPackage; // 兼容旧版，默认 directPackage
+}
+
 AppUpdateType _parseUpdateType(dynamic value) {
   if (value is String) {
     switch (value) {
@@ -95,8 +116,8 @@ class AppUpdateInfo {
   final String sha256;
   final String downloadUrl;
 
-  final String? deliveryMode;
-  final String? actionUrl;
+  final AppUpdateDeliveryMode deliveryMode;
+  final String actionUrl;
 
   final DateTime? publishedAt;
   final int checkAfterSeconds;
@@ -114,15 +135,19 @@ class AppUpdateInfo {
     required this.fileSize,
     required this.sha256,
     required this.downloadUrl,
-    this.deliveryMode,
-    this.actionUrl,
+    required this.deliveryMode,
+    required this.actionUrl,
     required this.publishedAt,
     required this.checkAfterSeconds,
   });
 
   /// 转换为可持久化的服务端协议字段，供本地策略缓存恢复。
   /// 下载链接已在解析阶段转为绝对地址，恢复时会原样保留。
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson() {
+    final modeString = deliveryMode == AppUpdateDeliveryMode.externalMarket
+        ? 'external_market'
+        : 'direct_package';
+    return {
         'update_available': updateAvailable,
         'update_type': updateType.name,
         'current_version_name': currentVersionName,
@@ -135,11 +160,12 @@ class AppUpdateInfo {
         'file_size': fileSize,
         'sha256': sha256,
         'download_url': downloadUrl,
-        if (deliveryMode != null) 'delivery_mode': deliveryMode,
-        if (actionUrl != null) 'action_url': actionUrl,
+        'delivery_mode': modeString,
+        'action_url': actionUrl,
         if (publishedAt != null) 'published_at': publishedAt!.toIso8601String(),
         'check_after_seconds': checkAfterSeconds,
       };
+  }
 
   /// 从服务端 JSON 构造 AppUpdateInfo。
   ///
@@ -196,39 +222,44 @@ class AppUpdateInfo {
     String sha256 = '';
     String downloadUrl = '';
 
+    final deliveryMode = _parseDeliveryMode(json['delivery_mode']);
+    String actionUrl = '';
+    
+    if (json['action_url'] is String) {
+      actionUrl = (json['action_url'] as String).trim();
+    }
+
     if (updateAvailable) {
       title = (json['title'] ?? '') as String;
       changelog = (json['changelog'] ?? '') as String;
-      fileSize = _parseInt(json['file_size'], 'file_size');
-      if (fileSize <= 0) {
-        throw FormatException('file_size 必须为正，收到: $fileSize');
-      }
-      final rawSha = json['sha256'];
-      if (rawSha is! String || rawSha.isEmpty) {
-        throw const FormatException('update_available=true 时 sha256 必须存在');
-      }
-      _validateSha256Hex(rawSha);
-      sha256 = rawSha;
-
-      final rawUrl = json['download_url'];
-      if (rawUrl is! String || rawUrl.isEmpty) {
-        if (json['delivery_mode'] != 'external_market') {
-          throw const FormatException(
-              'update_available=true 且非 external_market 时 download_url 必须存在');
+      
+      if (deliveryMode == AppUpdateDeliveryMode.directPackage) {
+        fileSize = _parseInt(json['file_size'], 'file_size');
+        if (fileSize <= 0) {
+          throw FormatException('direct_package 模式下 file_size 必须为正，收到: $fileSize');
         }
-      } else {
-        // 相对路径（如 /api/app/releases/12/download）经 ApiConstants.fullUrl
-        // 拼成完整 https URL；绝对 URL 直接透传。
+        final rawSha = json['sha256'];
+        if (rawSha is! String || rawSha.isEmpty) {
+          throw const FormatException('direct_package 模式下 sha256 必须存在');
+        }
+        _validateSha256Hex(rawSha);
+        sha256 = rawSha;
+  
+        final rawUrl = json['download_url'];
+        if (rawUrl is! String || rawUrl.isEmpty) {
+          throw const FormatException('direct_package 模式下 download_url 必须存在');
+        }
         final absoluteUrl = ApiConstants.fullUrl(rawUrl);
         if (absoluteUrl.isEmpty) {
           throw FormatException('download_url 转绝对后为空，原始值: $rawUrl');
         }
         downloadUrl = absoluteUrl;
+      } else if (deliveryMode == AppUpdateDeliveryMode.externalMarket) {
+        if (actionUrl.isEmpty) {
+          throw const FormatException('external_market 模式下 action_url 不能为空');
+        }
       }
     }
-
-    final deliveryMode = json['delivery_mode'] as String?;
-    final actionUrl = json['action_url'] as String?;
 
     final publishedAt = _parseNullableDate(
       json['published_at'] is String ? json['published_at'] as String : null,

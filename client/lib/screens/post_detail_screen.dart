@@ -392,12 +392,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _sendReply() async {
     if (_isSending) return;
-
-    if (!context.read<AuthProvider>().isLoggedIn) {
-      AppFeedback.showSnackBar(context, '请先登录');
-      return;
-    }
-
     final content = _replyController.text.trim();
     if (content.isEmpty) return;
 

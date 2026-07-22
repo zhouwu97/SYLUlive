@@ -29,9 +29,9 @@ abstract interface class AppUpdateAction {
   factory AppUpdateAction.current(AppUpdateInfo info, AppInstaller installer, AppUpdateDownloadService downloadService) {
     final capabilities = PlatformCapabilities.current;
     
-    // 如果是鸿蒙平台，只有在服务端明确指明为 external_market 或提供了 actionUrl 时才允许外部跳转
+    // 如果是鸿蒙平台，只有在服务端明确指明为 external_market 且提供了有效 actionUrl 时才允许外部跳转
     if (capabilities.platform == AppPlatform.ohos) {
-      if (info.deliveryMode == 'external_market' || info.actionUrl != null) {
+      if (info.deliveryMode == AppUpdateDeliveryMode.externalMarket && info.actionUrl.trim().isNotEmpty) {
         return const OhosMarketUpdateAction();
       }
       return const UnsupportedUpdateAction();
@@ -77,7 +77,9 @@ class OhosMarketUpdateAction implements AppUpdateAction {
     void Function(AppDownloadProgress)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final targetUrl = info.actionUrl ?? info.downloadUrl;
+    final canOpenExternal = info.deliveryMode == AppUpdateDeliveryMode.externalMarket && info.actionUrl.trim().isNotEmpty;
+    final targetUrl = canOpenExternal ? info.actionUrl.trim() : info.downloadUrl.trim();
+    if (targetUrl.isEmpty) throw StateError('更新链接无效');
     final url = Uri.tryParse(targetUrl);
     if (url == null) throw StateError('更新链接无效');
     

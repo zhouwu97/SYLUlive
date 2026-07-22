@@ -124,6 +124,28 @@ class CompetitionStudentEventCard extends StatelessWidget {
                   ),
                 ),
               ],
+              if (showRecommendations && event.personalizedScore != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.tune_rounded,
+                      size: 15,
+                      color: CompetitionUiTokens.accent(isDark),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      '偏好匹配 ${event.personalizedScore}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.2,
+                        color: CompetitionUiTokens.accent(isDark),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,

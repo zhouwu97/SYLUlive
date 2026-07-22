@@ -41,6 +41,7 @@ void main() {
       recommendationLevel: 'S',
       recommendationReason: '强烈推荐理由',
       fitReasons: const ['专业匹配'],
+      personalizedScore: 88,
     );
 
     await tester.pumpWidget(
@@ -61,6 +62,50 @@ void main() {
     expect(find.text('人工 S'), findsNothing);
     expect(find.text('强烈推荐理由'), findsNothing);
     expect(find.text('专业匹配'), findsNothing);
+    expect(find.text('偏好匹配 88'), findsNothing);
     expect(find.text('加入计划'), findsOneWidget);
+  });
+
+  testWidgets('适合我模式独立展示偏好匹配分数', (WidgetTester tester) async {
+    final event = CompetitionEvent(
+      id: 3,
+      title: 'Preference Competition',
+      fitReasons: const ['方向匹配'],
+      personalizedScore: 78,
+      recommendationTier: 'recommended',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CompetitionStudentEventCard(
+            event: event,
+            onTap: () {},
+            onAddPlan: () {},
+            onJoinedTap: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('偏好匹配 78'), findsOneWidget);
+    expect(find.text('人工 78'), findsNothing);
+  });
+
+  testWidgets('未配置偏好时不展示匹配分数', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CompetitionStudentEventCard(
+            event: CompetitionEvent(id: 4, title: 'Legacy Competition'),
+            onTap: () {},
+            onAddPlan: () {},
+            onJoinedTap: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('偏好匹配'), findsNothing);
   });
 }

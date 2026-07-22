@@ -45,24 +45,15 @@ export default class OhosPreferencesPlugin implements FlutterPlugin, MethodCallH
       const key = args ? args['key'] as string : '';
 
       switch (call.method) {
-        case 'getString':
-          result.success(await prefs.get(key, null));
-          break;
         case 'setString':
           await prefs.put(key, args['value'] as string);
           await prefs.flush();
           result.success(null);
           break;
-        case 'getBool':
-          result.success(await prefs.get(key, null));
-          break;
         case 'setBool':
           await prefs.put(key, args['value'] as boolean);
           await prefs.flush();
           result.success(null);
-          break;
-        case 'getInt':
-          result.success(await prefs.get(key, null));
           break;
         case 'setInt':
           await prefs.put(key, args['value'] as number);
@@ -73,9 +64,6 @@ export default class OhosPreferencesPlugin implements FlutterPlugin, MethodCallH
           await prefs.put(key, args['value'] as number);
           await prefs.flush();
           result.success(null);
-          break;
-        case 'getStringList':
-          result.success(await prefs.get(key, null));
           break;
         case 'setStringList':
           await prefs.put(key, args['value'] as Array<string>);

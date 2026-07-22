@@ -95,6 +95,9 @@ class AppUpdateInfo {
   final String sha256;
   final String downloadUrl;
 
+  final String? deliveryMode;
+  final String? actionUrl;
+
   final DateTime? publishedAt;
   final int checkAfterSeconds;
 
@@ -111,6 +114,8 @@ class AppUpdateInfo {
     required this.fileSize,
     required this.sha256,
     required this.downloadUrl,
+    this.deliveryMode,
+    this.actionUrl,
     required this.publishedAt,
     required this.checkAfterSeconds,
   });
@@ -130,6 +135,8 @@ class AppUpdateInfo {
         'file_size': fileSize,
         'sha256': sha256,
         'download_url': downloadUrl,
+        if (deliveryMode != null) 'delivery_mode': deliveryMode,
+        if (actionUrl != null) 'action_url': actionUrl,
         if (publishedAt != null) 'published_at': publishedAt!.toIso8601String(),
         'check_after_seconds': checkAfterSeconds,
       };
@@ -205,17 +212,23 @@ class AppUpdateInfo {
 
       final rawUrl = json['download_url'];
       if (rawUrl is! String || rawUrl.isEmpty) {
-        throw const FormatException(
-            'update_available=true 时 download_url 必须存在');
+        if (json['delivery_mode'] != 'external_market') {
+          throw const FormatException(
+              'update_available=true 且非 external_market 时 download_url 必须存在');
+        }
+      } else {
+        // 相对路径（如 /api/app/releases/12/download）经 ApiConstants.fullUrl
+        // 拼成完整 https URL；绝对 URL 直接透传。
+        final absoluteUrl = ApiConstants.fullUrl(rawUrl);
+        if (absoluteUrl.isEmpty) {
+          throw FormatException('download_url 转绝对后为空，原始值: $rawUrl');
+        }
+        downloadUrl = absoluteUrl;
       }
-      // 相对路径（如 /api/app/releases/12/download）经 ApiConstants.fullUrl
-      // 拼成完整 https URL；绝对 URL 直接透传。
-      final absoluteUrl = ApiConstants.fullUrl(rawUrl);
-      if (absoluteUrl.isEmpty) {
-        throw FormatException('download_url 转绝对后为空，原始值: $rawUrl');
-      }
-      downloadUrl = absoluteUrl;
     }
+
+    final deliveryMode = json['delivery_mode'] as String?;
+    final actionUrl = json['action_url'] as String?;
 
     final publishedAt = _parseNullableDate(
       json['published_at'] is String ? json['published_at'] as String : null,
@@ -234,6 +247,8 @@ class AppUpdateInfo {
       fileSize: fileSize,
       sha256: sha256,
       downloadUrl: downloadUrl,
+      deliveryMode: deliveryMode,
+      actionUrl: actionUrl,
       publishedAt: publishedAt,
       checkAfterSeconds: checkAfterSeconds,
     );

@@ -252,14 +252,16 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
     final oldUserJson = prefs.getString(_userKey);
     try {
       await _store.write(_tokenKey, token);
-      await prefs.setString(_userKey, userJson);
+      if (!await prefs.setString(_userKey, userJson)) {
+        throw StateError('用户信息持久化失败');
+      }
     } catch (error, stackTrace) {
       try {
         await _restore(_tokenKey, oldToken);
         if (oldUserJson == null) {
-          await prefs.remove(_userKey);
+          if (!await prefs.remove(_userKey)) throw StateError('回滚用户信息删除失败');
         } else {
-          await prefs.setString(_userKey, oldUserJson);
+          if (!await prefs.setString(_userKey, oldUserJson)) throw StateError('回滚用户信息修改失败');
         }
       } catch (rollbackError) {
         throw AuthCredentialConsistencyException(
@@ -276,7 +278,9 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   Future<void> clear() async {
     final prefs = await _prefsFuture;
     await _store.delete(_tokenKey);
-    await prefs.remove(_userKey);
+    if (!await prefs.remove(_userKey)) {
+      throw StateError('清除认证用户偏好数据失败');
+    }
   }
 
   @override

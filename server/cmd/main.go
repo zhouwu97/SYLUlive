@@ -851,6 +851,8 @@ func main() {
 		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
 		user.PUT("/competition-preference", competitionHandler.PutCompetitionPreference)
 		user.GET("/competition-capability-profile", competitionHandler.GetCompetitionCapabilityProfile)
+		user.GET("/competition-capability-profile/ai-access", competitionHandler.GetCompetitionCapabilityAIAccess)
+		user.PUT("/competition-capability-profile/ai-access", competitionHandler.PutCompetitionCapabilityAIAccess)
 		user.GET("/competition-awards", competitionHandler.ListCompetitionAwards)
 		user.POST("/competition-awards/evidence", competitionHandler.UploadCompetitionAwardEvidence)
 		user.POST("/competition-awards", competitionHandler.CreateCompetitionAward)
@@ -1691,6 +1693,7 @@ func main() {
 	aiCapabilities.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
 		aiCapabilities.GET("/capabilities", aiCapabilitiesHandler.Get)
+		aiCapabilities.GET("/tools/competition-capability-profile", competitionHandler.GetAICompetitionCapabilityProfile)
 	}
 	if aiRuntimeHandler != nil {
 		aiProtected := r.Group("/api/ai")

@@ -121,6 +121,40 @@ type UserCompetitionPreference struct {
 
 func (UserCompetitionPreference) TableName() string { return "user_competition_preferences" }
 
+// UserCompetitionAward 保存用户私有的竞赛经历和材料核验状态。
+type UserCompetitionAward struct {
+	ID     uint `gorm:"primaryKey" json:"id"`
+	UserID uint `gorm:"not null;index" json:"-"`
+
+	CompetitionEventID *uint  `gorm:"index" json:"competition_event_id"`
+	CompetitionTitle   string `gorm:"size:200;not null" json:"competition_title"`
+	TrackName          string `gorm:"size:100" json:"track_name"`
+
+	CompetitionYear  int    `gorm:"not null;index" json:"competition_year"`
+	AwardName        string `gorm:"size:100;not null" json:"award_name"`
+	AwardLevel       string `gorm:"size:50" json:"award_level"`
+	CompetitionStage string `gorm:"size:24;not null" json:"competition_stage"`
+
+	Role                string         `gorm:"size:24;not null" json:"role"`
+	SkillTags           datatypes.JSON `gorm:"not null" json:"skill_tags"`
+	ContributionSummary string         `gorm:"size:1000" json:"contribution_summary"`
+
+	EvidenceFileIDs datatypes.JSON `gorm:"not null" json:"evidence_file_ids"`
+
+	VerificationStatus string     `gorm:"size:24;not null;default:'self_reported';index" json:"verification_status"`
+	VerificationNote   string     `gorm:"size:500" json:"verification_note"`
+	VerifiedBy         *uint      `gorm:"index" json:"verified_by,omitempty"`
+	VerifiedAt         *time.Time `json:"verified_at,omitempty"`
+
+	Visibility string `gorm:"size:24;not null;default:'private';index" json:"visibility"`
+
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+func (UserCompetitionAward) TableName() string { return "user_competition_awards" }
+
 type CompetitionEventAttachment struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	EventID   uint      `gorm:"not null;index" json:"event_id"`

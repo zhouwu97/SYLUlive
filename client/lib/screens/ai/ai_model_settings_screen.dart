@@ -8,16 +8,31 @@ import '../../features/ai_runtime/ai_model_provider.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
 import '../../features/ai_runtime/openai_compatible_provider.dart';
 import '../../features/ai_runtime/tool_calling/openai_tool_calling_model.dart';
+import '../../widgets/app_page_app_bar.dart';
+import '../../widgets/campus/campus_theme.dart';
+
+typedef AIModelDiscovery = Future<AIModelCapabilities> Function(
+  AIModelProviderConfig config,
+  String apiKey,
+);
+typedef AIToolCallingProbe = Future<void> Function(
+  AIModelProviderConfig config,
+  String apiKey,
+);
 
 class AIModelSettingsScreen extends StatefulWidget {
   const AIModelSettingsScreen({
     super.key,
     required this.appUserId,
     this.settingsStore,
+    this.modelDiscovery,
+    this.toolCallingProbe,
   });
 
   final String appUserId;
   final AIProviderSettingsStore? settingsStore;
+  final AIModelDiscovery? modelDiscovery;
+  final AIToolCallingProbe? toolCallingProbe;
 
   @override
   State<AIModelSettingsScreen> createState() => _AIModelSettingsScreenState();
@@ -33,7 +48,8 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
   List<String> _models = const <String>[];
   bool _loading = true;
   bool _saving = false;
-  bool _probing = false;
+  bool _discoveringModels = false;
+  bool _testingConnection = false;
   bool _hasStoredApiKey = false;
   bool _hasStoredConfig = false;
   String? _error;
@@ -79,91 +95,222 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
     }
   }
 
-  Future<void> _probeModels() async {
-    AIModelProvider? provider;
-    final endpoint = _endpointController.text;
-    final model = _modelController.text;
+  bool get _requestBusy => _discoveringModels || _testingConnection;
+
+  Future<String> _resolveApiKey() async {
     final inputApiKey = _apiKeyController.text;
+    return inputApiKey.isEmpty && _hasStoredApiKey
+        ? (await _store.readApiKey() ?? '')
+        : inputApiKey;
+  }
+
+  AIModelProviderConfig _currentConfig({String? model}) {
+    return AIModelProviderConfig(
+      kind: AIModelProviderKind.openAICompatible,
+      endpoint: _endpointController.text,
+      model: model ?? _modelController.text,
+      wireApi: _wireApi,
+    );
+  }
+
+  /// 只读取服务端模型列表；选择模型不会隐式触发联通或 Tool Calling 测试。
+  Future<void> _discoverModels() async {
+    AIModelProvider? provider;
     setState(() {
-      _probing = true;
+      _discoveringModels = true;
       _error = null;
       _probeSuccess = null;
     });
     try {
-      final apiKey = inputApiKey.isEmpty && _hasStoredApiKey
-          ? (await _store.readApiKey() ?? '')
-          : inputApiKey;
+      final apiKey = await _resolveApiKey();
       if (!mounted) return;
-      var probeConfig = AIModelProviderConfig(
-        kind: AIModelProviderKind.openAICompatible,
-        endpoint: endpoint,
-        model: model,
-        wireApi: _wireApi,
-      );
-      provider = OpenAICompatibleProvider(
-        config: probeConfig,
-        apiKey: apiKey,
-        dio: OpenAICompatibleProvider.createDio(),
-      );
-      _probeProvider = provider;
-      final capabilities = await provider.discoverCapabilities();
+      final config = _currentConfig();
+      final capabilities = widget.modelDiscovery != null
+          ? await widget.modelDiscovery!(config, apiKey)
+          : await () async {
+              provider = OpenAICompatibleProvider(
+                config: config,
+                apiKey: apiKey,
+                dio: OpenAICompatibleProvider.createDio(),
+              );
+              _probeProvider = provider;
+              return provider!.discoverCapabilities();
+            }();
       if (!mounted) return;
       setState(() {
         _models = capabilities.models;
-        if (capabilities.chatAvailability ==
-            AIModelChatAvailability.unavailable) {
-          _error = '当前服务未开放普通聊天';
-        }
+        _discoveringModels = false;
+        _probeSuccess = _models.isEmpty ? null : '已发现 ${_models.length} 个可用模型';
+        if (_models.isEmpty) _error = '服务已连接，但没有返回可用模型';
       });
       if (_models.length == 1) {
         _modelController.text = _models.single;
       } else if (_models.length > 1) {
         await _selectModel(_models);
       }
-      if (!mounted) return;
+    } on AIModelProviderException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = '无法查询模型列表');
+    } finally {
+      if (identical(_probeProvider, provider)) _probeProvider = null;
+      if (mounted && _discoveringModels) {
+        setState(() => _discoveringModels = false);
+      }
+    }
+  }
+
+  /// 只验证当前表单中的模型和 Tool Calling 能力，不查询或改写模型列表。
+  Future<void> _testConnection() async {
+    setState(() {
+      _testingConnection = true;
+      _error = null;
+      _probeSuccess = null;
+    });
+    try {
       final selectedModel = _modelController.text.trim();
       if (selectedModel.isEmpty) {
         throw const AIModelProviderConfigurationException(
-          '已连接服务，请选择或填写模型后再验证 Tool Calling',
+          '请先查询并选择模型，或手动填写模型名称',
         );
       }
-      probeConfig = probeConfig.copyWith(model: selectedModel);
-      final toolModel = OpenAIToolCallingModel.fromConfig(
-        config: probeConfig,
-        apiKey: apiKey,
-        dio: OpenAICompatibleProvider.createDio(),
-      );
-      _probeToolModel = toolModel;
-      await toolModel.probeToolCalling();
+      final apiKey = await _resolveApiKey();
+      if (!mounted) return;
+      final config = _currentConfig(model: selectedModel);
+      if (widget.toolCallingProbe != null) {
+        await widget.toolCallingProbe!(config, apiKey);
+      } else {
+        final toolModel = OpenAIToolCallingModel.fromConfig(
+          config: config,
+          apiKey: apiKey,
+          dio: OpenAICompatibleProvider.createDio(),
+        );
+        _probeToolModel = toolModel;
+        await toolModel.probeToolCalling();
+      }
       if (mounted) {
         setState(() => _probeSuccess = '连接成功，Tool Calling 验证通过');
       }
     } on AIModelProviderException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {
-      if (mounted) setState(() => _error = '无法探测模型能力');
+      if (mounted) setState(() => _error = '无法验证模型连接');
     } finally {
-      if (identical(_probeProvider, provider)) _probeProvider = null;
       _probeToolModel = null;
-      if (mounted) setState(() => _probing = false);
+      if (mounted) setState(() => _testingConnection = false);
     }
   }
 
   Future<void> _selectModel(List<String> models) async {
     final selected = await showModalBottomSheet<String>(
       context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: ListView.separated(
-          shrinkWrap: true,
-          itemCount: models.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (context, index) => ListTile(
-            title: Text(models[index]),
-            onTap: () => Navigator.of(context).pop(models[index]),
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.28),
+      builder: (context) {
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+        final selectedModel = _modelController.text.trim();
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.68,
           ),
-        ),
-      ),
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+          decoration: BoxDecoration(
+            color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              Text(
+                '选择模型',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '共发现 ${models.length} 个模型，选择后可单独测试连接。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: CampusTheme.subText,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: models.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 4),
+                  itemBuilder: (context, index) {
+                    final model = models[index];
+                    final selected = model == selectedModel;
+                    return Material(
+                      color: selected
+                          ? CampusTheme.primary.withValues(alpha: 0.10)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => Navigator.of(context).pop(model),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 13,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.smart_toy_outlined,
+                                size: 20,
+                                color: selected
+                                    ? CampusTheme.primary
+                                    : CampusTheme.subText,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  model,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyLarge?.copyWith(
+                                    fontWeight: selected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (selected)
+                                const Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 21,
+                                  color: CampusTheme.primary,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
     if (selected != null && mounted) _modelController.text = selected;
   }
@@ -265,7 +412,8 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      backgroundColor: CampusTheme.pageBackground(context),
+      appBar: AppPageAppBar(
         title: const Text('模型设置'),
         actions: [
           if (_hasStoredConfig)
@@ -347,7 +495,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                         ),
                       )
                       .toList(growable: false),
-                  onChanged: _saving || _probing
+                  onChanged: _saving || _requestBusy
                       ? null
                       : (wireApi) {
                           if (wireApi == null) return;
@@ -371,16 +519,40 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 20),
-                OutlinedButton.icon(
-                  onPressed: _probing || _saving ? null : _probeModels,
-                  icon: _probing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.travel_explore_rounded),
-                  label: const Text('测试连接与 Tool Calling'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed:
+                            _requestBusy || _saving ? null : _discoverModels,
+                        icon: _discoveringModels
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.manage_search_rounded),
+                        label: const Text('查询模型'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed:
+                            _requestBusy || _saving ? null : _testConnection,
+                        icon: _testingConnection
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.cable_rounded),
+                        label: const Text('测试连接'),
+                      ),
+                    ),
+                  ],
                 ),
                 if (_models.isNotEmpty) ...[
                   const SizedBox(height: 10),

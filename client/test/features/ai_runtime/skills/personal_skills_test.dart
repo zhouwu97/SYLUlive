@@ -564,6 +564,126 @@ void main() {
       throwsA(isA<CompetitionCapabilityAccessDeniedException>()),
     );
   });
+
+  test('竞赛解释严格保留服务端顺序、分数和匹配理由', () async {
+    final first = CompetitionMatchExplanationItem.fromEvent(
+      CompetitionEvent(
+        id: 2,
+        title: '服务端第一名',
+        personalizedScore: 71,
+        recommendationTier: 'recommended',
+        fitReasons: const <String>['方向匹配'],
+        competitionRating: 'A',
+        manualRating: 4.5,
+      ),
+    );
+    final second = CompetitionMatchExplanationItem.fromEvent(
+      CompetitionEvent(
+        id: 1,
+        title: '服务端第二名',
+        personalizedScore: 99,
+        recommendationTier: 'strong',
+        fitReasons: const <String>['时间匹配'],
+      ),
+    );
+    final result = await ExplainCompetitionMatchesSkill(
+      _FakeMatchExplanationSource(
+        CompetitionMatchExplanationPage(
+          profileReady: true,
+          preferenceConfigured: true,
+          items: <CompetitionMatchExplanationItem>[first, second],
+          total: 2,
+          fetchedAt: fetchedAt,
+        ),
+      ),
+    ).execute(
+      const EmptyCompetitionAdvisorInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.success);
+    expect(result.value?.items.map((item) => item.id), <int>[2, 1]);
+    expect(result.value?.items.first.personalizedScore, 71);
+    expect(result.value?.items.first.fitReasons, <String>['方向匹配']);
+    expect(result.warnings.first, contains('不重新评分'));
+    expect(result.warnings.last, contains('正式文件'));
+    expect(gateway.totalReads, 0);
+  });
+
+  test('竞赛解释在基础画像未就绪时返回稳定空结果和明确提示', () async {
+    final result = await ExplainCompetitionMatchesSkill(
+      _FakeMatchExplanationSource(
+        CompetitionMatchExplanationPage(
+          profileReady: false,
+          preferenceConfigured: false,
+          items: const <CompetitionMatchExplanationItem>[],
+          total: 0,
+          fetchedAt: fetchedAt,
+        ),
+      ),
+    ).execute(
+      const EmptyCompetitionAdvisorInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.partial);
+    expect(result.value?.items, isEmpty);
+    expect(result.warnings, contains(contains('基础画像尚未就绪')));
+  });
+
+  test('竞赛解释数据源只读取现有适合我接口并保留响应顺序', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.path, '/user/competitions/fit');
+          expect(options.queryParameters,
+              const <String, dynamic>{'page': 1, 'page_size': 20});
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: <String, dynamic>{
+                'profile_ready': true,
+                'preference_configured': true,
+                'total': 2,
+                'items': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 8,
+                    'title': '第一项',
+                    'personalized_score': 63,
+                    'recommendation_tier': 'recommended',
+                    'fit_reasons': <String>['专业匹配'],
+                    'competition_rating': 'B',
+                    'manual_rating': 3.5,
+                    'school_recognition_status': 'recognized',
+                    'school_recognition_grade': '省级',
+                    'time_status': 'confirmed',
+                    'registration_time_text': '2026-09',
+                  },
+                  <String, dynamic>{'id': 3, 'title': '第二项'},
+                ],
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final page = await DioCompetitionMatchExplanationSource(
+      dio,
+      clock: () => fetchedAt,
+    ).load();
+
+    expect(page.items.map((item) => item.id), <int>[8, 3]);
+    expect(page.items.first.personalizedScore, 63);
+    expect(page.items.first.competitionRating, 'B');
+    expect(page.items.first.registrationTimeText, '2026-09');
+  });
 }
 
 GatewayResult<T> _available<T>(T data, {required DateTime fetchedAt}) =>
@@ -707,6 +827,15 @@ class _DeniedCapabilityProfileSource
   Future<CompetitionCapabilityProfile> load() async {
     throw const CompetitionCapabilityAccessDeniedException();
   }
+}
+
+class _FakeMatchExplanationSource implements CompetitionMatchExplanationSource {
+  _FakeMatchExplanationSource(this.value);
+
+  final CompetitionMatchExplanationPage value;
+
+  @override
+  Future<CompetitionMatchExplanationPage> load() async => value;
 }
 
 class _EmptyInput {

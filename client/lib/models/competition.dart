@@ -45,6 +45,8 @@ class CompetitionEvent {
   final List<String> eligibleMajors;
   final String fitLevel;
   final List<String> fitReasons;
+  final int? personalizedScore;
+  final String recommendationTier;
   final String participationType;
   final int? teamSizeMin;
   final int? teamSizeMax;
@@ -94,6 +96,8 @@ class CompetitionEvent {
     this.eligibleMajors = const [],
     this.fitLevel = '',
     this.fitReasons = const [],
+    this.personalizedScore,
+    this.recommendationTier = '',
     this.participationType = '',
     this.teamSizeMin,
     this.teamSizeMax,
@@ -157,6 +161,8 @@ class CompetitionEvent {
       eligibleMajors: _stringList(json['eligible_majors']),
       fitLevel: json['fit_level'] ?? '',
       fitReasons: _stringList(json['fit_reasons']),
+      personalizedScore: (json['personalized_score'] as num?)?.toInt(),
+      recommendationTier: json['recommendation_tier'] ?? '',
       participationType: json['participation_type'] ?? '',
       teamSizeMin: (json['team_size_min'] as num?)?.toInt(),
       teamSizeMax: (json['team_size_max'] as num?)?.toInt(),
@@ -267,6 +273,11 @@ class CompetitionEvent {
       'eligible_entry_years': eligibleEntryYears,
       'eligible_colleges': eligibleColleges,
       'eligible_majors': eligibleMajors,
+      if (fitLevel.isNotEmpty) 'fit_level': fitLevel,
+      if (fitReasons.isNotEmpty) 'fit_reasons': fitReasons,
+      if (personalizedScore != null) 'personalized_score': personalizedScore,
+      if (recommendationTier.isNotEmpty)
+        'recommendation_tier': recommendationTier,
       'participation_type': participationType,
       'team_size_min': teamSizeMin,
       'team_size_max': teamSizeMax,

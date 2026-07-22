@@ -477,6 +477,11 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 		return
 	}
 	profile, ready := profileFromUser(user, time.Now())
+	preference, preferenceConfigured, err := h.loadCompetitionPreference(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛目标失败"})
+		return
+	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	if page < 1 {
@@ -486,7 +491,7 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 		pageSize = 20
 	}
 	if !ready {
-		c.JSON(http.StatusOK, gin.H{"profile_ready": false, "items": []CompetitionEventDTO{}, "total": 0, "page": page, "page_size": pageSize})
+		c.JSON(http.StatusOK, gin.H{"profile_ready": false, "preference_configured": preferenceConfigured, "items": []CompetitionEventDTO{}, "total": 0, "page": page, "page_size": pageSize})
 		return
 	}
 	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory").Where("status = ?", "published")
@@ -496,7 +501,15 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取个性化比赛失败"})
 		return
 	}
-	matched := make([]models.CompetitionEvent, 0, len(candidates))
+	type rankedFitEvent struct {
+		event            models.CompetitionEvent
+		profileRank      int
+		preferencePoints int
+		timePoints       int
+		valuePoints      int
+	}
+	matched := make([]rankedFitEvent, 0, len(candidates))
+	fitRank := map[string]int{"major": 3, "college": 2, "general": 1}
 	for _, event := range candidates {
 		isMatch, level, reasons := matchCompetitionForProfile(event, profile)
 		if !isMatch {
@@ -504,30 +517,52 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 		}
 		event.FitLevel = level
 		event.FitReasons = reasons
-		matched = append(matched, event)
+		ranked := rankedFitEvent{event: event, profileRank: fitRank[level]}
+		if preferenceConfigured {
+			preferenceMatch := matchCompetitionPreference(event, level, preference)
+			event.PersonalizedScore = &preferenceMatch.Score
+			event.RecommendationTier = preferenceMatch.Tier
+			event.FitReasons = append(event.FitReasons, preferenceMatch.Reasons...)
+			if preferenceMatch.PreferencePoints+preferenceMatch.TimePoints > 0 {
+				event.FitLevel = "preference"
+			}
+			ranked.event = event
+			ranked.preferencePoints = preferenceMatch.PreferencePoints
+			ranked.timePoints = preferenceMatch.TimePoints
+			ranked.valuePoints = preferenceMatch.ValuePoints
+		}
+		matched = append(matched, ranked)
 	}
-	fitRank := map[string]int{"major": 3, "college": 2, "general": 1}
 	sort.SliceStable(matched, func(i, j int) bool {
 		left, right := matched[i], matched[j]
-		if fitRank[left.FitLevel] != fitRank[right.FitLevel] {
-			return fitRank[left.FitLevel] > fitRank[right.FitLevel]
+		if left.profileRank != right.profileRank {
+			return left.profileRank > right.profileRank
 		}
-		leftRating := effectiveCompetitionRating(left)
-		rightRating := effectiveCompetitionRating(right)
+		if preferenceConfigured && left.preferencePoints != right.preferencePoints {
+			return left.preferencePoints > right.preferencePoints
+		}
+		if preferenceConfigured && left.timePoints != right.timePoints {
+			return left.timePoints > right.timePoints
+		}
+		if preferenceConfigured && left.valuePoints != right.valuePoints {
+			return left.valuePoints > right.valuePoints
+		}
+		leftRating := effectiveCompetitionRating(left.event)
+		rightRating := effectiveCompetitionRating(right.event)
 		if recommendationRanks[leftRating] != recommendationRanks[rightRating] {
 			return recommendationRanks[leftRating] > recommendationRanks[rightRating]
 		}
-		if left.ImportanceScore != right.ImportanceScore {
-			return left.ImportanceScore > right.ImportanceScore
+		if left.event.ImportanceScore != right.event.ImportanceScore {
+			return left.event.ImportanceScore > right.event.ImportanceScore
 		}
-		if left.SortDate == nil || right.SortDate == nil {
-			if left.SortDate != nil || right.SortDate != nil {
-				return left.SortDate != nil
+		if left.event.SortDate == nil || right.event.SortDate == nil {
+			if left.event.SortDate != nil || right.event.SortDate != nil {
+				return left.event.SortDate != nil
 			}
-		} else if !left.SortDate.Equal(*right.SortDate) {
-			return left.SortDate.Before(*right.SortDate)
+		} else if !left.event.SortDate.Equal(*right.event.SortDate) {
+			return left.event.SortDate.Before(*right.event.SortDate)
 		}
-		return left.ID < right.ID
+		return left.event.ID < right.event.ID
 	})
 	total := len(matched)
 	start := (page - 1) * pageSize
@@ -538,7 +573,11 @@ func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
 	if finish > total {
 		finish = total
 	}
-	c.JSON(http.StatusOK, gin.H{"profile_ready": true, "items": competitionEventDTOs(matched[start:finish]), "total": total, "page": page, "page_size": pageSize})
+	pageEvents := make([]models.CompetitionEvent, 0, finish-start)
+	for _, ranked := range matched[start:finish] {
+		pageEvents = append(pageEvents, ranked.event)
+	}
+	c.JSON(http.StatusOK, gin.H{"profile_ready": true, "preference_configured": preferenceConfigured, "items": competitionEventDTOs(pageEvents), "total": total, "page": page, "page_size": pageSize})
 }
 
 func (h *CompetitionHandler) AdminCompetitionAudienceOptions(c *gin.Context) {

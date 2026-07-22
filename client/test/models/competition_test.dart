@@ -68,4 +68,34 @@ void main() {
       expect(event.recommendationLevel, 'S');
     });
   });
+
+  group('CompetitionEvent preference matching', () {
+    test('解析并序列化个性化分数和推荐层级', () {
+      final event = CompetitionEvent.fromJson(<String, dynamic>{
+        'id': 12,
+        'title': '程序设计竞赛',
+        'personalized_score': 78,
+        'recommendation_tier': 'recommended',
+        'fit_level': 'preference',
+        'fit_reasons': ['与你关注的程序设计方向一致'],
+      });
+
+      expect(event.personalizedScore, 78);
+      expect(event.recommendationTier, 'recommended');
+      expect(event.fitLevel, 'preference');
+      expect(event.toJson()['personalized_score'], 78);
+      expect(event.toJson()['recommendation_tier'], 'recommended');
+    });
+
+    test('旧响应不产生个性化字段', () {
+      final event = CompetitionEvent.fromJson(<String, dynamic>{
+        'id': 13,
+        'title': '通用赛事',
+      });
+
+      expect(event.personalizedScore, isNull);
+      expect(event.recommendationTier, isEmpty);
+      expect(event.toJson().containsKey('personalized_score'), isFalse);
+    });
+  });
 }

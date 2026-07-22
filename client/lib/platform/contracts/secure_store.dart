@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -5,43 +6,54 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_platform.dart';
 
-/// 统一安全存储接口
-abstract interface class AppSecureStore {
+class SecretTooLargeException implements Exception {
+  final int size;
+  const SecretTooLargeException(this.size);
+  @override
+  String toString() => 'SecretTooLargeException: $size bytes (limit is 1024 bytes)';
+}
+
+/// 统一敏感数据安全存储接口（适合保存 Token、密码、API Key 等小数据，限制 1024 字节）
+abstract interface class AppSecretStore {
   Future<String?> read(String key);
   Future<void> write(String key, String value);
   Future<void> delete(String key);
 
   /// 根据当前平台返回最佳实现的工厂方法
-  factory AppSecureStore.current() {
+  factory AppSecretStore.current() {
     if (AppPlatforms.current.isOhos) {
-      return const OhosAssetSecureStore();
+      return const OhosAssetSecretStore();
     }
     if (kIsWeb) {
-      return WebSecureStore();
+      return WebSecretStore();
     }
-    return const FlutterDefaultSecureStore();
+    return const FlutterDefaultSecretStore();
   }
 }
 
 /// Android / iOS 默认使用的 flutter_secure_storage
-class FlutterDefaultSecureStore implements AppSecureStore {
-  const FlutterDefaultSecureStore();
+class FlutterDefaultSecretStore implements AppSecretStore {
+  const FlutterDefaultSecretStore();
   static const FlutterSecureStorage _storage = FlutterSecureStorage();
 
   @override
   Future<String?> read(String key) => _storage.read(key: key);
 
   @override
-  Future<void> write(String key, String value) =>
-      _storage.write(key: key, value: value);
+  Future<void> write(String key, String value) {
+    if (utf8.encode(value).length > 1024) {
+      return Future.error(SecretTooLargeException(utf8.encode(value).length));
+    }
+    return _storage.write(key: key, value: value);
+  }
 
   @override
   Future<void> delete(String key) => _storage.delete(key: key);
 }
 
-/// 鸿蒙使用的 Asset Store Kit 桥接
-class OhosAssetSecureStore implements AppSecureStore {
-  const OhosAssetSecureStore();
+/// 鸿蒙使用的 Asset Store Kit 桥接 (单条严格限制 < 1KB)
+class OhosAssetSecretStore implements AppSecretStore {
+  const OhosAssetSecretStore();
   static const _channel = MethodChannel('shenliyuan/secure_storage');
 
   @override
@@ -49,8 +61,12 @@ class OhosAssetSecureStore implements AppSecureStore {
       _channel.invokeMethod<String>('read', {'key': key});
 
   @override
-  Future<void> write(String key, String value) =>
-      _channel.invokeMethod<void>('write', {'key': key, 'value': value});
+  Future<void> write(String key, String value) {
+    if (utf8.encode(value).length > 1024) {
+      return Future.error(SecretTooLargeException(utf8.encode(value).length));
+    }
+    return _channel.invokeMethod<void>('write', {'key': key, 'value': value});
+  }
 
   @override
   Future<void> delete(String key) =>
@@ -58,7 +74,7 @@ class OhosAssetSecureStore implements AppSecureStore {
 }
 
 /// Web 环境使用的兜底持久化（由于无法使用系统级 KeyStore）
-class WebSecureStore implements AppSecureStore {
+class WebSecretStore implements AppSecretStore {
   @override
   Future<String?> read(String key) async {
     final prefs = await SharedPreferences.getInstance();
@@ -67,6 +83,9 @@ class WebSecureStore implements AppSecureStore {
 
   @override
   Future<void> write(String key, String value) async {
+    if (utf8.encode(value).length > 1024) {
+      throw SecretTooLargeException(utf8.encode(value).length);
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(key, value);
   }
@@ -79,14 +98,19 @@ class WebSecureStore implements AppSecureStore {
 }
 
 /// 测试用内存存储
-class MemorySecureStore implements AppSecureStore {
+class MemorySecretStore implements AppSecretStore {
   final Map<String, String> _store = {};
 
   @override
   Future<String?> read(String key) async => _store[key];
 
   @override
-  Future<void> write(String key, String value) async => _store[key] = value;
+  Future<void> write(String key, String value) async {
+    if (utf8.encode(value).length > 1024) {
+      throw SecretTooLargeException(utf8.encode(value).length);
+    }
+    _store[key] = value;
+  }
 
   @override
   Future<void> delete(String key) async => _store.remove(key);

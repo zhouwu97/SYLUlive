@@ -14,16 +14,16 @@ class AIProviderSettingsStore {
   AIProviderSettingsStore({
     required String appUserId,
     String providerConfigId = 'default',
-    AppSecureStore? secureStore,
+    AppSecretStore? secureStore,
     Future<SharedPreferences> Function()? preferencesLoader,
   })  : _accountHash = _accountHashFor(appUserId),
         _providerConfigId = _providerConfigIdFor(providerConfigId),
-        _secureStore = secureStore ?? AppSecureStore.current(),
+        _secureStore = secureStore ?? AppSecretStore.current(),
         _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
 
   final String _accountHash;
   final String _providerConfigId;
-  final AppSecureStore _secureStore;
+  final AppSecretStore _secureStore;
   final Future<SharedPreferences> Function() _preferencesLoader;
 
   String get _configKey =>

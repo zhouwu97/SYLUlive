@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../platform/contracts/external_navigator.dart';
 
 // ---- 瑞士极客风博客页面 ----
 
@@ -381,8 +381,8 @@ class _ArticleReaderState extends State<_ArticleReader> {
 
   void _launchUrl(String url) async {
     final uri = Uri.tryParse(url);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (uri != null) {
+      await ExternalNavigator.current().open(uri);
     }
   }
 

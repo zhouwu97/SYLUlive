@@ -62,7 +62,7 @@ void main() {
   });
 }
 
-class _MemoryProviderSecureStore implements AppSecureStore {
+class _MemoryProviderSecureStore implements AppSecretStore {
   final Map<String, String> _values = <String, String>{};
 
   @override

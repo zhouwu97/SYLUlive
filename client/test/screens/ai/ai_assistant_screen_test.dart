@@ -6,6 +6,7 @@ import 'package:shenliyuan/screens/ai/ai_assistant_screen.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_session/personal_conversation_store.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
 import 'package:shenliyuan/platform/contracts/secure_store.dart';
+import 'package:shenliyuan/platform/contracts/blob_store.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/models/ai_capabilities.dart';
@@ -70,9 +71,9 @@ void main() {
   });
 
   testWidgets('个人历史在页面重建后恢复且切换账号立即隔离', (tester) async {
-    final secure = _MemoryConversationSecureStore();
+    final secure = _FakeBlobStore();
     PersonalConversationStore storeFor(String accountKey) =>
-        PersonalConversationStore(accountKey: accountKey, secureStore: secure);
+        PersonalConversationStore(accountKey: accountKey, blobStore: secure);
     await storeFor('1::').replace(<PersonalConversationEntry>[
       PersonalConversationEntry(
         message: AiChatMessage(
@@ -185,8 +186,7 @@ User _user(int id) => User(
       createdAt: DateTime.utc(2026, 7, 21),
     );
 
-class _MemoryConversationSecureStore
-    implements AppSecureStore {
+class _FakeBlobStore implements EncryptedBlobStore {
   final Map<String, String> values = <String, String>{};
 
   @override
@@ -197,4 +197,6 @@ class _MemoryConversationSecureStore
 
   @override
   Future<void> write(String key, String value) async => values[key] = value;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -1,8 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/services/physical_credential_store.dart';
+import 'package:shenliyuan/platform/contracts/secure_store.dart';
 
-class _MemorySecureStore implements PhysicalSecureStore {
+class _MemorySecureStore implements AppSecretStore {
   final Map<String, String> values = <String, String>{};
 
   @override

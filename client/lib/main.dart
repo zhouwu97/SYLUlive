@@ -6,9 +6,11 @@ import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
 import 'package:hive_flutter/hive_flutter.dart';
 import 'platform/contracts/push_client.dart';
+import 'platform/contracts/system_notification_client.dart';
+import 'platform/contracts/external_navigator.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/auth_provider.dart';
@@ -279,7 +281,7 @@ Future<void> main() async {
         PlatformBootstrap().initializeAfterFirstFrame(
           initializeAndroidServices: () async {
             await CourseReminderService.instance.initialize();
-            await _initializePrivateMessageNotifications();
+            await _ensurePrivateMessageNotificationsReady();
           },
         );
       });
@@ -308,8 +310,7 @@ Future<void> main() async {
 
 /// 极光推送初始化
 late final PushClient pushClient = PushClient.current();
-final FlutterLocalNotificationsPlugin _privateMessageNotifications =
-    FlutterLocalNotificationsPlugin();
+late final SystemNotificationClient systemNotificationClient = SystemNotificationClient.current();
 bool _privateMessageNotificationsReady = false;
 const MethodChannel _privateMessageNotificationChannel = MethodChannel(
   'shenliyuan/private_message_notifications',
@@ -525,7 +526,7 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
     debug: kDebugMode,
   );
   
-  final rid = await pushClient.getRegistrationId();
+  final rid = (await pushClient.getRegistrationId())?.trim() ?? '';
 
   if (rid.isEmpty) {
     return const RemotePushEnableResult(
@@ -591,23 +592,15 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
   );
 }
 
-Future<void> _initializePrivateMessageNotifications() async {
-  if (!PlatformCapabilities.current.supportsSystemNotification) return;
+Future<void> _ensurePrivateMessageNotificationsReady() async {
   if (_privateMessageNotificationsReady) return;
-  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-  const darwin = DarwinInitializationSettings(
-    requestAlertPermission: false,
-    requestBadgePermission: false,
-    requestSoundPermission: false,
-  );
-  const settings = InitializationSettings(android: android, iOS: darwin);
-  await _privateMessageNotifications.initialize(
-    settings,
-    onDidReceiveNotificationResponse: (response) {
-      final payload = response.payload;
-      if (payload == null || payload.isEmpty) return;
+  _privateMessageNotificationsReady = true;
+
+  await systemNotificationClient.initialize(
+    onNotificationTap: (payload) {
+      if (payload.isEmpty) return;
       try {
-        final target = privateMessageTargetFromLocalPayload(payload);
+        final target = privateMessageTargetFromLocalPayload(jsonEncode(payload));
         if (target != null) {
           _clearPrivateMessageNotifications(target.conversationId).ignore();
           _openPrivateMessage(target);
@@ -617,29 +610,6 @@ Future<void> _initializePrivateMessageNotifications() async {
       }
     },
   );
-  await _privateMessageNotifications
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(
-        const AndroidNotificationChannel(
-          'developer-default',
-          '系统通知',
-          description: '评论、系统通知等',
-          importance: Importance.low,
-        ),
-      );
-  await _privateMessageNotifications
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(
-        const AndroidNotificationChannel(
-          'private_messages',
-          '私信通知',
-          description: '收到新私信时悬浮提醒',
-          importance: Importance.high,
-        ),
-      );
-  _privateMessageNotificationsReady = true;
 }
 
 /// 已通过本地通知展示过的极光 msg_id，用于去重
@@ -752,20 +722,17 @@ Future<void> _showPrivateMessageLocalNotification(
   });
 
   try {
-    await _privateMessageNotifications.show(
-      target.conversationId, // 同会话的通知会互相替换
-      title,
-      body,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'private_messages',
-          '私信通知',
-          channelDescription: '收到新私信时悬浮提醒',
-          importance: Importance.high,
-          priority: Priority.high,
-        ),
-      ),
-      payload: payload,
+    await systemNotificationClient.showNotification(
+      id: target.conversationId,
+      title: title,
+      body: body,
+      payload: {
+        'conversation_id': target.conversationId,
+        'sender_id': target.senderId,
+        'sender_name': target.displayName,
+        'sender_avatar': target.senderAvatar,
+        'message_id': target.messageId,
+      },
     );
     debugPrint('✅ 本地私信通知已弹出: ${target.displayName}');
   } catch (e) {
@@ -885,10 +852,8 @@ Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
   }
 
   try {
-    var launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched) {
-      launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
-    }
+    final nav = ExternalNavigator.current();
+    final launched = await nav.open(uri);
     if (!launched) {
       debugPrint('无法打开更新下载地址: $downloadUrl');
     }

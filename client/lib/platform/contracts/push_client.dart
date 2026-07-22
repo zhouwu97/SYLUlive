@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:jpush_flutter/jpush_flutter.dart';
+import 'package:jpush_flutter/jpush_interface.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../app_platform.dart';
 import '../platform_capabilities.dart';
@@ -17,6 +18,7 @@ abstract interface class PushClient {
     Future<dynamic> Function(Map<String, dynamic>)? onReceiveNotification,
     Future<dynamic> Function(Map<String, dynamic>)? onOpenNotification,
     Future<dynamic> Function(Map<String, dynamic>)? onReceiveMessage,
+    Future<dynamic> Function(Map<String, dynamic>)? onNotifyMessageUnShow,
   });
   Future<void> clearAlias();
   Future<void> setAlias(String alias);
@@ -32,7 +34,7 @@ abstract interface class PushClient {
 }
 
 class AndroidJPushClient implements PushClient {
-  static final JPush _jpush = JPush();
+  static final JPushFlutterInterface _jpush = JPush.newJPush();
   static final FlutterLocalNotificationsPlugin _permissionPlugin = FlutterLocalNotificationsPlugin();
 
   @override
@@ -57,7 +59,7 @@ class AndroidJPushClient implements PushClient {
   Future<String?> getRegistrationId() async {
     try {
       final res = await _jpush.getRegistrationID();
-      if (res.isNotEmpty) return res;
+      if (res != null && res.trim().isNotEmpty) return res.trim();
     } catch (_) {}
     return null;
   }
@@ -81,11 +83,13 @@ class AndroidJPushClient implements PushClient {
     Future<dynamic> Function(Map<String, dynamic>)? onReceiveNotification,
     Future<dynamic> Function(Map<String, dynamic>)? onOpenNotification,
     Future<dynamic> Function(Map<String, dynamic>)? onReceiveMessage,
+    Future<dynamic> Function(Map<String, dynamic>)? onNotifyMessageUnShow,
   }) {
     _jpush.addEventHandler(
       onReceiveNotification: onReceiveNotification,
       onOpenNotification: onOpenNotification,
       onReceiveMessage: onReceiveMessage,
+      onNotifyMessageUnShow: onNotifyMessageUnShow,
     );
   }
 
@@ -145,6 +149,7 @@ class UnsupportedPushClient implements PushClient {
     Future<dynamic> Function(Map<String, dynamic>)? onReceiveNotification,
     Future<dynamic> Function(Map<String, dynamic>)? onOpenNotification,
     Future<dynamic> Function(Map<String, dynamic>)? onReceiveMessage,
+    Future<dynamic> Function(Map<String, dynamic>)? onNotifyMessageUnShow,
   }) {}
 
   @override

@@ -305,6 +305,8 @@ class AppUpdateCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
+  AppUpdateAction? _currentAction;
+
   /// 开始更新操作
   Future<void> downloadOrInstall() async {
     final info = _info;
@@ -322,9 +324,10 @@ class AppUpdateCoordinator extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final action = AppUpdateAction.current(_installer, _downloadService);
-      final result = await action.execute(
+      _currentAction ??= AppUpdateAction.current(_installer, _downloadService);
+      final result = await _currentAction!.execute(
         info,
+        existingApk: _currentAction!.readyApk,
         cancelToken: _downloadCancelToken,
         onProgress: (progress) {
           _downloadProgress = progress;
@@ -337,7 +340,7 @@ class AppUpdateCoordinator extends ChangeNotifier {
         _phase = AppUpdatePhase.readyToInstall;
       } else if (result == AppUpdateActionResult.success) {
         _errorMessage = null;
-        _phase = AppUpdatePhase.readyToInstall; // 或者 AppUpdatePhase.installing 取决于逻辑
+        _phase = AppUpdatePhase.installing;
       }
       notifyListeners();
     } catch (error) {

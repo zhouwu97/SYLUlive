@@ -16,8 +16,9 @@ import 'package:shenliyuan/models/ai_quota.dart';
 import 'package:shenliyuan/models/ai_run.dart';
 import 'package:shenliyuan/models/ai_run_event.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
+import 'package:shenliyuan/platform/contracts/secure_store.dart';
 
-class _MemorySecureStore implements AIProviderSecureStore {
+class _MemorySecureStore implements AppSecretStore {
   final Map<String, String> values = <String, String>{};
 
   @override

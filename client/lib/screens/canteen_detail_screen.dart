@@ -309,7 +309,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final auth = context.watch<AuthProvider>();
     final ratingHint = !auth.isLoggedIn
         ? '登录后可评价'
-        : auth.user?.eduBound != true
+        : auth.user?.studentVerified != true
             ? '绑定教务后可评价'
             : hasRating
                 ? '修改我的评价...'
@@ -890,7 +890,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           .showSnackBar(const SnackBar(content: Text('请先登录后评价')));
       return;
     }
-    if (auth.user?.eduBound != true) {
+    if (auth.user?.studentVerified != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先绑定教务账号后再评价')),
       );

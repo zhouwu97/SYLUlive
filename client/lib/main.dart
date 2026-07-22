@@ -310,7 +310,8 @@ Future<void> main() async {
 
 /// 极光推送初始化
 late final PushClient pushClient = PushClient.current();
-late final SystemNotificationClient systemNotificationClient = SystemNotificationClient.current();
+late final SystemNotificationClient systemNotificationClient =
+    SystemNotificationClient.current();
 bool _privateMessageNotificationsReady = false;
 const MethodChannel _privateMessageNotificationChannel = MethodChannel(
   'shenliyuan/private_message_notifications',
@@ -525,7 +526,7 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
     production: true,
     debug: kDebugMode,
   );
-  
+
   final rid = (await pushClient.getRegistrationId())?.trim() ?? '';
 
   if (rid.isEmpty) {
@@ -600,7 +601,8 @@ Future<void> _ensurePrivateMessageNotificationsReady() async {
     onNotificationTap: (payload) {
       if (payload.isEmpty) return;
       try {
-        final target = privateMessageTargetFromLocalPayload(jsonEncode(payload));
+        final target =
+            privateMessageTargetFromLocalPayload(jsonEncode(payload));
         if (target != null) {
           _clearPrivateMessageNotifications(target.conversationId).ignore();
           _openPrivateMessage(target);
@@ -985,8 +987,12 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider<AuthProvider, EduProvider>(
           create: (_) => EduProvider(dio),
-          update: (_, auth, provider) =>
-              provider!..syncSessionUser(auth.user?.id.toString()),
+          update: (_, auth, provider) => provider!
+            ..setAuthCallbacks(
+              applyAuthPayload: auth.applyAuthPayload,
+              refreshAuthUser: auth.refreshUser,
+            )
+            ..syncSessionUser(auth.user?.id.toString()),
         ),
         ChangeNotifierProxyProvider2<AuthProvider, EduProvider,
             CourseScheduleProvider>(
@@ -1476,7 +1482,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       }
       await showRequiredLegalConsentDialog(
         context,
-        requiresEduDataConsent: currentUser.eduBound,
+        requiresEduDataConsent: currentUser.eduAuthorized,
       );
       _legalConsentDialogVisible = false;
       if (mounted) setState(() {});

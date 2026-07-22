@@ -42,8 +42,8 @@ class EduError(Exception):
 class CookieLapseError(EduError):
     """Cookie失效"""
 
-    def __init__(self, message: str = "教务登录会话已失效，请重新登录"):
-        super().__init__(message, "SESSION_EXPIRED")
+    def __init__(self, message: str = "教务登录会话已失效，请重新登录", code: str = "SESSION_EXPIRED"):
+        super().__init__(message, code)
 
 
 class LoginFailedError(EduError):

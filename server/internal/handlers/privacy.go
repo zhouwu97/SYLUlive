@@ -140,20 +140,22 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 		"legal_consents_required": consentState == models.LegalConsentStateRequired,
 		"consent_revoked_at":      user.LegalConsentRevokedAt,
 		"account": gin.H{
-			"id":              user.ID,
-			"student_id":      user.StudentID,
-			"nickname":        user.Nickname,
-			"gender":          user.Gender,
-			"avatar_set":      user.Avatar != "",
-			"background_set":  user.Background != "",
-			"qq":              user.QQ,
-			"created_at":      user.CreatedAt,
-			"edu_bound":       user.EduBound,
-			"edu_student_id":  user.EduStudentID,
-			"edu_grade":       user.EduGrade,
-			"edu_college":     user.EduCollege,
-			"edu_major":       user.EduMajor,
-			"notification_on": user.DeviceToken != "",
+			"id":                user.ID,
+			"student_id":        user.StudentID,
+			"nickname":          user.Nickname,
+			"gender":            user.Gender,
+			"avatar_set":        user.Avatar != "",
+			"background_set":    user.Background != "",
+			"qq":                user.QQ,
+			"created_at":        user.CreatedAt,
+			"edu_bound":         user.IsEduAuthorized(),
+			"edu_authorized":    user.IsEduAuthorized(),
+			"edu_session_state": user.EduSessionState,
+			"edu_student_id":    user.EduStudentID,
+			"edu_grade":         user.EduGrade,
+			"edu_college":       user.EduCollege,
+			"edu_major":         user.EduMajor,
+			"notification_on":   user.DeviceToken != "",
 		},
 		"legal_consents": consents,
 	}
@@ -218,7 +220,7 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
 		return
 	}
-	needsEduCredentialCleanup := user.EduBound
+	needsEduCredentialCleanup := user.IsEduAuthorized()
 	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
@@ -228,13 +230,12 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 			"push_installation_id":         "",
 			"push_notice_version":          "",
 			"push_enabled_at":              nil,
-			"edu_student_id":               "",
 			"edu_password":                 "",
 			"edu_cookie":                   "",
 			"edu_bound":                    false,
-			"edu_grade":                    "",
-			"edu_college":                  "",
-			"edu_major":                    "",
+			"edu_authorized":               false,
+			"edu_session_state":            "revoked",
+			"edu_auto_relogin":             false,
 		}).Error; err != nil {
 			return err
 		}
@@ -268,16 +269,15 @@ func (h *PrivacyHandler) UnbindEdu(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-	needsCleanup := user.EduBound || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
+	needsCleanup := user.IsEduAuthorized() || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-			"edu_student_id": "",
-			"edu_password":   "",
-			"edu_cookie":     "",
-			"edu_bound":      false,
-			"edu_grade":      "",
-			"edu_college":    "",
-			"edu_major":      "",
+			"edu_password":      "",
+			"edu_cookie":        "",
+			"edu_bound":         false,
+			"edu_authorized":    false,
+			"edu_session_state": "revoked",
+			"edu_auto_relogin":  false,
 		}).Error; err != nil {
 			return err
 		}
@@ -401,7 +401,7 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		return
 	}
 	now := time.Now()
-	needsEduCredentialCleanup := user.EduBound || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
+	needsEduCredentialCleanup := user.IsEduAuthorized() || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 			"student_id":                   fmt.Sprintf("cancelled-%d-%d", userID, now.UnixNano()),
@@ -420,6 +420,9 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 			"edu_password":                 "",
 			"edu_cookie":                   "",
 			"edu_bound":                    false,
+			"edu_authorized":               false,
+			"edu_session_state":            "revoked",
+			"edu_auto_relogin":             false,
 			"edu_grade":                    "",
 			"edu_college":                  "",
 			"edu_major":                    "",

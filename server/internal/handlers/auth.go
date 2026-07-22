@@ -37,6 +37,8 @@ import (
 	"shenliyuan/internal/middleware"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
+	"shenliyuan/internal/utils"
 )
 
 // EduServiceConfig 鏁欏姟鏈嶅姟閰嶇疆
@@ -105,16 +107,36 @@ var loginThrottleStore = struct {
 // AuthHandler 璁よ瘉澶勭悊鍣
 
 type AuthHandler struct {
-	db *gorm.DB
+	db          *gorm.DB
+	cleanupJobs *services.EduCredentialCleanupJobService
 
-	jwtSecret string
+	jwtSecret         string
+	emailVerification *services.EmailVerificationService
 }
 
 // NewAuthHandler 鍒涘缓璁よ瘉澶勭悊鍣
 
 func NewAuthHandler(db *gorm.DB, jwtSecret string) *AuthHandler {
+	return NewAuthHandlerWithEmailVerificationAndCleanup(db, jwtSecret, nil, nil)
 
-	return &AuthHandler{db: db, jwtSecret: jwtSecret}
+}
+
+// NewAuthHandlerWithEmailVerification 创建使用持久化邮箱验证码服务的认证处理器。
+func NewAuthHandlerWithEmailVerification(db *gorm.DB, jwtSecret string, emailVerification *services.EmailVerificationService) *AuthHandler {
+	return NewAuthHandlerWithEmailVerificationAndCleanup(db, jwtSecret, emailVerification, nil)
+
+}
+
+// NewAuthHandlerWithEmailVerificationAndCleanup 创建具备教务凭据补偿能力的认证处理器。
+func NewAuthHandlerWithEmailVerificationAndCleanup(
+	db *gorm.DB,
+	jwtSecret string,
+	emailVerification *services.EmailVerificationService,
+	cleanupJobs *services.EduCredentialCleanupJobService,
+) *AuthHandler {
+	return &AuthHandler{
+		db: db, jwtSecret: jwtSecret, emailVerification: emailVerification, cleanupJobs: cleanupJobs,
+	}
 
 }
 
@@ -213,12 +235,12 @@ func (h *AuthHandler) AcceptLegalConsents(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
-	if err := input.validate(user.EduBound); err != nil {
+	if err := input.validate(user.IsEduAuthorized()); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := recordLegalConsents(tx, user.ID, input, user.EduBound); err != nil {
+		if err := recordLegalConsents(tx, user.ID, input, user.IsEduAuthorized()); err != nil {
 			return err
 		}
 		return tx.Model(&models.User{}).Where("id = ?", user.ID).Update("legal_consent_revoked_at", nil).Error
@@ -276,6 +298,20 @@ func deleteIncompleteRegistrationUser(db *gorm.DB, userID uint) {
 			return err
 		}
 		return tx.Delete(&models.User{}, userID).Error
+	})
+}
+
+// compensateFailedEduRegistrationBinding 清理注册阶段 Python 已写入、但 Go 身份升级失败的教务凭据。
+func (h *AuthHandler) compensateFailedEduRegistrationBinding(userID uint) {
+	resp, err := pythonEduRequest(http.MethodDelete, "/api/edu/authorization", &userID, nil)
+	if err == nil && resp.StatusCode() == http.StatusOK {
+		return
+	}
+	if h.cleanupJobs == nil || h.db == nil {
+		return
+	}
+	_ = h.db.Transaction(func(tx *gorm.DB) error {
+		return h.cleanupJobs.Enqueue(tx, userID)
 	})
 }
 
@@ -573,6 +609,15 @@ func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
 		return
 
 	}
+	if h.emailVerification != nil {
+		// 旧客户端仅能提交 QQ 号；兼容期内统一映射为 QQ 邮箱验证码。
+		if err := h.requestEmailCode(c, qq+"@qq.com", models.EmailVerificationPurposeRegister, nil); err != nil {
+			writeEmailVerificationError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "验证码已发送"})
+		return
+	}
 
 	var count int64
 
@@ -654,6 +699,15 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 		return
 
 	}
+	if h.emailVerification != nil {
+		// 兼容校验不消费验证码，随后 /register 会原子消费它。
+		if err := h.validateEmailCode(qq+"@qq.com", models.EmailVerificationPurposeRegister, input.Code, false); err != nil {
+			writeEmailVerificationError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "验证通过"})
+		return
+	}
 
 	verifyCodeStore.Lock()
 	record, ok := verifyCodeStore.codes[qq]
@@ -723,6 +777,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 
 	}
+	email := qq + "@qq.com"
+	if h.emailVerification != nil {
+		// 新服务将旧 QQ 注册迁移为已验证的 QQ 邮箱账号。
+		if err := h.validateEmailCode(email, models.EmailVerificationPurposeRegister, input.Code, true); err != nil {
+			writeEmailVerificationError(c, err)
+			return
+		}
+		// 后续旧兼容分支只检查完成态；安全性已由持久化验证码消费保证。
+		markQQVerified(qq)
+	}
 
 	var count int64
 
@@ -775,9 +839,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	}
 
+	now := time.Now()
 	user := models.User{
 
-		StudentID: qq,
+		StudentID: "",
+
+		Email: email, EmailVerifiedAt: &now,
 
 		Nickname: nickname,
 
@@ -787,9 +854,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 		CreditScore: 100,
 
-		QQ: qq,
-
-		EduBound: false,
+		EduSessionState: "unbound",
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -799,6 +864,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return recordLegalConsents(tx, user.ID, input.LegalConsentInput, false)
 	}); err != nil {
 
+		if utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
+			c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已绑定其他账号", "code": "EMAIL_ALREADY_BOUND"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 
 		return
@@ -818,27 +887,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	consumeQQVerified(qq)
 
-	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成Token"})
-		return
+	if h.emailVerification != nil {
+		h.writeSecurityAudit(user.ID, "legacy_qq_registered_as_email", maskEmail(email))
 	}
-
-	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
-
-	response, responseErr := selfUserResponseForDB(h.db, user)
-	if responseErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
-		return
-	}
-	c.JSON(http.StatusCreated, gin.H{
-
-		"token": token,
-
-		"user": response,
-	})
+	h.issueAuthSession(c, user, http.StatusCreated)
 
 }
 
@@ -942,9 +994,11 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 	}
 
+	now := time.Now()
 	user := models.User{
 
-		StudentID: input.StudentID,
+		StudentID:         input.StudentID,
+		StudentVerifiedAt: &now,
 
 		Nickname: nickname,
 
@@ -954,7 +1008,12 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 		CreditScore: 100,
 
-		EduBound: false,
+		EduAuthorized:       true,
+		EduSessionState:     "active",
+		EduAutoRelogin:      true,
+		EduAuthorizedAt:     &now,
+		EduSessionUpdatedAt: &now,
+		EduBound:            true,
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -963,7 +1022,10 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		}
 		return recordLegalConsents(tx, user.ID, input.LegalConsentInput, true)
 	}); err != nil {
-
+		if utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
+			c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 
 		return
@@ -987,12 +1049,18 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	// 创建本地账号后，必须由同一条 Go -> Python 绑定链路完成凭据落库。
 	bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
 	if err != nil {
+		h.compensateFailedEduRegistrationBinding(user.ID)
 		deleteIncompleteRegistrationUser(h.db, user.ID)
 		writeEduServiceError(c, err)
 		return
 	}
 	if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
+		h.compensateFailedEduRegistrationBinding(user.ID)
 		deleteIncompleteRegistrationUser(h.db, user.ID)
+		if errors.Is(err, errEduStudentAlreadyBound) {
+			c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
 		return
 	}
@@ -1029,7 +1097,9 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 // LoginInput 鐧诲綍杈撳叆
 
 type LoginInput struct {
-	StudentID string `json:"student_id" binding:"required"`
+	// Account 是新客户端字段；StudentID 保留给兼容客户端。
+	Account   string `json:"account"`
+	StudentID string `json:"student_id"`
 
 	Password string `json:"password" binding:"required"`
 }
@@ -1142,7 +1212,10 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 			}
 			return recordLegalConsents(tx, user.ID, input.LegalConsentInput, true)
 		}); err != nil {
-
+			if utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
+				c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 
 			return
@@ -1151,12 +1224,18 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 		bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
 		if err != nil {
+			h.compensateFailedEduRegistrationBinding(user.ID)
 			deleteIncompleteRegistrationUser(h.db, user.ID)
 			writeEduServiceError(c, err)
 			return
 		}
 		if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
+			h.compensateFailedEduRegistrationBinding(user.ID)
 			deleteIncompleteRegistrationUser(h.db, user.ID)
+			if errors.Is(err, errEduStudentAlreadyBound) {
+				c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
 			return
 		}
@@ -1184,6 +1263,11 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 			return
 		}
 		if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
+			h.compensateFailedEduRegistrationBinding(user.ID)
+			if errors.Is(err, errEduStudentAlreadyBound) {
+				c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
 			return
 		}
@@ -1245,7 +1329,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 	var user models.User
 
-	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
+	if err := h.db.Where("student_id = ? AND student_verified_at IS NOT NULL", input.StudentID).First(&user).Error; err != nil {
 
 		c.JSON(http.StatusNotFound, gin.H{"error": "该学号尚未注册，请先注册"})
 
@@ -1285,12 +1369,6 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 	}
 
-	bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
-	if err != nil {
-		writeEduServiceError(c, err)
-		return
-	}
-
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
 
 	if err != nil {
@@ -1305,33 +1383,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 		"password_hash": string(hashedPassword),
 
-		"edu_student_id": input.StudentID,
-
-		"edu_password": "",
-
-		"edu_cookie": "",
-
-		"edu_bound": true,
-
 		"token_version": gorm.Expr("token_version + 1"),
-	}
-
-	if bindResult.Grade != "" {
-
-		updates["edu_grade"] = bindResult.Grade
-
-	}
-
-	if bindResult.College != "" {
-
-		updates["edu_college"] = bindResult.College
-
-	}
-
-	if bindResult.Major != "" {
-
-		updates["edu_major"] = bindResult.Major
-
 	}
 
 	if err := h.db.Model(&user).Updates(updates).Error; err != nil {
@@ -1343,7 +1395,8 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	}
 	middleware.InvalidateTokenVersionCache(user.ID)
 
-	clearLoginFailures(normalizeLoginAccount(input.StudentID))
+	clearLoginFailures("user:" + strconvUserID(user.ID))
+	h.writeSecurityAudit(user.ID, "password_reset_edu", "")
 
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
 
@@ -1422,11 +1475,20 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	}
 
-	account := normalizeLoginAccount(input.StudentID)
+	accountInput := input.Account
+	if strings.TrimSpace(accountInput) == "" {
+		accountInput = input.StudentID
+	}
+	account := normalizeLoginAccount(accountInput)
+	if account == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入学号或邮箱"})
+		return
+	}
 
 	now := time.Now()
 
-	if remaining, locked := currentLoginLock(account, now); locked {
+	unknownKey := "account:" + account
+	if remaining, locked := currentLoginLock(unknownKey, now); locked {
 
 		c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
 
@@ -1439,11 +1501,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	}
 
-	var user models.User
-
-	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
+	user, err := h.findLoginUser(account)
+	if err != nil {
 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			registerLoginFailure(unknownKey, now)
 
 			c.JSON(http.StatusNotFound, gin.H{"error": "该账号尚未注册，请先注册"})
 
@@ -1456,10 +1518,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 
 	}
+	userKey := "user:" + strconv.FormatUint(uint64(user.ID), 10)
+	if remaining, locked := currentLoginLock(userKey, now); locked {
+		c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(remaining))})
+		return
+	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
 
-		lockFor := registerLoginFailure(account, now)
+		lockFor := registerLoginFailure(userKey, now)
 
 		if lockFor > 0 {
 
@@ -1480,7 +1548,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	}
 
-	clearLoginFailures(account)
+	clearLoginFailures(userKey)
+	clearLoginFailures(unknownKey)
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
 	if err != nil {
@@ -1504,6 +1573,31 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		"user": response,
 	})
 
+}
+
+// findLoginUser 依据新账号规则解析登录标识：邮箱、十位学号、兼容期 QQ 数字账号。
+func (h *AuthHandler) findLoginUser(account string) (models.User, error) {
+	var user models.User
+	query := h.db
+	switch {
+	case strings.Contains(account, "@"):
+		email, err := services.NormalizeEmail(account)
+		if err != nil {
+			return user, err
+		}
+		return user, query.Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error
+	case regexp.MustCompile(`^[0-9]{10}$`).MatchString(account):
+		err := query.Where("student_id = ? AND student_verified_at IS NOT NULL", account).First(&user).Error
+		if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
+			return user, err
+		}
+		// 十位 QQ 与学号长度可能相同，仅在真实学号未命中时回退兼容旧账号。
+		return user, h.db.Where("qq = ?", account).First(&user).Error
+	case validateQQ(account):
+		return user, query.Where("qq = ?", account).First(&user).Error
+	default:
+		return user, gorm.ErrRecordNotFound
+	}
 }
 
 // ChangePasswordInput 淇鏀瑰瘑鐮佽緭鍏

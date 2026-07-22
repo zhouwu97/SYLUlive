@@ -1187,11 +1187,11 @@ func (h *PostHandler) Create(c *gin.Context) {
 	}
 
 	var user models.User
-	if err := h.db.Select("id", "edu_bound").First(&user, userID).Error; err != nil {
+	if err := h.db.Select("id", "student_verified_at", "edu_bound").First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
 		return
 	}
-	if models.BoardID(input.BoardID) == models.BoardMarket && !user.EduBound {
+	if models.BoardID(input.BoardID) == models.BoardMarket && !user.IsStudentVerified() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "毕业用户仅可发布普通帖子，不能在集市发帖"})
 		return
 	}
@@ -1471,10 +1471,10 @@ func (h *PostHandler) Update(c *gin.Context) {
 		}
 
 		var user models.User
-		if err := tx.Select("id", "edu_bound").First(&user, userID).Error; err != nil {
+		if err := tx.Select("id", "student_verified_at", "edu_bound").First(&user, userID).Error; err != nil {
 			return fmt.Errorf("user_not_found")
 		}
-		if post.BoardID == models.BoardMarket && !user.EduBound {
+		if post.BoardID == models.BoardMarket && !user.IsStudentVerified() {
 			return fmt.Errorf("market_graduated")
 		}
 

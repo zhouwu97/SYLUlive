@@ -32,13 +32,24 @@ class UnbindResponse(BaseModel):
 
 
 class EduStatusResponse(BaseModel):
-    """�����״̬"""
     bound: bool
+    authorized: bool = False
+    session_state: str = "unbound"
+    auto_relogin: bool = False
     student_id: Optional[str] = None
     name: Optional[str] = None
     grade: Optional[str] = None
     college: Optional[str] = None
     major: Optional[str] = None
+
+
+class EduSessionResponse(BaseModel):
+    """教务授权或会话操作后的状态。"""
+    success: bool
+    message: str
+    authorized: bool
+    session_state: str
+    auto_relogin: bool
 
 
 class PreVerifyInput(BaseModel):

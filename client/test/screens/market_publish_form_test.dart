@@ -18,6 +18,7 @@ class _FakeAuthProvider extends Fake
         nickname: '测试用户',
         avatar: '',
         createdAt: DateTime(2026, 1, 1),
+        studentVerified: true,
         eduBound: true,
       );
 }

@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
-import 'package:shenliyuan/platform/contracts/secure_store.dart';
 
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
@@ -9,7 +8,6 @@ import '../models/edu_academic_situation.dart';
 import '../models/edu_grade.dart';
 import '../utils/edu_semester_utils.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
 
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {
@@ -52,6 +50,8 @@ class EduProvider extends ChangeNotifier {
 
   String? _userId;
   bool _isBound = false;
+  bool _isAuthorized = false;
+  String _sessionState = 'unbound';
   String _studentId = '';
   String _name = '';
   String _grade = '';
@@ -65,8 +65,13 @@ class EduProvider extends ChangeNotifier {
   final Map<String, AcademicSituationCacheEntry> _academicSituationCache = {};
   int _statusGeneration = 0;
   bool _eduRequestBusy = false;
+  Future<void> Function(String token, Map<String, dynamic> user)?
+      _applyAuthPayload;
+  Future<void> Function()? _refreshAuthUser;
 
   bool get isBound => _isBound;
+  bool get isAuthorized => _isAuthorized;
+  String get sessionState => _sessionState;
   String get studentId => _studentId;
   String get name => _name;
   String get grade => _grade;
@@ -130,6 +135,15 @@ class EduProvider extends ChangeNotifier {
     _academicSituationCache.remove(_academicSituationCacheKey(userId));
   }
 
+  /// 撤销教务授权后销毁该账号的本地个人数据保险箱。
+  ///
+  /// 课表、成绩、体测等快照均依赖教务专项授权，不能在撤销后继续保留。
+  Future<void> _clearSensitiveEduSnapshots(String userId) async {
+    final store = _snapshotStoreBuilder?.call(userId) ??
+        AesGcmAccountScopedSnapshotStore(appUserId: userId);
+    await store.clearUser();
+  }
+
   String _gradeDetailCacheKey(EduGrade grade, String year, int semester) {
     final stableId = grade.studentGradeId.isNotEmpty
         ? grade.studentGradeId
@@ -157,25 +171,21 @@ class EduProvider extends ChangeNotifier {
     return _gradeDetailCache[_gradeDetailCacheKey(grade, year, semester)];
   }
 
-  String _eduPasswordKey(String studentId) => 'edu_pwd_${studentId.trim()}';
-
-  /// 删除教务密码（解绑后）
-  Future<void> _deleteEduPassword(String studentId) async {
-    final key = _eduPasswordKey(studentId);
-    if (kIsWeb) {
-      final prefs = await AppPreferencesStore.getInstance();
-      await prefs.remove(key);
-    } else {
-      final storage = AppSecretStore.current();
-      await storage.delete(key);
-    }
-  }
-
   EduProvider(
     Dio authDio, [
     AccountScopedSnapshotStore Function(String appUserId)? snapshotStoreBuilder,
   ])  : _snapshotStoreBuilder = snapshotStoreBuilder,
         _authDio = authDio;
+
+  /// 由认证提供者注入，使绑定学号返回的新令牌能与用户资料原子落盘。
+  void setAuthCallbacks({
+    Future<void> Function(String token, Map<String, dynamic> user)?
+        applyAuthPayload,
+    Future<void> Function()? refreshAuthUser,
+  }) {
+    _applyAuthPayload = applyAuthPayload;
+    _refreshAuthUser = refreshAuthUser;
+  }
 
   void setUserId(String userId) {
     if (_userId == userId) return;
@@ -190,6 +200,8 @@ class EduProvider extends ChangeNotifier {
     }
     _userId = userId;
     _isBound = false;
+    _isAuthorized = false;
+    _sessionState = 'unbound';
     _studentId = '';
     _name = '';
     _grade = '';
@@ -224,6 +236,8 @@ class EduProvider extends ChangeNotifier {
     _statusGeneration++;
     _userId = null;
     _isBound = false;
+    _isAuthorized = false;
+    _sessionState = 'unbound';
     _studentId = '';
     _name = '';
     _grade = '';
@@ -287,6 +301,8 @@ class EduProvider extends ChangeNotifier {
 
     if (!_statusLoaded) {
       _isBound = cached;
+      _isAuthorized = cached;
+      _sessionState = cached ? 'active' : 'unbound';
       _statusLoaded = true;
       notifyListeners();
     }
@@ -300,7 +316,11 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        _isBound = data['edu_bound'] ?? false;
+        _isAuthorized =
+            data['edu_authorized'] == true || data['edu_bound'] == true;
+        _isBound = _isAuthorized;
+        _sessionState = data['edu_session_state']?.toString() ??
+            (_isAuthorized ? 'active' : 'unbound');
         _studentId = data['edu_student_id'] ?? '';
         _name = data['name'] ?? '';
         _grade = data['edu_grade'] ?? '';
@@ -318,6 +338,8 @@ class EduProvider extends ChangeNotifier {
         return;
       }
       _isBound = cached;
+      _isAuthorized = cached;
+      _sessionState = cached ? 'active' : 'unbound';
       _errorMessage = _parseDioError(e);
       _statusLoaded = true;
       debugPrint('获取教务状态失败: $_errorMessage，使用缓存: $cached');
@@ -358,58 +380,24 @@ class EduProvider extends ChangeNotifier {
   /// 清除本机教务登录态，不修改服务器绑定关系。
   Future<void> clearLocalSession() async {
     final oldUserId = _userId;
-    final oldStudentId = _studentId;
     clearMemoryForAccountTransition();
 
-    if (oldStudentId.trim().isNotEmpty) {
-      await _deleteEduPassword(oldStudentId);
-    }
     if (oldUserId != null && oldUserId.isNotEmpty) {
       await _clearBoundStatusFor(oldUserId);
     }
   }
 
-  Future<void> _saveEduPassword(String studentId, String password) async {
-    final key = _eduPasswordKey(studentId);
-    if (kIsWeb) {
-      final prefs = await AppPreferencesStore.getInstance();
-      await prefs.setString(key, password);
-    } else {
-      final storage = AppSecretStore.current();
-      await storage.write(key, password);
-    }
-  }
-
-  Future<String?> _loadEduPassword(String studentId) async {
-    final key = _eduPasswordKey(studentId);
-    if (kIsWeb) {
-      final prefs = await AppPreferencesStore.getInstance();
-      return prefs.getString(key);
-    } else {
-      final storage = AppSecretStore.current();
-      return await storage.read(key);
-    }
-  }
-
   // 绑定教务账号
-  Future<bool> bind(
-    String studentId,
-    String password, {
-    bool isSilent = false,
-  }) async {
+  Future<bool> bind(String studentId, String password) async {
     if (_userId == null) {
-      if (!isSilent) {
-        _errorMessage = '用户未登录';
-        notifyListeners();
-      }
+      _errorMessage = '用户未登录';
+      notifyListeners();
       return false;
     }
 
-    if (!isSilent) {
-      _isLoading = true;
-      _errorMessage = null;
-      notifyListeners();
-    }
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
 
     try {
       final response = await _authDio.post(
@@ -420,12 +408,17 @@ class EduProvider extends ChangeNotifier {
         },
       );
 
-      if (!isSilent) {
-        _isLoading = false;
-      }
+      _isLoading = false;
       if (response.statusCode == 200) {
-        final data = response.data;
+        final data = Map<String, dynamic>.from(response.data as Map);
+        final token = data['token'];
+        final user = data['user'];
+        if (token is String && user is Map && _applyAuthPayload != null) {
+          await _applyAuthPayload!(token, Map<String, dynamic>.from(user));
+        }
+        _isAuthorized = data['edu_authorized'] != false;
         _isBound = true;
+        _sessionState = data['edu_session_state']?.toString() ?? 'active';
         _studentId = data['edu_student_id'] ?? studentId;
         _name = data['name'] ?? '';
         _grade = data['edu_grade'] ?? '';
@@ -435,87 +428,97 @@ class EduProvider extends ChangeNotifier {
         _statusLoaded = true;
         final boundUserId = _userId!;
         await _saveBoundStatusFor(boundUserId);
-        await _saveEduPassword(_studentId, password);
         notifyListeners();
         return true;
       }
     } on DioException catch (e) {
-      if (!isSilent) {
-        _isLoading = false;
-        _errorMessage = _parseDioError(e);
-        notifyListeners();
-      }
+      _isLoading = false;
+      _errorMessage = _parseDioError(e);
+      notifyListeners();
       debugPrint('绑定教务失败: $_errorMessage');
       return false;
     }
-    if (!isSilent) {
-      _isLoading = false;
-      _errorMessage = '绑定失败，未知错误';
-      notifyListeners();
-    }
+    _isLoading = false;
+    _errorMessage = '绑定失败，未知错误';
+    notifyListeners();
     return false;
   }
 
-  // 解绑教务账号
+  /// 兼容旧页面的“解绑”入口，实际语义是撤销教务授权，稳定学号不会被清空。
   Future<OperationResult<void>> unbind() async {
+    return revokeAuthorization();
+  }
+
+  Future<OperationResult<void>> logoutSession() async {
     if (_userId == null) {
       return OperationResult.fail('用户未登录');
     }
-
-    final currentUserId = _userId!;
-    final currentStudentId = _studentId; // 先保存，字段之后会被清空
-
     try {
-      final response = await _authDio.delete('/edu/bind');
+      final response = await _authDio.post('/edu/session/logout');
 
       if (response.statusCode == 200) {
-        // 清除本地状态
-        _isBound = false;
-        _studentId = '';
-        _name = '';
-        _grade = '';
-        _college = '';
-        _major = '';
+        _sessionState = 'logged_out';
         _errorMessage = null;
         _statusLoaded = true;
-
-        // 清除 AppPreferencesStore 中该用户的教务信息
-        final prefs = await AppPreferencesStore.getInstance();
-        await prefs.setBool('edu_bound_$currentUserId', false);
-        await prefs.remove('edu_student_id_$currentUserId');
-        await prefs.remove('edu_grade_$currentUserId');
-        await prefs.remove('edu_college_$currentUserId');
-        await prefs.remove('edu_major_$currentUserId');
-        await prefs.remove('edu_last_semester_$currentUserId');
-
-        // 删除安全存储中的密码
-        if (currentStudentId.isNotEmpty) {
-          await _deleteEduPassword(currentStudentId);
-        }
-
-        // 清除该用户的所有成绩缓存
-        clearGradeCacheForUser(currentUserId);
-
+        await _refreshAuthUser?.call();
         notifyListeners();
         return OperationResult.ok(null);
       }
-      return OperationResult.fail('解绑失败');
+      return OperationResult.fail('退出教务登录失败');
     } on DioException catch (e) {
       final errorMsg = _parseDioError(e);
-      debugPrint('解绑教务失败: $errorMsg');
+      debugPrint('退出教务登录失败: $errorMsg');
       return OperationResult.fail(errorMsg);
     }
   }
 
-  // 尝试后台静默恢复教务登录
-  Future<bool> _trySilentRelogin() async {
-    final pwd = await _loadEduPassword(_studentId);
-    if (pwd != null && pwd.isNotEmpty) {
-      debugPrint('后台尝试静默恢复教务登录...');
-      AppFeedback.showGlobalToast('检测到教务登录已过期，自动为您重新登录中...');
-      return await bind(_studentId, pwd, isSilent: true);
+  Future<OperationResult<void>> resumeSession() async {
+    if (_userId == null) return OperationResult.fail('用户未登录');
+    try {
+      final response = await _authDio.post('/edu/session/resume');
+      if (response.statusCode == 200) {
+        _isAuthorized = response.data['edu_authorized'] != false;
+        _isBound = _isAuthorized;
+        _sessionState =
+            response.data['edu_session_state']?.toString() ?? 'active';
+        _errorMessage = null;
+        _statusLoaded = true;
+        await _refreshAuthUser?.call();
+        notifyListeners();
+        return OperationResult.ok(null);
+      }
+      return OperationResult.fail('恢复教务会话失败');
+    } on DioException catch (error) {
+      return OperationResult.fail(_parseDioError(error));
     }
-    return false;
+  }
+
+  Future<OperationResult<void>> revokeAuthorization() async {
+    if (_userId == null) return OperationResult.fail('用户未登录');
+    final currentUserId = _userId!;
+    try {
+      final response = await _authDio.delete('/edu/authorization');
+      if (response.statusCode == 200 || response.statusCode == 202) {
+        _isAuthorized = false;
+        _isBound = false;
+        _sessionState = 'revoked';
+        _errorMessage = null;
+        _statusLoaded = true;
+        clearGradeCacheForUser(currentUserId);
+        try {
+          await _clearSensitiveEduSnapshots(currentUserId);
+        } catch (error) {
+          // 服务端授权已撤销，清理失败不应回滚该安全操作；下次进入时不会再读取该会话。
+          debugPrint('清除教务本地敏感快照失败: ${error.runtimeType}');
+        }
+        await _refreshAuthUser?.call();
+        notifyListeners();
+        return OperationResult.ok(null);
+      }
+      return OperationResult.fail('撤销教务授权失败');
+    } on DioException catch (error) {
+      return OperationResult.fail(_parseDioError(error));
+    }
   }
 
   // 获取课表
@@ -576,33 +579,7 @@ class EduProvider extends ChangeNotifier {
       } on DioException catch (e) {
         final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
-          final rebindSuccess = await _trySilentRelogin();
-          await Future.delayed(const Duration(milliseconds: 350));
-          try {
-            final retryResp = await _authDio.post(
-              '/edu/courses',
-              data: {'year': year, 'semester': semester},
-            );
-            if (!isCurrentContext()) {
-              return OperationResult.fail('用户已切换');
-            }
-            if (retryResp.statusCode == 200 &&
-                retryResp.data['courses'] != null &&
-                (retryResp.data['courses'] as List).isNotEmpty) {
-              return OperationResult.ok(
-                List<Map<String, dynamic>>.from(retryResp.data['courses']),
-              );
-            }
-          } on DioException catch (retryError) {
-            final retryMessage = _parseDioError(retryError);
-            if (_isEduSessionExpired(retryError)) {
-              return OperationResult.fail(
-                rebindSuccess ? '教务会话恢复后仍无法读取课表，请稍后重试' : '教务登录状态已失效，请重新绑定',
-              );
-            }
-            return OperationResult.fail(retryMessage);
-          }
-          return OperationResult.fail('获取课表失败');
+          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
         }
         return OperationResult.fail(errorMsg);
       }
@@ -760,32 +737,7 @@ class EduProvider extends ChangeNotifier {
       } on DioException catch (e) {
         final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
-          final rebindSuccess = await _trySilentRelogin();
-          await Future.delayed(const Duration(milliseconds: 350));
-          try {
-            final retryResp = await request();
-            if (_userId != requestUserId) {
-              return OperationResult.fail('用户已切换');
-            }
-            if (retryResp.statusCode == 200) {
-              final detail = EduGradeDetail.fromJson(
-                Map<String, dynamic>.from(retryResp.data),
-              );
-              if (detail.success && detail.components.isNotEmpty) {
-                _gradeDetailCache[cacheKey] = detail;
-              }
-              return OperationResult.ok(detail);
-            }
-          } on DioException catch (retryError) {
-            final retryMessage = _parseDioError(retryError);
-            if (_isEduSessionExpired(retryError)) {
-              return OperationResult.fail(
-                rebindSuccess ? '教务会话恢复后仍无法读取成绩构成，请稍后重试' : '教务登录状态已失效，请重新绑定',
-              );
-            }
-            return OperationResult.fail(retryMessage);
-          }
-          return OperationResult.fail('获取成绩构成失败');
+          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
         }
         return OperationResult.fail(errorMsg);
       }
@@ -842,54 +794,7 @@ class EduProvider extends ChangeNotifier {
       } on DioException catch (e) {
         final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
-          final rebindSuccess = await _trySilentRelogin();
-          await Future.delayed(const Duration(milliseconds: 350));
-          try {
-            final retryResp = await request();
-            if (!_isSameAcademicContext(
-              requestUserId,
-              requestSourceAccountId,
-            )) {
-              return OperationResult.fail('用户已切换');
-            }
-            if (retryResp.statusCode == 200) {
-              if (retryResp.data is! Map) {
-                return OperationResult.fail('获取学业情况失败');
-              }
-              final rawSituation =
-                  Map<String, dynamic>.from(retryResp.data as Map);
-              final situation = EduAcademicSituation.fromJson(
-                rawSituation,
-              );
-              if (!situation.success) {
-                return OperationResult.fail(situation.message ?? '获取学业情况失败');
-              }
-              final persisted = await _persistAcademicSituation(
-                appUserId: requestUserId,
-                sourceAccountId: requestSourceAccountId,
-                raw: rawSituation,
-              );
-              if (!persisted) {
-                return OperationResult.fail('学业情况本地加密保存失败，请稍后重试');
-              }
-              _academicSituationCache[
-                      _academicSituationCacheKey(requestUserId)] =
-                  AcademicSituationCacheEntry(
-                data: situation,
-                updatedAt: DateTime.now(),
-              );
-              return OperationResult.ok(situation);
-            }
-          } on DioException catch (retryError) {
-            final retryMessage = _parseDioError(retryError);
-            if (_isEduSessionExpired(retryError)) {
-              return OperationResult.fail(
-                rebindSuccess ? '教务会话恢复后仍无法读取学业情况，请稍后重试' : '教务登录状态已失效，请重新绑定',
-              );
-            }
-            return OperationResult.fail(retryMessage);
-          }
-          return OperationResult.fail('获取学业情况失败');
+          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
         }
         return OperationResult.fail(errorMsg);
       }
@@ -950,29 +855,7 @@ class EduProvider extends ChangeNotifier {
       } on DioException catch (e) {
         final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {
-          final rebindSuccess = await _trySilentRelogin();
-          await Future.delayed(const Duration(milliseconds: 350));
-          try {
-            final retryResp = await _authDio.post(
-              '/edu/grades',
-              data: {'year': year, 'semester': semester},
-            );
-            if (retryResp.statusCode == 200 &&
-                retryResp.data['grades'] != null) {
-              return OperationResult.ok(
-                List<Map<String, dynamic>>.from(retryResp.data['grades']),
-              );
-            }
-          } on DioException catch (retryError) {
-            final retryMessage = _parseDioError(retryError);
-            if (_isEduSessionExpired(retryError)) {
-              return OperationResult.fail(
-                rebindSuccess ? '教务会话恢复后仍无法读取成绩，请稍后重试' : '教务登录状态已失效，请重新绑定',
-              );
-            }
-            return OperationResult.fail(retryMessage);
-          }
-          return OperationResult.fail('获取成绩失败');
+          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
         }
         return OperationResult.fail(errorMsg);
       }

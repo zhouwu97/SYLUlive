@@ -8,9 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:jpush_flutter/jpush_flutter.dart';
+import 'platform/contracts/push_client.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/post_provider.dart';
@@ -261,7 +261,7 @@ Future<void> main() async {
 
       await Hive.initFlutter();
 
-      PushSettingsService.configureRemoteRegistration(setupJPush);
+      PushSettingsService.configureRemoteRegistration(setupPush);
 
       try {
         final deletedCount = await PostCacheService.clearLegacyCache();
@@ -307,7 +307,7 @@ Future<void> main() async {
 }
 
 /// 极光推送初始化
-late final JPush jpush = JPush.newJPush();
+late final PushClient pushClient = PushClient.current();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
@@ -332,7 +332,7 @@ void _ensureJPushHandlersRegistered() {
   if (_jpushHandlersRegistered) return;
   _jpushHandlersRegistered = true;
 
-  jpush.addEventHandler(
+  pushClient.setHandlers(
     onReceiveNotification: (Map<String, dynamic> message) async {
       // 极光 SDK 已展示通知，不弹本地兜底，避免双通知
       await _handlePrivateMessageNotification(
@@ -481,9 +481,9 @@ void _processPendingNotificationOpen() {
   }
 }
 
-Future<RemotePushEnableResult> setupJPush(AuthProvider authProvider) async {
+Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
   if (!await PushSettingsService.isEnabled()) {
-    debugPrint('推送未主动启用，跳过 JPush 初始化');
+    debugPrint('推送未主动启用，跳过 PushClient 初始化');
     return const RemotePushEnableResult(
       permissionGranted: false,
       registrationSucceeded: false,
@@ -518,14 +518,14 @@ Future<RemotePushEnableResult> setupJPush(AuthProvider authProvider) async {
     );
   }
 
-  jpush.setup(
+  pushClient.setup(
     appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
-    production: !kDebugMode,
+    production: true,
     debug: kDebugMode,
   );
-
-  final rid = await jpush.getRegistrationID();
+  
+  final rid = await pushClient.getRegistrationId();
 
   if (rid.isEmpty) {
     return const RemotePushEnableResult(

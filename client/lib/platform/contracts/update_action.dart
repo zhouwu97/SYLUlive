@@ -1,54 +1,97 @@
 import 'package:flutter/foundation.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
+import 'package:dio/dio.dart';
 
 import '../../models/app_update_info.dart';
 import '../app_platform.dart';
 import '../app_installer.dart';
+import 'external_navigator.dart';
+import '../../services/app_update_download_service.dart';
+import 'dart:io';
 
-/// 统一的应用更新动作接口
+enum AppUpdateActionResult {
+  success,
+  needPermission,
+  failed,
+}
+
 abstract interface class AppUpdateAction {
-  Future<void> execute(AppUpdateInfo info, String? downloadedApkPath);
+  Future<AppUpdateActionResult> execute(
+    AppUpdateInfo info, {
+    void Function(double)? onProgress,
+    CancelToken? cancelToken,
+  });
 
-  factory AppUpdateAction.current(AppInstaller installer) {
+  factory AppUpdateAction.current(AppInstaller installer, AppUpdateDownloadService downloadService) {
     if (AppPlatforms.current.isOhos) {
       return const OhosMarketUpdateAction();
     }
-    return AndroidApkUpdateAction(installer);
+    return AndroidApkUpdateAction(installer, downloadService);
   }
 }
 
-/// 鸿蒙：跳转华为应用市场或官方分发链接
 class OhosMarketUpdateAction implements AppUpdateAction {
   const OhosMarketUpdateAction();
 
   @override
-  Future<void> execute(AppUpdateInfo info, String? downloadedApkPath) async {
+  Future<AppUpdateActionResult> execute(
+    AppUpdateInfo info, {
+    void Function(double)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
     final url = Uri.tryParse(info.downloadUrl);
     if (url == null) throw StateError('更新链接无效');
     
-    // 如果是应用市场链接 (appgallery://)，可以直接跳转；否则使用浏览器打开 HAP/网页下载页
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
-      throw StateError('无法打开更新页面，请手动前往应用市场更新');
+    final nav = ExternalNavigator.current();
+    final opened = await nav.open(url);
+    if (!opened) {
+      throw StateError('无法打开应用市场或链接，请手动更新');
     }
+    return AppUpdateActionResult.success;
   }
 }
 
-/// Android：调用系统安装器安装已下载的 APK
 class AndroidApkUpdateAction implements AppUpdateAction {
   final AppInstaller _installer;
+  final AppUpdateDownloadService _downloadService;
 
-  const AndroidApkUpdateAction(this._installer);
+  const AndroidApkUpdateAction(this._installer, this._downloadService);
 
   @override
-  Future<void> execute(AppUpdateInfo info, String? downloadedApkPath) async {
-    if (downloadedApkPath == null || downloadedApkPath.isEmpty) {
-      throw StateError('安装包未下载完成');
+  Future<AppUpdateActionResult> execute(
+    AppUpdateInfo info, {
+    void Function(double)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    // 1. Download
+    File? apk;
+    try {
+      apk = await _downloadService.download(
+        url: info.downloadUrl,
+        expectedSize: info.fileSize,
+        expectedSha256: info.sha256.toLowerCase(),
+        cancelToken: cancelToken,
+        onProgress: onProgress,
+      );
+    } catch (e) {
+      if (cancelToken?.isCancelled ?? false) {
+        throw StateError('用户暂停下载');
+      }
+      rethrow;
     }
-    
-    // 假设下载的文件在 downloadedApkPath，由于 AppInstaller 已封装 File 逻辑，
-    // 这里需在调用方转 File 传递给 installApk，或在 coordinator 里处理。
-    // 为了不大幅改动 AppInstaller，我们在外部处理具体安装。
+
+    // 2. Check Permission
+    if (!await _installer.canInstallPackages()) {
+      await _installer.openInstallPermissionSettings();
+      return AppUpdateActionResult.needPermission;
+    }
+
+    // 3. Install
+    try {
+      await _installer.installApk(apk);
+      return AppUpdateActionResult.success;
+    } on PlatformException catch (e) {
+      throw StateError(e.message ?? '无法打开系统安装器');
+    }
   }
 }

@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../platform/contracts/external_navigator.dart';
 
 import '../../models/competition.dart';
 import '../../providers/auth_provider.dart';
@@ -1095,13 +1095,13 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                     if (event.officialUrl.isNotEmpty)
                       OutlinedButton.icon(
                         onPressed: () =>
-                            launchUrl(Uri.parse(event.officialUrl)),
+                            ExternalNavigator.current().open(Uri.parse(event.officialUrl)),
                         icon: const Icon(Icons.open_in_new),
                         label: const Text('打开官网'),
                       ),
                     if (event.noticeUrl.isNotEmpty)
                       OutlinedButton.icon(
-                        onPressed: () => launchUrl(Uri.parse(event.noticeUrl)),
+                        onPressed: () => ExternalNavigator.current().open(Uri.parse(event.noticeUrl)),
                         icon: const Icon(Icons.article_outlined),
                         label: const Text('查看通知'),
                       ),

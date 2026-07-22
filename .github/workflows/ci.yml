@@ -132,7 +132,7 @@ jobs:
         working-directory: server
         run: go test ./internal/models -run TestPGVectorMigrationIntegration -count=1
 
-  client-ohos:
+  client-platform-boundary:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -151,7 +151,7 @@ jobs:
         run: flutter analyze --no-fatal-warnings --no-fatal-infos
       - name: Verify no direct Android plugin usage
         run: |
-          if grep -rnw 'lib/' -e 'JPush.newJPush()' -e 'FlutterSecureStorage()'; then
+          if grep -rnE 'package:(jpush_flutter|flutter_local_notifications|url_launcher|flutter_secure_storage)' lib/ | grep -v 'lib/platform/'; then
             echo "Found direct usage of Android plugins without platform abstraction."
             exit 1
           fi

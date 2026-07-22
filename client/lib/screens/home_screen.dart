@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../platform/contracts/external_navigator.dart';
 import '../config/api_constants.dart';
 import '../main.dart';
 import '../models/post.dart';
@@ -815,9 +815,9 @@ class _HomeScreenState extends State<HomeScreen>
                           final link = href?.trim();
                           if (link == null || link.isEmpty) return;
                           final uri = Uri.tryParse(link);
-                          if (uri == null) return;
-                          await launchUrl(uri,
-                              mode: LaunchMode.externalApplication);
+                          final opened = await ExternalNavigator.current().open(uri);
+                        if (!opened && mounted) {
+                        }
                         },
                         styleSheet: MarkdownStyleSheet(
                           p: TextStyle(
@@ -1197,10 +1197,9 @@ class _HomeScreenState extends State<HomeScreen>
                               if (link == null || link.isEmpty) return;
                               final uri = Uri.tryParse(link);
                               if (uri == null) return;
-                              await launchUrl(
-                                uri,
-                                mode: LaunchMode.externalApplication,
-                              );
+                             final opened = await ExternalNavigator.current().open(uri);
+                            if (!opened && mounted) {
+                            }
                             },
                             styleSheet: MarkdownStyleSheet(
                               p: TextStyle(

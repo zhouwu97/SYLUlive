@@ -1,38 +1,15 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-/// 体测凭证使用的最小安全存储接口，便于在测试中验证迁移行为。
-abstract interface class PhysicalSecureStore {
-  Future<String?> read(String key);
-  Future<void> write(String key, String value);
-  Future<void> delete(String key);
-}
-
-class FlutterPhysicalSecureStore implements PhysicalSecureStore {
-  const FlutterPhysicalSecureStore();
-
-  static const FlutterSecureStorage _storage = FlutterSecureStorage();
-
-  @override
-  Future<String?> read(String key) => _storage.read(key: key);
-
-  @override
-  Future<void> write(String key, String value) =>
-      _storage.write(key: key, value: value);
-
-  @override
-  Future<void> delete(String key) => _storage.delete(key: key);
-}
+import '../platform/contracts/secure_store.dart';
 
 /// 保存体测密码，并将旧版 SharedPreferences 明文凭证一次性迁移出去。
 class PhysicalCredentialStore {
   PhysicalCredentialStore({
-    PhysicalSecureStore secureStore = const FlutterPhysicalSecureStore(),
+    AppSecretStore? secureStore,
     Future<SharedPreferences> Function()? preferencesLoader,
-  })  : _secureStore = secureStore,
+  })  : _secureStore = secureStore ?? AppSecretStore.current(),
         _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
 
-  final PhysicalSecureStore _secureStore;
+  final AppSecretStore _secureStore;
   final Future<SharedPreferences> Function() _preferencesLoader;
 
   static const String _securePrefix = 'secure_physical_test_pwd_';

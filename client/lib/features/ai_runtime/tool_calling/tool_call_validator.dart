@@ -1,5 +1,6 @@
 import '../skills/academic_overview_skill.dart';
 import '../skills/competition_search_skill.dart';
+import '../skills/competition_advisor_skills.dart';
 import '../skills/erke_overview_skill.dart';
 import '../skills/deterministic_skills.dart';
 import '../skills/physical_overview_skill.dart';
@@ -56,6 +57,10 @@ class LocalToolCallValidator {
           const ErkeOverviewInput(),
         ),
       CompetitionSearchSkill.skillId => _competition(call.arguments),
+      CompetitionCapabilityProfileSkill.skillId => _empty(
+          call.arguments,
+          const EmptyCompetitionAdvisorInput(),
+        ),
       CompetitionFitSkill.skillId => _competitionFit(call.arguments),
       AcademicGpaSkill.skillId ||
       AcademicCreditSummarySkill.skillId ||
@@ -79,10 +84,7 @@ class LocalToolCallValidator {
   }
 
   Object _week(Map<String, dynamic> arguments) {
-    _requireOnly(
-      arguments,
-      const <String>{'start', 'end', 'week_containing'},
-    );
+    _requireOnly(arguments, const <String>{'start', 'end', 'week_containing'});
     final anchor = arguments['week_containing'];
     final start = arguments['start'];
     final end = arguments['end'];
@@ -100,10 +102,11 @@ class LocalToolCallValidator {
   }
 
   Object _competition(Map<String, dynamic> arguments) {
-    _requireOnly(
-      arguments,
-      const <String>{'keyword', 'category_slug', 'limit'},
-    );
+    _requireOnly(arguments, const <String>{
+      'keyword',
+      'category_slug',
+      'limit',
+    });
     final keyword = arguments['keyword'];
     final category = arguments['category_slug'];
     final limit = arguments['limit'] ?? 10;
@@ -161,15 +164,12 @@ class LocalToolCallValidator {
   }
 
   Object _fitness(Map<String, dynamic> arguments) {
-    _requireOnly(
-      arguments,
-      const <String>{
-        'week_containing',
-        'height_meters',
-        'weight_kg',
-        'reports_discomfort',
-      },
-    );
+    _requireOnly(arguments, const <String>{
+      'week_containing',
+      'height_meters',
+      'weight_kg',
+      'reports_discomfort',
+    });
     final height = arguments['height_meters'];
     final weight = arguments['weight_kg'];
     final discomfort = arguments['reports_discomfort'];

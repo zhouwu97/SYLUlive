@@ -17,6 +17,7 @@ import '../../features/ai_runtime/personal_data/gateway/unavailable_personal_dat
 import '../../features/ai_runtime/personal_session/personal_conversation_store.dart';
 import '../../features/ai_runtime/personal_session/personal_session_epoch.dart';
 import '../../features/ai_runtime/skills/competition_search_skill.dart';
+import '../../features/ai_runtime/skills/competition_advisor_skills.dart';
 import '../../features/ai_runtime/skills/deterministic_skills.dart';
 import '../../features/ai_runtime/skills/personal_skill.dart';
 import '../../features/ai_runtime/skills/skill_execution_context.dart';
@@ -318,9 +319,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   Future<void> _submitPublic(String message) async {
     if (!await _featureFlags.isEnabled(AIFeatureFlag.chat)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('校园 AI 问答当前已关闭')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('校园 AI 问答当前已关闭')));
       }
       return;
     }
@@ -429,11 +430,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     try {
       final registry = buildStageSevenSkillRegistry(
         competitionSearchSource: DioCompetitionSearchSource(widget.dio),
+        competitionCapabilityProfileSource:
+            DioCompetitionCapabilityProfileSource(widget.dio),
         graduationRuleProvider: const _NoVerifiedRuleProvider(),
-        competitionFitDataSource: _DioCompetitionFitDataSource(
-          widget.dio,
-          edu,
-        ),
+        competitionFitDataSource: _DioCompetitionFitDataSource(widget.dio, edu),
       );
       final loop = LocalToolLoop(
         registry: registry,
@@ -448,6 +448,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       );
       final tools = buildStageSixToolDefinitions().where((tool) {
         if (!hasEduAccount &&
+            tool.id != CompetitionCapabilityProfileSkill.skillId &&
             (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)) {
           return false;
         }
@@ -468,7 +469,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       final unavailableToolReasons = <String, String>{
         if (!hasEduAccount)
           for (final tool in buildStageSixToolDefinitions())
-            if (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)
+            if (tool.id != CompetitionCapabilityProfileSkill.skillId &&
+                (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false))
               tool.id: '需要绑定教务后才能读取年级、学院、专业或个人校园数据',
       };
       final outcome = await loop.run(
@@ -674,9 +676,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   Future<void> _openAiSetting(String value) async {
     if (value == 'graduation' && !BetaReleasePolicy.aiGraduationAssistant) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('毕业助手在当前内测版本中暂未开放')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('毕业助手在当前内测版本中暂未开放')));
       return;
     }
     final auth = context.read<AuthProvider>();
@@ -706,18 +708,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         ),
       _ => const AIFeatureSettingsScreen(),
     };
-    final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => page),
-    );
+    final saved = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute<bool>(builder: (_) => page));
     if (saved == true && value == 'model' && mounted) {
       _clearPersonalPermissions();
       setState(() {
         _personalError = null;
         _personalNeedsModelConfiguration = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('个人助手模型已保存')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('个人助手模型已保存')));
     }
   }
 
@@ -823,7 +825,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                 if (provider.error != null)
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 16),
+                                      horizontal: 16,
+                                    ),
                                     child: AiErrorCard(
                                       message: provider.error!,
                                       actionLabel:

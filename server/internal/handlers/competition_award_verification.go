@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -360,8 +358,14 @@ func (h *CompetitionHandler) downloadCompetitionAwardEvidence(c *gin.Context, ad
 		c.JSON(http.StatusNotFound, gin.H{"error": "证明材料不存在"})
 		return
 	}
-	var file models.File
-	if err := h.db.First(&file, fileID).Error; err != nil {
+	var mappingCount int64
+	if err := h.db.Model(&models.CompetitionAwardEvidence{}).
+		Where("award_id = ? AND file_id = ?", award.ID, fileID).Count(&mappingCount).Error; err != nil || mappingCount != 1 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "证明材料不存在"})
+		return
+	}
+	var file models.CompetitionAwardEvidenceFile
+	if err := h.db.Where("id = ? AND uploader_id = ?", fileID, award.UserID).First(&file).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "证明材料不存在"})
 		return
 	}
@@ -372,7 +376,7 @@ func (h *CompetitionHandler) downloadCompetitionAwardEvidence(c *gin.Context, ad
 			return
 		}
 	}
-	serveStoredFile(c, file)
+	serveCompetitionAwardEvidenceFile(c, h.evidenceDir, file)
 }
 
 func containsUint(values []uint, target uint) bool {
@@ -382,24 +386,4 @@ func containsUint(values []uint, target uint) bool {
 		}
 	}
 	return false
-}
-
-var competitionUploadDir string
-
-func SetCompetitionUploadDir(path string) { competitionUploadDir = path }
-
-func serveStoredFile(c *gin.Context, file models.File) {
-	relative := strings.TrimPrefix(filepath.ToSlash(file.Path), "/uploads/")
-	if relative == file.Path || relative == "" || strings.Contains(relative, "..") {
-		c.JSON(http.StatusNotFound, gin.H{"error": "文件不存在"})
-		return
-	}
-	fullPath := filepath.Join(competitionUploadDir, filepath.FromSlash(relative))
-	if _, err := os.Stat(fullPath); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "文件不存在"})
-		return
-	}
-	c.Header("Content-Type", file.MimeType)
-	c.Header("Cache-Control", "private, no-store")
-	c.File(fullPath)
 }

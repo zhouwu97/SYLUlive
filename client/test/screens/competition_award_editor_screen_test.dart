@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -87,6 +88,15 @@ Future<void> _fillRequired(WidgetTester tester) async {
 }
 
 void main() {
+  test('证明材料使用专用私有上传接口且不读取公共文件字段', () {
+    final source = File(
+      'lib/screens/competition/competition_award_editor_screen.dart',
+    ).readAsStringSync();
+    expect(source, contains("'/user/competition-awards/evidence'"));
+    expect(source, contains("response.data['evidence_file_id']"));
+    expect(source, isNot(contains("widget.dio.post(\n          '/upload'")));
+  });
+
   testWidgets('默认手动赛事且可见范围为仅自己', (tester) async {
     final dio = _dio(_EditorAdapter((options, _) {
       if (options.method == 'GET') return _jsonResponse({'items': []});

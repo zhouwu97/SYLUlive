@@ -116,13 +116,13 @@ class _CompetitionAwardEditorScreenState
         final bytes = file.bytes;
         if (bytes == null) continue;
         final response = await widget.dio.post(
-          '/upload',
+          '/user/competition-awards/evidence',
           data: FormData.fromMap({
             'file': MultipartFile.fromBytes(bytes, filename: file.name),
           }),
         );
         final id = response.data is Map
-            ? (response.data['file_id'] as num?)?.toInt()
+            ? (response.data['evidence_file_id'] as num?)?.toInt()
             : null;
         if (id != null && !_evidenceFileIds.contains(id)) {
           _evidenceFileIds.add(id);

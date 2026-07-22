@@ -61,7 +61,6 @@ type UploadHandler struct {
 
 // NewUploadHandler 创建上传处理器
 func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB) *UploadHandler {
-	SetCompetitionUploadDir(uploadDir)
 	return &UploadHandler{
 		db:        db,
 		uploadDir: uploadDir,
@@ -69,7 +68,7 @@ func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB) *UploadHandl
 	}
 }
 
-// ServePublic 提供普通上传文件；竞赛证明材料必须通过带鉴权的专用接口读取。
+// ServePublic 提供普通公开上传文件。内容哈希路径可安全使用长期缓存。
 func (h *UploadHandler) ServePublic(c *gin.Context) {
 	relative := strings.TrimPrefix(filepath.ToSlash(c.Param("filepath")), "/")
 	if relative == "" || strings.Contains(relative, "..") {
@@ -84,20 +83,15 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 		c.Writer.WriteHeaderNow()
 		return
 	}
-	var evidenceCount int64
-	if err := h.db.Model(&models.CompetitionAwardEvidence{}).
-		Where("file_id = ?", file.ID).Count(&evidenceCount).Error; err != nil {
-		c.Status(http.StatusInternalServerError)
-		c.Writer.WriteHeaderNow()
-		return
-	}
-	if evidenceCount > 0 {
-		// 对私密材料返回 404，避免匿名请求探测文件是否存在。
+	fullPath := filepath.Join(h.uploadDir, filepath.FromSlash(relative))
+	if _, err := os.Stat(fullPath); err != nil {
 		c.Status(http.StatusNotFound)
 		c.Writer.WriteHeaderNow()
 		return
 	}
-	serveStoredFile(c, file)
+	c.Header("Content-Type", file.MimeType)
+	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.File(fullPath)
 }
 
 // Upload 上传文件

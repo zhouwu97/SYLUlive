@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -24,11 +26,31 @@ import (
 )
 
 type CompetitionHandler struct {
-	db *gorm.DB
+	db                  *gorm.DB
+	evidenceDir         string
+	maxEvidenceFileSize int64
 }
 
 func NewCompetitionHandler(db *gorm.DB) *CompetitionHandler {
-	return &CompetitionHandler{db: db}
+	return &CompetitionHandler{
+		db: db, evidenceDir: filepath.Clean("./private/competition-award-evidence"),
+		maxEvidenceFileSize: 10 * 1024 * 1024,
+	}
+}
+
+// NewCompetitionHandlerWithEvidenceStorage 创建使用独立私有材料目录的竞赛处理器。
+func NewCompetitionHandlerWithEvidenceStorage(db *gorm.DB, evidenceDir string, maxFileSize int64) (*CompetitionHandler, error) {
+	if strings.TrimSpace(evidenceDir) == "" {
+		return nil, fmt.Errorf("竞赛证明材料私有目录不能为空")
+	}
+	if maxFileSize <= 0 {
+		return nil, fmt.Errorf("竞赛证明材料大小限制必须大于 0")
+	}
+	cleanDir := filepath.Clean(evidenceDir)
+	if err := os.MkdirAll(cleanDir, 0o700); err != nil {
+		return nil, fmt.Errorf("创建竞赛证明材料私有目录失败: %w", err)
+	}
+	return &CompetitionHandler{db: db, evidenceDir: cleanDir, maxEvidenceFileSize: maxFileSize}, nil
 }
 
 // CompetitionGovernanceDTO 描述赛事治理状态，不复用旧推荐等级推导人工结论。

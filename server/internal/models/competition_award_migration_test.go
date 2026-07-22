@@ -1,7 +1,6 @@
 package models
 
 import (
-	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -29,6 +28,7 @@ func TestCompetitionAwardMigrationPreservesExistingEvents(t *testing.T) {
 	if err := db.AutoMigrate(
 		&UserCompetitionAward{},
 		&CompetitionAwardVerificationLog{},
+		&CompetitionAwardEvidenceFile{},
 		&CompetitionAwardEvidence{},
 		&CompetitionAwardEvidenceAccessLog{},
 	); err != nil {
@@ -46,6 +46,7 @@ func TestCompetitionAwardMigrationPreservesExistingEvents(t *testing.T) {
 	}
 	for _, model := range []interface{}{
 		&CompetitionAwardVerificationLog{},
+		&CompetitionAwardEvidenceFile{},
 		&CompetitionAwardEvidence{},
 		&CompetitionAwardEvidenceAccessLog{},
 	} {
@@ -58,24 +59,37 @@ func TestCompetitionAwardMigrationPreservesExistingEvents(t *testing.T) {
 			t.Fatalf("user competition award index missing: %s", field)
 		}
 	}
-	fileIDs, _ := json.Marshal([]uint{11, 12})
-	legacy := UserCompetitionAward{
+	privateFile := CompetitionAwardEvidenceFile{
+		UploaderID: 1, Hash: "private-hash", Path: "1/pr/private.png",
+		MimeType: "image/png", Size: 12, Status: "active",
+	}
+	if err := db.Create(&privateFile).Error; err != nil {
+		t.Fatal(err)
+	}
+	award := UserCompetitionAward{
 		UserID: 1, CompetitionTitle: "历史赛事", CompetitionYear: 2025,
 		AwardName: "二等奖", CompetitionStage: "provincial", Role: "member",
-		SkillTags: []byte("[]"), EvidenceFileIDs: fileIDs,
+		SkillTags: []byte("[]"), EvidenceFileIDs: []byte("[1]"),
 		VerificationStatus: "self_reported", Visibility: "private",
 	}
-	if err := db.Create(&legacy).Error; err != nil {
+	if err := db.Create(&award).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := BackfillCompetitionAwardEvidence(db); err != nil {
+	mapping := CompetitionAwardEvidence{AwardID: award.ID, FileID: privateFile.ID}
+	if err := db.Create(&mapping).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := BackfillCompetitionAwardEvidence(db); err != nil {
+	for range 2 {
+		if err := db.AutoMigrate(&CompetitionAwardEvidenceFile{}, &CompetitionAwardEvidence{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var persistedFile CompetitionAwardEvidenceFile
+	if err := db.First(&persistedFile, privateFile.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	var mappingCount int64
-	if err := db.Model(&CompetitionAwardEvidence{}).Where("award_id = ?", legacy.ID).Count(&mappingCount).Error; err != nil || mappingCount != 2 {
-		t.Fatalf("legacy evidence mapping count=%d err=%v", mappingCount, err)
+	if err := db.Model(&CompetitionAwardEvidence{}).Where("award_id = ? AND file_id = ?", award.ID, privateFile.ID).Count(&mappingCount).Error; err != nil || mappingCount != 1 {
+		t.Fatalf("private evidence mapping count=%d err=%v", mappingCount, err)
 	}
 }

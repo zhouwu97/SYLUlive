@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 
+import '../../config/beta_release_policy.dart';
 import '../../features/ai_runtime/ai_feature_flags.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
 import '../../features/ai_runtime/personal_ai_runtime_limits.dart';
@@ -458,6 +459,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             flags[AIFeatureFlag.graduationAssistant] != true) {
           return false;
         }
+        if (tool.id == CompetitionFitSkill.skillId &&
+            flags[AIFeatureFlag.competitionFit] != true) {
+          return false;
+        }
         return true;
       }).toList(growable: false);
       final unavailableToolReasons = <String, String>{
@@ -602,9 +607,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       const actions = <(IconData, String, String)>[
         (Icons.today_outlined, '今天安排', '我今天有什么课？'),
         (Icons.school_outlined, '我的学业', '计算我的 GPA 和学分情况。'),
-        (Icons.emoji_events_outlined, '竞赛建议', '最近有什么适合我的竞赛？'),
+        (Icons.emoji_events_outlined, '竞赛搜索', '搜索近期公开竞赛。'),
         (Icons.fitness_center_outlined, '运动计划', '帮我安排本周运动时间。'),
-        (Icons.fact_check_outlined, '毕业清单', '我的毕业要求还有哪些未完成？'),
+        if (BetaReleasePolicy.aiGraduationAssistant)
+          (Icons.fact_check_outlined, '毕业清单', '我的毕业要求还有哪些未完成？'),
         (Icons.dashboard_outlined, '二课概览', '我还差多少二课分？'),
       ];
       return ListView(
@@ -667,6 +673,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   Future<void> _openAiSetting(String value) async {
+    if (value == 'graduation' && !BetaReleasePolicy.aiGraduationAssistant) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('毕业助手在当前内测版本中暂未开放')),
+      );
+      return;
+    }
     final auth = context.read<AuthProvider>();
     final edu = context.read<EduProvider>();
     final appUserId = auth.user?.id.toString() ?? '';
@@ -678,7 +690,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           appUserId: appUserId,
           sourceAccountId: edu.studentId,
         ),
-      _ => GraduationChecklistScreen(
+      'graduation' => GraduationChecklistScreen(
           readiness: GraduationReadiness(
             policyId: 'unknown',
             items: const <GraduationRequirementItem>[
@@ -692,6 +704,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             warnings: const <String>['当前没有可执行的已审核政策规则'],
           ),
         ),
+      _ => const AIFeatureSettingsScreen(),
     };
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(builder: (_) => page),
@@ -749,11 +762,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       label: '个人数据保险箱',
                       icon: Icons.shield_outlined,
                     ),
-                    AppPopupAction(
-                      value: 'graduation',
-                      label: '毕业清单',
-                      icon: Icons.fact_check_outlined,
-                    ),
+                    if (BetaReleasePolicy.aiGraduationAssistant)
+                      AppPopupAction(
+                        value: 'graduation',
+                        label: '毕业清单',
+                        icon: Icons.fact_check_outlined,
+                      ),
                     AppPopupAction(
                       value: 'flags',
                       label: '功能开关',

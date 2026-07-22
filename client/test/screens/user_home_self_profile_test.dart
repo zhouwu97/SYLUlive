@@ -319,6 +319,11 @@ void main() {
     await tester.tap(find.text('编辑资料'));
     await tester.pumpAndSettle();
 
+    expect(
+      find.byKey(const Key('profile-competition-award-entry')),
+      findsOneWidget,
+    );
+
     // 未知性别默认选中保密
     final secrecySegment = find.descendant(
       of: find.byType(SegmentedButton<String>),

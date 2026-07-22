@@ -40,6 +40,8 @@ type AppReleaseDraftInput struct {
 	Changelog                   string
 	MinimumSupportedVersionCode int64
 	CreatedBy                   uint
+	DeliveryMode                string
+	ActionURL                   string
 }
 
 // AppReleaseDraftUpdate 包含可更新的展示信息与最低支持版本。
@@ -54,44 +56,61 @@ type AppReleaseDraftUpdate struct {
 // CreateDraft 将上传流先校验并写入临时文件，再移动到正式的版本目录中。
 // 数据库写入失败时会清理刚移动的 APK，避免留下可被误发布的孤立文件。
 func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDraftInput, fileName string, source io.Reader, maxSize int64) (*models.AppRelease, error) {
-	if source == nil {
-		return nil, fmt.Errorf("%w: APK 文件为空", ErrAppReleaseInvalid)
-	}
-	if maxSize <= 0 {
-		maxSize = defaultAppReleaseMaxSize
-	}
 	if err := validateDraftInput(&input); err != nil {
 		return nil, err
 	}
-	if !strings.EqualFold(filepath.Ext(strings.TrimSpace(fileName)), ".apk") {
-		return nil, fmt.Errorf("%w: 仅支持 .apk 文件", ErrAppReleaseInvalid)
-	}
 
-	temporaryPath, size, sha, err := s.storeTemporaryAPK(source, maxSize)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = os.Remove(temporaryPath) }()
+	var size int64
+	var sha string
+	var storageKey string
+	var fileNameForDb string
+	moved := false
+	var finalPath string
 
-	storageKey := buildAppReleaseStorageKey(input.VersionName, input.VersionCode, sha)
-	finalPath := filepath.Join(s.releaseDir, filepath.FromSlash(storageKey))
-	if err := os.MkdirAll(filepath.Dir(finalPath), 0o750); err != nil {
-		return nil, fmt.Errorf("创建 APK 发布目录: %w", err)
-	}
-	if _, err := os.Stat(finalPath); err == nil {
-		return nil, fmt.Errorf("%w: 相同版本文件已存在", ErrAppReleaseInvalid)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("检查 APK 目标目录: %w", err)
-	}
-	if err := os.Rename(temporaryPath, finalPath); err != nil {
-		return nil, fmt.Errorf("移动 APK 到发布目录: %w", err)
-	}
-	moved := true
-	defer func() {
-		if moved {
-			_ = os.Remove(finalPath)
+	if input.DeliveryMode == models.AppReleaseDeliveryModeDirectPackage {
+		if source == nil {
+			return nil, fmt.Errorf("%w: APK 文件为空", ErrAppReleaseInvalid)
 		}
-	}()
+		if !strings.EqualFold(filepath.Ext(strings.TrimSpace(fileName)), ".apk") {
+			return nil, fmt.Errorf("%w: 仅支持 .apk 文件", ErrAppReleaseInvalid)
+		}
+
+		temporaryPath, apkSize, apkSha, err := s.storeTemporaryAPK(source, maxSize)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = os.Remove(temporaryPath) }()
+
+		size = apkSize
+		sha = apkSha
+		storageKey = buildAppReleaseStorageKey(input.VersionName, input.VersionCode, sha)
+		fileNameForDb = buildAppReleaseFileName(input.VersionName, input.VersionCode)
+		finalPath = filepath.Join(s.releaseDir, filepath.FromSlash(storageKey))
+		
+		if err := os.MkdirAll(filepath.Dir(finalPath), 0o750); err != nil {
+			return nil, fmt.Errorf("创建 APK 发布目录: %w", err)
+		}
+		if _, err := os.Stat(finalPath); err == nil {
+			return nil, fmt.Errorf("%w: 相同版本文件已存在", ErrAppReleaseInvalid)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("检查 APK 目标目录: %w", err)
+		}
+		if err := os.Rename(temporaryPath, finalPath); err != nil {
+			return nil, fmt.Errorf("移动 APK 到发布目录: %w", err)
+		}
+		moved = true
+		defer func() {
+			if moved {
+				_ = os.Remove(finalPath)
+			}
+		}()
+	} else {
+		// External market doesn't need a file
+		fileNameForDb = ""
+		storageKey = ""
+		size = 0
+		sha = ""
+	}
 
 	release := &models.AppRelease{
 		Platform:                    input.Platform,
@@ -101,10 +120,12 @@ func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDra
 		Title:                       input.Title,
 		Changelog:                   input.Changelog,
 		MinimumSupportedVersionCode: input.MinimumSupportedVersionCode,
-		FileName:                    buildAppReleaseFileName(input.VersionName, input.VersionCode),
+		FileName:                    fileNameForDb,
 		StorageKey:                  storageKey,
 		FileSize:                    size,
 		SHA256:                      sha,
+		DeliveryMode:                input.DeliveryMode,
+		ActionURL:                   input.ActionURL,
 		Status:                      models.AppReleaseStatusDraft,
 		CreatedBy:                   input.CreatedBy,
 	}
@@ -370,16 +391,21 @@ func validateNewReleaseVersion(tx *gorm.DB, release *models.AppRelease) error {
 		return err
 	}
 	var sameSHA int64
-	if err := tx.Model(&models.AppRelease{}).Where("sha256 = ?", release.SHA256).Count(&sameSHA).Error; err != nil {
-		return err
-	}
-	if sameSHA > 0 {
-		return fmt.Errorf("%w: APK SHA-256 已被其他版本使用", ErrAppReleaseInvalid)
+	if release.SHA256 != "" {
+		if err := tx.Model(&models.AppRelease{}).Where("sha256 = ?", release.SHA256).Count(&sameSHA).Error; err != nil {
+			return err
+		}
+		if sameSHA > 0 {
+			return fmt.Errorf("%w: APK SHA-256 已被其他版本使用", ErrAppReleaseInvalid)
+		}
 	}
 	return nil
 }
 
 func (s *AppReleaseService) verifyReleaseFile(release *models.AppRelease) error {
+	if release.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
+		return nil
+	}
 	path, err := s.LocateAPK(release)
 	if err != nil {
 		return err

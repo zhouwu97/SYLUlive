@@ -310,7 +310,16 @@ class AppUpdateCoordinator extends ChangeNotifier {
   /// 开始更新操作
   Future<void> downloadOrInstall() async {
     final info = _info;
-    if (info == null || !info.updateAvailable || info.downloadUrl.isEmpty) {
+    if (info == null || !info.updateAvailable) {
+      _errorMessage = '更新包信息不完整，请重新检查';
+      _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
+      notifyListeners();
+      return;
+    }
+
+    final hasDirectPackage = info.downloadUrl.trim().isNotEmpty;
+    final hasExternalAction = info.actionUrl.trim().isNotEmpty;
+    if (!hasDirectPackage && !hasExternalAction) {
       _errorMessage = '更新包信息不完整，请重新检查';
       _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
       notifyListeners();
@@ -324,10 +333,11 @@ class AppUpdateCoordinator extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _currentAction ??= AppUpdateAction.current(info, _installer, _downloadService);
+      final oldApk = _currentAction?.readyApk;
+      _currentAction = AppUpdateAction.current(info, _installer, _downloadService);
       final result = await _currentAction!.execute(
         info,
-        existingApk: _currentAction!.readyApk,
+        existingApk: oldApk,
         cancelToken: _downloadCancelToken,
         onProgress: (progress) {
           _downloadProgress = progress;

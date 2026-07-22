@@ -523,7 +523,7 @@ class AuthProvider extends ChangeNotifier {
   Future<AuthState> _recoverUserWithToken(String token) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: ApiConfig.baseUrl,
+        baseUrl: _dio.options.baseUrl,
         headers: {'Authorization': 'Bearer $token'},
         connectTimeout: const Duration(seconds: 10),
       ));

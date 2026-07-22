@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:shenliyuan/platform/contracts/secure_store.dart';
@@ -11,43 +10,6 @@ import '../models/edu_grade.dart';
 import '../utils/edu_semester_utils.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-class EduStatusSnapshot {
-  final bool isBound;
-  final String studentId;
-  final String name;
-  final String grade;
-  final String college;
-  final String major;
-
-  const EduStatusSnapshot({
-    required this.isBound,
-    required this.studentId,
-    required this.name,
-    required this.grade,
-    required this.college,
-    required this.major,
-  });
-
-  factory EduStatusSnapshot.fromJson(Map<String, dynamic> json) {
-    return EduStatusSnapshot(
-      isBound: json['isBound'] ?? false,
-      studentId: json['studentId'] ?? '',
-      name: json['name'] ?? '',
-      grade: json['grade'] ?? '',
-      college: json['college'] ?? '',
-      major: json['major'] ?? '',
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'isBound': isBound,
-        'studentId': studentId,
-        'name': name,
-        'grade': grade,
-        'college': college,
-        'major': major,
-      };
-}
 
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {
@@ -103,7 +65,6 @@ class EduProvider extends ChangeNotifier {
   final Map<String, AcademicSituationCacheEntry> _academicSituationCache = {};
   int _statusGeneration = 0;
   bool _eduRequestBusy = false;
-  Future<void>? _statusLoadFuture;
 
   bool get isBound => _isBound;
   String get studentId => _studentId;
@@ -305,8 +266,10 @@ class EduProvider extends ChangeNotifier {
     return false;
   }
 
-  Future<void> ensureStatusLoaded() {
-    return _statusLoadFuture ?? Future.value();
+  Future<void> ensureStatusLoaded() async {
+    while (!_statusLoaded) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
   }
 
   // 获取绑定状态
@@ -314,19 +277,8 @@ class EduProvider extends ChangeNotifier {
     required String expectedUserId,
     required int generation,
   }) async {
-    _statusLoadFuture = _loadStatusInternal(
-      expectedUserId: expectedUserId,
-      generation: generation,
-    );
-    await _statusLoadFuture;
-  }
-
-  Future<void> _loadStatusInternal({
-    required String expectedUserId,
-    required int generation,
-  }) async {
     // 极速上屏：先从本地缓存读取状态
-    final cachedSnapshot = await _loadBoundStatusFor(expectedUserId);
+    final cached = await _loadBoundStatusFor(expectedUserId);
 
     // 检查是否已被新请求废弃
     if (_userId != expectedUserId || generation != _statusGeneration) {
@@ -334,14 +286,7 @@ class EduProvider extends ChangeNotifier {
     }
 
     if (!_statusLoaded) {
-      if (cachedSnapshot != null) {
-        _isBound = cachedSnapshot.isBound;
-        _studentId = cachedSnapshot.studentId;
-        _name = cachedSnapshot.name;
-        _grade = cachedSnapshot.grade;
-        _college = cachedSnapshot.college;
-        _major = cachedSnapshot.major;
-      }
+      _isBound = cached;
       _statusLoaded = true;
       notifyListeners();
     }
@@ -355,69 +300,58 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        final snapshot = EduStatusSnapshot(
-          isBound: data['edu_bound'] ?? false,
-          studentId: data['edu_student_id'] ?? '',
-          name: data['name'] ?? '',
-          grade: data['edu_grade'] ?? '',
-          college: data['edu_college'] ?? '',
-          major: data['edu_major'] ?? '',
-        );
-
-        _isBound = snapshot.isBound;
-        _studentId = snapshot.studentId;
-        _name = snapshot.name;
-        _grade = snapshot.grade;
-        _college = snapshot.college;
-        _major = snapshot.major;
+        _isBound = data['edu_bound'] ?? false;
+        _studentId = data['edu_student_id'] ?? '';
+        _name = data['name'] ?? '';
+        _grade = data['edu_grade'] ?? '';
+        _college = data['edu_college'] ?? '';
+        _major = data['edu_major'] ?? '';
         _errorMessage = null;
         _statusLoaded = true;
 
-        await _saveBoundStatusFor(expectedUserId, snapshot);
+        // _saveBoundStatusFor 使用捕获的 userId
+        await _saveBoundStatusFor(expectedUserId);
         notifyListeners();
       }
     } on DioException catch (e) {
       if (_userId != expectedUserId || generation != _statusGeneration) {
         return;
       }
-      if (cachedSnapshot != null) {
-        _isBound = cachedSnapshot.isBound;
-        _studentId = cachedSnapshot.studentId;
-        _name = cachedSnapshot.name;
-        _grade = cachedSnapshot.grade;
-        _college = cachedSnapshot.college;
-        _major = cachedSnapshot.major;
-      }
+      _isBound = cached;
       _errorMessage = _parseDioError(e);
       _statusLoaded = true;
-      debugPrint('获取教务状态失败: $_errorMessage，使用缓存: ${cachedSnapshot != null}');
+      debugPrint('获取教务状态失败: $_errorMessage，使用缓存: $cached');
       notifyListeners();
     }
   }
 
   /// 保存绑定状态 — 使用显式 userId，不从可变字段读取
-  Future<void> _saveBoundStatusFor(String userId, EduStatusSnapshot snapshot) async {
+  Future<void> _saveBoundStatusFor(String userId) async {
     final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setString('edu_status_$userId', jsonEncode(snapshot.toJson()));
+    await prefs.setBool('edu_bound_$userId', _isBound);
+    await prefs.setString('edu_student_id_$userId', _studentId);
+    await prefs.setString('edu_grade_$userId', _grade);
+    await prefs.setString('edu_college_$userId', _college);
+    await prefs.setString('edu_major_$userId', _major);
   }
 
   /// 读取绑定状态 — 使用显式 userId
-  Future<EduStatusSnapshot?> _loadBoundStatusFor(String userId) async {
+  Future<bool> _loadBoundStatusFor(String userId) async {
     final prefs = await AppPreferencesStore.getInstance();
-    final jsonStr = prefs.getString('edu_status_$userId');
-    if (jsonStr == null || jsonStr.isEmpty) return null;
-    try {
-      final decoded = jsonDecode(jsonStr);
-      if (decoded is Map<String, dynamic>) {
-        return EduStatusSnapshot.fromJson(decoded);
-      }
-    } catch (_) {}
-    return null;
+    _studentId = prefs.getString('edu_student_id_$userId') ?? '';
+    _grade = prefs.getString('edu_grade_$userId') ?? '';
+    _college = prefs.getString('edu_college_$userId') ?? '';
+    _major = prefs.getString('edu_major_$userId') ?? '';
+    return prefs.getBool('edu_bound_$userId') ?? false;
   }
 
   Future<void> _clearBoundStatusFor(String userId) async {
     final prefs = await AppPreferencesStore.getInstance();
-    await prefs.remove('edu_status_$userId');
+    await prefs.remove('edu_bound_$userId');
+    await prefs.remove('edu_student_id_$userId');
+    await prefs.remove('edu_grade_$userId');
+    await prefs.remove('edu_college_$userId');
+    await prefs.remove('edu_major_$userId');
     await prefs.remove('edu_last_semester_$userId');
   }
 
@@ -546,7 +480,13 @@ class EduProvider extends ChangeNotifier {
         _statusLoaded = true;
 
         // 清除 AppPreferencesStore 中该用户的教务信息
-        await _clearBoundStatusFor(currentUserId);
+        final prefs = await AppPreferencesStore.getInstance();
+        await prefs.setBool('edu_bound_$currentUserId', false);
+        await prefs.remove('edu_student_id_$currentUserId');
+        await prefs.remove('edu_grade_$currentUserId');
+        await prefs.remove('edu_college_$currentUserId');
+        await prefs.remove('edu_major_$currentUserId');
+        await prefs.remove('edu_last_semester_$currentUserId');
 
         // 删除安全存储中的密码
         if (currentStudentId.isNotEmpty) {

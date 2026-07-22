@@ -8,6 +8,7 @@ import 'erke_overview_skill.dart';
 import 'physical_overview_skill.dart';
 import 'today_schedule_skill.dart';
 import 'week_schedule_skill.dart';
+import 'competition_plan_action_skill.dart';
 
 PersonalSkillRegistry buildStageSevenSkillRegistry({
   required CompetitionSearchSource competitionSearchSource,
@@ -15,6 +16,7 @@ PersonalSkillRegistry buildStageSevenSkillRegistry({
   required CompetitionCapabilityProfileSource
       competitionCapabilityProfileSource,
   required CompetitionMatchExplanationSource competitionMatchExplanationSource,
+  required CompetitionPlanActionSource competitionPlanActionSource,
 }) {
   return PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
     TodayScheduleSkill(),
@@ -25,6 +27,7 @@ PersonalSkillRegistry buildStageSevenSkillRegistry({
     CompetitionSearchSkill(competitionSearchSource),
     CompetitionCapabilityProfileSkill(competitionCapabilityProfileSource),
     ExplainCompetitionMatchesSkill(competitionMatchExplanationSource),
+    DraftAddCompetitionToPlanSkill(competitionPlanActionSource),
     AcademicGpaSkill(),
     AcademicCreditSummarySkill(),
     AcademicFailureRiskSkill(),

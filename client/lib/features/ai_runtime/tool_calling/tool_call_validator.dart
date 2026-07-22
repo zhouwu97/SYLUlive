@@ -7,6 +7,7 @@ import '../skills/physical_overview_skill.dart';
 import '../skills/schedule_skill_models.dart';
 import '../skills/today_schedule_skill.dart';
 import '../skills/week_schedule_skill.dart';
+import '../skills/competition_plan_action_skill.dart';
 import 'tool_call_models.dart';
 
 class ValidatedToolCall {
@@ -65,6 +66,7 @@ class LocalToolCallValidator {
           call.arguments,
           const EmptyCompetitionAdvisorInput(),
         ),
+      DraftAddCompetitionToPlanSkill.skillId => _draftAddCompetition(call.arguments),
       AcademicGpaSkill.skillId ||
       AcademicCreditSummarySkill.skillId ||
       AcademicFailureRiskSkill.skillId ||
@@ -134,6 +136,15 @@ class LocalToolCallValidator {
       categorySlug: category,
       limit: limit.toInt(),
     );
+  }
+
+  Object _draftAddCompetition(Map<String, dynamic> arguments) {
+    _requireOnly(arguments, const <String>{'event_id'});
+    final eventID = arguments['event_id'];
+    if (eventID is! num || eventID % 1 != 0 || eventID < 1 || eventID > 2147483647) {
+      throw const ToolCallValidationException('赛事 ID 无效');
+    }
+    return DraftAddCompetitionToPlanInput(eventID.toInt());
   }
 
   Object _empty(Map<String, dynamic> arguments, Object input) {

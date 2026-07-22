@@ -4,6 +4,7 @@ import '../../../models/competition_capability_profile.dart';
 import '../../../models/competition.dart';
 import '../../campus_data/storage/personal_snapshot_models.dart';
 import 'personal_skill.dart';
+import 'competition_plan_action_skill.dart';
 import 'skill_execution_context.dart';
 
 class EmptyCompetitionAdvisorInput {
@@ -13,6 +14,7 @@ class EmptyCompetitionAdvisorInput {
 const Set<String> competitionAdvisorAccountIndependentSkillIds = <String>{
   CompetitionCapabilityProfileSkill.skillId,
   ExplainCompetitionMatchesSkill.skillId,
+  DraftAddCompetitionToPlanSkill.skillId,
 };
 
 class CompetitionCapabilityAccessDeniedException implements Exception {
@@ -52,8 +54,10 @@ class DioCompetitionCapabilityProfileSource
 
 class CompetitionCapabilityProfileSkill
     implements
-        PersonalSkill<EmptyCompetitionAdvisorInput,
-            CompetitionCapabilityProfile> {
+        PersonalSkill<
+          EmptyCompetitionAdvisorInput,
+          CompetitionCapabilityProfile
+        > {
   CompetitionCapabilityProfileSkill(this._source);
 
   static const String skillId = 'get_competition_capability_profile';
@@ -68,8 +72,8 @@ class CompetitionCapabilityProfileSkill
 
   @override
   Set<PersonalDataType> get requiredDataTypes => const <PersonalDataType>{
-        PersonalDataType.studentProfile,
-      };
+    PersonalDataType.studentProfile,
+  };
 
   @override
   Future<SkillResult<CompetitionCapabilityProfile>> execute(
@@ -117,17 +121,17 @@ class CompetitionCapabilityProfileSkill
 
 class CompetitionMatchExplanationItem {
   CompetitionMatchExplanationItem.fromEvent(CompetitionEvent event)
-      : id = event.id,
-        title = event.title,
-        personalizedScore = event.personalizedScore,
-        recommendationTier = event.recommendationTier,
-        fitReasons = List<String>.unmodifiable(event.fitReasons),
-        competitionRating = event.competitionRating,
-        manualRating = event.manualRating,
-        schoolRecognitionStatus = event.schoolRecognitionStatus,
-        schoolRecognitionGrade = event.schoolRecognitionGrade,
-        timeStatus = event.timeStatus,
-        registrationTimeText = event.registrationTimeText;
+    : id = event.id,
+      title = event.title,
+      personalizedScore = event.personalizedScore,
+      recommendationTier = event.recommendationTier,
+      fitReasons = List<String>.unmodifiable(event.fitReasons),
+      competitionRating = event.competitionRating,
+      manualRating = event.manualRating,
+      schoolRecognitionStatus = event.schoolRecognitionStatus,
+      schoolRecognitionGrade = event.schoolRecognitionGrade,
+      timeStatus = event.timeStatus,
+      registrationTimeText = event.registrationTimeText;
 
   final int id;
   final String title;
@@ -165,7 +169,7 @@ abstract interface class CompetitionMatchExplanationSource {
 class DioCompetitionMatchExplanationSource
     implements CompetitionMatchExplanationSource {
   DioCompetitionMatchExplanationSource(this._dio, {DateTime Function()? clock})
-      : _clock = clock ?? DateTime.now;
+    : _clock = clock ?? DateTime.now;
 
   final Dio _dio;
   final DateTime Function() _clock;
@@ -205,8 +209,10 @@ class DioCompetitionMatchExplanationSource
 
 class ExplainCompetitionMatchesSkill
     implements
-        PersonalSkill<EmptyCompetitionAdvisorInput,
-            CompetitionMatchExplanationPage> {
+        PersonalSkill<
+          EmptyCompetitionAdvisorInput,
+          CompetitionMatchExplanationPage
+        > {
   ExplainCompetitionMatchesSkill(this._source);
 
   static const String skillId = 'explain_competition_matches';
@@ -220,8 +226,9 @@ class ExplainCompetitionMatchesSkill
   SkillSensitivity get sensitivity => SkillSensitivity.medium;
 
   @override
-  Set<PersonalDataType> get requiredDataTypes =>
-      const <PersonalDataType>{PersonalDataType.studentProfile};
+  Set<PersonalDataType> get requiredDataTypes => const <PersonalDataType>{
+    PersonalDataType.studentProfile,
+  };
 
   @override
   Future<SkillResult<CompetitionMatchExplanationPage>> execute(

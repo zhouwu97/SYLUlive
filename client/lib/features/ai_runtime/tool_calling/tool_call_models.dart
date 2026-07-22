@@ -125,12 +125,14 @@ class ToolLoopOutcome {
     this.answer = '',
     this.warnings = const <String>[],
     this.evidence = const <SkillEvidence>[],
+    this.actionArtifacts = const <SkillActionArtifact>[],
   });
 
   final ToolLoopStatus status;
   final String answer;
   final List<String> warnings;
   final List<SkillEvidence> evidence;
+  final List<SkillActionArtifact> actionArtifacts;
 }
 
 class ToolLoopCancellationToken {

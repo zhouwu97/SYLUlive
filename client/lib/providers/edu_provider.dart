@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shenliyuan/platform/contracts/secure_store.dart';
 
 import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
@@ -164,8 +165,8 @@ class EduProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(key);
     } else {
-      const storage = FlutterSecureStorage();
-      await storage.delete(key: key);
+      final storage = AppSecretStore.current();
+      await storage.delete(key);
     }
   }
 
@@ -373,8 +374,8 @@ class EduProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(key, password);
     } else {
-      const storage = FlutterSecureStorage();
-      await storage.write(key: key, value: password);
+      final storage = AppSecretStore.current();
+      await storage.write(key, password);
     }
   }
 
@@ -384,8 +385,8 @@ class EduProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getString(key);
     } else {
-      const storage = FlutterSecureStorage();
-      return await storage.read(key: key);
+      final storage = AppSecretStore.current();
+      return await storage.read(key);
     }
   }
 

@@ -13,7 +13,6 @@ class MemoryPersonalSnapshotSecureStore implements PersonalSnapshotSecureStore {
   @override
   Future<String?> read(String key) async => values[key];
 
-  @override
   Future<Map<String, String>> readAll() async =>
       Map<String, String>.from(values);
 

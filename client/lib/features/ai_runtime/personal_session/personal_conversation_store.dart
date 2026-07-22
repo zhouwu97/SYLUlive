@@ -85,11 +85,10 @@ class PersonalConversationEntry {
       value is String ? DateTime.tryParse(value) : null;
 }
 
-/// 仅保存最终可见消息和证据摘要，不接受 Tool 调用或原始 Tool Result。
 class PersonalConversationStore {
   PersonalConversationStore({
     required String accountKey,
-    EncryptedBlobStore? blobStore,
+    AppBlobStore? blobStore,
   })  : _accountFingerprint = AccountCacheNamespace.fingerprint(accountKey),
         _blobStore = blobStore ?? EncryptedBlobStore(namespace: 'ai_history_$accountKey') {
     if (_accountFingerprint.isEmpty) {
@@ -102,7 +101,7 @@ class PersonalConversationStore {
   static const int _schemaVersion = 1;
 
   final String _accountFingerprint;
-  final EncryptedBlobStore _blobStore;
+  final AppBlobStore _blobStore;
   Future<void> _pendingWrite = Future<void>.value();
 
   String get _storageKey => 'ai_personal_conversations/$_accountFingerprint/v1';
@@ -145,7 +144,7 @@ class PersonalConversationStore {
   Future<void> clear() {
     _pendingWrite = _pendingWrite
         .catchError((_) {})
-        .then((_) => _secureStore.delete(_storageKey));
+        .then((_) => _blobStore.delete(_storageKey));
     return _pendingWrite;
   }
 

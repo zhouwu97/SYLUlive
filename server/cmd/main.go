@@ -1524,6 +1524,9 @@ func main() {
 
 		canteen.GET("", canteenHandler.GetList)
 
+		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
+		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
+
 	}
 
 	canteenAdmin := canteen.Group("")
@@ -1549,8 +1552,6 @@ func main() {
 	canteenAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 
 	{
-
-		canteenAuth.GET("/:id", canteenHandler.GetDetail)
 
 		canteenAuth.POST("", canteenHandler.Create)
 

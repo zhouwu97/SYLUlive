@@ -23,6 +23,16 @@ import '../widgets/auth_expired_overlay.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 
+enum AuthState {
+  unknown,
+  loading,
+  authenticated,
+  guest,
+  recovering,
+  recoveryFailed,
+  expired
+}
+
 /// 认证结果，包含成功状态和错误信息
 class AuthResult {
   final bool success;
@@ -277,8 +287,14 @@ class _PlatformAuthCredentialStore implements AuthCredentialStore {
   @override
   Future<void> clear() async {
     final prefs = await _prefs;
-    await _store.delete(_tokenKey);
-    await prefs.remove(_userKey);
+    try {
+      await Future.wait([
+        _store.delete(_tokenKey),
+        prefs.remove(_userKey),
+      ]);
+    } catch (e) {
+      debugPrint('清除凭据遇到异常: $e');
+    }
   }
 
   @override
@@ -325,16 +341,24 @@ class AuthProvider extends ChangeNotifier {
   Future<void>? _initializationFuture;
   int _sessionGeneration = 0;
   bool _applyingConsentRestriction = false;
+  AuthState _authState = AuthState.unknown;
 
   User? get user => _user;
   String? get token => _token;
+  AuthState get authState => _authState;
   bool get isLoading => _isLoading;
-  bool get isLoggedIn => _token != null && _user != null;
+  bool get isLoggedIn => _authState == AuthState.authenticated;
   bool get isInitialized => _initialized;
+
+  void _setAuthState(AuthState state) {
+    if (_authState != state) {
+      _authState = state;
+      notifyListeners();
+    }
+  }
   int get sessionGeneration => _sessionGeneration;
   Dio get dio => _dio;
   PersistCookieJar? _cookieJar;
-  Future<void>? _sessionExpiryFuture;
 
   AuthProvider(
     this._dio, {
@@ -433,12 +457,13 @@ class AuthProvider extends ChangeNotifier {
         ignoreExpires: true,
         storage: FileStorage('$appDocPath/.cookies/'),
       );
-      // 禁止向原生 Dio 添加 CookieManager，仅依赖 Bearer Token，并清除过期的旧 Cookie
+      // 完全关闭原生 Cookie 写入，仅保留清理逻辑
       await _cookieJar!.deleteAll();
     }
   }
 
   Future<void> _loadStoredAuth() async {
+    _setAuthState(AuthState.loading);
     try {
       if (_usesPlatformCredentialStore) await _initCookieJar();
       final prefs = await AppPreferencesStore.getInstance();
@@ -446,6 +471,7 @@ class AuthProvider extends ChangeNotifier {
       if (prefs.getBool('auth_force_logged_out') == true) {
         await _clearStoredAuth();
         await prefs.remove('auth_force_logged_out');
+        _setAuthState(AuthState.guest);
       } else {
         final stored = await _credentialStore.read();
         
@@ -459,22 +485,29 @@ class AuthProvider extends ChangeNotifier {
             Map<String, dynamic>.from(decoded),
           );
           _commitAuthSession(candidate);
+          _setAuthState(AuthState.authenticated);
           if (candidate.user.legalConsentsActive) {
             _onAuthenticated();
           } else {
             await _clearConsentDependentLocalData(candidate.user);
           }
         } else if (stored.token != null && stored.userJson == null) {
-          final success = await _recoverUserWithToken(stored.token!);
-          if (!success) {
+          _setAuthState(AuthState.recovering);
+          final recoveryState = await _recoverUserWithToken(stored.token!);
+          _setAuthState(recoveryState);
+          if (recoveryState == AuthState.expired) {
             await _clearStoredAuth();
           }
-        } else if (stored.token == null && stored.userJson != null) {
-          await _clearStoredAuth();
+        } else {
+          if (stored.userJson != null) {
+            await _clearStoredAuth();
+          }
+          _setAuthState(AuthState.guest);
         }
       }
     } catch (e) {
       debugPrint('解析本地认证信息失败: $e');
+      _setAuthState(AuthState.guest);
     }
     _initialized = true;
     if (_user?.legalConsentsActive ?? false) {
@@ -487,7 +520,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> _recoverUserWithToken(String token) async {
+  Future<AuthState> _recoverUserWithToken(String token) async {
     try {
       final dio = Dio(BaseOptions(
         baseUrl: ApiConfig.baseUrl,
@@ -501,12 +534,18 @@ class AuthProvider extends ChangeNotifier {
         await _saveAuthCandidate(candidate);
         _commitAuthSession(candidate);
         _onAuthenticated();
-        return true;
+        return AuthState.authenticated;
       }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        debugPrint('恢复用户状态失败：Token已过期');
+        return AuthState.expired;
+      }
+      debugPrint('恢复用户状态失败（网络错误等）: $e');
     } catch (e) {
       debugPrint('恢复用户状态失败: $e');
     }
-    return false;
+    return AuthState.recoveryFailed;
   }
 
   Future<void> _saveAuthCandidate(_AuthSessionCandidate candidate) async {
@@ -860,6 +899,9 @@ class AuthProvider extends ChangeNotifier {
     // 1. 立即清空内存，通知 UI 已退出
     _token = null;
     _user = null;
+    if (_authState != AuthState.expired) {
+      _setAuthState(AuthState.guest);
+    }
     if (hadSession) _sessionGeneration++;
     _applyAuthHeader();
     notifyListeners();

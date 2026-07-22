@@ -169,8 +169,8 @@ func TestCompetitionAwardUsesEventTitleSnapshot(t *testing.T) {
 func TestCompetitionAwardValidatesEvidenceOwnershipAndCounts(t *testing.T) {
 	db := newCompetitionTestDB(t)
 	handler := NewCompetitionHandler(db).CreateCompetitionAward
-	owned := models.File{Hash: strings.Repeat("a", 64), Path: "/uploads/a.jpg", Size: 10, MimeType: "image/jpeg", UploaderID: 51}
-	foreign := models.File{Hash: strings.Repeat("b", 64), Path: "/uploads/b.jpg", Size: 10, MimeType: "image/jpeg", UploaderID: 52}
+	owned := models.CompetitionAwardEvidenceFile{Hash: strings.Repeat("a", 64), Path: "51/aa/a.jpg", Size: 10, MimeType: "image/jpeg", UploaderID: 51}
+	foreign := models.CompetitionAwardEvidenceFile{Hash: strings.Repeat("b", 64), Path: "52/bb/b.jpg", Size: 10, MimeType: "image/jpeg", UploaderID: 52}
 	if err := db.Create(&owned).Error; err != nil {
 		t.Fatal(err)
 	}

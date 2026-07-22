@@ -1,7 +1,6 @@
 package models
 
 import (
-	"encoding/json"
 	"time"
 
 	"gorm.io/datatypes"
@@ -172,7 +171,25 @@ func (CompetitionAwardVerificationLog) TableName() string {
 	return "competition_award_verification_logs"
 }
 
-// CompetitionAwardEvidence 将文件标记为竞赛证明材料。映射保留后，旧公开地址也不能绕过权限校验。
+// CompetitionAwardEvidenceFile 保存竞赛证明材料的私有文件元数据。
+// 同一用户可复用相同内容，不同用户之间不共享文件记录或授权。
+type CompetitionAwardEvidenceFile struct {
+	ID         uint       `gorm:"primaryKey" json:"id"`
+	UploaderID uint       `gorm:"not null;index;uniqueIndex:idx_award_evidence_uploader_hash" json:"-"`
+	Hash       string     `gorm:"size:64;not null;uniqueIndex:idx_award_evidence_uploader_hash" json:"-"`
+	Path       string     `gorm:"size:500;not null;uniqueIndex" json:"-"`
+	MimeType   string     `gorm:"size:100;not null" json:"mime_type"`
+	Size       int64      `gorm:"not null" json:"size"`
+	Status     string     `gorm:"size:20;not null;default:'temporary';index" json:"status"`
+	ClaimedAt  *time.Time `json:"claimed_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+func (CompetitionAwardEvidenceFile) TableName() string {
+	return "competition_award_evidence_files"
+}
+
+// CompetitionAwardEvidence 关联竞赛经历与私有证明材料文件。
 type CompetitionAwardEvidence struct {
 	ID        uint      `gorm:"primaryKey" json:"-"`
 	AwardID   uint      `gorm:"not null;uniqueIndex:idx_award_evidence" json:"award_id"`
@@ -193,36 +210,6 @@ type CompetitionAwardEvidenceAccessLog struct {
 
 func (CompetitionAwardEvidenceAccessLog) TableName() string {
 	return "competition_award_evidence_access_logs"
-}
-
-// BackfillCompetitionAwardEvidence 为 7A 已有记录补齐私密材料映射，可重复执行。
-func BackfillCompetitionAwardEvidence(db *gorm.DB) error {
-	var awards []UserCompetitionAward
-	if err := db.Unscoped().Select("id", "evidence_file_ids").Find(&awards).Error; err != nil {
-		return err
-	}
-	return db.Transaction(func(tx *gorm.DB) error {
-		for _, award := range awards {
-			var fileIDs []uint
-			if len(award.EvidenceFileIDs) == 0 {
-				continue
-			}
-			if err := json.Unmarshal(award.EvidenceFileIDs, &fileIDs); err != nil {
-				return err
-			}
-			for _, fileID := range fileIDs {
-				if fileID == 0 {
-					continue
-				}
-				mapping := CompetitionAwardEvidence{AwardID: award.ID, FileID: fileID}
-				if err := tx.Where("award_id = ? AND file_id = ?", award.ID, fileID).
-					FirstOrCreate(&mapping).Error; err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
 }
 
 type CompetitionEventAttachment struct {

@@ -34,11 +34,14 @@ func competitionAwardVerificationRequest(t *testing.T, handler gin.HandlerFunc, 
 	return recorder
 }
 
-func createAwardWithEvidence(t *testing.T, userID uint) (*CompetitionHandler, models.UserCompetitionAward, models.File) {
+func createAwardWithEvidence(t *testing.T, userID uint) (*CompetitionHandler, models.UserCompetitionAward, models.CompetitionAwardEvidenceFile) {
 	t.Helper()
 	db := newCompetitionTestDB(t)
-	handler := NewCompetitionHandler(db)
-	file := models.File{Hash: strings.Repeat("c", 64), Path: "/uploads/cc/evidence.png", Size: 8, MimeType: "image/png", UploaderID: userID}
+	handler, err := NewCompetitionHandlerWithEvidenceStorage(db, t.TempDir(), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := models.CompetitionAwardEvidenceFile{Hash: strings.Repeat("c", 64), Path: fmt.Sprintf("%d/cc/evidence.png", userID), Size: 8, MimeType: "image/png", UploaderID: userID}
 	if err := db.Create(&file).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -144,25 +147,16 @@ func TestCompetitionAwardRejectedCanEditAndResubmit(t *testing.T) {
 
 func TestCompetitionAwardEvidenceIsPrivateAndAdminAccessIsAudited(t *testing.T) {
 	handler, award, file := createAwardWithEvidence(t, 76)
-	uploadDir := t.TempDir()
-	filePath := filepath.Join(uploadDir, "cc", "evidence.png")
+	filePath := filepath.Join(handler.evidenceDir, filepath.FromSlash(file.Path))
 	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filePath, []byte("evidence"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	uploadHandler := NewUploadHandler(uploadDir, 1024, handler.db)
 	var mappingCount int64
 	if err := handler.db.Model(&models.CompetitionAwardEvidence{}).Where("award_id = ? AND file_id = ?", award.ID, file.ID).Count(&mappingCount).Error; err != nil || mappingCount != 1 {
 		t.Fatalf("evidence mapping count=%d err=%v", mappingCount, err)
-	}
-	public := httptest.NewRecorder()
-	publicContext, _ := gin.CreateTestContext(public)
-	publicContext.Params = gin.Params{{Key: "filepath", Value: "/cc/evidence.png"}}
-	uploadHandler.ServePublic(publicContext)
-	if public.Code != http.StatusNotFound {
-		t.Fatalf("public status=%d", public.Code)
 	}
 	owner := evidenceRequest(t, handler.DownloadOwnCompetitionAwardEvidence, award.ID, file.ID, 76, "user")
 	if owner.Code != http.StatusOK || owner.Body.String() != "evidence" {

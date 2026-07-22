@@ -355,15 +355,9 @@ func (h *CompetitionHandler) validateCompetitionAwardFiles(userID uint, fileIDs 
 			return errors.New("证明材料 ID 无效")
 		}
 		var count int64
-		if err := h.db.Model(&models.File{}).
+		if err := h.db.Model(&models.CompetitionAwardEvidenceFile{}).
 			Where("id = ? AND uploader_id = ?", fileID, userID).Count(&count).Error; err != nil {
 			return err
-		}
-		if count == 0 {
-			if err := h.db.Model(&models.FileUploadGrant{}).
-				Where("file_id = ? AND user_id = ?", fileID, userID).Count(&count).Error; err != nil {
-				return err
-			}
 		}
 		if count == 0 {
 			return errors.New("证明材料不存在或无权使用")
@@ -377,12 +371,15 @@ func activateCompetitionAwardFiles(tx *gorm.DB, fileIDs []uint) error {
 		return nil
 	}
 	now := time.Now()
-	return tx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
+	return tx.Model(&models.CompetitionAwardEvidenceFile{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
 		"status": "active", "claimed_at": &now,
 	}).Error
 }
 
 func registerCompetitionAwardEvidence(tx *gorm.DB, awardID uint, fileIDs []uint) error {
+	if err := tx.Where("award_id = ?", awardID).Delete(&models.CompetitionAwardEvidence{}).Error; err != nil {
+		return err
+	}
 	for _, fileID := range fileIDs {
 		mapping := models.CompetitionAwardEvidence{AwardID: awardID, FileID: fileID}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&mapping).Error; err != nil {

@@ -57,11 +57,11 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
       ErkeOverviewSkill.skillId => _erkeOverview(),
       CompetitionSearchSkill.skillId => _competitionSearch(),
       CompetitionCapabilityProfileSkill.skillId => _competitionCapability(),
+      ExplainCompetitionMatchesSkill.skillId => _competitionMatches(),
       AcademicGpaSkill.skillId => _gpa(),
       AcademicCreditSummarySkill.skillId => _creditSummary(),
       AcademicFailureRiskSkill.skillId => _failureRisk(),
       GraduationReadinessSkill.skillId => _graduationReadiness(),
-      CompetitionFitSkill.skillId => _competitionFit(request.validatedInput),
       FitnessWeeklyPlanSkill.skillId => _fitness(request.validatedInput),
       _ => throw StateError('Tool 授权元数据未配置'),
     };
@@ -171,6 +171,26 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
         output: const <String>['竞赛目标和方向偏好', '投入时间和偏好角色', '已核验与本人填写的技能、角色及经历数量'],
       );
 
+  ToolPermissionPreviewMetadata _competitionMatches() => _metadata(
+        inputItems: const <ToolDataPreviewItem>[
+          ToolDataPreviewItem(
+            dataType: PersonalDataType.studentProfile,
+            label: '平台已有的“适合我”确定性排序及匹配依据',
+          ),
+        ],
+        excluded: const <String>[
+          '证明材料、获奖核验备注和审核信息',
+          '成绩、GPA、毕业和保研政策收益',
+          '自动报名、计划修改和核验操作',
+          ..._credentials,
+        ],
+        output: const <String>[
+          '原有个性化分数、推荐档位和匹配理由',
+          '赛事人工评级和学校认定状态',
+          '报名时间状态和准备建议所需事实',
+        ],
+      );
+
   ToolPermissionPreviewMetadata _gpa() => _metadata(
         inputItems: const <ToolDataPreviewItem>[
           ToolDataPreviewItem(
@@ -214,28 +234,6 @@ class DefaultToolPreviewMetadataSource implements ToolPreviewMetadataSource {
         excluded: const <String>['未审核政策推断', '姓名', ..._credentials],
         output: const <String>['毕业要求完成状态', '学分缺口', '阻断项', '数据不足警告'],
       );
-
-  ToolPermissionPreviewMetadata _competitionFit(Object input) {
-    final value = input as CompetitionFitInput;
-    final goals = value.goals.isEmpty ? '未指定目标' : value.goals.join('、');
-    return _metadata(
-      inputItems: <ToolDataPreviewItem>[
-        ToolDataPreviewItem(
-          dataType: PersonalDataType.studentProfile,
-          label: '年级、学院、专业和本次竞赛目标（$goals）',
-        ),
-      ],
-      excluded: const <String>[
-        '课程成绩',
-        'GPA',
-        '学分',
-        '挂科记录',
-        '完整成绩原始响应',
-        ..._credentials,
-      ],
-      output: const <String>['赛事适配状态', '适配评分', '匹配理由', '强推荐门槛状态'],
-    );
-  }
 
   ToolPermissionPreviewMetadata _fitness(Object input) {
     final value = input as FitnessWeeklyPlanInput;

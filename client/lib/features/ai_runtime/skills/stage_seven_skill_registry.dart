@@ -12,9 +12,9 @@ import 'week_schedule_skill.dart';
 PersonalSkillRegistry buildStageSevenSkillRegistry({
   required CompetitionSearchSource competitionSearchSource,
   required GraduationRuleProvider graduationRuleProvider,
-  required CompetitionFitDataSource competitionFitDataSource,
   required CompetitionCapabilityProfileSource
       competitionCapabilityProfileSource,
+  required CompetitionMatchExplanationSource competitionMatchExplanationSource,
 }) {
   return PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
     TodayScheduleSkill(),
@@ -24,11 +24,11 @@ PersonalSkillRegistry buildStageSevenSkillRegistry({
     ErkeOverviewSkill(),
     CompetitionSearchSkill(competitionSearchSource),
     CompetitionCapabilityProfileSkill(competitionCapabilityProfileSource),
+    ExplainCompetitionMatchesSkill(competitionMatchExplanationSource),
     AcademicGpaSkill(),
     AcademicCreditSummarySkill(),
     AcademicFailureRiskSkill(),
     GraduationReadinessSkill(ruleProvider: graduationRuleProvider),
-    CompetitionFitSkill(competitionFitDataSource),
     FitnessWeeklyPlanSkill(),
   ]);
 }

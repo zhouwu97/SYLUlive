@@ -4,6 +4,7 @@ import '../../../models/competition_capability_profile.dart';
 import '../../campus_data/storage/personal_snapshot_models.dart';
 import '../skills/academic_overview_skill.dart';
 import '../skills/competition_search_skill.dart';
+import '../skills/competition_advisor_skills.dart';
 import '../skills/erke_overview_skill.dart';
 import '../skills/deterministic_skills.dart';
 import '../skills/personal_skill.dart';
@@ -165,6 +166,27 @@ class SkillResultSerializer {
             'weekly_hours': output.weeklyHours,
             'accept_long_term_training': output.acceptLongTermTraining,
           },
+        CompetitionMatchExplanationPage output => <String, dynamic>{
+            'profile_ready': output.profileReady,
+            'preference_configured': output.preferenceConfigured,
+            'total': output.total,
+            'items': output.items
+                .map((item) => <String, dynamic>{
+                      'id': item.id,
+                      'title': item.title,
+                      'personalized_score': item.personalizedScore,
+                      'recommendation_tier': item.recommendationTier,
+                      'fit_reasons': item.fitReasons,
+                      'competition_rating': item.competitionRating,
+                      'manual_rating': item.manualRating,
+                      'school_recognition_status': item.schoolRecognitionStatus,
+                      'school_recognition_grade': item.schoolRecognitionGrade,
+                      'time_status': item.timeStatus,
+                      'registration_time_text': item.registrationTimeText,
+                    })
+                .toList(),
+            'data_updated_at': _time(output.fetchedAt),
+          },
         AcademicGpaOutput output => <String, dynamic>{
             'formula_version': output.result.formulaVersion,
             'gpa': output.result.gpa,
@@ -224,21 +246,6 @@ class SkillResultSerializer {
                 )
                 .toList(),
             'warnings': output.readiness.warnings,
-          },
-        CompetitionFitOutput output => <String, dynamic>{
-            'items': output.items
-                .map(
-                  (item) => <String, dynamic>{
-                    'id': item.candidate.id,
-                    'title': item.candidate.title,
-                    'status': item.status.name,
-                    'score': item.score,
-                    'strong_recommendation_allowed':
-                        item.strongRecommendationAllowed,
-                    'reasons': item.reasons,
-                  },
-                )
-                .toList(),
           },
         FitnessWeeklyPlanOutput output => <String, dynamic>{
             'bmi': output.plan.bmi,

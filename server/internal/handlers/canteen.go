@@ -359,7 +359,6 @@ func isUniqueConstraintError(err error) bool {
 
 // Rate 评价食堂
 func (h *CanteenHandler) Rate(c *gin.Context) {
-	userID, _ := c.Get("user_id")
 	cid, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
@@ -386,6 +385,31 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 
+	userIDValue, exists := c.Get("user_id")
+	userID, validUserID := userIDValue.(uint)
+	if !exists || !validUserID || userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "请先登录后评价",
+			"code":  "authentication_required",
+		})
+		return
+	}
+	var user models.User
+	if err := h.db.Select("id", "edu_bound").First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "登录状态无效，请重新登录",
+			"code":  "authentication_required",
+		})
+		return
+	}
+	if !user.EduBound {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "请先绑定教务账号后评价",
+			"code":  "edu_binding_required",
+		})
+		return
+	}
+
 	var rating models.CanteenRating
 	err = h.db.Where("canteen_id = ? AND user_id = ?", cid, userID).First(&rating).Error
 	if err == nil {
@@ -403,7 +427,7 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		// 新建
 		rating = models.CanteenRating{
 			CanteenID: uint(cid),
-			UserID:    userID.(uint),
+			UserID:    userID,
 			Star:      input.Star,
 			Comment:   input.Comment,
 			Images:    input.Images,

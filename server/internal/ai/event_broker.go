@@ -11,6 +11,7 @@ type RunEvent struct {
 	Type      string      `json:"type"`
 	Timestamp time.Time   `json:"timestamp"`
 	Payload   interface{} `json:"payload"`
+	Persisted bool        `json:"-"`
 }
 
 // EventBroker 只承载在线增量。断线恢复始终以 PostgreSQL 检查点为准。
@@ -50,13 +51,21 @@ func (b *EventBroker) Subscribe(runID string) (<-chan RunEvent, func()) {
 }
 
 func (b *EventBroker) Publish(event RunEvent) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	for _, channel := range b.subscribers[event.RunID] {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	subscribers := b.subscribers[event.RunID]
+	for id, channel := range subscribers {
 		select {
 		case channel <- event:
 		default:
-			// 慢客户端会通过持久化检查点恢复，不能反向阻塞模型流。
+			// 增量可丢弃；持久化事件必须触发断线恢复，避免客户端遗漏终态。
+			if event.Persisted {
+				delete(subscribers, id)
+				close(channel)
+			}
 		}
+	}
+	if len(subscribers) == 0 {
+		delete(b.subscribers, event.RunID)
 	}
 }

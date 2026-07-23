@@ -12,8 +12,10 @@ import (
 func TestCreateCompetitionRecommendationSnapshotUsesServerResult(t *testing.T) {
 	db := newCompetitionTestDB(t)
 	handler := NewCompetitionHandler(db)
+	verifiedAt := time.Now().UTC()
 	user := models.User{
-		StudentID: "snapshot-user", PasswordHash: "x", Nickname: "快照用户", EduBound: true,
+		StudentID: "snapshot-user", PasswordHash: "x", Nickname: "快照用户",
+		EduAuthorized: true, EduBound: true, StudentVerifiedAt: &verifiedAt,
 		EduGrade: "2023", EduCollege: "信息科学与工程学院", EduMajor: "计算机科学与技术",
 	}
 	if err := db.Create(&user).Error; err != nil {

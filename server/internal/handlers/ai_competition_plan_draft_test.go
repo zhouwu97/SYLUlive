@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,8 +19,10 @@ import (
 
 func createAIActionTestUserAndEvent(t *testing.T, db *gorm.DB, suffix string) (models.User, models.CompetitionEvent) {
 	t.Helper()
+	verifiedAt := time.Now().UTC()
 	user := models.User{
-		StudentID: "ai-action-" + suffix, PasswordHash: "x", Nickname: "草稿用户", EduBound: true,
+		StudentID: "ai-action-" + suffix, PasswordHash: "x", Nickname: "草稿用户",
+		EduAuthorized: true, EduBound: true, StudentVerifiedAt: &verifiedAt,
 		EduGrade: "2023", EduCollege: "信息科学与工程学院", EduMajor: "计算机科学与技术",
 	}
 	if err := db.Create(&user).Error; err != nil {
@@ -247,5 +251,71 @@ func TestCompetitionPlanDraftBindsExistingPlanItem(t *testing.T) {
 	var stored models.AIActionDraft
 	if err := db.First(&stored, draft.ID).Error; err != nil || stored.ResultResourceID == nil || *stored.ResultResourceID != item.ID {
 		t.Fatalf("stored=%+v err=%v", stored, err)
+	}
+}
+
+func TestCompetitionPlanDraftBindsItemAddedDuringConfirmation(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	if _, err := models.ApplyCompetitionCalendarDedupMigration(db); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewCompetitionHandler(db)
+	user, event := createAIActionTestUserAndEvent(t, db, "race")
+	draft := createCompetitionPlanDraftForTest(t, handler, user.ID, event.ID, "race-request")
+	calendar, err := handler.ensureCalendarTx(db, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var planQueries atomic.Int32
+	callbackName := "test:insert_plan_during_confirmation"
+	err = db.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement == nil || !strings.Contains(tx.Statement.Table, "user_competition_calendar_items") {
+			return
+		}
+		// 第一次查询模拟确认流程的预检查；第二次查询前模拟普通入口提交成功。
+		if planQueries.Add(1) != 2 {
+			return
+		}
+		item := calendarItemFromEvent(calendar.ID, user.ID, event, "official", &event.ID, "", nil)
+		if insertErr := tx.Session(&gorm.Session{SkipHooks: true}).Create(&item).Error; insertErr != nil {
+			tx.AddError(insertErr)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Callback().Query().Remove(callbackName) })
+
+	confirmed := confirmCompetitionPlanDraftForTest(t, handler, user.ID, draft.ID)
+	if confirmed.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", confirmed.Code, confirmed.Body.String())
+	}
+
+	var items []models.UserCompetitionCalendarItem
+	if err := db.Where("user_id = ? AND source_event_id = ?", user.ID, event.ID).Find(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items=%d want=1", len(items))
+	}
+	var stored models.AIActionDraft
+	if err := db.First(&stored, draft.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != "executed" || stored.ResultResourceID == nil || *stored.ResultResourceID != items[0].ID {
+		t.Fatalf("stored draft=%+v item=%+v", stored, items[0])
+	}
+
+	repeated := confirmCompetitionPlanDraftForTest(t, handler, user.ID, draft.ID)
+	if repeated.Code != http.StatusOK {
+		t.Fatalf("repeat status=%d body=%s", repeated.Code, repeated.Body.String())
+	}
+	var repeatedResponse competitionPlanDraftResponse
+	if err := json.Unmarshal(repeated.Body.Bytes(), &repeatedResponse); err != nil {
+		t.Fatal(err)
+	}
+	if repeatedResponse.PlanItemID == nil || *repeatedResponse.PlanItemID != items[0].ID {
+		t.Fatalf("repeat response=%+v", repeatedResponse)
 	}
 }

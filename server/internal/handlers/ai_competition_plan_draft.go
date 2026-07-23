@@ -196,6 +196,22 @@ func (h *CompetitionHandler) ConfirmAIActionDraft(c *gin.Context) {
 		currentSnapshot, event, buildErr := h.buildCompetitionRecommendationSnapshot(tx, userID, draft.CompetitionEventID, now)
 		if buildErr != nil {
 			if errors.Is(buildErr, errCompetitionAlreadyPlanned) {
+				existing, found, findErr := findExistingOfficialPlanItem(tx, userID, draft.CompetitionEventID)
+				if findErr != nil {
+					return findErr
+				}
+				if found {
+					return executeAIActionDraftWithItem(
+						tx,
+						&draft,
+						existing,
+						now,
+						c.GetHeader("X-Client-Request-ID"),
+						"existing_plan_item",
+						&response,
+						h,
+					)
+				}
 				return buildErr
 			}
 			if err := failAIActionDraft(tx, &draft, now, buildErr.Error(), c.GetHeader("X-Client-Request-ID")); err != nil {

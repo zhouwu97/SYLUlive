@@ -497,30 +497,6 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('知道了'),
             ),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: accent,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Clipboard.setData(const ClipboardData(text: _authorEmail));
-                Navigator.pop(dialogContext); // 关闭对话框
-                Navigator.pop(context); // 关闭 AboutAppSheet
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('邮箱已复制到剪贴板'),
-                    behavior: SnackBarBehavior.floating,
-                    margin: const EdgeInsets.all(16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.copy_rounded, size: 16),
-              label: const Text('复制邮箱'),
-            ),
           ],
         );
       },

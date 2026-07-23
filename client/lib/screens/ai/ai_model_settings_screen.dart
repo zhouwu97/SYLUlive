@@ -148,24 +148,6 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
       } else if (_models.length > 1) {
         await _selectModel(_models);
       }
-      if (!mounted) return;
-      final selectedModel = _modelController.text.trim();
-      if (selectedModel.isEmpty) {
-        throw const AIModelProviderConfigurationException(
-          '已连接服务，请选择或填写模型后再验证 Tool Calling',
-        );
-      }
-      probeConfig = probeConfig.copyWith(model: selectedModel);
-      final toolModel = OpenAIToolCallingModel.fromConfig(
-        config: probeConfig,
-        apiKey: apiKey,
-        dio: OpenAICompatibleProvider.createDio(),
-      );
-      _probeToolModel = toolModel;
-      await toolModel.probeToolCalling();
-      if (mounted) {
-        setState(() => _probeSuccess = '连接成功，Tool Calling 验证通过');
-      }
     } on AIModelProviderException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {

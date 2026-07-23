@@ -9,6 +9,7 @@ import asyncio
 import logging
 from typing import Callable, Awaitable, TypeVar
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import EduUser
@@ -20,6 +21,16 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 _user_locks: dict[str, asyncio.Lock] = {}
+
+
+def _ensure_auto_relogin_allowed(edu_user: EduUser) -> None:
+    """在持锁刷新前后重复校验，主动退出或撤销绝不能触发静默登录。"""
+    if not edu_user.authorized:
+        raise CookieLapseError("教务授权已撤销，请重新授权", "EDU_AUTHORIZATION_REVOKED")
+    if edu_user.session_state in {"logged_out", "revoked"}:
+        raise CookieLapseError("教务会话已退出，请手动重新登录", "EDU_SESSION_LOGGED_OUT")
+    if not edu_user.auto_relogin:
+        raise CookieLapseError("教务会话不允许自动恢复，请手动重新登录", "EDU_SESSION_EXPIRED")
 
 
 def _user_lock(user_id: str) -> asyncio.Lock:
@@ -51,12 +62,7 @@ async def execute_with_session_refresh(
     """
 
     # 主动退出或撤销授权的账号绝不能触发静默重登。
-    if getattr(edu_user, "authorized", None) is False:
-        raise CookieLapseError("教务授权已撤销，请重新授权", "EDU_AUTHORIZATION_REVOKED")
-    if getattr(edu_user, "session_state", "") == "logged_out":
-        raise CookieLapseError("教务会话已退出，请手动重新登录", "EDU_SESSION_LOGGED_OUT")
-    if getattr(edu_user, "auto_relogin", None) is False:
-        raise CookieLapseError("教务会话不允许自动恢复，请手动重新登录", "EDU_SESSION_EXPIRED")
+    _ensure_auto_relogin_allowed(edu_user)
 
     async def _attempt_fresh(cookie: str) -> T:
         async with EduCrawler(timeout=timeout) as crawler:
@@ -83,6 +89,8 @@ async def execute_with_session_refresh(
     async with lock:
         # 重新读取最新 Cookie（可能被前一个锁持有者刷新过）
         await db.refresh(edu_user)
+        _ensure_auto_relogin_allowed(edu_user)
+        credential_generation = edu_user.credential_generation
         try:
             refreshed_cookie = decrypt_credential(edu_user.cookie)
         except (RuntimeError, ValueError):
@@ -119,10 +127,26 @@ async def execute_with_session_refresh(
                 f"账号密码可能已变更: {e}"
             ) from e
 
-        # 锁内持久化，保证后续请求能看到最新 Cookie
-        edu_user.cookie = encrypt_credential(new_cookie)
-        edu_user.session_state = "active"
+        # 使用条件更新防止等待登录期间发生的退出或撤销被旧请求覆盖。
+        encrypted_cookie = encrypt_credential(new_cookie)
+        result = await db.execute(
+            update(EduUser)
+            .where(
+                EduUser.id == edu_user.id,
+                EduUser.authorized.is_(True),
+                EduUser.auto_relogin.is_(True),
+                EduUser.session_state.not_in(["logged_out", "revoked"]),
+                EduUser.credential_generation == credential_generation,
+            )
+            .values(cookie=encrypted_cookie, session_state="active")
+        )
+        if result.rowcount != 1:
+            await db.rollback()
+            raise CookieLapseError("教务会话状态已变化，请手动重新登录", "EDU_SESSION_LOGGED_OUT")
         await db.commit()
+        # 提交后同步当前会话对象，使同进程等待锁的请求立即观察到新 Cookie。
+        edu_user.cookie = encrypted_cookie
+        edu_user.session_state = "active"
         await db.refresh(edu_user)
         refreshed_cookie = new_cookie
 

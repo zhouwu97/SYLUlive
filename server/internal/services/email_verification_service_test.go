@@ -90,3 +90,22 @@ func TestEmailVerificationLimitsAttemptsAndExpires(t *testing.T) {
 		t.Fatalf("过期验证码错误=%v，期望=%v", err, ErrCodeExpired)
 	}
 }
+
+func TestUseValidatedChallengeConsumesOnlyAfterBusinessCommit(t *testing.T) {
+	now := time.Date(2026, time.July, 22, 12, 0, 0, 0, time.UTC)
+	service, mailer, _ := newEmailVerificationTestService(t, &now)
+	const email = "atomic@example.com"
+	if err := service.Request(email, models.EmailVerificationPurposeRegister, nil, "127.0.0.3"); err != nil {
+		t.Fatalf("请求验证码失败: %v", err)
+	}
+	code := mailer.codes[email+":"+models.EmailVerificationPurposeRegister]
+	callbackErr := errors.New("模拟账户写入失败")
+	if err := service.UseValidatedChallenge(email, models.EmailVerificationPurposeRegister, code, func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
+		return callbackErr
+	}); !errors.Is(err, callbackErr) {
+		t.Fatalf("业务失败错误=%v，期望=%v", err, callbackErr)
+	}
+	if err := service.Validate(email, models.EmailVerificationPurposeRegister, code, true); err != nil {
+		t.Fatalf("业务失败后验证码应仍可使用: %v", err)
+	}
+}

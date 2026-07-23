@@ -20,6 +20,9 @@ type User struct {
 	// 学号是经教务验证后的稳定学生身份。唯一性由显式 SQL 部分索引保证。
 	StudentID         string     `gorm:"size:20;default:''" json:"student_id"`
 	StudentVerifiedAt *time.Time `json:"-"`
+	// AccountStatus 明确表示账号生命周期，注销后不再依赖伪造身份字段判断状态。
+	AccountStatus string     `gorm:"size:20;default:'active';index" json:"-"`
+	CancelledAt   *time.Time `json:"-"`
 	// 邮箱用于辅助登录和找回密码，统一以小写保存。
 	Email           string     `gorm:"size:320;default:''" json:"-"`
 	EmailVerifiedAt *time.Time `json:"-"`
@@ -57,6 +60,9 @@ type User struct {
 	EduAutoRelogin      bool       `gorm:"default:true" json:"-"`
 	EduAuthorizedAt     *time.Time `json:"-"`
 	EduSessionUpdatedAt *time.Time `json:"-"`
+	// EduAuthorizationGeneration 每次显式绑定递增，用于隔离旧撤销任务与新凭据。
+	EduAuthorizationGeneration uint `gorm:"not null;default:0" json:"-"`
+	EduCleanupPending          bool `gorm:"not null;default:false" json:"-"`
 	// EduBound 为旧客户端兼容字段，恒等于 EduAuthorized。
 	EduBound   bool   `gorm:"default:false" json:"edu_bound"`
 	EduGrade   string `gorm:"size:20" json:"edu_grade"`
@@ -116,10 +122,10 @@ func (u User) MarshalJSON() ([]byte, error) {
 // IsStudentVerified 统一判断学生身份。短暂兼容尚未执行数据迁移的旧绑定记录，
 // 生产迁移完成后该回退分支不应再命中。
 func (u User) IsStudentVerified() bool {
-	return u.StudentVerifiedAt != nil || u.EduBound
+	return u.StudentVerifiedAt != nil
 }
 
 // IsEduAuthorized 统一判断是否允许教务服务持有并使用凭据。
 func (u User) IsEduAuthorized() bool {
-	return u.EduAuthorized || u.EduBound
+	return u.EduAuthorized
 }

@@ -1,5 +1,5 @@
 """SQLAlchemy 数据库模型"""
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, select
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, inspect, select, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from datetime import datetime
@@ -15,9 +15,11 @@ AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_co
 
 
 async def init_db():
-    """初始化数据库"""
+    """初始化数据库，并升级已有 SQLite 教务库后校验关键列。"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_migrate_edu_user_schema)
+        await conn.run_sync(_verify_edu_user_schema)
     # 旧版本将密码和 Cookie 明文写入数据库。不能安全迁移这些值，
     # 直接清除并要求用户重新绑定，避免遗留凭据继续暴露。
     async with AsyncSessionLocal() as session:
@@ -31,6 +33,57 @@ async def init_db():
         deleted = await clear_legacy_course_cache(session)
         if any(deleted.values()):
             print(f"已清理退役课表缓存: {deleted}")
+
+
+def _migrate_edu_user_schema(conn):
+    """为旧 SQLite 数据库补齐会话生命周期字段。
+
+    SQLAlchemy 的 create_all 只创建新表，不会升级旧表。此处只使用 SQLite
+    支持的 ADD COLUMN，生产 PostgreSQL 仍应先执行随服务发布的 SQL 迁移。
+    """
+    inspector = inspect(conn)
+    if "edu_users" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("edu_users")}
+    additions = {
+        "authorized": "BOOLEAN NOT NULL DEFAULT 0",
+        "session_state": "VARCHAR(20) NOT NULL DEFAULT 'unbound'",
+        "auto_relogin": "BOOLEAN NOT NULL DEFAULT 1",
+        "authorized_at": "DATETIME",
+        "logged_out_at": "DATETIME",
+        "revoked_at": "DATETIME",
+        "credential_generation": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for name, definition in additions.items():
+        if name not in columns:
+            conn.execute(text(f"ALTER TABLE edu_users ADD COLUMN {name} {definition}"))
+
+    # 仅处理尚未升级的旧 bound 记录；已撤销记录的 bound 必为 false，不能恢复。
+    conn.execute(text("""
+        UPDATE edu_users
+        SET authorized = 1,
+            session_state = CASE WHEN cookie IS NULL OR cookie = '' THEN 'expired' ELSE 'active' END,
+            auto_relogin = 1,
+            authorized_at = COALESCE(authorized_at, updated_at, created_at),
+            credential_generation = CASE WHEN credential_generation < 1 THEN 1 ELSE credential_generation END
+        WHERE bound = 1 AND authorized = 0 AND session_state = 'unbound'
+    """))
+
+
+def _verify_edu_user_schema(conn):
+    """启动时检查既有数据库结构，避免请求期间才因缺列失败。"""
+    inspector = inspect(conn)
+    if "edu_users" not in inspector.get_table_names():
+        raise RuntimeError("教务数据库缺少 edu_users 表")
+    columns = {column["name"] for column in inspector.get_columns("edu_users")}
+    required = {
+        "user_id", "student_id", "encrypted_password", "cookie", "bound",
+        "authorized", "session_state", "auto_relogin", "authorized_at",
+        "logged_out_at", "revoked_at", "credential_generation",
+    }
+    missing = sorted(required - columns)
+    if missing:
+        raise RuntimeError(f"教务数据库结构不完整，缺少字段: {', '.join(missing)}")
 
 
 async def get_db():
@@ -62,5 +115,7 @@ class EduUser(Base):
     authorized_at = Column(DateTime, nullable=True)
     logged_out_at = Column(DateTime, nullable=True)
     revoked_at = Column(DateTime, nullable=True)
+    # 每次 Go 显式绑定递增，旧代次的撤销任务不得影响新凭据。
+    credential_generation = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

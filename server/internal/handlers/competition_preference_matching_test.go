@@ -32,8 +32,10 @@ func fitEventsRequest(t *testing.T, handler *CompetitionHandler, userID uint) ma
 func createFitUser(t *testing.T, studentID string) (*CompetitionHandler, models.User) {
 	t.Helper()
 	db := newCompetitionTestDB(t)
+	verifiedAt := time.Now()
 	user := models.User{
-		StudentID: studentID, PasswordHash: "x", Nickname: "匹配用户", EduBound: true,
+		StudentID: studentID, StudentVerifiedAt: &verifiedAt, PasswordHash: "x", Nickname: "匹配用户",
+		EduAuthorized: true, EduBound: true,
 		EduGrade: "2023", EduCollege: "信息科学与工程学院", EduMajor: "计算机科学与技术",
 	}
 	if err := db.Create(&user).Error; err != nil {

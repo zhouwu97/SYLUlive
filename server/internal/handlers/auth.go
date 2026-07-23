@@ -221,6 +221,18 @@ func recordLegalConsents(tx *gorm.DB, userID uint, input LegalConsentInput, incl
 	return nil
 }
 
+// recordEduBindingConsent 记录绑定教务前取得的专项授权，与注册阶段的同意证据分开保存。
+func recordEduBindingConsent(tx *gorm.DB, userID uint) error {
+	now := time.Now()
+	consent := models.UserLegalConsent{
+		UserID: userID, Document: models.LegalDocumentEduDataConsent, Version: models.LegalDocumentVersion,
+		AcknowledgementType: "separate_consent", Scope: "education", Scene: "edu_binding",
+	}
+	return tx.Where("user_id = ? AND document = ? AND version = ? AND scene = ?", userID, consent.Document, consent.Version, consent.Scene).
+		Assign(map[string]interface{}{"accepted_at": now, "revoked_at": nil, "acknowledgement_type": consent.AcknowledgementType, "scope": consent.Scope}).
+		FirstOrCreate(&consent).Error
+}
+
 // AcceptLegalConsents 记录当前协议版本的同意，并恢复已主动撤销授权的账号。
 func (h *AuthHandler) AcceptLegalConsents(c *gin.Context) {
 	var input LegalConsentInput
@@ -303,16 +315,18 @@ func deleteIncompleteRegistrationUser(db *gorm.DB, userID uint) {
 
 // compensateFailedEduRegistrationBinding 清理注册阶段 Python 已写入、但 Go 身份升级失败的教务凭据。
 func (h *AuthHandler) compensateFailedEduRegistrationBinding(userID uint) {
-	resp, err := pythonEduRequest(http.MethodDelete, "/api/edu/authorization", &userID, nil)
+	resp, err := pythonEduRequest(http.MethodDelete, "/api/edu/authorization", &userID, map[string]interface{}{
+		"expected_generation": 1,
+		"delete_identity":     true,
+	})
 	if err == nil && resp.StatusCode() == http.StatusOK {
 		return
 	}
 	if h.cleanupJobs == nil || h.db == nil {
 		return
 	}
-	_ = h.db.Transaction(func(tx *gorm.DB) error {
-		return h.cleanupJobs.Enqueue(tx, userID)
-	})
+	// 注册失败后本地账号会被删除，无法安全保留依赖 user_id 的重试任务。
+	// 远端删除失败由调用方记录并告警，避免创建无法判定代次的补偿任务。
 }
 
 type verifyCodeInput struct {
@@ -778,15 +792,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	}
 	email := qq + "@qq.com"
-	if h.emailVerification != nil {
-		// 新服务将旧 QQ 注册迁移为已验证的 QQ 邮箱账号。
-		if err := h.validateEmailCode(email, models.EmailVerificationPurposeRegister, input.Code, true); err != nil {
-			writeEmailVerificationError(c, err)
-			return
-		}
-		// 后续旧兼容分支只检查完成态；安全性已由持久化验证码消费保证。
-		markQQVerified(qq)
-	}
 
 	var count int64
 
@@ -800,9 +805,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	}
 
-	// 已验证的凭证是注册唯一可信的完成态。验证码记录可在验证后被清理，
-	// 因此不能要求它仍然存在。
-	if !isQQVerified(qq) {
+	// 未启用邮件验证码服务时，沿用旧 QQ 验证完成态；启用后由后续事务校验并消费。
+	if h.emailVerification == nil && !isQQVerified(qq) {
 		verifyCodeStore.Lock()
 		record, ok := verifyCodeStore.codes[qq]
 		verifyCodeStore.Unlock()
@@ -838,11 +842,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		nickname = "毕业用户"
 
 	}
+	useGeneratedNickname := strings.TrimSpace(input.Nickname) == ""
 
 	now := time.Now()
 	user := models.User{
 
 		StudentID: "",
+
+		QQ: qq,
 
 		Email: email, EmailVerifiedAt: &now,
 
@@ -857,12 +864,30 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		EduSessionState: "unbound",
 	}
 
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	createUser := func(tx *gorm.DB) error {
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
+		if useGeneratedNickname {
+			user.Nickname = "毕业用户" + strconv.FormatUint(uint64(user.ID), 10)
+			if err := tx.Model(&user).Update("nickname", user.Nickname).Error; err != nil {
+				return err
+			}
+		}
 		return recordLegalConsents(tx, user.ID, input.LegalConsentInput, false)
-	}); err != nil {
+	}
+	if h.emailVerification != nil {
+		err = h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeRegister, input.Code, func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
+			return createUser(tx)
+		})
+	} else {
+		err = h.db.Transaction(createUser)
+	}
+	if err != nil {
+		if isEmailVerificationError(err) {
+			writeEmailVerificationError(c, err)
+			return
+		}
 
 		if utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
 			c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已绑定其他账号", "code": "EMAIL_ALREADY_BOUND"})
@@ -874,18 +899,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	}
 
-	if strings.TrimSpace(input.Nickname) == "" {
-
-		user.Nickname = "毕业用户" + strconv.FormatUint(uint64(user.ID), 10)
-
-		if err := h.db.Model(&user).Update("nickname", user.Nickname).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-			return
-		}
-
+	if h.emailVerification == nil {
+		consumeQQVerified(qq)
 	}
-
-	consumeQQVerified(qq)
 
 	if h.emailVerification != nil {
 		h.writeSecurityAudit(user.ID, "legacy_qq_registered_as_email", maskEmail(email))
@@ -1047,14 +1063,14 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	}
 
 	// 创建本地账号后，必须由同一条 Go -> Python 绑定链路完成凭据落库。
-	bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
+	bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword, 1)
 	if err != nil {
 		h.compensateFailedEduRegistrationBinding(user.ID)
 		deleteIncompleteRegistrationUser(h.db, user.ID)
 		writeEduServiceError(c, err)
 		return
 	}
-	if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
+	if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult, 1, false); err != nil {
 		h.compensateFailedEduRegistrationBinding(user.ID)
 		deleteIncompleteRegistrationUser(h.db, user.ID)
 		if errors.Is(err, errEduStudentAlreadyBound) {
@@ -1153,6 +1169,14 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 	var user models.User
 
 	err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusConflict, gin.H{"error": "请先登录或注册账号后绑定教务", "code": "ACCOUNT_BIND_REQUIRED"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
+		return
+	}
 
 	isNewUser := err == gorm.ErrRecordNotFound
 
@@ -1222,14 +1246,14 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 		}
 
-		bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
+		bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword, 1)
 		if err != nil {
 			h.compensateFailedEduRegistrationBinding(user.ID)
 			deleteIncompleteRegistrationUser(h.db, user.ID)
 			writeEduServiceError(c, err)
 			return
 		}
-		if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
+		if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult, 1, false); err != nil {
 			h.compensateFailedEduRegistrationBinding(user.ID)
 			deleteIncompleteRegistrationUser(h.db, user.ID)
 			if errors.Is(err, errEduStudentAlreadyBound) {
@@ -1257,12 +1281,12 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 		}
 
-		bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword)
+		bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword, user.EduAuthorizationGeneration+1)
 		if err != nil {
 			writeEduServiceError(c, err)
 			return
 		}
-		if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult); err != nil {
+		if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult, user.EduAuthorizationGeneration+1, false); err != nil {
 			h.compensateFailedEduRegistrationBinding(user.ID)
 			if errors.Is(err, errEduStudentAlreadyBound) {
 				c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})

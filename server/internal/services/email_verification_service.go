@@ -159,6 +159,13 @@ func (s *EmailVerificationService) Request(email string, purpose string, userID 
 		ExpiresAt: now.Add(emailVerificationCodeTTL), RequestIPHash: ipHash,
 	}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			for _, scope := range []string{"email:" + normalized, "ip:" + ipHash} {
+				if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", scope).Error; err != nil {
+					return err
+				}
+			}
+		}
 		var sentToEmail int64
 		if err := tx.Model(&models.EmailVerificationChallenge{}).
 			Where("email = ? AND created_at >= ?", normalized, now.Add(-time.Hour)).
@@ -244,6 +251,68 @@ func (s *EmailVerificationService) Validate(email string, purpose string, code s
 			return tx.Model(&challenge).Update("consumed_at", now).Error
 		}
 		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return validationErr
+}
+
+// UseValidatedChallenge 在同一事务内校验验证码、执行账户写入并消费验证码。
+// 回调返回错误时整个事务回滚，验证码仍可用于用户修正业务错误后重试。
+func (s *EmailVerificationService) UseValidatedChallenge(
+	email string,
+	purpose string,
+	code string,
+	fn func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error,
+) error {
+	if s == nil || s.db == nil {
+		return ErrCodeNotFound
+	}
+	if !IsVerificationPurpose(purpose) {
+		return ErrPurposeInvalid
+	}
+	if fn == nil {
+		return errors.New("验证码业务处理函数不能为空")
+	}
+
+	normalized, err := NormalizeEmail(email)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	var validationErr error
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var challenge models.EmailVerificationChallenge
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("email = ? AND purpose = ? AND consumed_at IS NULL", normalized, purpose).
+			Order("created_at DESC").First(&challenge).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			validationErr = ErrCodeNotFound
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if now.After(challenge.ExpiresAt) {
+			validationErr = ErrCodeExpired
+			return nil
+		}
+		if challenge.Attempts >= 5 {
+			validationErr = ErrCodeAttempts
+			return nil
+		}
+		if bcrypt.CompareHashAndPassword([]byte(challenge.CodeHash), []byte(strings.TrimSpace(code))) != nil {
+			if err := tx.Model(&challenge).Update("attempts", challenge.Attempts+1).Error; err != nil {
+				return err
+			}
+			validationErr = ErrCodeInvalid
+			return nil
+		}
+		if err := fn(tx, challenge); err != nil {
+			return err
+		}
+		return tx.Model(&challenge).Update("consumed_at", now).Error
 	})
 	if err != nil {
 		return err

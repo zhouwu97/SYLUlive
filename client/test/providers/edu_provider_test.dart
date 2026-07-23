@@ -86,7 +86,7 @@ void main() {
                 requestOptions: options,
                 statusCode: 200,
                 data: <String, dynamic>{
-                  'edu_bound': true,
+                  'edu_authorized': true,
                   'edu_student_id': '2403130233',
                 },
               ),
@@ -223,7 +223,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': '2403130233',
                   },
                 ),
@@ -270,7 +270,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': '2403130233',
                   },
                 ),
@@ -375,7 +375,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': '2403130233',
                   },
                 ),
@@ -409,7 +409,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': '2403130233',
                   },
                 ),
@@ -568,7 +568,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: {
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': ' 2403130233 ',
                     'edu_grade': '2024',
                     'edu_college': '信息科学与工程学院',
@@ -624,6 +624,8 @@ void main() {
       final prefs = await AppPreferencesStore.getInstance();
       for (final key in [
         'edu_bound_user_a',
+        'edu_authorized_user_a',
+        'edu_session_state_user_a',
         'edu_student_id_user_a',
         'edu_grade_user_a',
         'edu_college_user_a',
@@ -648,7 +650,7 @@ void main() {
                     requestOptions: options,
                     statusCode: 200,
                     data: {
-                      'edu_bound': true,
+                      'edu_authorized': true,
                       'edu_student_id': '2403130233',
                       'edu_grade': '2024',
                       'edu_college': '信息科学与工程学院',

@@ -73,7 +73,15 @@ func performWaterSectionAuthGET(t *testing.T, handler gin.HandlerFunc, path stri
 
 func newWaterTestUser(t *testing.T, db *gorm.DB, eduBound bool) models.User {
 	t.Helper()
-	user := models.User{StudentID: "20260100", PasswordHash: "x", Nickname: "tester", EduBound: eduBound}
+	var verifiedAt *time.Time
+	if eduBound {
+		now := time.Now()
+		verifiedAt = &now
+	}
+	user := models.User{
+		StudentID: "20260100", StudentVerifiedAt: verifiedAt, PasswordHash: "x", Nickname: "tester",
+		EduAuthorized: eduBound, EduBound: eduBound,
+	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}

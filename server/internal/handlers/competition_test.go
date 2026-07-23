@@ -291,8 +291,9 @@ func TestCopyOfficialToCalendarIsIdempotent(t *testing.T) {
 
 func TestUserCompetitionStateUsesDatabaseProfile(t *testing.T) {
 	db := newCompetitionTestDB(t)
+	now := time.Now()
 	user := models.User{
-		StudentID: "20260002", PasswordHash: "x", Nickname: "画像用户", EduBound: true,
+		StudentID: "20260002", StudentVerifiedAt: &now, PasswordHash: "x", Nickname: "画像用户", EduAuthorized: true, EduBound: true,
 		EduGrade: "本科2023级", EduCollege: " 信息科学与工程学院 ", EduMajor: "计算机科学与技术",
 	}
 	if err := db.Create(&user).Error; err != nil {

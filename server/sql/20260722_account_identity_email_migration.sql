@@ -18,9 +18,17 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_session_state varchar(20) NOT NUL
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_auto_relogin boolean NOT NULL DEFAULT true;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_authorized_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_session_updated_at timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_authorization_generation bigint NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_cleanup_pending boolean NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status varchar(20) NOT NULL DEFAULT 'active';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
 
 ALTER TABLE users ALTER COLUMN student_id DROP NOT NULL;
 ALTER TABLE users ALTER COLUMN student_id SET DEFAULT '';
+
+-- 旧全量唯一索引必须先删除。否则多个未绑定教务的 QQ 账号在迁移为
+-- 空 student_id 时会立即触发唯一约束，导致事务在创建部分索引前回滚。
+DROP INDEX IF EXISTS idx_users_student_id;
 
 -- 历史 QQ 注册已经完成 QQ 邮箱验证码校验，可转换为已验证邮箱。
 UPDATE users
@@ -47,6 +55,7 @@ SET edu_authorized = COALESCE(edu_bound, false),
     edu_auto_relogin = COALESCE(edu_bound, false),
     edu_authorized_at = CASE WHEN COALESCE(edu_bound, false) THEN COALESCE(edu_authorized_at, created_at, now()) ELSE NULL END,
     edu_session_updated_at = COALESCE(edu_session_updated_at, now()),
+    edu_authorization_generation = CASE WHEN COALESCE(edu_bound, false) THEN GREATEST(edu_authorization_generation, 1) ELSE edu_authorization_generation END,
     edu_bound = COALESCE(edu_bound, false);
 
 -- Go 侧遗留凭据不再使用，迁移时立即清除。
@@ -74,7 +83,15 @@ CREATE TABLE IF NOT EXISTS account_security_audit_logs (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-DROP INDEX IF EXISTS idx_users_student_id;
+ALTER TABLE IF EXISTS edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS expected_generation bigint NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS revoked_at timestamptz;
+ALTER TABLE IF EXISTS edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS delete_identity boolean NOT NULL DEFAULT false;
+
+-- 原索引无法同时保留注册和后续教务绑定的独立专项授权证据。
+DROP INDEX IF EXISTS idx_user_legal_document_version;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_legal_document_version_scene
+ON user_legal_consents(user_id, document, version, scene);
+
 CREATE UNIQUE INDEX IF NOT EXISTS ux_users_student_id_nonempty ON users(student_id) WHERE student_id <> '';
 CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email_nonempty ON users(email) WHERE email <> '';
 CREATE UNIQUE INDEX IF NOT EXISTS ux_users_edu_student_id_nonempty ON users(edu_student_id) WHERE edu_student_id <> '';

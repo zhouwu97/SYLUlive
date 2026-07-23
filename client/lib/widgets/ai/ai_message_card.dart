@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../models/ai_chat_message.dart';
+import '../../models/ai_source.dart';
 import '../../models/competition_action_draft.dart';
 import '../campus/campus_theme.dart';
 import 'ai_competition_plan_draft_card.dart';
@@ -11,11 +12,13 @@ class AiMessageCard extends StatelessWidget {
   final AiChatMessage message;
   final Future<void> Function(CompetitionPlanActionDraft draft)? onConfirmDraft;
   final void Function(int eventId)? onViewCompetition;
+  final Future<AiSourceContent> Function(int chunkId)? loadSourceContent;
   const AiMessageCard({
     super.key,
     required this.message,
     this.onConfirmDraft,
     this.onViewCompetition,
+    this.loadSourceContent,
   });
 
   @override
@@ -64,7 +67,7 @@ class AiMessageCard extends StatelessWidget {
                       : () => onViewCompetition!(draft.event.id),
                 ),
               for (final source in message.sources)
-                AiSourceCard(source: source),
+                AiSourceCard(source: source, loadContent: loadSourceContent),
             ],
           ),
         ),

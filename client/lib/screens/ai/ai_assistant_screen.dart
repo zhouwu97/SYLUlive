@@ -775,6 +775,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             message: message,
             onConfirmDraft: _confirmCompetitionDraft,
             onViewCompetition: _openCompetitionDetail,
+            loadSourceContent: widget.service.getSourceContent,
           ),
         if (_personalEvidence.isNotEmpty)
           AiEvidenceCard(evidence: _personalEvidence),
@@ -960,7 +961,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                           padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
                           children: [
                             for (final message in provider.messages)
-                              AiMessageCard(message: message),
+                              AiMessageCard(
+                                message: message,
+                                loadSourceContent:
+                                    widget.service.getSourceContent,
+                              ),
                             if (provider.isRunning)
                               AiTypingStatus(
                                 status: provider.friendlyRunStatus,

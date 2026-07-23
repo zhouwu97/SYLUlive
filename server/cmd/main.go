@@ -1742,6 +1742,7 @@ func main() {
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)
 			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
 			aiProtected.GET("/runs/:id/events", aiRuntimeHandler.Events)
+			aiProtected.GET("/sources/chunks/:chunk_id", aiRuntimeHandler.GetSourceChunk)
 			aiProtected.POST("/runs/:id/cancel", aiRuntimeHandler.CancelRun)
 			aiProtected.GET("/conversations", aiRuntimeHandler.ListConversations)
 			aiProtected.POST("/conversations", aiRuntimeHandler.CreateConversation)

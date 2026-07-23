@@ -1,0 +1,26 @@
+{
+  "version": "v0.5",
+  "generated_at": "2026-07-23",
+  "document_count": 12,
+  "new_school_full_text_document_count": 6,
+  "link_only_documents": 0,
+  "empty_content_documents": [],
+  "invalid_json_files": [],
+  "source_file_hash_count": 6,
+  "rule_count": 53,
+  "test_case_count": 14,
+  "checks": {
+    "all_import_docs_have_content": true,
+    "all_new_docs_have_source_file": true,
+    "competition_tables_structured": true,
+    "supersession_recorded": true,
+    "high_risk_rules_have_source_locator": true
+  },
+  "supersedes_knowledge_base_versions": [
+    "v0.1",
+    "v0.2",
+    "v0.3",
+    "v0.4"
+  ],
+  "production_note": "先将旧知识库文档标记为superseded或撤销发布，再导入v0.5，避免旧规则与新正式文件同时召回。"
+}

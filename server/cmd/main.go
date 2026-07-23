@@ -147,6 +147,7 @@ func main() {
 
 		&models.User{},
 		&models.EmailVerificationChallenge{},
+		&models.EmailVerificationRequest{},
 		&models.AccountSecurityAuditLog{},
 
 		&models.UserLegalConsent{},
@@ -462,6 +463,7 @@ func main() {
 	// 初始化处理器
 
 	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
+	eduBindingRecovery := services.NewEduBindingRecoveryService(db, handlers.PythonEduBindingRecoveryRemote{}, eduCredentialCleanupJobs, time.Now)
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
 
 	userHandler := handlers.NewUserHandler(db)
@@ -706,6 +708,7 @@ func main() {
 		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
 	}
 	eduCredentialCleanupCron := tasks.StartEduCredentialCleanupCron(appCtx, eduCredentialCleanupJobs)
+	eduBindingRecoveryCron := tasks.StartEduBindingRecoveryCron(appCtx, eduBindingRecovery)
 
 	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。
 	appPublic := r.Group("/api/app")
@@ -1776,6 +1779,7 @@ func main() {
 	stopApp()
 	examPaperStorageCron.Wait()
 	eduCredentialCleanupCron.Wait()
+	eduBindingRecoveryCron.Wait()
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
 	}

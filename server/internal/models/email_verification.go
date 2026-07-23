@@ -25,6 +25,16 @@ type EmailVerificationChallenge struct {
 	UpdatedAt     time.Time
 }
 
+// EmailVerificationRequest 记录公开验证码请求的限流证据。
+// 即使邮箱未绑定账号也会写入，避免响应路径泄露账号是否存在。
+type EmailVerificationRequest struct {
+	ID            uint      `gorm:"primaryKey"`
+	Email         string    `gorm:"size:320;not null;index"`
+	Purpose       string    `gorm:"size:32;not null;index"`
+	RequestIPHash string    `gorm:"size:64;not null;index"`
+	CreatedAt     time.Time `gorm:"index"`
+}
+
 // AccountSecurityAuditLog 记录身份和教务连接的安全关键操作。
 type AccountSecurityAuditLog struct {
 	ID        uint      `gorm:"primaryKey"`

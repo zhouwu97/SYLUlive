@@ -9,12 +9,99 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
+
+func TestRegisterWithEduIssuesUsableCurrentAuthSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.EduCredentialCleanupJob{}, &models.CheckIn{}); err != nil {
+		t.Fatalf("迁移测试表失败: %v", err)
+	}
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/edu/pre_verify":
+			_, _ = writer.Write([]byte(`{"success":true,"student_id":"2026000101","name":"测试学生"}`))
+		case "/api/edu/bind":
+			_, _ = writer.Write([]byte(`{"success":true,"student_id":"2026000101","name":"测试学生","grade":"2026","college":"计算机学院","major":"软件工程"}`))
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer upstream.Close()
+	previousConfig := EduServiceConfig
+	EduServiceConfig.BaseURL = upstream.URL
+	EduServiceConfig.Token = "test-token"
+	defer func() { EduServiceConfig = previousConfig }()
+
+	const jwtSecret = "register-with-edu-test-secret"
+	authHandler := NewAuthHandler(db, jwtSecret)
+	userHandler := NewUserHandler(db)
+	router := gin.New()
+	router.POST("/register", authHandler.RegisterWithEdu)
+	protected := router.Group("/protected")
+	protected.Use(middleware.AuthMiddleware(db, jwtSecret))
+	protected.GET("/profile", userHandler.GetProfile)
+
+	payload := []byte(`{
+		"student_id":"2026000101",
+		"edu_password":"edu-password",
+		"password":"app-password",
+		"user_agreement_accepted":true,
+		"privacy_policy_accepted":true,
+		"edu_data_consent_accepted":true
+	}`)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/register", bytes.NewReader(payload)))
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("注册失败: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var response struct {
+		Token string           `json:"token"`
+		User  SelfUserResponse `json:"user"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("解析注册响应失败: %v", err)
+	}
+	if response.Token == "" || !response.User.StudentVerified || !response.User.EduAuthorized || response.User.EduSessionState != "active" {
+		t.Fatalf("注册响应未反映已提交的教务身份: %#v", response)
+	}
+
+	claims := &middleware.Claims{}
+	parsed, err := jwt.ParseWithClaims(response.Token, claims, func(token *jwt.Token) (interface{}, error) {
+		return []byte(jwtSecret), nil
+	})
+	if err != nil || !parsed.Valid {
+		t.Fatalf("解析注册令牌失败: %v", err)
+	}
+	var stored models.User
+	if err := db.First(&stored, response.User.ID).Error; err != nil {
+		t.Fatalf("读取注册用户失败: %v", err)
+	}
+	if claims.TokenVersion != stored.TokenVersion {
+		t.Fatalf("令牌版本=%d，数据库版本=%d", claims.TokenVersion, stored.TokenVersion)
+	}
+
+	profileRecorder := httptest.NewRecorder()
+	profileRequest := httptest.NewRequest(http.MethodGet, "/protected/profile", nil)
+	profileRequest.Header.Set("Authorization", "Bearer "+response.Token)
+	router.ServeHTTP(profileRecorder, profileRequest)
+	if profileRecorder.Code != http.StatusOK {
+		t.Fatalf("新令牌无法访问受保护接口: status=%d body=%s", profileRecorder.Code, profileRecorder.Body.String())
+	}
+}
 
 func TestGetEduStatusCannotRestoreConcurrentRevocation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -90,6 +177,41 @@ func TestGetEduStatusCannotRestoreConcurrentRevocation(t *testing.T) {
 	}
 }
 
+func TestPrepareEduBindingReusesPersistedPendingGeneration(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}); err != nil {
+		t.Fatalf("迁移测试表失败: %v", err)
+	}
+	user := models.User{
+		StudentID: "2026000012", PasswordHash: "hash", AccountStatus: "active",
+		EduAuthorizationGeneration: 3,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("创建测试用户失败: %v", err)
+	}
+	firstGeneration, err := prepareEduBinding(db, user.ID)
+	if err != nil {
+		t.Fatalf("准备首次绑定失败: %v", err)
+	}
+	secondGeneration, err := prepareEduBinding(db, user.ID)
+	if err != nil {
+		t.Fatalf("准备重试绑定失败: %v", err)
+	}
+	if firstGeneration != 4 || secondGeneration != firstGeneration {
+		t.Fatalf("待绑定代次未被复用: first=%d second=%d", firstGeneration, secondGeneration)
+	}
+	var stored models.User
+	if err := db.First(&stored, user.ID).Error; err != nil {
+		t.Fatalf("读取待绑定用户失败: %v", err)
+	}
+	if stored.EduBindingState != "pending" || stored.EduBindingPendingGeneration != firstGeneration || stored.EduBindingStartedAt == nil {
+		t.Fatalf("待绑定状态未持久化: %#v", stored)
+	}
+}
+
 func TestLoginEduIsRetired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -151,6 +273,60 @@ func TestFailedEduRegistrationCompensationPersistsIdentityDeletionJob(t *testing
 	}
 	if !job.DeleteIdentity || job.ExpectedGeneration != 1 {
 		t.Fatalf("远端清理任务语义错误: %#v", job)
+	}
+}
+
+func TestRevokeEduAuthorizationRevokesEducationConsent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}, &models.AccountSecurityAuditLog{}); err != nil {
+		t.Fatalf("迁移测试表失败: %v", err)
+	}
+	user := models.User{
+		StudentID: "2026000004", PasswordHash: "hash", EduStudentID: "2026000004",
+		EduAuthorized: true, EduBound: true, EduSessionState: "active", EduAuthorizationGeneration: 1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("创建测试用户失败: %v", err)
+	}
+	if err := db.Create(&models.UserLegalConsent{
+		UserID: user.ID, Document: models.LegalDocumentEduDataConsent, Version: models.LegalDocumentVersion,
+		AcknowledgementType: "separate_consent", Scope: "education", Scene: "edu_binding",
+	}).Error; err != nil {
+		t.Fatalf("创建教务授权记录失败: %v", err)
+	}
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/edu/authorization" {
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"success":true}`))
+	}))
+	defer upstream.Close()
+	previousConfig := EduServiceConfig
+	EduServiceConfig.BaseURL = upstream.URL
+	EduServiceConfig.Token = "test-token"
+	defer func() { EduServiceConfig = previousConfig }()
+
+	handler := NewEduHandler(db)
+	router := gin.New()
+	router.DELETE("/authorization", func(context *gin.Context) { context.Set("user_id", user.ID) }, handler.RevokeEduAuthorization)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, "/authorization", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("撤销教务授权失败: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var consent models.UserLegalConsent
+	if err := db.Where("user_id = ? AND document = ?", user.ID, models.LegalDocumentEduDataConsent).First(&consent).Error; err != nil {
+		t.Fatalf("读取教务授权记录失败: %v", err)
+	}
+	if consent.RevokedAt == nil {
+		t.Fatal("撤销教务授权后专项同意记录仍处于有效状态")
 	}
 }
 

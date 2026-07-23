@@ -3,7 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 
 from models.database import EduUser, get_db
 from models.schemas import AuthorizationCleanupInput, BindInput, BindResponse, UnbindResponse, EduStatusResponse, EduSessionResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse
@@ -53,6 +53,38 @@ def _authorization_error(edu_user: EduUser | None) -> HTTPException:
         status_code=409,
         detail={"code": "EDU_SESSION_EXPIRED", "message": "教务会话已过期，请重新登录"},
     )
+
+
+async def _store_active_cookie(
+    db: AsyncSession,
+    edu_user: EduUser,
+    cookie: str,
+    credential_generation: int,
+    *,
+    auto_relogin: bool,
+) -> EduUser:
+    """仅在授权和代次未变化时写回外部登录取得的 Cookie。"""
+    result = await db.execute(
+        update(EduUser)
+        .where(
+            EduUser.id == edu_user.id,
+            EduUser.authorized.is_(True),
+            EduUser.credential_generation == credential_generation,
+            EduUser.session_state != "revoked",
+        )
+        .values(
+            cookie=encrypt_credential(cookie),
+            session_state="active",
+            auto_relogin=auto_relogin,
+            logged_out_at=None,
+        )
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise _authorization_error(None)
+    await db.commit()
+    await db.refresh(edu_user)
+    return edu_user
 
 
 @router.post("/pre_verify", response_model=PreVerifyResponse)
@@ -108,99 +140,88 @@ async def bind_edu_account(
     db: AsyncSession = Depends(get_db)
 ):
     """绑定教务账号"""
-    async with EduCrawler() as crawler:
-        try:
-            # 1. 登录教务系统
-            cookie = await crawler.login(input.student_id, input.password)
+    try:
+        result = await db.execute(select(EduUser).where(EduUser.user_id == user_id))
+        existing_user = result.scalar_one_or_none()
+        owner_result = await db.execute(
+            select(EduUser).where(EduUser.student_id == input.student_id, EduUser.user_id != user_id)
+        )
+        if owner_result.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "EDU_STUDENT_ALREADY_BOUND", "message": "该学号已绑定其他账号"},
+            )
+        if existing_user and input.credential_generation < existing_user.credential_generation:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "EDU_CREDENTIAL_GENERATION_STALE", "message": "教务授权请求已过期，请重试"},
+            )
+        if existing_user and input.credential_generation == existing_user.credential_generation:
+            if existing_user.student_id == input.student_id and existing_user.authorized:
+                return BindResponse(
+                    success=True, message="绑定已恢复", student_id=existing_user.student_id,
+                    name=existing_user.name, grade=existing_user.grade,
+                    college=existing_user.college, major=existing_user.major,
+                )
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "EDU_CREDENTIAL_GENERATION_STALE", "message": "教务授权请求已过期，请重试"},
+            )
 
-            # 2. 获取学生信息
+        async with EduCrawler() as crawler:
+            cookie = await crawler.login(input.student_id, input.password)
             student_info = await crawler.get_student_info(cookie, input.student_id)
 
-            # 3. 在写入凭据前检查学号归属，数据库唯一索引仍是最终防线。
-            result = await db.execute(
-                select(EduUser).where(EduUser.user_id == user_id)
-            )
-            existing_user = result.scalar_one_or_none()
-
-            owner_result = await db.execute(
-                select(EduUser).where(
-                    EduUser.student_id == input.student_id,
-                    EduUser.user_id != user_id,
-                )
-            )
-            if owner_result.scalar_one_or_none() is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail={"code": "EDU_STUDENT_ALREADY_BOUND", "message": "该学号已绑定其他账号"},
-                )
-
-            if existing_user:
-                if input.credential_generation <= existing_user.credential_generation:
-                    raise HTTPException(
-                        status_code=409,
-                        detail={"code": "EDU_CREDENTIAL_GENERATION_STALE", "message": "教务授权请求已过期，请重试"},
-                    )
-                # 更新
-                existing_user.student_id = input.student_id
-                existing_user.name = student_info.name
-                existing_user.encrypted_password = encrypt_credential(input.password)
-                existing_user.raw_password = None
-                existing_user.cookie = encrypt_credential(cookie)
-                existing_user.grade = student_info.grade
-                existing_user.college = student_info.college
-                existing_user.major = student_info.major
-                existing_user.bound = True
-                existing_user.authorized = True
-                existing_user.session_state = "active"
-                existing_user.auto_relogin = True
-                existing_user.authorized_at = existing_user.authorized_at or datetime.now()
-                existing_user.logged_out_at = None
-                existing_user.revoked_at = None
-                existing_user.credential_generation = input.credential_generation
-            else:
-                # 新建
-                edu_user = EduUser(
-                    user_id=user_id,
-                    student_id=input.student_id,
-                    name=student_info.name,
-                    encrypted_password=encrypt_credential(input.password),
-                    cookie=encrypt_credential(cookie),
-                    grade=student_info.grade,
-                    college=student_info.college,
-                    major=student_info.major,
-                    bound=True,
-                    authorized=True,
-                    session_state="active",
-                    auto_relogin=True,
-                    authorized_at=datetime.now(),
-                    credential_generation=input.credential_generation,
-                )
-                db.add(edu_user)
-
-            await db.commit()
-
-            return BindResponse(
-                success=True,
-                message="绑定成功",
-                student_id=input.student_id,
-                name=student_info.name,
-                grade=student_info.grade,
-                college=student_info.college,
-                major=student_info.major
-            )
-
-        except HTTPException:
-            await db.rollback()
-            raise
-        except LoginFailedError as e:
-            raise HTTPException(status_code=401, detail=_error_detail(e))
-        except CookieLapseError as e:
-            raise HTTPException(status_code=401, detail=_error_detail(e))
-        except NetworkError as e:
-            raise HTTPException(status_code=503, detail=_error_detail(e))
-        except Exception as e:
-            await db.rollback()
-            raise HTTPException(status_code=500, detail=f"绑定失败: {str(e)}")
+        if existing_user:
+            existing_user.student_id = input.student_id
+            existing_user.name = student_info.name
+            existing_user.encrypted_password = encrypt_credential(input.password)
+            existing_user.raw_password = None
+            existing_user.cookie = encrypt_credential(cookie)
+            existing_user.grade = student_info.grade
+            existing_user.college = student_info.college
+            existing_user.major = student_info.major
+            existing_user.bound = True
+            existing_user.authorized = True
+            existing_user.session_state = "active"
+            existing_user.auto_relogin = True
+            existing_user.authorized_at = existing_user.authorized_at or datetime.now()
+            existing_user.logged_out_at = None
+            existing_user.revoked_at = None
+            existing_user.credential_generation = input.credential_generation
+            existing_user.binding_state = "active"
+            existing_user.pending_credential_generation = 0
+            existing_user.binding_started_at = None
+        else:
+            db.add(EduUser(
+                user_id=user_id, student_id=input.student_id, name=student_info.name,
+                encrypted_password=encrypt_credential(input.password), cookie=encrypt_credential(cookie),
+                grade=student_info.grade, college=student_info.college, major=student_info.major,
+                bound=True, authorized=True, session_state="active", auto_relogin=True,
+                authorized_at=datetime.now(), credential_generation=input.credential_generation,
+                binding_state="active",
+            ))
+        await db.commit()
+        return BindResponse(
+            success=True, message="绑定成功", student_id=input.student_id,
+            name=student_info.name, grade=student_info.grade,
+            college=student_info.college, major=student_info.major,
+        )
+    except HTTPException:
+        await db.rollback()
+        raise
+    except LoginFailedError as e:
+        await db.rollback()
+        raise HTTPException(status_code=401, detail=_error_detail(e))
+    except CookieLapseError as e:
+        await db.rollback()
+        raise HTTPException(status_code=401, detail=_error_detail(e))
+    except NetworkError as e:
+        await db.rollback()
+        raise HTTPException(status_code=503, detail=_error_detail(e))
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"绑定失败: {str(e)}")
 
 
 @router.delete("/bind", response_model=EduSessionResponse)
@@ -220,15 +241,31 @@ async def unbind_edu_account(
             session_state="revoked", auto_relogin=False,
         )
 
-    edu_user.encrypted_password = None
-    edu_user.raw_password = None
-    edu_user.cookie = None
-    edu_user.bound = False
-    edu_user.authorized = False
-    edu_user.session_state = "revoked"
-    edu_user.auto_relogin = False
-    edu_user.revoked_at = datetime.now()
+    credential_generation = edu_user.credential_generation
+    result = await db.execute(
+        update(EduUser).where(
+            EduUser.id == edu_user.id,
+            EduUser.authorized.is_(True),
+            EduUser.credential_generation == credential_generation,
+        ).values(
+            encrypted_password=None,
+            raw_password=None,
+            cookie=None,
+            bound=False,
+            authorized=False,
+            session_state="revoked",
+            auto_relogin=False,
+            revoked_at=datetime.now(),
+        )
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        return EduSessionResponse(
+            success=True, message="旧教务解绑请求已失效", authorized=False,
+            session_state="revoked", auto_relogin=False,
+        )
     await db.commit()
+    await db.refresh(edu_user)
 
     return _session_response(edu_user, "教务授权已撤销")
 
@@ -252,6 +289,7 @@ async def get_edu_status(
         authorized=bool(edu_user.authorized),
         session_state=edu_user.session_state or "unbound",
         auto_relogin=bool(edu_user.auto_relogin),
+        credential_generation=edu_user.credential_generation,
         student_id=edu_user.student_id,
         name=edu_user.name,
         grade=edu_user.grade,
@@ -273,6 +311,8 @@ async def refresh_cookie(
 
     if not edu_user or not edu_user.authorized or not edu_user.auto_relogin or edu_user.session_state == "logged_out":
         raise _authorization_error(edu_user)
+    credential_generation = edu_user.credential_generation
+    student_id = edu_user.student_id
 
     try:
         password = decrypt_credential(edu_user.encrypted_password)
@@ -281,10 +321,8 @@ async def refresh_cookie(
 
     async with EduCrawler() as crawler:
         try:
-            new_cookie = await crawler.login(edu_user.student_id, password)
-            edu_user.cookie = encrypt_credential(new_cookie)
-            edu_user.session_state = "active"
-            await db.commit()
+            new_cookie = await crawler.login(student_id, password)
+            await _store_active_cookie(db, edu_user, new_cookie, credential_generation, auto_relogin=True)
             return _session_response(edu_user, "教务会话已刷新")
         except (LoginFailedError, CookieLapseError, NetworkError) as e:
             raise HTTPException(status_code=401, detail=_error_detail(e))
@@ -300,12 +338,20 @@ async def logout_edu_session(
     edu_user = result.scalar_one_or_none()
     if not edu_user or not edu_user.authorized:
         raise _authorization_error(edu_user)
+    credential_generation = edu_user.credential_generation
 
-    edu_user.cookie = None
-    edu_user.session_state = "logged_out"
-    edu_user.auto_relogin = False
-    edu_user.logged_out_at = datetime.now()
+    result = await db.execute(
+        update(EduUser).where(
+            EduUser.id == edu_user.id,
+            EduUser.authorized.is_(True),
+            EduUser.credential_generation == credential_generation,
+        ).values(cookie=None, session_state="logged_out", auto_relogin=False, logged_out_at=datetime.now())
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise _authorization_error(None)
     await db.commit()
+    await db.refresh(edu_user)
     return _session_response(edu_user, "已退出教务登录")
 
 
@@ -319,6 +365,8 @@ async def resume_edu_session(
     edu_user = result.scalar_one_or_none()
     if not edu_user or not edu_user.authorized or not edu_user.encrypted_password:
         raise _authorization_error(edu_user)
+    credential_generation = edu_user.credential_generation
+    student_id = edu_user.student_id
     try:
         password = decrypt_credential(edu_user.encrypted_password)
     except (RuntimeError, ValueError):
@@ -326,14 +374,10 @@ async def resume_edu_session(
 
     async with EduCrawler() as crawler:
         try:
-            cookie = await crawler.login(edu_user.student_id, password)
+            cookie = await crawler.login(student_id, password)
         except (LoginFailedError, CookieLapseError, NetworkError) as exc:
             raise HTTPException(status_code=401, detail=_error_detail(exc))
-    edu_user.cookie = encrypt_credential(cookie)
-    edu_user.session_state = "active"
-    edu_user.auto_relogin = True
-    edu_user.logged_out_at = None
-    await db.commit()
+    await _store_active_cookie(db, edu_user, cookie, credential_generation, auto_relogin=True)
     return _session_response(edu_user, "教务会话已恢复")
 
 
@@ -344,30 +388,33 @@ async def revoke_edu_authorization(
     db: AsyncSession = Depends(get_db),
 ):
     """仅撤销指定代次的授权，旧任务不会删除重绑后的凭据。"""
-    result = await db.execute(select(EduUser).where(EduUser.user_id == user_id))
-    edu_user = result.scalar_one_or_none()
-    if not edu_user or edu_user.credential_generation != input.expected_generation:
-        return EduSessionResponse(
-            success=True, message="旧教务清理任务已失效", authorized=False,
-            session_state="revoked", auto_relogin=False,
-        )
     if input.delete_identity:
-        await db.delete(edu_user)
+        result = await db.execute(delete(EduUser).where(
+            EduUser.user_id == user_id,
+            EduUser.credential_generation == input.expected_generation,
+        ))
+        if result.rowcount != 1:
+            await db.rollback()
+            return EduSessionResponse(success=True, message="旧教务清理任务已失效", authorized=False, session_state="revoked", auto_relogin=False)
         await db.commit()
         return EduSessionResponse(
             success=True, message="教务身份与凭据已删除", authorized=False,
             session_state="revoked", auto_relogin=False,
         )
-    edu_user.encrypted_password = None
-    edu_user.raw_password = None
-    edu_user.cookie = None
-    edu_user.bound = False
-    edu_user.authorized = False
-    edu_user.session_state = "revoked"
-    edu_user.auto_relogin = False
-    edu_user.revoked_at = datetime.now()
+    result = await db.execute(
+        update(EduUser).where(
+            EduUser.user_id == user_id,
+            EduUser.credential_generation == input.expected_generation,
+        ).values(
+            encrypted_password=None, raw_password=None, cookie=None, bound=False,
+            authorized=False, session_state="revoked", auto_relogin=False, revoked_at=datetime.now(),
+        )
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        return EduSessionResponse(success=True, message="旧教务清理任务已失效", authorized=False, session_state="revoked", auto_relogin=False)
     await db.commit()
-    return _session_response(edu_user, "教务授权已撤销")
+    return EduSessionResponse(success=True, message="教务授权已撤销", authorized=False, session_state="revoked", auto_relogin=False)
 
 
 @router.post("/login_edu", response_model=LoginEduResponse)

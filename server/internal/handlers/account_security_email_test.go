@@ -100,3 +100,52 @@ func TestEmailResetChallengeCannotResetNewEmailOwner(t *testing.T) {
 		t.Fatal("业务校验失败时验证码不应被消费")
 	}
 }
+
+func TestPublicEmailCodeRequestsRateLimitExistingAndUnknownAddressesEqually(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开数据库失败: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}); err != nil {
+		t.Fatalf("迁移公开验证码测试表失败: %v", err)
+	}
+	now := time.Date(2026, time.July, 23, 12, 0, 0, 0, time.UTC)
+	mailer := &accountSecurityTestMailer{}
+	verification := services.NewEmailVerificationService(db, mailer, "test-ip-secret", func() time.Time { return now })
+	verifiedAt := now
+	existing := models.User{StudentID: "", Email: "existing@example.com", EmailVerifiedAt: &verifiedAt, PasswordHash: "hash"}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatalf("创建已有邮箱账号失败: %v", err)
+	}
+	handler := NewAuthHandlerWithEmailVerification(db, "test-secret", verification)
+	router := gin.New()
+	router.POST("/register-code", handler.RequestEmailRegistrationCode)
+	router.POST("/reset-code", handler.RequestEmailPasswordResetCode)
+
+	testCases := []struct {
+		path    string
+		purpose string
+	}{
+		{path: "/register-code", purpose: models.EmailVerificationPurposeRegister},
+		{path: "/reset-code", purpose: models.EmailVerificationPurposeResetPassword},
+	}
+	for _, testCase := range testCases {
+		for _, email := range []string{"existing@example.com", "unknown@example.com"} {
+			payload, err := json.Marshal(map[string]string{"email": email, "purpose": testCase.purpose})
+			if err != nil {
+				t.Fatalf("序列化公开验证码请求失败: %v", err)
+			}
+			first := httptest.NewRecorder()
+			router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, testCase.path, bytes.NewReader(payload)))
+			if first.Code != http.StatusOK {
+				t.Fatalf("首次公开验证码请求失败: path=%s email=%s status=%d body=%s", testCase.path, email, first.Code, first.Body.String())
+			}
+			second := httptest.NewRecorder()
+			router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, testCase.path, bytes.NewReader(payload)))
+			if second.Code != http.StatusTooManyRequests || !containsJSONCode(second.Body.Bytes(), "EMAIL_VERIFICATION_RATE_LIMITED") {
+				t.Fatalf("重复公开验证码请求未获得统一限流: path=%s email=%s status=%d body=%s", testCase.path, email, second.Code, second.Body.String())
+			}
+		}
+	}
+}

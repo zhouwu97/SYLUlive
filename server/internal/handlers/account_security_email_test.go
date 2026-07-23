@@ -141,6 +141,12 @@ func TestPublicEmailCodeRequestsRateLimitExistingAndUnknownAddressesEqually(t *t
 			if first.Code != http.StatusOK {
 				t.Fatalf("首次公开验证码请求失败: path=%s email=%s status=%d body=%s", testCase.path, email, first.Code, first.Body.String())
 			}
+			shouldSend := (testCase.purpose == models.EmailVerificationPurposeRegister && email == "unknown@example.com") ||
+				(testCase.purpose == models.EmailVerificationPurposeResetPassword && email == "existing@example.com")
+			_, sent := mailer.codes[email+":"+testCase.purpose]
+			if sent != shouldSend {
+				t.Fatalf("公开验证码邮件发送对象错误: path=%s email=%s sent=%t want=%t", testCase.path, email, sent, shouldSend)
+			}
 			second := httptest.NewRecorder()
 			router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, testCase.path, bytes.NewReader(payload)))
 			if second.Code != http.StatusTooManyRequests || !containsJSONCode(second.Body.Bytes(), "EMAIL_VERIFICATION_RATE_LIMITED") {

@@ -48,6 +48,7 @@ func TestAccountIdentityMigrationPreservesLegacyQQAccounts(t *testing.T) {
 
 	assertLegacyQQMigration(t, db)
 	assertStudentIdentityPartialUniqueIndex(t, db)
+	assertEduBindingPendingStudentIDColumn(t, db)
 }
 
 func createLegacyAccountIdentitySchema(t *testing.T, db *sql.DB) {
@@ -201,5 +202,24 @@ func assertStudentIdentityPartialUniqueIndex(t *testing.T, db *sql.DB) {
 	}
 	if _, err := db.Exec(`INSERT INTO users (student_id) VALUES ('2026000002')`); err == nil {
 		t.Fatal("部分唯一索引应拒绝重复的非空学号")
+	}
+}
+
+func assertEduBindingPendingStudentIDColumn(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var nullable string
+	var defaultValue sql.NullString
+	err := db.QueryRow(`
+		SELECT is_nullable, column_default
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND table_name = 'users'
+		  AND column_name = 'edu_binding_pending_student_id'
+	`).Scan(&nullable, &defaultValue)
+	if err != nil {
+		t.Fatalf("迁移未创建待绑定教务学号字段: %v", err)
+	}
+	if nullable != "NO" || !defaultValue.Valid || defaultValue.String == "" {
+		t.Fatalf("待绑定教务学号字段约束错误: nullable=%s default=%q", nullable, defaultValue.String)
 	}
 }

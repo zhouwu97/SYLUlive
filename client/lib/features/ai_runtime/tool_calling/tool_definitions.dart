@@ -1,4 +1,5 @@
 import 'tool_call_models.dart';
+import '../skills/competition_plan_action_skill.dart';
 
 /// 与本地 Validator 同源维护的固定 Tool Schema，模型不能动态新增能力。
 List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
@@ -15,7 +16,7 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
         parameters: _object(<String, dynamic>{
           'week_containing': <String, dynamic>{
             'type': 'string',
-            'format': 'date',
+            'format': 'date'
           },
         }),
       ),
@@ -50,12 +51,34 @@ List<ToolDefinition> buildStageSixToolDefinitions() => <ToolDefinition>[
           required: const <String>['keyword'],
         ),
       ),
+      ToolDefinition(
+        id: 'get_competition_capability_profile',
+        description: '读取用户明确授权的竞赛目标和结构化能力画像',
+        parameters: _object(const <String, dynamic>{}),
+      ),
+      ToolDefinition(
+        id: 'explain_competition_matches',
+        description: '读取并解释平台已有的确定性“适合我”排序，不重新评分',
+        parameters: _object(const <String, dynamic>{}),
+      ),
+      ToolDefinition(
+        id: DraftAddCompetitionToPlanSkill.skillId,
+        description: '基于服务端确定性推荐创建一个待用户确认的竞赛计划草稿，不会直接加入计划',
+        parameters: _object(
+          <String, dynamic>{
+            'event_id': const <String, dynamic>{
+              'type': 'integer',
+              'minimum': 1,
+            },
+          },
+          required: const <String>['event_id'],
+        ),
+      ),
       ...<String, String>{
         'personal.academic.gpa': '按固定公式计算 GPA 并列出纳入和排除课程',
         'personal.academic.credit_summary': '确定性统计已修、通过和未通过学分',
         'personal.academic.failure_risk': '列出未通过和无法确认的课程',
         'personal.graduation.readiness': '按已审核培养方案生成毕业清单',
-        'personal.competition.fit': '按资格和证据门槛计算竞赛适配度',
       }.entries.map(
             (entry) => ToolDefinition(
               id: entry.key,

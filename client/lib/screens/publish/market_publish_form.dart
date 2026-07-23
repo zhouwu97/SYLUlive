@@ -411,7 +411,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (_isLoading) return;
 
     final auth = context.read<AuthProvider>();
-    if (auth.user?.eduBound != true) {
+    if (auth.user?.studentVerified != true) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

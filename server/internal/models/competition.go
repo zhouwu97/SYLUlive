@@ -37,6 +37,8 @@ type CompetitionEvent struct {
 	SchoolRecognitionStatus string `gorm:"size:32;index" json:"school_recognition_status"`
 	SchoolRecognitionGrade  string `gorm:"size:16;index" json:"school_recognition_grade"`
 
+	// CompetitionRating 表示赛事本身的价值评级；RecommendationLevel 仅保留给旧客户端兼容。
+	CompetitionRating    string `gorm:"size:8;index" json:"competition_rating"`
 	RecommendationLevel  string `gorm:"size:8;index" json:"recommendation_level"`
 	ImportanceScore      int    `gorm:"default:0;index" json:"importance_score"`
 	RecommendationReason string `gorm:"size:1000" json:"recommendation_reason"`
@@ -90,9 +92,151 @@ type CompetitionEvent struct {
 
 	FitLevel   string   `gorm:"-" json:"fit_level,omitempty"`
 	FitReasons []string `gorm:"-" json:"fit_reasons,omitempty"`
+	// PersonalizedScore 与赛事人工评级完全独立，仅在“适合我”响应中赋值。
+	PersonalizedScore  *int   `gorm:"-" json:"personalized_score,omitempty"`
+	RecommendationTier string `gorm:"-" json:"recommendation_tier,omitempty"`
 }
 
 func (CompetitionEvent) TableName() string { return "competition_events" }
+
+// UserCompetitionPreference 保存用户当前的竞赛目标与投入偏好，每个用户只保留一份。
+type UserCompetitionPreference struct {
+	ID     uint `gorm:"primaryKey" json:"id"`
+	UserID uint `gorm:"not null;uniqueIndex" json:"user_id"`
+
+	Goals          datatypes.JSON `gorm:"not null" json:"goals"`
+	DirectionTags  datatypes.JSON `gorm:"not null" json:"direction_tags"`
+	SkillTags      datatypes.JSON `gorm:"not null" json:"skill_tags"`
+	PreferredRoles datatypes.JSON `gorm:"not null" json:"preferred_roles"`
+
+	WeeklyHours            int  `gorm:"not null;default:0" json:"weekly_hours"`
+	AcceptLongTermTraining bool `gorm:"not null;default:false" json:"accept_long_term_training"`
+
+	CareerDirection string `gorm:"size:80" json:"career_direction"`
+	ExperienceLevel string `gorm:"size:20;not null;default:'beginner'" json:"experience_level"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (UserCompetitionPreference) TableName() string { return "user_competition_preferences" }
+
+// CompetitionRecommendationSnapshot 记录 AI 提议操作时所依据的确定性推荐结果。
+// 快照只保存解释与重新校验所需字段，不保存证明材料、审核信息或完整能力画像。
+type CompetitionRecommendationSnapshot struct {
+	ID     uint `gorm:"primaryKey" json:"id"`
+	UserID uint `gorm:"not null;index" json:"-"`
+
+	EventID      uint   `gorm:"not null;index" json:"event_id"`
+	EventVersion int    `gorm:"not null" json:"event_version"`
+	EventTitle   string `gorm:"size:200;not null" json:"event_title"`
+
+	PersonalizedScore  *int           `json:"personalized_score"`
+	RecommendationTier string         `gorm:"size:24" json:"recommendation_tier"`
+	FitReasons         datatypes.JSON `gorm:"not null" json:"fit_reasons"`
+
+	PreferenceUpdatedAt *time.Time `json:"preference_updated_at,omitempty"`
+	CapabilityHash      string     `gorm:"size:64;not null" json:"-"`
+	EventCriticalHash   string     `gorm:"size:64;not null" json:"-"`
+
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `gorm:"not null;index" json:"expires_at"`
+}
+
+func (CompetitionRecommendationSnapshot) TableName() string {
+	return "competition_recommendation_snapshots"
+}
+
+// UserCompetitionAward 保存用户私有的竞赛经历和材料核验状态。
+type UserCompetitionAward struct {
+	ID     uint `gorm:"primaryKey" json:"id"`
+	UserID uint `gorm:"not null;index" json:"-"`
+
+	CompetitionEventID *uint  `gorm:"index" json:"competition_event_id"`
+	CompetitionTitle   string `gorm:"size:200;not null" json:"competition_title"`
+	TrackName          string `gorm:"size:100" json:"track_name"`
+
+	CompetitionYear  int    `gorm:"not null;index" json:"competition_year"`
+	AwardName        string `gorm:"size:100;not null" json:"award_name"`
+	AwardLevel       string `gorm:"size:50" json:"award_level"`
+	CompetitionStage string `gorm:"size:24;not null" json:"competition_stage"`
+
+	Role                string         `gorm:"size:24;not null" json:"role"`
+	SkillTags           datatypes.JSON `gorm:"not null" json:"skill_tags"`
+	ContributionSummary string         `gorm:"size:1000" json:"contribution_summary"`
+
+	EvidenceFileIDs datatypes.JSON `gorm:"not null" json:"evidence_file_ids"`
+
+	VerificationStatus string     `gorm:"size:24;not null;default:'self_reported';index" json:"verification_status"`
+	VerificationNote   string     `gorm:"size:500" json:"verification_note"`
+	VerifiedBy         *uint      `gorm:"index" json:"verified_by,omitempty"`
+	VerifiedAt         *time.Time `json:"verified_at,omitempty"`
+
+	Visibility string `gorm:"size:24;not null;default:'private';index" json:"visibility"`
+
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+func (UserCompetitionAward) TableName() string { return "user_competition_awards" }
+
+// CompetitionAwardVerificationLog 记录竞赛经历每一次核验状态变化，日志只增不改。
+type CompetitionAwardVerificationLog struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	AwardID    uint      `gorm:"not null;index" json:"award_id"`
+	UserID     uint      `gorm:"not null;index" json:"user_id"`
+	OperatorID *uint     `gorm:"index" json:"operator_id,omitempty"`
+	FromStatus string    `gorm:"size:24;not null" json:"from_status"`
+	ToStatus   string    `gorm:"size:24;not null;index" json:"to_status"`
+	Note       string    `gorm:"size:500" json:"note"`
+	CreatedAt  time.Time `gorm:"index" json:"created_at"`
+}
+
+func (CompetitionAwardVerificationLog) TableName() string {
+	return "competition_award_verification_logs"
+}
+
+// CompetitionAwardEvidenceFile 保存竞赛证明材料的私有文件元数据。
+// 同一用户可复用相同内容，不同用户之间不共享文件记录或授权。
+type CompetitionAwardEvidenceFile struct {
+	ID         uint       `gorm:"primaryKey" json:"id"`
+	UploaderID uint       `gorm:"not null;index;uniqueIndex:idx_award_evidence_uploader_hash" json:"-"`
+	Hash       string     `gorm:"size:64;not null;uniqueIndex:idx_award_evidence_uploader_hash" json:"-"`
+	Path       string     `gorm:"size:500;not null;uniqueIndex" json:"-"`
+	MimeType   string     `gorm:"size:100;not null" json:"mime_type"`
+	Size       int64      `gorm:"not null" json:"size"`
+	Status     string     `gorm:"size:20;not null;default:'temporary';index" json:"status"`
+	ClaimedAt  *time.Time `json:"claimed_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+func (CompetitionAwardEvidenceFile) TableName() string {
+	return "competition_award_evidence_files"
+}
+
+// CompetitionAwardEvidence 关联竞赛经历与私有证明材料文件。
+type CompetitionAwardEvidence struct {
+	ID        uint      `gorm:"primaryKey" json:"-"`
+	AwardID   uint      `gorm:"not null;uniqueIndex:idx_award_evidence" json:"award_id"`
+	FileID    uint      `gorm:"not null;uniqueIndex:idx_award_evidence;index" json:"file_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (CompetitionAwardEvidence) TableName() string { return "competition_award_evidences" }
+
+// CompetitionAwardEvidenceAccessLog 记录审核人员读取私密证明材料的行为。
+type CompetitionAwardEvidenceAccessLog struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	AwardID   uint      `gorm:"not null;index" json:"award_id"`
+	FileID    uint      `gorm:"not null;index" json:"file_id"`
+	ViewerID  uint      `gorm:"not null;index" json:"viewer_id"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+}
+
+func (CompetitionAwardEvidenceAccessLog) TableName() string {
+	return "competition_award_evidence_access_logs"
+}
 
 type CompetitionEventAttachment struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`

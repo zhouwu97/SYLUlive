@@ -4,7 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../../platform/contracts/external_navigator.dart';
 import 'evaluation_constants.dart';
 import 'evaluation_models.dart';
 import 'evaluation_page_detector.dart';
@@ -327,7 +327,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
         if (scheme != 'http' && scheme != 'https') {
           // Non-http schemes: open in system browser (tel:, mailto:, intent:, etc.)
           try {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
+            await ExternalNavigator.current().open(uri);
           } catch (_) {}
           return NavigationActionPolicy.CANCEL;
         }
@@ -338,7 +338,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
 
         // Disallowed external URL → system browser
         try {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
+          await ExternalNavigator.current().open(uri);
         } catch (_) {}
         return NavigationActionPolicy.CANCEL;
       },

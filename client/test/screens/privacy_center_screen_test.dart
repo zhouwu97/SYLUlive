@@ -31,19 +31,10 @@ class _PrivacyStore implements AuthCredentialStore {
   Future<void> clear() async {}
 
   @override
-  Future<void> deleteEduPassword(String studentId) async {}
-
-  @override
   Future<StoredAuthCredentials> read() async => const StoredAuthCredentials();
 
   @override
-  Future<String?> readEduPassword(String studentId) async => null;
-
-  @override
   Future<void> write({required String token, required String userJson}) async {}
-
-  @override
-  Future<void> writeEduPassword(String studentId, String password) async {}
 }
 
 void main() {

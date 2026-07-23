@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/adapters/academic_gateway_adapter.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/adapters/erke_gateway_adapter.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/adapters/physical_gateway_adapter.dart';
@@ -18,6 +17,8 @@ import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dar
 import 'package:shenliyuan/services/account_session_cleanup_coordinator.dart';
 
 import '../../../../helpers/personal_snapshot_test_fakes.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -30,7 +31,7 @@ void main() {
   late IncrementingRandomBytes random;
 
   setUp(() {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
     secureStore = MemoryPersonalSnapshotSecureStore();
     files = MemoryPersonalSnapshotFileBackend();
     random = IncrementingRandomBytes();

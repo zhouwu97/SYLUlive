@@ -30,9 +30,13 @@ class CompetitionEvent {
   final String competitionLevel;
   final String schoolRecognitionStatus;
   final String schoolRecognitionGrade;
+  final String competitionRating;
   final String recommendationLevel;
   final int importanceScore;
   final String recommendationReason;
+  final double? manualRating;
+  final String evidenceStatus;
+  final bool strongRecommendationReady;
   final String organizer;
   final String hostUnit;
   final String targetAudience;
@@ -41,6 +45,8 @@ class CompetitionEvent {
   final List<String> eligibleMajors;
   final String fitLevel;
   final List<String> fitReasons;
+  final int? personalizedScore;
+  final String recommendationTier;
   final String participationType;
   final int? teamSizeMin;
   final int? teamSizeMax;
@@ -75,9 +81,13 @@ class CompetitionEvent {
     this.competitionLevel = '',
     this.schoolRecognitionStatus = '',
     this.schoolRecognitionGrade = '',
+    this.competitionRating = '',
     this.recommendationLevel = '',
     this.importanceScore = 0,
     this.recommendationReason = '',
+    this.manualRating,
+    this.evidenceStatus = 'pending',
+    this.strongRecommendationReady = false,
     this.organizer = '',
     this.hostUnit = '',
     this.targetAudience = '',
@@ -86,6 +96,8 @@ class CompetitionEvent {
     this.eligibleMajors = const [],
     this.fitLevel = '',
     this.fitReasons = const [],
+    this.personalizedScore,
+    this.recommendationTier = '',
     this.participationType = '',
     this.teamSizeMin,
     this.teamSizeMax,
@@ -114,6 +126,15 @@ class CompetitionEvent {
 
   factory CompetitionEvent.fromJson(Map<String, dynamic> json) {
     final rawTimeStatus = json['time_status'];
+    final rawCompetitionRating = '${json['competition_rating'] ?? ''}'.trim();
+    final rawRecommendationLevel =
+        '${json['recommendation_level'] ?? ''}'.trim();
+    final competitionRating = rawCompetitionRating.isNotEmpty
+        ? rawCompetitionRating
+        : rawRecommendationLevel;
+    final recommendationLevel = rawRecommendationLevel.isNotEmpty
+        ? rawRecommendationLevel
+        : rawCompetitionRating;
     return CompetitionEvent(
       id: json['id'] ?? 0,
       title: json['title'] ?? '',
@@ -125,9 +146,13 @@ class CompetitionEvent {
       competitionLevel: json['competition_level'] ?? '',
       schoolRecognitionStatus: json['school_recognition_status'] ?? '',
       schoolRecognitionGrade: json['school_recognition_grade'] ?? '',
-      recommendationLevel: json['recommendation_level'] ?? '',
+      competitionRating: competitionRating,
+      recommendationLevel: recommendationLevel,
       importanceScore: json['importance_score'] ?? 0,
       recommendationReason: json['recommendation_reason'] ?? '',
+      manualRating: (json['manual_rating'] as num?)?.toDouble(),
+      evidenceStatus: json['evidence_status'] ?? 'pending',
+      strongRecommendationReady: json['strong_recommendation_ready'] == true,
       organizer: json['organizer'] ?? '',
       hostUnit: json['host_unit'] ?? '',
       targetAudience: json['target_audience'] ?? '',
@@ -136,6 +161,8 @@ class CompetitionEvent {
       eligibleMajors: _stringList(json['eligible_majors']),
       fitLevel: json['fit_level'] ?? '',
       fitReasons: _stringList(json['fit_reasons']),
+      personalizedScore: (json['personalized_score'] as num?)?.toInt(),
+      recommendationTier: json['recommendation_tier'] ?? '',
       participationType: json['participation_type'] ?? '',
       teamSizeMin: (json['team_size_min'] as num?)?.toInt(),
       teamSizeMax: (json['team_size_max'] as num?)?.toInt(),
@@ -236,6 +263,7 @@ class CompetitionEvent {
       'competition_level': competitionLevel,
       'school_recognition_status': schoolRecognitionStatus,
       'school_recognition_grade': schoolRecognitionGrade,
+      'competition_rating': competitionRating,
       'recommendation_level': recommendationLevel,
       'importance_score': importanceScore,
       'recommendation_reason': recommendationReason,
@@ -245,6 +273,11 @@ class CompetitionEvent {
       'eligible_entry_years': eligibleEntryYears,
       'eligible_colleges': eligibleColleges,
       'eligible_majors': eligibleMajors,
+      if (fitLevel.isNotEmpty) 'fit_level': fitLevel,
+      if (fitReasons.isNotEmpty) 'fit_reasons': fitReasons,
+      if (personalizedScore != null) 'personalized_score': personalizedScore,
+      if (recommendationTier.isNotEmpty)
+        'recommendation_tier': recommendationTier,
       'participation_type': participationType,
       'team_size_min': teamSizeMin,
       'team_size_max': teamSizeMax,

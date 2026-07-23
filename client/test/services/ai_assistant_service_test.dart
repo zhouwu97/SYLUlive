@@ -72,4 +72,41 @@ void main() {
       ),
     );
   });
+
+  test('来源正文按 chunk id 缓存并合并并发请求', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    var requestCount = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestCount++;
+          expect(options.path, '/ai/sources/chunks/26');
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'chunk_id': 26,
+                'document_id': 2,
+                'title': '补考成绩规则',
+                'content': '补考正文',
+              },
+            ),
+          );
+        },
+      ),
+    );
+    final service = AiAssistantService(dio);
+
+    final firstPair = await Future.wait([
+      service.getSourceContent(26),
+      service.getSourceContent(26),
+    ]);
+    final cached = await service.getSourceContent(26);
+
+    expect(requestCount, 1);
+    expect(firstPair.first.content, '补考正文');
+    expect(identical(firstPair.first, firstPair.last), isTrue);
+    expect(identical(firstPair.first, cached), isTrue);
+  });
 }

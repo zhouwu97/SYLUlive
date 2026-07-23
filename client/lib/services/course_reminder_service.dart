@@ -4,11 +4,12 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../providers/course_schedule_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 class CourseReminderResult {
   final bool enabled;
@@ -136,12 +137,12 @@ class CourseReminderService {
   }
 
   Future<bool> isEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     return prefs.getBool(_enabledKey) ?? false;
   }
 
   Future<int> getAdvanceMinutes() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     return prefs.getInt(_advanceMinutesKey) ?? 5;
   }
 
@@ -150,7 +151,7 @@ class CourseReminderService {
     required List<CourseBlock> courses,
     required DateTime? semesterStart,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setInt(_advanceMinutesKey, minutes);
     if (await isEnabled()) {
       await reschedule(courses: courses, semesterStart: semesterStart);
@@ -158,7 +159,7 @@ class CourseReminderService {
   }
 
   Future<int> pendingCourseReminderCount() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     return prefs.getStringList(_notificationIdsKey)?.length ?? 0;
   }
 
@@ -168,7 +169,7 @@ class CourseReminderService {
     required DateTime? semesterStart,
   }) async {
     await initialize();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
 
     if (!enabled) {
       await prefs.setBool(_enabledKey, false);
@@ -258,7 +259,7 @@ class CourseReminderService {
       }
     }
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setStringList(_notificationIdsKey, ids);
 
     return CourseReminderResult(
@@ -371,7 +372,7 @@ class CourseReminderService {
   }
 
   Future<void> cancelCourseReminders() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final ids = prefs.getStringList(_notificationIdsKey) ?? const <String>[];
     final notificationIds = <int>[];
     for (final id in ids) {

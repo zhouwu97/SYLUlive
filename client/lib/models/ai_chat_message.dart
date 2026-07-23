@@ -1,4 +1,5 @@
 import 'ai_source.dart';
+import 'competition_action_draft.dart';
 
 enum AiMessageRole { user, assistant }
 
@@ -11,6 +12,7 @@ class AiChatMessage {
   final String content;
   final AiMessageStatus status;
   final List<AiSource> sources;
+  final List<CompetitionPlanActionDraft> actionDrafts;
   final DateTime createdAt;
 
   const AiChatMessage({
@@ -21,12 +23,14 @@ class AiChatMessage {
     required this.status,
     required this.createdAt,
     this.sources = const [],
+    this.actionDrafts = const [],
   });
 
   AiChatMessage copyWith({
     String? content,
     AiMessageStatus? status,
     List<AiSource>? sources,
+    List<CompetitionPlanActionDraft>? actionDrafts,
   }) {
     return AiChatMessage(
       id: id,
@@ -36,6 +40,7 @@ class AiChatMessage {
       status: status ?? this.status,
       createdAt: createdAt,
       sources: sources ?? this.sources,
+      actionDrafts: actionDrafts ?? this.actionDrafts,
     );
   }
 }

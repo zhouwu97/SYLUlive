@@ -19,9 +19,19 @@ class User {
   final bool legalConsentsRequired;
   final bool pushEnabled;
 
+  // 账号身份与找回能力，仅在本人响应中由服务端返回。
+  final bool studentVerified;
+  final String emailMasked;
+  final bool emailBound;
+  final List<String> loginMethods;
+  final bool canResetViaEmail;
+  final bool canResetViaEdu;
+
   // 教务系统绑定信息
   final String eduStudentId;
   final bool eduBound;
+  final bool eduAuthorized;
+  final String eduSessionState;
   final String eduGrade;
   final String eduCollege;
   final String eduMajor;
@@ -51,8 +61,16 @@ class User {
     this.legalConsentsActive = true,
     this.legalConsentsRequired = false,
     this.pushEnabled = false,
+    this.studentVerified = false,
+    this.emailMasked = '',
+    this.emailBound = false,
+    this.loginMethods = const [],
+    this.canResetViaEmail = false,
+    this.canResetViaEdu = false,
     this.eduStudentId = '',
     this.eduBound = false,
+    this.eduAuthorized = false,
+    this.eduSessionState = 'unbound',
     this.eduGrade = '',
     this.eduCollege = '',
     this.eduMajor = '',
@@ -83,8 +101,23 @@ class User {
       legalConsentsRequired: json['legal_consents_required'] == true ||
           !json.containsKey('legal_consents_active'),
       pushEnabled: json['push_enabled'] == true,
+      // 兼容尚未升级的服务端：旧 edu_bound 仅作为展示退化值，
+      // 业务权限统一读取 studentVerified。
+      studentVerified: json['student_verified'] == true ||
+          (!json.containsKey('student_verified') && json['edu_bound'] == true),
+      emailMasked: json['email_masked']?.toString() ?? '',
+      emailBound: json['email_bound'] == true,
+      loginMethods: (json['login_methods'] as List? ?? const [])
+          .map((value) => value.toString())
+          .toList(growable: false),
+      canResetViaEmail: json['can_reset_via_email'] == true,
+      canResetViaEdu: json['can_reset_via_edu'] == true,
       eduStudentId: json['edu_student_id'] ?? '',
       eduBound: json['edu_bound'] ?? false,
+      eduAuthorized: json['edu_authorized'] == true ||
+          (!json.containsKey('edu_authorized') && json['edu_bound'] == true),
+      eduSessionState: json['edu_session_state']?.toString() ??
+          ((json['edu_bound'] == true) ? 'active' : 'unbound'),
       eduGrade: json['edu_grade'] ?? '',
       eduCollege: json['edu_college'] ?? '',
       eduMajor: json['edu_major'] ?? '',
@@ -115,8 +148,16 @@ class User {
       'legal_consents_active': legalConsentsActive,
       'legal_consents_required': legalConsentsRequired,
       'push_enabled': pushEnabled,
+      'student_verified': studentVerified,
+      'email_masked': emailMasked,
+      'email_bound': emailBound,
+      'login_methods': loginMethods,
+      'can_reset_via_email': canResetViaEmail,
+      'can_reset_via_edu': canResetViaEdu,
       'edu_student_id': eduStudentId,
       'edu_bound': eduBound,
+      'edu_authorized': eduAuthorized,
+      'edu_session_state': eduSessionState,
       'edu_grade': eduGrade,
       'edu_college': eduCollege,
       'edu_major': eduMajor,

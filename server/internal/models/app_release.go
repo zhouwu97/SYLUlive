@@ -16,6 +16,12 @@ const (
 	AppReleaseChannelStable   = "stable"
 )
 
+// 发布交付模式常量。
+const (
+	AppReleaseDeliveryModeDirectPackage  = "direct_package"
+	AppReleaseDeliveryModeExternalMarket = "external_market"
+)
+
 // AppRelease 表示由服务器托管的单个 APK 版本。
 // 已发布记录是对应 platform/channel/versionCode 是否可下载的唯一依据；渠道中
 // versionCode 最高的已发布版本决定更新目标，MinimumSupportedVersionCode 决定
@@ -38,6 +44,9 @@ type AppRelease struct {
 	StorageKey string `gorm:"type:varchar(255);not null" json:"storage_key"`
 	FileSize   int64  `gorm:"not null" json:"file_size"`
 	SHA256     string `gorm:"type:char(64);not null" json:"sha256"`
+
+	DeliveryMode string `gorm:"type:varchar(32);not null;default:'direct_package'" json:"delivery_mode"`
+	ActionURL    string `gorm:"type:text;not null;default:''" json:"action_url"`
 
 	Status string `gorm:"type:varchar(16);not null;index" json:"status"`
 

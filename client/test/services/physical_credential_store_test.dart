@@ -1,8 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/services/physical_credential_store.dart';
+import 'package:shenliyuan/platform/contracts/secure_store.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-class _MemorySecureStore implements PhysicalSecureStore {
+
+class _MemorySecureStore implements AppSecretStore {
   final Map<String, String> values = <String, String>{};
 
   @override
@@ -19,7 +21,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('读取时将旧版体测明文密码迁移到安全存储', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
+    AppPreferencesStore.setMockInitialValues(<String, Object>{
       'sylu_physical_test_pwd_20260001': 'legacy-password',
     });
     final secure = _MemorySecureStore();
@@ -30,12 +32,12 @@ void main() {
       secure.values['secure_physical_test_pwd_20260001'],
       'legacy-password',
     );
-    final preferences = await SharedPreferences.getInstance();
+    final preferences = await AppPreferencesStore.getInstance();
     expect(preferences.containsKey('sylu_physical_test_pwd_20260001'), isFalse);
   });
 
   test('保存与删除均清理旧版明文键', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
+    AppPreferencesStore.setMockInitialValues(<String, Object>{
       'sylu_physical_test_pwd_20260001': 'old-password',
     });
     final secure = _MemorySecureStore();

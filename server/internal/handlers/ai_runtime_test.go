@@ -41,6 +41,38 @@ func TestParseLastEventIDSupportsRunPrefix(t *testing.T) {
 	}
 }
 
+func TestGetSourceChunkOnlyReturnsPublishedKnowledge(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.AIKnowledgeDocument{}, &models.AIKnowledgeChunk{}))
+
+	document := models.AIKnowledgeDocument{
+		Title: "学生手册", SourceType: "official", Content: "完整正文", ContentHash: "document-hash",
+		Status: models.KnowledgeStatusPublished, CreatedBy: 1,
+	}
+	require.NoError(t, db.Create(&document).Error)
+	chunk := models.AIKnowledgeChunk{
+		DocumentID: document.ID, ChunkIndex: 0, Content: "补考规则正文", ContentHash: "chunk-hash",
+		SearchTokens: "补考", Embedding: "[]", SourceLocator: "chunk:1", EmbeddingModelVersion: "test",
+	}
+	require.NoError(t, db.Create(&chunk).Error)
+
+	router := gin.New()
+	router.GET("/sources/chunks/:chunk_id", NewAIRuntimeHandler(db, nil).GetSourceChunk)
+	path := fmt.Sprintf("/sources/chunks/%d", chunk.ID)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Contains(t, response.Body.String(), `"content":"补考规则正文"`)
+	require.Equal(t, "private, max-age=300", response.Header().Get("Cache-Control"))
+
+	require.NoError(t, db.Model(&document).Update("status", models.KnowledgeStatusRevoked).Error)
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	require.Equal(t, http.StatusNotFound, response.Code, response.Body.String())
+}
+
 func TestDeleteConversationRetainsConsumedQuotaLedger(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})

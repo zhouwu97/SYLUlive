@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/edu_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/edu_academic_situation.dart';
@@ -14,10 +13,16 @@ import '../services/grade_reminder_service.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
+import '../widgets/edu_grade/grade_gpa_hero_card.dart';
+import '../widgets/edu_grade/academic_course_item.dart';
+import '../widgets/edu_grade/academic_course_status_state.dart';
+import '../widgets/edu_grade/academic_credit_overview.dart';
+import '../widgets/edu_grade/academic_privacy_notice.dart';
+import '../widgets/edu_grade/grade_center_section_tabs.dart';
+import '../widgets/edu_grade/graduation_warning_empty_state.dart';
 import 'edu_grade_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
-
-// GradeViewMode removed
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 class EduGradeScreen extends StatefulWidget {
   final String? initialYear;
@@ -52,8 +57,12 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   EduAcademicSituation? _academicSituation;
   bool _isAcademicLoading = false;
   String? _academicError;
+  GradeCenterSection _section = GradeCenterSection.term;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ScrollController _termScrollController = ScrollController();
+  final ScrollController _overviewScrollController = ScrollController();
+  final ScrollController _warningScrollController = ScrollController();
 
   EduProvider? _eduProvider;
 
@@ -66,6 +75,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   @override
   void dispose() {
     GradeScreenRegistry.unregister(this);
+    _termScrollController.dispose();
+    _overviewScrollController.dispose();
+    _warningScrollController.dispose();
     super.dispose();
   }
 
@@ -75,6 +87,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
   @override
   Future<bool> switchToGradeSemester(String year, int semester) async {
+    _switchSection(GradeCenterSection.term, scrollToTop: true);
     if (year == _selectedYear && semester == _selectedSemester) {
       final grades = await _refreshGrades();
       return grades != null;
@@ -86,7 +99,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final eduProvider = context.read<EduProvider>();
-    final authProvider = context.read<AuthProvider>();
+    final authProvider = context.watch<AuthProvider>();
     final currentUserId = authProvider.user?.id.toString();
 
     if (_eduProvider != eduProvider || _lastUserId != currentUserId) {
@@ -103,11 +116,13 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _activeFilter = '全部';
         _errorMessage = null;
         _academicError = null;
+        _section = GradeCenterSection.term;
         _pageState = GradePageState.loading;
         _isInitialLoading = true;
         _isRefreshing = false;
         _isAcademicLoading = true;
       });
+      _resetSectionScrollPositions();
 
       if (currentUserId != null) {
         // 捕获局部变量防止异步期间 _lastUserId 变化
@@ -124,19 +139,39 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         Future<void> initFlow() async {
           await eduProvider.ensureStatusLoaded();
           if (!mounted || _lastUserId != capturedUserId) return;
+          if (!eduProvider.isBound) {
+            _showUnavailableState('请先绑定教务账号');
+            return;
+          }
           await _initSemesterAndLoad(capturedUserId);
         }
+
         initFlow();
       } else {
+        _showUnavailableState('请先登录后查看成绩');
         unawaited(
             GradeReminderService.instance.syncRuntimeConfig(userId: null));
       }
     }
   }
 
+  void _showUnavailableState(String message) {
+    if (!mounted) return;
+    setState(() {
+      _grades = const <EduGrade>[];
+      _academicSituation = null;
+      _pageState = GradePageState.error;
+      _errorMessage = message;
+      _academicError = message;
+      _isInitialLoading = false;
+      _isRefreshing = false;
+      _isAcademicLoading = false;
+    });
+  }
+
   Future<void> _initSemesterAndLoad(String userId) async {
     // Load persisted semester
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final savedKey = 'edu_last_semester_$userId';
     final saved = prefs.getString(savedKey);
 
@@ -215,8 +250,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
 
     final gen = ++_academicRequestGeneration;
-    final result =
-        await provider.fetchAcademicSituation(forceRefresh: forceRefresh);
+    final result = await provider.fetchAcademicSituation();
 
     if (!mounted || _academicRequestGeneration != gen) return;
 
@@ -430,7 +464,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   void _saveSelectedSemesterFor(String userId, String year, int semester) {
-    SharedPreferences.getInstance().then((prefs) {
+    AppPreferencesStore.getInstance().then((prefs) {
       prefs.setString('edu_last_semester_$userId', '${year}_$semester');
     });
     unawaited(
@@ -526,14 +560,129 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   Widget _buildBody() {
-    return CustomScrollView(
-      slivers: [
-        ..._buildTermContent(),
+    return Column(
+      children: [
+        GradeCenterSectionTabs(
+          selected: _section,
+          onChanged: _switchSection,
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _section.index,
+            children: [
+              CustomScrollView(
+                key: const ValueKey('grade_term_scroll_view'),
+                controller: _termScrollController,
+                slivers: _buildTermContent(),
+              ),
+              CustomScrollView(
+                key: const ValueKey('grade_overview_scroll_view'),
+                controller: _overviewScrollController,
+                slivers: _buildAcademicContent(),
+              ),
+              CustomScrollView(
+                key: const ValueKey('grade_warning_scroll_view'),
+                controller: _warningScrollController,
+                slivers: const [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: GraduationWarningEmptyState(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 
-  // Academic content builders removed
+  void _switchSection(
+    GradeCenterSection section, {
+    bool scrollToTop = false,
+  }) {
+    if (_section != section) {
+      setState(() => _section = section);
+    }
+    if (scrollToTop) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _jumpToTop(_controllerFor(section));
+      });
+    }
+  }
+
+  ScrollController _controllerFor(GradeCenterSection section) {
+    return switch (section) {
+      GradeCenterSection.term => _termScrollController,
+      GradeCenterSection.overview => _overviewScrollController,
+      GradeCenterSection.graduationWarning => _warningScrollController,
+    };
+  }
+
+  void _resetSectionScrollPositions() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _jumpToTop(_termScrollController);
+      _jumpToTop(_overviewScrollController);
+      _jumpToTop(_warningScrollController);
+    });
+  }
+
+  void _jumpToTop(ScrollController controller) {
+    if (controller.hasClients) controller.jumpTo(0);
+  }
+
+  List<Widget> _buildAcademicContent() {
+    final situation = _academicError == null ? _academicSituation : null;
+    return [
+      SliverToBoxAdapter(
+        child: GradeGpaHeroCard(
+          situation: situation,
+          isLoading: _isAcademicLoading,
+          errorMessage: _academicError,
+          onRetry: _refreshAcademicSituation,
+        ),
+      ),
+      if (situation != null)
+        SliverToBoxAdapter(
+          child: AcademicCreditOverview(situation: situation),
+        ),
+      if (situation != null && situation.courses.isNotEmpty) ...[
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Text(
+              '课程明细',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : const Color(0xFF1F2328),
+              ),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => AcademicCourseItem(
+                course: situation.courses[index],
+              ),
+              childCount: situation.courses.length,
+            ),
+          ),
+        ),
+      ] else if (situation != null && !_isAcademicLoading)
+        SliverToBoxAdapter(
+          child: AcademicCourseStatusState(
+            status: situation.coursesStatus,
+          ),
+        ),
+      const SliverToBoxAdapter(child: AcademicPrivacyNotice()),
+      const SliverToBoxAdapter(child: SizedBox(height: 32)),
+    ];
+  }
 
   List<Widget> _buildTermContent() {
     return [

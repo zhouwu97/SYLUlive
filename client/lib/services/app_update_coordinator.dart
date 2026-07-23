@@ -9,6 +9,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../models/app_update_info.dart';
 import '../platform/app_installer.dart';
 import '../platform/app_platform.dart';
+import '../platform/contracts/update_action.dart';
+import '../platform/platform_capabilities.dart';
 import 'app_update_api.dart';
 import 'app_update_cache.dart';
 import 'app_update_download_service.dart';
@@ -303,25 +305,21 @@ class AppUpdateCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 下载完成后立即尝试交给系统安装器；若缺少未知来源授权，先跳转系统设置，
-  /// 用户返回后可点击“继续安装”，无需重下 APK。
+  AppUpdateAction? _currentAction;
+
+  /// 开始更新操作
   Future<void> downloadOrInstall() async {
     final info = _info;
-    final downloadedApk = _downloadedApk;
-    if (downloadedApk != null && await downloadedApk.exists()) {
-      final matchesCurrentInfo = info != null &&
-          _downloadedVersionCode == info.latestVersionCode &&
-          _downloadedSha256 == info.sha256.toLowerCase();
-      if (_phase == AppUpdatePhase.readyToInstall || matchesCurrentInfo) {
-        await installReadyPackage();
-        return;
-      }
-    } else if (downloadedApk != null) {
-      _downloadedApk = null;
-      _downloadedVersionCode = null;
-      _downloadedSha256 = null;
+    if (info == null || !info.updateAvailable) {
+      _errorMessage = '更新包信息不完整，请重新检查';
+      _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
+      notifyListeners();
+      return;
     }
-    if (info == null || !info.updateAvailable || info.downloadUrl.isEmpty) {
+
+    final hasDirectPackage = info.downloadUrl.trim().isNotEmpty;
+    final hasExternalAction = info.actionUrl.trim().isNotEmpty;
+    if (!hasDirectPackage && !hasExternalAction) {
       _errorMessage = '更新包信息不完整，请重新检查';
       _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
       notifyListeners();
@@ -333,22 +331,31 @@ class AppUpdateCoordinator extends ChangeNotifier {
     _errorMessage = null;
     _phase = AppUpdatePhase.downloading;
     notifyListeners();
+
     try {
-      _downloadedApk = await _downloadService.download(
-        url: info.downloadUrl,
-        expectedSize: info.fileSize,
-        expectedSha256: info.sha256.toLowerCase(),
+      final oldApk = _currentAction?.readyApk;
+      _currentAction = AppUpdateAction.current(info, _installer, _downloadService);
+      final result = await _currentAction!.execute(
+        info,
+        existingApk: oldApk,
         cancelToken: _downloadCancelToken,
         onProgress: (progress) {
           _downloadProgress = progress;
           notifyListeners();
         },
       );
-      _downloadedVersionCode = info.latestVersionCode;
-      _downloadedSha256 = info.sha256.toLowerCase();
-      _phase = AppUpdatePhase.readyToInstall;
+
+      if (result == AppUpdateActionResult.permissionRequired) {
+        _errorMessage = '请在系统设置中允许“沈理校园”安装未知应用';
+        _phase = AppUpdatePhase.readyToInstall;
+      } else if (result == AppUpdateActionResult.installerOpened) {
+        _errorMessage = null;
+        _phase = AppUpdatePhase.installing;
+      } else if (result == AppUpdateActionResult.externalStoreOpened) {
+        _errorMessage = null;
+        _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.allowed;
+      }
       notifyListeners();
-      await installReadyPackage();
     } catch (error) {
       _errorMessage = _errorText(error);
       _phase = isRequired ? AppUpdatePhase.required : AppUpdatePhase.optional;
@@ -363,29 +370,8 @@ class AppUpdateCoordinator extends ChangeNotifier {
   }
 
   Future<void> installReadyPackage() async {
-    final apk = _downloadedApk;
-    if (apk == null) return;
-    try {
-      if (!await _installer.canInstallPackages()) {
-        _errorMessage = '请在系统设置中允许“沈理校园”安装未知应用';
-        _phase = AppUpdatePhase.readyToInstall;
-        notifyListeners();
-        await _installer.openInstallPermissionSettings();
-        return;
-      }
-      _errorMessage = null;
-      _phase = AppUpdatePhase.installing;
-      notifyListeners();
-      await _installer.installApk(apk);
-    } on PlatformException catch (error) {
-      _errorMessage = error.message ?? '无法打开系统安装器';
-      _phase = AppUpdatePhase.readyToInstall;
-      notifyListeners();
-    } catch (error) {
-      _errorMessage = _errorText(error);
-      _phase = AppUpdatePhase.readyToInstall;
-      notifyListeners();
-    }
+    // Retry installation directly through action
+    await downloadOrInstall();
   }
 
   bool _shouldCheckNow() {

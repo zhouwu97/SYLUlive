@@ -7,9 +7,12 @@ import 'package:shenliyuan/features/ai_runtime/personal_data/models/academic_rec
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/erke_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/physical_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/schedule_overview.dart';
+import 'package:shenliyuan/features/ai_runtime/deterministic/competition_fit_engine.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/deterministic_skills.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skills.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
 import 'package:shenliyuan/models/competition.dart';
+import 'package:shenliyuan/models/competition_capability_profile.dart';
 
 void main() {
   final fetchedAt = DateTime.utc(2026, 7, 20, 8, 30);
@@ -409,6 +412,278 @@ void main() {
     expect(page.total, 1);
     expect(page.fetchedAt, fetchedAt);
   });
+
+  test('竞赛适配只读取基础画像且无成绩缓存时仍可运行', () async {
+    final source = _FakeCompetitionFitSource(
+      candidatesValue: const <CompetitionCandidate>[
+        CompetitionCandidate(
+          id: 'ai',
+          title: '人工智能竞赛',
+          tags: <String>['人工智能'],
+          importanceScore: 60,
+        ),
+      ],
+      profileValue: const StudentCompetitionProfile(
+        grade: '2024',
+        college: '信息科学与工程学院',
+        major: '计算机科学与技术',
+      ),
+    );
+    final skill = CompetitionFitSkill(source);
+
+    final result = await skill.execute(
+      const CompetitionFitInput(goals: <String>['人工智能']),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(skill.requiredDataTypes,
+        const <PersonalDataType>{PersonalDataType.studentProfile});
+    expect(result.status, SkillStatus.success);
+    expect(result.containsPersonalData, isTrue);
+    expect(result.value?.items.single.score, 65);
+    expect(result.evidence.single.source, '本地教务绑定资料');
+    expect(result.evidence.single.scope, '年级、学院、专业和本次竞赛目标');
+    expect(result.evidence.single.dataType, PersonalDataType.studentProfile);
+    expect(gateway.academicRecordReads, 0);
+    expect(gateway.totalReads, 0);
+  });
+
+  test('竞赛适配空目标仍按资格和报名状态排序', () async {
+    final source = _FakeCompetitionFitSource(
+      candidatesValue: const <CompetitionCandidate>[
+        CompetitionCandidate(
+          id: 'open',
+          title: '开放报名竞赛',
+          importanceScore: 40,
+          registrationOpen: true,
+          schoolRecognitionStatus: '学校认定',
+        ),
+      ],
+      profileValue: const StudentCompetitionProfile(
+        grade: '2024',
+        college: '信息科学与工程学院',
+        major: '计算机科学与技术',
+      ),
+    );
+
+    final result = await CompetitionFitSkill(source).execute(
+      const CompetitionFitInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.success);
+    expect(result.value?.items.single.score, 70);
+    expect(gateway.totalReads, 0);
+  });
+
+  test('竞赛能力画像保留目标和已核验、自报分组且不读取教务 Gateway', () async {
+    final skill = CompetitionCapabilityProfileSkill(
+      _FakeCapabilityProfileSource(
+        CompetitionCapabilityProfile.fromJson(<String, dynamic>{
+          'preference_configured': true,
+          'goals': <String>['ability'],
+          'verified_award_count': 2,
+          'self_reported_award_count': 1,
+          'skill_summary': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'skill': 'Python',
+              'verified_count': 1,
+              'self_reported_count': 1,
+            },
+          ],
+          'role_summary': <Map<String, dynamic>>[],
+          'direction_tags': <String>['数据分析'],
+          'preferred_roles': <String>['developer'],
+          'weekly_hours': 7,
+          'accept_long_term_training': true,
+        }),
+      ),
+    );
+
+    final result = await skill.execute(
+      const EmptyCompetitionAdvisorInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.success);
+    expect(result.value?.goals, <String>['ability']);
+    expect(result.value?.verifiedAwardCount, 2);
+    expect(result.value?.skillSummary.single.selfReportedCount, 1);
+    expect(result.evidence.single.source, '神理校园竞赛档案');
+    expect(result.evidence.single.dataType, PersonalDataType.studentProfile);
+    expect(gateway.totalReads, 0);
+  });
+
+  test('竞赛能力画像专项授权关闭时明确拒绝而非返回空画像', () async {
+    final result = await CompetitionCapabilityProfileSkill(
+      _DeniedCapabilityProfileSource(),
+    ).execute(
+      const EmptyCompetitionAdvisorInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.denied);
+    expect(result.value, isNull);
+    expect(result.warnings.single, '用户尚未授权读取竞赛能力画像');
+  });
+
+  test('竞赛能力画像数据源只调用专项 AI 接口并识别 403', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.path, '/ai/tools/competition-capability-profile');
+          expect(options.queryParameters, isEmpty);
+          handler.reject(
+            DioException.badResponse(
+              statusCode: 403,
+              requestOptions: options,
+              response: Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 403,
+                data: const <String, dynamic>{
+                  'code': 'competition_capability_profile_access_denied',
+                },
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    await expectLater(
+      DioCompetitionCapabilityProfileSource(dio).load(),
+      throwsA(isA<CompetitionCapabilityAccessDeniedException>()),
+    );
+  });
+
+  test('竞赛解释严格保留服务端顺序、分数和匹配理由', () async {
+    final first = CompetitionMatchExplanationItem.fromEvent(
+      CompetitionEvent(
+        id: 2,
+        title: '服务端第一名',
+        personalizedScore: 71,
+        recommendationTier: 'recommended',
+        fitReasons: const <String>['方向匹配'],
+        competitionRating: 'A',
+        manualRating: 4.5,
+      ),
+    );
+    final second = CompetitionMatchExplanationItem.fromEvent(
+      CompetitionEvent(
+        id: 1,
+        title: '服务端第二名',
+        personalizedScore: 99,
+        recommendationTier: 'strong',
+        fitReasons: const <String>['时间匹配'],
+      ),
+    );
+    final result = await ExplainCompetitionMatchesSkill(
+      _FakeMatchExplanationSource(
+        CompetitionMatchExplanationPage(
+          profileReady: true,
+          preferenceConfigured: true,
+          items: <CompetitionMatchExplanationItem>[first, second],
+          total: 2,
+          fetchedAt: fetchedAt,
+        ),
+      ),
+    ).execute(
+      const EmptyCompetitionAdvisorInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.success);
+    expect(result.value?.items.map((item) => item.id), <int>[2, 1]);
+    expect(result.value?.items.first.personalizedScore, 71);
+    expect(result.value?.items.first.fitReasons, <String>['方向匹配']);
+    expect(result.warnings.first, contains('不重新评分'));
+    expect(result.warnings.last, contains('正式文件'));
+    expect(gateway.totalReads, 0);
+  });
+
+  test('竞赛解释在基础画像未就绪时返回稳定空结果和明确提示', () async {
+    final result = await ExplainCompetitionMatchesSkill(
+      _FakeMatchExplanationSource(
+        CompetitionMatchExplanationPage(
+          profileReady: false,
+          preferenceConfigured: false,
+          items: const <CompetitionMatchExplanationItem>[],
+          total: 0,
+          fetchedAt: fetchedAt,
+        ),
+      ),
+    ).execute(
+      const EmptyCompetitionAdvisorInput(),
+      context.restrictTo(
+        const <PersonalDataType>{PersonalDataType.studentProfile},
+      ),
+    );
+
+    expect(result.status, SkillStatus.partial);
+    expect(result.value?.items, isEmpty);
+    expect(result.warnings, contains(contains('基础画像尚未就绪')));
+  });
+
+  test('竞赛解释数据源只读取现有适合我接口并保留响应顺序', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.path, '/user/competitions/fit');
+          expect(options.queryParameters,
+              const <String, dynamic>{'page': 1, 'page_size': 20});
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: <String, dynamic>{
+                'profile_ready': true,
+                'preference_configured': true,
+                'total': 2,
+                'items': <Map<String, dynamic>>[
+                  <String, dynamic>{
+                    'id': 8,
+                    'title': '第一项',
+                    'personalized_score': 63,
+                    'recommendation_tier': 'recommended',
+                    'fit_reasons': <String>['专业匹配'],
+                    'competition_rating': 'B',
+                    'manual_rating': 3.5,
+                    'school_recognition_status': 'recognized',
+                    'school_recognition_grade': '省级',
+                    'time_status': 'confirmed',
+                    'registration_time_text': '2026-09',
+                  },
+                  <String, dynamic>{'id': 3, 'title': '第二项'},
+                ],
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final page = await DioCompetitionMatchExplanationSource(
+      dio,
+      clock: () => fetchedAt,
+    ).load();
+
+    expect(page.items.map((item) => item.id), <int>[8, 3]);
+    expect(page.items.first.personalizedScore, 63);
+    expect(page.items.first.competitionRating, 'B');
+    expect(page.items.first.registrationTimeText, '2026-09');
+  });
 }
 
 GatewayResult<T> _available<T>(T data, {required DateTime fetchedAt}) =>
@@ -441,11 +716,16 @@ class _FakeGateway implements PersonalDataGateway {
   int physicalReads = 0;
   int scheduleReads = 0;
   int academicReads = 0;
+  int academicRecordReads = 0;
   DateTime? lastScheduleStart;
   DateTime? lastScheduleEnd;
 
   int get totalReads =>
-      erkeReads + physicalReads + scheduleReads + academicReads;
+      erkeReads +
+      physicalReads +
+      scheduleReads +
+      academicReads +
+      academicRecordReads;
 
   @override
   Future<void> close() async {}
@@ -457,8 +737,13 @@ class _FakeGateway implements PersonalDataGateway {
   }
 
   @override
-  Future<GatewayResult<AcademicRecords>> getAcademicRecords() =>
-      throw UnimplementedError();
+  Future<GatewayResult<AcademicRecords>> getAcademicRecords() async {
+    academicRecordReads++;
+    return GatewayResult<AcademicRecords>(
+      status: GatewayStatus.missing,
+      source: PersonalDataSource.none,
+    );
+  }
 
   @override
   Future<GatewayResult<ErkeOverview>> getErkeOverview() async {
@@ -500,6 +785,57 @@ class _FakeCompetitionSource implements CompetitionSearchSource {
           fetchedAt: DateTime.utc(2026, 7, 20),
         );
   }
+}
+
+class _FakeCompetitionFitSource implements CompetitionFitDataSource {
+  _FakeCompetitionFitSource({
+    required this.candidatesValue,
+    required this.profileValue,
+  });
+
+  final List<CompetitionCandidate> candidatesValue;
+  final StudentCompetitionProfile profileValue;
+  int candidateReads = 0;
+  int profileReads = 0;
+
+  @override
+  Future<List<CompetitionCandidate>> candidates() async {
+    candidateReads++;
+    return candidatesValue;
+  }
+
+  @override
+  Future<StudentCompetitionProfile> currentProfile() async {
+    profileReads++;
+    return profileValue;
+  }
+}
+
+class _FakeCapabilityProfileSource
+    implements CompetitionCapabilityProfileSource {
+  _FakeCapabilityProfileSource(this.value);
+
+  final CompetitionCapabilityProfile value;
+
+  @override
+  Future<CompetitionCapabilityProfile> load() async => value;
+}
+
+class _DeniedCapabilityProfileSource
+    implements CompetitionCapabilityProfileSource {
+  @override
+  Future<CompetitionCapabilityProfile> load() async {
+    throw const CompetitionCapabilityAccessDeniedException();
+  }
+}
+
+class _FakeMatchExplanationSource implements CompetitionMatchExplanationSource {
+  _FakeMatchExplanationSource(this.value);
+
+  final CompetitionMatchExplanationPage value;
+
+  @override
+  Future<CompetitionMatchExplanationPage> load() async => value;
 }
 
 class _EmptyInput {

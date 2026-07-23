@@ -1,15 +1,16 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/exam_schedule.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 统一管理考试页与其它校园页面共享的本地考试安排。
 class ExamScheduleRepository {
   static const localExamsKey = 'local_exams';
 
   Future<List<ExamModel>> load() async {
-    final preferences = await SharedPreferences.getInstance();
+    final preferences = await AppPreferencesStore.getInstance();
     final encoded = preferences.getString(localExamsKey);
     if (encoded == null || encoded.isEmpty) return const [];
 
@@ -34,7 +35,7 @@ class ExamScheduleRepository {
   }
 
   Future<void> save(List<ExamModel> exams) async {
-    final preferences = await SharedPreferences.getInstance();
+    final preferences = await AppPreferencesStore.getInstance();
     final encoded = jsonEncode(exams.map((exam) => exam.toJson()).toList());
     await preferences.setString(localExamsKey, encoded);
   }

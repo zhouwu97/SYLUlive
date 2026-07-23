@@ -214,6 +214,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
+      studentVerified: true,
       eduBound: true,
       createdAt: DateTime(2026),
     );
@@ -252,6 +253,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
+      studentVerified: true,
       eduBound: true,
       createdAt: DateTime(2026),
     );
@@ -286,6 +288,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
+      studentVerified: true,
       eduBound: true,
       createdAt: DateTime(2026),
     );
@@ -346,6 +349,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
+      studentVerified: true,
       eduBound: true,
       createdAt: DateTime(2026),
     );
@@ -383,6 +387,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
+      studentVerified: true,
       eduBound: true,
       createdAt: DateTime(2026),
     );
@@ -422,6 +427,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
+      studentVerified: true,
       eduBound: true,
       createdAt: DateTime(2026),
     );
@@ -460,6 +466,7 @@ void main() {
       id: 1,
       studentId: '20260001',
       nickname: '测试用户',
+      studentVerified: true,
       eduBound: true,
       createdAt: DateTime(2026),
     );

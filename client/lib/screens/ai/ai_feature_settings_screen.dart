@@ -43,9 +43,14 @@ class _AIFeatureSettingsScreenState extends State<AIFeatureSettingsScreen> {
                   .map(
                     (flag) => SwitchListTile(
                       title: Text(_label(flag)),
+                      subtitle: flag.availableInCurrentRelease
+                          ? null
+                          : const Text('内测阶段暂不开放'),
                       secondary: Icon(_icon(flag)),
                       value: values[flag]!,
-                      onChanged: (enabled) => _set(flag, enabled),
+                      onChanged: flag.availableInCurrentRelease
+                          ? (enabled) => _set(flag, enabled)
+                          : null,
                     ),
                   )
                   .toList(growable: false),
@@ -61,6 +66,7 @@ class _AIFeatureSettingsScreenState extends State<AIFeatureSettingsScreen> {
         AIFeatureFlag.toolCalling => 'Tool Calling',
         AIFeatureFlag.academicEngine => '学业计算引擎',
         AIFeatureFlag.graduationAssistant => '毕业助手',
+        AIFeatureFlag.competitionFit => '个性化竞赛适配',
       };
 
   IconData _icon(AIFeatureFlag flag) => switch (flag) {
@@ -71,5 +77,6 @@ class _AIFeatureSettingsScreenState extends State<AIFeatureSettingsScreen> {
         AIFeatureFlag.toolCalling => Icons.build_outlined,
         AIFeatureFlag.academicEngine => Icons.calculate_outlined,
         AIFeatureFlag.graduationAssistant => Icons.fact_check_outlined,
+        AIFeatureFlag.competitionFit => Icons.emoji_events_outlined,
       };
 }

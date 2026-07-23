@@ -58,6 +58,9 @@ def _migrate_edu_user_schema(conn):
         "logged_out_at": "DATETIME",
         "revoked_at": "DATETIME",
         "credential_generation": "INTEGER NOT NULL DEFAULT 0",
+        "binding_state": "VARCHAR(32) NOT NULL DEFAULT 'idle'",
+        "pending_credential_generation": "INTEGER NOT NULL DEFAULT 0",
+        "binding_started_at": "DATETIME",
     }
     for name, definition in additions.items():
         if name not in columns:
@@ -106,7 +109,8 @@ def _verify_edu_user_schema(conn):
     required = {
         "user_id", "student_id", "encrypted_password", "cookie", "bound",
         "authorized", "session_state", "auto_relogin", "authorized_at",
-        "logged_out_at", "revoked_at", "credential_generation",
+        "logged_out_at", "revoked_at", "credential_generation", "binding_state",
+        "pending_credential_generation", "binding_started_at",
     }
     missing = sorted(required - columns)
     if missing:
@@ -155,5 +159,9 @@ class EduUser(Base):
     revoked_at = Column(DateTime, nullable=True)
     # 每次 Go 显式绑定递增，旧代次的撤销任务不得影响新凭据。
     credential_generation = Column(Integer, default=0, nullable=False)
+    # Python 保留镜像状态，便于诊断跨服务绑定恢复；Go 是状态机权威来源。
+    binding_state = Column(String(32), default="idle", nullable=False)
+    pending_credential_generation = Column(Integer, default=0, nullable=False)
+    binding_started_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

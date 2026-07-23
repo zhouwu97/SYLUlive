@@ -127,7 +127,11 @@ func (s *EduCredentialCleanupJobService) ProcessDue(ctx context.Context, limit i
 		}
 		if !applicable {
 			if err := s.complete(ctx, job); err != nil {
-				return report, err
+				if failErr := s.fail(ctx, job, err); failErr != nil {
+					return report, failErr
+				}
+				report.Failed++
+				continue
 			}
 			report.Completed++
 			continue
@@ -140,7 +144,11 @@ func (s *EduCredentialCleanupJobService) ProcessDue(ctx context.Context, limit i
 			continue
 		}
 		if err := s.complete(ctx, job); err != nil {
-			return report, err
+			if failErr := s.fail(ctx, job, err); failErr != nil {
+				return report, failErr
+			}
+			report.Failed++
+			continue
 		}
 		report.Completed++
 	}
@@ -229,6 +237,9 @@ func (s *EduCredentialCleanupJobService) isStillApplicable(ctx context.Context, 
 }
 
 func (s *EduCredentialCleanupJobService) complete(ctx context.Context, job models.EduCredentialCleanupJob) error {
+	if job.DeleteIdentity {
+		return s.completeIdentityDeletion(ctx, job)
+	}
 	now := s.now()
 	result := s.db.WithContext(ctx).Model(&models.EduCredentialCleanupJob{}).
 		Where("id = ? AND lock_token = ? AND delete_identity = ? AND completed_at IS NULL", job.ID, job.LockToken, job.DeleteIdentity).
@@ -242,13 +253,48 @@ func (s *EduCredentialCleanupJobService) complete(ctx context.Context, job model
 		// 还要等待租约超时才开始重试。
 		return s.releaseUpgradedJob(ctx, job)
 	}
-	if job.DeleteIdentity {
-		removed, err := s.removeRegistrationCleanupUser(ctx, job.UserID)
-		if err != nil || removed {
+	return s.clearPending(ctx, job.UserID, job.ExpectedGeneration)
+}
+
+// completeIdentityDeletion 在同一事务内删除注册占位账号并完成任务。
+// 本地删除失败会回滚 completed_at，随后由 fail 释放租约并安排下一次重试。
+func (s *EduCredentialCleanupJobService) completeIdentityDeletion(ctx context.Context, job models.EduCredentialCleanupJob) error {
+	now := s.now()
+	upgraded := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.EduCredentialCleanupJob{}).
+			Where("id = ? AND lock_token = ? AND delete_identity = ? AND completed_at IS NULL", job.ID, job.LockToken, true).
+			Updates(map[string]interface{}{"completed_at": now, "last_error": "", "locked_at": nil, "lock_token": ""})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			upgraded = true
+			return nil
+		}
+		var user models.User
+		err := tx.Where("id = ? AND account_status = ?", job.UserID, "registration_cleanup_pending").First(&user).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
 			return err
 		}
+		if err := tx.Where("user_id = ?", job.UserID).Delete(&models.UserLegalConsent{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", job.UserID).Delete(&models.EmailVerificationChallenge{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&models.User{}, job.UserID).Error
+	})
+	if err != nil {
+		return err
 	}
-	return s.clearPending(ctx, job.UserID, job.ExpectedGeneration)
+	if upgraded {
+		return s.releaseUpgradedJob(ctx, job)
+	}
+	return nil
 }
 
 func (s *EduCredentialCleanupJobService) releaseUpgradedJob(ctx context.Context, job models.EduCredentialCleanupJob) error {
@@ -270,34 +316,6 @@ func (s *EduCredentialCleanupJobService) clearPending(ctx context.Context, userI
 	return s.db.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND edu_authorization_generation = ? AND edu_authorized = ? AND edu_session_state = ?", userID, generation, false, "revoked").
 		Update("edu_cleanup_pending", false).Error
-}
-
-// removeRegistrationCleanupUser 仅在远端身份已经成功删除后移除未完成注册的本地占位账号。
-// 注销用户需要保留审计记录，因此绝不能在这里删除。
-func (s *EduCredentialCleanupJobService) removeRegistrationCleanupUser(ctx context.Context, userID uint) (bool, error) {
-	removed := false
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var user models.User
-		err := tx.Where("id = ? AND account_status = ?", userID, "registration_cleanup_pending").First(&user).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ?", userID).Delete(&models.UserLegalConsent{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ?", userID).Delete(&models.EmailVerificationChallenge{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Delete(&models.User{}, userID).Error; err != nil {
-			return err
-		}
-		removed = true
-		return nil
-	})
-	return removed, err
 }
 
 func (s *EduCredentialCleanupJobService) fail(ctx context.Context, job models.EduCredentialCleanupJob, operationErr error) error {

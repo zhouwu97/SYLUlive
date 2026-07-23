@@ -20,6 +20,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_authorized_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_session_updated_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_authorization_generation bigint NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_cleanup_pending boolean NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_binding_state varchar(32) NOT NULL DEFAULT 'idle';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_binding_pending_generation bigint NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_binding_started_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status varchar(20) NOT NULL DEFAULT 'active';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
 
@@ -56,6 +59,9 @@ SET edu_authorized = COALESCE(edu_bound, false),
     edu_authorized_at = CASE WHEN COALESCE(edu_bound, false) THEN COALESCE(edu_authorized_at, created_at, now()) ELSE NULL END,
     edu_session_updated_at = COALESCE(edu_session_updated_at, now()),
     edu_authorization_generation = CASE WHEN COALESCE(edu_bound, false) THEN GREATEST(edu_authorization_generation, 1) ELSE edu_authorization_generation END,
+    edu_binding_state = CASE WHEN COALESCE(edu_bound, false) THEN 'active' ELSE COALESCE(edu_binding_state, 'idle') END,
+    edu_binding_pending_generation = CASE WHEN COALESCE(edu_bound, false) THEN 0 ELSE COALESCE(edu_binding_pending_generation, 0) END,
+    edu_binding_started_at = NULL,
     edu_bound = COALESCE(edu_bound, false);
 
 -- Go 侧遗留凭据不再使用，迁移时立即清除。
@@ -83,9 +89,41 @@ CREATE TABLE IF NOT EXISTS account_security_audit_logs (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-ALTER TABLE IF EXISTS edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS expected_generation bigint NOT NULL DEFAULT 0;
-ALTER TABLE IF EXISTS edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS revoked_at timestamptz;
-ALTER TABLE IF EXISTS edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS delete_identity boolean NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS email_verification_requests (
+  id bigserial PRIMARY KEY,
+  email varchar(320) NOT NULL,
+  purpose varchar(32) NOT NULL,
+  request_ip_hash varchar(64) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS edu_credential_cleanup_jobs (
+  id bigserial PRIMARY KEY,
+  user_id bigint NOT NULL REFERENCES users(id),
+  expected_generation bigint NOT NULL DEFAULT 0,
+  revoked_at timestamptz,
+  delete_identity boolean NOT NULL DEFAULT false,
+  attempts integer NOT NULL DEFAULT 0,
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz,
+  locked_at timestamptz,
+  lock_token varchar(36) NOT NULL DEFAULT '',
+  last_error varchar(1000) NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS expected_generation bigint NOT NULL DEFAULT 0;
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS revoked_at timestamptz;
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS delete_identity boolean NOT NULL DEFAULT false;
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS next_attempt_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS completed_at timestamptz;
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS locked_at timestamptz;
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS lock_token varchar(36) NOT NULL DEFAULT '';
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS last_error varchar(1000) NOT NULL DEFAULT '';
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 
 -- 合并历史上同一用户、同一授权代次的重复任务。永久删除身份是更强语义，
 -- 必须保留在唯一的待处理任务中，普通撤销任务不能将其提前完成。
@@ -131,6 +169,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email_nonempty ON users(email) WHERE 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_users_edu_student_id_nonempty ON users(edu_student_id) WHERE edu_student_id <> '';
 CREATE INDEX IF NOT EXISTS ix_email_verification_active ON email_verification_challenges(email, purpose, created_at DESC) WHERE consumed_at IS NULL;
 CREATE INDEX IF NOT EXISTS ix_email_verification_ip_created ON email_verification_challenges(request_ip_hash, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_email_verification_request_email_created ON email_verification_requests(email, purpose, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_email_verification_request_ip_created ON email_verification_requests(request_ip_hash, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_account_security_audit_user_created ON account_security_audit_logs(user_id, created_at DESC);
 
 COMMIT;

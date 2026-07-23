@@ -335,6 +335,7 @@ func (h *AuthHandler) markIncompleteRegistrationForCleanup(userID uint, generati
 			"edu_cleanup_pending":            true,
 			"edu_binding_state":              "cleanup_pending",
 			"edu_binding_pending_generation": 0,
+			"edu_binding_pending_student_id": "",
 			"edu_binding_started_at":         nil,
 			"edu_session_updated_at":         now,
 			"edu_password":                   "",
@@ -1066,6 +1067,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		EduSessionUpdatedAt:         &now,
 		EduBindingState:             "pending",
 		EduBindingPendingGeneration: 1,
+		EduBindingPendingStudentID:  input.StudentID,
 		EduBindingStartedAt:         &now,
 		EduBound:                    false,
 	}

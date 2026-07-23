@@ -30,7 +30,7 @@ func newEmailVerificationTestService(t *testing.T, now *time.Time) (*EmailVerifi
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(&models.EmailVerificationChallenge{}); err != nil {
+	if err := db.AutoMigrate(&models.EmailVerificationChallenge{}, &models.EmailVerificationRequest{}); err != nil {
 		t.Fatalf("迁移验证码表失败: %v", err)
 	}
 	mailer := &capturedVerificationMailer{}

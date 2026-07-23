@@ -77,16 +77,20 @@ func (h *AuthHandler) RequestEmailRegistrationCode(c *gin.Context) {
 		writeEmailVerificationError(c, err)
 		return
 	}
-	var existing models.User
-	if err := h.db.Where("email = ?", email).First(&existing).Error; err == nil {
-		c.JSON(http.StatusOK, gin.H{"message": "如果该邮箱可以使用，验证码将发送至邮箱"})
-		return
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
+	if h.emailVerification == nil {
+		writeEmailVerificationError(c, services.ErrMailNotConfigured)
 		return
 	}
-	if err := h.requestEmailCode(c, email, input.Purpose, nil); err != nil {
+	if err := h.emailVerification.ReservePublicRequest(email, input.Purpose, c.ClientIP()); err != nil {
 		writeEmailVerificationError(c, err)
+		return
+	}
+	var existing models.User
+	if err := h.db.Where("email = ?", email).First(&existing).Error; err == nil {
+		// 公开接口不向外暴露发送失败，避免通过 SMTP 响应枚举已有账号。
+		_ = h.emailVerification.SendReservedPublicRequest(email, input.Purpose, nil, c.ClientIP())
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "如果该邮箱可以使用，验证码将发送至邮箱"})
@@ -329,12 +333,18 @@ func (h *AuthHandler) RequestEmailPasswordResetCode(c *gin.Context) {
 		writeEmailVerificationError(c, err)
 		return
 	}
+	if h.emailVerification == nil {
+		writeEmailVerificationError(c, services.ErrMailNotConfigured)
+		return
+	}
+	if err := h.emailVerification.ReservePublicRequest(email, input.Purpose, c.ClientIP()); err != nil {
+		writeEmailVerificationError(c, err)
+		return
+	}
 	var user models.User
 	if err := h.db.Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error; err == nil {
-		if err := h.requestEmailCode(c, email, input.Purpose, &user.ID); err != nil {
-			writeEmailVerificationError(c, err)
-			return
-		}
+		// 公开接口不向外暴露发送失败，避免通过 SMTP 响应枚举已有账号。
+		_ = h.emailVerification.SendReservedPublicRequest(email, input.Purpose, &user.ID, c.ClientIP())
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return

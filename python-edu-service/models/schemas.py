@@ -43,6 +43,7 @@ class EduStatusResponse(BaseModel):
     authorized: bool = False
     session_state: str = "unbound"
     auto_relogin: bool = False
+    credential_generation: int = 0
     student_id: Optional[str] = None
     name: Optional[str] = None
     grade: Optional[str] = None

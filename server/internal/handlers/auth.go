@@ -304,12 +304,45 @@ func (h *AuthHandler) AcceptCommunityRules(c *gin.Context) {
 }
 
 // deleteIncompleteRegistrationUser 清理注册链路中未完成的账号及其授权留痕。
-func deleteIncompleteRegistrationUser(db *gorm.DB, userID uint) {
-	_ = db.Transaction(func(tx *gorm.DB) error {
+func deleteIncompleteRegistrationUser(db *gorm.DB, userID uint) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.UserLegalConsent{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&models.User{}, userID).Error
+	})
+}
+
+// markIncompleteRegistrationForCleanup 将本地占位账号转为可重试清理状态。
+// 即使远端已经删除成功，本地删除失败也必须留下 outbox，不能永久占用学号。
+func (h *AuthHandler) markIncompleteRegistrationForCleanup(userID uint, generation uint) error {
+	if h == nil || h.db == nil || generation == 0 {
+		return errors.New("注册清理参数无效")
+	}
+	jobs := h.cleanupJobs
+	if jobs == nil {
+		jobs = services.NewEduCredentialCleanupJobService(h.db, nil, time.Now)
+	}
+	now := time.Now()
+	return h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+			"account_status":                 "registration_cleanup_pending",
+			"edu_authorization_generation":   generation,
+			"edu_authorized":                 false,
+			"edu_bound":                      false,
+			"edu_session_state":              "revoked",
+			"edu_auto_relogin":               false,
+			"edu_cleanup_pending":            true,
+			"edu_binding_state":              "cleanup_pending",
+			"edu_binding_pending_generation": 0,
+			"edu_binding_started_at":         nil,
+			"edu_session_updated_at":         now,
+			"edu_password":                   "",
+			"edu_cookie":                     "",
+		}).Error; err != nil {
+			return err
+		}
+		return jobs.Enqueue(tx, userID, generation, now, true)
 	})
 }
 
@@ -324,31 +357,7 @@ func (h *AuthHandler) compensateFailedEduRegistrationBinding(userID uint) bool {
 	if err == nil && resp.StatusCode() == http.StatusOK {
 		return true
 	}
-	if h.db == nil {
-		return false
-	}
-	jobs := h.cleanupJobs
-	if jobs == nil {
-		jobs = services.NewEduCredentialCleanupJobService(h.db, nil, time.Now)
-	}
-	now := time.Now()
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-			"account_status":               "registration_cleanup_pending",
-			"edu_authorization_generation": 1,
-			"edu_authorized":               false,
-			"edu_bound":                    false,
-			"edu_session_state":            "revoked",
-			"edu_auto_relogin":             false,
-			"edu_cleanup_pending":          true,
-			"edu_session_updated_at":       now,
-			"edu_password":                 "",
-			"edu_cookie":                   "",
-		}).Error; err != nil {
-			return err
-		}
-		return jobs.Enqueue(tx, userID, 1, now, true)
-	}); err != nil {
+	if err := h.markIncompleteRegistrationForCleanup(userID, 1); err != nil {
 		return false
 	}
 	return false
@@ -1051,11 +1060,14 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 		CreditScore: 100,
 
-		EduAuthorized:       false,
-		EduSessionState:     "unbound",
-		EduAutoRelogin:      false,
-		EduSessionUpdatedAt: &now,
-		EduBound:            false,
+		EduAuthorized:               false,
+		EduSessionState:             "unbound",
+		EduAutoRelogin:              false,
+		EduSessionUpdatedAt:         &now,
+		EduBindingState:             "pending",
+		EduBindingPendingGeneration: 1,
+		EduBindingStartedAt:         &now,
+		EduBound:                    false,
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -1079,7 +1091,9 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	if input.Nickname == "" {
 
 		if err := h.db.Model(&user).Update("nickname", "校园用户"+strconv.FormatUint(uint64(user.ID), 10)).Error; err != nil {
-			deleteIncompleteRegistrationUser(h.db, user.ID)
+			if cleanupErr := deleteIncompleteRegistrationUser(h.db, user.ID); cleanupErr != nil {
+				_ = h.markIncompleteRegistrationForCleanup(user.ID, 1)
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 			return
 		}
@@ -1092,14 +1106,18 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	bindResult, err := bindEduWithPython(user.ID, input.StudentID, input.EduPassword, 1)
 	if err != nil {
 		if h.compensateFailedEduRegistrationBinding(user.ID) {
-			deleteIncompleteRegistrationUser(h.db, user.ID)
+			if cleanupErr := deleteIncompleteRegistrationUser(h.db, user.ID); cleanupErr != nil {
+				_ = h.markIncompleteRegistrationForCleanup(user.ID, 1)
+			}
 		}
 		writeEduServiceError(c, err)
 		return
 	}
 	if err := updateUserEduBinding(h.db, user.ID, input.StudentID, bindResult, 1, false); err != nil {
 		if h.compensateFailedEduRegistrationBinding(user.ID) {
-			deleteIncompleteRegistrationUser(h.db, user.ID)
+			if cleanupErr := deleteIncompleteRegistrationUser(h.db, user.ID); cleanupErr != nil {
+				_ = h.markIncompleteRegistrationForCleanup(user.ID, 1)
+			}
 		}
 		if errors.Is(err, errEduStudentAlreadyBound) {
 			c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})
@@ -1108,33 +1126,12 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
 		return
 	}
-	user.EduBound = true
-	user.EduStudentID = input.StudentID
-	user.EduGrade = bindResult.Grade
-	user.EduCollege = bindResult.College
-	user.EduMajor = bindResult.Major
-
-	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成Token"})
+	middleware.InvalidateTokenVersionCache(user.ID)
+	if err := h.db.First(&user, user.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新注册后的会话失败"})
 		return
 	}
-
-	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
-
-	response, responseErr := selfUserResponseForDB(h.db, user)
-	if responseErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取授权状态失败"})
-		return
-	}
-	c.JSON(http.StatusCreated, gin.H{
-
-		"token": token,
-
-		"user": response,
-	})
+	h.issueAuthSession(c, user, http.StatusCreated)
 
 }
 

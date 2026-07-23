@@ -63,6 +63,10 @@ type User struct {
 	// EduAuthorizationGeneration 每次显式绑定递增，用于隔离旧撤销任务与新凭据。
 	EduAuthorizationGeneration uint `gorm:"not null;default:0" json:"-"`
 	EduCleanupPending          bool `gorm:"not null;default:false" json:"-"`
+	// EduBindingState 记录跨服务绑定的提交阶段，避免 Go 在 Python 成功后崩溃时丢失待提交代次。
+	EduBindingState             string     `gorm:"size:32;not null;default:'idle';index" json:"-"`
+	EduBindingPendingGeneration uint       `gorm:"not null;default:0" json:"-"`
+	EduBindingStartedAt         *time.Time `gorm:"index" json:"-"`
 	// EduBound 为旧客户端兼容字段，恒等于 EduAuthorized。
 	EduBound   bool   `gorm:"default:false" json:"edu_bound"`
 	EduGrade   string `gorm:"size:20" json:"edu_grade"`

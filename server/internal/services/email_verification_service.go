@@ -133,6 +133,72 @@ func IsVerificationPurpose(purpose string) bool {
 }
 
 func (s *EmailVerificationService) Request(email string, purpose string, userID *uint, clientIP string) error {
+	return s.createAndSend(email, purpose, userID, clientIP, true)
+}
+
+// ReservePublicRequest 为公开验证码接口预留完全一致的限流额度。
+// 是否实际发送邮件由调用方在查询账号后决定，不能影响外部响应。
+func (s *EmailVerificationService) ReservePublicRequest(email string, purpose string, clientIP string) error {
+	if s == nil || s.db == nil || s.mailer == nil {
+		return ErrMailNotConfigured
+	}
+	if !IsVerificationPurpose(purpose) {
+		return ErrPurposeInvalid
+	}
+	normalized, err := NormalizeEmail(email)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	ipHash := s.hashIP(clientIP)
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			for _, scope := range []string{"public-email:" + normalized, "public-ip:" + ipHash} {
+				if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", scope).Error; err != nil {
+					return err
+				}
+			}
+		}
+		var sentToEmail int64
+		if err := tx.Model(&models.EmailVerificationRequest{}).
+			Where("email = ? AND created_at >= ?", normalized, now.Add(-time.Hour)).
+			Count(&sentToEmail).Error; err != nil {
+			return err
+		}
+		if sentToEmail >= 5 {
+			return ErrEmailRateLimited
+		}
+		var sentFromIP int64
+		if err := tx.Model(&models.EmailVerificationRequest{}).
+			Where("request_ip_hash = ? AND created_at >= ?", ipHash, now.Add(-time.Hour)).
+			Count(&sentFromIP).Error; err != nil {
+			return err
+		}
+		if sentFromIP >= 10 {
+			return ErrIPRateLimited
+		}
+		var latest models.EmailVerificationRequest
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("email = ? AND purpose = ?", normalized, purpose).
+			Order("created_at DESC").First(&latest).Error
+		if err == nil && now.Sub(latest.CreatedAt) < time.Minute {
+			return ErrSendTooFrequently
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return tx.Create(&models.EmailVerificationRequest{
+			Email: normalized, Purpose: purpose, RequestIPHash: ipHash, CreatedAt: now,
+		}).Error
+	})
+}
+
+// SendReservedPublicRequest 为已存在账号发送已完成公开限流预留的验证码。
+func (s *EmailVerificationService) SendReservedPublicRequest(email string, purpose string, userID *uint, clientIP string) error {
+	return s.createAndSend(email, purpose, userID, clientIP, false)
+}
+
+func (s *EmailVerificationService) createAndSend(email string, purpose string, userID *uint, clientIP string, enforceChallengeRateLimit bool) error {
 	if s == nil || s.db == nil || s.mailer == nil {
 		return ErrMailNotConfigured
 	}
@@ -156,43 +222,45 @@ func (s *EmailVerificationService) Request(email string, purpose string, userID 
 
 	challenge := models.EmailVerificationChallenge{
 		UserID: userID, Email: normalized, Purpose: purpose, CodeHash: string(codeHash),
-		ExpiresAt: now.Add(emailVerificationCodeTTL), RequestIPHash: ipHash,
+		ExpiresAt: now.Add(emailVerificationCodeTTL), RequestIPHash: ipHash, CreatedAt: now,
 	}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if tx.Dialector.Name() == "postgres" {
+		if enforceChallengeRateLimit && tx.Dialector.Name() == "postgres" {
 			for _, scope := range []string{"email:" + normalized, "ip:" + ipHash} {
 				if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", scope).Error; err != nil {
 					return err
 				}
 			}
 		}
-		var sentToEmail int64
-		if err := tx.Model(&models.EmailVerificationChallenge{}).
-			Where("email = ? AND created_at >= ?", normalized, now.Add(-time.Hour)).
-			Count(&sentToEmail).Error; err != nil {
-			return err
-		}
-		if sentToEmail >= 5 {
-			return ErrEmailRateLimited
-		}
-		var sentFromIP int64
-		if err := tx.Model(&models.EmailVerificationChallenge{}).
-			Where("request_ip_hash = ? AND created_at >= ?", ipHash, now.Add(-time.Hour)).
-			Count(&sentFromIP).Error; err != nil {
-			return err
-		}
-		if sentFromIP >= 10 {
-			return ErrIPRateLimited
-		}
-		var latest models.EmailVerificationChallenge
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("email = ? AND purpose = ?", normalized, purpose).
-			Order("created_at DESC").First(&latest).Error
-		if err == nil && now.Sub(latest.CreatedAt) < time.Minute {
-			return ErrSendTooFrequently
-		}
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+		if enforceChallengeRateLimit {
+			var sentToEmail int64
+			if err := tx.Model(&models.EmailVerificationChallenge{}).
+				Where("email = ? AND created_at >= ?", normalized, now.Add(-time.Hour)).
+				Count(&sentToEmail).Error; err != nil {
+				return err
+			}
+			if sentToEmail >= 5 {
+				return ErrEmailRateLimited
+			}
+			var sentFromIP int64
+			if err := tx.Model(&models.EmailVerificationChallenge{}).
+				Where("request_ip_hash = ? AND created_at >= ?", ipHash, now.Add(-time.Hour)).
+				Count(&sentFromIP).Error; err != nil {
+				return err
+			}
+			if sentFromIP >= 10 {
+				return ErrIPRateLimited
+			}
+			var latest models.EmailVerificationChallenge
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("email = ? AND purpose = ?", normalized, purpose).
+				Order("created_at DESC").First(&latest).Error
+			if err == nil && now.Sub(latest.CreatedAt) < time.Minute {
+				return ErrSendTooFrequently
+			}
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
 		}
 		return tx.Create(&challenge).Error
 	}); err != nil {

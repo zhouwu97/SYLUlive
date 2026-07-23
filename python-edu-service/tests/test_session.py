@@ -8,6 +8,9 @@ from services.session import execute_with_session_refresh, CookieLapseError
 from services.crawler import LoginFailedError
 from models.database import EduUser
 from services.security import encrypt_credential
+from routers.auth import bind_edu_account, refresh_cookie, resume_edu_session
+from fastapi import HTTPException
+from models.schemas import BindInput
 
 @pytest.fixture(autouse=True)
 def _clear_locks(monkeypatch):
@@ -146,3 +149,70 @@ async def test_session_refresh_does_not_restore_user_who_logged_out_while_waitin
                 operation=operation,
             )
         MockCrawlerClass.return_value.__aenter__.return_value.login.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", [resume_edu_session, refresh_cookie])
+async def test_explicit_session_login_does_not_restore_cookie_after_revoke(endpoint):
+    """外部登录期间若撤销已提交，resume 和 refresh 都必须丢弃新 Cookie。"""
+    mock_db = AsyncMock()
+    edu_user = EduUser(
+        id=1,
+        user_id="u1",
+        student_id="s1",
+        encrypted_password=encrypt_credential("p1"),
+        cookie=None,
+        authorized=True,
+        session_state="expired",
+        auto_relogin=True,
+        credential_generation=3,
+    )
+    select_result = MagicMock()
+    select_result.scalar_one_or_none.return_value = edu_user
+    # 模拟撤销在 crawler.login 等待期间提交，条件 UPDATE 因 authorized=false 影响零行。
+    mock_db.execute.side_effect = [select_result, MagicMock(rowcount=0)]
+
+    with patch("routers.auth.EduCrawler") as MockCrawlerClass:
+        crawler = AsyncMock()
+        crawler.login.return_value = "new_cookie"
+        MockCrawlerClass.return_value.__aenter__.return_value = crawler
+
+        with pytest.raises(HTTPException) as exc_info:
+            await endpoint("u1", mock_db)
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "EDU_AUTHORIZATION_REVOKED"
+    mock_db.rollback.assert_awaited_once()
+    mock_db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bind_reuses_same_active_credential_generation_after_go_recovery():
+    """Go 在 Python 已提交后崩溃时，同代次重试应直接恢复为成功。"""
+    mock_db = AsyncMock()
+    existing = EduUser(
+        user_id="u1",
+        student_id="2026000001",
+        name="测试学生",
+        grade="2026",
+        college="计算机学院",
+        major="软件工程",
+        authorized=True,
+        credential_generation=4,
+    )
+    existing_result = MagicMock()
+    existing_result.scalar_one_or_none.return_value = existing
+    owner_result = MagicMock()
+    owner_result.scalar_one_or_none.return_value = None
+    mock_db.execute.side_effect = [existing_result, owner_result]
+
+    response = await bind_edu_account(
+        BindInput(student_id="2026000001", password="edu-password", credential_generation=4),
+        user_id="u1",
+        db=mock_db,
+    )
+
+    assert response.success is True
+    assert response.message == "绑定已恢复"
+    assert response.student_id == "2026000001"
+    mock_db.commit.assert_not_awaited()

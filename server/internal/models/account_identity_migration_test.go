@@ -74,7 +74,15 @@ func createLegacyAccountIdentitySchema(t *testing.T, db *sql.DB) {
 		`CREATE UNIQUE INDEX idx_user_legal_document_version ON user_legal_consents(user_id, document, version)`,
 		`CREATE TABLE edu_credential_cleanup_jobs (
 			id bigserial PRIMARY KEY,
-			user_id bigint NOT NULL REFERENCES users(id)
+			user_id bigint NOT NULL REFERENCES users(id),
+			attempts integer NOT NULL DEFAULT 0,
+			next_attempt_at timestamptz NOT NULL DEFAULT now(),
+			completed_at timestamptz,
+			locked_at timestamptz,
+			lock_token varchar(36) NOT NULL DEFAULT '',
+			last_error varchar(1000) NOT NULL DEFAULT '',
+			created_at timestamptz NOT NULL DEFAULT now(),
+			updated_at timestamptz NOT NULL DEFAULT now()
 		)`,
 	}
 	for _, statement := range statements {

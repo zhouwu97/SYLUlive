@@ -140,22 +140,27 @@ func (h *PrivacyHandler) personalDataPayload(userID uint, includeRequests bool) 
 		"legal_consents_required": consentState == models.LegalConsentStateRequired,
 		"consent_revoked_at":      user.LegalConsentRevokedAt,
 		"account": gin.H{
-			"id":                user.ID,
-			"student_id":        user.StudentID,
-			"nickname":          user.Nickname,
-			"gender":            user.Gender,
-			"avatar_set":        user.Avatar != "",
-			"background_set":    user.Background != "",
-			"qq":                user.QQ,
-			"created_at":        user.CreatedAt,
-			"edu_bound":         user.IsEduAuthorized(),
-			"edu_authorized":    user.IsEduAuthorized(),
-			"edu_session_state": user.EduSessionState,
-			"edu_student_id":    user.EduStudentID,
-			"edu_grade":         user.EduGrade,
-			"edu_college":       user.EduCollege,
-			"edu_major":         user.EduMajor,
-			"notification_on":   user.DeviceToken != "",
+			"id":                  user.ID,
+			"student_id":          user.StudentID,
+			"student_verified_at": user.StudentVerifiedAt,
+			"email":               user.Email,
+			"email_verified_at":   user.EmailVerifiedAt,
+			"account_status":      user.AccountStatus,
+			"cancelled_at":        user.CancelledAt,
+			"nickname":            user.Nickname,
+			"gender":              user.Gender,
+			"avatar_set":          user.Avatar != "",
+			"background_set":      user.Background != "",
+			"qq":                  user.QQ,
+			"created_at":          user.CreatedAt,
+			"edu_bound":           user.IsEduAuthorized(),
+			"edu_authorized":      user.IsEduAuthorized(),
+			"edu_session_state":   user.EduSessionState,
+			"edu_student_id":      user.EduStudentID,
+			"edu_grade":           user.EduGrade,
+			"edu_college":         user.EduCollege,
+			"edu_major":           user.EduMajor,
+			"notification_on":     user.DeviceToken != "",
 		},
 		"legal_consents": consents,
 	}
@@ -236,6 +241,7 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 			"edu_authorized":               false,
 			"edu_session_state":            "revoked",
 			"edu_auto_relogin":             false,
+			"edu_cleanup_pending":          needsEduCredentialCleanup,
 		}).Error; err != nil {
 			return err
 		}
@@ -245,7 +251,7 @@ func (h *PrivacyHandler) WithdrawConsent(c *gin.Context) {
 			return err
 		}
 		if needsEduCredentialCleanup {
-			return h.eduCredentialCleanupJobs.Enqueue(tx, userID)
+			return h.eduCredentialCleanupJobs.Enqueue(tx, userID, user.EduAuthorizationGeneration, now, false)
 		}
 		return nil
 	}); err != nil {
@@ -270,19 +276,21 @@ func (h *PrivacyHandler) UnbindEdu(c *gin.Context) {
 		return
 	}
 	needsCleanup := user.IsEduAuthorized() || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
+	now := time.Now()
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-			"edu_password":      "",
-			"edu_cookie":        "",
-			"edu_bound":         false,
-			"edu_authorized":    false,
-			"edu_session_state": "revoked",
-			"edu_auto_relogin":  false,
+			"edu_password":        "",
+			"edu_cookie":          "",
+			"edu_bound":           false,
+			"edu_authorized":      false,
+			"edu_session_state":   "revoked",
+			"edu_auto_relogin":    false,
+			"edu_cleanup_pending": needsCleanup,
 		}).Error; err != nil {
 			return err
 		}
 		if needsCleanup {
-			return h.eduCredentialCleanupJobs.Enqueue(tx, userID)
+			return h.eduCredentialCleanupJobs.Enqueue(tx, userID, user.EduAuthorizationGeneration, now, false)
 		}
 		return nil
 	}); err != nil {
@@ -404,7 +412,12 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 	needsEduCredentialCleanup := user.IsEduAuthorized() || user.EduStudentID != "" || user.EduCookie != "" || user.EduPassword != ""
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-			"student_id":                   fmt.Sprintf("cancelled-%d-%d", userID, now.UnixNano()),
+			"student_id":                   "",
+			"student_verified_at":          nil,
+			"email":                        "",
+			"email_verified_at":            nil,
+			"account_status":               "cancelled",
+			"cancelled_at":                 now,
 			"password_hash":                string(randomPassword),
 			"nickname":                     "已注销用户",
 			"gender":                       "",
@@ -423,6 +436,7 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 			"edu_authorized":               false,
 			"edu_session_state":            "revoked",
 			"edu_auto_relogin":             false,
+			"edu_cleanup_pending":          needsEduCredentialCleanup,
 			"edu_grade":                    "",
 			"edu_college":                  "",
 			"edu_major":                    "",
@@ -433,8 +447,13 @@ func (h *PrivacyHandler) CancelAccount(c *gin.Context) {
 		if err := tx.Where("follower_id = ? OR following_id = ?", userID, userID).Delete(&models.UserFollow{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Model(&models.EmailVerificationChallenge{}).
+			Where("user_id = ? AND consumed_at IS NULL", userID).
+			Update("consumed_at", now).Error; err != nil {
+			return err
+		}
 		if needsEduCredentialCleanup {
-			if err := h.eduCredentialCleanupJobs.Enqueue(tx, userID); err != nil {
+			if err := h.eduCredentialCleanupJobs.Enqueue(tx, userID, user.EduAuthorizationGeneration, now, true); err != nil {
 				return err
 			}
 		}

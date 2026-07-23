@@ -9,13 +9,15 @@ ALTER TABLE edu_users ADD COLUMN IF NOT EXISTS auto_relogin boolean NOT NULL DEF
 ALTER TABLE edu_users ADD COLUMN IF NOT EXISTS authorized_at timestamp NULL;
 ALTER TABLE edu_users ADD COLUMN IF NOT EXISTS logged_out_at timestamp NULL;
 ALTER TABLE edu_users ADD COLUMN IF NOT EXISTS revoked_at timestamp NULL;
+ALTER TABLE edu_users ADD COLUMN IF NOT EXISTS credential_generation integer NOT NULL DEFAULT 0;
 
 -- 仅将旧已绑定账号升级为已授权的活跃会话；旧数据没有“主动退出”证据。
 UPDATE edu_users
 SET authorized = true,
     session_state = CASE WHEN cookie IS NULL OR cookie = '' THEN 'expired' ELSE 'active' END,
     auto_relogin = true,
-    authorized_at = COALESCE(authorized_at, updated_at, created_at)
+    authorized_at = COALESCE(authorized_at, updated_at, created_at),
+    credential_generation = GREATEST(credential_generation, 1)
 WHERE bound = true;
 
 UPDATE edu_users

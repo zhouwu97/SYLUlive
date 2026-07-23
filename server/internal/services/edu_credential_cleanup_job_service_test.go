@@ -17,7 +17,7 @@ type eduCredentialCleanupRemoteStub struct {
 	userIDs []uint
 }
 
-func (s *eduCredentialCleanupRemoteStub) Unbind(_ context.Context, userID uint) error {
+func (s *eduCredentialCleanupRemoteStub) Unbind(_ context.Context, userID uint, _ uint, _ bool) error {
 	s.userIDs = append(s.userIDs, userID)
 	if len(s.errors) == 0 {
 		return nil
@@ -32,15 +32,19 @@ func TestEduCredentialCleanupJobServiceRetriesUntilRemoteUnbindSucceeds(t *testi
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&models.EduCredentialCleanupJob{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.EduCredentialCleanupJob{}); err != nil {
 		t.Fatalf("migrate cleanup jobs: %v", err)
 	}
 
 	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	user := models.User{ID: 42, StudentID: "2026000042", PasswordHash: "x", EduSessionState: "revoked", EduAuthorizationGeneration: 1, EduCleanupPending: true}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
 	remote := &eduCredentialCleanupRemoteStub{errors: []error{errors.New("教务服务暂不可用"), nil}}
 	service := NewEduCredentialCleanupJobService(db, remote, func() time.Time { return now })
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		return service.Enqueue(tx, 42)
+		return service.Enqueue(tx, 42, 1, now, false)
 	}); err != nil {
 		t.Fatalf("enqueue cleanup job: %v", err)
 	}
@@ -77,5 +81,43 @@ func TestEduCredentialCleanupJobServiceRetriesUntilRemoteUnbindSucceeds(t *testi
 	}
 	if len(remote.userIDs) != 2 || remote.userIDs[0] != 42 || remote.userIDs[1] != 42 {
 		t.Fatalf("remote calls=%v, want two calls for user 42", remote.userIDs)
+	}
+}
+
+func TestEduCredentialCleanupJobServiceSkipsStaleGenerationAfterRebind(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.EduCredentialCleanupJob{}); err != nil {
+		t.Fatalf("migrate cleanup jobs: %v", err)
+	}
+	now := time.Date(2026, 7, 22, 8, 0, 0, 0, time.UTC)
+	user := models.User{ID: 43, StudentID: "2026000043", PasswordHash: "x", EduSessionState: "revoked", EduAuthorizationGeneration: 1, EduCleanupPending: true}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	remote := &eduCredentialCleanupRemoteStub{}
+	service := NewEduCredentialCleanupJobService(db, remote, func() time.Time { return now })
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.Enqueue(tx, user.ID, 1, now, false)
+	}); err != nil {
+		t.Fatalf("enqueue cleanup job: %v", err)
+	}
+	if err := db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+		"edu_authorized":               true,
+		"edu_bound":                    true,
+		"edu_session_state":            "active",
+		"edu_authorization_generation": 2,
+		"edu_cleanup_pending":          false,
+	}).Error; err != nil {
+		t.Fatalf("simulate rebind: %v", err)
+	}
+	report, err := service.ProcessDue(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("process stale job: %v", err)
+	}
+	if report.Processed != 1 || report.Completed != 1 || len(remote.userIDs) != 0 {
+		t.Fatalf("stale job should complete without remote deletion: report=%#v calls=%v", report, remote.userIDs)
 	}
 }

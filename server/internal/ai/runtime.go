@@ -445,7 +445,10 @@ func (r *Runtime) appendEvent(ctx context.Context, runID, eventType string, payl
 				return err
 			}
 		}
-		event = RunEvent{RunID: runID, Seq: seq, Type: eventType, Timestamp: timestamp, Payload: json.RawMessage(payloadBytes)}
+		event = RunEvent{
+			RunID: runID, Seq: seq, Type: eventType, Timestamp: timestamp,
+			Payload: json.RawMessage(payloadBytes), Persisted: persist,
+		}
 		return nil
 	})
 	if err == nil {

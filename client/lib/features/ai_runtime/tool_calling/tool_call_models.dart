@@ -75,13 +75,13 @@ enum ToolPermissionDecision { allowOnce, allowSession, denied }
 
 class ToolDataPreviewItem {
   const ToolDataPreviewItem({
-    required this.dataType,
+    this.dataType,
     required this.label,
     this.fetchedAt,
     this.isStale = false,
   });
 
-  final PersonalDataType dataType;
+  final PersonalDataType? dataType;
   final String label;
   final DateTime? fetchedAt;
   final bool isStale;
@@ -91,6 +91,7 @@ class ToolPermissionPreview {
   ToolPermissionPreview({
     required this.toolId,
     required this.sensitivity,
+    required this.providerKind,
     required this.destination,
     required List<ToolDataPreviewItem> dataItems,
     required List<String> excludedDataLabels,
@@ -101,6 +102,7 @@ class ToolPermissionPreview {
 
   final String toolId;
   final SkillSensitivity sensitivity;
+  final AIModelProviderKind providerKind;
   final String destination;
   final List<ToolDataPreviewItem> dataItems;
   final List<String> excludedDataLabels;
@@ -123,12 +125,14 @@ class ToolLoopOutcome {
     this.answer = '',
     this.warnings = const <String>[],
     this.evidence = const <SkillEvidence>[],
+    this.actionArtifacts = const <SkillActionArtifact>[],
   });
 
   final ToolLoopStatus status;
   final String answer;
   final List<String> warnings;
   final List<SkillEvidence> evidence;
+  final List<SkillActionArtifact> actionArtifacts;
 }
 
 class ToolLoopCancellationToken {

@@ -2,10 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/home_widget_config.dart';
 import '../providers/course_schedule_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 class HomeWidgetExamEntry {
   const HomeWidgetExamEntry({
@@ -107,7 +108,7 @@ class HomeWidgetService {
   static List<HomeWidgetExamEntry>? _lastExamEntries;
 
   static Future<void> migrateLegacyAppearance() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final legacyTheme =
         prefs.containsKey(HomeWidgetPreferenceKeys.legacyTextColor)
             ? HomeWidgetTheme.fromLegacyTextColor(
@@ -136,7 +137,7 @@ class HomeWidgetService {
     HomeWidgetKind kind,
   ) async {
     await migrateLegacyAppearance();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     return HomeWidgetAppearance(
       kind: kind,
       theme: HomeWidgetTheme.fromStorage(
@@ -149,7 +150,7 @@ class HomeWidgetService {
 
   static Future<void> updateAppearance(HomeWidgetAppearance appearance) async {
     await migrateLegacyAppearance();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setString(
       HomeWidgetPreferenceKeys.theme(appearance.kind),
       appearance.theme.storageName,
@@ -221,7 +222,7 @@ class HomeWidgetService {
         };
       }).toList();
 
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       await prefs.setString(
         _courseDataKey,
         jsonEncode({'title': '沈理院课表', 'date': date, 'courses': courses}),
@@ -253,7 +254,7 @@ class HomeWidgetService {
         };
       }).toList();
 
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       await prefs.setString(_examDataKey, jsonEncode(exams));
       await _refreshNative();
       debugPrint('考试小组件已同步：${exams.length} 场考试');
@@ -328,7 +329,7 @@ class HomeWidgetService {
   static Future<HomeWidgetPreviewData> getPreviewData(
     HomeWidgetKind kind,
   ) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     try {
       if (kind == HomeWidgetKind.course) {
         final raw = prefs.getString(_courseDataKey);

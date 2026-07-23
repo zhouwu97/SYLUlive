@@ -7,22 +7,34 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_model_provider.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/gateway_result.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/personal_data_gateway.dart';
+import 'package:shenliyuan/features/ai_runtime/personal_data/gateway/unavailable_personal_data_gateway.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/academic_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/academic_records.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/erke_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/physical_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/personal_data/models/schedule_overview.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/academic_overview_skill.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/competition_search_skill.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/competition_advisor_skills.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/competition_plan_action_skill.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/deterministic_skills.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/erke_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/personal_skill_registry.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/physical_overview_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/skills/skill_execution_context.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/today_schedule_skill.dart';
+import 'package:shenliyuan/features/ai_runtime/skills/week_schedule_skill.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_call_models.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_call_validator.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_definitions.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_loop.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/openai_tool_calling_model.dart';
 import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_permission.dart';
+import 'package:shenliyuan/features/ai_runtime/tool_calling/tool_preview_metadata.dart';
+import 'package:shenliyuan/features/ai_runtime/tool_calling/skill_result_serializer.dart';
 import 'package:shenliyuan/features/campus_data/storage/personal_snapshot_models.dart';
+import 'package:shenliyuan/models/competition.dart';
 
 void main() {
   group('OpenAIToolCallingModel', () {
@@ -251,12 +263,109 @@ void main() {
         throwsA(isA<ToolCallValidationException>()),
       );
     });
+
+    test('竞赛顾问两个只读 Tool 均不接受任何变更参数', () {
+      for (final toolId in <String>{
+        CompetitionCapabilityProfileSkill.skillId,
+        ExplainCompetitionMatchesSkill.skillId,
+      }) {
+        final definition = buildStageSixToolDefinitions()
+            .singleWhere((item) => item.id == toolId);
+        expect(definition.parameters['additionalProperties'], isFalse);
+        expect(definition.parameters['properties'], isEmpty);
+        expect(
+          validator
+              .validate(LocalToolCall(
+                id: 'valid-$toolId',
+                tool: toolId,
+                arguments: const <String, dynamic>{},
+              ))
+              .input,
+          isA<EmptyCompetitionAdvisorInput>(),
+        );
+        expect(
+          () => validator.validate(LocalToolCall(
+            id: 'invalid-$toolId',
+            tool: toolId,
+            arguments: const <String, dynamic>{'event_id': 1},
+          )),
+          throwsA(isA<ToolCallValidationException>()),
+        );
+      }
+      expect(
+        buildStageSixToolDefinitions().map((item) => item.id),
+        isNot(contains(CompetitionFitSkill.skillId)),
+      );
+      expect(
+        competitionAdvisorAccountIndependentSkillIds,
+        <String>{
+          CompetitionCapabilityProfileSkill.skillId,
+          ExplainCompetitionMatchesSkill.skillId,
+          DraftAddCompetitionToPlanSkill.skillId,
+        },
+      );
+    });
+
+    test('studentProfile 支持审计存储值往返解析', () {
+      expect(PersonalDataType.studentProfile.storageValue, 'student_profile');
+      expect(
+        PersonalDataTypeStorage.fromStorage('student_profile'),
+        PersonalDataType.studentProfile,
+      );
+    });
+
+    test('竞赛解释序列化只保留确定性解释字段且不泄露材料审核信息', () {
+      final page = CompetitionMatchExplanationPage(
+        profileReady: true,
+        preferenceConfigured: true,
+        items: <CompetitionMatchExplanationItem>[
+          CompetitionMatchExplanationItem.fromEvent(
+            CompetitionEvent(
+              id: 7,
+              title: '程序设计竞赛',
+              personalizedScore: 82,
+              recommendationTier: 'strong',
+              fitReasons: const <String>['技能匹配'],
+              competitionRating: 'A',
+              schoolRecognitionStatus: 'recognized',
+              timeStatus: 'confirmed',
+              registrationTimeText: '2026-10',
+            ),
+          ),
+        ],
+        total: 1,
+        fetchedAt: DateTime.utc(2026, 7, 20),
+      );
+
+      final json = const SkillResultSerializer().serialize(
+        SkillResult<Object?>(
+          value: page,
+          status: SkillStatus.success,
+          containsPersonalData: true,
+        ),
+      );
+
+      expect(json, contains('"personalized_score":82'));
+      expect(json, contains('"fit_reasons":["技能匹配"]'));
+      for (final forbidden in <String>[
+        'evidence_file_id',
+        'verification_note',
+        'verified_by',
+        'file_path',
+        'access_log',
+      ]) {
+        expect(json, isNot(contains(forbidden)));
+      }
+    });
   });
 
   group('ToolPermissionManager', () {
     test('低敏感允许会话复用，中敏感强制降级为仅本次', () async {
       final prompt = _Prompt(ToolPermissionDecision.allowSession);
-      final manager = ToolPermissionManager(prompt: prompt);
+      final manager = ToolPermissionManager(
+        prompt: prompt,
+        accountKey: 'app-a::edu-a',
+      );
       final low = _preview(SkillSensitivity.low);
       expect(
         await manager.authorize(low),
@@ -272,10 +381,119 @@ void main() {
         await manager.authorize(_preview(SkillSensitivity.medium)),
         ToolPermissionDecision.allowOnce,
       );
+      expect(
+        await manager.authorize(_preview(SkillSensitivity.medium)),
+        ToolPermissionDecision.allowOnce,
+      );
+      expect(prompt.count, 3);
+    });
+
+    test('会话授权按模型目标隔离且清空后失效', () async {
+      final prompt = _Prompt(ToolPermissionDecision.allowSession);
+      final manager = ToolPermissionManager(
+        prompt: prompt,
+        accountKey: 'app-a::edu-a',
+      );
+
+      await manager.authorize(_preview(SkillSensitivity.low));
+      await manager.authorize(
+        _preview(SkillSensitivity.low, destination: 'provider-b'),
+      );
+      expect(prompt.count, 2);
+
+      manager.clearSession();
+      await manager.authorize(_preview(SkillSensitivity.low));
+      expect(prompt.count, 3);
     });
   });
 
   group('LocalToolLoop', () {
+    test('第二轮请求会携带已完成的用户和助手历史', () async {
+      final model = _ScriptedModel(
+        const <ToolModelTurn>[ToolModelTurn.finalAnswer('继续回答')],
+      );
+      final outcome = await _loop(model: model).run(
+        userMessage: '那第二项呢？',
+        tools: buildStageSixToolDefinitions(),
+        conversationHistory: const <ToolConversationMessage>[
+          ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '我想提升人工智能能力',
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.assistant,
+            content: '可以先参加基础赛事。',
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.tool,
+            content: '不得进入历史的原始 Tool Result',
+          ),
+        ],
+      );
+
+      expect(outcome.status, ToolLoopStatus.completed);
+      expect(
+        model.receivedMessages.map((item) => item.content),
+        containsAllInOrder(<String>[
+          '我想提升人工智能能力',
+          '可以先参加基础赛事。',
+          '那第二项呢？',
+        ]),
+      );
+      expect(
+        model.receivedMessages.map((item) => item.content),
+        isNot(contains('不得进入历史的原始 Tool Result')),
+      );
+    });
+
+    test('未绑定教务时公开竞赛搜索仍可执行', () async {
+      final source = _CompetitionSearchSource();
+      final model = _ScriptedModel(<ToolModelTurn>[
+        ToolModelTurn.call(
+          LocalToolCall(
+            id: 'search-1',
+            tool: CompetitionSearchSkill.skillId,
+            arguments: const <String, dynamic>{'keyword': '人工智能'},
+          ),
+        ),
+        const ToolModelTurn.finalAnswer('找到公开竞赛。'),
+      ]);
+      final outcome = await _loop(
+        model: model,
+        gateway: const UnavailablePersonalDataGateway(),
+        registry: PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
+          CompetitionSearchSkill(source),
+        ]),
+      ).run(
+        userMessage: '搜索人工智能竞赛',
+        tools: buildStageSixToolDefinitions()
+            .where((item) => item.id == CompetitionSearchSkill.skillId)
+            .toList(),
+      );
+
+      expect(outcome.status, ToolLoopStatus.completed);
+      expect(source.searches, 1);
+    });
+
+    test('未绑定教务时请求学业工具返回明确绑定说明', () async {
+      final model = _ScriptedModel(<ToolModelTurn>[
+        ToolModelTurn.call(_academicCall('academic-unavailable')),
+      ]);
+      final outcome = await _loop(
+        model: model,
+        gateway: const UnavailablePersonalDataGateway(),
+      ).run(
+        userMessage: '查看我的学业情况',
+        tools: const <ToolDefinition>[],
+        unavailableToolReasons: const <String, String>{
+          AcademicOverviewSkill.skillId: '需要绑定教务后才能读取学业数据',
+        },
+      );
+
+      expect(outcome.status, ToolLoopStatus.rejected);
+      expect(outcome.warnings, <String>['需要绑定教务后才能读取学业数据']);
+    });
+
     test('授权后执行最小化 Skill 并把证据回传模型', () async {
       final model = _ScriptedModel(<ToolModelTurn>[
         ToolModelTurn.call(_academicCall('call-1')),
@@ -399,6 +617,218 @@ void main() {
       expect(gateway.academicReads, 0);
     });
 
+    test('竞赛解释授权准确声明服务端确定性结果并排除政策推断', () async {
+      final source = _ToolCompetitionMatchSource();
+      final prompt = _Prompt(ToolPermissionDecision.allowOnce);
+      final audit = _AuditSink();
+      final model = _ScriptedModel(<ToolModelTurn>[
+        ToolModelTurn.call(
+          LocalToolCall(
+            id: 'fit-1',
+            tool: ExplainCompetitionMatchesSkill.skillId,
+            arguments: const <String, dynamic>{},
+          ),
+        ),
+        const ToolModelTurn.finalAnswer('竞赛适配完成。'),
+      ]);
+      final outcome = await _loop(
+        model: model,
+        audit: audit,
+        prompt: prompt,
+        registry: PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
+          ExplainCompetitionMatchesSkill(source),
+        ]),
+      ).run(
+        userMessage: '我想参加人工智能竞赛',
+        tools: buildStageSixToolDefinitions(),
+      );
+
+      expect(outcome.status, ToolLoopStatus.completed);
+      final preview = prompt.lastPreview!;
+      expect(
+          preview.dataItems.single.dataType, PersonalDataType.studentProfile);
+      expect(
+        preview.dataItems.single.label,
+        '平台已有的“适合我”确定性排序及匹配依据',
+      );
+      expect(preview.dataItems.single.label, isNot('公开检索结果'));
+      expect(preview.excludedDataLabels,
+          containsAll(<String>['证明材料、获奖核验备注和审核信息', '成绩、GPA、毕业和保研政策收益']));
+      expect(preview.outputFields, contains('原有个性化分数、推荐档位和匹配理由'));
+      expect(model.receivedMessages.last.content,
+          contains('"contains_personal_data":true'));
+      expect(audit.entries.single.dataTypes,
+          const <PersonalDataType>{PersonalDataType.studentProfile});
+      expect(source.reads, 1);
+    });
+
+    test('工具级授权元数据准确描述 GPA 和运动计划输入输出', () async {
+      const source = DefaultToolPreviewMetadataSource();
+      final gpa = await source.describe(
+        const ToolPreviewRequest(
+          toolId: AcademicGpaSkill.skillId,
+          validatedInput: EmptyDeterministicInput(),
+          dataTypes: <PersonalDataType>{PersonalDataType.academic},
+        ),
+      );
+      expect(gpa.inputItems.single.label, contains('课程成绩'));
+      expect(gpa.inputItems.single.label, isNot('最小化学业数据'));
+      expect(gpa.outputFields, contains('GPA'));
+      expect(gpa.excludedDataLabels, contains('教务密码'));
+
+      final fitness = await source.describe(
+        const ToolPreviewRequest(
+          toolId: FitnessWeeklyPlanSkill.skillId,
+          validatedInput: FitnessWeeklyPlanInput(
+            heightMeters: 1.75,
+            weightKg: 65,
+            reportsDiscomfort: true,
+          ),
+          dataTypes: <PersonalDataType>{
+            PersonalDataType.schedule,
+            PersonalDataType.physical,
+          },
+        ),
+      );
+      expect(
+        fitness.inputItems.map((item) => item.label),
+        contains('用户主动填写的身高、体重、不适状态'),
+      );
+      expect(fitness.outputFields, contains('安全提示'));
+      await expectLater(
+        source.describe(
+          const ToolPreviewRequest(
+            toolId: 'unknown.tool',
+            validatedInput: EmptyDeterministicInput(),
+            dataTypes: <PersonalDataType>{},
+          ),
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('全部 Tool 定义均有与数据权限一致的授权元数据', () async {
+      const source = DefaultToolPreviewMetadataSource();
+      const validator = LocalToolCallValidator();
+      const dataTypesByTool = <String, Set<PersonalDataType>>{
+        TodayScheduleSkill.skillId: <PersonalDataType>{
+          PersonalDataType.schedule,
+        },
+        WeekScheduleSkill.skillId: <PersonalDataType>{
+          PersonalDataType.schedule,
+        },
+        AcademicOverviewSkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+        },
+        PhysicalOverviewSkill.skillId: <PersonalDataType>{
+          PersonalDataType.physical,
+        },
+        ErkeOverviewSkill.skillId: <PersonalDataType>{
+          PersonalDataType.erke,
+        },
+        CompetitionSearchSkill.skillId: <PersonalDataType>{},
+        CompetitionCapabilityProfileSkill.skillId: <PersonalDataType>{
+          PersonalDataType.studentProfile,
+        },
+        AcademicGpaSkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+        },
+        AcademicCreditSummarySkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+        },
+        AcademicFailureRiskSkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+        },
+        GraduationReadinessSkill.skillId: <PersonalDataType>{
+          PersonalDataType.academic,
+          PersonalDataType.erke,
+        },
+        ExplainCompetitionMatchesSkill.skillId: <PersonalDataType>{
+          PersonalDataType.studentProfile,
+        },
+        DraftAddCompetitionToPlanSkill.skillId: <PersonalDataType>{
+          PersonalDataType.studentProfile,
+        },
+        FitnessWeeklyPlanSkill.skillId: <PersonalDataType>{
+          PersonalDataType.schedule,
+          PersonalDataType.physical,
+        },
+      };
+      final definitions = buildStageSixToolDefinitions();
+      expect(
+        definitions.map((definition) => definition.id).toSet(),
+        dataTypesByTool.keys.toSet(),
+      );
+
+      for (final definition in definitions) {
+        final arguments = switch (definition.id) {
+          CompetitionSearchSkill.skillId => <String, dynamic>{
+              'keyword': '人工智能'
+            },
+          DraftAddCompetitionToPlanSkill.skillId => <String, dynamic>{
+              'event_id': 1
+            },
+          _ => <String, dynamic>{},
+        };
+        final validated = validator.validate(
+          LocalToolCall(
+            id: 'preview-${definition.id}',
+            tool: definition.id,
+            arguments: arguments,
+          ),
+        );
+        final metadata = await source.describe(
+          ToolPreviewRequest(
+            toolId: definition.id,
+            validatedInput: validated.input,
+            dataTypes: dataTypesByTool[definition.id]!,
+          ),
+        );
+        expect(metadata.outputFields, isNotEmpty, reason: definition.id);
+        expect(metadata.excludedDataLabels, isNotEmpty, reason: definition.id);
+      }
+
+      await expectLater(
+        source.describe(
+          const ToolPreviewRequest(
+            toolId: AcademicGpaSkill.skillId,
+            validatedInput: EmptyDeterministicInput(),
+            dataTypes: <PersonalDataType>{PersonalDataType.schedule},
+          ),
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('账号代际变化会在读取确定性竞赛结果前取消', () async {
+      var generation = 1;
+      final source = _ToolCompetitionMatchSource();
+      final model = _ScriptedModel(
+        <ToolModelTurn>[
+          ToolModelTurn.call(LocalToolCall(
+            id: 'fit-cancel',
+            tool: ExplainCompetitionMatchesSkill.skillId,
+            arguments: const <String, dynamic>{},
+          )),
+        ],
+        onTurn: () => generation++,
+      );
+      final outcome = await _loop(
+        model: model,
+        generation: () => generation,
+        registry: PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
+          ExplainCompetitionMatchesSkill(source),
+        ]),
+      ).run(
+        userMessage: '推荐竞赛',
+        tools: buildStageSixToolDefinitions(),
+      );
+
+      expect(outcome.status, ToolLoopStatus.cancelled);
+      expect(model.cancelled, isTrue);
+      expect(source.reads, 0);
+    });
+
     test('单次 Skill 超时后失败关闭', () async {
       final gateway = _Gateway(blockAcademic: true);
       final model = _ScriptedModel(
@@ -488,27 +918,47 @@ Future<ResponseBody> _jsonResponse(
 
 LocalToolLoop _loop({
   required _ScriptedModel model,
-  _Gateway? gateway,
+  PersonalDataGateway? gateway,
   _AuditSink? audit,
+  _Prompt? prompt,
+  PersonalSkillRegistry? registry,
   ToolPermissionDecision decision = ToolPermissionDecision.allowOnce,
   int Function()? generation,
   Duration timeout = const Duration(seconds: 1),
 }) {
   final dataGateway = gateway ?? _Gateway();
   return LocalToolLoop(
-    registry: PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
-      AcademicOverviewSkill(),
-    ]),
+    registry: registry ??
+        PersonalSkillRegistry(<PersonalSkill<dynamic, dynamic>>[
+          AcademicOverviewSkill(),
+        ]),
     executionContext: SkillExecutionContext(
       personalDataGateway: dataGateway,
       clock: () => DateTime.utc(2026, 7, 20),
     ),
     model: model,
-    permissionManager: ToolPermissionManager(prompt: _Prompt(decision)),
+    permissionManager: ToolPermissionManager(
+      prompt: prompt ?? _Prompt(decision),
+      accountKey: 'app-a::edu-a',
+    ),
     auditSink: audit ?? _AuditSink(),
     accountGeneration: generation ?? () => 1,
     skillTimeout: timeout,
   );
+}
+
+class _CompetitionSearchSource implements CompetitionSearchSource {
+  int searches = 0;
+
+  @override
+  Future<CompetitionSearchPage> search(CompetitionSearchInput input) async {
+    searches++;
+    return CompetitionSearchPage(
+      events: const [],
+      total: 0,
+      fetchedAt: DateTime.utc(2026, 7, 21),
+    );
+  }
 }
 
 LocalToolCall _academicCall(String id) => LocalToolCall(
@@ -517,11 +967,15 @@ LocalToolCall _academicCall(String id) => LocalToolCall(
       arguments: const <String, dynamic>{},
     );
 
-ToolPermissionPreview _preview(SkillSensitivity sensitivity) =>
+ToolPermissionPreview _preview(
+  SkillSensitivity sensitivity, {
+  String destination = 'test',
+}) =>
     ToolPermissionPreview(
       toolId: 'test',
       sensitivity: sensitivity,
-      destination: 'test',
+      providerKind: AIModelProviderKind.openAICompatible,
+      destination: destination,
       dataItems: const <ToolDataPreviewItem>[
         ToolDataPreviewItem(
           dataType: PersonalDataType.academic,
@@ -537,10 +991,12 @@ class _Prompt implements ToolPermissionPrompt {
 
   final ToolPermissionDecision decision;
   int count = 0;
+  ToolPermissionPreview? lastPreview;
 
   @override
   Future<ToolPermissionDecision> request(ToolPermissionPreview preview) async {
     count++;
+    lastPreview = preview;
     return decision;
   }
 }
@@ -647,4 +1103,30 @@ class _Gateway implements PersonalDataGateway {
     required DateTime end,
   }) =>
       throw UnimplementedError();
+}
+
+class _ToolCompetitionMatchSource implements CompetitionMatchExplanationSource {
+  int reads = 0;
+
+  @override
+  Future<CompetitionMatchExplanationPage> load() async {
+    reads++;
+    return CompetitionMatchExplanationPage(
+      profileReady: true,
+      preferenceConfigured: true,
+      items: <CompetitionMatchExplanationItem>[
+        CompetitionMatchExplanationItem.fromEvent(
+          CompetitionEvent(
+            id: 1,
+            title: '人工智能竞赛',
+            personalizedScore: 75,
+            recommendationTier: 'recommended',
+            fitReasons: const <String>['方向匹配'],
+          ),
+        ),
+      ],
+      total: 1,
+      fetchedAt: DateTime.utc(2026, 7, 20),
+    );
+  }
 }

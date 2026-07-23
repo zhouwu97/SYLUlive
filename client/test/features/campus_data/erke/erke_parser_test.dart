@@ -5,6 +5,8 @@ import 'package:html/parser.dart' show parse;
 
 import 'package:shenliyuan/features/campus_data/erke/erke_parser.dart';
 import 'package:shenliyuan/features/campus_data/erke/erke_models.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 加载测试 fixture HTML
 String _loadFixture(String name) {
@@ -712,7 +714,7 @@ void main() {
 
     test('clearCachedData 清除所有二课数据', () {
       // ErkeRepository.clearCachedData() 清除缓存和内存数据
-      // 不删除 SharedPreferences 中已保存的密码
+      // 不删除 AppPreferencesStore 中已保存的密码
       expect(true, isTrue); // 占位——Repository 实例测试
     });
 

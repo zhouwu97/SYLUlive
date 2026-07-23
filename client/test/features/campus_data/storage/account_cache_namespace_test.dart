@@ -7,9 +7,10 @@ import 'package:shenliyuan/features/campus_data/storage/account_cache_namespace.
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/erke_cache_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/physical_cache_store.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../helpers/personal_snapshot_test_fakes.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -19,7 +20,7 @@ void main() {
   late IncrementingRandomBytes random;
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     secureStore = MemoryPersonalSnapshotSecureStore();
     files = MemoryPersonalSnapshotFileBackend();
     random = IncrementingRandomBytes();
@@ -72,7 +73,7 @@ void main() {
     const appUserId = 'user-a';
     const sourceAccountId = 'sid-a';
     final key = AccountCacheNamespace.erkeSnapshot(appUserId);
-    SharedPreferences.setMockInitialValues(<String, Object>{
+    AppPreferencesStore.setMockInitialValues(<String, Object>{
       key: jsonEncode(<String, dynamic>{
         'app_user_id': AccountCacheNamespace.fingerprint(appUserId),
         'source_account_fingerprint': AccountCacheNamespace.fingerprint(
@@ -91,7 +92,7 @@ void main() {
 
     expect(await store.loadSnapshot(), isNotNull);
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     expect(prefs.containsKey(key), isFalse);
     expect(files.values, isNotEmpty);
   });
@@ -100,7 +101,7 @@ void main() {
     const appUserId = 'user-a';
     const sourceAccountId = 'sid-a';
     final key = AccountCacheNamespace.erkeSnapshot(appUserId);
-    SharedPreferences.setMockInitialValues(<String, Object>{
+    AppPreferencesStore.setMockInitialValues(<String, Object>{
       key: jsonEncode(<String, dynamic>{
         'app_user_id': AccountCacheNamespace.fingerprint(appUserId),
         'source_account_fingerprint': AccountCacheNamespace.fingerprint(
@@ -119,13 +120,13 @@ void main() {
 
     expect(await store.loadSnapshot(), isNull);
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     expect(prefs.containsKey(key), isTrue);
     expect(await store.needsResync(), isTrue);
   });
 
   test('无归属旧二课缓存只触发重同步，不自动迁移', () async {
-    SharedPreferences.setMockInitialValues({
+    AppPreferencesStore.setMockInitialValues({
       'erke_scores_cache': '[{"name":"旧数据"}]',
       'erke_summary_cache': '{}',
       'erke_snapshot': '{}',
@@ -138,7 +139,7 @@ void main() {
 
     expect(await store.loadOrMigrateSnapshot(), isNull);
     expect(await store.needsResync(), isTrue);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     expect(prefs.containsKey('erke_scores_cache'), isFalse);
   });
 
@@ -206,7 +207,7 @@ void main() {
       sourceAccountId,
       legacyYear,
     );
-    SharedPreferences.setMockInitialValues(<String, Object>{
+    AppPreferencesStore.setMockInitialValues(<String, Object>{
       legacyKey: jsonEncode(<String, dynamic>{
         'app_user_id': AccountCacheNamespace.fingerprint(appUserId),
         'source_account_fingerprint': AccountCacheNamespace.fingerprint(
@@ -252,7 +253,7 @@ void main() {
       sourceAccountId,
       year,
     );
-    SharedPreferences.setMockInitialValues(<String, Object>{
+    AppPreferencesStore.setMockInitialValues(<String, Object>{
       key: jsonEncode(<String, dynamic>{
         'app_user_id': AccountCacheNamespace.fingerprint(appUserId),
         'source_account_fingerprint': AccountCacheNamespace.fingerprint(
@@ -271,7 +272,7 @@ void main() {
 
     expect(await store.readYear(year), {'total_score': 90});
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     expect(prefs.containsKey(key), isFalse);
     expect(files.values, isNotEmpty);
   });
@@ -285,7 +286,7 @@ void main() {
       sourceAccountId,
       year,
     );
-    SharedPreferences.setMockInitialValues(<String, Object>{
+    AppPreferencesStore.setMockInitialValues(<String, Object>{
       key: jsonEncode(<String, dynamic>{
         'app_user_id': AccountCacheNamespace.fingerprint(appUserId),
         'source_account_fingerprint': AccountCacheNamespace.fingerprint(
@@ -304,13 +305,13 @@ void main() {
 
     expect(await store.readYear(year), isNull);
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     expect(prefs.containsKey(key), isTrue);
     expect(await store.needsResync(), isTrue);
   });
 
   test('体测旧键无法确认归属时被清理并要求重同步', () async {
-    SharedPreferences.setMockInitialValues({'gym_cache_sid-a_2026': '{}'});
+    AppPreferencesStore.setMockInitialValues({'gym_cache_sid-a_2026': '{}'});
     final store = PhysicalCacheStore(
       appUserId: 'user-a',
       sourceAccountId: 'sid-a',
@@ -320,7 +321,7 @@ void main() {
     await store.discardUnownedLegacy(['2026']);
 
     expect(await store.needsResync(), isTrue);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     expect(prefs.containsKey('gym_cache_sid-a_2026'), isFalse);
   });
 }

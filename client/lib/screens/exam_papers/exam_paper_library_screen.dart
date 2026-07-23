@@ -90,7 +90,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
       _error = null;
     }
     final canAccess = auth.isLoggedIn &&
-        (auth.user?.isAdmin == true || auth.user?.eduBound == true);
+        (auth.user?.isAdmin == true || auth.user?.studentVerified == true);
     if (canAccess && !_loadScheduled && _items.isEmpty && !_loading) {
       _loadScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -233,7 +233,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     await auth.refreshUser();
     if (!mounted) return;
     _loadScheduled = false;
-    if (auth.user?.eduBound == true || auth.user?.isAdmin == true) {
+    if (auth.user?.studentVerified == true || auth.user?.isAdmin == true) {
       await _load(refresh: true);
     }
   }
@@ -320,7 +320,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
     final canAccess =
-        auth.isLoggedIn && (user?.isAdmin == true || user?.eduBound == true);
+        auth.isLoggedIn && (user?.isAdmin == true || user?.studentVerified == true);
 
     return GlobalBackgroundWrapper(
       child: Scaffold(

@@ -22,6 +22,8 @@ const (
 	examPaperStorageJobBatchSize        = 50
 	eduCredentialCleanupJobInterval     = time.Minute
 	eduCredentialCleanupJobBatchSize    = 50
+	eduBindingRecoveryInterval          = time.Minute
+	eduBindingRecoveryBatchSize         = 50
 )
 
 type examPaperStorageJobProcessor interface {
@@ -36,6 +38,10 @@ type eduCredentialCleanupJobProcessor interface {
 	ProcessDue(context.Context, int) (services.EduCredentialCleanupJobProcessReport, error)
 }
 
+type eduBindingRecoveryProcessor interface {
+	ProcessDue(context.Context, int) (services.EduBindingRecoveryReport, error)
+}
+
 // ExamPaperStorageCron 持有存储后台任务的退出同步状态。
 type ExamPaperStorageCron struct {
 	wg sync.WaitGroup
@@ -46,8 +52,20 @@ type EduCredentialCleanupCron struct {
 	wg sync.WaitGroup
 }
 
+// EduBindingRecoveryCron 持有跨服务教务绑定恢复任务的退出同步状态。
+type EduBindingRecoveryCron struct {
+	wg sync.WaitGroup
+}
+
 // Wait 等待教务凭证清理任务在 context 取消后退出。
 func (c *EduCredentialCleanupCron) Wait() {
+	if c != nil {
+		c.wg.Wait()
+	}
+}
+
+// Wait 等待教务绑定恢复任务在 context 取消后退出。
+func (c *EduBindingRecoveryCron) Wait() {
 	if c != nil {
 		c.wg.Wait()
 	}
@@ -146,6 +164,37 @@ func StartEduCredentialCleanupCron(ctx context.Context, jobs eduCredentialCleanu
 		}
 	}()
 	log.Println("教务凭证清理后台任务已启动")
+	return cron
+}
+
+// StartEduBindingRecoveryCron 启动跨服务绑定崩溃恢复任务。
+func StartEduBindingRecoveryCron(ctx context.Context, recovery eduBindingRecoveryProcessor) *EduBindingRecoveryCron {
+	cron := &EduBindingRecoveryCron{}
+	cron.wg.Add(1)
+	go func() {
+		defer cron.wg.Done()
+		ticker := time.NewTicker(eduBindingRecoveryInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			report, err := recovery.ProcessDue(ctx, eduBindingRecoveryBatchSize)
+			if err != nil {
+				log.Printf("处理教务绑定恢复任务失败: %v", err)
+			} else if report.Processed > 0 {
+				log.Printf("教务绑定恢复任务完成: processed=%d completed=%d cleaned=%d failed=%d", report.Processed, report.Completed, report.Cleaned, report.Failed)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	log.Println("教务绑定恢复后台任务已启动")
 	return cron
 }
 

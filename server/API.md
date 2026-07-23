@@ -103,8 +103,8 @@
 | `POST` | `/api/majors/:id/rate` | 评价专业 |
 | `DELETE` | `/api/majors/rating/:id` | 删除自己的专业评价 |
 | `GET` | `/api/canteens` | 获取食堂评分列表 |
-| `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 获取食堂详情及评价，支持综合/最新排序和评价筛选 |
-| `POST` | `/api/canteens/:id/rate` | 评价食堂 |
+| `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 公开获取食堂详情及评价；登录时附带个人评价/投票状态 |
+| `POST` | `/api/canteens/:id/rate` | 评价食堂（需登录并绑定教务） |
 | `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
 | `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
 

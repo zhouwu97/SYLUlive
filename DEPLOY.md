@@ -333,6 +333,7 @@ JWT_SECRET=your_random_secret
 DSN=host=127.0.0.1 port=5432 user=shenliyuan password=your_password dbname=shenliyuan sslmode=disable
 UPLOAD_DIR=./uploads
 EXAM_PAPER_DIR=/opt/shenliyuan/private/exam-papers
+COMPETITION_AWARD_EVIDENCE_DIR=/opt/shenliyuan/private/competition-award-evidence
 SUPER_ADMIN_ID=admin
 SUPER_ADMIN_PASSWORD=your_random_admin_password
 GIN_MODE=release

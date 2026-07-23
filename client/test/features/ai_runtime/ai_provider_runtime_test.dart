@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_endpoint_policy.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_model_provider.dart';
 import 'package:shenliyuan/features/ai_runtime/ai_model_runtime.dart';
@@ -16,8 +15,11 @@ import 'package:shenliyuan/models/ai_quota.dart';
 import 'package:shenliyuan/models/ai_run.dart';
 import 'package:shenliyuan/models/ai_run_event.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
+import 'package:shenliyuan/platform/contracts/secure_store.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-class _MemorySecureStore implements AIProviderSecureStore {
+
+class _MemorySecureStore implements AppSecretStore {
   final Map<String, String> values = <String, String>{};
 
   @override
@@ -150,7 +152,7 @@ void main() {
   });
 
   test('模型配置和 API Key 均按账号与配置 ID 隔离', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
     final secureStore = _MemorySecureStore();
     final primaryStore = AIProviderSettingsStore(
       appUserId: '10001',
@@ -169,7 +171,7 @@ void main() {
       apiKey: 'secret-key',
     );
 
-    final preferences = await SharedPreferences.getInstance();
+    final preferences = await AppPreferencesStore.getInstance();
     expect(
       preferences.getKeys().map(preferences.getString).whereType<String>(),
       isNot(contains('secret-key')),
@@ -198,13 +200,13 @@ void main() {
   });
 
   test('未知 Provider 类型失败关闭，不回退到校园公益 AI', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
     final store = AIProviderSettingsStore(
       appUserId: '10001',
       secureStore: _MemorySecureStore(),
     );
     await store.saveCampusPublic();
-    final preferences = await SharedPreferences.getInstance();
+    final preferences = await AppPreferencesStore.getInstance();
     final configKey = preferences
         .getKeys()
         .singleWhere((key) => key.startsWith('ai_provider_config/'));
@@ -224,7 +226,7 @@ void main() {
   });
 
   test('密钥删除失败时保留普通配置供用户重试清理', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
     final secureStore = _FailingDeleteSecureStore();
     final store = AIProviderSettingsStore(
       appUserId: '10001',
@@ -492,7 +494,7 @@ void main() {
   });
 
   test('聊天控制器关闭上下文时取消公益 Run 并限制内存历史', () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
     final store = AIProviderSettingsStore(
       appUserId: '10001',
       secureStore: _MemorySecureStore(),

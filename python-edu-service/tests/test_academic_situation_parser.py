@@ -1,4 +1,17 @@
+from models.schemas import AcademicSituationResponse
 from services.crawler import parse_academic_situation_html
+
+
+def _valid_summary(
+    all_gpa="2.61728",
+    degree_gpa="1.96826",
+):
+    return f"""
+      当前所有课程平均学分绩点（GPA）：{all_gpa}
+      当前学位课程平均学分绩点（GPA）：{degree_gpa}
+      计划总课程 101 门 通过 51 门 未通过 1 门 未修 43 门 在读 6 门
+      计划学位课程为 15 门 通过 7 门 未通过 1 门 未修 6 门 在读 1 门
+    """
 
 
 def test_parse_academic_situation_summary_and_retake_passed():
@@ -33,6 +46,13 @@ def test_parse_academic_situation_summary_and_retake_passed():
 
     parsed = parse_academic_situation_html(html)
 
+    assert parsed["success"] is True
+    assert parsed["source_kind"] == "official_academic_situation"
+    assert parsed["source_url"] == "/xsxy/xsxyqk_cxXsxyqkIndex.html"
+    assert parsed["parser_version"] == "academic-situation-v2"
+    assert parsed["captured_at"]
+    assert parsed["official_updated_at"] is None
+    assert len(parsed["structure_signature"]) == 64
     assert parsed["all_gpa"] == 2.61728
     assert parsed["degree_gpa"] == 1.96826
     assert parsed["total_courses"] == 101
@@ -47,17 +67,23 @@ def test_parse_academic_situation_summary_and_retake_passed():
     assert course["effective_passed"] is True
     assert course["effective_grade"] == "68.9"
     assert course["is_degree"] is True
+    assert parsed["courses_status"] == "available"
 
 
 def test_gpa_parsing_continuous_text():
-    html = "当前所有课程平均学分绩点（GPA）：2.61728 当前学位课程平均学分绩点（GPA）：1.96826"
+    html = _valid_summary()
     parsed = parse_academic_situation_html(html)
     assert parsed["all_gpa"] == 2.61728
     assert parsed["degree_gpa"] == 1.96826
 
 
 def test_gpa_parsing_with_spaces():
-    html = "当前所有课程平均学分绩点 （GPA） ： 2.61728 当前学位课程平均学分绩点 （GPA） ： 1.96826"
+    html = f"""
+      当前所有课程平均学分绩点 （GPA） ： 2.61728
+      当前学位课程平均学分绩点 （GPA） ： 1.96826
+      计划总课程 101 门 通过 51 门 未通过 1 门 未修 43 门 在读 6 门
+      计划学位课程为 15 门 通过 7 门 未通过 1 门 未修 6 门 在读 1 门
+    """
     parsed = parse_academic_situation_html(html)
     assert parsed["all_gpa"] == 2.61728
     assert parsed["degree_gpa"] == 1.96826
@@ -73,6 +99,8 @@ def test_gpa_parsing_with_html_tags():
       当前学位课程平均学分绩点
       <font>（GPA）：</font>
       <font style="color:red;">1.96826</font>
+      计划总课程 101 门 通过 51 门 未通过 1 门 未修 43 门 在读 6 门
+      计划学位课程为 15 门 通过 7 门 未通过 1 门 未修 6 门 在读 1 门
     </div>
     """
     parsed = parse_academic_situation_html(html)
@@ -92,3 +120,129 @@ def test_parse_academic_situation_degree_gpa_with_split_text():
     result = parse_academic_situation_html(html)
     assert result["all_gpa"] == 2.61728
     assert result["degree_gpa"] == 1.96826
+
+
+def test_blank_and_login_pages_fail_closed():
+    for html in ("", '<form action="login_slogin.html">用户登录</form>'):
+        result = parse_academic_situation_html(html)
+
+        assert result["success"] is False
+        assert result["error_code"] == "ACADEMIC_SITUATION_STRUCTURE_CHANGED"
+        assert result["courses_status"] == "parse_failed"
+        assert result["total_courses"] is None
+
+
+def test_missing_gpa_region_fails_closed():
+    html = """
+      计划总课程 101 门 通过 51 门 未通过 1 门 未修 43 门 在读 6 门
+      计划学位课程为 15 门 通过 7 门 未通过 1 门 未修 6 门 在读 1 门
+    """
+
+    result = parse_academic_situation_html(html)
+
+    assert result["success"] is False
+    assert result["message"] == "学业情况页面结构发生变化"
+
+
+def test_missing_course_count_region_fails_closed():
+    result = parse_academic_situation_html(
+        "当前所有课程平均学分绩点（GPA）：2.61728 "
+        "当前学位课程平均学分绩点（GPA）：1.96826"
+    )
+
+    assert result["success"] is False
+    assert result["passed_courses"] is None
+
+
+def test_single_missing_course_count_fails_closed():
+    html = _valid_summary().replace("未通过 1 门", "", 1)
+
+    result = parse_academic_situation_html(html)
+
+    assert result["success"] is False
+    assert result["failed_courses"] is None
+    assert result["total_courses"] is None
+    assert result["error_code"] == "ACADEMIC_SITUATION_STRUCTURE_CHANGED"
+
+
+def test_missing_passed_count_does_not_reuse_failed_count():
+    html = _valid_summary().replace("通过 51 门 ", "", 1)
+
+    result = parse_academic_situation_html(html)
+
+    assert result["success"] is False
+    assert result["passed_courses"] is None
+    assert result["failed_courses"] is None
+
+
+def test_partial_course_counts_fail_closed():
+    html = """
+      当前所有课程平均学分绩点（GPA）：2.61728
+      当前学位课程平均学分绩点（GPA）：1.96826
+      计划总课程 101 门 通过 51 门 未通过 1 门 未修 43 门 在读 6 门
+    """
+
+    result = parse_academic_situation_html(html)
+
+    assert result["success"] is False
+    assert result["total_courses"] is None
+    assert result["degree_total_courses"] is None
+    assert result["courses_status"] == "parse_failed"
+
+
+def test_courses_status_distinguishes_unresolved_dynamic_source():
+    html = f"""
+      <div>{_valid_summary()}</div>
+      <div id="course-table"></div>
+      <script>$.ajax({{url: '/xsxy/course/list'}})</script>
+    """
+
+    result = parse_academic_situation_html(html)
+
+    assert result["success"] is True
+    assert result["courses"] == []
+    assert result["courses_status"] == "dynamic_source_unresolved"
+
+
+def test_courses_status_distinguishes_empty_and_missing_tables():
+    empty_table_html = f"""
+      <div>{_valid_summary()}</div>
+      <table>
+        <tr><td>课程明细</td></tr>
+        <tr><th>课程名称</th><th>最大成绩</th><th>修读状态</th></tr>
+      </table>
+    """
+
+    empty_result = parse_academic_situation_html(empty_table_html)
+    missing_result = parse_academic_situation_html(_valid_summary())
+
+    assert empty_result["courses_status"] == "empty"
+    assert missing_result["courses_status"] == "not_present"
+
+
+def test_courses_status_marks_unparseable_rows_as_failed():
+    html = f"""
+      <div>{_valid_summary()}</div>
+      <table>
+        <tr><th>课程名称</th><th>最大成绩</th><th>修读状态</th></tr>
+        <tr><td></td><td>90</td><td>通过</td></tr>
+      </table>
+    """
+
+    result = parse_academic_situation_html(html)
+
+    assert result["courses"] == []
+    assert result["courses_status"] == "parse_failed"
+
+
+def test_structure_failure_schema_keeps_statistics_null():
+    parsed = parse_academic_situation_html("")
+
+    response = AcademicSituationResponse(**parsed).model_dump(mode="json")
+
+    assert response["success"] is False
+    assert response["total_courses"] is None
+    assert response["passed_courses"] is None
+    assert response["degree_total_courses"] is None
+    assert response["courses_status"] == "parse_failed"
+    assert response["error_code"] == "ACADEMIC_SITUATION_STRUCTURE_CHANGED"

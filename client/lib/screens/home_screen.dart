@@ -5,8 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../platform/contracts/external_navigator.dart';
 import '../config/api_constants.dart';
 import '../main.dart';
 import '../models/post.dart';
@@ -32,6 +31,21 @@ import 'create_post_screen.dart';
 import 'poll/poll_composer_screen.dart';
 import 'publish/publish_type_sheet.dart';
 import 'image_viewer_screen.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
+
+/// 首页首屏请求结束后再检查更新，避免更新状态覆盖开屏与帖子加载过程。
+Future<void> loadInitialFeedBeforeUpdateCheck({
+  required Future<void> Function() loadInitialFeed,
+  required Future<void> Function() initializeUpdateCheck,
+}) async {
+  try {
+    await loadInitialFeed();
+  } catch (error) {
+    debugPrint('首页帖子首次加载失败，继续执行更新检查: $error');
+  }
+  await initializeUpdateCheck();
+}
 
 /// 首页首屏请求结束后再检查更新，避免更新状态覆盖开屏与帖子加载过程。
 Future<void> loadInitialFeedBeforeUpdateCheck({
@@ -145,7 +159,7 @@ class _HomeScreenState extends State<HomeScreen>
     } catch (_) {}
   }
 
-  // Snooze: keyed by userId:announcementId in SharedPreferences
+  // Snooze: keyed by userId:announcementId in AppPreferencesStore
   static const _snoozePrefix = 'announcement_snooze_';
   static const _snoozeDuration = Duration(hours: 4);
   // Fallback polling interval (keep until JPush trigger is implemented)
@@ -301,7 +315,7 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _loadSeenAnnouncements() async {
     final key = _announcementSeenKey;
     if (key == null) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final stored = prefs.getStringList(key) ?? const [];
     _seenAnnouncementIds
       ..clear()
@@ -311,7 +325,7 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _saveSeenAnnouncements() async {
     final key = _announcementSeenKey;
     if (key == null) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setStringList(
       key,
       _seenAnnouncementIds.map((id) => id.toString()).toList(),
@@ -592,11 +606,11 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  // ─── Snooze helpers (SharedPreferences, keyed by userId:announcementId) ───
+  // ─── Snooze helpers (AppPreferencesStore, keyed by userId:announcementId) ───
 
   Future<bool> _isSnoozed(int announcementId, int userId) async {
     if (userId <= 0) return false;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final key = '$_snoozePrefix${userId}_$announcementId';
     final until = prefs.getString(key);
     if (until == null) return false;
@@ -610,7 +624,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _snoozeAnnouncement(int announcementId, int userId) async {
     if (userId <= 0) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final key = '$_snoozePrefix${userId}_$announcementId';
     await prefs.setString(
       key,
@@ -620,7 +634,7 @@ class _HomeScreenState extends State<HomeScreen>
     _cleanExpiredSnoozes(prefs);
   }
 
-  void _cleanExpiredSnoozes(SharedPreferences prefs) {
+  void _cleanExpiredSnoozes(AppPreferencesStore prefs) {
     final keys = prefs.getKeys().where((k) => k.startsWith(_snoozePrefix));
     final now = DateTime.now();
     for (final key in keys) {
@@ -816,8 +830,9 @@ class _HomeScreenState extends State<HomeScreen>
                           if (link == null || link.isEmpty) return;
                           final uri = Uri.tryParse(link);
                           if (uri == null) return;
-                          await launchUrl(uri,
-                              mode: LaunchMode.externalApplication);
+                          final opened = await ExternalNavigator.current().open(uri);
+                          if (!opened && mounted) {
+                          }
                         },
                         styleSheet: MarkdownStyleSheet(
                           p: TextStyle(
@@ -1197,10 +1212,9 @@ class _HomeScreenState extends State<HomeScreen>
                               if (link == null || link.isEmpty) return;
                               final uri = Uri.tryParse(link);
                               if (uri == null) return;
-                              await launchUrl(
-                                uri,
-                                mode: LaunchMode.externalApplication,
-                              );
+                             final opened = await ExternalNavigator.current().open(uri);
+                            if (!opened && mounted) {
+                            }
                             },
                             styleSheet: MarkdownStyleSheet(
                               p: TextStyle(

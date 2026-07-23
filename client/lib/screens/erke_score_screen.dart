@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../services/webvpn_service.dart';
 import '../features/campus_data/erke/erke_repository.dart';
 import '../features/campus_data/erke/erke_models.dart';
 import '../features/campus_data/storage/erke_cache_store.dart';
 import '../utils/app_feedback.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 class ErkeScoreScreen extends StatefulWidget {
   const ErkeScoreScreen({super.key});
@@ -86,7 +87,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Future<void> _clearLegacySavedPasswords() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       await prefs.remove('erke_cas_pwd');
       await prefs.remove('erke_erke_pwd');
     } catch (_) {}

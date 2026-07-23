@@ -11,6 +11,7 @@ class CompetitionStudentEventCard extends StatelessWidget {
   final VoidCallback onJoinedTap;
   final bool joined;
   final bool isAdding;
+  final bool showRecommendations;
 
   const CompetitionStudentEventCard({
     super.key,
@@ -20,6 +21,7 @@ class CompetitionStudentEventCard extends StatelessWidget {
     required this.onJoinedTap,
     this.joined = false,
     this.isAdding = false,
+    this.showRecommendations = true,
   });
 
   @override
@@ -27,8 +29,11 @@ class CompetitionStudentEventCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final status = resolveCompetitionStatus(event, isDark);
     final audience = _studentAudience(event);
-    final reason = _studentReason(event);
-    final manualLabel = competitionManualRatingShort(event.recommendationLevel);
+    final reason =
+        showRecommendations ? _studentReason(event) : event.summary.trim();
+    final manualLabel = showRecommendations
+        ? competitionManualRatingShort(event.recommendationLevel)
+        : '';
     final schoolLabel = competitionSchoolRecognitionShort(
       status: event.schoolRecognitionStatus,
       grade: event.schoolRecognitionGrade,
@@ -107,7 +112,7 @@ class CompetitionStudentEventCard extends StatelessWidget {
                   ),
                 ),
               ],
-              if (event.fitReasons.isNotEmpty) ...[
+              if (showRecommendations && event.fitReasons.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(
                   event.fitReasons.join(' · '),
@@ -117,6 +122,28 @@ class CompetitionStudentEventCard extends StatelessWidget {
                     color: CompetitionUiTokens.accent(isDark),
                     fontWeight: FontWeight.w700,
                   ),
+                ),
+              ],
+              if (showRecommendations && event.personalizedScore != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.tune_rounded,
+                      size: 15,
+                      color: CompetitionUiTokens.accent(isDark),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      '偏好匹配 ${event.personalizedScore}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.2,
+                        color: CompetitionUiTokens.accent(isDark),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
               ],
               const SizedBox(height: 12),

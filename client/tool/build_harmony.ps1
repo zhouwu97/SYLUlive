@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet('debug', 'release')]
     [string]$Mode = 'debug',
@@ -75,10 +75,30 @@ if (-not (Test-Path -LiteralPath $localSigningProfile)) {
     throw "缺少本机签名配置：$localSigningProfile。请在 DevEco Studio 生成调试签名材料后创建该未跟踪文件。"
 }
 
+$pubspecPath = Join-Path $projectRoot 'pubspec.yaml'
+$pubspecContent = Get-Content -LiteralPath $pubspecPath -Raw
+if ($pubspecContent -match 'version:\s*(?<versionName>[\d\.]+)\+(?<versionCode>\d+)') {
+    $versionName = $matches['versionName']
+    $versionCode = $matches['versionCode']
+} else {
+    throw "Cannot extract version from pubspec.yaml."
+}
+
+$appJson5Path = Join-Path $projectRoot 'ohos\AppScope\app.json5'
+$appJson5Content = Get-Content -LiteralPath $appJson5Path -Raw
+
+$appJson5Template = $appJson5Content
+$appJson5Modified = $appJson5Content -replace '"versionCode"\s*:\s*\d+', "`"versionCode`": $versionCode"
+$appJson5Modified = $appJson5Modified -replace '"versionName"\s*:\s*"[^"]+"', "`"versionName`": `"$versionName`""
+
+Set-Content -LiteralPath $appJson5Path -Value $appJson5Modified -Encoding utf8 -NoNewline
+
 # 签名材料只允许存在于已忽略的本地文件中，构建结束后立即恢复无凭据模板。
 Copy-Item -LiteralPath $localSigningProfile -Destination $buildProfile -Force
 try {
     & $flutter build hap "--$Mode" --no-pub --dart-define=APP_PLATFORM=ohos `
+        "--dart-define=APP_VERSION_NAME=$versionName" `
+        "--dart-define=APP_VERSION_CODE=$versionCode" `
         --target-platform=$TargetPlatform `
         --dart-define=APP_API_URL=https://sylulive.online/api
 
@@ -87,4 +107,5 @@ try {
     }
 } finally {
     Set-Content -LiteralPath $buildProfile -Value $buildProfileTemplate -Encoding utf8 -NoNewline
+    Set-Content -LiteralPath $appJson5Path -Value $appJson5Template -Encoding utf8 -NoNewline
 }

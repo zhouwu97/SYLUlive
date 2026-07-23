@@ -63,6 +63,9 @@ class SkillResult<T> {
       );
 }
 
+/// 可由 Skill 返回、交给界面等待用户确认的安全操作预览。
+abstract interface class SkillActionArtifact {}
+
 abstract interface class PersonalSkill<I, O> {
   String get id;
 

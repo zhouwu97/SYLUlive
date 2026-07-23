@@ -306,6 +306,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   Widget _buildFloatingRatingComposer(bool isDark, Color accent) {
     final bottom = MediaQuery.of(context).padding.bottom;
     final hasRating = _canteenData?['my_rating'] != null;
+    final auth = context.watch<AuthProvider>();
+    final ratingHint = !auth.isLoggedIn
+        ? '登录后可评价'
+        : auth.user?.studentVerified != true
+            ? '绑定教务后可评价'
+            : hasRating
+                ? '修改我的评价...'
+                : '说说你的真实体验...';
 
     return Container(
       padding: EdgeInsets.fromLTRB(16, 8, 16, bottom + 8),
@@ -332,7 +340,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                   ),
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    hasRating ? '修改我的评价...' : '说说你的真实体验...',
+                    ratingHint,
                     style: TextStyle(
                       fontSize: 13,
                       color: RankingTokens.subColor(isDark),
@@ -880,6 +888,12 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     if (!auth.isLoggedIn) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('请先登录后评价')));
+      return;
+    }
+    if (auth.user?.studentVerified != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先绑定教务账号后再评价')),
+      );
       return;
     }
 

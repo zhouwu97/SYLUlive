@@ -2,12 +2,12 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
 
 import '../helpers/personal_snapshot_test_fakes.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +20,7 @@ void main() {
   late IncrementingRandomBytes vaultRandom;
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     secureStore.clear();
     vaultSecureStore = MemoryPersonalSnapshotSecureStore();
     vaultFiles = MemoryPersonalSnapshotFileBackend();
@@ -86,7 +86,7 @@ void main() {
                 requestOptions: options,
                 statusCode: 200,
                 data: <String, dynamic>{
-                  'edu_bound': true,
+                  'edu_authorized': true,
                   'edu_student_id': '2403130233',
                 },
               ),
@@ -113,6 +113,20 @@ void main() {
                 ),
               );
             }
+            return;
+          }
+          if (options.path == '/edu/authorization' &&
+              options.method == 'DELETE') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: const <String, dynamic>{
+                  'edu_authorized': false,
+                  'edu_session_state': 'revoked',
+                },
+              ),
+            );
             return;
           }
           // Default: pass through (will fail if unexpected)
@@ -209,7 +223,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': '2403130233',
                   },
                 ),
@@ -256,7 +270,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': '2403130233',
                   },
                 ),
@@ -361,7 +375,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': '2403130233',
                   },
                 ),
@@ -385,6 +399,7 @@ void main() {
 
     test('失败的学业情况响应不会写入加密快照', () async {
       final dio = Dio();
+      Object? academicRequestData;
       dio.interceptors.add(
         InterceptorsWrapper(
           onRequest: (options, handler) {
@@ -394,7 +409,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': '2403130233',
                   },
                 ),
@@ -402,13 +417,17 @@ void main() {
               return;
             }
             if (options.path == '/edu/academic-situation') {
+              academicRequestData = options.data;
               handler.resolve(
                 Response(
                   requestOptions: options,
                   statusCode: 200,
                   data: <String, dynamic>{
                     'success': false,
-                    'message': '教务数据暂不可用',
+                    'error_code': 'ACADEMIC_SITUATION_STRUCTURE_CHANGED',
+                    'message': '学业情况页面结构发生变化',
+                    'parser_version': 'academic-situation-v2',
+                    'courses_status': 'parse_failed',
                   },
                 ),
               );
@@ -424,6 +443,14 @@ void main() {
       final result = await value.fetchAcademicSituation();
 
       expect(result.success, isFalse);
+      expect(result.errorMessage, '学业情况页面结构发生变化');
+      expect(academicRequestData, isA<Map<String, dynamic>>());
+      expect(
+        (academicRequestData! as Map<String, dynamic>).containsKey(
+          'force_refresh',
+        ),
+        isFalse,
+      );
       final store = AcademicCacheStore(
         appUserId: 'user_academic',
         sourceAccountId: '2403130233',
@@ -491,8 +518,38 @@ void main() {
       expect(grades[0].isPassed, true); // 64.7 >= 60
     });
 
+    test('revokeAuthorization clears in-memory and encrypted edu snapshots',
+        () async {
+      provider = createProvider(responseData: [
+        {
+          'name': '数据结构',
+          'grade': '90',
+          'credits': 4,
+          'gpa': 4.0,
+          'is_degree': true,
+        },
+      ]);
+
+      await setBoundUser(provider, 'user_revoke');
+      await provider.fetchGrades('2025', 3);
+      final store = AcademicCacheStore(
+        appUserId: 'user_revoke',
+        sourceAccountId: '2403130233',
+        snapshotStore: createSnapshotStore('user_revoke'),
+      );
+      expect(await store.readSnapshot(), isNotNull);
+
+      final result = await provider.revokeAuthorization();
+
+      expect(result.success, isTrue);
+      expect(provider.isAuthorized, isFalse);
+      expect(provider.sessionState, 'revoked');
+      expect(provider.getCachedGrades('2025', 3), isNull);
+      expect(await store.readSnapshot(), isNull);
+    });
+
     test('clearLocalSession clears local edu state and saved keys', () async {
-      SharedPreferences.setMockInitialValues({
+      AppPreferencesStore.setMockInitialValues({
         'edu_bound_user_a': true,
         'edu_student_id_user_a': ' 2403130233 ',
         'edu_grade_user_a': '2024',
@@ -500,7 +557,6 @@ void main() {
         'edu_major_user_a': '软件工程',
         'edu_last_semester_user_a': '2025_3',
       });
-      secureStore['edu_pwd_2403130233'] = 'old-password';
 
       final dio = Dio();
       dio.interceptors.add(
@@ -512,7 +568,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: {
-                    'edu_bound': true,
+                    'edu_authorized': true,
                     'edu_student_id': ' 2403130233 ',
                     'edu_grade': '2024',
                     'edu_college': '信息科学与工程学院',
@@ -564,11 +620,12 @@ void main() {
       expect(p.isLoading, false);
       expect(p.isStatusLoaded, false);
       expect(p.getCachedGrades('2025', 3), isNull);
-      expect(secureStore.containsKey('edu_pwd_2403130233'), false);
 
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       for (final key in [
         'edu_bound_user_a',
+        'edu_authorized_user_a',
+        'edu_session_state_user_a',
         'edu_student_id_user_a',
         'edu_grade_user_a',
         'edu_college_user_a',
@@ -593,7 +650,7 @@ void main() {
                     requestOptions: options,
                     statusCode: 200,
                     data: {
-                      'edu_bound': true,
+                      'edu_authorized': true,
                       'edu_student_id': '2403130233',
                       'edu_grade': '2024',
                       'edu_college': '信息科学与工程学院',

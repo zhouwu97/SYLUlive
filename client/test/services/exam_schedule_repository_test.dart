@@ -1,14 +1,15 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/services/exam_schedule_repository.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('读取考试页导入的本地考试安排', () async {
-    SharedPreferences.setMockInitialValues({
+    AppPreferencesStore.setMockInitialValues({
       'local_exams': jsonEncode([
         {
           'name': '高等数学',

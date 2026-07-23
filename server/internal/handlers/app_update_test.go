@@ -149,6 +149,27 @@ func TestCheckUpdate_OptionalUpdate(t *testing.T) {
 	require.Len(t, resp.SHA256, 64)
 }
 
+func TestCheckUpdate_ExternalMarket(t *testing.T) {
+	db := newAppUpdateTestDB(t)
+	rel := buildReleasePtrForUpdate(1602, models.AppReleaseStatusPublished, 1601)
+	rel.Platform = models.AppReleasePlatformOhos
+	rel.DeliveryMode = models.AppReleaseDeliveryModeExternalMarket
+	rel.ActionURL = "appgallery://..."
+	require.NoError(t, db.Create(rel).Error)
+
+	r := newAppUpdateRouter(t, db)
+	w := mustDoUpdateRequest(t, r, "/api/app/update?platform=ohos&channel=stable&version_name=1.6.1&version_code=1601", nil)
+	resp := decodeUpdateResponse(t, w)
+	
+	require.True(t, resp.UpdateAvailable)
+	require.Equal(t, "optional", resp.UpdateType)
+	require.Equal(t, "external_market", resp.DeliveryMode)
+	require.Equal(t, "appgallery://...", resp.ActionURL)
+	require.Empty(t, resp.DownloadURL)
+	require.Empty(t, resp.FileSize)
+	require.Empty(t, resp.SHA256)
+}
+
 func TestCheckUpdate_RequiredUpdate(t *testing.T) {
 	db := newAppUpdateTestDB(t)
 	require.NoError(t, db.Create(buildReleasePtrForUpdate(1603, models.AppReleaseStatusPublished, 1602)).Error)

@@ -2,30 +2,29 @@ package handlers
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"math/big"
 	"net/http"
-	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
+	"shenliyuan/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
-	indexUrl  = "https://jxw.sylu.edu.cn/xtgl"
 	courseUrl = "https://jxw.sylu.edu.cn/kbcx"
 	gradeUrl  = "https://jxw.sylu.edu.cn/cjcx"
 
@@ -34,12 +33,13 @@ const (
 )
 
 var (
-	Error302          = errors.New("post redirect disabled")
 	ErrorLapse        = errors.New("cookie已失效")
 	ErrorCourseNoOpen = errors.New("当前学期课表暂未排课")
 	ErrorGradesNoOpen = errors.New("当前学期暂无成绩")
 )
 
+// eduLoginError 表示教务服务返回给客户端的可判定错误。
+// 该类型只用于错误归类，实际教务登录由 Python 教务服务负责。
 type eduLoginError struct {
 	Code    string
 	Message string
@@ -49,15 +49,11 @@ func (e *eduLoginError) Error() string {
 	return e.Message
 }
 
-// PublicKey 公钥结构
-type PublicKey struct {
-	Modulus  string `json:"modulus"`
-	Exponent string `json:"exponent"`
-}
-
 // EduHandler 教务处理器
 type EduHandler struct {
-	db *gorm.DB
+	db          *gorm.DB
+	jwtSecret   string
+	cleanupJobs *services.EduCredentialCleanupJobService
 }
 
 // NewEduHandler 创建教务处理器
@@ -65,18 +61,9 @@ func NewEduHandler(db *gorm.DB) *EduHandler {
 	return &EduHandler{db: db}
 }
 
-// baseHttpHeaders 请求头
-func baseHttpHeaders() map[string]string {
-	return map[string]string{
-		"User-Agent":    "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:29.0) Gecko/20100101 Firefox/29.0",
-		"Content-Type":  "application/x-www-form-urlencoded;charset=utf-8",
-		"Cache-Control": "no-cache",
-	}
-}
-
-// nowTime 获取当前时间戳
-func nowTime() string {
-	return strconv.FormatInt(time.Now().UnixMilli(), 10)
+// NewEduHandlerWithLifecycle 创建具备授权撤销补偿和 Token 刷新能力的教务处理器。
+func NewEduHandlerWithLifecycle(db *gorm.DB, jwtSecret string, cleanupJobs *services.EduCredentialCleanupJobService) *EduHandler {
+	return &EduHandler{db: db, jwtSecret: jwtSecret, cleanupJobs: cleanupJobs}
 }
 
 // ---------- 统一的 Python 教务服务错误映射 ----------
@@ -119,12 +106,15 @@ func pythonEduRequest(method, path string, userID *uint, body interface{}) (*res
 // PythonEduCredentialCleanupRemote 将本地已提交的撤销授权补偿到教务服务。
 type PythonEduCredentialCleanupRemote struct{}
 
-// Unbind 删除教务服务保存的凭证副本；接口失败由 outbox 记录后重试。
-func (PythonEduCredentialCleanupRemote) Unbind(ctx context.Context, userID uint) error {
+// Unbind 仅删除指定授权代次的远端凭据；接口失败由 outbox 记录后重试。
+func (PythonEduCredentialCleanupRemote) Unbind(ctx context.Context, userID uint, generation uint, deleteIdentity bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	response, err := pythonEduRequest(http.MethodDelete, "/api/edu/bind", &userID, nil)
+	response, err := pythonEduRequest(http.MethodDelete, "/api/edu/authorization", &userID, map[string]interface{}{
+		"expected_generation": generation,
+		"delete_identity":     deleteIdentity,
+	})
 	if err != nil {
 		return err
 	}
@@ -145,19 +135,38 @@ type eduBindResult struct {
 	Major     string `json:"major"`
 }
 
+var (
+	errEduStudentAlreadyBound      = errors.New("该学号已绑定其他账号")
+	errEduStudentIdentityImmutable = errors.New("已认证学生不能绑定其他学号")
+	errEduBindingStudentMismatch   = errors.New("待提交教务绑定的学号不一致")
+)
+
 type eduStatusResult struct {
-	Bound     bool   `json:"bound"`
-	StudentID string `json:"student_id"`
-	Name      string `json:"name"`
-	Grade     string `json:"grade"`
-	College   string `json:"college"`
-	Major     string `json:"major"`
+	Bound                bool   `json:"bound"`
+	Authorized           bool   `json:"authorized"`
+	SessionState         string `json:"session_state"`
+	AutoRelogin          bool   `json:"auto_relogin"`
+	CredentialGeneration uint   `json:"credential_generation"`
+	StudentID            string `json:"student_id"`
+	Name                 string `json:"name"`
+	Grade                string `json:"grade"`
+	College              string `json:"college"`
+	Major                string `json:"major"`
 }
 
-func bindEduWithPython(userID uint, studentID, password string) (*eduBindResult, error) {
-	resp, err := pythonEduRequest(http.MethodPost, "/api/edu/bind", &userID, map[string]string{
-		"student_id": studentID,
-		"password":   password,
+type eduSessionResult struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	Authorized   bool   `json:"authorized"`
+	SessionState string `json:"session_state"`
+	AutoRelogin  bool   `json:"auto_relogin"`
+}
+
+func bindEduWithPython(userID uint, studentID, password string, generation uint) (*eduBindResult, error) {
+	resp, err := pythonEduRequest(http.MethodPost, "/api/edu/bind", &userID, map[string]interface{}{
+		"student_id":            studentID,
+		"password":              password,
+		"credential_generation": generation,
 	})
 	if err != nil {
 		return nil, &eduServiceRequestError{err: err}
@@ -176,16 +185,213 @@ func bindEduWithPython(userID uint, studentID, password string) (*eduBindResult,
 	return &result, nil
 }
 
-func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *eduBindResult) error {
-	return db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-		"edu_student_id": studentID,
-		"edu_password":   "",
-		"edu_cookie":     "",
-		"edu_bound":      true,
-		"edu_grade":      result.Grade,
-		"edu_college":    result.College,
-		"edu_major":      result.Major,
-	}).Error
+// prepareEduBinding 在跨服务请求前持久化待绑定代次及目标学号。相同 pending 代次仅能由
+// 同一学号重试，从而覆盖 Python 已成功、Go 进程尚未完成本地提交时的崩溃窗口。
+func prepareEduBinding(db *gorm.DB, userID uint, studentID string) (uint, error) {
+	studentID = strings.TrimSpace(studentID)
+	if studentID == "" {
+		return 0, errors.New("待绑定学号不能为空")
+	}
+	var generation uint
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			return err
+		}
+		if user.AccountStatus == "cancelled" || user.AccountStatus == "registration_cleanup_pending" {
+			return errors.New("当前账号不能绑定教务")
+		}
+		if user.EduBindingState == "pending" && user.EduBindingPendingGeneration > user.EduAuthorizationGeneration {
+			pendingStudentID := strings.TrimSpace(user.EduBindingPendingStudentID)
+			if pendingStudentID == "" {
+				// 兼容升级前已有的待绑定记录；已稳定认证的账号可从本地身份恢复目标学号。
+				pendingStudentID = strings.TrimSpace(user.StudentID)
+			}
+			if pendingStudentID != "" && pendingStudentID != studentID {
+				return errEduBindingStudentMismatch
+			}
+			if pendingStudentID == "" {
+				if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("edu_binding_pending_student_id", studentID).Error; err != nil {
+					return err
+				}
+			}
+			generation = user.EduBindingPendingGeneration
+			return nil
+		}
+		generation = user.EduAuthorizationGeneration + 1
+		now := time.Now()
+		return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+			"edu_binding_state":              "pending",
+			"edu_binding_pending_generation": generation,
+			"edu_binding_pending_student_id": studentID,
+			"edu_binding_started_at":         now,
+		}).Error
+	})
+	return generation, err
+}
+
+func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *eduBindResult, generation uint, recordBindingConsent bool) error {
+	if result == nil || strings.TrimSpace(studentID) == "" {
+		return errors.New("教务绑定结果无效")
+	}
+	if generation == 0 {
+		return errors.New("教务授权代次无效")
+	}
+	studentID = strings.TrimSpace(studentID)
+	now := time.Now()
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			return err
+		}
+		var conflict models.User
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("student_id = ? AND id <> ?", studentID, userID).First(&conflict).Error
+		if err == nil {
+			return errEduStudentAlreadyBound
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if user.StudentVerifiedAt != nil && user.StudentID != "" && user.StudentID != studentID {
+			return errEduStudentIdentityImmutable
+		}
+		if user.AccountStatus == "cancelled" || user.AccountStatus == "registration_cleanup_pending" {
+			return errors.New("当前账号不能绑定教务")
+		}
+		if user.EduBindingState == "active" && user.EduAuthorizationGeneration == generation && user.EduAuthorized && user.StudentID == studentID {
+			// 相同请求已在先前尝试中完成本地提交；再次执行不得触发补偿删除新凭据。
+			return nil
+		}
+		if user.EduBindingState != "pending" || user.EduBindingPendingGeneration != generation {
+			return errors.New("教务授权待提交代次已变化")
+		}
+		updates := map[string]interface{}{
+			"student_id":                     studentID,
+			"student_verified_at":            now,
+			"edu_student_id":                 studentID,
+			"edu_authorized":                 true,
+			"edu_session_state":              "active",
+			"edu_auto_relogin":               true,
+			"edu_authorized_at":              now,
+			"edu_session_updated_at":         now,
+			"edu_authorization_generation":   generation,
+			"edu_cleanup_pending":            false,
+			"edu_binding_state":              "active",
+			"edu_binding_pending_generation": 0,
+			"edu_binding_pending_student_id": "",
+			"edu_binding_started_at":         nil,
+			"edu_bound":                      true,
+			"edu_password":                   "",
+			"edu_cookie":                     "",
+			"edu_grade":                      result.Grade,
+			"edu_college":                    result.College,
+			"edu_major":                      result.Major,
+		}
+		if user.StudentID != studentID || user.StudentVerifiedAt == nil {
+			updates["token_version"] = gorm.Expr("token_version + 1")
+		}
+		if user.AccountStatus == "registration_pending" {
+			updates["account_status"] = "active"
+		}
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.EduCredentialCleanupJob{}).
+			Where("user_id = ? AND expected_generation < ? AND completed_at IS NULL", userID, generation).
+			Updates(map[string]interface{}{"completed_at": now, "last_error": "已由新的教务授权代次替代", "locked_at": nil, "lock_token": ""}).Error; err != nil {
+			return err
+		}
+		if recordBindingConsent {
+			return recordEduBindingConsent(tx, userID)
+		}
+		return nil
+	})
+	if err != nil && (utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique")) {
+		return errEduStudentAlreadyBound
+	}
+	return err
+}
+
+// precheckEduBinding 在调用 Python 教务服务前确认稳定学号身份和归属没有冲突。
+// 数据库唯一索引与 updateUserEduBinding 仍负责处理并发竞争。
+func precheckEduBinding(db *gorm.DB, userID uint, studentID string) error {
+	studentID = strings.TrimSpace(studentID)
+	var user models.User
+	if err := db.Select("id", "student_id", "student_verified_at").First(&user, userID).Error; err != nil {
+		return err
+	}
+	if user.StudentVerifiedAt != nil && user.StudentID != "" && user.StudentID != studentID {
+		return errEduStudentIdentityImmutable
+	}
+	var conflict models.User
+	err := db.Select("id").Where("student_id = ? AND id <> ?", studentID, userID).First(&conflict).Error
+	if err == nil {
+		return errEduStudentAlreadyBound
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	return err
+}
+
+// compensateFailedEduBinding 清理 Python 已落库、但 Go 未能提交身份升级的残留凭据。
+func (h *EduHandler) compensateFailedEduBinding(userID uint, generation uint) {
+	resp, err := pythonEduRequest(http.MethodDelete, "/api/edu/authorization", &userID, map[string]interface{}{
+		"expected_generation": generation,
+		"delete_identity":     false,
+	})
+	if err == nil && resp.StatusCode() == http.StatusOK {
+		return
+	}
+	if h.cleanupJobs == nil || h.db == nil {
+		return
+	}
+	_ = h.db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+			"edu_authorization_generation":   generation,
+			"edu_authorized":                 false,
+			"edu_bound":                      false,
+			"edu_session_state":              "revoked",
+			"edu_auto_relogin":               false,
+			"edu_cleanup_pending":            true,
+			"edu_binding_state":              "cleanup_pending",
+			"edu_binding_pending_generation": 0,
+			"edu_binding_pending_student_id": "",
+			"edu_binding_started_at":         nil,
+			"edu_session_updated_at":         now,
+		}).Error; err != nil {
+			return err
+		}
+		return h.cleanupJobs.Enqueue(tx, userID, generation, now, false)
+	})
+}
+
+func (h *EduHandler) issueBoundEduSession(c *gin.Context, userID uint) {
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新账号信息失败"})
+		return
+	}
+	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成 Token"})
+		return
+	}
+	response, err := selfUserResponseForDB(h.db, user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号状态失败"})
+		return
+	}
+	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "绑定成功，学号已成为主账号，APP 密码保持不变",
+		"token":   token,
+		"user":    response,
+	})
 }
 
 func writeEduServiceError(c *gin.Context, err error) {
@@ -230,6 +436,10 @@ func mapEduServiceError(c *gin.Context, statusCode int, body []byte) {
 	if msg == "" {
 		msg = "教务服务异常"
 	}
+	if isStableEduStateErrorCode(svcErr.Code) {
+		c.JSON(statusCode, gin.H{"code": svcErr.Code, "error": msg, "upstream_code": svcErr.Code})
+		return
+	}
 
 	switch statusCode {
 	case http.StatusUnauthorized:
@@ -268,8 +478,9 @@ func mapEduServiceError(c *gin.Context, statusCode int, body []byte) {
 
 // BindEduInput 绑定教务输入
 type BindEduInput struct {
-	StudentID string `json:"student_id" binding:"required,len=10"`
-	Password  string `json:"password" binding:"required"`
+	StudentID              string `json:"student_id" binding:"required,len=10"`
+	Password               string `json:"password" binding:"required"`
+	EduDataConsentAccepted bool   `json:"edu_data_consent_accepted"`
 }
 
 // BindEdu 绑定教务账号
@@ -281,59 +492,68 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
 		return
 	}
+	if !input.EduDataConsentAccepted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "绑定教务前请阅读并同意教务数据专项授权", "code": "EDU_DATA_CONSENT_REQUIRED"})
+		return
+	}
+	if err := precheckEduBinding(h.db, userID, input.StudentID); err != nil {
+		switch {
+		case errors.Is(err, errEduStudentAlreadyBound):
+			c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})
+		case errors.Is(err, errEduStudentIdentityImmutable):
+			c.JSON(http.StatusConflict, gin.H{"error": "已认证学生不能绑定其他学号", "code": "STUDENT_ID_ALREADY_VERIFIED"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查学号归属失败"})
+		}
+		return
+	}
+	generation, err := prepareEduBinding(h.db, userID, input.StudentID)
+	if err != nil {
+		if errors.Is(err, errEduBindingStudentMismatch) {
+			c.JSON(http.StatusConflict, gin.H{"error": "已有待提交教务绑定，请使用同一学号重试", "code": "EDU_BINDING_PENDING"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "准备教务授权失败"})
+		return
+	}
 
-	result, err := bindEduWithPython(userID, input.StudentID, input.Password)
+	result, err := bindEduWithPython(userID, input.StudentID, input.Password, generation)
 	if err != nil {
 		writeEduServiceError(c, err)
 		return
 	}
-	if err := updateUserEduBinding(h.db, userID, input.StudentID, result); err != nil {
+	if err := updateUserEduBinding(h.db, userID, input.StudentID, result, generation, true); err != nil {
+		h.compensateFailedEduBinding(userID, generation)
+		if errors.Is(err, errEduStudentAlreadyBound) {
+			c.JSON(http.StatusConflict, gin.H{"error": "该学号已绑定其他账号", "code": "EDU_STUDENT_ALREADY_BOUND"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务绑定状态失败"})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":        "绑定成功",
-		"edu_student_id": input.StudentID,
-		"name":           result.Name,
-		"edu_grade":      result.Grade,
-		"edu_college":    result.College,
-		"edu_major":      result.Major,
-	})
+	middleware.InvalidateTokenVersionCache(userID)
+	h.issueBoundEduSession(c, userID)
 }
 
 // UnbindEdu 解绑教务账号
 func (h *EduHandler) UnbindEdu(c *gin.Context) {
-	userID := c.GetUint("user_id")
-	resp, err := pythonEduRequest(http.MethodDelete, "/api/edu/bind", &userID, nil)
-	if err != nil {
-		writeEduServiceError(c, &eduServiceRequestError{err: err})
-		return
-	}
-	if resp.StatusCode() != http.StatusOK {
-		mapEduServiceError(c, resp.StatusCode(), resp.Body())
-		return
-	}
-
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-		"edu_student_id": "",
-		"edu_password":   "",
-		"edu_cookie":     "",
-		"edu_bound":      false,
-		"edu_grade":      "",
-		"edu_college":    "",
-		"edu_major":      "",
-	}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务解绑状态失败"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "解绑成功"})
+	// 旧接口在兼容期内映射为撤销授权，不能释放已认证学号。
+	h.RevokeEduAuthorization(c)
 }
 
 // GetEduStatus 获取教务绑定状态
 func (h *EduHandler) GetEduStatus(c *gin.Context) {
 	userID := c.GetUint("user_id")
+	var localUser models.User
+	if err := h.db.First(&localUser, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	// 用户已撤销授权时，本地状态优先于远端旧副本。只有显式绑定才可恢复授权。
+	if !localUser.EduAuthorized && (localUser.EduSessionState == "revoked" || localUser.EduCleanupPending) {
+		c.JSON(http.StatusOK, localEduStatusPayload(localUser))
+		return
+	}
 	resp, err := pythonEduRequest(http.MethodGet, "/api/edu/status", &userID, nil)
 	if err != nil {
 		writeEduServiceError(c, &eduServiceRequestError{err: err})
@@ -348,33 +568,255 @@ func (h *EduHandler) GetEduStatus(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
 		return
 	}
-	updates := map[string]interface{}{"edu_bound": status.Bound}
-	if status.Bound {
+	remoteAuthorized := status.Authorized || status.Bound
+	if !remoteAuthorized {
+		// 远端凭据丢失只能令本地活跃会话降级为过期，不能悄然撤销或重建授权。
+		write := h.db.Model(&models.User{}).Where(
+			"id = ? AND edu_authorized = ? AND edu_cleanup_pending = ? AND edu_session_state <> ? AND edu_authorization_generation = ?",
+			userID, true, false, "revoked", localUser.EduAuthorizationGeneration,
+		).Updates(map[string]interface{}{
+			"edu_session_state": "expired", "edu_auto_relogin": false, "edu_session_updated_at": time.Now(),
+		})
+		if write.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务状态失败"})
+			return
+		}
+		if write.RowsAffected == 0 {
+			if err := h.db.First(&localUser, userID).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "读取教务状态失败"})
+				return
+			}
+			c.JSON(http.StatusOK, localEduStatusPayload(localUser))
+			return
+		}
+		localUser.EduSessionState = "expired"
+		localUser.EduAutoRelogin = false
+		c.JSON(http.StatusOK, localEduStatusPayload(localUser))
+		return
+	}
+	updates := map[string]interface{}{
+		"edu_session_state":      status.SessionState,
+		"edu_auto_relogin":       status.AutoRelogin,
+		"edu_session_updated_at": time.Now(),
+	}
+	if status.StudentID != "" {
 		updates["edu_student_id"] = status.StudentID
 		updates["edu_grade"] = status.Grade
 		updates["edu_college"] = status.College
 		updates["edu_major"] = status.Major
-	} else {
-		updates["edu_student_id"] = ""
-		updates["edu_password"] = ""
-		updates["edu_cookie"] = ""
-		updates["edu_grade"] = ""
-		updates["edu_college"] = ""
-		updates["edu_major"] = ""
 	}
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+	write := h.db.Model(&models.User{}).Where(
+		"id = ? AND edu_authorized = ? AND edu_cleanup_pending = ? AND edu_session_state <> ? AND edu_authorization_generation = ?",
+		userID, true, false, "revoked", localUser.EduAuthorizationGeneration,
+	).Updates(updates)
+	if write.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务状态失败"})
+		return
+	}
+	if write.RowsAffected == 0 {
+		if err := h.db.First(&localUser, userID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取教务状态失败"})
+			return
+		}
+		c.JSON(http.StatusOK, localEduStatusPayload(localUser))
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"edu_bound":      status.Bound,
-		"edu_student_id": status.StudentID,
-		"name":           status.Name,
-		"edu_grade":      status.Grade,
-		"edu_college":    status.College,
-		"edu_major":      status.Major,
+		"edu_bound":         true,
+		"edu_authorized":    true,
+		"edu_session_state": status.SessionState,
+		"edu_student_id":    status.StudentID,
+		"name":              status.Name,
+		"edu_grade":         status.Grade,
+		"edu_college":       status.College,
+		"edu_major":         status.Major,
 	})
+}
+
+func parseEduSessionResult(resp *resty.Response) (eduSessionResult, error) {
+	var result eduSessionResult
+	if err := json.Unmarshal(resp.Body(), &result); err != nil || !result.Success {
+		if err == nil {
+			err = errors.New("教务服务未确认会话操作成功")
+		}
+		return result, err
+	}
+	return result, nil
+}
+
+func (h *EduHandler) syncEduSessionState(userID uint, result eduSessionResult) (models.User, error) {
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		return models.User{}, err
+	}
+	if !user.EduAuthorized || user.EduSessionState == "revoked" || user.EduCleanupPending {
+		return user, nil
+	}
+	now := time.Now()
+	sessionState := result.SessionState
+	autoRelogin := result.AutoRelogin
+	if !result.Authorized {
+		// 远端会话信息不能撤销本地授权，只能将当前会话降级为不可用。
+		sessionState = "expired"
+		autoRelogin = false
+	}
+	updates := map[string]interface{}{
+		"edu_session_state":      sessionState,
+		"edu_auto_relogin":       autoRelogin,
+		"edu_session_updated_at": now,
+		"edu_password":           "",
+		"edu_cookie":             "",
+	}
+	write := h.db.Model(&models.User{}).Where(
+		"id = ? AND edu_authorized = ? AND edu_cleanup_pending = ? AND edu_session_state <> ? AND edu_authorization_generation = ?",
+		userID, true, false, "revoked", user.EduAuthorizationGeneration,
+	).Updates(updates)
+	if write.Error != nil {
+		return models.User{}, write.Error
+	}
+	if write.RowsAffected == 0 {
+		if err := h.db.First(&user, userID).Error; err != nil {
+			return models.User{}, err
+		}
+		return user, nil
+	}
+	user.EduSessionState = sessionState
+	user.EduAutoRelogin = autoRelogin
+	return user, nil
+}
+
+// localEduStatusPayload 仅根据本地权威状态构造响应。
+// 远端读取与本地撤销并发时，调用方必须返回此状态，不能用旧远端结果覆盖它。
+func localEduStatusPayload(user models.User) gin.H {
+	state := user.EduSessionState
+	if !user.EduAuthorized && (state == "revoked" || user.EduCleanupPending) {
+		state = "revoked"
+	}
+	return gin.H{
+		"edu_bound":         user.EduAuthorized,
+		"edu_authorized":    user.EduAuthorized,
+		"edu_session_state": state,
+		"edu_student_id":    user.EduStudentID,
+		"edu_grade":         user.EduGrade,
+		"edu_college":       user.EduCollege,
+		"edu_major":         user.EduMajor,
+	}
+}
+
+func isStableEduStateErrorCode(code string) bool {
+	switch code {
+	case "EDU_AUTHORIZATION_REVOKED", "EDU_SESSION_LOGGED_OUT", "EDU_SESSION_EXPIRED", "EDU_CREDENTIAL_UNAVAILABLE":
+		return true
+	default:
+		return false
+	}
+}
+
+// LogoutEduSession 仅断开教务会话，学生身份和授权凭据仍由服务端保留。
+func (h *EduHandler) LogoutEduSession(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	resp, err := pythonEduRequest(http.MethodPost, "/api/edu/session/logout", &userID, nil)
+	if err != nil {
+		writeEduServiceError(c, &eduServiceRequestError{err: err})
+		return
+	}
+	if resp.StatusCode() != http.StatusOK {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
+		return
+	}
+	result, err := parseEduSessionResult(resp)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
+		return
+	}
+	user, err := h.syncEduSessionState(userID, result)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务会话状态失败"})
+		return
+	}
+	_ = h.db.Create(&models.AccountSecurityAuditLog{UserID: userID, Action: "edu_session_logged_out"}).Error
+	c.JSON(http.StatusOK, gin.H{"message": result.Message, "edu_authorized": user.EduAuthorized, "edu_session_state": user.EduSessionState})
+}
+
+// ResumeEduSession 仅在用户明确点击后恢复会话，绝不由客户端静默触发。
+func (h *EduHandler) ResumeEduSession(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	resp, err := pythonEduRequest(http.MethodPost, "/api/edu/session/resume", &userID, nil)
+	if err != nil {
+		writeEduServiceError(c, &eduServiceRequestError{err: err})
+		return
+	}
+	if resp.StatusCode() != http.StatusOK {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
+		return
+	}
+	result, err := parseEduSessionResult(resp)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
+		return
+	}
+	user, err := h.syncEduSessionState(userID, result)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务会话状态失败"})
+		return
+	}
+	_ = h.db.Create(&models.AccountSecurityAuditLog{UserID: userID, Action: "edu_session_resumed"}).Error
+	c.JSON(http.StatusOK, gin.H{"message": result.Message, "edu_authorized": user.EduAuthorized, "edu_session_state": user.EduSessionState})
+}
+
+// RevokeEduAuthorization 撤销凭据使用权；稳定学号、学生认证和基础资料均不受影响。
+func (h *EduHandler) RevokeEduAuthorization(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	now := time.Now()
+	var generation uint
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+			return err
+		}
+		generation = user.EduAuthorizationGeneration
+		updates := map[string]interface{}{
+			"edu_authorized": false, "edu_bound": false, "edu_session_state": "revoked",
+			"edu_auto_relogin": false, "edu_session_updated_at": now,
+			"edu_cleanup_pending": true, "edu_password": "", "edu_cookie": "",
+			"edu_binding_state": "cleanup_pending", "edu_binding_pending_generation": 0, "edu_binding_pending_student_id": "", "edu_binding_started_at": nil,
+		}
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.UserLegalConsent{}).
+			Where("user_id = ? AND document = ? AND revoked_at IS NULL", userID, models.LegalDocumentEduDataConsent).
+			Update("revoked_at", now).Error; err != nil {
+			return err
+		}
+		if h.cleanupJobs != nil {
+			return h.cleanupJobs.Enqueue(tx, userID, generation, now, false)
+		}
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤销教务授权失败"})
+		return
+	}
+
+	// 本地状态已先提交；远端暂时不可用时由 outbox 后台重试，避免用户无法撤销授权。
+	resp, err := pythonEduRequest(http.MethodDelete, "/api/edu/authorization", &userID, map[string]interface{}{
+		"expected_generation": generation,
+		"delete_identity":     false,
+	})
+	if err != nil || resp.StatusCode() != http.StatusOK {
+		_ = h.db.Create(&models.AccountSecurityAuditLog{UserID: userID, Action: "edu_authorization_revoked_pending_cleanup"}).Error
+		c.JSON(http.StatusAccepted, gin.H{"message": "教务授权已撤销，凭据清理将在后台完成", "edu_authorized": false, "edu_session_state": "revoked"})
+		return
+	}
+	if h.cleanupJobs != nil {
+		if err := h.cleanupJobs.CompleteGeneration(c.Request.Context(), userID, generation, false); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步凭据清理状态失败"})
+			return
+		}
+	}
+	_ = h.db.Create(&models.AccountSecurityAuditLog{UserID: userID, Action: "edu_authorization_revoked"}).Error
+	c.JSON(http.StatusOK, gin.H{"message": "教务授权已撤销", "edu_authorized": false, "edu_session_state": "revoked"})
 }
 
 // PreVerifyInput 注册前验证教务输入
@@ -506,11 +948,6 @@ type GradeDetailInput struct {
 	StudentGradeID string `json:"student_grade_id"`
 }
 
-// AcademicSituationInput 学业情况查询输入
-type AcademicSituationInput struct {
-	ForceRefresh bool `json:"force_refresh"`
-}
-
 // GetGrades 获取成绩（通过Python服务访问教务系统）
 func (h *EduHandler) GetGrades(c *gin.Context) {
 	userID, _ := c.Get("user_id")
@@ -576,12 +1013,6 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 		return
 	}
 
-	var input AcademicSituationInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
 	client := resty.New()
 	client.SetTimeout(45 * time.Second)
 
@@ -590,8 +1021,7 @@ func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
 		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
 		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
 		SetBody(map[string]interface{}{
-			"user_id":       fmt.Sprintf("%d", userID),
-			"force_refresh": input.ForceRefresh,
+			"user_id": fmt.Sprintf("%d", userID),
 		}).
 		Post(strings.TrimRight(EduServiceConfig.BaseURL, "/") + "/api/edu/academic-situation/")
 
@@ -678,74 +1108,6 @@ func (h *EduHandler) GetGradeDetail(c *gin.Context) {
 	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
 }
 
-// 以下是整合的教务系统登录和查询逻辑
-
-func getIndexCookieAndCsrfToken(client *resty.Client, retryCount int) (string, error) {
-	if retryCount >= 5 {
-		return "", errors.New("教务系统连接超时，多次重试失败")
-	}
-	client.SetTimeout(3 * time.Second)
-
-	initResp, err := client.R().SetHeaders(baseHttpHeaders()).Get(indexUrl + "/login_slogin.html")
-	if err != nil {
-		if urlErr, ok := err.(*url.Error); ok && urlErr.Timeout() {
-			return getIndexCookieAndCsrfToken(client, retryCount+1)
-		}
-		return "", err
-	}
-
-	findCsrfToken := regexp.MustCompile(`id="csrftoken" name="csrftoken" value="([^"]+)"`)
-	matches := findCsrfToken.FindStringSubmatch(string(initResp.Body()))
-	if len(matches) < 2 {
-		return "", errors.New("无法获取csrf token")
-	}
-
-	client.Cookies = initResp.Cookies()
-	return matches[1], nil
-}
-
-func getPublicKey(client *resty.Client) (*PublicKey, error) {
-	resp, err := client.R().SetHeaders(baseHttpHeaders()).
-		SetQueryParams(map[string]string{
-			"time": nowTime(),
-			"_":    nowTime(),
-		}).Get(indexUrl + "/login_getPublicKey.html")
-
-	if err != nil {
-		return nil, err
-	}
-
-	var publicKey PublicKey
-	if err := json.Unmarshal(resp.Body(), &publicKey); err != nil {
-		return nil, err
-	}
-	return &publicKey, nil
-}
-
-func rsaByPublicKey(password string, publicKey *PublicKey) (string, error) {
-	modulusBytes, err := base64.StdEncoding.DecodeString(publicKey.Modulus)
-	if err != nil {
-		return "", err
-	}
-
-	exponentBytes, err := base64.StdEncoding.DecodeString(publicKey.Exponent)
-	if err != nil {
-		return "", err
-	}
-
-	pubKey := &rsa.PublicKey{
-		N: new(big.Int).SetBytes(modulusBytes),
-		E: int(new(big.Int).SetBytes(exponentBytes).Int64()),
-	}
-
-	encryptedBytes, err := rsa.EncryptPKCS1v15(rand.Reader, pubKey, []byte(password))
-	if err != nil {
-		return "", err
-	}
-
-	return base64.StdEncoding.EncodeToString(encryptedBytes), nil
-}
-
 func classifyEduLoginFailure(statusCode int, body string) error {
 	if strings.Contains(body, "用户名或密码错误") ||
 		strings.Contains(body, "账号或密码错误") ||
@@ -759,85 +1121,10 @@ func classifyEduLoginFailure(statusCode int, body string) error {
 	if statusCode == http.StatusOK {
 		return &eduLoginError{Code: "UNKNOWN_LOGIN_STATE", Message: "学校登录状态未知，请稍后重试或联系管理员"}
 	}
-	if statusCode >= 500 || statusCode == 0 {
+	if statusCode >= http.StatusInternalServerError || statusCode == 0 {
 		return &eduLoginError{Code: "REMOTE_SYSTEM_UNAVAILABLE", Message: "学校教务系统暂时不可用，请稍后再试"}
 	}
 	return &eduLoginError{Code: "CAS_FLOW_CHANGED", Message: "学校登录页面可能发生变化，请稍后重试或联系管理员"}
-}
-
-func summarizeEduLoginFailureBody(body string) (string, string) {
-	title := ""
-	if matches := regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`).FindStringSubmatch(body); len(matches) > 1 {
-		title = strings.Join(strings.Fields(matches[1]), " ")
-	}
-
-	text := regexp.MustCompile(`(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>`).ReplaceAllString(body, " ")
-	text = regexp.MustCompile(`(?s)<[^>]+>`).ReplaceAllString(text, " ")
-	text = strings.Join(strings.Fields(text), " ")
-	runes := []rune(text)
-	if len(runes) > 120 {
-		text = string(runes[:120])
-	}
-
-	return title, text
-}
-
-func logEduLoginFailure(resp *resty.Response, err error) {
-	statusCode := 0
-	finalURL := ""
-	body := ""
-	if resp != nil {
-		statusCode = resp.StatusCode()
-		body = string(resp.Body())
-		if resp.RawResponse != nil && resp.RawResponse.Request != nil && resp.RawResponse.Request.URL != nil {
-			finalURL = resp.RawResponse.Request.URL.Redacted()
-		}
-	}
-
-	code := "UNKNOWN_LOGIN_STATE"
-	var loginErr *eduLoginError
-	if errors.As(err, &loginErr) {
-		code = loginErr.Code
-	}
-	title, hint := summarizeEduLoginFailureBody(body)
-	log.Printf("[EDU] login failed status=%d final_url=%q title=%q code=%s body_hint=%q", statusCode, finalURL, title, code, hint)
-}
-
-func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken string) ([]*http.Cookie, error) {
-	loginResp, err := client.SetRedirectPolicy(resty.NoRedirectPolicy()).R().
-		SetFormData(map[string]string{
-			"csrftoken": csrfToken,
-			"language":  "zh_CN",
-			"yhm":       studentID,
-			"mm":        encryptedPassword,
-		}).
-		SetQueryParam("time", nowTime()).
-		SetHeaders(baseHttpHeaders()).
-		Post(indexUrl + "/login_slogin.html")
-
-	if err != nil && err.Error() == Error302.Error() {
-		return loginResp.Cookies(), nil
-	} else if err != nil {
-		loginErr := &eduLoginError{Code: "REMOTE_SYSTEM_UNAVAILABLE", Message: "学校教务系统暂时不可用，请稍后再试"}
-		logEduLoginFailure(loginResp, loginErr)
-		return nil, loginErr
-	}
-	if loginResp == nil {
-		loginErr := &eduLoginError{Code: "REMOTE_SYSTEM_UNAVAILABLE", Message: "学校教务系统暂时不可用，请稍后再试"}
-		logEduLoginFailure(nil, loginErr)
-		return nil, loginErr
-	}
-	loginErr := classifyEduLoginFailure(loginResp.StatusCode(), string(loginResp.Body()))
-	logEduLoginFailure(loginResp, loginErr)
-	return nil, loginErr
-}
-
-func buildCookieString(cookies []*http.Cookie) string {
-	var parts []string
-	for _, c := range cookies {
-		parts = append(parts, c.Name+"="+c.Value)
-	}
-	return strings.Join(parts, "; ")
 }
 
 // scheduleResponse 课表响应结构（匹配教务系统JSON字段）
@@ -1058,7 +1345,6 @@ func getStudentInfo(client *resty.Client, cookie, studentID string) (grade, coll
 	// 访问个人中心页面获取学生信息
 	resp, err := client.R().
 		SetHeader("Cookie", cookie).
-		SetHeaders(baseHttpHeaders()).
 		Get("/grxx_cxGrxx.html?gnmkdm=N100501&layout=default")
 
 	if err != nil {
@@ -1097,51 +1383,4 @@ func getStudentInfo(client *resty.Client, cookie, studentID string) (grade, coll
 	}
 
 	return grade, college, major, nil
-}
-
-// refreshCookie 自动刷新过期的Cookie
-func (h *EduHandler) refreshCookie(userID uint) (string, error) {
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		return "", err
-	}
-
-	if !user.EduBound || user.EduStudentID == "" || user.EduPassword == "" {
-		return "", errors.New("未绑定教务账号")
-	}
-
-	client := resty.New()
-
-	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
-	if err != nil {
-		return "", err
-	}
-
-	publicKey, err := getPublicKey(client)
-	if err != nil {
-		return "", err
-	}
-
-	encryptedPassword, err := rsaByPublicKey(user.EduPassword, publicKey)
-	if err != nil {
-		return "", err
-	}
-
-	_, err = syluLogin(client, user.EduStudentID, encryptedPassword, csrfToken)
-	if err != nil {
-		return "", err
-	}
-
-	var cookieStr string
-	if len(client.Cookies) > 1 {
-		cookieStr = buildCookieString(client.Cookies[1:2])
-	} else if len(client.Cookies) == 1 {
-		cookieStr = buildCookieString(client.Cookies)
-	}
-
-	h.db.Model(&user).Updates(map[string]interface{}{
-		"edu_cookie": cookieStr,
-	})
-
-	return cookieStr, nil
 }

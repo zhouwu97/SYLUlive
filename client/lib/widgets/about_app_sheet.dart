@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../platform/contracts/external_navigator.dart';
 import '../utils/update_checker.dart';
 import 'group_chat_dialog.dart';
 
@@ -411,9 +411,9 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
   }
 
   Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      await ExternalNavigator.current().open(uri);
     } else {
       debugPrint('Could not launch URL: $url');
     }
@@ -496,6 +496,30 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               style: TextButton.styleFrom(foregroundColor: accent),
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('知道了'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Clipboard.setData(const ClipboardData(text: _authorEmail));
+                Navigator.pop(dialogContext); // 关闭对话框
+                Navigator.pop(context); // 关闭 AboutAppSheet
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('邮箱已复制到剪贴板'),
+                    behavior: SnackBarBehavior.floating,
+                    margin: const EdgeInsets.all(16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy_rounded, size: 16),
+              label: const Text('复制邮箱'),
             ),
           ],
         );

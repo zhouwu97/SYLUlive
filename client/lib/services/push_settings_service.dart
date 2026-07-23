@@ -1,10 +1,13 @@
 import 'dart:math';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../platform/contracts/push_client.dart';
 
+import '../platform/app_platform.dart';
+import '../platform/platform_capabilities.dart';
 import '../providers/auth_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 class RemotePushEnableResult {
   final bool permissionGranted;
@@ -32,15 +35,15 @@ class PushSettingsService {
   static const _aliasChannel = MethodChannel(
     'shenliyuan/private_message_notifications',
   );
-  static final FlutterLocalNotificationsPlugin _permissionPlugin =
-      FlutterLocalNotificationsPlugin();
+  static final PushClient _pushClient = PushClient.current();
   static RemotePushRegistration? _registrationHandler;
   static Future<RemotePushEnableResult>? _registrationFuture;
   static String? _registrationUserId;
 
-  static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
+  static Future<AppPreferencesStore> _prefs() => AppPreferencesStore.getInstance();
 
   static Future<bool> isEnabled() async {
+    if (!PlatformCapabilities.current.supportsJPush) return false;
     final prefs = await _prefs();
     return prefs.getBool(enabledKey) ?? false;
   }
@@ -56,6 +59,7 @@ class PushSettingsService {
   }
 
   static Future<void> enable() async {
+    if (!PlatformCapabilities.current.supportsJPush) return;
     final prefs = await _prefs();
     await prefs.setBool(enabledKey, true);
   }
@@ -68,6 +72,7 @@ class PushSettingsService {
 
   /// 同步原生层的主动选择状态，必须先于 JPush 初始化执行。
   static Future<void> setNativePushOptIn(bool enabled) async {
+    if (!PlatformCapabilities.current.supportsJPush) return;
     await _aliasChannel.invokeMethod<void>(
       'setPushOptIn',
       {'enabled': enabled},
@@ -141,26 +146,8 @@ class PushSettingsService {
 
   /// 仅在用户主动开启远程推送时请求系统权限，冷启动初始化不弹权限框。
   static Future<bool> requestSystemNotificationPermission() async {
-    const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      iOS: DarwinInitializationSettings(
-        requestAlertPermission: false,
-        requestBadgePermission: false,
-        requestSoundPermission: false,
-      ),
-    );
-    await _permissionPlugin.initialize(settings);
-    final android = _permissionPlugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (android != null) {
-      // Android 12 及以下没有运行时通知权限，插件返回 null 代表无需申请。
-      return await android.requestNotificationsPermission() ?? true;
-    }
-    final ios = _permissionPlugin.resolvePlatformSpecificImplementation<
-        IOSFlutterLocalNotificationsPlugin>();
-    return await ios?.requestPermissions(
-            alert: true, badge: true, sound: true) ??
-        true;
+    if (!PlatformCapabilities.current.supportsJPush) return false;
+    return await _pushClient.requestSystemNotificationPermission();
   }
 
   static Future<AuthResult> disable(AuthProvider auth) async {

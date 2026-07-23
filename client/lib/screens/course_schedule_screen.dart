@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
@@ -28,6 +27,7 @@ import '../widgets/course/course_term_switch_sheet.dart';
 import '../widgets/course/course_preview_sheet.dart';
 import '../widgets/course/course_semester_start_picker.dart';
 import '../widgets/campus/campus_theme.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
@@ -445,7 +445,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+        // 课表路由由 GlobalBackgroundWrapper 提供页面背景，保持透明以展示自定义壁纸。
+        backgroundColor: Colors.transparent,
         body: SafeArea(
           bottom: false,
           child: Consumer<AuthProvider>(
@@ -919,6 +920,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final sidCtrl = TextEditingController();
     final pwdCtrl = TextEditingController();
     bool isLoading = false;
+    bool eduDataConsentAccepted = false;
 
     showDialog(
       context: context,
@@ -936,6 +938,18 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 ),
                 maxLength: 10,
                 enabled: !isLoading,
+              ),
+              CheckboxListTile(
+                value: eduDataConsentAccepted,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('同意教务数据专项授权'),
+                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销。'),
+                onChanged: isLoading
+                    ? null
+                    : (value) => setDialogState(
+                          () => eduDataConsentAccepted = value ?? false,
+                        ),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -971,8 +985,18 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               onPressed: isLoading
                   ? null
                   : () async {
+                      if (!eduDataConsentAccepted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请先同意教务数据专项授权')),
+                        );
+                        return;
+                      }
                       setDialogState(() => isLoading = true);
-                      final ok = await edu.bind(sidCtrl.text, pwdCtrl.text);
+                      final ok = await edu.bind(
+                        sidCtrl.text,
+                        pwdCtrl.text,
+                        eduDataConsentAccepted: true,
+                      );
                       if (ctx.mounted) Navigator.pop(ctx);
                       if (ok && context.mounted) {
                         ScaffoldMessenger.of(
@@ -1624,7 +1648,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   Future<void> _loadSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
 
       // 关键路径：不涉及原生通道的高耗时操作，仅读取本地配置
       if (!mounted) return;
@@ -1674,12 +1698,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   Future<void> _saveOpacity(double v) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setDouble(_scheduleOpacityKey, v);
   }
 
   Future<void> _saveSlotHeight(double v) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.setDouble(_scheduleSlotHeightKey, v);
   }
 
@@ -2697,7 +2721,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     String name,
   ) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       // 在 provider 中定义的常量：_archiveDataKeyPrefix = 'course_archive_data_v1_'
       final jsonStr = prefs.getString('course_archive_data_v1_$archiveId');
       if (jsonStr == null) throw Exception('存档数据不存在');

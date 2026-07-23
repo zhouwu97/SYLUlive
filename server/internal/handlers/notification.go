@@ -264,6 +264,39 @@ func CreateReplyNotificationFull(jpushAppKey, jpushMasterSecret string, db *gorm
 	return nil
 }
 
+// CreateMarketPostNotification 集市发帖通知（发给所有用户，除了作者自己）
+func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price float64, authorID uint) {
+	var users []models.User
+	if err := db.Select("id").Where("id != ?", authorID).Find(&users).Error; err != nil {
+		log.Printf("[DB_WARN] CreateMarketPostNotification Find users failed: %v", err)
+		return
+	}
+
+	titlePreview := textutils.TruncateGraphemes(title, 50)
+	content := titlePreview
+	if price > 0 {
+		content = fmt.Sprintf("%s  ¥%.2f", titlePreview, price)
+	}
+
+	notifications := make([]models.Notification, 0, len(users))
+	for _, user := range users {
+		notifications = append(notifications, models.Notification{
+			UserID:    user.ID,
+			Type:      "market_post",
+			Content:   content,
+			RelatedID: postID,
+			PostID:    postID,
+			FromUID:   authorID,
+			IsRead:    false,
+		})
+	}
+	if len(notifications) > 0 {
+		if err := db.CreateInBatches(&notifications, 200).Error; err != nil {
+			log.Printf("[DB_ERROR] CreateMarketPostNotification batch insert failed: %v", err)
+		}
+	}
+}
+
 // CreateFeaturedApplicationResultNotification 创建精华申请结果通知
 func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID uint, postID, appID uint, status, title, reason string, points int) {
 	content := fmt.Sprintf("你的精华申请已通过：《%s》", title)

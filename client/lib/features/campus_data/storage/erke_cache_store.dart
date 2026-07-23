@@ -1,11 +1,12 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../erke/erke_models.dart';
 import 'account_cache_namespace.dart';
 import 'account_scoped_snapshot_store.dart';
 import 'personal_snapshot_models.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 二课数据缓存，仅允许访问当前 App 用户与来源账号的命名空间。
 ///
@@ -94,7 +95,7 @@ class ErkeCacheStore {
 
   Future<bool> needsResync() async {
     if (!_hasValidNamespace) return true;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     return prefs.getBool(_needsResyncKey) ?? false;
   }
 
@@ -111,7 +112,7 @@ class ErkeCacheStore {
       expiresAt: DateTime.now().toUtc().add(const Duration(days: 7)),
       payload: snapshot.toJson(),
     );
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.remove(_needsResyncKey);
     // 新写入成功后清理阶段 0B 明文信封。
     await prefs.remove(_legacyOwnedSnapshotKey);
@@ -170,7 +171,7 @@ class ErkeCacheStore {
 
   Future<void> clearAll() async {
     await _snapshotStore.deleteType(PersonalDataType.erke);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.remove(_legacyOwnedSnapshotKey);
     await prefs.remove(_needsResyncKey);
     for (final key in _legacyKeys) {
@@ -181,7 +182,7 @@ class ErkeCacheStore {
   Future<void> close() => _snapshotStore.close();
 
   Future<ErkeSnapshot?> _migrateOwnedPlaintextSnapshot() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final raw = prefs.getString(_legacyOwnedSnapshotKey);
     if (raw == null || raw.isEmpty) return null;
 
@@ -239,7 +240,7 @@ class ErkeCacheStore {
 
   Future<void> _discardUnownedLegacyCache() async {
     if (!_hasValidNamespace) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     var discarded = false;
     for (final key in _legacyKeys) {
       discarded = await prefs.remove(key) || discarded;
@@ -247,9 +248,9 @@ class ErkeCacheStore {
     if (discarded) await _markNeedsResync(prefs);
   }
 
-  Future<void> _markNeedsResync([SharedPreferences? preferences]) async {
+  Future<void> _markNeedsResync([AppPreferencesStore? preferences]) async {
     if (!_hasValidNamespace) return;
-    final prefs = preferences ?? await SharedPreferences.getInstance();
+    final prefs = preferences ?? await AppPreferencesStore.getInstance();
     await prefs.setBool(_needsResyncKey, true);
   }
 }

@@ -46,8 +46,8 @@ void main() {
     expect(tester.widget<Checkbox>(agreement).value, isTrue);
     expect(tester.widget<Checkbox>(privacy).value, isTrue);
 
-    await tester.ensureVisible(find.text('毕业人员注册'));
-    await tester.tap(find.text('毕业人员注册'));
+    await tester.ensureVisible(find.text('邮箱注册'));
+    await tester.tap(find.text('邮箱注册'));
     await tester.pumpAndSettle();
 
     expect(agreement, findsOneWidget);
@@ -55,6 +55,7 @@ void main() {
     expect(tester.widget<Checkbox>(agreement).value, isTrue);
     expect(tester.widget<Checkbox>(privacy).value, isTrue);
     expect(edu, findsNothing);
+    expect(find.text('毕业人员注册'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

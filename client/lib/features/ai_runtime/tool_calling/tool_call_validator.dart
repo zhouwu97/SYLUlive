@@ -1,11 +1,13 @@
 import '../skills/academic_overview_skill.dart';
 import '../skills/competition_search_skill.dart';
+import '../skills/competition_advisor_skills.dart';
 import '../skills/erke_overview_skill.dart';
 import '../skills/deterministic_skills.dart';
 import '../skills/physical_overview_skill.dart';
 import '../skills/schedule_skill_models.dart';
 import '../skills/today_schedule_skill.dart';
 import '../skills/week_schedule_skill.dart';
+import '../skills/competition_plan_action_skill.dart';
 import 'tool_call_models.dart';
 
 class ValidatedToolCall {
@@ -56,11 +58,19 @@ class LocalToolCallValidator {
           const ErkeOverviewInput(),
         ),
       CompetitionSearchSkill.skillId => _competition(call.arguments),
+      CompetitionCapabilityProfileSkill.skillId => _empty(
+          call.arguments,
+          const EmptyCompetitionAdvisorInput(),
+        ),
+      ExplainCompetitionMatchesSkill.skillId => _empty(
+          call.arguments,
+          const EmptyCompetitionAdvisorInput(),
+        ),
+      DraftAddCompetitionToPlanSkill.skillId => _draftAddCompetition(call.arguments),
       AcademicGpaSkill.skillId ||
       AcademicCreditSummarySkill.skillId ||
       AcademicFailureRiskSkill.skillId ||
-      GraduationReadinessSkill.skillId ||
-      CompetitionFitSkill.skillId =>
+      GraduationReadinessSkill.skillId =>
         _empty(
           call.arguments,
           const EmptyDeterministicInput(),
@@ -79,10 +89,7 @@ class LocalToolCallValidator {
   }
 
   Object _week(Map<String, dynamic> arguments) {
-    _requireOnly(
-      arguments,
-      const <String>{'start', 'end', 'week_containing'},
-    );
+    _requireOnly(arguments, const <String>{'start', 'end', 'week_containing'});
     final anchor = arguments['week_containing'];
     final start = arguments['start'];
     final end = arguments['end'];
@@ -100,10 +107,11 @@ class LocalToolCallValidator {
   }
 
   Object _competition(Map<String, dynamic> arguments) {
-    _requireOnly(
-      arguments,
-      const <String>{'keyword', 'category_slug', 'limit'},
-    );
+    _requireOnly(arguments, const <String>{
+      'keyword',
+      'category_slug',
+      'limit',
+    });
     final keyword = arguments['keyword'];
     final category = arguments['category_slug'];
     final limit = arguments['limit'] ?? 10;
@@ -130,6 +138,15 @@ class LocalToolCallValidator {
     );
   }
 
+  Object _draftAddCompetition(Map<String, dynamic> arguments) {
+    _requireOnly(arguments, const <String>{'event_id'});
+    final eventID = arguments['event_id'];
+    if (eventID is! num || eventID % 1 != 0 || eventID < 1 || eventID > 2147483647) {
+      throw const ToolCallValidationException('赛事 ID 无效');
+    }
+    return DraftAddCompetitionToPlanInput(eventID.toInt());
+  }
+
   Object _empty(Map<String, dynamic> arguments, Object input) {
     if (arguments.isNotEmpty) {
       throw const ToolCallValidationException('该 Tool 不接受参数');
@@ -138,21 +155,18 @@ class LocalToolCallValidator {
   }
 
   Object _fitness(Map<String, dynamic> arguments) {
-    _requireOnly(
-      arguments,
-      const <String>{
-        'week_containing',
-        'height_meters',
-        'weight_kg',
-        'reports_discomfort',
-      },
-    );
+    _requireOnly(arguments, const <String>{
+      'week_containing',
+      'height_meters',
+      'weight_kg',
+      'reports_discomfort',
+    });
     final height = arguments['height_meters'];
     final weight = arguments['weight_kg'];
-    final discomfort = arguments['reports_discomfort'] ?? false;
+    final discomfort = arguments['reports_discomfort'];
     if (height != null && height is! num ||
         weight != null && weight is! num ||
-        discomfort is! bool) {
+        discomfort != null && discomfort is! bool) {
       throw const ToolCallValidationException('运动计划参数无效');
     }
     final heightValue = (height as num?)?.toDouble();

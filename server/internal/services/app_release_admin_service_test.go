@@ -54,10 +54,11 @@ func createAppReleaseDraftForTest(
 			Changelog:                   "测试更新说明",
 			MinimumSupportedVersionCode: minimum,
 			CreatedBy:                   admin.ID,
+			DeliveryMode:                models.AppReleaseDeliveryModeDirectPackage,
 		},
 		"shenliyuan.apk",
 		bytes.NewReader(apkFixture(versionCode)),
-		0,
+		1024*1024,
 	)
 	require.NoError(t, err)
 	return release
@@ -116,5 +117,72 @@ func TestAppReleaseAdminServiceDeleteDraftRemovesPrivateAPK(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 	var count int64
 	require.NoError(t, db.Model(&models.AppRelease{}).Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestAppReleaseAdminServiceOhosExternalMarketLifecycle(t *testing.T) {
+	svc, db, admin := newAppReleaseAdminTestService(t)
+	// Create a baseline release so we can withdraw the new one
+	require.NoError(t, db.Create(&models.AppRelease{
+		Platform:                    "ohos",
+		Channel:                     "stable",
+		VersionName:                 "1.6.0",
+		VersionCode:                 1600,
+		Title:                       "Baseline",
+		Changelog:                   "Baseline",
+		MinimumSupportedVersionCode: 1600,
+		CreatedBy:                   admin.ID,
+		DeliveryMode:                models.AppReleaseDeliveryModeExternalMarket,
+		ActionURL:                   "https://example.com",
+		Status:                      models.AppReleaseStatusPublished,
+	}).Error)
+
+	draft, err := svc.CreateDraft(context.Background(), AppReleaseDraftInput{
+		Platform:                    "ohos",
+		Channel:                     "stable",
+		VersionName:                 "1.6.5",
+		VersionCode:                 1605,
+		Title:                       "HarmonyOS Update",
+		Changelog:                   "Support HarmonyOS",
+		MinimumSupportedVersionCode: 1600,
+		CreatedBy:                   admin.ID,
+		DeliveryMode:                models.AppReleaseDeliveryModeExternalMarket,
+		ActionURL:                   "https://appgallery.huawei.com/",
+	}, "", bytes.NewReader([]byte{}), 1024)
+	require.NoError(t, err)
+	require.Equal(t, "ohos", draft.Platform)
+	require.Equal(t, models.AppReleaseDeliveryModeExternalMarket, draft.DeliveryMode)
+
+	// Publish
+	published, err := svc.PublishDraft(context.Background(), draft.ID, admin.ID)
+	require.NoError(t, err)
+	require.Equal(t, models.AppReleaseStatusPublished, published.Status)
+
+	// Withdraw
+	withdrawn, err := svc.WithdrawPublished(context.Background(), published.ID, admin.ID)
+	require.NoError(t, err)
+	require.Equal(t, models.AppReleaseStatusWithdrawn, withdrawn.Status)
+
+	// Test DeleteDraft with a new draft
+	draft2, err := svc.CreateDraft(context.Background(), AppReleaseDraftInput{
+		Platform:                    "ohos",
+		Channel:                     "stable",
+		VersionName:                 "1.6.6",
+		VersionCode:                 1606,
+		Title:                       "Another Draft",
+		Changelog:                   "...",
+		MinimumSupportedVersionCode: 1600,
+		CreatedBy:                   admin.ID,
+		DeliveryMode:                models.AppReleaseDeliveryModeExternalMarket,
+		ActionURL:                   "https://example.com/2",
+	}, "", bytes.NewReader([]byte{}), 1024)
+	require.NoError(t, err)
+
+	// Delete Draft
+	err = svc.DeleteDraft(context.Background(), draft2.ID, admin.ID)
+	require.NoError(t, err)
+	
+	var count int64
+	require.NoError(t, db.Model(&models.AppRelease{}).Where("id = ?", draft2.ID).Count(&count).Error)
 	require.Zero(t, count)
 }

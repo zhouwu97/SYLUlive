@@ -3,8 +3,8 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pointycastle/export.dart';
+import '../../../platform/contracts/secure_store.dart';
 
 import 'account_cache_namespace.dart';
 import 'personal_snapshot_file_backend.dart';
@@ -13,29 +13,25 @@ import 'personal_snapshot_models.dart';
 
 abstract interface class PersonalSnapshotSecureStore {
   Future<String?> read(String key);
-  Future<Map<String, String>> readAll();
   Future<void> write(String key, String value);
   Future<void> delete(String key);
 }
 
-class FlutterPersonalSnapshotSecureStore
+class PlatformPersonalSnapshotSecureStore
     implements PersonalSnapshotSecureStore {
-  const FlutterPersonalSnapshotSecureStore();
+  const PlatformPersonalSnapshotSecureStore();
 
-  static const FlutterSecureStorage _storage = FlutterSecureStorage();
-
-  @override
-  Future<String?> read(String key) => _storage.read(key: key);
+  static final AppSecretStore _storage = AppSecretStore.current();
 
   @override
-  Future<Map<String, String>> readAll() => _storage.readAll();
+  Future<String?> read(String key) => _storage.read(key);
 
   @override
   Future<void> write(String key, String value) =>
-      _storage.write(key: key, value: value);
+      _storage.write(key, value);
 
   @override
-  Future<void> delete(String key) => _storage.delete(key: key);
+  Future<void> delete(String key) => _storage.delete(key);
 }
 
 abstract interface class AccountScopedSnapshotStore {
@@ -72,7 +68,7 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
   AesGcmAccountScopedSnapshotStore({
     required String appUserId,
     PersonalSnapshotSecureStore secureStore =
-        const FlutterPersonalSnapshotSecureStore(),
+        const PlatformPersonalSnapshotSecureStore(),
     PersonalSnapshotFileBackend? fileBackend,
     Uint8List Function(int length)? randomBytes,
   })  : _accountHash = _validateAccount(appUserId),
@@ -292,16 +288,11 @@ class AesGcmAccountScopedSnapshotStore implements AccountScopedSnapshotStore {
   /// 仅用于“清除全部本地个人数据”设置项，不删除其他业务密钥。
   static Future<void> clearAllVaultData({
     PersonalSnapshotSecureStore secureStore =
-        const FlutterPersonalSnapshotSecureStore(),
+        const PlatformPersonalSnapshotSecureStore(),
     PersonalSnapshotFileBackend? fileBackend,
   }) async {
-    final values = await secureStore.readAll();
-    final keys = values.keys
-        .where((key) => key.startsWith(_keyPrefix) || key == _deviceSaltKey)
-        .toList();
-    for (final key in keys) {
-      await secureStore.delete(key);
-    }
+    // 只能删除设备盐，使所有账号的数据失效（加密擦除）。无法使用 readAll 获取其他密钥。
+    await secureStore.delete(_deviceSaltKey);
     await (fileBackend ?? createPersonalSnapshotFileBackend()).deleteAll();
   }
 

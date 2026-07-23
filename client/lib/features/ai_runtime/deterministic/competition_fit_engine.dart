@@ -128,7 +128,8 @@ class CompetitionFitEngine {
   }
 
   bool? _matches(List<String> allowed, String actual) {
-    if (allowed.isEmpty || actual.trim().isEmpty) return null;
+    if (allowed.isEmpty) return true;
+    if (actual.trim().isEmpty) return null;
     return allowed.any((item) => item == actual || item == '全部');
   }
 }

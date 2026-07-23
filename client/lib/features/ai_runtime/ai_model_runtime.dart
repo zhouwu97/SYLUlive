@@ -8,6 +8,7 @@ import 'ai_model_provider.dart';
 import 'ai_provider_storage.dart';
 import 'campus_public_provider.dart';
 import 'openai_compatible_provider.dart';
+import 'personal_ai_runtime_limits.dart';
 
 class AIModelProviderFactory {
   AIModelProviderFactory({
@@ -136,8 +137,9 @@ class AIModelChatController extends ChangeNotifier {
       _notify();
       return;
     }
-    if (message.length > 8000) {
-      _error = '单条消息不能超过 8000 个字符';
+    if (PersonalAIRuntimeLimits.inputCharacters(message) >
+        PersonalAIRuntimeLimits.maximumInputCharacters) {
+      _error = '单条消息不能超过 ${PersonalAIRuntimeLimits.maximumInputCharacters} 个字符';
       _notify();
       return;
     }

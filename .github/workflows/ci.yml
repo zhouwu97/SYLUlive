@@ -131,3 +131,27 @@ jobs:
       - name: Run independent pgvector migration test
         working-directory: server
         run: go test ./internal/models -run TestPGVectorMigrationIntegration -count=1
+
+  client-platform-boundary:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.8'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Analyze OHOS platform integrity
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos
+      - name: Verify no direct Android plugin usage
+        run: |
+          if grep -rnE 'package:(jpush_flutter|flutter_local_notifications|url_launcher|flutter_secure_storage)' lib/ | grep -v 'lib/platform/'; then
+            echo "Found direct usage of Android plugins without platform abstraction."
+            exit 1
+          fi

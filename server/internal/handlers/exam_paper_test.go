@@ -71,14 +71,21 @@ func newExamPaperTestEnv(t *testing.T) examPaperTestEnv {
 
 func createExamPaperTestUser(t *testing.T, db *gorm.DB, studentID string, role models.Role, eduBound bool, exp int) models.User {
 	t.Helper()
+	var verifiedAt *time.Time
+	if eduBound {
+		now := time.Now()
+		verifiedAt = &now
+	}
 	user := models.User{
-		StudentID:    studentID,
-		PasswordHash: "test",
-		Nickname:     studentID,
-		Role:         role,
-		EduBound:     eduBound,
-		Exp:          exp,
-		Avatar:       "/uploads/avatar.png",
+		StudentID:         studentID,
+		StudentVerifiedAt: verifiedAt,
+		PasswordHash:      "test",
+		Nickname:          studentID,
+		Role:              role,
+		EduAuthorized:     eduBound,
+		EduBound:          eduBound,
+		Exp:               exp,
+		Avatar:            "/uploads/avatar.png",
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("创建测试用户失败: %v", err)

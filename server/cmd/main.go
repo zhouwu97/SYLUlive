@@ -103,6 +103,9 @@ func main() {
 	// 确保上传目录存在
 
 	os.MkdirAll(cfg.UploadDir, 0755)
+	if err := os.MkdirAll(cfg.CompetitionAwardEvidenceDir, 0o700); err != nil {
+		log.Fatal("创建竞赛证明材料私有目录失败:", err)
+	}
 
 	// 确保 APK 发布根目录与 .tmp 已就绪，避免后续上传 Handler 在缺目录时报错。
 	os.MkdirAll(filepath.Join(cfg.AppReleaseDir, "android", "stable", ".tmp"), 0755)
@@ -143,6 +146,9 @@ func main() {
 	if err := db.AutoMigrate(
 
 		&models.User{},
+		&models.EmailVerificationChallenge{},
+		&models.EmailVerificationRequest{},
+		&models.AccountSecurityAuditLog{},
 
 		&models.UserLegalConsent{},
 
@@ -263,6 +269,15 @@ func main() {
 		&models.CalendarShareSnapshot{},
 		&models.CalendarShareSnapshotItem{},
 		&models.CompetitionImportBatch{},
+		&models.UserCompetitionPreference{},
+		&models.CompetitionRecommendationSnapshot{},
+		&models.AIActionDraft{},
+		&models.AIActionAuditLog{},
+		&models.UserCompetitionAward{},
+		&models.CompetitionAwardVerificationLog{},
+		&models.CompetitionAwardEvidenceFile{},
+		&models.CompetitionAwardEvidence{},
+		&models.CompetitionAwardEvidenceAccessLog{},
 		&models.CampusCalendar{},
 		&models.AIKnowledgeDocument{},
 		&models.AIKnowledgeAuditLog{},
@@ -322,6 +337,9 @@ func main() {
 
 	if err := models.EnsureConversationIndexes(db); err != nil {
 		log.Fatal("私信索引迁移失败:", err)
+	}
+	if err := models.ApplyCompetitionRatingMigration(db); err != nil {
+		log.Fatal("竞赛评级字段迁移失败:", err)
 	}
 	if err := models.VerifyCompetitionCalendarDedupMigration(db); err != nil {
 		log.Fatal("竞赛计划数据约束未就绪:", err)
@@ -425,19 +443,41 @@ func main() {
 		cfg.AllowMissingVersionHeaders,
 	))
 
+	// 初始化跨服务和邮件配置。生产身份数据迁移仍由显式 SQL 完成。
+	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+	handlers.EduServiceConfig.Token = cfg.EduServiceToken
+	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
+	handlers.VerifyCodeConfig.SMTPPort = cfg.SMTPPort
+	handlers.VerifyCodeConfig.SMTPUser = cfg.SMTPUser
+	handlers.VerifyCodeConfig.SMTPPass = cfg.SMTPPass
+	handlers.VerifyCodeConfig.SMTPFrom = cfg.SMTPFrom
+	emailVerification := services.NewEmailVerificationService(
+		db,
+		services.NewSMTPVerificationMailer(services.SMTPConfig{
+			Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass, From: cfg.SMTPFrom,
+		}),
+		cfg.JWTSecret,
+		time.Now,
+	)
+
 	// 初始化处理器
 
-	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
+	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
+	eduBindingRecovery := services.NewEduBindingRecoveryService(db, handlers.PythonEduBindingRecoveryRemote{}, eduCredentialCleanupJobs, time.Now)
+	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
 
 	userHandler := handlers.NewUserHandler(db)
-
-	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	pollHandler := handlers.NewPollHandler(db)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
-	competitionHandler := handlers.NewCompetitionHandler(db)
+	competitionHandler, competitionHandlerErr := handlers.NewCompetitionHandlerWithEvidenceStorage(
+		db, cfg.CompetitionAwardEvidenceDir, cfg.MaxFileSize,
+	)
+	if competitionHandlerErr != nil {
+		log.Fatal("初始化竞赛证明材料私有存储失败:", competitionHandlerErr)
+	}
 
 	waterSectionHandler := handlers.NewWaterSectionHandler(db)
 	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
@@ -516,7 +556,7 @@ func main() {
 		cfg.AppReleaseAccelPrefix,
 	)
 
-	eduHandler := handlers.NewEduHandler(db)
+	eduHandler := handlers.NewEduHandlerWithLifecycle(db, cfg.JWTSecret, eduCredentialCleanupJobs)
 
 	teacherHandler := handlers.NewTeacherHandler(db)
 
@@ -534,21 +574,6 @@ func main() {
 	erkeHandler := handlers.NewErkeHandler(db)
 
 	lotteryHandler := handlers.NewLotteryHandler(db)
-
-	// 初始化教务服务配置
-
-	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
-	handlers.EduServiceConfig.Token = cfg.EduServiceToken
-
-	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
-
-	handlers.VerifyCodeConfig.SMTPPort = cfg.SMTPPort
-
-	handlers.VerifyCodeConfig.SMTPUser = cfg.SMTPUser
-
-	handlers.VerifyCodeConfig.SMTPPass = cfg.SMTPPass
-
-	handlers.VerifyCodeConfig.SMTPFrom = cfg.SMTPFrom
 
 	handlers.SetMajorLogDB(db)
 
@@ -683,6 +708,7 @@ func main() {
 		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
 	}
 	eduCredentialCleanupCron := tasks.StartEduCredentialCleanupCron(appCtx, eduCredentialCleanupJobs)
+	eduBindingRecoveryCron := tasks.StartEduBindingRecoveryCron(appCtx, eduBindingRecovery)
 
 	// 应用内更新：公开版本检查接口，不需要登录。下载路由在阶段 A5 追加。
 	appPublic := r.Group("/api/app")
@@ -738,7 +764,8 @@ func main() {
 
 	// 静态文件服务
 
-	r.Static("/uploads", cfg.UploadDir)
+	r.GET("/uploads/*filepath", uploadHandler.ServePublic)
+	r.HEAD("/uploads/*filepath", uploadHandler.ServePublic)
 
 	// 认证路由
 
@@ -752,6 +779,10 @@ func main() {
 
 		auth.POST("/register", authHandler.Register)
 
+		auth.POST("/register/email/code", authHandler.RequestEmailRegistrationCode)
+
+		auth.POST("/register/email", authHandler.RegisterWithEmail)
+
 		auth.POST("/login", authHandler.Login)
 
 		auth.POST("/login_edu", authHandler.LoginEdu)
@@ -759,6 +790,12 @@ func main() {
 		auth.POST("/register_with_edu", authHandler.RegisterWithEdu)
 
 		auth.POST("/forgot_password", authHandler.ForgotPassword)
+
+		auth.POST("/password/email/code", authHandler.RequestEmailPasswordResetCode)
+
+		auth.POST("/password/email/reset", authHandler.ResetPasswordByEmail)
+
+		auth.POST("/password/edu/reset", authHandler.ForgotPassword)
 
 		auth.POST("/change_password", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.ChangePassword)
 
@@ -783,6 +820,14 @@ func main() {
 		user.PUT("/background", userHandler.UpdateBackground)
 
 		user.PUT("/nightmode", userHandler.UpdateNightMode)
+
+		user.GET("/account-security", authHandler.GetAccountSecurity)
+
+		user.POST("/email/code", authHandler.RequestUserEmailCode)
+
+		user.PUT("/email", authHandler.UpdateUserEmail)
+
+		user.DELETE("/email", authHandler.DeleteUserEmail)
 
 		user.PUT("/device_token", userHandler.UpdateDeviceToken)
 		user.PUT("/push-settings", userHandler.UpdatePushSettings)
@@ -830,7 +875,23 @@ func main() {
 		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
 		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
 		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
+		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
+		user.PUT("/competition-preference", competitionHandler.PutCompetitionPreference)
+		user.GET("/competition-capability-profile", competitionHandler.GetCompetitionCapabilityProfile)
+		user.GET("/competition-capability-profile/ai-access", competitionHandler.GetCompetitionCapabilityAIAccess)
+		user.PUT("/competition-capability-profile/ai-access", competitionHandler.PutCompetitionCapabilityAIAccess)
+		user.GET("/competition-awards", competitionHandler.ListCompetitionAwards)
+		user.POST("/competition-awards/evidence", competitionHandler.UploadCompetitionAwardEvidence)
+		user.POST("/competition-awards", competitionHandler.CreateCompetitionAward)
+		user.PUT("/competition-awards/:id", competitionHandler.UpdateCompetitionAward)
+		user.DELETE("/competition-awards/:id", competitionHandler.DeleteCompetitionAward)
+		user.POST("/competition-awards/:id/submit-verification", competitionHandler.SubmitCompetitionAwardVerification)
+		user.POST("/competition-awards/:id/cancel-verification", competitionHandler.CancelCompetitionAwardVerification)
+		user.GET("/competition-awards/:id/evidence/:file_id", competitionHandler.DownloadOwnCompetitionAwardEvidence)
 		user.GET("/competitions/fit", competitionHandler.ListFitEvents)
+		user.GET("/ai-action-drafts/:id", competitionHandler.GetAIActionDraft)
+		user.POST("/ai-action-drafts/:id/confirm", competitionHandler.ConfirmAIActionDraft)
+		user.POST("/ai-action-drafts/:id/cancel", competitionHandler.CancelAIActionDraft)
 		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
 		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)
 		user.GET("/collaboration-applications/received", postHandler.GetMyCollaborationApplicationsReceived)
@@ -1319,6 +1380,11 @@ func main() {
 	{
 
 		adminSuper.POST("/promote", invitationHandler.DirectPromote)
+		adminSuper.GET("/competition-awards/verifications", competitionHandler.ListCompetitionAwardVerifications)
+		adminSuper.GET("/competition-awards/verifications/:id", competitionHandler.GetCompetitionAwardVerification)
+		adminSuper.POST("/competition-awards/verifications/:id/approve", competitionHandler.ApproveCompetitionAwardVerification)
+		adminSuper.POST("/competition-awards/verifications/:id/reject", competitionHandler.RejectCompetitionAwardVerification)
+		adminSuper.GET("/competition-awards/verifications/:id/evidence/:file_id", competitionHandler.DownloadAdminCompetitionAwardEvidence)
 
 	}
 
@@ -1339,6 +1405,12 @@ func main() {
 		edu.POST("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.BindEdu)
 
 		edu.DELETE("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.UnbindEdu)
+
+		edu.POST("/session/logout", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.LogoutEduSession)
+
+		edu.POST("/session/resume", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.ResumeEduSession)
+
+		edu.DELETE("/authorization", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.RevokeEduAuthorization)
 
 		edu.POST("/courses", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCourses)
 
@@ -1521,6 +1593,9 @@ func main() {
 
 		canteen.GET("", canteenHandler.GetList)
 
+		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
+		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
+
 	}
 
 	canteenAdmin := canteen.Group("")
@@ -1546,8 +1621,6 @@ func main() {
 	canteenAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 
 	{
-
-		canteenAuth.GET("/:id", canteenHandler.GetDetail)
 
 		canteenAuth.POST("", canteenHandler.Create)
 
@@ -1656,6 +1729,8 @@ func main() {
 	aiCapabilities.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
 		aiCapabilities.GET("/capabilities", aiCapabilitiesHandler.Get)
+		aiCapabilities.GET("/tools/competition-capability-profile", competitionHandler.GetAICompetitionCapabilityProfile)
+		aiCapabilities.POST("/action-drafts/competition-plan", competitionHandler.CreateCompetitionPlanActionDraft)
 	}
 	if aiRuntimeHandler != nil {
 		aiProtected := r.Group("/api/ai")
@@ -1667,6 +1742,7 @@ func main() {
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)
 			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
 			aiProtected.GET("/runs/:id/events", aiRuntimeHandler.Events)
+			aiProtected.GET("/sources/chunks/:chunk_id", aiRuntimeHandler.GetSourceChunk)
 			aiProtected.POST("/runs/:id/cancel", aiRuntimeHandler.CancelRun)
 			aiProtected.GET("/conversations", aiRuntimeHandler.ListConversations)
 			aiProtected.POST("/conversations", aiRuntimeHandler.CreateConversation)
@@ -1704,6 +1780,7 @@ func main() {
 	stopApp()
 	examPaperStorageCron.Wait()
 	eduCredentialCleanupCron.Wait()
+	eduBindingRecoveryCron.Wait()
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
 	}

@@ -60,6 +60,7 @@ services:
       - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:?set DB_PASSWORD in .env} dbname=shenliyuan sslmode=disable}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
       - EXAM_PAPER_DIR=${EXAM_PAPER_DIR:-/app/private/exam-papers}
+      - COMPETITION_AWARD_EVIDENCE_DIR=${COMPETITION_AWARD_EVIDENCE_DIR:-/app/private/competition-award-evidence}
       - SUPER_ADMIN_ID=${SUPER_ADMIN_ID:?set SUPER_ADMIN_ID in .env}
       - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:?set SUPER_ADMIN_PASSWORD in .env}
       - EDU_SERVICE_URL=${EDU_SERVICE_URL:-http://python-edu-service:8000}
@@ -92,6 +93,7 @@ services:
     volumes:
       - server_data:/app/uploads
       - exam_paper_data:/app/private/exam-papers
+      - competition_award_evidence_data:/app/private/competition-award-evidence
     restart: unless-stopped
     networks:
       - shenliyuan_network
@@ -112,6 +114,7 @@ services:
 volumes:
   server_data:
   exam_paper_data:
+  competition_award_evidence_data:
   postgres_data:
 
 networks:

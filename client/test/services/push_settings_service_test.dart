@@ -1,15 +1,16 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/services/push_settings_service.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('用户开启推送时立即调用设备注册回调', () async {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     final auth = AuthProvider(Dio(), loadStoredAuth: false);
     var registrationCalled = false;
     PushSettingsService.configureRemoteRegistration((_) async {
@@ -50,7 +51,7 @@ void main() {
   });
 
   test('同一账号的注册请求共享同一个 Future', () async {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     final auth = AuthProvider(Dio(), loadStoredAuth: false);
     var registrationCalls = 0;
     PushSettingsService.configureRemoteRegistration((_) async {

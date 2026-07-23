@@ -19,6 +19,7 @@ import '../widgets/cached_avatar.dart';
 import 'social_list_screen.dart';
 import 'image_viewer_screen.dart';
 import 'chat_detail_screen.dart';
+import 'competition/competition_award_screen.dart';
 
 import '../widgets/level_progress_pill.dart';
 import '../utils/app_navigation.dart';
@@ -909,6 +910,19 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         child: _EditProfileSheet(
             user: user,
+            onCompetitionAwards: () {
+              final auth = context.read<AuthProvider>();
+              final accountID = auth.user?.id;
+              if (accountID == null) return;
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => CompetitionAwardScreen(
+                    dio: auth.dio,
+                    accountKey: accountID,
+                  ),
+                ),
+              );
+            },
             onSaved: () async {
               _onProfileSaved();
             }),
@@ -939,8 +953,13 @@ class AnimatedCount extends StatelessWidget {
 class _EditProfileSheet extends StatefulWidget {
   final User user;
   final Future<void> Function() onSaved;
+  final VoidCallback onCompetitionAwards;
 
-  const _EditProfileSheet({required this.user, required this.onSaved});
+  const _EditProfileSheet({
+    required this.user,
+    required this.onSaved,
+    required this.onCompetitionAwards,
+  });
 
   @override
   State<_EditProfileSheet> createState() => _EditProfileSheetState();
@@ -1167,6 +1186,38 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       const Icon(Icons.image, color: Colors.blue),
                       const SizedBox(width: 12),
                       const Expanded(child: Text('更改主页背景图')),
+                      Icon(Icons.chevron_right, color: Colors.grey[500]),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 竞赛经历是私有档案入口，不在公开主页直接展示。
+              InkWell(
+                key: const Key('profile-competition-award-entry'),
+                onTap: _isSaving
+                    ? null
+                    : () {
+                        Navigator.pop(context);
+                        widget.onCompetitionAwards();
+                      },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.grey[800] : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.workspace_premium_outlined,
+                        color: Colors.blue,
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(child: Text('竞赛经历')),
                       Icon(Icons.chevron_right, color: Colors.grey[500]),
                     ],
                   ),

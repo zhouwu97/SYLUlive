@@ -8,6 +8,10 @@ class PlatformCapabilities {
   const PlatformCapabilities._({
     required this.platform,
     required this.supportsJPush,
+    required this.supportsSystemNotification,
+    required this.supportsPersistentStorage,
+    required this.supportsSensitiveSecretStorage,
+    required this.supportsMarketUpdate,
     required this.supportsNativeWidget,
     required this.supportsLiveView,
     required this.supportsScanKit,
@@ -18,6 +22,10 @@ class PlatformCapabilities {
 
   final AppPlatform platform;
   final bool supportsJPush;
+  final bool supportsSystemNotification;
+  final bool supportsPersistentStorage;
+  final bool supportsSensitiveSecretStorage;
+  final bool supportsMarketUpdate;
   final bool supportsNativeWidget;
   final bool supportsLiveView;
   final bool supportsScanKit;
@@ -32,6 +40,10 @@ class PlatformCapabilities {
         AppPlatform.android => const PlatformCapabilities._(
             platform: AppPlatform.android,
             supportsJPush: true,
+            supportsSystemNotification: true,
+            supportsPersistentStorage: true,
+            supportsSensitiveSecretStorage: true,
+            supportsMarketUpdate: false,
             supportsNativeWidget: true,
             supportsLiveView: false,
             supportsScanKit: false,
@@ -42,6 +54,10 @@ class PlatformCapabilities {
         AppPlatform.ohos => const PlatformCapabilities._(
             platform: AppPlatform.ohos,
             supportsJPush: false,
+            supportsSystemNotification: false,
+            supportsPersistentStorage: true,
+            supportsSensitiveSecretStorage: true,
+            supportsMarketUpdate: false,
             supportsNativeWidget: false,
             supportsLiveView: false,
             supportsScanKit: false,
@@ -52,6 +68,10 @@ class PlatformCapabilities {
         AppPlatform.web || AppPlatform.other => PlatformCapabilities._(
             platform: platform,
             supportsJPush: false,
+            supportsSystemNotification: false,
+            supportsPersistentStorage: true,
+            supportsSensitiveSecretStorage: false,
+            supportsMarketUpdate: false,
             supportsNativeWidget: false,
             supportsLiveView: false,
             supportsScanKit: false,

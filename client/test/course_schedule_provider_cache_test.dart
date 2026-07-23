@@ -2,12 +2,13 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/schedule_cache_store.dart';
 import 'package:shenliyuan/providers/course_schedule_provider.dart';
 
 import 'helpers/personal_snapshot_test_fakes.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -17,7 +18,7 @@ void main() {
   late IncrementingRandomBytes random;
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     secureStore = MemoryPersonalSnapshotSecureStore();
     files = MemoryPersonalSnapshotFileBackend();
     random = IncrementingRandomBytes();

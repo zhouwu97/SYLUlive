@@ -27,7 +27,11 @@ class AppPlatforms {
     'APP_PLATFORM',
   );
 
+  @visibleForTesting
+  static AppPlatform? currentOverrides;
+
   static AppPlatform get current {
+    if (currentOverrides != null) return currentOverrides!;
     final configured = _fromWireName(_configuredPlatform);
     if (configured != null) return configured;
     if (kIsWeb) return AppPlatform.web;

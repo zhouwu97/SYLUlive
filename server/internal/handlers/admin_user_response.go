@@ -48,7 +48,7 @@ func adminUserResponse(user models.User) AdminUserResponse {
 		Role:        user.Role,
 		CreditScore: user.CreditScore,
 		ReportCount: user.ReportCount,
-		EduBound:    user.EduBound,
+		EduBound:    user.IsEduAuthorized(),
 		CreatedAt:   user.CreatedAt,
 	}
 }

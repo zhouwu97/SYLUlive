@@ -395,6 +395,7 @@ class _EduScreenState extends State<EduScreen> {
     _studentIdController.clear();
     _passwordController.clear();
     bool isBinding = false; // 本地加载状态
+    bool eduDataConsentAccepted = false;
 
     showDialog(
       context: context,
@@ -412,6 +413,18 @@ class _EduScreenState extends State<EduScreen> {
                 ),
                 maxLength: 10,
                 enabled: !isBinding,
+              ),
+              CheckboxListTile(
+                value: eduDataConsentAccepted,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('同意教务数据专项授权'),
+                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销。'),
+                onChanged: isBinding
+                    ? null
+                    : (value) => setDialogState(
+                          () => eduDataConsentAccepted = value ?? false,
+                        ),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -446,10 +459,17 @@ class _EduScreenState extends State<EduScreen> {
               onPressed: isBinding
                   ? null
                   : () async {
+                      if (!eduDataConsentAccepted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请先同意教务数据专项授权')),
+                        );
+                        return;
+                      }
                       setDialogState(() => isBinding = true);
                       final success = await eduProvider.bind(
                         _studentIdController.text,
                         _passwordController.text,
+                        eduDataConsentAccepted: true,
                       );
                       if (context.mounted) {
                         Navigator.pop(context);

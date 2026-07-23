@@ -94,9 +94,9 @@ class GradeGpaHeroCard extends StatelessWidget {
 
   Widget _buildContent(BuildContext context) {
     final data = situation;
-    final updatedText = data?.updatedAt == null
+    final updatedText = data?.capturedAt == null
         ? ''
-        : ' · ${data!.updatedAt!.month.toString().padLeft(2, '0')}-${data.updatedAt!.day.toString().padLeft(2, '0')} ${data.updatedAt!.hour.toString().padLeft(2, '0')}:${data.updatedAt!.minute.toString().padLeft(2, '0')}';
+        : ' · ${data!.capturedAt!.toLocal().month.toString().padLeft(2, '0')}-${data.capturedAt!.toLocal().day.toString().padLeft(2, '0')} ${data.capturedAt!.toLocal().hour.toString().padLeft(2, '0')}:${data.capturedAt!.toLocal().minute.toString().padLeft(2, '0')}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

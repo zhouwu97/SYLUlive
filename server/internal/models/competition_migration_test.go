@@ -69,6 +69,47 @@ func TestCompetitionCalendarDedupMigrationKeepsDeterministicWinner(t *testing.T)
 	}
 }
 
+func TestCompetitionRatingMigrationBackfillsLegacyRowsWithoutOverwritingNewRating(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "rating.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&CompetitionEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	legacy := CompetitionEvent{Title: "旧赛事", RecommendationLevel: "A"}
+	current := CompetitionEvent{Title: "新赛事", CompetitionRating: "S", RecommendationLevel: "B"}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&current).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyCompetitionRatingMigration(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyCompetitionRatingMigration(db); err != nil {
+		t.Fatalf("迁移应可重复执行: %v", err)
+	}
+	if err := db.First(&legacy, legacy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&current, current.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacy.CompetitionRating != "A" {
+		t.Fatalf("legacy rating=%q want=A", legacy.CompetitionRating)
+	}
+	if current.CompetitionRating != "S" {
+		t.Fatalf("current rating=%q want=S", current.CompetitionRating)
+	}
+}
+
 func TestCompetitionCalendarUniqueIndexPostgres(t *testing.T) {
 	dsn := os.Getenv("TEST_POSTGRES_DSN")
 	if dsn == "" {

@@ -31,6 +31,12 @@ func publicUserResponse(user models.User) PublicUserResponse {
 type SelfUserResponse struct {
 	ID                    uint        `json:"id"`
 	StudentID             string      `json:"student_id"`
+	StudentVerified       bool        `json:"student_verified"`
+	EmailMasked           string      `json:"email_masked"`
+	EmailBound            bool        `json:"email_bound"`
+	LoginMethods          []string    `json:"login_methods"`
+	CanResetViaEmail      bool        `json:"can_reset_via_email"`
+	CanResetViaEdu        bool        `json:"can_reset_via_edu"`
 	Nickname              string      `json:"nickname"`
 	Gender                string      `json:"gender"`
 	Avatar                string      `json:"avatar"`
@@ -44,6 +50,8 @@ type SelfUserResponse struct {
 	CreatedAt             time.Time   `json:"created_at"`
 	EduStudentID          string      `json:"edu_student_id"`
 	EduBound              bool        `json:"edu_bound"`
+	EduAuthorized         bool        `json:"edu_authorized"`
+	EduSessionState       string      `json:"edu_session_state"`
 	EduGrade              string      `json:"edu_grade"`
 	EduCollege            string      `json:"edu_college"`
 	EduMajor              string      `json:"edu_major"`
@@ -58,12 +66,23 @@ type SelfUserResponse struct {
 }
 
 func selfUserResponse(user models.User, consentState models.LegalConsentState) SelfUserResponse {
+	loginMethods := make([]string, 0, 2)
+	if user.IsStudentVerified() && user.StudentID != "" {
+		loginMethods = append(loginMethods, "student_id")
+	}
+	if user.EmailVerifiedAt != nil && user.Email != "" {
+		loginMethods = append(loginMethods, "email")
+	}
 	return SelfUserResponse{
-		ID: user.ID, StudentID: user.StudentID, Nickname: user.Nickname, Gender: user.Gender,
+		ID: user.ID, StudentID: user.StudentID, StudentVerified: user.IsStudentVerified(),
+		EmailMasked: maskEmail(user.Email), EmailBound: user.EmailVerifiedAt != nil && user.Email != "",
+		LoginMethods: loginMethods, CanResetViaEmail: user.EmailVerifiedAt != nil && user.Email != "",
+		CanResetViaEdu: user.IsStudentVerified() && user.StudentID != "", Nickname: user.Nickname, Gender: user.Gender,
 		Avatar: user.Avatar, Background: user.Background, NightMode: user.NightMode,
 		CreditScore: user.CreditScore, Role: user.Role, AdminExp: user.AdminExp, Exp: user.Exp,
 		ReportCount: user.ReportCount, CreatedAt: user.CreatedAt, EduStudentID: user.EduStudentID,
-		EduBound: user.EduBound, EduGrade: user.EduGrade, EduCollege: user.EduCollege,
+		EduBound: user.IsEduAuthorized(), EduAuthorized: user.IsEduAuthorized(), EduSessionState: user.EduSessionState,
+		EduGrade: user.EduGrade, EduCollege: user.EduCollege,
 		EduMajor: user.EduMajor, IsCheckedInToday: user.IsCheckedInToday,
 		FollowersCount: user.FollowersCount, FollowingCount: user.FollowingCount,
 		TotalLikesReceived: user.TotalLikesReceived, IsFollowing: user.IsFollowing,

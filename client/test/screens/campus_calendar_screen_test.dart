@@ -6,17 +6,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/models/campus_calendar.dart';
 import 'package:shenliyuan/providers/campus_calendar_provider.dart';
 import 'package:shenliyuan/screens/campus_calendar_screen.dart';
 import 'package:shenliyuan/services/campus_calendar_service.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('在月历上向左滑动会切换到下一个月', (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
@@ -66,7 +67,7 @@ void main() {
   });
 
   testWidgets('相邻月份周数不同时半页拖动不会溢出', (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    AppPreferencesStore.setMockInitialValues({});
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();

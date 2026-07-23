@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -56,17 +57,34 @@ func (h *AppUpdateHandler) AdminCreate(c *gin.Context) {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "APK 上传体积超过限制", "code": "apk_too_large"})
 		return
 	}
-	fileHeader, err := c.FormFile("apk")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 APK 文件", "code": "missing_apk"})
+	deliveryMode := c.DefaultPostForm("delivery_mode", models.AppReleaseDeliveryModeDirectPackage)
+	actionURL := c.PostForm("action_url")
+
+	var fileHeader *multipart.FileHeader
+	var file multipart.File
+	var err error
+
+	if deliveryMode == models.AppReleaseDeliveryModeDirectPackage {
+		fileHeader, err = c.FormFile("apk")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 APK 文件", "code": "missing_apk"})
+			return
+		}
+		file, err = fileHeader.Open()
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "读取 APK 文件失败", "code": "apk_open_failed"})
+			return
+		}
+		defer file.Close()
+	} else if deliveryMode == models.AppReleaseDeliveryModeExternalMarket {
+		if strings.TrimSpace(actionURL) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "市场分发模式必须提供跳转链接", "code": "missing_action_url"})
+			return
+		}
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 delivery_mode", "code": "invalid_delivery_mode"})
 		return
 	}
-	file, err := fileHeader.Open()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "读取 APK 文件失败", "code": "apk_open_failed"})
-		return
-	}
-	defer file.Close()
 	versionCode, err := parsePositiveInt64(c.PostForm("version_code"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "version_code 必须为正整数", "code": "invalid_version_code"})
@@ -79,6 +97,11 @@ func (h *AppUpdateHandler) AdminCreate(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Minute)
 	defer cancel()
+	var fileName string
+	if fileHeader != nil {
+		fileName = fileHeader.Filename
+	}
+
 	release, err := h.svc.CreateDraft(ctx, services.AppReleaseDraftInput{
 		Platform:                    c.DefaultPostForm("platform", models.AppReleasePlatformAndroid),
 		Channel:                     c.DefaultPostForm("channel", models.AppReleaseChannelStable),
@@ -88,7 +111,9 @@ func (h *AppUpdateHandler) AdminCreate(c *gin.Context) {
 		Changelog:                   c.PostForm("changelog"),
 		MinimumSupportedVersionCode: minimum,
 		CreatedBy:                   c.GetUint("user_id"),
-	}, fileHeader.Filename, file, maxSize)
+		DeliveryMode:                deliveryMode,
+		ActionURL:                   actionURL,
+	}, fileName, file, maxSize)
 	if err != nil {
 		writeAdminReleaseError(c, err, "创建应用版本草稿失败")
 		return

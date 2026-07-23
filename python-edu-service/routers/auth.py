@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from models.database import EduUser, get_db
-from models.schemas import BindInput, BindResponse, UnbindResponse, EduStatusResponse, EduSessionResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse
+from models.schemas import AuthorizationCleanupInput, BindInput, BindResponse, UnbindResponse, EduStatusResponse, EduSessionResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse
 from services.crawler import EduCrawler, CookieLapseError, LoginFailedError, NetworkError
 from services.security import decrypt_credential, encrypt_credential, require_internal_service, require_internal_user
 
@@ -135,6 +135,11 @@ async def bind_edu_account(
                 )
 
             if existing_user:
+                if input.credential_generation <= existing_user.credential_generation:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={"code": "EDU_CREDENTIAL_GENERATION_STALE", "message": "教务授权请求已过期，请重试"},
+                    )
                 # 更新
                 existing_user.student_id = input.student_id
                 existing_user.name = student_info.name
@@ -151,6 +156,7 @@ async def bind_edu_account(
                 existing_user.authorized_at = existing_user.authorized_at or datetime.now()
                 existing_user.logged_out_at = None
                 existing_user.revoked_at = None
+                existing_user.credential_generation = input.credential_generation
             else:
                 # 新建
                 edu_user = EduUser(
@@ -167,6 +173,7 @@ async def bind_edu_account(
                     session_state="active",
                     auto_relogin=True,
                     authorized_at=datetime.now(),
+                    credential_generation=input.credential_generation,
                 )
                 db.add(edu_user)
 
@@ -199,7 +206,7 @@ async def bind_edu_account(
 @router.delete("/bind", response_model=EduSessionResponse)
 async def unbind_edu_account(
     user_id: str = Depends(require_internal_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """兼容旧解绑路径：撤销授权，不释放稳定学号身份。"""
     result = await db.execute(
@@ -332,11 +339,35 @@ async def resume_edu_session(
 
 @router.delete("/authorization", response_model=EduSessionResponse)
 async def revoke_edu_authorization(
+    input: AuthorizationCleanupInput,
     user_id: str = Depends(require_internal_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """撤销授权并擦除服务端凭据与 Cookie，保留学号镜像供身份一致性检查。"""
-    return await unbind_edu_account(user_id=user_id, db=db)
+    """仅撤销指定代次的授权，旧任务不会删除重绑后的凭据。"""
+    result = await db.execute(select(EduUser).where(EduUser.user_id == user_id))
+    edu_user = result.scalar_one_or_none()
+    if not edu_user or edu_user.credential_generation != input.expected_generation:
+        return EduSessionResponse(
+            success=True, message="旧教务清理任务已失效", authorized=False,
+            session_state="revoked", auto_relogin=False,
+        )
+    if input.delete_identity:
+        await db.delete(edu_user)
+        await db.commit()
+        return EduSessionResponse(
+            success=True, message="教务身份与凭据已删除", authorized=False,
+            session_state="revoked", auto_relogin=False,
+        )
+    edu_user.encrypted_password = None
+    edu_user.raw_password = None
+    edu_user.cookie = None
+    edu_user.bound = False
+    edu_user.authorized = False
+    edu_user.session_state = "revoked"
+    edu_user.auto_relogin = False
+    edu_user.revoked_at = datetime.now()
+    await db.commit()
+    return _session_response(edu_user, "教务授权已撤销")
 
 
 @router.post("/login_edu", response_model=LoginEduResponse)

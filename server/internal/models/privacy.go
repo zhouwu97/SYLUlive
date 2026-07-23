@@ -22,14 +22,14 @@ const (
 // UserLegalConsent 保存用户对每一份法律文件版本的明确同意，不保存密码或设备标识。
 type UserLegalConsent struct {
 	ID                  uint       `gorm:"primaryKey" json:"id"`
-	UserID              uint       `gorm:"not null;uniqueIndex:idx_user_legal_document_version" json:"user_id"`
-	Document            string     `gorm:"size:64;not null;uniqueIndex:idx_user_legal_document_version" json:"document"`
-	Version             string     `gorm:"size:32;not null;uniqueIndex:idx_user_legal_document_version" json:"version"`
+	UserID              uint       `gorm:"not null;uniqueIndex:idx_user_legal_document_version_scene" json:"user_id"`
+	Document            string     `gorm:"size:64;not null;uniqueIndex:idx_user_legal_document_version_scene" json:"document"`
+	Version             string     `gorm:"size:32;not null;uniqueIndex:idx_user_legal_document_version_scene" json:"version"`
 	AcceptedAt          time.Time  `gorm:"not null" json:"accepted_at"`
 	RevokedAt           *time.Time `gorm:"index" json:"revoked_at,omitempty"`
 	AcknowledgementType string     `gorm:"size:32;default:'separate_consent'" json:"acknowledgement_type"`
 	Scope               string     `gorm:"size:64" json:"scope,omitempty"`
-	Scene               string     `gorm:"size:64" json:"scene,omitempty"`
+	Scene               string     `gorm:"size:64;not null;default:'registration';uniqueIndex:idx_user_legal_document_version_scene" json:"scene,omitempty"`
 }
 
 // LegalConsentState 区分正常授权、需确认新版协议和主动撤销，避免客户端猜测状态。

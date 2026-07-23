@@ -29,7 +29,6 @@ import '../widgets/course/course_semester_start_picker.dart';
 import '../widgets/campus/campus_theme.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
 
@@ -921,6 +920,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final sidCtrl = TextEditingController();
     final pwdCtrl = TextEditingController();
     bool isLoading = false;
+    bool eduDataConsentAccepted = false;
 
     showDialog(
       context: context,
@@ -938,6 +938,18 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 ),
                 maxLength: 10,
                 enabled: !isLoading,
+              ),
+              CheckboxListTile(
+                value: eduDataConsentAccepted,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('同意教务数据专项授权'),
+                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销。'),
+                onChanged: isLoading
+                    ? null
+                    : (value) => setDialogState(
+                          () => eduDataConsentAccepted = value ?? false,
+                        ),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -973,8 +985,18 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               onPressed: isLoading
                   ? null
                   : () async {
+                      if (!eduDataConsentAccepted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请先同意教务数据专项授权')),
+                        );
+                        return;
+                      }
                       setDialogState(() => isLoading = true);
-                      final ok = await edu.bind(sidCtrl.text, pwdCtrl.text);
+                      final ok = await edu.bind(
+                        sidCtrl.text,
+                        pwdCtrl.text,
+                        eduDataConsentAccepted: true,
+                      );
                       if (ctx.mounted) Navigator.pop(ctx);
                       if (ok && context.mounted) {
                         ScaffoldMessenger.of(

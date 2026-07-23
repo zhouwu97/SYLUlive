@@ -23,7 +23,7 @@ func newPrivacyTestHandler(t *testing.T) (*PrivacyHandler, *gorm.DB, models.User
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.UserFollow{}, &models.UserLegalConsent{}, &models.PersonalDataRequest{}, &models.EduCredentialCleanupJob{}, &models.AdminActionLog{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.UserFollow{}, &models.UserLegalConsent{}, &models.EmailVerificationChallenge{}, &models.PersonalDataRequest{}, &models.EduCredentialCleanupJob{}, &models.AdminActionLog{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.MinCost)
@@ -143,9 +143,12 @@ func TestWithdrawConsentClearsDependentCredentials(t *testing.T) {
 func TestWithdrawConsentQueuesEduCredentialCleanupWithoutWaitingForRemoteService(t *testing.T) {
 	handler, db, user := newPrivacyTestHandler(t)
 	if err := db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
-		"edu_bound":      true,
-		"edu_student_id": "2026000001",
-		"edu_cookie":     "cookie",
+		"edu_bound":                    true,
+		"edu_authorized":               true,
+		"edu_session_state":            "active",
+		"edu_authorization_generation": 1,
+		"edu_student_id":               "2026000001",
+		"edu_cookie":                   "cookie",
 	}).Error; err != nil {
 		t.Fatalf("set edu binding: %v", err)
 	}

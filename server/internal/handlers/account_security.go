@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
@@ -84,8 +85,10 @@ func (h *AuthHandler) RequestEmailRegistrationCode(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return
 	}
-	// 注册验证码接口始终使用统一响应，不能通过限流或邮件配置状态枚举已注册邮箱。
-	_ = h.requestEmailCode(c, email, input.Purpose, nil)
+	if err := h.requestEmailCode(c, email, input.Purpose, nil); err != nil {
+		writeEmailVerificationError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "如果该邮箱可以使用，验证码将发送至邮箱"})
 }
 
@@ -105,8 +108,8 @@ func (h *AuthHandler) RegisterWithEmail(c *gin.Context) {
 		writeEmailVerificationError(c, err)
 		return
 	}
-	if err := h.validateEmailCode(email, models.EmailVerificationPurposeRegister, input.Code, true); err != nil {
-		writeEmailVerificationError(c, err)
+	if h.emailVerification == nil {
+		writeEmailVerificationError(c, services.ErrMailNotConfigured)
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -123,25 +126,29 @@ func (h *AuthHandler) RegisterWithEmail(c *gin.Context) {
 	if user.Nickname == "" {
 		user.Nickname = "邮箱用户"
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	useGeneratedNickname := strings.TrimSpace(input.Nickname) == ""
+	if err := h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeRegister, input.Code, func(tx *gorm.DB, _ models.EmailVerificationChallenge) error {
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
+		if useGeneratedNickname {
+			user.Nickname = "邮箱用户" + strconvUserID(user.ID)
+			if err := tx.Model(&user).Update("nickname", user.Nickname).Error; err != nil {
+				return err
+			}
+		}
 		return recordLegalConsents(tx, user.ID, input.LegalConsentInput, false)
 	}); err != nil {
+		if isEmailVerificationError(err) {
+			writeEmailVerificationError(c, err)
+			return
+		}
 		if utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
 			c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已绑定其他账号", "code": "EMAIL_ALREADY_BOUND"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 		return
-	}
-	if strings.TrimSpace(input.Nickname) == "" {
-		user.Nickname = "邮箱用户" + strconvUserID(user.ID)
-		if err := h.db.Model(&user).Update("nickname", user.Nickname).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新昵称失败"})
-			return
-		}
 	}
 	h.writeSecurityAudit(user.ID, "email_registered", maskEmail(email))
 	h.issueAuthSession(c, user, http.StatusCreated)
@@ -203,14 +210,35 @@ func (h *AuthHandler) UpdateUserEmail(c *gin.Context) {
 		purpose = models.EmailVerificationPurposeChange
 		action = "email_changed"
 	}
-	if err := h.validateEmailCode(email, purpose, input.Code, true); err != nil {
-		writeEmailVerificationError(c, err)
+	now := time.Now()
+	if h.emailVerification == nil {
+		writeEmailVerificationError(c, services.ErrMailNotConfigured)
 		return
 	}
-	now := time.Now()
-	if err := h.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
-		"email": email, "email_verified_at": now, "token_version": gorm.Expr("token_version + 1"),
-	}).Error; err != nil {
+	if err := h.emailVerification.UseValidatedChallenge(email, purpose, input.Code, func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
+		if challenge.UserID == nil || *challenge.UserID != userID {
+			return services.ErrCodeNotFound
+		}
+		var lockedUser models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedUser, userID).Error; err != nil {
+			return err
+		}
+		if bcrypt.CompareHashAndPassword([]byte(lockedUser.PasswordHash), []byte(input.Password)) != nil {
+			return errors.New("APP 密码错误")
+		}
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+			"email": email, "email_verified_at": now, "token_version": gorm.Expr("token_version + 1"),
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.EmailVerificationChallenge{}).
+			Where("user_id = ? AND purpose = ? AND consumed_at IS NULL", userID, models.EmailVerificationPurposeResetPassword).
+			Update("consumed_at", now).Error
+	}); err != nil {
+		if isEmailVerificationError(err) {
+			writeEmailVerificationError(c, err)
+			return
+		}
 		if utils.IsPostgresUniqueViolation(err) || strings.Contains(strings.ToLower(err.Error()), "unique") {
 			c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已绑定其他账号", "code": "EMAIL_ALREADY_BOUND"})
 			return
@@ -254,9 +282,25 @@ func (h *AuthHandler) DeleteUserEmail(c *gin.Context) {
 		return
 	}
 	previousEmail := user.Email
-	if err := h.db.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
-		"email": "", "email_verified_at": nil, "token_version": gorm.Expr("token_version + 1"),
-	}).Error; err != nil {
+	now := time.Now()
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+			"email": "", "email_verified_at": nil, "token_version": gorm.Expr("token_version + 1"),
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.EmailVerificationChallenge{}).
+			Where("user_id = ? AND purpose = ? AND consumed_at IS NULL", user.ID, models.EmailVerificationPurposeResetPassword).
+			Update("consumed_at", now).Error
+	}); err != nil {
+		if isEmailVerificationError(err) {
+			writeEmailVerificationError(c, err)
+			return
+		}
+		if err.Error() == "APP 密码错误" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "APP 密码错误"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解除邮箱失败"})
 		return
 	}
@@ -287,8 +331,10 @@ func (h *AuthHandler) RequestEmailPasswordResetCode(c *gin.Context) {
 	}
 	var user models.User
 	if err := h.db.Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error; err == nil {
-		// 重置验证码接口始终使用统一响应，避免通过发送频率和邮件配置探测账号存在。
-		_ = h.requestEmailCode(c, email, input.Purpose, &user.ID)
+		if err := h.requestEmailCode(c, email, input.Purpose, &user.ID); err != nil {
+			writeEmailVerificationError(c, err)
+			return
+		}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return
@@ -308,23 +354,42 @@ func (h *AuthHandler) ResetPasswordByEmail(c *gin.Context) {
 		writeEmailVerificationError(c, err)
 		return
 	}
-	if err := h.validateEmailCode(email, models.EmailVerificationPurposeResetPassword, input.Code, true); err != nil {
-		writeEmailVerificationError(c, err)
-		return
-	}
-	var user models.User
-	if err := h.db.Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "邮箱不可用于密码找回"})
-		return
-	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 		return
 	}
-	if err := h.db.Model(&user).Updates(map[string]interface{}{
-		"password_hash": string(hash), "token_version": gorm.Expr("token_version + 1"),
-	}).Error; err != nil {
+	if h.emailVerification == nil {
+		writeEmailVerificationError(c, services.ErrMailNotConfigured)
+		return
+	}
+	var user models.User
+	if err := h.emailVerification.UseValidatedChallenge(email, models.EmailVerificationPurposeResetPassword, input.Code, func(tx *gorm.DB, challenge models.EmailVerificationChallenge) error {
+		if challenge.UserID == nil {
+			return services.ErrCodeNotFound
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, *challenge.UserID).Error; err != nil {
+			return err
+		}
+		if user.Email != email || user.EmailVerifiedAt == nil {
+			return errors.New("邮箱不可用于密码找回")
+		}
+		return tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+			"password_hash": string(hash), "token_version": gorm.Expr("token_version + 1"),
+		}).Error
+	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "邮箱不可用于密码找回"})
+			return
+		}
+		if err.Error() == "邮箱不可用于密码找回" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "邮箱不可用于密码找回"})
+			return
+		}
+		if errors.Is(err, services.ErrCodeNotFound) || errors.Is(err, services.ErrCodeExpired) || errors.Is(err, services.ErrCodeAttempts) || errors.Is(err, services.ErrCodeInvalid) {
+			writeEmailVerificationError(c, err)
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码重置失败"})
 		return
 	}
@@ -409,6 +474,16 @@ func writeEmailVerificationError(c *gin.Context, err error) {
 		code = "EMAIL_VERIFICATION_ATTEMPTS_EXCEEDED"
 	}
 	c.JSON(status, gin.H{"error": err.Error(), "code": code})
+}
+
+func isEmailVerificationError(err error) bool {
+	return errors.Is(err, services.ErrEmailInvalid) ||
+		errors.Is(err, services.ErrCodeNotFound) ||
+		errors.Is(err, services.ErrCodeExpired) ||
+		errors.Is(err, services.ErrCodeAttempts) ||
+		errors.Is(err, services.ErrCodeInvalid) ||
+		errors.Is(err, services.ErrPurposeInvalid) ||
+		errors.Is(err, services.ErrMailNotConfigured)
 }
 
 func maskEmail(email string) string {

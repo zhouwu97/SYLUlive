@@ -10,6 +10,7 @@ class BindInput(BaseModel):
     """�󶨽����˺�����"""
     student_id: str = Field(..., min_length=10, max_length=10, description="ѧ��")
     password: str = Field(..., description="��������")
+    credential_generation: int = Field(..., ge=1, description="授权代次")
 
 
 class BindResponse(BaseModel):
@@ -29,6 +30,12 @@ class UnbindResponse(BaseModel):
     """�����Ӧ"""
     success: bool
     message: str
+
+
+class AuthorizationCleanupInput(BaseModel):
+    """按授权代次删除远端凭据，避免旧任务删除新绑定。"""
+    expected_generation: int = Field(..., ge=0)
+    delete_identity: bool = False
 
 
 class EduStatusResponse(BaseModel):

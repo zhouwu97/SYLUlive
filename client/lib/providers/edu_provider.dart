@@ -272,10 +272,17 @@ class EduProvider extends ChangeNotifier {
   bool _isEduSessionExpired(DioException e) {
     final data = e.response?.data;
     if (data is Map) {
-      final code = data['code'];
-      if (code == 'EDU_SESSION_EXPIRED') return true;
-      final upstream = data['upstream_code'];
-      if (upstream == 'SESSION_EXPIRED') return true;
+      const sessionCodes = <String>{
+        'EDU_AUTHORIZATION_REVOKED',
+        'EDU_SESSION_LOGGED_OUT',
+        'EDU_SESSION_EXPIRED',
+        'EDU_CREDENTIAL_UNAVAILABLE',
+      };
+      final code = data['code']?.toString();
+      final upstream = data['upstream_code']?.toString();
+      if (sessionCodes.contains(code) || sessionCodes.contains(upstream)) {
+        return true;
+      }
     }
     return false;
   }
@@ -293,6 +300,7 @@ class EduProvider extends ChangeNotifier {
   }) async {
     // 极速上屏：先从本地缓存读取状态
     final cached = await _loadBoundStatusFor(expectedUserId);
+    final cachedSessionState = _sessionState;
 
     // 检查是否已被新请求废弃
     if (_userId != expectedUserId || generation != _statusGeneration) {
@@ -300,9 +308,6 @@ class EduProvider extends ChangeNotifier {
     }
 
     if (!_statusLoaded) {
-      _isBound = cached;
-      _isAuthorized = cached;
-      _sessionState = cached ? 'active' : 'unbound';
       _statusLoaded = true;
       notifyListeners();
     }
@@ -316,8 +321,7 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        _isAuthorized =
-            data['edu_authorized'] == true || data['edu_bound'] == true;
+        _isAuthorized = data['edu_authorized'] == true;
         _isBound = _isAuthorized;
         _sessionState = data['edu_session_state']?.toString() ??
             (_isAuthorized ? 'active' : 'unbound');
@@ -339,7 +343,7 @@ class EduProvider extends ChangeNotifier {
       }
       _isBound = cached;
       _isAuthorized = cached;
-      _sessionState = cached ? 'active' : 'unbound';
+      _sessionState = cachedSessionState;
       _errorMessage = _parseDioError(e);
       _statusLoaded = true;
       debugPrint('获取教务状态失败: $_errorMessage，使用缓存: $cached');
@@ -350,7 +354,8 @@ class EduProvider extends ChangeNotifier {
   /// 保存绑定状态 — 使用显式 userId，不从可变字段读取
   Future<void> _saveBoundStatusFor(String userId) async {
     final prefs = await AppPreferencesStore.getInstance();
-    await prefs.setBool('edu_bound_$userId', _isBound);
+    await prefs.setBool('edu_authorized_$userId', _isAuthorized);
+    await prefs.setString('edu_session_state_$userId', _sessionState);
     await prefs.setString('edu_student_id_$userId', _studentId);
     await prefs.setString('edu_grade_$userId', _grade);
     await prefs.setString('edu_college_$userId', _college);
@@ -364,12 +369,29 @@ class EduProvider extends ChangeNotifier {
     _grade = prefs.getString('edu_grade_$userId') ?? '';
     _college = prefs.getString('edu_college_$userId') ?? '';
     _major = prefs.getString('edu_major_$userId') ?? '';
-    return prefs.getBool('edu_bound_$userId') ?? false;
+    final hasLifecycleStatus = prefs.containsKey('edu_authorized_$userId') ||
+        prefs.containsKey('edu_session_state_$userId');
+    if (hasLifecycleStatus) {
+      _isAuthorized = prefs.getBool('edu_authorized_$userId') ?? false;
+      _sessionState = prefs.getString('edu_session_state_$userId') ??
+          (_isAuthorized ? 'active' : 'unbound');
+    } else {
+      // 仅为旧版本缓存迁移一次，之后始终以授权和会话状态两个字段为准。
+      _isAuthorized = prefs.getBool('edu_bound_$userId') ?? false;
+      _sessionState = _isAuthorized ? 'active' : 'unbound';
+      await prefs.setBool('edu_authorized_$userId', _isAuthorized);
+      await prefs.setString('edu_session_state_$userId', _sessionState);
+      await prefs.remove('edu_bound_$userId');
+    }
+    _isBound = _isAuthorized;
+    return _isAuthorized;
   }
 
   Future<void> _clearBoundStatusFor(String userId) async {
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.remove('edu_bound_$userId');
+    await prefs.remove('edu_authorized_$userId');
+    await prefs.remove('edu_session_state_$userId');
     await prefs.remove('edu_student_id_$userId');
     await prefs.remove('edu_grade_$userId');
     await prefs.remove('edu_college_$userId');
@@ -388,7 +410,11 @@ class EduProvider extends ChangeNotifier {
   }
 
   // 绑定教务账号
-  Future<bool> bind(String studentId, String password) async {
+  Future<bool> bind(
+    String studentId,
+    String password, {
+    required bool eduDataConsentAccepted,
+  }) async {
     if (_userId == null) {
       _errorMessage = '用户未登录';
       notifyListeners();
@@ -405,6 +431,7 @@ class EduProvider extends ChangeNotifier {
         data: {
           'student_id': studentId,
           'password': password,
+          'edu_data_consent_accepted': eduDataConsentAccepted,
         },
       );
 
@@ -416,14 +443,17 @@ class EduProvider extends ChangeNotifier {
         if (token is String && user is Map && _applyAuthPayload != null) {
           await _applyAuthPayload!(token, Map<String, dynamic>.from(user));
         }
-        _isAuthorized = data['edu_authorized'] != false;
-        _isBound = true;
-        _sessionState = data['edu_session_state']?.toString() ?? 'active';
-        _studentId = data['edu_student_id'] ?? studentId;
-        _name = data['name'] ?? '';
-        _grade = data['edu_grade'] ?? '';
-        _college = data['edu_college'] ?? '';
-        _major = data['edu_major'] ?? '';
+        final boundUser = user is Map
+            ? Map<String, dynamic>.from(user)
+            : const <String, dynamic>{};
+        _isAuthorized = boundUser['edu_authorized'] == true;
+        _isBound = _isAuthorized;
+        _sessionState = boundUser['edu_session_state']?.toString() ?? 'active';
+        _studentId = boundUser['edu_student_id']?.toString() ?? studentId;
+        _name = boundUser['name']?.toString() ?? '';
+        _grade = boundUser['edu_grade']?.toString() ?? '';
+        _college = boundUser['edu_college']?.toString() ?? '';
+        _major = boundUser['edu_major']?.toString() ?? '';
         _errorMessage = null;
         _statusLoaded = true;
         final boundUserId = _userId!;
@@ -460,6 +490,7 @@ class EduProvider extends ChangeNotifier {
         _sessionState = 'logged_out';
         _errorMessage = null;
         _statusLoaded = true;
+        await _saveBoundStatusFor(_userId!);
         await _refreshAuthUser?.call();
         notifyListeners();
         return OperationResult.ok(null);
@@ -483,6 +514,7 @@ class EduProvider extends ChangeNotifier {
             response.data['edu_session_state']?.toString() ?? 'active';
         _errorMessage = null;
         _statusLoaded = true;
+        await _saveBoundStatusFor(_userId!);
         await _refreshAuthUser?.call();
         notifyListeners();
         return OperationResult.ok(null);
@@ -504,6 +536,7 @@ class EduProvider extends ChangeNotifier {
         _sessionState = 'revoked';
         _errorMessage = null;
         _statusLoaded = true;
+        await _saveBoundStatusFor(currentUserId);
         clearGradeCacheForUser(currentUserId);
         try {
           await _clearSensitiveEduSnapshots(currentUserId);

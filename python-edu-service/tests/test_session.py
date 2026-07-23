@@ -2,7 +2,7 @@ import pytest
 import asyncio
 import base64
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.session import execute_with_session_refresh, CookieLapseError
 from services.crawler import LoginFailedError
@@ -21,7 +21,8 @@ def _clear_locks(monkeypatch):
 async def test_session_refresh_success():
     """旧 Cookie 失败 → 自动登录成功 → 同一次请求直接返回"""
     mock_db = AsyncMock()
-    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"))
+    mock_db.execute.return_value = MagicMock(rowcount=1)
+    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"), authorized=True, session_state="active", auto_relogin=True, credential_generation=1)
 
     operation = AsyncMock()
     operation.side_effect = [CookieLapseError("Expired"), "success_data"]
@@ -47,7 +48,7 @@ async def test_session_refresh_success():
 async def test_session_refresh_login_failed():
     """旧 Cookie 失败 → 登录失败 → 返回 CookieLapseError"""
     mock_db = AsyncMock()
-    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"))
+    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"), authorized=True, session_state="active", auto_relogin=True, credential_generation=1)
 
     operation = AsyncMock()
     operation.side_effect = [CookieLapseError("Expired")]
@@ -71,7 +72,8 @@ async def test_session_refresh_login_failed():
 async def test_session_refresh_concurrent_requests():
     """grades 和 academic-situation 同时触发 → 只登录一次，两个请求都成功"""
     mock_db = AsyncMock()
-    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"))
+    mock_db.execute.return_value = MagicMock(rowcount=1)
+    edu_user = EduUser(user_id="u1", student_id="s1", encrypted_password=encrypt_credential("p1"), cookie=encrypt_credential("old_cookie"), authorized=True, session_state="active", auto_relogin=True, credential_generation=1)
 
     op1 = AsyncMock()
     op2 = AsyncMock()
@@ -109,3 +111,38 @@ async def test_session_refresh_concurrent_requests():
         # 确保只调用了一次 login
         assert mock_crawler_instance.login.call_count == 1
         assert edu_user.cookie != "new_cookie"
+
+
+@pytest.mark.asyncio
+async def test_session_refresh_does_not_restore_user_who_logged_out_while_waiting():
+    """请求等待用户锁时若用户退出，持锁后的二次检查必须阻止静默登录。"""
+    mock_db = AsyncMock()
+    mock_db.execute.return_value = MagicMock(rowcount=1)
+    edu_user = EduUser(
+        id=1,
+        user_id="u1",
+        student_id="s1",
+        encrypted_password=encrypt_credential("p1"),
+        cookie=encrypt_credential("old_cookie"),
+        authorized=True,
+        session_state="active",
+        auto_relogin=True,
+        credential_generation=1,
+    )
+
+    async def refresh_after_logout(user):
+        user.authorized = True
+        user.session_state = "logged_out"
+        user.auto_relogin = False
+
+    mock_db.refresh.side_effect = refresh_after_logout
+    operation = AsyncMock(side_effect=CookieLapseError("Expired"))
+
+    with patch("services.session.EduCrawler") as MockCrawlerClass:
+        with pytest.raises(CookieLapseError, match="教务会话已退出"):
+            await execute_with_session_refresh(
+                db=mock_db,
+                edu_user=edu_user,
+                operation=operation,
+            )
+        MockCrawlerClass.return_value.__aenter__.return_value.login.assert_not_called()

@@ -16,7 +16,7 @@ const eduCredentialCleanupJobLease = 5 * time.Minute
 
 // EduCredentialCleanupRemote 定义后台任务清理教务服务中凭证副本的操作。
 type EduCredentialCleanupRemote interface {
-	Unbind(context.Context, uint) error
+	Unbind(context.Context, uint, uint, bool) error
 }
 
 // EduCredentialCleanupJobProcessReport 汇总一批教务凭证清理任务的执行情况。
@@ -41,12 +41,40 @@ func NewEduCredentialCleanupJobService(db *gorm.DB, remote EduCredentialCleanupR
 	return &EduCredentialCleanupJobService{db: db, remote: remote, now: now}
 }
 
-// Enqueue 在调用方事务中写入清理任务，使本地撤销和远端补偿具备原子可见性。
-func (s *EduCredentialCleanupJobService) Enqueue(tx *gorm.DB, userID uint) error {
-	if tx == nil || userID == 0 {
+// Enqueue 在调用方事务中写入带授权代次的清理任务，使旧任务不会删除后续重新绑定的凭据。
+func (s *EduCredentialCleanupJobService) Enqueue(tx *gorm.DB, userID uint, expectedGeneration uint, revokedAt time.Time, deleteIdentity bool) error {
+	if tx == nil || userID == 0 || revokedAt.IsZero() {
 		return errors.New("教务凭证清理任务参数无效")
 	}
-	return tx.Create(&models.EduCredentialCleanupJob{UserID: userID, NextAttemptAt: s.now()}).Error
+	return tx.Create(&models.EduCredentialCleanupJob{
+		UserID: userID, ExpectedGeneration: expectedGeneration, RevokedAt: &revokedAt,
+		DeleteIdentity: deleteIdentity, NextAttemptAt: s.now(),
+	}).Error
+}
+
+// CompleteGeneration 在同步删除远端凭据成功后关闭对应 outbox 任务。
+func (s *EduCredentialCleanupJobService) CompleteGeneration(ctx context.Context, userID uint, generation uint) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	now := s.now()
+	if err := s.db.WithContext(ctx).Model(&models.EduCredentialCleanupJob{}).
+		Where("user_id = ? AND expected_generation = ? AND completed_at IS NULL", userID, generation).
+		Updates(map[string]interface{}{"completed_at": now, "last_error": "", "locked_at": nil, "lock_token": ""}).Error; err != nil {
+		return err
+	}
+	return s.clearPending(ctx, userID, generation)
+}
+
+// CancelOlderGenerations 在用户重新绑定时终止旧代次的待处理任务。
+func (s *EduCredentialCleanupJobService) CancelOlderGenerations(tx *gorm.DB, userID uint, generation uint) error {
+	if s == nil || tx == nil {
+		return nil
+	}
+	now := s.now()
+	return tx.Model(&models.EduCredentialCleanupJob{}).
+		Where("user_id = ? AND expected_generation < ? AND completed_at IS NULL", userID, generation).
+		Updates(map[string]interface{}{"completed_at": now, "last_error": "已由新的教务授权代次替代", "locked_at": nil, "lock_token": ""}).Error
 }
 
 // ProcessDue 领取并处理一批到期任务。远端失败只更新重试状态，不会中止后续任务。
@@ -66,7 +94,18 @@ func (s *EduCredentialCleanupJobService) ProcessDue(ctx context.Context, limit i
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
-		if err := s.unbind(ctx, job.UserID); err != nil {
+		applicable, err := s.isStillApplicable(ctx, job)
+		if err != nil {
+			return report, err
+		}
+		if !applicable {
+			if err := s.complete(ctx, job); err != nil {
+				return report, err
+			}
+			report.Completed++
+			continue
+		}
+		if err := s.unbind(ctx, job.UserID, job.ExpectedGeneration, job.DeleteIdentity); err != nil {
 			if err := s.fail(ctx, job, err); err != nil {
 				return report, err
 			}
@@ -125,11 +164,24 @@ func (s *EduCredentialCleanupJobService) claimOne(ctx context.Context, jobID uin
 	return job, true, nil
 }
 
-func (s *EduCredentialCleanupJobService) unbind(ctx context.Context, userID uint) error {
+func (s *EduCredentialCleanupJobService) unbind(ctx context.Context, userID uint, generation uint, deleteIdentity bool) error {
 	if s.remote == nil {
 		return errors.New("教务凭证清理客户端未配置")
 	}
-	return s.remote.Unbind(ctx, userID)
+	return s.remote.Unbind(ctx, userID, generation, deleteIdentity)
+}
+
+func (s *EduCredentialCleanupJobService) isStillApplicable(ctx context.Context, job models.EduCredentialCleanupJob) (bool, error) {
+	var user models.User
+	err := s.db.WithContext(ctx).First(&user, job.UserID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return user.EduAuthorizationGeneration == job.ExpectedGeneration &&
+		!user.EduAuthorized && user.EduSessionState == "revoked" && user.EduCleanupPending, nil
 }
 
 func (s *EduCredentialCleanupJobService) complete(ctx context.Context, job models.EduCredentialCleanupJob) error {
@@ -143,7 +195,13 @@ func (s *EduCredentialCleanupJobService) complete(ctx context.Context, job model
 	if result.RowsAffected != 1 {
 		return fmt.Errorf("教务凭证清理任务完成状态已变化: %d", job.ID)
 	}
-	return nil
+	return s.clearPending(ctx, job.UserID, job.ExpectedGeneration)
+}
+
+func (s *EduCredentialCleanupJobService) clearPending(ctx context.Context, userID uint, generation uint) error {
+	return s.db.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND edu_authorization_generation = ? AND edu_authorized = ? AND edu_session_state = ?", userID, generation, false, "revoked").
+		Update("edu_cleanup_pending", false).Error
 }
 
 func (s *EduCredentialCleanupJobService) fail(ctx context.Context, job models.EduCredentialCleanupJob, operationErr error) error {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -344,7 +345,12 @@ func TestCanteenApprovalControlsVisibilityAndRating(t *testing.T) {
 		t.Fatalf("unbound user must not rate: %d %s", ratingWithoutEdu.Code, ratingWithoutEdu.Body.String())
 	}
 
-	if err := db.Model(&models.User{}).Where("id = ?", 2).Update("edu_bound", true).Error; err != nil {
+	verifiedAt := time.Now()
+	if err := db.Model(&models.User{}).Where("id = ?", 2).Updates(map[string]interface{}{
+		"student_verified_at": verifiedAt,
+		"edu_authorized":      true,
+		"edu_bound":           true,
+	}).Error; err != nil {
 		t.Fatalf("bind edu account: %v", err)
 	}
 	ratingAfterApproval := performCanteenRequest(

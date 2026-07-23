@@ -76,21 +76,6 @@ class _LoginScreenState extends State<LoginScreen> {
         eduDataConsentAccepted: _eduDataConsentAccepted,
       );
 
-  bool get _hasRequiredRegistrationConsents =>
-      _userAgreementAccepted &&
-      _privacyPolicyAccepted &&
-      (_isGraduateRegister || _eduDataConsentAccepted);
-
-  RegistrationConsents get _registrationConsents => RegistrationConsents(
-        userAgreementAccepted: _userAgreementAccepted,
-        privacyPolicyAccepted: _privacyPolicyAccepted,
-        communityRulesAccepted: _communityRulesAccepted,
-        minorProtectionAccepted: _minorProtectionAccepted,
-        contentComplaintAccepted: _contentComplaintAccepted,
-        sdkDisclosureAccepted: _sdkDisclosureAccepted,
-        eduDataConsentAccepted: _eduDataConsentAccepted,
-      );
-
   InputDecoration _inputDecoration(
     BuildContext context, {
     required String label,

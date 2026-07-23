@@ -54,7 +54,7 @@ void main() {
     (_) async => null,
   );
 
-  testWidgets('正常模式保留数据权利请求区域', (tester) async {
+  testWidgets('正常模式不显示数据更正与处理记录入口', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 1800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final adapter = _PrivacyAdapter();
@@ -65,13 +65,13 @@ void main() {
 
     expect(find.text('查阅个人信息'), findsOneWidget);
     expect(find.text('导出个人数据'), findsOneWidget);
-    expect(find.text('数据更正、删除与处理记录'), findsOneWidget);
+    expect(find.text('数据更正、删除与处理记录'), findsNothing);
     expect(find.text('撤销全部同意'), findsNothing);
     expect(find.text('重新授权'), findsNothing);
-    expect(adapter.requestedPaths, contains('/user/privacy/requests'));
+    expect(adapter.requestedPaths, isEmpty);
   });
 
-  testWidgets('受限模式保留数据权利、重新授权、注销和退出登录', (tester) async {
+  testWidgets('受限模式保留重新授权、注销和退出登录', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 1800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final adapter = _PrivacyAdapter();
@@ -84,10 +84,10 @@ void main() {
     expect(find.text('查阅个人信息'), findsOneWidget);
     expect(find.text('导出个人数据'), findsOneWidget);
     expect(find.text('重新授权'), findsOneWidget);
-    expect(find.text('数据更正、删除与处理记录'), findsOneWidget);
+    expect(find.text('数据更正、删除与处理记录'), findsNothing);
     expect(find.text('撤销全部同意'), findsNothing);
     expect(find.byTooltip('退出登录'), findsOneWidget);
-    expect(adapter.requestedPaths, contains('/user/privacy/requests'));
+    expect(adapter.requestedPaths, isEmpty);
   });
 }
 

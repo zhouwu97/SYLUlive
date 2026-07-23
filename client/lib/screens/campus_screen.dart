@@ -14,6 +14,7 @@ import '../utils/campus_asset_preloader.dart';
 
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/campus/campus_ai_entry_card.dart';
+import '../widgets/campus/campus_model_chat_entry_card.dart';
 import '../widgets/campus/campus_header.dart';
 import '../widgets/campus/campus_feature_notice_card.dart';
 import '../widgets/campus/campus_service_grid.dart';

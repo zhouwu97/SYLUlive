@@ -296,11 +296,13 @@ func (s *AppReleaseService) DeleteDraft(ctx context.Context, releaseID, operator
 		if release.Status != models.AppReleaseStatusDraft {
 			return ErrAppReleaseNotDraft
 		}
-		path, err := s.LocateAPK(&release)
-		if err != nil {
-			return err
+		if release.DeliveryMode == models.AppReleaseDeliveryModeDirectPackage {
+			path, err := s.LocateAPK(&release)
+			if err != nil {
+				return err
+			}
+			storagePath = path
 		}
-		storagePath = path
 		if err := tx.Delete(&release).Error; err != nil {
 			return err
 		}
@@ -365,8 +367,25 @@ func validateDraftInput(input *AppReleaseDraftInput) error {
 	input.VersionName = strings.TrimSpace(input.VersionName)
 	input.Title = strings.TrimSpace(input.Title)
 	input.Changelog = strings.TrimSpace(input.Changelog)
-	if input.Platform != models.AppReleasePlatformAndroid || input.Channel != models.AppReleaseChannelStable {
-		return fmt.Errorf("%w: 当前仅支持 android/stable", ErrAppReleaseInvalid)
+
+	if input.Channel != models.AppReleaseChannelStable {
+		return fmt.Errorf("%w: 当前仅支持 stable 通道", ErrAppReleaseInvalid)
+	}
+	if input.Platform == models.AppReleasePlatformOhos {
+		if input.DeliveryMode == models.AppReleaseDeliveryModeDirectPackage {
+			return fmt.Errorf("%w: 鸿蒙版暂不支持 direct_package 模式", ErrAppReleaseInvalid)
+		}
+	} else if input.Platform != models.AppReleasePlatformAndroid {
+		return fmt.Errorf("%w: 不支持的平台 %s", ErrAppReleaseInvalid, input.Platform)
+	}
+
+	if input.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
+		if !strings.HasPrefix(input.ActionURL, "http://") && !strings.HasPrefix(input.ActionURL, "https://") {
+			return fmt.Errorf("%w: action_url 必须以 http 或 https 开头", ErrAppReleaseInvalid)
+		}
+		if len(input.ActionURL) > 500 {
+			return fmt.Errorf("%w: action_url 过长", ErrAppReleaseInvalid)
+		}
 	}
 	if input.VersionName == "" || len([]rune(input.VersionName)) > 32 || !regexp.MustCompile(`^[0-9A-Za-z._-]+$`).MatchString(input.VersionName) {
 		return fmt.Errorf("%w: version_name 只能包含字母、数字、点、下划线和连字符", ErrAppReleaseInvalid)

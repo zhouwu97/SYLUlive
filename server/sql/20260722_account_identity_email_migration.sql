@@ -22,6 +22,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_authorization_generation bigint N
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_cleanup_pending boolean NOT NULL DEFAULT false;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_binding_state varchar(32) NOT NULL DEFAULT 'idle';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_binding_pending_generation bigint NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_binding_pending_student_id varchar(20) NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS edu_binding_started_at timestamptz;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status varchar(20) NOT NULL DEFAULT 'active';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;

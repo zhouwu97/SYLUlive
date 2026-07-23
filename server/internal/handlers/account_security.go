@@ -86,10 +86,10 @@ func (h *AuthHandler) RequestEmailRegistrationCode(c *gin.Context) {
 		return
 	}
 	var existing models.User
-	if err := h.db.Where("email = ?", email).First(&existing).Error; err == nil {
+	if err := h.db.Where("email = ?", email).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		// 公开接口不向外暴露发送失败，避免通过 SMTP 响应枚举已有账号。
 		_ = h.emailVerification.SendReservedPublicRequest(email, input.Purpose, nil, c.ClientIP())
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	} else if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取账号失败"})
 		return
 	}

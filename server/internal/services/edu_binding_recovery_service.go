@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -77,7 +78,12 @@ func (s *EduBindingRecoveryService) ProcessDue(ctx context.Context, limit int) (
 			report.Failed++
 			continue
 		}
-		if status.Authorized && status.CredentialGeneration == user.EduBindingPendingGeneration && status.StudentID == user.StudentID {
+		pendingStudentID := strings.TrimSpace(user.EduBindingPendingStudentID)
+		if pendingStudentID == "" {
+			// 兼容升级前已持久化的学生账号待绑定记录。
+			pendingStudentID = strings.TrimSpace(user.StudentID)
+		}
+		if status.Authorized && status.CredentialGeneration == user.EduBindingPendingGeneration && status.StudentID == pendingStudentID {
 			if err := s.completeBinding(ctx, user.ID, user.EduBindingPendingGeneration, status); err != nil {
 				report.Failed++
 				continue
@@ -112,10 +118,15 @@ func (s *EduBindingRecoveryService) completeBinding(ctx context.Context, userID,
 		if user.EduBindingState != "pending" || user.EduBindingPendingGeneration != generation {
 			return nil
 		}
-		if user.StudentID != status.StudentID || status.StudentID == "" {
+		pendingStudentID := strings.TrimSpace(user.EduBindingPendingStudentID)
+		if pendingStudentID == "" {
+			pendingStudentID = strings.TrimSpace(user.StudentID)
+		}
+		if pendingStudentID == "" || pendingStudentID != status.StudentID || status.StudentID == "" {
 			return errors.New("远端教务身份与待恢复账号不一致")
 		}
 		updates := map[string]interface{}{
+			"student_id":                     status.StudentID,
 			"student_verified_at":            now,
 			"edu_student_id":                 status.StudentID,
 			"edu_authorized":                 true,
@@ -127,6 +138,7 @@ func (s *EduBindingRecoveryService) completeBinding(ctx context.Context, userID,
 			"edu_cleanup_pending":            false,
 			"edu_binding_state":              "active",
 			"edu_binding_pending_generation": 0,
+			"edu_binding_pending_student_id": "",
 			"edu_binding_started_at":         nil,
 			"edu_bound":                      true,
 			"edu_grade":                      status.Grade,
@@ -162,7 +174,7 @@ func (s *EduBindingRecoveryService) completeBinding(ctx context.Context, userID,
 func (s *EduBindingRecoveryService) releaseBinding(ctx context.Context, userID, generation uint) error {
 	return s.db.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND edu_binding_state = ? AND edu_binding_pending_generation = ?", userID, "pending", generation).
-		Updates(map[string]interface{}{"edu_binding_state": "idle", "edu_binding_pending_generation": 0, "edu_binding_started_at": nil}).Error
+		Updates(map[string]interface{}{"edu_binding_state": "idle", "edu_binding_pending_generation": 0, "edu_binding_pending_student_id": "", "edu_binding_started_at": nil}).Error
 }
 
 func (s *EduBindingRecoveryService) scheduleRegistrationCleanup(ctx context.Context, userID, generation uint) error {
@@ -183,6 +195,7 @@ func (s *EduBindingRecoveryService) scheduleRegistrationCleanup(ctx context.Cont
 				"edu_cleanup_pending":            true,
 				"edu_binding_state":              "cleanup_pending",
 				"edu_binding_pending_generation": 0,
+				"edu_binding_pending_student_id": "",
 				"edu_binding_started_at":         nil,
 				"edu_session_updated_at":         now,
 			})

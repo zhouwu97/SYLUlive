@@ -64,9 +64,11 @@ type User struct {
 	EduAuthorizationGeneration uint `gorm:"not null;default:0" json:"-"`
 	EduCleanupPending          bool `gorm:"not null;default:false" json:"-"`
 	// EduBindingState 记录跨服务绑定的提交阶段，避免 Go 在 Python 成功后崩溃时丢失待提交代次。
-	EduBindingState             string     `gorm:"size:32;not null;default:'idle';index" json:"-"`
-	EduBindingPendingGeneration uint       `gorm:"not null;default:0" json:"-"`
-	EduBindingStartedAt         *time.Time `gorm:"index" json:"-"`
+	EduBindingState             string `gorm:"size:32;not null;default:'idle';index" json:"-"`
+	EduBindingPendingGeneration uint   `gorm:"not null;default:0" json:"-"`
+	// EduBindingPendingStudentID 是待提交绑定的目标学号，恢复任务用它校验远端身份。
+	EduBindingPendingStudentID string     `gorm:"size:20;not null;default:''" json:"-"`
+	EduBindingStartedAt        *time.Time `gorm:"index" json:"-"`
 	// EduBound 为旧客户端兼容字段，恒等于 EduAuthorized。
 	EduBound   bool   `gorm:"default:false" json:"edu_bound"`
 	EduGrade   string `gorm:"size:20" json:"edu_grade"`

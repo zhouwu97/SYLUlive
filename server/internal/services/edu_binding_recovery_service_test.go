@@ -20,7 +20,7 @@ func (s eduBindingRecoveryRemoteStub) Status(_ context.Context, _ uint) (EduBind
 	return s.status, s.err
 }
 
-func TestEduBindingRecoveryCompletesRegistrationAfterRemoteCommit(t *testing.T) {
+func TestEduBindingRecoveryCompletesEmailAccountAfterRemoteCommit(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
@@ -30,16 +30,18 @@ func TestEduBindingRecoveryCompletesRegistrationAfterRemoteCommit(t *testing.T) 
 	}
 	now := time.Date(2026, time.July, 23, 9, 0, 0, 0, time.UTC)
 	startedAt := now.Add(-eduBindingRecoveryDelay - time.Minute)
+	const pendingStudentID = "2026000051"
 	user := models.User{
-		StudentID: "2026000051", PasswordHash: "hash", AccountStatus: "registration_pending",
-		EduBindingState: "pending", EduBindingPendingGeneration: 1, EduBindingStartedAt: &startedAt,
+		StudentID: "", Email: "email-user@example.com", PasswordHash: "hash", AccountStatus: "active",
+		EduBindingState: "pending", EduBindingPendingGeneration: 1,
+		EduBindingPendingStudentID: pendingStudentID, EduBindingStartedAt: &startedAt,
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("创建待恢复注册用户失败: %v", err)
 	}
 	cleanupJobs := NewEduCredentialCleanupJobService(db, nil, func() time.Time { return now })
 	service := NewEduBindingRecoveryService(db, eduBindingRecoveryRemoteStub{status: EduBindingRecoveryStatus{
-		Authorized: true, CredentialGeneration: 1, StudentID: user.StudentID,
+		Authorized: true, CredentialGeneration: 1, StudentID: pendingStudentID,
 		Grade: "2026", College: "计算机学院", Major: "软件工程",
 	}}, cleanupJobs, func() time.Time { return now })
 
@@ -54,7 +56,7 @@ func TestEduBindingRecoveryCompletesRegistrationAfterRemoteCommit(t *testing.T) 
 	if err := db.First(&stored, user.ID).Error; err != nil {
 		t.Fatalf("读取恢复后的用户失败: %v", err)
 	}
-	if stored.AccountStatus != "active" || stored.EduBindingState != "active" || !stored.EduAuthorized || stored.EduAuthorizationGeneration != 1 || stored.StudentVerifiedAt == nil {
+	if stored.StudentID != pendingStudentID || stored.AccountStatus != "active" || stored.EduBindingState != "active" || !stored.EduAuthorized || stored.EduAuthorizationGeneration != 1 || stored.StudentVerifiedAt == nil || stored.EduBindingPendingStudentID != "" {
 		t.Fatalf("恢复后的账号状态错误: %#v", stored)
 	}
 	var consent models.UserLegalConsent
@@ -78,7 +80,8 @@ func TestEduBindingRecoverySchedulesIdentityCleanupWhenRemoteHasNoBinding(t *tes
 	startedAt := now.Add(-eduBindingRecoveryDelay - time.Minute)
 	user := models.User{
 		StudentID: "2026000052", PasswordHash: "hash", AccountStatus: "registration_pending",
-		EduBindingState: "pending", EduBindingPendingGeneration: 1, EduBindingStartedAt: &startedAt,
+		EduBindingState: "pending", EduBindingPendingGeneration: 1,
+		EduBindingPendingStudentID: "2026000052", EduBindingStartedAt: &startedAt,
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("创建待清理注册用户失败: %v", err)

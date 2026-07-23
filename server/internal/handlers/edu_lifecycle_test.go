@@ -192,11 +192,11 @@ func TestPrepareEduBindingReusesPersistedPendingGeneration(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("创建测试用户失败: %v", err)
 	}
-	firstGeneration, err := prepareEduBinding(db, user.ID)
+	firstGeneration, err := prepareEduBinding(db, user.ID, user.StudentID)
 	if err != nil {
 		t.Fatalf("准备首次绑定失败: %v", err)
 	}
-	secondGeneration, err := prepareEduBinding(db, user.ID)
+	secondGeneration, err := prepareEduBinding(db, user.ID, user.StudentID)
 	if err != nil {
 		t.Fatalf("准备重试绑定失败: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestPrepareEduBindingReusesPersistedPendingGeneration(t *testing.T) {
 	if err := db.First(&stored, user.ID).Error; err != nil {
 		t.Fatalf("读取待绑定用户失败: %v", err)
 	}
-	if stored.EduBindingState != "pending" || stored.EduBindingPendingGeneration != firstGeneration || stored.EduBindingStartedAt == nil {
+	if stored.EduBindingState != "pending" || stored.EduBindingPendingGeneration != firstGeneration || stored.EduBindingPendingStudentID != user.StudentID || stored.EduBindingStartedAt == nil {
 		t.Fatalf("待绑定状态未持久化: %#v", stored)
 	}
 }

@@ -138,6 +138,7 @@ type eduBindResult struct {
 var (
 	errEduStudentAlreadyBound      = errors.New("该学号已绑定其他账号")
 	errEduStudentIdentityImmutable = errors.New("已认证学生不能绑定其他学号")
+	errEduBindingStudentMismatch   = errors.New("待提交教务绑定的学号不一致")
 )
 
 type eduStatusResult struct {
@@ -184,9 +185,13 @@ func bindEduWithPython(userID uint, studentID, password string, generation uint)
 	return &result, nil
 }
 
-// prepareEduBinding 在跨服务请求前持久化待绑定代次。相同 pending 代次可被安全重试，
-// 从而覆盖 Python 已成功、Go 进程尚未完成本地提交时的崩溃窗口。
-func prepareEduBinding(db *gorm.DB, userID uint) (uint, error) {
+// prepareEduBinding 在跨服务请求前持久化待绑定代次及目标学号。相同 pending 代次仅能由
+// 同一学号重试，从而覆盖 Python 已成功、Go 进程尚未完成本地提交时的崩溃窗口。
+func prepareEduBinding(db *gorm.DB, userID uint, studentID string) (uint, error) {
+	studentID = strings.TrimSpace(studentID)
+	if studentID == "" {
+		return 0, errors.New("待绑定学号不能为空")
+	}
 	var generation uint
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var user models.User
@@ -197,6 +202,19 @@ func prepareEduBinding(db *gorm.DB, userID uint) (uint, error) {
 			return errors.New("当前账号不能绑定教务")
 		}
 		if user.EduBindingState == "pending" && user.EduBindingPendingGeneration > user.EduAuthorizationGeneration {
+			pendingStudentID := strings.TrimSpace(user.EduBindingPendingStudentID)
+			if pendingStudentID == "" {
+				// 兼容升级前已有的待绑定记录；已稳定认证的账号可从本地身份恢复目标学号。
+				pendingStudentID = strings.TrimSpace(user.StudentID)
+			}
+			if pendingStudentID != "" && pendingStudentID != studentID {
+				return errEduBindingStudentMismatch
+			}
+			if pendingStudentID == "" {
+				if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("edu_binding_pending_student_id", studentID).Error; err != nil {
+					return err
+				}
+			}
 			generation = user.EduBindingPendingGeneration
 			return nil
 		}
@@ -205,6 +223,7 @@ func prepareEduBinding(db *gorm.DB, userID uint) (uint, error) {
 		return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 			"edu_binding_state":              "pending",
 			"edu_binding_pending_generation": generation,
+			"edu_binding_pending_student_id": studentID,
 			"edu_binding_started_at":         now,
 		}).Error
 	})
@@ -260,6 +279,7 @@ func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *ed
 			"edu_cleanup_pending":            false,
 			"edu_binding_state":              "active",
 			"edu_binding_pending_generation": 0,
+			"edu_binding_pending_student_id": "",
 			"edu_binding_started_at":         nil,
 			"edu_bound":                      true,
 			"edu_password":                   "",
@@ -338,6 +358,7 @@ func (h *EduHandler) compensateFailedEduBinding(userID uint, generation uint) {
 			"edu_cleanup_pending":            true,
 			"edu_binding_state":              "cleanup_pending",
 			"edu_binding_pending_generation": 0,
+			"edu_binding_pending_student_id": "",
 			"edu_binding_started_at":         nil,
 			"edu_session_updated_at":         now,
 		}).Error; err != nil {
@@ -486,8 +507,12 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 		}
 		return
 	}
-	generation, err := prepareEduBinding(h.db, userID)
+	generation, err := prepareEduBinding(h.db, userID, input.StudentID)
 	if err != nil {
+		if errors.Is(err, errEduBindingStudentMismatch) {
+			c.JSON(http.StatusConflict, gin.H{"error": "已有待提交教务绑定，请使用同一学号重试", "code": "EDU_BINDING_PENDING"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "准备教务授权失败"})
 		return
 	}
@@ -755,7 +780,7 @@ func (h *EduHandler) RevokeEduAuthorization(c *gin.Context) {
 			"edu_authorized": false, "edu_bound": false, "edu_session_state": "revoked",
 			"edu_auto_relogin": false, "edu_session_updated_at": now,
 			"edu_cleanup_pending": true, "edu_password": "", "edu_cookie": "",
-			"edu_binding_state": "cleanup_pending", "edu_binding_pending_generation": 0, "edu_binding_started_at": nil,
+			"edu_binding_state": "cleanup_pending", "edu_binding_pending_generation": 0, "edu_binding_pending_student_id": "", "edu_binding_started_at": nil,
 		}
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
 			return err

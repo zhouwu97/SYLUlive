@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -136,7 +137,11 @@ func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDra
 		if err := tx.Create(release).Error; err != nil {
 			return err
 		}
-		return writeAppReleaseAdminLog(tx, input.CreatedBy, "创建应用版本草稿", *release, "已校验 APK SHA-256")
+		auditDetail := "已校验 APK SHA-256"
+		if release.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
+			auditDetail = "外部市场模式发布"
+		}
+		return writeAppReleaseAdminLog(tx, input.CreatedBy, "创建应用版本草稿", *release, auditDetail)
 	}); err != nil {
 		return nil, normalizeAppReleaseDBError(err)
 	}
@@ -277,7 +282,11 @@ func (s *AppReleaseService) WithdrawPublished(ctx context.Context, releaseID, op
 		if err := tx.First(&withdrawn, releaseID).Error; err != nil {
 			return err
 		}
-		return writeAppReleaseAdminLog(tx, operatorID, "下架应用版本", withdrawn, "APK 文件保留，停止新客户端下载")
+		auditDetail := "APK 文件保留，停止新客户端下载"
+		if withdrawn.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
+			auditDetail = "停止新客户端通过外部链接下载"
+		}
+		return writeAppReleaseAdminLog(tx, operatorID, "下架应用版本", withdrawn, auditDetail)
 	})
 	if err != nil {
 		return nil, normalizeAppReleaseDBError(err)
@@ -380,8 +389,12 @@ func validateDraftInput(input *AppReleaseDraftInput) error {
 	}
 
 	if input.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
-		if !strings.HasPrefix(input.ActionURL, "http://") && !strings.HasPrefix(input.ActionURL, "https://") {
-			return fmt.Errorf("%w: action_url 必须以 http 或 https 开头", ErrAppReleaseInvalid)
+		parsedURL, err := url.ParseRequestURI(input.ActionURL)
+		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+			return fmt.Errorf("%w: action_url 必须是有效的 HTTP 或 HTTPS 链接", ErrAppReleaseInvalid)
+		}
+		if parsedURL.User != nil {
+			return fmt.Errorf("%w: action_url 不允许包含用户信息", ErrAppReleaseInvalid)
 		}
 		if len(input.ActionURL) > 500 {
 			return fmt.Errorf("%w: action_url 过长", ErrAppReleaseInvalid)

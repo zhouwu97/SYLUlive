@@ -208,6 +208,59 @@ func TestAuthMiddlewareSoftModeAllowsLegacyUser(t *testing.T) {
 	}
 }
 
+func TestAuthMiddlewareRequiresEduDataConsentForAuthorizedUser(t *testing.T) {
+	clearTokenVersionCacheForTest()
+	previousMode := legalConsentEnforcement
+	SetLegalConsentEnforcement(LegalConsentEnforcementHard)
+	defer SetLegalConsentEnforcement(previousMode)
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.UserLegalConsent{}); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+	user := models.User{StudentID: "edu-consent-user", PasswordHash: "hash", EduAuthorized: true, EduBound: true}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	for _, document := range models.RequiredLegalDocuments(false) {
+		if err := db.Create(&models.UserLegalConsent{
+			UserID: user.ID, Document: document, Version: models.LegalDocumentVersion,
+			AcceptedAt: time.Now(), Scene: "registration",
+		}).Error; err != nil {
+			t.Fatalf("create base consent %s: %v", document, err)
+		}
+	}
+	token, err := GenerateToken(user.ID, string(models.RoleUser), user.TokenVersion, "secret")
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	router := gin.New()
+	router.GET("/api/private", AuthMiddleware(db, "secret"), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	request := httptest.NewRequest(http.MethodGet, "/api/private", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "legal_consent_required") {
+		t.Fatalf("missing edu consent should be blocked: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	if err := db.Create(&models.UserLegalConsent{
+		UserID: user.ID, Document: models.LegalDocumentEduDataConsent, Version: models.LegalDocumentVersion,
+		AcceptedAt: time.Now(), Scope: "education", Scene: "edu_binding",
+	}).Error; err != nil {
+		t.Fatalf("create edu consent: %v", err)
+	}
+	clearTokenVersionCacheForTest()
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("valid edu consent should pass: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestOptionalAuthMiddlewareOffModePreservesIdentity(t *testing.T) {
 	assertOptionalAuthIdentity(t, LegalConsentEnforcementOff, models.LegalConsentStateRequired, true)
 }

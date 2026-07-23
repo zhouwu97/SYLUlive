@@ -186,7 +186,7 @@ func getCachedSessionState(db *gorm.DB, userID uint) (cachedSessionState, error)
 	tokenVersionCache.Unlock()
 
 	var user models.User
-	if err := db.Select("id", "token_version", "legal_consent_revoked_at", "edu_bound").First(&user, userID).Error; err != nil {
+	if err := db.Select("id", "token_version", "legal_consent_revoked_at", "edu_authorized").First(&user, userID).Error; err != nil {
 		return cachedSessionState{}, err
 	}
 	legalConsentState, err := models.LegalConsentStateForUser(db, user)

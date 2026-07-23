@@ -220,26 +220,32 @@ func updateUserEduBinding(db *gorm.DB, userID uint, studentID string, result *ed
 		if user.StudentVerifiedAt != nil && user.StudentID != "" && user.StudentID != studentID {
 			return errEduStudentIdentityImmutable
 		}
+		if user.AccountStatus == "cancelled" || user.AccountStatus == "registration_cleanup_pending" {
+			return errors.New("当前账号不能绑定教务")
+		}
 		updates := map[string]interface{}{
-			"student_id":             studentID,
-			"student_verified_at":    now,
-			"edu_student_id":         studentID,
-			"edu_authorized":         true,
-			"edu_session_state":      "active",
-			"edu_auto_relogin":       true,
-			"edu_authorized_at":      now,
-			"edu_session_updated_at": now,
+			"student_id":                   studentID,
+			"student_verified_at":          now,
+			"edu_student_id":               studentID,
+			"edu_authorized":               true,
+			"edu_session_state":            "active",
+			"edu_auto_relogin":             true,
+			"edu_authorized_at":            now,
+			"edu_session_updated_at":       now,
 			"edu_authorization_generation": generation,
 			"edu_cleanup_pending":          false,
-			"edu_bound":              true,
-			"edu_password":           "",
-			"edu_cookie":             "",
-			"edu_grade":              result.Grade,
-			"edu_college":            result.College,
-			"edu_major":              result.Major,
+			"edu_bound":                    true,
+			"edu_password":                 "",
+			"edu_cookie":                   "",
+			"edu_grade":                    result.Grade,
+			"edu_college":                  result.College,
+			"edu_major":                    result.Major,
 		}
 		if user.StudentID != studentID || user.StudentVerifiedAt == nil {
 			updates["token_version"] = gorm.Expr("token_version + 1")
+		}
+		if user.AccountStatus == "registration_pending" {
+			updates["account_status"] = "active"
 		}
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
 			return err
@@ -490,15 +496,7 @@ func (h *EduHandler) GetEduStatus(c *gin.Context) {
 	}
 	// 用户已撤销授权时，本地状态优先于远端旧副本。只有显式绑定才可恢复授权。
 	if !localUser.EduAuthorized && (localUser.EduSessionState == "revoked" || localUser.EduCleanupPending) {
-		c.JSON(http.StatusOK, gin.H{
-			"edu_bound":         false,
-			"edu_authorized":    false,
-			"edu_session_state": "revoked",
-			"edu_student_id":    localUser.EduStudentID,
-			"edu_grade":         localUser.EduGrade,
-			"edu_college":       localUser.EduCollege,
-			"edu_major":         localUser.EduMajor,
-		})
+		c.JSON(http.StatusOK, localEduStatusPayload(localUser))
 		return
 	}
 	resp, err := pythonEduRequest(http.MethodGet, "/api/edu/status", &userID, nil)
@@ -518,26 +516,30 @@ func (h *EduHandler) GetEduStatus(c *gin.Context) {
 	remoteAuthorized := status.Authorized || status.Bound
 	if !remoteAuthorized {
 		// 远端凭据丢失只能令本地活跃会话降级为过期，不能悄然撤销或重建授权。
-		if err := h.db.Model(&models.User{}).Where("id = ? AND edu_authorized = ?", userID, true).Updates(map[string]interface{}{
+		write := h.db.Model(&models.User{}).Where(
+			"id = ? AND edu_authorized = ? AND edu_cleanup_pending = ? AND edu_session_state <> ? AND edu_authorization_generation = ?",
+			userID, true, false, "revoked", localUser.EduAuthorizationGeneration,
+		).Updates(map[string]interface{}{
 			"edu_session_state": "expired", "edu_auto_relogin": false, "edu_session_updated_at": time.Now(),
-		}).Error; err != nil {
+		})
+		if write.Error != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务状态失败"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"edu_bound":         localUser.EduAuthorized,
-			"edu_authorized":    localUser.EduAuthorized,
-			"edu_session_state": "expired",
-			"edu_student_id":    localUser.EduStudentID,
-			"edu_grade":         localUser.EduGrade,
-			"edu_college":       localUser.EduCollege,
-			"edu_major":         localUser.EduMajor,
-		})
+		if write.RowsAffected == 0 {
+			if err := h.db.First(&localUser, userID).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "读取教务状态失败"})
+				return
+			}
+			c.JSON(http.StatusOK, localEduStatusPayload(localUser))
+			return
+		}
+		localUser.EduSessionState = "expired"
+		localUser.EduAutoRelogin = false
+		c.JSON(http.StatusOK, localEduStatusPayload(localUser))
 		return
 	}
 	updates := map[string]interface{}{
-		"edu_bound":              true,
-		"edu_authorized":         true,
 		"edu_session_state":      status.SessionState,
 		"edu_auto_relogin":       status.AutoRelogin,
 		"edu_session_updated_at": time.Now(),
@@ -548,8 +550,20 @@ func (h *EduHandler) GetEduStatus(c *gin.Context) {
 		updates["edu_college"] = status.College
 		updates["edu_major"] = status.Major
 	}
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+	write := h.db.Model(&models.User{}).Where(
+		"id = ? AND edu_authorized = ? AND edu_cleanup_pending = ? AND edu_session_state <> ? AND edu_authorization_generation = ?",
+		userID, true, false, "revoked", localUser.EduAuthorizationGeneration,
+	).Updates(updates)
+	if write.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务状态失败"})
+		return
+	}
+	if write.RowsAffected == 0 {
+		if err := h.db.First(&localUser, userID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取教务状态失败"})
+			return
+		}
+		c.JSON(http.StatusOK, localEduStatusPayload(localUser))
 		return
 	}
 
@@ -576,25 +590,63 @@ func parseEduSessionResult(resp *resty.Response) (eduSessionResult, error) {
 	return result, nil
 }
 
-func (h *EduHandler) syncEduSessionState(userID uint, result eduSessionResult) error {
+func (h *EduHandler) syncEduSessionState(userID uint, result eduSessionResult) (models.User, error) {
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		return err
+		return models.User{}, err
 	}
 	if !user.EduAuthorized || user.EduSessionState == "revoked" || user.EduCleanupPending {
-		return nil
+		return user, nil
 	}
 	now := time.Now()
+	sessionState := result.SessionState
+	autoRelogin := result.AutoRelogin
+	if !result.Authorized {
+		// 远端会话信息不能撤销本地授权，只能将当前会话降级为不可用。
+		sessionState = "expired"
+		autoRelogin = false
+	}
 	updates := map[string]interface{}{
-		"edu_authorized":         result.Authorized,
-		"edu_bound":              result.Authorized,
-		"edu_session_state":      result.SessionState,
-		"edu_auto_relogin":       result.AutoRelogin,
+		"edu_session_state":      sessionState,
+		"edu_auto_relogin":       autoRelogin,
 		"edu_session_updated_at": now,
 		"edu_password":           "",
 		"edu_cookie":             "",
 	}
-	return h.db.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
+	write := h.db.Model(&models.User{}).Where(
+		"id = ? AND edu_authorized = ? AND edu_cleanup_pending = ? AND edu_session_state <> ? AND edu_authorization_generation = ?",
+		userID, true, false, "revoked", user.EduAuthorizationGeneration,
+	).Updates(updates)
+	if write.Error != nil {
+		return models.User{}, write.Error
+	}
+	if write.RowsAffected == 0 {
+		if err := h.db.First(&user, userID).Error; err != nil {
+			return models.User{}, err
+		}
+		return user, nil
+	}
+	user.EduSessionState = sessionState
+	user.EduAutoRelogin = autoRelogin
+	return user, nil
+}
+
+// localEduStatusPayload 仅根据本地权威状态构造响应。
+// 远端读取与本地撤销并发时，调用方必须返回此状态，不能用旧远端结果覆盖它。
+func localEduStatusPayload(user models.User) gin.H {
+	state := user.EduSessionState
+	if !user.EduAuthorized && (state == "revoked" || user.EduCleanupPending) {
+		state = "revoked"
+	}
+	return gin.H{
+		"edu_bound":         user.EduAuthorized,
+		"edu_authorized":    user.EduAuthorized,
+		"edu_session_state": state,
+		"edu_student_id":    user.EduStudentID,
+		"edu_grade":         user.EduGrade,
+		"edu_college":       user.EduCollege,
+		"edu_major":         user.EduMajor,
+	}
 }
 
 func isStableEduStateErrorCode(code string) bool {
@@ -623,12 +675,13 @@ func (h *EduHandler) LogoutEduSession(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
 		return
 	}
-	if err := h.syncEduSessionState(userID, result); err != nil {
+	user, err := h.syncEduSessionState(userID, result)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务会话状态失败"})
 		return
 	}
 	_ = h.db.Create(&models.AccountSecurityAuditLog{UserID: userID, Action: "edu_session_logged_out"}).Error
-	c.JSON(http.StatusOK, gin.H{"message": result.Message, "edu_authorized": result.Authorized, "edu_session_state": result.SessionState})
+	c.JSON(http.StatusOK, gin.H{"message": result.Message, "edu_authorized": user.EduAuthorized, "edu_session_state": user.EduSessionState})
 }
 
 // ResumeEduSession 仅在用户明确点击后恢复会话，绝不由客户端静默触发。
@@ -648,12 +701,13 @@ func (h *EduHandler) ResumeEduSession(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "教务服务返回异常"})
 		return
 	}
-	if err := h.syncEduSessionState(userID, result); err != nil {
+	user, err := h.syncEduSessionState(userID, result)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "同步教务会话状态失败"})
 		return
 	}
 	_ = h.db.Create(&models.AccountSecurityAuditLog{UserID: userID, Action: "edu_session_resumed"}).Error
-	c.JSON(http.StatusOK, gin.H{"message": result.Message, "edu_authorized": result.Authorized, "edu_session_state": result.SessionState})
+	c.JSON(http.StatusOK, gin.H{"message": result.Message, "edu_authorized": user.EduAuthorized, "edu_session_state": user.EduSessionState})
 }
 
 // RevokeEduAuthorization 撤销凭据使用权；稳定学号、学生认证和基础资料均不受影响。
@@ -695,7 +749,7 @@ func (h *EduHandler) RevokeEduAuthorization(c *gin.Context) {
 		return
 	}
 	if h.cleanupJobs != nil {
-		if err := h.cleanupJobs.CompleteGeneration(c.Request.Context(), userID, generation); err != nil {
+		if err := h.cleanupJobs.CompleteGeneration(c.Request.Context(), userID, generation, false); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步凭据清理状态失败"})
 			return
 		}

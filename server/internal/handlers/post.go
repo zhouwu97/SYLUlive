@@ -1366,11 +1366,6 @@ func (h *PostHandler) Create(c *gin.Context) {
 		log.Printf("[DB_WARN] Failed to re-fetch post with preloads after create: %v", err)
 	}
 
-	// 触发通知用户
-	if post.BoardID == models.BoardMarket {
-		go CreateMarketPostNotification(h.db, post.ID, post.Title, post.Price, userID.(uint))
-	}
-
 	responsePosts := []models.Post{post}
 	h.hydratePosts(c, responsePosts, time.Now())
 

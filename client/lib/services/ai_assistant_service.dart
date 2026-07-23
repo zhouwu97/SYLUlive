@@ -7,11 +7,37 @@ import '../models/ai_capabilities.dart';
 import '../models/ai_conversation.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
+import '../models/ai_source.dart';
 
 class AiAssistantService {
   final Dio _dio;
+  final Map<int, AiSourceContent> _sourceCache = <int, AiSourceContent>{};
+  final Map<int, Future<AiSourceContent>> _sourceRequests =
+      <int, Future<AiSourceContent>>{};
 
   AiAssistantService(this._dio);
+
+  /// 读取来源正文。缓存命中和并发请求合并都在服务层完成，展开卡片不会重复请求。
+  Future<AiSourceContent> getSourceContent(int chunkId) {
+    if (chunkId <= 0) {
+      throw const AiAssistantServiceException('来源正文不可用');
+    }
+    final cached = _sourceCache[chunkId];
+    if (cached != null) return Future.value(cached);
+    final pending = _sourceRequests[chunkId];
+    if (pending != null) return pending;
+    final request = _fetchSourceContent(chunkId);
+    _sourceRequests[chunkId] = request;
+    return request.whenComplete(() => _sourceRequests.remove(chunkId));
+  }
+
+  Future<AiSourceContent> _fetchSourceContent(int chunkId) async {
+    final response = await _dio.get('/ai/sources/chunks/$chunkId');
+    _expectStatus(response, 200);
+    final value = AiSourceContent.fromJson(_map(response.data));
+    _sourceCache[chunkId] = value;
+    return value;
+  }
 
   Future<AiCapabilities> getCapabilities() async {
     final response = await _dio.get('/ai/capabilities');

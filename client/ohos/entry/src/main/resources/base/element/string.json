@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "shenliyuan"
+    },
+    {
+      "name": "calendar_permission_reason",
+      "value": "用于添加和管理考试或课程表日程"
     }
   ]
 }

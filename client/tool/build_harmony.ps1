@@ -86,19 +86,12 @@ if ($pubspecContent -match 'version:\s*(?<versionName>[\d\.]+)\+(?<versionCode>\
 
 $appJson5Path = Join-Path $projectRoot 'ohos\AppScope\app.json5'
 $appJson5Content = Get-Content -LiteralPath $appJson5Path -Raw
-if ($appJson5Content -match '"versionName"\s*:\s*"(?<json5Name>[\d\.]+)"') {
-    $json5Name = $matches['json5Name']
-}
-if ($appJson5Content -match '"versionCode"\s*:\s*(?<json5Code>\d+)') {
-    $json5Code = $matches['json5Code']
-}
-if (-not [string]::IsNullOrEmpty($json5Name) -and -not [string]::IsNullOrEmpty($json5Code)) {
-    if ($json5Name -ne $versionName -or $json5Code -ne $versionCode) {
-        throw "Version mismatch: pubspec($versionName+$versionCode) vs app.json5($json5Name+$json5Code). Please update app.json5."
-    }
-} else {
-    throw "Cannot extract version from app.json5."
-}
+
+$appJson5Template = $appJson5Content
+$appJson5Modified = $appJson5Content -replace '"versionCode"\s*:\s*\d+', "`"versionCode`": $versionCode"
+$appJson5Modified = $appJson5Modified -replace '"versionName"\s*:\s*"[^"]+"', "`"versionName`": `"$versionName`""
+
+Set-Content -LiteralPath $appJson5Path -Value $appJson5Modified -Encoding utf8 -NoNewline
 
 # 签名材料只允许存在于已忽略的本地文件中，构建结束后立即恢复无凭据模板。
 Copy-Item -LiteralPath $localSigningProfile -Destination $buildProfile -Force
@@ -114,4 +107,5 @@ try {
     }
 } finally {
     Set-Content -LiteralPath $buildProfile -Value $buildProfileTemplate -Encoding utf8 -NoNewline
+    Set-Content -LiteralPath $appJson5Path -Value $appJson5Template -Encoding utf8 -NoNewline
 }

@@ -34,11 +34,8 @@ export default class OhosNotificationsPlugin implements FlutterPlugin, MethodCal
   }
 
   onMethodCall(call: MethodCall, result: MethodResult): void {
-    if (call.method === 'syncAlias') {
-      // Mock implementation
-      result.success(true);
-    } else if (call.method === 'clearAlias') {
-      result.success(null);
+    if (call.method === 'syncAlias' || call.method === 'clearAlias') {
+      result.error('unsupported_on_ohos', 'Push kit alias not implemented on HarmonyOS', null);
     } else if (call.method === 'clearConversationNotifications') {
       result.success(null);
     } else if (call.method === 'setCurrentConversation') {
@@ -47,8 +44,8 @@ export default class OhosNotificationsPlugin implements FlutterPlugin, MethodCal
       result.success(null);
     } else if (call.method === 'getPushDiagnostics') {
       result.success({
-        'status': 'mocked',
-        'platform': 'ohos'
+        'supported': false,
+        'reason': 'unsupported_on_ohos'
       });
     } else {
       result.notImplemented();

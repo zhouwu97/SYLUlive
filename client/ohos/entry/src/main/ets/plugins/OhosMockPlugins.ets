@@ -35,12 +35,20 @@ export default class OhosMockPlugins implements FlutterPlugin, MethodCallHandler
   }
 
   onMethodCall(call: MethodCall, result: MethodResult): void {
-    // Simply mock all methods on these channels to prevent MissingPluginException
-    // Most methods in Dart check for null or use `?? false`
-    if (call.method.startsWith('can') || call.method.startsWith('is') || call.method.startsWith('open')) {
-      result.success(false);
-    } else {
+    const readMethods = ['canRequest', 'isSupported', 'getWidgetStatus', 'getDiagnostic', 'checkStatus'];
+    const clearMethods = ['clearWidget', 'clearNotifications', 'removeReminder', 'cancelAll'];
+    
+    if (readMethods.includes(call.method) || call.method.startsWith('get') || call.method.startsWith('is') || call.method.startsWith('can')) {
+      result.success({
+        'supported': false,
+        'reason': 'unsupported_on_ohos'
+      });
+    } else if (clearMethods.includes(call.method) || call.method.startsWith('clear')) {
       result.success(null);
+    } else if (call.method === 'scheduleReminder' || call.method === 'syncToken' || call.method === 'updateWidget' || call.method === 'saveConfiguration') {
+      result.error('unsupported_on_ohos', 'This write operation is not supported on HarmonyOS', null);
+    } else {
+      result.notImplemented();
     }
   }
 }

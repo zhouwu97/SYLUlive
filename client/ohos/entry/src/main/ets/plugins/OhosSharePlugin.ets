@@ -3,6 +3,8 @@ import MethodChannel, { MethodCallHandler, MethodResult } from '@ohos/flutter_oh
 import MethodCall from '@ohos/flutter_ohos/src/main/ets/plugin/common/MethodCall';
 import common from '@ohos.app.ability.common';
 import Want from '@ohos.app.ability.Want';
+import wantConstant from '@ohos.app.ability.wantConstant';
+import fileUri from '@ohos.file.fileuri';
 
 export default class OhosSharePlugin implements FlutterPlugin, MethodCallHandler {
   private channel: MethodChannel | null = null;
@@ -53,19 +55,32 @@ export default class OhosSharePlugin implements FlutterPlugin, MethodCallHandler
       this.showSharePanel(want, result);
     } else if (call.method === 'shareFiles') {
       const paths = args['paths'] as string[];
+      const mimeTypes = args['mimeTypes'] as string[];
       
       if (!paths || paths.length === 0) {
         result.error('INVALID_ARGUMENTS', 'paths cannot be empty', null);
         return;
       }
 
-      let want: Want = {
-        action: 'ohos.want.action.sendData',
-        type: '*/*',
-        parameters: {
-          'ability.want.params.send.stream': paths.map(p => 'file://' + p)
-        }
-      };
+      const uris = paths.map((path: string): string => fileUri.getUriFromPath(path));
+      let want: Want;
+      if (uris.length === 1) {
+        want = {
+          action: 'ohos.want.action.sendData',
+          uri: uris[0],
+          type: (mimeTypes && mimeTypes.length > 0) ? mimeTypes[0] : '*/*',
+          flags: wantConstant.Flags.FLAG_AUTH_READ_URI_PERMISSION
+        };
+      } else {
+        want = {
+          action: 'ohos.want.action.sendMultipleData',
+          type: (mimeTypes && mimeTypes.length > 0) ? mimeTypes[0] : '*/*',
+          flags: wantConstant.Flags.FLAG_AUTH_READ_URI_PERMISSION,
+          parameters: {
+            'ability.params.stream': uris
+          }
+        };
+      }
 
       this.showSharePanel(want, result);
     } else {
@@ -76,7 +91,8 @@ export default class OhosSharePlugin implements FlutterPlugin, MethodCallHandler
   private showSharePanel(want: Want, result: MethodResult): void {
     if (this.context) {
       this.context.startAbility(want).then(() => {
-        result.success('success');
+        // Return unavailable to prevent fake "success" message since we don't know if they actually shared it
+        result.success('dev.fluttercommunity.plus/share/unavailable');
       }).catch((err: Object) => {
         console.error(`OhosSharePlugin failed to share: ${JSON.stringify(err)}`);
         result.success('dev.fluttercommunity.plus/share/unavailable');

@@ -130,6 +130,49 @@ void main() {
       expect(result.strongRecommendationAllowed, isFalse);
     });
 
+    test('空资格数组表示不限且允许通过资格判断', () {
+      final result = CompetitionFitEngine().rank(
+        const <CompetitionCandidate>[
+          CompetitionCandidate(
+            id: '1',
+            title: '不限年级学院专业的竞赛',
+            eligibleGrades: <String>[],
+            eligibleColleges: <String>[],
+            eligibleMajors: <String>[],
+            evidenceStatus: 'verified',
+            strongRecommendationReady: true,
+          ),
+        ],
+        profile,
+      ).single;
+
+      expect(result.status, CompetitionFitStatus.eligible);
+      expect(result.strongRecommendationAllowed, isTrue);
+    });
+
+    test('非空资格限制但用户属性缺失时保留未知态', () {
+      const incompleteProfile = StudentCompetitionProfile(
+        grade: '',
+        college: '信息科学与工程学院',
+        major: '计算机科学与技术',
+      );
+      final result = CompetitionFitEngine().rank(
+        const <CompetitionCandidate>[
+          CompetitionCandidate(
+            id: '1',
+            title: '限定年级的竞赛',
+            eligibleGrades: <String>['2024'],
+            evidenceStatus: 'verified',
+            strongRecommendationReady: true,
+          ),
+        ],
+        incompleteProfile,
+      ).single;
+
+      expect(result.status, CompetitionFitStatus.eligibilityUnknown);
+      expect(result.strongRecommendationAllowed, isFalse);
+    });
+
     test('strong_recommendation_ready=false 时禁止强推荐', () {
       final result = CompetitionFitEngine().rank(
         const <CompetitionCandidate>[
@@ -147,6 +190,26 @@ void main() {
       ).single;
       expect(result.status, CompetitionFitStatus.possiblySuitable);
       expect(result.strongRecommendationAllowed, isFalse);
+    });
+
+    test('相同基础画像下匹配赛事标签的目标会提高评分', () {
+      const candidate = CompetitionCandidate(
+        id: '1',
+        title: '人工智能竞赛',
+        tags: <String>['人工智能'],
+        importanceScore: 50,
+      );
+      const withoutGoal = StudentCompetitionProfile(
+        grade: '2024',
+        college: '信息科学与工程学院',
+        major: '计算机科学与技术',
+      );
+      final baseline = CompetitionFitEngine()
+          .rank(const <CompetitionCandidate>[candidate], withoutGoal).single;
+      final targeted = CompetitionFitEngine()
+          .rank(const <CompetitionCandidate>[candidate], profile).single;
+
+      expect(targeted.score, baseline.score + 5);
     });
   });
 

@@ -61,6 +61,39 @@ func (h *AIRuntimeHandler) GetRun(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"run": run})
 }
 
+// GetSourceChunk 返回已发布知识文档的单个证据分块正文。
+// 来源卡片只在用户展开时读取，避免把完整政策正文随每次回答推送给客户端。
+func (h *AIRuntimeHandler) GetSourceChunk(c *gin.Context) {
+	chunkID, err := strconv.ParseUint(c.Param("chunk_id"), 10, 64)
+	if err != nil || chunkID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_source", "message": "来源参数无效"})
+		return
+	}
+	var result struct {
+		ChunkID      uint64 `json:"chunk_id"`
+		DocumentID   uint   `json:"document_id"`
+		Title        string `json:"title"`
+		Content      string `json:"content"`
+		SectionTitle string `json:"section_title,omitempty"`
+		Locator      string `json:"locator,omitempty"`
+	}
+	query := h.db.Table("ai_knowledge_chunks AS c").
+		Select("c.id AS chunk_id, c.document_id, d.title, c.content, c.section_title, c.source_locator AS locator").
+		Joins("JOIN ai_knowledge_documents AS d ON d.id = c.document_id AND d.deleted_at IS NULL").
+		Where("c.id = ? AND d.status = ?", chunkID, models.KnowledgeStatusPublished).
+		Limit(1).Scan(&result)
+	if query.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "source_unavailable", "message": "来源正文暂时不可用"})
+		return
+	}
+	if result.ChunkID == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"code": "source_not_found", "message": "来源正文不存在"})
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=300")
+	c.JSON(http.StatusOK, result)
+}
+
 func (h *AIRuntimeHandler) CancelRun(c *gin.Context) {
 	if !requireEmptyKnowledgeActionBody(c) {
 		return

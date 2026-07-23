@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_constants.dart';
 import '../providers/auth_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 class AdminAnnouncementsScreen extends StatefulWidget {
   const AdminAnnouncementsScreen({super.key});
@@ -53,7 +54,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     }
 
     final draftKey = _announcementDraftKey(announcement?['id'] as int?);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     final draftTitle = prefs.getString('${draftKey}_title');
     final draftContent = prefs.getString('${draftKey}_content');
     final draftPinned = prefs.getBool('${draftKey}_pinned');

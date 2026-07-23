@@ -6,9 +6,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../platform/contracts/external_navigator.dart';
 
+import '../../config/beta_release_policy.dart';
 import '../../models/competition.dart';
+import '../../models/competition_preference.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/competition_batch_action_payload.dart';
@@ -21,6 +23,9 @@ import '../../widgets/competition/competition_batch_selection_bar.dart';
 import '../../widgets/competition/competition_batch_confirm_dialog.dart';
 import '../../widgets/competition/competition_batch_action_sheet.dart';
 import 'competition_calendar_item_detail_screen.dart';
+import 'competition_award_screen.dart';
+import 'competition_capability_profile_screen.dart';
+import 'competition_preference_screen.dart';
 
 import 'competition_admin_center_screen.dart';
 
@@ -63,6 +68,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   int _eventTotal = 0;
   int _currentPage = 1;
   int _requestSerial = 0;
+  int _preferenceRequestSerial = 0;
   bool _hasMore = false;
   bool _profileReady = false;
   String? _categorySlug;
@@ -70,8 +76,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   final Set<String> _recognitions = {};
   final Set<String> _sources = {};
   int? _calendarCount;
+  CompetitionPreference? _competitionPreference;
+  bool _preferenceLoading = false;
+  String? _preferenceError;
+  int? _sessionGeneration;
 
-  String _studentFocusFilter = 'recommended';
+  String _studentFocusFilter = 'all';
 
   @override
   void initState() {
@@ -80,6 +90,21 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
     _loadAll();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final generation = context.watch<AuthProvider>().sessionGeneration;
+    if (_sessionGeneration == null) {
+      _sessionGeneration = generation;
+    } else if (_sessionGeneration != generation) {
+      _sessionGeneration = generation;
+      _competitionPreference = null;
+      _preferenceError = null;
+      _loadUserState();
+      _loadPreference();
+    }
   }
 
   @override
@@ -97,7 +122,47 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       _loadOverview(),
       _loadEvents(reset: true),
       _loadUserState(),
+      _loadPreference(),
     ]);
+  }
+
+  Future<void> _loadPreference() async {
+    final request = ++_preferenceRequestSerial;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      if (mounted) {
+        setState(() {
+          _competitionPreference = null;
+          _preferenceLoading = false;
+          _preferenceError = null;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _preferenceLoading = true;
+        _preferenceError = null;
+      });
+    }
+    try {
+      final response = await auth.dio.get('/user/competition-preference');
+      if (!mounted || request != _preferenceRequestSerial) return;
+      setState(() {
+        _competitionPreference = CompetitionPreference.fromJson(
+          Map<String, dynamic>.from(response.data as Map),
+        );
+        _preferenceLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || request != _preferenceRequestSerial) return;
+      setState(() {
+        _preferenceLoading = false;
+        _preferenceError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '竞赛目标加载失败')
+            : '竞赛目标数据解析失败';
+      });
+    }
   }
 
   void _onSearchChanged() {
@@ -205,7 +270,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         _stateLoading = false;
         _stateError = null;
         if (!_profileReady && _studentFocusFilter == 'fit') {
-          _studentFocusFilter = 'recommended';
+          _studentFocusFilter = 'all';
         }
       });
     } catch (error) {
@@ -284,7 +349,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       if (_searchController.text.trim().isNotEmpty)
         'keyword': _searchController.text.trim(),
       if (_categorySlug != null) 'category_slug': _categorySlug,
-      if (_recommendations.isNotEmpty)
+      if (BetaReleasePolicy.competitionRecommendations &&
+          _recommendations.isNotEmpty)
         'recommendation_level': _recommendations.join(','),
       if (_recognitions.isNotEmpty)
         'school_recognition_status': _recognitions.join(','),
@@ -293,7 +359,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
     switch (_studentFocusFilter) {
       case 'recommended':
-        if (_recommendations.isEmpty) {
+        if (BetaReleasePolicy.competitionRecommendations &&
+            _recommendations.isEmpty) {
           params['recommendation_level'] = 'S,A,B+';
         }
         break;
@@ -323,7 +390,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       _recommendations.clear();
       _recognitions.clear();
       _sources.clear();
-      _studentFocusFilter = 'recommended';
+      _studentFocusFilter = 'all';
     });
     _loadEvents(reset: true);
   }
@@ -337,7 +404,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           .firstOrNull;
       if (category != null) parts.add(category.name);
     }
-    parts.addAll(_recommendations.map((e) => '$e推荐'));
+    if (BetaReleasePolicy.competitionRecommendations) {
+      parts.addAll(_recommendations.map((e) => '$e推荐'));
+    }
     parts.addAll(_recognitions.map(competitionRecognitionLabel));
     parts.addAll(_sources.map(_sourceLabel));
     if (parts.isEmpty) return '全部比赛';
@@ -391,6 +460,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     return [
       _buildSearchAndFilters(isDark),
       _buildStudentOverview(isDark),
+      _buildPreferenceEntry(isDark),
+      _buildAwardEntry(isDark),
+      _buildCapabilityProfileEntry(isDark),
       _buildStudentFocusTabs(isDark),
       _buildSectionTitle(
         title: _studentFocusTitle,
@@ -555,6 +627,285 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     );
   }
 
+  Widget _buildPreferenceEntry(bool isDark) {
+    final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
+    final preference = _competitionPreference;
+    String title = '完善竞赛目标';
+    String subtitle = '让“适合我”更符合你的方向';
+    if (!isLoggedIn) {
+      subtitle = '登录后设置你的参赛方向和投入时间';
+    } else if (_preferenceLoading && preference == null) {
+      subtitle = '正在读取你的竞赛目标';
+    } else if (_preferenceError != null && preference == null) {
+      subtitle = '读取失败，点击重试';
+    } else if (preference?.configured == true) {
+      title = '我的竞赛目标';
+      final parts = <String>[];
+      if (preference!.goals.isNotEmpty) {
+        parts.add(competitionGoalLabels[preference.goals.first] ??
+            preference.goals.first);
+      }
+      if (preference.directionTags.isNotEmpty) {
+        parts.add(preference.directionTags.first);
+      }
+      parts.add(competitionWeeklyHourLabels[preference.weeklyHours] ??
+          '每周 ${preference.weeklyHours} 小时');
+      subtitle = parts.join(' · ');
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        14,
+      ),
+      child: Material(
+        color: CompetitionUiTokens.cardBg(isDark),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+        ),
+        child: InkWell(
+          onTap: _preferenceError != null && preference == null
+              ? _loadPreference
+              : _openCompetitionPreference,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(Icons.flag_outlined,
+                    color: CompetitionUiTokens.accent(isDark), size: 21),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: CompetitionUiTokens.titleColor(isDark))),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: CompetitionUiTokens.subColor(isDark)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right_rounded,
+                    color: CompetitionUiTokens.subColor(isDark)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCompetitionPreference() async {
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+    }
+    final accountID = auth.user?.id;
+    if (accountID == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CompetitionPreferenceScreen(
+          dio: auth.dio,
+          accountKey: accountID,
+        ),
+      ),
+    );
+    if (mounted && context.read<AuthProvider>().user?.id == accountID) {
+      await _loadPreference();
+    }
+  }
+
+  Widget _buildAwardEntry(bool isDark) {
+    final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        14,
+      ),
+      child: Material(
+        color: CompetitionUiTokens.cardBg(isDark),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+        ),
+        child: InkWell(
+          key: const Key('competition-award-entry'),
+          onTap: _openCompetitionAwards,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.workspace_premium_outlined,
+                  color: CompetitionUiTokens.accent(isDark),
+                  size: 21,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '我的竞赛经历',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: CompetitionUiTokens.titleColor(isDark),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        isLoggedIn ? '记录参赛、获奖和团队贡献' : '登录后管理你的私有竞赛档案',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: CompetitionUiTokens.subColor(isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: CompetitionUiTokens.subColor(isDark),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCompetitionAwards() async {
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+    }
+    final accountID = auth.user?.id;
+    if (accountID == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CompetitionAwardScreen(
+          dio: auth.dio,
+          accountKey: accountID,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCapabilityProfileEntry(bool isDark) {
+    final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        CompetitionUiTokens.pagePadding,
+        0,
+        CompetitionUiTokens.pagePadding,
+        14,
+      ),
+      child: Material(
+        color: CompetitionUiTokens.cardBg(isDark),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+        ),
+        child: InkWell(
+          key: const Key('competition-capability-profile-entry'),
+          onTap: _openCompetitionCapabilityProfile,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.account_tree_outlined,
+                  color: CompetitionUiTokens.accent(isDark),
+                  size: 21,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '我的能力画像',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: CompetitionUiTokens.titleColor(isDark),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        isLoggedIn ? '查看经历与目标的结构化汇总' : '登录后查看你的竞赛能力画像',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: CompetitionUiTokens.subColor(isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: CompetitionUiTokens.subColor(isDark),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCompetitionCapabilityProfile() async {
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+    }
+    final accountID = auth.user?.id;
+    if (accountID == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CompetitionCapabilityProfileScreen(
+          dio: auth.dio,
+          accountKey: accountID,
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatBand(
     bool isDark,
     List<(String, String, VoidCallback?)> items,
@@ -618,10 +969,11 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
   Widget _buildStudentFocusTabs(bool isDark) {
     final tabs = [
-      ('recommended', '推荐'),
+      ('all', '全部'),
+      if (BetaReleasePolicy.competitionRecommendations) ('recommended', '推荐'),
       ('deadline', '临近截止'),
       ('recognized', '学校认定'),
-      if (_profileReady) ('fit', '适合我'),
+      if (BetaReleasePolicy.aiCompetitionFit && _profileReady) ('fit', '适合我'),
       ('pending', '时间待公布'),
     ];
     return Padding(
@@ -756,8 +1108,10 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         return '适合我';
       case 'pending':
         return '时间待公布';
-      default:
+      case 'recommended':
         return '推荐关注';
+      default:
+        return '比赛目录';
     }
   }
 
@@ -773,6 +1127,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       isAdding: _addingEventIds.contains(event.id),
       onAddPlan: () => _copyToCalendar(event.id),
       onJoinedTap: _openCalendar,
+      showRecommendations: BetaReleasePolicy.competitionRecommendations,
     );
   }
 
@@ -887,6 +1242,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         categories: _categories,
         categorySlug: _categorySlug,
         recommendations: _recommendations,
+        showRecommendations: BetaReleasePolicy.competitionRecommendations,
         recognitions: _recognitions,
         sources: _sources,
       ),
@@ -1018,12 +1374,14 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            _detailChip('${event.recommendationLevel}推荐'),
+                            if (BetaReleasePolicy.competitionRecommendations)
+                              _detailChip('${event.recommendationLevel}推荐'),
                             _detailChip(event.primaryCategory?.name ?? '未分类'),
                             _detailChip(_competitionTimeState(event).label),
                           ],
                         ),
-                        if (event.recommendationReason.isNotEmpty) ...[
+                        if (BetaReleasePolicy.competitionRecommendations &&
+                            event.recommendationReason.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           Text(
                             event.recommendationReason,
@@ -1050,7 +1408,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                       ],
                     ),
                     _detailCard(
-                      title: '参赛价值',
+                      title: '参赛信息',
                       children: [
                         _detailInfo(
                           '学校认定',
@@ -1058,8 +1416,10 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                               event.schoolRecognitionStatus),
                         ),
                         _detailInfo('学校等级', event.schoolRecognitionGrade),
-                        _detailInfo('推荐等级', event.recommendationLevel),
-                        _detailInfo('推荐理由', event.recommendationReason),
+                        if (BetaReleasePolicy.competitionRecommendations) ...[
+                          _detailInfo('推荐等级', event.recommendationLevel),
+                          _detailInfo('推荐理由', event.recommendationReason),
+                        ],
                         _detailInfo('适合对象', _rawValue('target_audience')),
                         _detailInfo('参赛形式', _rawValue('participation_type')),
                       ],
@@ -1094,14 +1454,15 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                     ),
                     if (event.officialUrl.isNotEmpty)
                       OutlinedButton.icon(
-                        onPressed: () =>
-                            launchUrl(Uri.parse(event.officialUrl)),
+                        onPressed: () => ExternalNavigator.current()
+                            .open(Uri.parse(event.officialUrl)),
                         icon: const Icon(Icons.open_in_new),
                         label: const Text('打开官网'),
                       ),
                     if (event.noticeUrl.isNotEmpty)
                       OutlinedButton.icon(
-                        onPressed: () => launchUrl(Uri.parse(event.noticeUrl)),
+                        onPressed: () => ExternalNavigator.current()
+                            .open(Uri.parse(event.noticeUrl)),
                         icon: const Icon(Icons.article_outlined),
                         label: const Text('查看通知'),
                       ),
@@ -1212,6 +1573,7 @@ class _CompetitionFilterSheet extends StatefulWidget {
   final Set<String> recommendations;
   final Set<String> recognitions;
   final Set<String> sources;
+  final bool showRecommendations;
 
   const _CompetitionFilterSheet({
     required this.categories,
@@ -1219,6 +1581,7 @@ class _CompetitionFilterSheet extends StatefulWidget {
     required this.recommendations,
     required this.recognitions,
     required this.sources,
+    required this.showRecommendations,
   });
 
   @override
@@ -1311,11 +1674,17 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
                         ),
                       ],
                     ),
-                    _sheetMulti(
-                      '推荐程度',
-                      {'S': 'S强烈推荐', 'A': 'A推荐', 'B': 'B可参加', 'C': 'C兴趣'},
-                      _recommendations,
-                    ),
+                    if (widget.showRecommendations)
+                      _sheetMulti(
+                        '推荐程度',
+                        {
+                          'S': 'S强烈推荐',
+                          'A': 'A推荐',
+                          'B': 'B可参加',
+                          'C': 'C兴趣',
+                        },
+                        _recommendations,
+                      ),
                     _sheetMulti(
                       '学校认定',
                       {

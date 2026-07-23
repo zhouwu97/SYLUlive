@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -63,7 +64,9 @@ func performCanteenRequest(
 	context.Request = httptest.NewRequest(method, path, strings.NewReader(body))
 	context.Request.Header.Set("Content-Type", "application/json")
 	context.Params = params
-	context.Set("user_id", userID)
+	if userID != 0 {
+		context.Set("user_id", userID)
+	}
 	handler(context)
 	return recorder
 }
@@ -236,6 +239,22 @@ func TestCanteenDetailSortFilterAndMyVote(t *testing.T) {
 		t.Fatalf("expected my_vote on second rating: %s", best.Body.String())
 	}
 
+	anonymous := performCanteenRequest(
+		t,
+		handler.GetDetail,
+		http.MethodGet,
+		fmt.Sprintf("/api/canteens/%d", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
+		0,
+		"",
+	)
+	if anonymous.Code != http.StatusOK {
+		t.Fatalf("anonymous detail status=%d body=%s", anonymous.Code, anonymous.Body.String())
+	}
+	if !strings.Contains(anonymous.Body.String(), `"my_rating":null`) {
+		t.Fatalf("anonymous detail must not expose a personal rating: %s", anonymous.Body.String())
+	}
+
 	withImage := performCanteenRequest(
 		t,
 		handler.GetDetail,
@@ -312,6 +331,28 @@ func TestCanteenApprovalControlsVisibilityAndRating(t *testing.T) {
 		t.Fatalf("canteen should be verified after approval: canteen=%+v err=%v", refreshed, err)
 	}
 
+	ratingWithoutEdu := performCanteenRequest(
+		t,
+		handler.Rate,
+		http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/rate", canteen.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(canteen.ID)}},
+		2,
+		`{"star":5,"comment":"很好"}`,
+	)
+	if ratingWithoutEdu.Code != http.StatusForbidden ||
+		!strings.Contains(ratingWithoutEdu.Body.String(), "edu_binding_required") {
+		t.Fatalf("unbound user must not rate: %d %s", ratingWithoutEdu.Code, ratingWithoutEdu.Body.String())
+	}
+
+	verifiedAt := time.Now()
+	if err := db.Model(&models.User{}).Where("id = ?", 2).Updates(map[string]interface{}{
+		"student_verified_at": verifiedAt,
+		"edu_authorized":      true,
+		"edu_bound":           true,
+	}).Error; err != nil {
+		t.Fatalf("bind edu account: %v", err)
+	}
 	ratingAfterApproval := performCanteenRequest(
 		t,
 		handler.Rate,

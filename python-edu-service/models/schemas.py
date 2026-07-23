@@ -10,6 +10,7 @@ class BindInput(BaseModel):
     """�󶨽����˺�����"""
     student_id: str = Field(..., min_length=10, max_length=10, description="ѧ��")
     password: str = Field(..., description="��������")
+    credential_generation: int = Field(..., ge=1, description="授权代次")
 
 
 class BindResponse(BaseModel):
@@ -31,14 +32,32 @@ class UnbindResponse(BaseModel):
     message: str
 
 
+class AuthorizationCleanupInput(BaseModel):
+    """按授权代次删除远端凭据，避免旧任务删除新绑定。"""
+    expected_generation: int = Field(..., ge=0)
+    delete_identity: bool = False
+
+
 class EduStatusResponse(BaseModel):
-    """�����״̬"""
     bound: bool
+    authorized: bool = False
+    session_state: str = "unbound"
+    auto_relogin: bool = False
+    credential_generation: int = 0
     student_id: Optional[str] = None
     name: Optional[str] = None
     grade: Optional[str] = None
     college: Optional[str] = None
     major: Optional[str] = None
+
+
+class EduSessionResponse(BaseModel):
+    """教务授权或会话操作后的状态。"""
+    success: bool
+    message: str
+    authorized: bool
+    session_state: str
+    auto_relogin: bool
 
 
 class PreVerifyInput(BaseModel):
@@ -171,7 +190,6 @@ class GradeDetailResponse(BaseModel):
 class AcademicSituationInput(BaseModel):
     """ѧҵ�����ѯ����"""
     user_id: str
-    force_refresh: bool = False
 
 
 class AcademicCourseInfo(BaseModel):
@@ -203,24 +221,31 @@ class AcademicSituationResponse(BaseModel):
     """ѧ��ѧҵ�����ѯ��Ӧ"""
     success: bool
     source: str = "academic_situation"
+    source_kind: str = "official_academic_situation"
+    source_url: str = "/xsxy/xsxyqk_cxXsxyqkIndex.html"
+    parser_version: str = "academic-situation-v2"
+    captured_at: Optional[str] = None
+    official_updated_at: Optional[str] = None
+    structure_signature: Optional[str] = None
     all_gpa: Optional[float] = None
     degree_gpa: Optional[float] = None
 
-    total_courses: int = 0
-    passed_courses: int = 0
-    failed_courses: int = 0
-    not_started_courses: int = 0
-    in_progress_courses: int = 0
+    total_courses: Optional[int] = None
+    passed_courses: Optional[int] = None
+    failed_courses: Optional[int] = None
+    not_started_courses: Optional[int] = None
+    in_progress_courses: Optional[int] = None
 
-    degree_total_courses: int = 0
-    degree_passed_courses: int = 0
-    degree_failed_courses: int = 0
-    degree_not_started_courses: int = 0
-    degree_in_progress_courses: int = 0
+    degree_total_courses: Optional[int] = None
+    degree_passed_courses: Optional[int] = None
+    degree_failed_courses: Optional[int] = None
+    degree_not_started_courses: Optional[int] = None
+    degree_in_progress_courses: Optional[int] = None
 
+    courses_status: str = "parse_failed"
     courses: List[AcademicCourseInfo] = Field(default_factory=list)
+    error_code: Optional[str] = None
     message: Optional[str] = None
-    updated_at: Optional[str] = None
 
 
 # ============== ������Ӧ ==============

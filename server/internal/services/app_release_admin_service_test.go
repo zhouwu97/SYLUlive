@@ -54,10 +54,11 @@ func createAppReleaseDraftForTest(
 			Changelog:                   "测试更新说明",
 			MinimumSupportedVersionCode: minimum,
 			CreatedBy:                   admin.ID,
+			DeliveryMode:                models.AppReleaseDeliveryModeDirectPackage,
 		},
 		"shenliyuan.apk",
 		bytes.NewReader(apkFixture(versionCode)),
-		0,
+		1024*1024,
 	)
 	require.NoError(t, err)
 	return release

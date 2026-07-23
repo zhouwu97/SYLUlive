@@ -74,6 +74,8 @@ type updateCheckResponse struct {
 	FileSize                    int64  `json:"file_size,omitempty"`
 	SHA256                      string `json:"sha256,omitempty"`
 	DownloadURL                 string `json:"download_url,omitempty"`
+	DeliveryMode                string `json:"delivery_mode,omitempty"`
+	ActionURL                   string `json:"action_url,omitempty"`
 	PublishedAt                 string `json:"published_at,omitempty"`
 	CheckAfterSeconds           int    `json:"check_after_seconds"`
 }
@@ -171,9 +173,21 @@ func (h *AppUpdateHandler) CheckUpdate(c *gin.Context) {
 	if decision != services.UpdateNone {
 		resp.Title = latest.Title
 		resp.Changelog = latest.Changelog
-		resp.FileSize = latest.FileSize
-		resp.SHA256 = latest.SHA256
-		resp.DownloadURL = formatAPKDownloadURL(latest.ID)
+		
+		deliveryMode := latest.DeliveryMode
+		if deliveryMode == "" {
+			deliveryMode = models.AppReleaseDeliveryModeDirectPackage
+		}
+		resp.DeliveryMode = deliveryMode
+		
+		if deliveryMode == models.AppReleaseDeliveryModeExternalMarket {
+			resp.ActionURL = latest.ActionURL
+		} else {
+			resp.FileSize = latest.FileSize
+			resp.SHA256 = latest.SHA256
+			resp.DownloadURL = formatAPKDownloadURL(latest.ID)
+		}
+		
 		if latest.PublishedAt != nil {
 			resp.PublishedAt = latest.PublishedAt.UTC().Format(time.RFC3339)
 		}

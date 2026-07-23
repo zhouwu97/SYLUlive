@@ -4,21 +4,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
-import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/user.dart';
 import '../services/account_session_cleanup_coordinator.dart';
-import '../platform/app_platform.dart';
+import '../platform/contracts/secure_store.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../services/keep_alive_service.dart';
 import '../services/grade_reminder_service.dart';
 import '../widgets/auth_expired_overlay.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
+enum AuthState {
+  unknown,
+  loading,
+  authenticated,
+  guest,
+  recovering,
+  recoveryFailed,
+  expired
+}
 
 /// 认证结果，包含成功状态和错误信息
 class AuthResult {
@@ -101,12 +110,6 @@ abstract interface class AuthCredentialStore {
   Future<void> write({required String token, required String userJson});
 
   Future<void> clear();
-
-  Future<void> writeEduPassword(String studentId, String password);
-
-  Future<String?> readEduPassword(String studentId);
-
-  Future<void> deleteEduPassword(String studentId);
 }
 
 class PreferenceAuthCredentialStore implements AuthCredentialStore {
@@ -169,25 +172,6 @@ class PreferenceAuthCredentialStore implements AuthCredentialStore {
     }
   }
 
-  @override
-  Future<void> writeEduPassword(String studentId, String password) async {
-    await _setString(
-      'edu_pwd_$studentId',
-      password,
-      '写入教务密码失败',
-    );
-  }
-
-  @override
-  Future<String?> readEduPassword(String studentId) async {
-    return _preferences.getString('edu_pwd_$studentId');
-  }
-
-  @override
-  Future<void> deleteEduPassword(String studentId) async {
-    await _remove('edu_pwd_$studentId', '删除教务密码失败');
-  }
-
   Future<void> _setString(String key, String value, String message) async {
     if (!await _preferences.setString(key, value)) {
       throw StateError(message);
@@ -206,55 +190,50 @@ class PreferenceAuthCredentialStore implements AuthCredentialStore {
   }
 }
 
-class _SharedPreferencesStore implements PreferenceStore {
-  final SharedPreferences _preferences;
-
-  const _SharedPreferencesStore(this._preferences);
-
-  @override
-  String? getString(String key) => _preferences.getString(key);
-
-  @override
-  Future<bool> setString(String key, String value) {
-    return _preferences.setString(key, value);
-  }
-
-  @override
-  Future<bool> remove(String key) => _preferences.remove(key);
-}
-
-/// 通过鸿蒙 Asset Store Kit 持久化登录令牌和教务密码。
+/// 通过鸿蒙 Asset Store Kit 持久化登录令牌。
 ///
 /// 原生端不设置“卸载后保留”标记，删除应用会一并清除这些凭据。
-class _OhosAuthCredentialStore implements AuthCredentialStore {
-  static const _channel = MethodChannel('shenliyuan/secure_storage');
+class _PlatformAuthCredentialStore implements AuthCredentialStore {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
 
-  const _OhosAuthCredentialStore();
+  final AppSecretStore _store = AppSecretStore.current();
+  Future<AppPreferencesStore> get _prefs => AppPreferencesStore.getInstance();
 
   @override
   Future<StoredAuthCredentials> read() async {
+    final prefs = await _prefs;
     return StoredAuthCredentials(
-      token: await _read(_tokenKey),
-      userJson: await _read(_userKey),
+      token: await _store.read(_tokenKey),
+      userJson: prefs.getString(_userKey),
     );
   }
 
   @override
   Future<void> write({required String token, required String userJson}) async {
-    final oldToken = await _read(_tokenKey);
-    final oldUserJson = await _read(_userKey);
+    final prefs = await _prefs;
+    final oldToken = await _store.read(_tokenKey);
+    final oldUserJson = prefs.getString(_userKey);
     try {
-      await _write(_tokenKey, token);
-      await _write(_userKey, userJson);
+      await _store.write(_tokenKey, token);
+      if (!await prefs.setString(_userKey, userJson)) {
+        throw StateError('用户信息持久化失败');
+      }
     } catch (error, stackTrace) {
       try {
         await _restore(_tokenKey, oldToken);
-        await _restore(_userKey, oldUserJson);
+        if (oldUserJson == null) {
+          if (!await prefs.remove(_userKey)) {
+            throw StateError('回滚用户信息删除失败');
+          }
+        } else {
+          if (!await prefs.setString(_userKey, oldUserJson)) {
+            throw StateError('回滚用户信息修改失败');
+          }
+        }
       } catch (rollbackError) {
         throw AuthCredentialConsistencyException(
-          message: '回滚鸿蒙认证信息失败，持久化凭据可能不一致',
+          message: '回滚认证信息失败，持久化凭据可能不一致',
           operationError: error,
           rollbackError: rollbackError,
         );
@@ -265,135 +244,23 @@ class _OhosAuthCredentialStore implements AuthCredentialStore {
 
   @override
   Future<void> clear() async {
-    await _delete(_tokenKey);
-    await _delete(_userKey);
-  }
-
-  @override
-  Future<void> writeEduPassword(String studentId, String password) {
-    return _write('edu_pwd_$studentId', password);
-  }
-
-  @override
-  Future<String?> readEduPassword(String studentId) {
-    return _read('edu_pwd_$studentId');
-  }
-
-  @override
-  Future<void> deleteEduPassword(String studentId) {
-    return _delete('edu_pwd_$studentId');
-  }
-
-  Future<String?> _read(String key) {
-    return _channel.invokeMethod<String>('read', {'key': key});
-  }
-
-  Future<void> _write(String key, String value) {
-    return _channel.invokeMethod<void>('write', {'key': key, 'value': value});
-  }
-
-  Future<void> _delete(String key) {
-    return _channel.invokeMethod<void>('delete', {'key': key});
-  }
-
-  Future<void> _restore(String key, String? value) {
-    return value == null ? _delete(key) : _write(key, value);
-  }
-}
-
-class _PlatformAuthCredentialStore implements AuthCredentialStore {
-  static const _tokenKey = 'auth_token';
-  static const _userKey = 'auth_user';
-
-  @override
-  Future<StoredAuthCredentials> read() async {
-    if (kIsWeb) {
-      return (await _preferenceStore()).read();
-    }
-    const storage = FlutterSecureStorage();
-    return StoredAuthCredentials(
-      token: await storage.read(key: _tokenKey),
-      userJson: await storage.read(key: _userKey),
-    );
-  }
-
-  @override
-  Future<void> write({required String token, required String userJson}) async {
-    if (kIsWeb) {
-      return (await _preferenceStore()).write(
-        token: token,
-        userJson: userJson,
-      );
-    }
-    const storage = FlutterSecureStorage();
-    final oldToken = await storage.read(key: _tokenKey);
-    final oldUserJson = await storage.read(key: _userKey);
+    final prefs = await _prefs;
     try {
-      await storage.write(key: _tokenKey, value: token);
-      await storage.write(key: _userKey, value: userJson);
-    } catch (error, stackTrace) {
-      await _restoreSecureValue(storage, _tokenKey, oldToken);
-      await _restoreSecureValue(storage, _userKey, oldUserJson);
-      Error.throwWithStackTrace(error, stackTrace);
+      await Future.wait([
+        _store.delete(_tokenKey),
+        prefs.remove(_userKey),
+      ]);
+    } catch (e) {
+      debugPrint('清除凭据遇到异常: $e');
     }
   }
 
-  @override
-  Future<void> clear() async {
-    if (kIsWeb) {
-      return (await _preferenceStore()).clear();
-    }
-    const storage = FlutterSecureStorage();
-    await storage.delete(key: _tokenKey);
-    await storage.delete(key: _userKey);
-  }
-
-  @override
-  Future<void> writeEduPassword(String studentId, String password) async {
-    if (kIsWeb) {
-      return (await _preferenceStore()).writeEduPassword(studentId, password);
-    }
-    const storage = FlutterSecureStorage();
-    await storage.write(key: 'edu_pwd_$studentId', value: password);
-  }
-
-  @override
-  Future<String?> readEduPassword(String studentId) async {
-    final key = 'edu_pwd_$studentId';
-    if (kIsWeb) {
-      return (await _preferenceStore()).readEduPassword(studentId);
-    }
-    const storage = FlutterSecureStorage();
-    return storage.read(key: key);
-  }
-
-  @override
-  Future<void> deleteEduPassword(String studentId) async {
-    final key = 'edu_pwd_$studentId';
-    if (kIsWeb) {
-      return (await _preferenceStore()).deleteEduPassword(studentId);
-    }
-    const storage = FlutterSecureStorage();
-    await storage.delete(key: key);
-  }
-
-  Future<void> _restoreSecureValue(
-    FlutterSecureStorage storage,
-    String key,
-    String? value,
-  ) async {
+  Future<void> _restore(String key, String? value) async {
     if (value == null) {
-      await storage.delete(key: key);
+      await _store.delete(key);
     } else {
-      await storage.write(key: key, value: value);
+      await _store.write(key, value);
     }
-  }
-
-  Future<PreferenceAuthCredentialStore> _preferenceStore() async {
-    final preferences = await SharedPreferences.getInstance();
-    return PreferenceAuthCredentialStore(
-      _SharedPreferencesStore(preferences),
-    );
   }
 }
 
@@ -417,12 +284,22 @@ class AuthProvider extends ChangeNotifier {
   Future<void>? _initializationFuture;
   int _sessionGeneration = 0;
   bool _applyingConsentRestriction = false;
+  AuthState _authState = AuthState.unknown;
 
   User? get user => _user;
   String? get token => _token;
+  AuthState get authState => _authState;
   bool get isLoading => _isLoading;
-  bool get isLoggedIn => _token != null && _user != null;
+  bool get isLoggedIn => _authState == AuthState.authenticated;
   bool get isInitialized => _initialized;
+
+  void _setAuthState(AuthState state) {
+    if (_authState != state) {
+      _authState = state;
+      notifyListeners();
+    }
+  }
+
   int get sessionGeneration => _sessionGeneration;
   Dio get dio => _dio;
   PersistCookieJar? _cookieJar;
@@ -433,12 +310,8 @@ class AuthProvider extends ChangeNotifier {
     bool loadStoredAuth = true,
     VoidCallback? onAuthenticated,
     AccountSessionCleanupCoordinator? sessionCleanupCoordinator,
-  })  : _credentialStore = credentialStore ??
-            (AppPlatforms.current.isOhos
-                ? const _OhosAuthCredentialStore()
-                : _PlatformAuthCredentialStore()),
-        _usesPlatformCredentialStore =
-            credentialStore == null && !AppPlatforms.current.isOhos,
+  })  : _credentialStore = credentialStore ?? _PlatformAuthCredentialStore(),
+        _usesPlatformCredentialStore = credentialStore == null,
         _onAuthenticated = onAuthenticated ?? WallpaperPrefetchService.start,
         _sessionCleanupCoordinator = sessionCleanupCoordinator ??
             AccountSessionCleanupCoordinator.instance {
@@ -462,12 +335,22 @@ class AuthProvider extends ChangeNotifier {
 
           if (status == 401 && _token != null) {
             if (isEduApi) {
-              // 教务登录态失效，不代表 App 登录失效
+              // 教务会话失效不导致 App 登录失效
               handler.next(error);
               return;
             }
 
-            // 无效令牌，自动登出
+            // 非教务接口，判定为 App 401
+            final isTargetError = errorCode == 'invalid_token' ||
+                errorCode == 'token_version_expired' ||
+                errorCode == 'authentication_required';
+
+            if (errorCode != null && !isTargetError) {
+              // 其他 401（比如密码错误等）不清除会话
+              handler.next(error);
+              return;
+            }
+
             debugPrint('检测到 App 401，自动登出');
             // 统一走 _clearLocalSession，与手动退出相同路径
             // 不 await — 拦截器内部不能阻塞
@@ -518,32 +401,66 @@ class AuthProvider extends ChangeNotifier {
         ignoreExpires: true,
         storage: FileStorage('$appDocPath/.cookies/'),
       );
-      _dio.interceptors.add(CookieManager(_cookieJar!));
+      // 完全关闭原生 Cookie 写入，仅保留清理逻辑
+      await _cookieJar!.deleteAll();
     }
   }
 
   Future<void> _loadStoredAuth() async {
+    _setAuthState(AuthState.loading);
     try {
-      if (_usesPlatformCredentialStore) await _initCookieJar();
-      final stored = await _credentialStore.read();
-      if (stored.token != null && stored.userJson != null) {
-        final decoded = jsonDecode(stored.userJson!);
-        if (decoded is! Map) {
-          throw const FormatException('本地用户信息不是对象');
-        }
-        final candidate = _authSessionCandidate(
-          stored.token,
-          Map<String, dynamic>.from(decoded),
-        );
-        _commitAuthSession(candidate);
-        if (candidate.user.legalConsentsActive) {
-          _onAuthenticated();
+      AppPreferencesStore? prefs;
+      if (_usesPlatformCredentialStore) {
+        await _initCookieJar();
+        prefs = await AppPreferencesStore.getInstance();
+        // Web 旧版密码位于偏好设置，启动即全量清理；原生端在读取到用户后
+        // 以其学号删除历史安全存储键。
+        await _clearLegacyEduPasswords(prefs, null);
+      }
+
+      if (prefs?.getBool('auth_force_logged_out') == true) {
+        await _clearStoredAuth();
+        await prefs!.remove('auth_force_logged_out');
+        _setAuthState(AuthState.guest);
+      } else {
+        final stored = await _credentialStore.read();
+
+        if (stored.token != null && stored.userJson != null) {
+          final decoded = jsonDecode(stored.userJson!);
+          if (decoded is! Map) {
+            throw const FormatException('本地用户信息不是对象');
+          }
+          final candidate = _authSessionCandidate(
+            stored.token!,
+            Map<String, dynamic>.from(decoded),
+          );
+          if (prefs != null) {
+            await _clearLegacyEduPasswords(prefs, candidate.user);
+          }
+          _commitAuthSession(candidate);
+          _setAuthState(AuthState.authenticated);
+          if (candidate.user.legalConsentsActive) {
+            _onAuthenticated();
+          } else {
+            await _clearConsentDependentLocalData(candidate.user);
+          }
+        } else if (stored.token != null && stored.userJson == null) {
+          _setAuthState(AuthState.recovering);
+          final recoveryState = await _recoverUserWithToken(stored.token!);
+          _setAuthState(recoveryState);
+          if (recoveryState == AuthState.expired) {
+            await _clearStoredAuth();
+          }
         } else {
-          await _clearConsentDependentLocalData(candidate.user);
+          if (stored.userJson != null) {
+            await _clearStoredAuth();
+          }
+          _setAuthState(AuthState.guest);
         }
       }
     } catch (e) {
       debugPrint('解析本地认证信息失败: $e');
+      _setAuthState(AuthState.guest);
     }
     _initialized = true;
     if (_user?.legalConsentsActive ?? false) {
@@ -554,6 +471,34 @@ class AuthProvider extends ChangeNotifier {
       await GradeReminderService.instance.ensureScheduledIfEnabled();
     }
     notifyListeners();
+  }
+
+  Future<AuthState> _recoverUserWithToken(String token) async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: _dio.options.baseUrl,
+        headers: {'Authorization': 'Bearer $token'},
+        connectTimeout: const Duration(seconds: 10),
+      ));
+      final response = await dio.get('/user/profile');
+      if (response.statusCode == 200 && response.data != null) {
+        final userJson = Map<String, dynamic>.from(response.data);
+        final candidate = _authSessionCandidate(token, userJson);
+        await _saveAuthCandidate(candidate);
+        _commitAuthSession(candidate);
+        _onAuthenticated();
+        return AuthState.authenticated;
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        debugPrint('恢复用户状态失败：Token已过期');
+        return AuthState.expired;
+      }
+      debugPrint('恢复用户状态失败（网络错误等）: $e');
+    } catch (e) {
+      debugPrint('恢复用户状态失败: $e');
+    }
+    return AuthState.recoveryFailed;
   }
 
   Future<void> _saveAuthCandidate(_AuthSessionCandidate candidate) async {
@@ -572,28 +517,27 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _saveEduPassword(String studentId, String password) async {
-    await _credentialStore.writeEduPassword(studentId, password);
-  }
+  /// 清理旧版本在本机保存的教务密码。教务凭据只允许由服务端加密保管。
+  Future<void> _clearLegacyEduPasswords(
+    AppPreferencesStore preferences,
+    User? user,
+  ) async {
+    final keys = preferences
+        .getKeys()
+        .where((key) => key.startsWith('edu_pwd_'))
+        .toList(growable: false);
+    await Future.wait(keys.map(preferences.remove));
 
-  Future<void> _saveAndCommitEduAuthSession(
-    _AuthSessionCandidate candidate, {
-    required String studentId,
-    required String eduPassword,
-  }) async {
-    final oldEduPassword = await _credentialStore.readEduPassword(studentId);
-    await _saveEduPassword(studentId, eduPassword);
-    try {
-      await _saveAuthCandidate(candidate);
-    } catch (error, stackTrace) {
-      if (oldEduPassword == null) {
-        await _credentialStore.deleteEduPassword(studentId);
-      } else {
-        await _saveEduPassword(studentId, oldEduPassword);
-      }
-      Error.throwWithStackTrace(error, stackTrace);
-    }
-    _commitAuthSession(candidate);
+    if (kIsWeb || user == null) return;
+    final secretStore = AppSecretStore.current();
+    final identifiers = <String>{
+      user.studentId.trim(),
+      user.eduStudentId.trim(),
+    }..removeWhere((value) => value.isEmpty);
+    await Future.wait(
+      identifiers
+          .map((identifier) => secretStore.delete('edu_pwd_$identifier')),
+    );
   }
 
   _AuthSessionCandidate _authSessionCandidate(
@@ -632,6 +576,7 @@ class AuthProvider extends ChangeNotifier {
       await _sessionCleanupCoordinator.closeCurrentSession();
     }
     _commitAuthSession(candidate);
+    _setAuthState(AuthState.authenticated);
     if (prefetchWallpaper && candidate.user.legalConsentsActive) {
       _onAuthenticated();
     }
@@ -700,14 +645,14 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<AuthResult> login(String studentId, String password) async {
+  Future<AuthResult> login(String account, String password) async {
     _isLoading = true;
     notifyListeners();
 
     try {
       final response = await _dio.post(
         '/login',
-        data: {'student_id': studentId, 'password': password},
+        data: {'account': account, 'password': password},
       );
 
       _isLoading = false;
@@ -748,8 +693,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<AuthResult> deleteAccount(String password) async {
-    final studentId = _user?.studentId;
-    if (!isLoggedIn || studentId == null || studentId.isEmpty) {
+    if (!isLoggedIn) {
       return AuthResult.failure('当前未登录');
     }
     _isLoading = true;
@@ -760,7 +704,6 @@ class AuthProvider extends ChangeNotifier {
         data: {'password': password, 'confirmed': true},
       );
       await _clearLocalSession(clearPushAlias: true);
-      await _credentialStore.deleteEduPassword(studentId);
       _isLoading = false;
       notifyListeners();
       return AuthResult.success();
@@ -862,11 +805,9 @@ class AuthProvider extends ChangeNotifier {
       final userJson = Map<String, dynamic>.from(currentUser.toJson())
         ..['legal_consents_active'] = false
         ..['legal_consents_required'] = required
-        ..['edu_student_id'] = ''
         ..['edu_bound'] = false
-        ..['edu_grade'] = ''
-        ..['edu_college'] = ''
-        ..['edu_major'] = '';
+        ..['edu_authorized'] = false
+        ..['edu_session_state'] = 'revoked';
       final nextUser = User.fromJson(userJson);
       await _credentialStore.write(
         token: _token!,
@@ -884,10 +825,6 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _clearConsentDependentLocalData(User user) async {
-    await _credentialStore.deleteEduPassword(user.studentId);
-    if (user.eduStudentId.isNotEmpty && user.eduStudentId != user.studentId) {
-      await _credentialStore.deleteEduPassword(user.eduStudentId);
-    }
     await KeepAliveService.instance.syncAuthToken(null);
     await GradeReminderService.instance.clearForUser(user.id.toString());
     await GradeReminderService.instance.syncRuntimeConfig(userId: null);
@@ -901,26 +838,49 @@ class AuthProvider extends ChangeNotifier {
     required bool clearPushAlias,
     bool closeAccountContext = true,
   }) async {
-    if (closeAccountContext) {
-      await _sessionCleanupCoordinator.closeCurrentSession();
-    }
     final hadSession = _token != null || _user != null;
     final oldUserId = _user?.id.toString();
-    if (oldUserId != null) {
-      await GradeReminderService.instance.clearForUser(oldUserId);
-    }
-    if (!kIsWeb && _cookieJar != null) {
-      await _cookieJar!.deleteAll();
-    }
+
+    // 先清除持久化凭据，失败时保留内存会话，避免出现“界面已退出、下次又恢复”的状态。
     await _clearStoredAuth();
-    if (clearPushAlias) {
-      await _clearPushAlias();
-    }
+
+    // 写入墓碑，防止下一次启动恢复旧 token。
+    try {
+      final prefs = await AppPreferencesStore.getInstance();
+      await prefs.setBool('auth_force_logged_out', true);
+    } catch (_) {}
+
+    // 认证凭据清除成功后再提交内存状态。
     _token = null;
     _user = null;
+    if (_authState != AuthState.expired) {
+      _setAuthState(AuthState.guest);
+    }
     if (hadSession) _sessionGeneration++;
     _applyAuthHeader();
     notifyListeners();
+
+    if (closeAccountContext) {
+      try {
+        await _sessionCleanupCoordinator.closeCurrentSession();
+      } catch (e) {
+        debugPrint('关闭账号上下文失败: $e');
+      }
+    }
+
+    if (oldUserId != null) {
+      try {
+        await GradeReminderService.instance.clearForUser(oldUserId);
+      } catch (_) {}
+    }
+    if (!kIsWeb && _cookieJar != null) {
+      try {
+        await _cookieJar!.deleteAll();
+      } catch (_) {}
+    }
+    if (clearPushAlias) {
+      await _clearPushAlias();
+    }
   }
 
   /// 清除极光推送 Alias，防止退出后仍收到前用户私信通知
@@ -1090,6 +1050,14 @@ class AuthProvider extends ChangeNotifier {
         data: {'old_password': oldPassword, 'new_password': newPassword},
       );
       if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is! Map || data['token'] is! String || data['user'] is! Map) {
+          return AuthResult.failure('密码已修改，但会话刷新失败，请重新登录');
+        }
+        await applyAuthPayload(
+          data['token'] as String,
+          Map<String, dynamic>.from(data['user'] as Map),
+        );
         return AuthResult.success();
       }
       return AuthResult.failure('修改密码失败');
@@ -1109,7 +1077,7 @@ class AuthProvider extends ChangeNotifier {
   ) async {
     try {
       final response = await _dio.post(
-        '/forgot_password',
+        '/password/edu/reset',
         data: {
           'student_id': studentId,
           'edu_password': eduPassword,
@@ -1132,32 +1100,60 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// 发送验证码到 QQ 邮箱
-  Future<AuthResult> sendVerifyCode(String qq) async {
+  /// 发送邮箱注册验证码。服务端使用统一文案，避免枚举现有账号。
+  Future<AuthResult> requestEmailRegistrationCode(String email) async {
     try {
-      final response = await _dio.post('/send_code', data: {'qq': qq});
-      if (response.statusCode == 200 && response.data['success'] == true) {
+      final response = await _dio.post(
+        '/register/email/code',
+        data: {'email': email, 'purpose': 'register'},
+      );
+      if (response.statusCode == 200) {
         return AuthResult.success();
       }
-      return AuthResult.failure(response.data['error'] ?? '发送失败');
+      return AuthResult.failure('发送失败');
     } on DioException catch (e) {
       return AuthResult.failure(_parseDioError(e));
     }
   }
 
-  /// 校验验证码
-  Future<AuthResult> verifyCode(String qq, String code) async {
+  /// 通过已验证邮箱注册账号。邮箱账号尚未完成学生认证时仅可使用邮箱登录。
+  Future<AuthResult> registerWithEmail(
+    String email,
+    String code,
+    String password, {
+    String? nickname,
+    required RegistrationConsents consents,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
     try {
       final response = await _dio.post(
-        '/verify_code',
-        data: {'qq': qq, 'code': code},
+        '/register/email',
+        data: {
+          'email': email,
+          'code': code,
+          'password': password,
+          ...consents.toJson(),
+          if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
+        },
       );
-      if (response.statusCode == 200 && response.data['success'] == true) {
+      _isLoading = false;
+      if (response.statusCode == 201) {
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        await _saveAndCommitAuthSession(candidate, prefetchWallpaper: true);
+        notifyListeners();
         return AuthResult.success();
       }
-      return AuthResult.failure(response.data['error'] ?? '验证失败');
+      return AuthResult.failure('注册失败，服务器返回异常');
     } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
       return AuthResult.failure(_parseDioError(e));
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      debugPrint('邮箱注册异常: ${e.runtimeType}');
+      return AuthResult.failure('注册失败');
     }
   }
 
@@ -1204,52 +1200,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<AuthResult> loginEdu(
-    String studentId,
-    String eduPassword,
-    String appPassword,
-  ) async {
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      final response = await _dio.post(
-        '/login_edu',
-        data: {
-          'student_id': studentId,
-          'edu_password': eduPassword,
-          'password': appPassword,
-        },
-      );
-
-      _isLoading = false;
-      if (response.statusCode == 200) {
-        final candidate = _authSessionCandidateFromResponse(response.data);
-        await _saveAndCommitEduAuthSession(
-          candidate,
-          studentId: studentId,
-          eduPassword: eduPassword,
-        );
-        notifyListeners();
-        return AuthResult.success();
-      }
-      return AuthResult.failure('登录失败，服务器返回异常');
-    } on DioException catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      final errorMsg = _parseDioError(e);
-      debugPrint(
-        '登录失败: type=${e.type}, status=${e.response?.statusCode}',
-      );
-      return AuthResult.failure(errorMsg);
-    } catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      debugPrint('登录异常: ${e.runtimeType}');
-      return AuthResult.failure('登录失败');
-    }
-  }
-
   /// 教务验证后注册
   Future<AuthResult> registerWithEdu(
     String studentId,
@@ -1276,11 +1226,7 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       if (response.statusCode == 201) {
         final candidate = _authSessionCandidateFromResponse(response.data);
-        await _saveAndCommitEduAuthSession(
-          candidate,
-          studentId: studentId,
-          eduPassword: eduPassword,
-        );
+        await _saveAndCommitAuthSession(candidate, prefetchWallpaper: true);
         notifyListeners();
         return AuthResult.success();
       }
@@ -1298,6 +1244,110 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       debugPrint('注册异常: ${e.runtimeType}');
       return AuthResult.failure('注册失败');
+    }
+  }
+
+  /// 获取账号安全页私有资料，完整邮箱仅在此接口中返回。
+  Future<Map<String, dynamic>?> getAccountSecurity() async {
+    if (!isLoggedIn) return null;
+    try {
+      final response = await _dio.get('/user/account-security');
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } on DioException catch (error) {
+      debugPrint('读取账号安全信息失败: ${error.response?.statusCode}');
+    }
+    return null;
+  }
+
+  Future<AuthResult> requestUserEmailCode(String email) async {
+    if (!isLoggedIn) return AuthResult.failure('请先登录');
+    final purpose = _user?.emailBound == true ? 'change' : 'bind';
+    try {
+      await _dio.post(
+        '/user/email/code',
+        data: {'email': email, 'purpose': purpose},
+      );
+      return AuthResult.success();
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
+    }
+  }
+
+  /// 绑定或修改邮箱后服务端会签发新令牌，必须原子替换本地会话。
+  Future<AuthResult> updateUserEmail({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    if (!isLoggedIn) return AuthResult.failure('请先登录');
+    try {
+      final response = await _dio.put('/user/email', data: {
+        'email': email,
+        'code': code,
+        'password': password,
+      });
+      if (response.statusCode == 200) {
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        await _saveAndCommitAuthSession(candidate);
+        notifyListeners();
+        return AuthResult.success();
+      }
+      return AuthResult.failure('更新邮箱失败');
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
+    }
+  }
+
+  Future<AuthResult> removeUserEmail(String password) async {
+    if (!isLoggedIn) return AuthResult.failure('请先登录');
+    try {
+      final response =
+          await _dio.delete('/user/email', data: {'password': password});
+      if (response.statusCode == 200) {
+        final candidate = _authSessionCandidateFromResponse(response.data);
+        await _saveAndCommitAuthSession(candidate);
+        notifyListeners();
+        return AuthResult.success();
+      }
+      return AuthResult.failure('解除邮箱失败');
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
+    }
+  }
+
+  Future<AuthResult> requestEmailPasswordResetCode(String email) async {
+    try {
+      await _dio.post('/password/email/code', data: {
+        'email': email,
+        'purpose': 'reset_password',
+      });
+      return AuthResult.success();
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
+    }
+  }
+
+  Future<AuthResult> resetPasswordWithEmail({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    try {
+      await _dio.post('/password/email/reset', data: {
+        'email': email,
+        'code': code,
+        'new_password': newPassword,
+      });
+      return AuthResult.success();
+    } on DioException catch (error) {
+      return AuthResult.failure(_parseDioError(error),
+          statusCode: error.response?.statusCode);
     }
   }
 
@@ -1336,51 +1386,6 @@ class AuthProvider extends ChangeNotifier {
     } on DioException catch (error) {
       return AuthResult.failure(_parseDioError(error),
           statusCode: error.response?.statusCode);
-    }
-  }
-
-  Future<AuthResult> registerGraduate(
-    String qq,
-    String code,
-    String password, {
-    String? nickname,
-    required RegistrationConsents consents,
-  }) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final response = await _dio.post(
-        '/register',
-        data: {
-          'qq': qq,
-          'code': code,
-          'password': password,
-          ...consents.toJson(),
-          if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
-        },
-      );
-
-      _isLoading = false;
-      if (response.statusCode == 201) {
-        final candidate = _authSessionCandidateFromResponse(response.data);
-        await _saveAndCommitAuthSession(candidate);
-        notifyListeners();
-        return AuthResult.success();
-      }
-      return AuthResult.failure('注册失败，服务器返回异常');
-    } on DioException catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      final errorMsg = _parseDioError(e);
-      debugPrint(
-        '毕业用户注册失败: type=${e.type}, status=${e.response?.statusCode}',
-      );
-      return AuthResult.failure(errorMsg);
-    } catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      debugPrint('毕业用户注册异常: ${e.runtimeType}');
-      return AuthResult.failure('注册失败');
     }
   }
 }

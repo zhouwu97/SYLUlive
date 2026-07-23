@@ -41,6 +41,8 @@ class _RequiredAppUpdateCoordinator extends _NoopAppUpdateCoordinator {
         sha256:
             '0000000000000000000000000000000000000000000000000000000000000000',
         downloadUrl: 'https://example.com/app.apk',
+        deliveryMode: AppUpdateDeliveryMode.directPackage,
+        actionUrl: '',
         publishedAt: null,
         checkAfterSeconds: 21600,
       );

@@ -68,6 +68,32 @@ func NewUploadHandler(uploadDir string, maxSize int64, db *gorm.DB) *UploadHandl
 	}
 }
 
+// ServePublic 提供普通公开上传文件。内容哈希路径可安全使用长期缓存。
+func (h *UploadHandler) ServePublic(c *gin.Context) {
+	relative := strings.TrimPrefix(filepath.ToSlash(c.Param("filepath")), "/")
+	if relative == "" || strings.Contains(relative, "..") {
+		c.Status(http.StatusNotFound)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+	path := "/uploads/" + relative
+	var file models.File
+	if err := h.db.Where("path = ?", path).First(&file).Error; err != nil {
+		c.Status(http.StatusNotFound)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+	fullPath := filepath.Join(h.uploadDir, filepath.FromSlash(relative))
+	if _, err := os.Stat(fullPath); err != nil {
+		c.Status(http.StatusNotFound)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+	c.Header("Content-Type", file.MimeType)
+	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.File(fullPath)
+}
+
 // Upload 上传文件
 func (h *UploadHandler) Upload(c *gin.Context) {
 	file, err := c.FormFile("file")

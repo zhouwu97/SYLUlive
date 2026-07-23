@@ -35,6 +35,15 @@ func (s *eduCredentialCleanupJobProcessorStub) ProcessDue(_ context.Context, lim
 	return services.EduCredentialCleanupJobProcessReport{Processed: 1, Completed: 1}, nil
 }
 
+type eduBindingRecoveryProcessorStub struct {
+	called chan int
+}
+
+func (s *eduBindingRecoveryProcessorStub) ProcessDue(_ context.Context, limit int) (services.EduBindingRecoveryReport, error) {
+	s.called <- limit
+	return services.EduBindingRecoveryReport{Processed: 1, Completed: 1}, nil
+}
+
 func (s *examPaperStorageMaintenanceStub) Run(ctx context.Context) (services.ExamPaperStorageMaintenanceReport, error) {
 	s.called <- ctx
 	return services.ExamPaperStorageMaintenanceReport{Referenced: 3}, nil
@@ -112,6 +121,32 @@ func TestStartEduCredentialCleanupCronRunsJobsImmediately(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("取消后教务凭证清理任务未退出")
+	}
+}
+
+func TestStartEduBindingRecoveryCronRunsJobsImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	recovery := &eduBindingRecoveryProcessorStub{called: make(chan int, 1)}
+	cron := StartEduBindingRecoveryCron(ctx, recovery)
+
+	select {
+	case limit := <-recovery.called:
+		if limit != 50 {
+			t.Fatalf("后台恢复批量大小错误: %d", limit)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("后台恢复任务未在启动后立即执行")
+	}
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		cron.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("取消后教务绑定恢复任务未退出")
 	}
 }
 

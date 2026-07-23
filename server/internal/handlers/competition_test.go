@@ -32,11 +32,69 @@ func newCompetitionTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{}, &models.CompetitionCategory{}, &models.CompetitionEvent{},
 		&models.UserCompetitionCalendar{}, &models.UserCompetitionCalendarItem{},
-		&models.CompetitionImportBatch{},
+		&models.CompetitionImportBatch{}, &models.UserCompetitionPreference{},
+		&models.CompetitionRecommendationSnapshot{},
+		&models.AIActionDraft{}, &models.AIActionAuditLog{},
+		&models.UserCompetitionAward{}, &models.File{}, &models.FileUploadGrant{},
+		&models.CompetitionAwardVerificationLog{}, &models.CompetitionAwardEvidenceFile{},
+		&models.CompetitionAwardEvidence{},
+		&models.CompetitionAwardEvidenceAccessLog{},
 	); err != nil {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func TestCompetitionEventDTOExposesFailClosedGovernanceContract(t *testing.T) {
+	event := models.CompetitionEvent{
+		ID:                  7,
+		Title:               "已核验赛事",
+		RecommendationLevel: "S",
+		ImportanceScore:     100,
+		IsVerified:          true,
+	}
+	dto := competitionEventDTO(event)
+	if dto.ManualRating != nil {
+		t.Fatal("不得从旧推荐等级或重要分推导人工评分")
+	}
+	if dto.EvidenceStatus != "verified" {
+		t.Fatalf("evidence_status=%q want=verified", dto.EvidenceStatus)
+	}
+	if dto.StrongRecommendationReady {
+		t.Fatal("缺少独立审核字段时必须禁止强推荐")
+	}
+
+	encoded, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"manual_rating", "evidence_status", "strong_recommendation_ready"} {
+		if _, exists := payload[key]; !exists {
+			t.Fatalf("响应缺少治理字段 %s", key)
+		}
+	}
+}
+
+func TestCompetitionEventDTOMarksUnverifiedEvidencePending(t *testing.T) {
+	dto := competitionEventDTO(models.CompetitionEvent{Title: "待核验赛事"})
+	if dto.EvidenceStatus != "pending" {
+		t.Fatalf("evidence_status=%q want=pending", dto.EvidenceStatus)
+	}
+}
+
+func TestCompetitionEventDTOProvidesBidirectionalRatingCompatibility(t *testing.T) {
+	legacyDTO := competitionEventDTO(models.CompetitionEvent{RecommendationLevel: "A"})
+	if legacyDTO.CompetitionRating != "A" || legacyDTO.RecommendationLevel != "A" {
+		t.Fatalf("legacy dto ratings: new=%q old=%q", legacyDTO.CompetitionRating, legacyDTO.RecommendationLevel)
+	}
+	currentDTO := competitionEventDTO(models.CompetitionEvent{CompetitionRating: "S"})
+	if currentDTO.CompetitionRating != "S" || currentDTO.RecommendationLevel != "S" {
+		t.Fatalf("current dto ratings: new=%q old=%q", currentDTO.CompetitionRating, currentDTO.RecommendationLevel)
+	}
 }
 
 func TestCompetitionOverviewBoundsUseShanghaiNaturalDays(t *testing.T) {
@@ -138,6 +196,51 @@ func TestRecommendationLevelValidation(t *testing.T) {
 	}
 }
 
+func TestEventFromInputPrefersCompetitionRatingAndDualWrites(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	category := models.CompetitionCategory{Name: "计算机", Slug: "computer_ai", IsActive: true}
+	if err := db.Create(&category).Error; err != nil {
+		t.Fatal(err)
+	}
+	event, err := NewCompetitionHandler(db).eventFromInput(competitionEventInput{
+		Title: "评级兼容赛事", PrimaryCategoryID: category.ID,
+		CompetitionRating: "A", RecommendationLevel: "B+",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.CompetitionRating != "A" || event.RecommendationLevel != "A" {
+		t.Fatalf("ratings: new=%q old=%q", event.CompetitionRating, event.RecommendationLevel)
+	}
+}
+
+func TestCompetitionRatingFiltersSupportNewAndLegacyQueryParameters(t *testing.T) {
+	db := newCompetitionTestDB(t)
+	events := []models.CompetitionEvent{
+		{Title: "新字段赛事", CompetitionRating: "S", RecommendationLevel: "B", Status: "published"},
+		{Title: "旧字段赛事", RecommendationLevel: "A", Status: "published"},
+	}
+	if err := db.Create(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	handler := NewCompetitionHandler(db)
+	for parameter, value := range map[string]string{
+		"competition_rating":   "S",
+		"recommendation_level": "A",
+	} {
+		context, _ := gin.CreateTestContext(httptest.NewRecorder())
+		context.Request = httptest.NewRequest(http.MethodGet, "/?"+parameter+"="+value, nil)
+		var count int64
+		query := handler.applyEventFilters(context, db.Model(&models.CompetitionEvent{}))
+		if err := query.Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("%s=%s count=%d want=1", parameter, value, count)
+		}
+	}
+}
+
 func TestCopyOfficialToCalendarIsIdempotent(t *testing.T) {
 	db := newCompetitionTestDB(t)
 	if _, err := models.ApplyCompetitionCalendarDedupMigration(db); err != nil {
@@ -190,8 +293,9 @@ func TestCopyOfficialToCalendarIsIdempotent(t *testing.T) {
 
 func TestUserCompetitionStateUsesDatabaseProfile(t *testing.T) {
 	db := newCompetitionTestDB(t)
+	now := time.Now()
 	user := models.User{
-		StudentID: "20260002", PasswordHash: "x", Nickname: "画像用户", EduBound: true,
+		StudentID: "20260002", StudentVerifiedAt: &now, PasswordHash: "x", Nickname: "画像用户", EduAuthorized: true, EduBound: true,
 		EduGrade: "本科2023级", EduCollege: " 信息科学与工程学院 ", EduMajor: "计算机科学与技术",
 	}
 	if err := db.Create(&user).Error; err != nil {

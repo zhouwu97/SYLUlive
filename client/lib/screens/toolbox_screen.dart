@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../platform/contracts/external_navigator.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -455,26 +455,19 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
 
   void _launchCloudGenshin(BuildContext context) async {
     String url;
-    LaunchMode mode;
-
     if (kIsWeb) {
       url = 'https://ys.mihoyo.com/cloud/';
-      mode = LaunchMode.platformDefault;
     } else if (Platform.isAndroid) {
       url = 'https://ys.mihoyo.com/cloud/';
-      mode = LaunchMode.externalApplication;
     } else if (Platform.isIOS) {
       url = 'https://apps.apple.com/cn/app/id1569029742';
-      mode = LaunchMode.externalApplication;
     } else {
       url = 'https://ys.mihoyo.com/cloud/';
-      mode = LaunchMode.externalApplication;
     }
 
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: mode, webOnlyWindowName: '_self');
-    } else {
+    final opened = await ExternalNavigator.current().open(uri);
+    if (!opened) {
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -808,16 +801,12 @@ class _WebsiteDirectoryCard extends StatelessWidget {
     _WebsiteDirectoryItem item,
   ) async {
     final uri = Uri.parse(item.url);
-    final canOpen = await canLaunchUrl(uri);
-    if (canOpen) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-      return;
+    final opened = await ExternalNavigator.current().open(uri);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法打开链接')),
+      );
     }
-
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('无法打开链接')),
-    );
   }
 }
 

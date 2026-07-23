@@ -110,19 +110,10 @@ class _MemoryAuthCredentialStore implements AuthCredentialStore {
   Future<void> clear() async {}
 
   @override
-  Future<void> deleteEduPassword(String studentId) async {}
-
-  @override
   Future<StoredAuthCredentials> read() async => const StoredAuthCredentials();
 
   @override
-  Future<String?> readEduPassword(String studentId) async => null;
-
-  @override
   Future<void> write({required String token, required String userJson}) async {}
-
-  @override
-  Future<void> writeEduPassword(String studentId, String password) async {}
 }
 
 class _EmptyCacheManager extends Fake implements BaseCacheManager {
@@ -318,6 +309,11 @@ void main() {
     // 打开编辑页
     await tester.tap(find.text('编辑资料'));
     await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('profile-competition-award-entry')),
+      findsOneWidget,
+    );
 
     // 未知性别默认选中保密
     final secrecySegment = find.descendant(

@@ -1,28 +1,34 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../campus_data/storage/personal_snapshot_models.dart';
 import '../ai_model_provider.dart';
 import '../skills/personal_skill.dart';
 import 'tool_call_models.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 abstract interface class ToolPermissionPrompt {
   Future<ToolPermissionDecision> request(ToolPermissionPreview preview);
 }
 
 class ToolPermissionManager {
-  ToolPermissionManager({required ToolPermissionPrompt prompt})
-      : _prompt = prompt;
+  ToolPermissionManager({
+    required ToolPermissionPrompt prompt,
+    required String accountKey,
+  })  : _prompt = prompt,
+        _accountKey = accountKey;
 
   final ToolPermissionPrompt _prompt;
+  final String _accountKey;
   final Set<String> _sessionGrants = <String>{};
 
   Future<ToolPermissionDecision> authorize(
       ToolPermissionPreview preview) async {
     if (!preview.containsPersonalData) return ToolPermissionDecision.allowOnce;
+    final grantKey = _grantKey(preview);
     if (preview.sensitivity == SkillSensitivity.low &&
-        _sessionGrants.contains(preview.toolId)) {
+        _sessionGrants.contains(grantKey)) {
       return ToolPermissionDecision.allowSession;
     }
     final decision = await _prompt.request(preview);
@@ -31,12 +37,19 @@ class ToolPermissionManager {
       return ToolPermissionDecision.allowOnce;
     }
     if (decision == ToolPermissionDecision.allowSession) {
-      _sessionGrants.add(preview.toolId);
+      _sessionGrants.add(grantKey);
     }
     return decision;
   }
 
   void clearSession() => _sessionGrants.clear();
+
+  String _grantKey(ToolPermissionPreview preview) => <String>[
+        _accountKey,
+        preview.providerKind.storageValue,
+        preview.destination,
+        preview.toolId,
+      ].join('\u001f');
 }
 
 class ToolAuditEntry {
@@ -73,12 +86,12 @@ abstract interface class ToolAuditSink {
 class LocalToolAuditStore implements ToolAuditSink {
   LocalToolAuditStore({
     required this.accountFingerprint,
-    Future<SharedPreferences> Function()? preferencesLoader,
-  }) : _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
+    Future<AppPreferencesStore> Function()? preferencesLoader,
+  }) : _preferencesLoader = preferencesLoader ?? AppPreferencesStore.getInstance;
 
   static const int _maximumEntries = 100;
   final String accountFingerprint;
-  final Future<SharedPreferences> Function() _preferencesLoader;
+  final Future<AppPreferencesStore> Function() _preferencesLoader;
 
   String get _key => 'ai_tool_audit/$accountFingerprint/v1';
 

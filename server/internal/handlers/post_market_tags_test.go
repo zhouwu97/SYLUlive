@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -196,11 +197,14 @@ func newMarketTagsTestDB(t *testing.T) *gorm.DB {
 
 func createMarketTagsTestUser(t *testing.T, db *gorm.DB, studentID string) models.User {
 	t.Helper()
+	now := time.Now()
 	user := models.User{
-		StudentID:    studentID,
-		PasswordHash: "x",
-		Nickname:     "卖家",
-		EduBound:     true,
+		StudentID:         studentID,
+		StudentVerifiedAt: &now,
+		PasswordHash:      "x",
+		Nickname:          "卖家",
+		EduAuthorized:     true,
+		EduBound:          true,
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)

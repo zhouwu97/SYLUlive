@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:shenliyuan/models/home_widget_config.dart';
 import 'package:shenliyuan/services/home_widget_service.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('桌面小组件外观迁移', () {
     test('旧白色文字迁移为两套独立深色主题和标题', () async {
-      SharedPreferences.setMockInitialValues({
+      AppPreferencesStore.setMockInitialValues({
         HomeWidgetPreferenceKeys.legacyTextColor: '#FFFFFF',
         HomeWidgetPreferenceKeys.legacyTitle: '我的校园',
       });
@@ -27,7 +28,7 @@ void main() {
     });
 
     test('没有旧配置的新安装默认跟随系统', () async {
-      SharedPreferences.setMockInitialValues({});
+      AppPreferencesStore.setMockInitialValues({});
 
       await HomeWidgetService.migrateLegacyAppearance();
 
@@ -42,7 +43,7 @@ void main() {
     });
 
     test('修改课表主题不会修改考试主题', () async {
-      SharedPreferences.setMockInitialValues({});
+      AppPreferencesStore.setMockInitialValues({});
       await HomeWidgetService.migrateLegacyAppearance();
 
       await HomeWidgetService.updateAppearance(
@@ -64,7 +65,7 @@ void main() {
     });
 
     test('修改考试主题不会修改课表主题', () async {
-      SharedPreferences.setMockInitialValues({});
+      AppPreferencesStore.setMockInitialValues({});
       await HomeWidgetService.migrateLegacyAppearance();
 
       await HomeWidgetService.updateAppearance(

@@ -23,9 +23,172 @@ class PrivacyCenterScreen extends StatefulWidget {
 }
 
 class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
+  List<Map<String, dynamic>> _requests = const [];
+  bool _loadingRequests = true;
   bool _loadingData = false;
   bool _exporting = false;
   bool _revoking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRequests();
+  }
+
+  Future<void> _loadRequests() async {
+    try {
+      final response = await context.read<AuthProvider>().dio.get('/user/privacy/requests');
+      final items = response.data is Map ? response.data['items'] : null;
+      if (mounted) {
+        setState(() {
+          _requests = items is List
+              ? items.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList()
+              : const [];
+          _loadingRequests = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingRequests = false);
+    }
+  }
+
+  Future<void> _showRequestDialog() async {
+    var requestType = 'correction';
+    final detailController = TextEditingController();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
+    
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('申请更正或删除', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withValues(alpha: 0.05) : CampusTheme.bg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? Colors.white24 : CampusTheme.softBorder),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: requestType,
+                    isExpanded: true,
+                    icon: const Icon(Icons.arrow_drop_down_rounded),
+                    items: const [
+                      DropdownMenuItem(value: 'correction', child: Text('更正个人信息')),
+                      DropdownMenuItem(value: 'deletion', child: Text('删除个人信息或内容')),
+                    ],
+                    onChanged: (value) => setDialogState(() => requestType = value ?? 'correction'),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: detailController,
+                maxLength: 500,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: '补充详细说明（选填）',
+                  filled: true,
+                  fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : CampusTheme.bg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: isDark ? Colors.white24 : CampusTheme.softBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: isDark ? Colors.white24 : CampusTheme.softBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: accent),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).textTheme.bodyMedium?.color,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+              ),
+              child: const Text('取消', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+              ),
+              child: const Text('提交', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (submitted != true) {
+      detailController.dispose();
+      return;
+    }
+    try {
+      if (!mounted) return;
+      await context.read<AuthProvider>().dio.post('/user/privacy/requests', data: {
+        'request_type': requestType,
+        'detail': detailController.text.trim(),
+      });
+      if (!mounted) return;
+      _showMessage('请求已提交');
+      await _loadRequests();
+    } on DioException catch (error) {
+      _showMessage(_errorMessage(error));
+    } finally {
+      detailController.dispose();
+    }
+  }
+
+  Future<void> _showRequestHistory() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: bg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text('个人信息请求记录',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            if (_requests.isEmpty)
+              const Text('暂无个人信息请求记录')
+            else
+              ..._requests.map((request) => ListTile(
+                    title: Text(request['request_type']?.toString() ?? '请求'),
+                    subtitle: Text(
+                        request['result']?.toString().isNotEmpty == true
+                            ? request['result'].toString()
+                            : request['status']?.toString() ?? 'pending'),
+                  )),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _showPersonalData() async {
     if (_loadingData) return;
@@ -130,7 +293,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     final auth = context.read<AuthProvider>();
     await showRequiredLegalConsentDialog(
       context,
-      requiresEduDataConsent: auth.user?.eduBound ?? false,
+      requiresEduDataConsent: auth.user?.eduAuthorized ?? false,
     );
   }
 
@@ -196,6 +359,64 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _showDataRightsSheet() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: bg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 16),
+              Container(
+                width: 32,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '数据权利',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              _PrivacyActionTile(
+                icon: Icons.edit_document,
+                title: '申请更正或删除',
+                subtitle: '提交隐私请求以更正或删除个人信息',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showRequestDialog();
+                },
+              ),
+              _PrivacyActionTile(
+                icon: Icons.history,
+                title: '查看处理记录',
+                subtitle: _loadingRequests ? '正在读取请求状态' : '共 ${_requests.length} 条记录',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showRequestHistory();
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _showAuthorizationManagementSheet() async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
@@ -234,7 +455,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                   _PrivacyActionTile(
                     icon: Icons.school_outlined,
                     title: '教务数据',
-                    subtitle: (auth.user?.eduBound ?? false) ? '已绑定' : '未绑定',
+                    subtitle: (auth.user?.eduAuthorized ?? false) ? '已授权' : '未授权',
                     trailing: const SizedBox.shrink(),
                   ),
                   _PrivacyActionTile(
@@ -286,6 +507,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     final restricted = widget.restricted || !(auth.user?.legalConsentsActive ?? true);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
 
     return Scaffold(
       backgroundColor: bg,
@@ -349,6 +571,14 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                 subtitle: '生成可分享 JSON，不含认证凭证',
                 trailing: _exporting ? _loadingWidget : null,
                 onTap: _exporting ? null : _exportData,
+              ),
+              const _PrivacyDivider(),
+              _PrivacyActionTile(
+                key: const ValueKey('create-privacy-request'),
+                icon: Icons.manage_accounts_outlined,
+                title: '数据更正、删除与处理记录',
+                subtitle: '提交隐私请求或查看处理进度',
+                onTap: _showDataRightsSheet,
               ),
             ],
           ),

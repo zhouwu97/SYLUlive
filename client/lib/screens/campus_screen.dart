@@ -6,6 +6,7 @@ import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../models/campus_article.dart';
 import '../models/ai_capabilities.dart';
+import '../models/ai_quota.dart';
 import '../services/ai_assistant_service.dart';
 import '../services/campus_article_service.dart';
 import '../widgets/home_tab_reveal.dart';
@@ -42,6 +43,18 @@ class CampusScreen extends StatefulWidget {
 
 class _CampusScreenState extends State<CampusScreen>
     with AutomaticKeepAliveClientMixin {
+  /// 公益 AI 不可用时仅作为页面结构占位，不会向校园模型发送请求。
+  static const _personalOnlyCapabilities = AiCapabilities(
+    enabled: false,
+    accessAllowed: false,
+    internalTestOnly: false,
+    chatEnabled: false,
+    phase: 'personal_only',
+    features: AiFeatures(policyRag: false, scheduleWindows: false),
+    quota: AiQuota(limit: 0, remaining: 0, windowSeconds: 3600),
+    maxMessageChars: 20,
+  );
+
   @override
   bool get wantKeepAlive => true;
 
@@ -255,26 +268,36 @@ class _CampusScreenState extends State<CampusScreen>
                       index: 1,
                       child: _buildLatestCard(isDark),
                     ),
-                    if (_aiCapabilities != null) ...[
-                      const SizedBox(height: 12),
-                      HomeTabRevealItem(
-                        index: 2,
-                        child: CampusAiEntryCard(
-                          capabilities: _aiCapabilities!,
-                          isDark: isDark,
-                          onTap: () => _openPage(
-                            AiAssistantScreen(
-                              capabilities: _aiCapabilities!,
-                              service: _aiService,
-                              dio: getSharedDio(),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 2 : 3,
+                      index: 2,
+                      child: _aiCapabilities != null
+                          ? CampusAiEntryCard(
+                              capabilities: _aiCapabilities!,
+                              isDark: isDark,
+                              onTap: () => _openPage(
+                                AiAssistantScreen(
+                                  capabilities: _aiCapabilities!,
+                                  service: _aiService,
+                                  dio: getSharedDio(),
+                                ),
+                              ),
+                            )
+                          : CampusModelChatEntryCard(
+                              isDark: isDark,
+                              onTap: () => _openPage(
+                                AiAssistantScreen(
+                                  capabilities: _personalOnlyCapabilities,
+                                  service: _aiService,
+                                  dio: getSharedDio(),
+                                  initialPersonalMode: true,
+                                ),
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+                    HomeTabRevealItem(
+                      index: 3,
                       child: CampusServiceGrid(
                         isDark: isDark,
                         onEduTap: () => _openPage(const EduScreen()),
@@ -288,7 +311,7 @@ class _CampusScreenState extends State<CampusScreen>
                     ),
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 3 : 4,
+                      index: 4,
                       child: CampusNewsSectionHeader(
                         isDark: isDark,
                         onCompetitionTap: () =>
@@ -303,7 +326,7 @@ class _CampusScreenState extends State<CampusScreen>
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 126),
                 sliver: SliverToBoxAdapter(
                   child: HomeTabRevealItem(
-                    index: _aiCapabilities == null ? 4 : 5,
+                    index: 5,
                     child: _buildRecentList(isDark),
                   ),
                 ),

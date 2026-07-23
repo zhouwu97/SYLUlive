@@ -25,6 +25,17 @@ func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
 	}
 }
 
+func TestLoadCompetitionAwardEvidenceDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
+	setBaseConfigEnv(t, "release")
+	t.Setenv("COMPETITION_AWARD_EVIDENCE_DIR", "")
+	production := Load()
+	require.Equal(t, "/opt/shenliyuan/private/competition-award-evidence", production.CompetitionAwardEvidenceDir)
+
+	t.Setenv("COMPETITION_AWARD_EVIDENCE_DIR", "/srv/private/competition-evidence")
+	overridden := Load()
+	require.Equal(t, "/srv/private/competition-evidence", overridden.CompetitionAwardEvidenceDir)
+}
+
 func TestLoadReleaseRejectsPlaceholderSecrets(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("JWT_SECRET", "your-super-secret-jwt-key-change-this")
@@ -41,6 +52,13 @@ func TestLoadReleaseRejectsExamPaperDirInsidePublicUploads(t *testing.T) {
 	t.Setenv("SUPER_ADMIN_PASSWORD", "realistic-admin-password")
 	t.Setenv("UPLOAD_DIR", "/opt/shenliyuan/uploads")
 	t.Setenv("EXAM_PAPER_DIR", "/opt/shenliyuan/uploads/exam-papers")
+
+	assertLoadPanics(t)
+}
+
+func TestLoadReleaseRejectsCompetitionEvidenceDirInsidePublicUploads(t *testing.T) {
+	setBaseConfigEnv(t, "release")
+	t.Setenv("COMPETITION_AWARD_EVIDENCE_DIR", "/opt/shenliyuan/uploads/competition-evidence")
 
 	assertLoadPanics(t)
 }
@@ -182,6 +200,7 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("EDU_SERVICE_TOKEN", "test-service-token")
 	t.Setenv("UPLOAD_DIR", "/opt/shenliyuan/uploads")
 	t.Setenv("EXAM_PAPER_DIR", "/opt/shenliyuan/private/exam-papers")
+	t.Setenv("COMPETITION_AWARD_EVIDENCE_DIR", "/opt/shenliyuan/private/competition-award-evidence")
 	t.Setenv("EXAM_PAPER_STORAGE_MODE", "")
 	t.Setenv("EXAM_PAPER_STORAGE_BASE_URL", "")
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")

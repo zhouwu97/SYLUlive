@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../providers/ai_assistant_provider.dart';
-import '../campus/campus_theme.dart';
 
 class AiInputComposer extends StatefulWidget {
   final TextEditingController controller;

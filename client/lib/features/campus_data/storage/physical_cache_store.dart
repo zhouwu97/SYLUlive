@@ -1,10 +1,11 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'account_cache_namespace.dart';
 import 'account_scoped_snapshot_store.dart';
 import 'personal_snapshot_models.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+
 
 /// 体测缓存仅负责当前 App 用户与当前来源账号的本地命名空间。
 ///
@@ -65,7 +66,7 @@ class PhysicalCacheStore {
       await _writeEncryptedYears(years);
     });
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     await prefs.remove(_legacyOwnedKey(year));
     await prefs.remove(AccountCacheNamespace.physicalNeedsResync(appUserId));
   }
@@ -73,7 +74,7 @@ class PhysicalCacheStore {
   /// 更早旧键没有 App 用户归属信息，不能自动迁给当前用户。
   Future<void> discardUnownedLegacy(Iterable<String> years) async {
     if (!_hasValidNamespace) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     var discarded = false;
     for (final year in years) {
       discarded =
@@ -85,7 +86,7 @@ class PhysicalCacheStore {
 
   Future<bool> needsResync() async {
     if (appUserId.trim().isEmpty) return true;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferencesStore.getInstance();
     return prefs.getBool(
           AccountCacheNamespace.physicalNeedsResync(appUserId),
         ) ??
@@ -95,7 +96,7 @@ class PhysicalCacheStore {
   Future<void> clearAll() async {
     await _serializePhysicalMutation(() async {
       await _snapshotStore.deleteType(PersonalDataType.physical);
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await AppPreferencesStore.getInstance();
       final ownedPrefix =
           'physical/${AccountCacheNamespace.fingerprint(appUserId)}/';
       final keys =
@@ -143,7 +144,7 @@ class PhysicalCacheStore {
         final existing = years[year];
         if (existing is Map) return Map<String, dynamic>.from(existing);
 
-        final prefs = await SharedPreferences.getInstance();
+        final prefs = await AppPreferencesStore.getInstance();
         final key = _legacyOwnedKey(year);
         final raw = prefs.getString(key);
         if (raw == null || raw.isEmpty) return null;
@@ -209,9 +210,9 @@ class PhysicalCacheStore {
     });
   }
 
-  Future<void> _markNeedsResync([SharedPreferences? preferences]) async {
+  Future<void> _markNeedsResync([AppPreferencesStore? preferences]) async {
     if (appUserId.trim().isEmpty) return;
-    final prefs = preferences ?? await SharedPreferences.getInstance();
+    final prefs = preferences ?? await AppPreferencesStore.getInstance();
     await prefs.setBool(
       AccountCacheNamespace.physicalNeedsResync(appUserId),
       true,

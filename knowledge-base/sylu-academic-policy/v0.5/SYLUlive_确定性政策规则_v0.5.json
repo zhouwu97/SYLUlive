@@ -1,0 +1,1221 @@
+{
+  "version": "2026-07-23-v0.5",
+  "school": "沈阳理工大学",
+  "generated_at": "2026-07-23",
+  "precedence": [
+    "同一事项优先使用生效日期更晚且明确废止旧文件的学校文件",
+    "学校具体规则优先于国家框架性规定，但不得违反上位法",
+    "转专业2020文件未在本次上传资料中发现替代文件，生产使用时应定期复核",
+    "只允许将verification_status=verified_full_text且calculation_status=enabled的规则用于确定性计算"
+  ],
+  "documents": {
+    "student_status": "沈理工校〔2024〕23号",
+    "retake": "沈理工教〔2025〕6号",
+    "major_transfer": "沈理工教〔2020〕4号",
+    "exam_misconduct": "沈理工校〔2024〕17号",
+    "competition_reward": "沈理工校〔2024〕54号"
+  },
+  "rules": [
+    {
+      "rule_id": "status-course-credit",
+      "domain": "credits",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第八至九条",
+      "title": "课程合格取得学分",
+      "conditions": {
+        "course_assessment_passed": true
+      },
+      "result": {
+        "credit_awarded": true,
+        "record_grade_and_credit": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "status-deferred-exam",
+      "domain": "exam",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第十一条",
+      "title": "缓考申请",
+      "conditions": {
+        "reason_in": [
+          "因公",
+          "因病",
+          "特殊情况"
+        ],
+        "apply_before_exam": true,
+        "supporting_materials": true,
+        "college_approved": true
+      },
+      "result": {
+        "submit_to_academic_affairs_for_record": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "notes": "原则上考试期间不给事假；最终是否批准以学院和教务处办理结果为准。"
+    },
+    {
+      "rule_id": "status-exam-qualification-cancel",
+      "domain": "exam",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第十三条",
+      "title": "取消课程考试资格",
+      "conditions": {
+        "any_of": [
+          {
+            "unapproved_absence_count": {
+              "gt": 3
+            }
+          },
+          {
+            "completed_assignments_ratio": {
+              "lt": 0.5
+            }
+          },
+          {
+            "course_lab_passed": false
+          }
+        ]
+      },
+      "result": {
+        "exam_qualification": false,
+        "course_grade": 0,
+        "must_relearn": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "high"
+    },
+    {
+      "rule_id": "status-grade-review-window",
+      "domain": "grades",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第十四条",
+      "title": "成绩查询申请期限",
+      "conditions": {
+        "days_since_grade_release": {
+          "lte": 14
+        },
+        "vacation_days_excluded": true,
+        "college_approved": true
+      },
+      "result": {
+        "review_request_allowed": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "status-study-duration",
+      "domain": "academic_status",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第二十二条",
+      "title": "普通本科最长与最短学习年限",
+      "conditions": {},
+      "result": {
+        "minimum_years": 3,
+        "maximum_years": 6,
+        "includes_leave_and_status_retention": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "status-leave-limit",
+      "domain": "academic_status",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第二十三条",
+      "title": "休学次数和期限",
+      "conditions": {},
+      "result": {
+        "normal_leave_duration_years_each": 1,
+        "maximum_leave_count_within_six_years": 2
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "status-entrepreneurship-extension",
+      "domain": "academic_status",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第二十四条",
+      "title": "休学创业最长学习年限延长",
+      "conditions": {
+        "valid_entrepreneurship_evidence": true
+      },
+      "result": {
+        "additional_maximum_years": 2
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "status-military-retention",
+      "domain": "academic_status",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第二十四条",
+      "title": "在校生应征入伍学习年限",
+      "conditions": {
+        "enlisted_during_study": true
+      },
+      "result": {
+        "maximum_school_study_years": 6,
+        "military_service_time_excluded": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "status-academic-warning",
+      "domain": "academic_warning",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第二十九条",
+      "title": "学业警告",
+      "conditions": {
+        "assessment_year_in_first_three_years": true,
+        "credits_earned_in_year": {
+          "lt": 30
+        }
+      },
+      "result": {
+        "academic_warning": true,
+        "notify_student_and_parent": true,
+        "study_with_next_grade": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "high"
+    },
+    {
+      "rule_id": "status-return-original-grade",
+      "domain": "academic_warning",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第二十九条",
+      "title": "跟读后升回原年级",
+      "conditions": {
+        "after_following_original_grade_courses": true,
+        "accumulated_failed_course_credits": {
+          "lt": 20
+        }
+      },
+      "result": {
+        "may_return_original_grade": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "status-dropout-second-warning",
+      "domain": "dropout",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第三十条第二项",
+      "title": "二次学业警告退学",
+      "conditions": {
+        "academic_warning_count": {
+          "gte": 2
+        }
+      },
+      "result": {
+        "dropout": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "status-dropout-max-duration",
+      "domain": "dropout",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第三十条第一项",
+      "title": "达到最长学习年限仍未达到毕业或结业要求",
+      "conditions": {
+        "maximum_study_duration_reached": true,
+        "meets_graduation_or_completion_requirement": false
+      },
+      "result": {
+        "dropout": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "status-graduation",
+      "domain": "graduation",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第三十八条",
+      "title": "毕业条件",
+      "conditions": {
+        "within_allowed_study_duration": true,
+        "completed_training_plan": true,
+        "credits_meet_graduation_requirement": true
+      },
+      "result": {
+        "graduation": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "status-completion",
+      "domain": "graduation",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第四十条",
+      "title": "结业条件",
+      "conditions": {
+        "within_allowed_study_duration": true,
+        "earned_credit_ratio_of_graduation_requirement": {
+          "gte": 0.9
+        },
+        "credits_meet_graduation_requirement": false
+      },
+      "result": {
+        "completion_certificate": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "status-degree-threshold-first-violation",
+      "domain": "degree",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第十八条",
+      "title": "第一次考试违纪后的学位槛值",
+      "conditions": {
+        "exam_violation_count": 1,
+        "exam_cheating_count": 0
+      },
+      "result": {
+        "degree_threshold": 2.2,
+        "threshold_increment": 0.2
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "high"
+    },
+    {
+      "rule_id": "status-degree-threshold-second-violation",
+      "domain": "degree",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第十八条",
+      "title": "第二次考试违纪后的学位槛值",
+      "conditions": {
+        "exam_violation_count": 2,
+        "exam_cheating_count": 0
+      },
+      "result": {
+        "degree_threshold": 2.6,
+        "additional_increment": 0.4
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "high"
+    },
+    {
+      "rule_id": "status-degree-threshold-first-cheating",
+      "domain": "degree",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第十八条",
+      "title": "第一次考试作弊后的学位槛值",
+      "conditions": {
+        "exam_cheating_count": 1
+      },
+      "result": {
+        "degree_threshold": 2.5,
+        "threshold_increment": 0.5
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "status-degree-threshold-second-cheating",
+      "domain": "degree",
+      "source_document": "沈理工校〔2024〕23号",
+      "source_locator": "第十八条",
+      "title": "第二次考试作弊后的学位槛值",
+      "conditions": {
+        "exam_cheating_count": 2
+      },
+      "result": {
+        "degree_threshold": 3.5,
+        "additional_increment": 1.0
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "critical",
+      "notes": "混合发生违纪与作弊、以及更多次数的组合计算，原文只给出递增示例，系统不得自行推导，需教务处确认。"
+    },
+    {
+      "rule_id": "retake-eligibility",
+      "domain": "retake",
+      "source_document": "沈理工教〔2025〕6号",
+      "source_locator": "第一部分",
+      "title": "允许参加课程重修的情形",
+      "conditions": {
+        "any_of": [
+          {
+            "course_passed": false,
+            "credit_awarded": false
+          },
+          {
+            "course_passed": true,
+            "student_requests_improvement": true
+          },
+          {
+            "practice_component_passed": false
+          },
+          {
+            "special_reason_requires_retake": true
+          }
+        ]
+      },
+      "result": {
+        "retake_allowed": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "retake-term-course-scope",
+      "domain": "retake",
+      "source_document": "沈理工教〔2025〕6号",
+      "source_locator": "第三部分第1项",
+      "title": "不同学期可申请的重修课程范围",
+      "conditions": {
+        "semester": {
+          "between": [
+            2,
+            7
+          ]
+        }
+      },
+      "result": {
+        "allowed_courses": "only_courses_offered_in_current_semester"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "retake-term-course-scope-late",
+      "domain": "retake",
+      "source_document": "沈理工教〔2025〕6号",
+      "source_locator": "第三部分第1项",
+      "title": "第八至十二学期重修课程范围",
+      "conditions": {
+        "semester": {
+          "between": [
+            8,
+            12
+          ]
+        }
+      },
+      "result": {
+        "allowed_courses": "all_semesters_subject_to_application_and_arrangement"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "retake-course-count-2-7",
+      "domain": "retake",
+      "source_document": "沈理工教〔2025〕6号",
+      "source_locator": "第四部分第4项",
+      "title": "第二至七学期重修门数上限",
+      "conditions": {
+        "semester": {
+          "between": [
+            2,
+            7
+          ]
+        }
+      },
+      "result": {
+        "maximum_retake_courses_per_semester": 3
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "retake-course-count-8-12",
+      "domain": "retake",
+      "source_document": "沈理工教〔2025〕6号",
+      "source_locator": "第四部分第4项",
+      "title": "第八至十二学期重修门数上限",
+      "conditions": {
+        "semester": {
+          "between": [
+            8,
+            12
+          ]
+        }
+      },
+      "result": {
+        "maximum_retake_courses_per_semester": 5
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "retake-payment",
+      "domain": "retake",
+      "source_document": "沈理工教〔2025〕6号",
+      "source_locator": "第四部分第2项",
+      "title": "重修缴费时限",
+      "conditions": {
+        "registered_for_retake": true,
+        "paid_within_deadline": false
+      },
+      "result": {
+        "may_participate_in_retake": false
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "retake-grade-record",
+      "domain": "retake",
+      "source_document": "沈理工教〔2025〕6号",
+      "source_locator": "第五部分第3至4项",
+      "title": "重修成绩记载",
+      "conditions": {
+        "retake_passed": true
+      },
+      "result": {
+        "credit_awarded": true,
+        "record_actual_grade": true,
+        "use_highest_retake_exam_grade": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "retake-repeat-limit",
+      "domain": "retake",
+      "source_document": "沈理工教〔2025〕6号",
+      "source_locator": "第五部分第4项",
+      "title": "重修不合格后的再次重修",
+      "conditions": {
+        "retake_passed": false
+      },
+      "result": {
+        "retake_again_allowed": true,
+        "limited_by_flexible_study_duration": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-basic",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第三部分",
+      "title": "转专业基本条件",
+      "conditions": {
+        "full_time_undergraduate": true,
+        "non_directed_training": true,
+        "legal_and_disciplinary_record_clear": true,
+        "health_meets_target_major": true
+      },
+      "result": {
+        "basic_eligibility": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-exclusions",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第四部分",
+      "title": "不予转专业情形",
+      "conditions": {
+        "any_of": [
+          {
+            "not_registered_or_no_student_status": true
+          },
+          {
+            "enrollment_less_than_one_year": true
+          },
+          {
+            "cross_admission_category": true
+          },
+          {
+            "special_admission_restriction": true
+          },
+          {
+            "graduation_grade": true
+          },
+          {
+            "currently_on_leave": true
+          },
+          {
+            "should_withdraw": true
+          },
+          {
+            "has_transferred_major_before": true
+          },
+          {
+            "special_admission_without_unified_gaokao": true
+          }
+        ]
+      },
+      "result": {
+        "transfer_allowed": false
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "high"
+    },
+    {
+      "rule_id": "transfer-academic-excellence",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第五部分第1项",
+      "title": "学业优秀类转专业",
+      "conditions": {
+        "completed_all_first_year_plan_courses": true,
+        "credit_gpa_rank_percentile": {
+          "lte": 20
+        },
+        "exclude_general_optional_courses_from_rank": true
+      },
+      "result": {
+        "category_eligible": "academic_excellence"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-subject-talent",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第五部分第2项",
+      "title": "学科专长类转专业",
+      "conditions": {
+        "any_of": [
+          {
+            "first_author_paper_level_in": [
+              "CSSCI",
+              "中文核心",
+              "CSCD或以上"
+            ],
+            "paper_first_affiliation": "沈阳理工大学"
+          },
+          {
+            "first_inventor_authorized_patent": true
+          },
+          {
+            "provincial_or_higher_discipline_competition_award": "二等奖及以上"
+          }
+        ]
+      },
+      "result": {
+        "category_eligible": "subject_talent"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-time-excellence",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第六部分",
+      "title": "学业优秀类办理时间",
+      "conditions": {
+        "category": "academic_excellence"
+      },
+      "result": {
+        "normal_application_time": "第一学年结束后、第二学年开学初"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-time-other",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第六部分",
+      "title": "其他类型办理时间",
+      "conditions": {
+        "category_not": "academic_excellence"
+      },
+      "result": {
+        "normal_application_semesters": [
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-capacity",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第八部分第1项",
+      "title": "接收专业班型人数标准",
+      "conditions": {
+        "major_category": "normal"
+      },
+      "result": {
+        "class_size_cap": 40
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-capacity-art",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第八部分第1项",
+      "title": "建筑及艺术设计类班型人数标准",
+      "conditions": {
+        "major_category_in": [
+          "建筑",
+          "艺术设计"
+        ]
+      },
+      "result": {
+        "class_size_cap": 25
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-no-replacement",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第八部分第2项",
+      "title": "前20%学生放弃资格后不可递补",
+      "conditions": {
+        "top_20_percent_student_gives_up": true
+      },
+      "result": {
+        "allow_next_student_replacement": false
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-credit-conversion",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第八部分第3项",
+      "title": "转专业后的课程与学分处理",
+      "conditions": {
+        "transfer_completed": true
+      },
+      "result": {
+        "follow_target_major_training_plan": true,
+        "source_credits_reviewed_and_converted_by_target_college": true,
+        "missing_courses_may_require_supplement": true,
+        "graduation_and_degree_review_by_target_plan": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "transfer-tuition",
+      "domain": "major_transfer",
+      "source_document": "沈理工教〔2020〕4号",
+      "source_locator": "第八部分第6项",
+      "title": "转专业后的学费",
+      "conditions": {
+        "transfer_completed": true
+      },
+      "result": {
+        "tuition_standard": "target_major"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "exam-violation-general",
+      "domain": "exam_misconduct",
+      "source_document": "沈理工校〔2024〕17号",
+      "source_locator": "第二章",
+      "title": "考试违纪的统一处理",
+      "conditions": {
+        "behavior_matches_articles_3_to_14": true
+      },
+      "result": {
+        "course_exam_grade": "invalid",
+        "disciplinary_action": "严重警告"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "high"
+    },
+    {
+      "rule_id": "exam-cheating-demerit",
+      "domain": "exam_misconduct",
+      "source_document": "沈理工校〔2024〕17号",
+      "source_locator": "第十五至二十条",
+      "title": "记过类考试作弊",
+      "conditions": {
+        "behavior_matches_articles_15_to_20": true
+      },
+      "result": {
+        "course_exam_grade": "invalid",
+        "disciplinary_action": "记过"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "exam-phone-carry",
+      "domain": "exam_misconduct",
+      "source_document": "沈理工校〔2024〕17号",
+      "source_locator": "第十七条",
+      "title": "携带具有通讯功能工具参加考试",
+      "conditions": {
+        "carries_communication_device": true,
+        "uses_device_during_exam": false
+      },
+      "result": {
+        "course_exam_grade": "invalid",
+        "disciplinary_action": "记过"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "exam-phone-use",
+      "domain": "exam_misconduct",
+      "source_document": "沈理工校〔2024〕17号",
+      "source_locator": "第二十五条",
+      "title": "考试过程中使用通讯工具",
+      "conditions": {
+        "uses_communication_device_during_exam": true
+      },
+      "result": {
+        "course_exam_grade": "invalid",
+        "disciplinary_action": "留校察看"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "exam-cheating-probation",
+      "domain": "exam_misconduct",
+      "source_document": "沈理工校〔2024〕17号",
+      "source_locator": "第二十一至二十六条",
+      "title": "留校察看类考试作弊",
+      "conditions": {
+        "behavior_matches_articles_21_to_26": true
+      },
+      "result": {
+        "course_exam_grade": "invalid",
+        "disciplinary_action": "留校察看"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "exam-cheating-dismissal",
+      "domain": "exam_misconduct",
+      "source_document": "沈理工校〔2024〕17号",
+      "source_locator": "第二十七至三十一条",
+      "title": "开除学籍类考试作弊",
+      "conditions": {
+        "behavior_matches_articles_27_to_31": true
+      },
+      "result": {
+        "course_exam_grade": "invalid",
+        "disciplinary_action": "开除学籍"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "exam-appeal",
+      "domain": "exam_misconduct",
+      "source_document": "沈理工校〔2024〕17号",
+      "source_locator": "第三十八条",
+      "title": "考试处分申诉期限",
+      "conditions": {
+        "days_since_decision_received": {
+          "lte": 10
+        }
+      },
+      "result": {
+        "written_appeal_allowed": true,
+        "appeal_body": "学校学生申诉处理委员会"
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "competition-course-scope",
+      "domain": "competition_reward",
+      "source_document": "沈理工校〔2024〕54号",
+      "source_locator": "第四条",
+      "title": "成绩奖励适用课程范围",
+      "conditions": {
+        "course_term_in": [
+          "获奖学期",
+          "获奖学期上一学期"
+        ],
+        "course_grade_source": "normal_assessment",
+        "original_course_grade": {
+          "gte": 50
+        }
+      },
+      "result": {
+        "course_eligible_for_reward": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "notes": "补考成绩不在奖励范围。"
+    },
+    {
+      "rule_id": "competition-grade-formula",
+      "domain": "competition_reward",
+      "source_document": "沈理工校〔2024〕54号",
+      "source_locator": "第五条",
+      "title": "奖励成绩计算公式",
+      "conditions": {
+        "reward_mode": "multiplier"
+      },
+      "result": {
+        "recorded_grade_formula": "min(95, original_grade * R)",
+        "recorded_grade_cap": 95
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "competition-direct-95",
+      "domain": "competition_reward",
+      "source_document": "沈理工校〔2024〕54号",
+      "source_locator": "表1至表3",
+      "title": "直接记载95分的奖励项目",
+      "conditions": {
+        "reward_table_value": "记载成绩95"
+      },
+      "result": {
+        "recorded_grade": 95
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "competition-category-course-limit",
+      "domain": "competition_reward",
+      "source_document": "沈理工校〔2024〕54号",
+      "source_locator": "第五条",
+      "title": "每类奖励课程门数",
+      "conditions": {
+        "category_in": [
+          "科技类竞赛",
+          "文体类竞赛",
+          "论文",
+          "专利"
+        ]
+      },
+      "result": {
+        "normal_maximum_rewarded_courses_per_category_per_semester": 1
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "competition-two-course-exception",
+      "domain": "competition_reward",
+      "source_document": "沈理工校〔2024〕54号",
+      "source_locator": "第六条第5项",
+      "title": "可申请两门课程奖励的项目",
+      "conditions": {
+        "any_of": [
+          {
+            "national_invention_patent_rank": 1
+          },
+          {
+            "paper_index_in": [
+              "SCI",
+              "SSCI",
+              "A&HCI"
+            ],
+            "author_rank": 1
+          }
+        ]
+      },
+      "result": {
+        "maximum_rewarded_courses": 2
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "competition-no-double-benefit",
+      "domain": "competition_reward",
+      "source_document": "沈理工校〔2024〕54号",
+      "source_locator": "第六条第2项",
+      "title": "成绩奖励与创新创业学分不可兼得",
+      "conditions": {
+        "applies_for_course_grade_reward": true
+      },
+      "result": {
+        "innovation_entrepreneurship_credit_for_same_result": false
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "competition-application-window",
+      "domain": "competition_reward",
+      "source_document": "沈理工校〔2024〕54号",
+      "source_locator": "第七条第1项",
+      "title": "成绩奖励申请时间",
+      "conditions": {
+        "semester": "获奖下一学期",
+        "teaching_week_in": [
+          2,
+          14
+        ]
+      },
+      "result": {
+        "application_allowed": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "notes": "逾期未提出申请视为自动放弃。"
+    },
+    {
+      "rule_id": "competition-higher-level-reaward",
+      "domain": "competition_reward",
+      "source_document": "沈理工校〔2024〕54号",
+      "source_locator": "第四条",
+      "title": "同一竞赛后续获得更高级别荣誉",
+      "conditions": {
+        "already_received_reward": true,
+        "later_award_is_higher_level": true
+      },
+      "result": {
+        "may_cancel_original_and_reapply": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled",
+      "notes": "不同级别奖励原则上不能兼得，特殊情况需向教务处单独申请。"
+    },
+    {
+      "rule_id": "competition-exam-conflict",
+      "domain": "competition_reward",
+      "source_document": "沈理工校〔2024〕54号",
+      "source_locator": "第三条",
+      "title": "竞赛与考试冲突可申请缓考",
+      "conditions": {
+        "exam_conflicts_with": "竞赛时间、赛前一周或赛后一周"
+      },
+      "result": {
+        "may_apply_for_deferred_exam": true
+      },
+      "verification_status": "verified_full_text",
+      "calculation_status": "enabled"
+    },
+    {
+      "rule_id": "makeup-exam-grade-user-provided",
+      "domain": "exam",
+      "source_document": "用户提供的补考成绩规则截图（2026-07-23）",
+      "source_locator": "截图及用户文字说明",
+      "title": "补考成绩计算口径（待教务处核验）",
+      "conditions": {
+        "original_continuous_assessment_score_unchanged": true,
+        "exam_weight_from_course_assessment_plan": true
+      },
+      "result": {
+        "formula": "min(60, original_continuous_assessment_score + makeup_exam_score * exam_weight)",
+        "score_cap": 60,
+        "below_cap_record_actual_result": true
+      },
+      "verification_status": "unverified_user_provided",
+      "calculation_status": "disabled",
+      "notes": "仅用于解释用户提供的口径；考试比例未提供统一数值，须以课程考核方案或教务处正式文件为准。官方核验前禁止自动计算。"
+    }
+  ],
+  "competition_reward_tables": {
+    "patent": [
+      {
+        "rank": 1,
+        "invention": "95",
+        "utility_model": 1.5,
+        "design": 1.4
+      },
+      {
+        "rank": 2,
+        "invention": 1.4,
+        "utility_model": 1.3,
+        "design": 1.2
+      },
+      {
+        "rank": 3,
+        "invention": 1.3,
+        "utility_model": 1.2,
+        "design": 1.2
+      }
+    ],
+    "paper": [
+      {
+        "rank": 1,
+        "SCI_SSCI_AHCI": "95",
+        "EI": 1.8,
+        "chinese_core": 1.6
+      },
+      {
+        "rank": 2,
+        "SCI_SSCI_AHCI": 1.4,
+        "EI": 1.3,
+        "chinese_core": 1.2
+      },
+      {
+        "rank": 3,
+        "SCI_SSCI_AHCI": 1.2,
+        "EI": 1.2,
+        "chinese_core": 1.2
+      }
+    ],
+    "science_competition": [
+      {
+        "level": "国家级",
+        "category": "A/B/C",
+        "award": "特等奖",
+        "value": "95"
+      },
+      {
+        "level": "国家级",
+        "category": "A/B/C",
+        "award": "一等奖",
+        "value": 1.8
+      },
+      {
+        "level": "国家级",
+        "category": "A/B/C",
+        "award": "二等奖",
+        "value": 1.7
+      },
+      {
+        "level": "国家级",
+        "category": "A/B/C",
+        "award": "三等奖",
+        "value": 1.6
+      },
+      {
+        "level": "国家级",
+        "category": "A/B/C",
+        "award": "优秀奖",
+        "value": 1.5
+      },
+      {
+        "level": "国家级",
+        "category": "D/E",
+        "award": "一等奖",
+        "value": 1.7
+      },
+      {
+        "level": "国家级",
+        "category": "D/E",
+        "award": "二等奖",
+        "value": 1.6
+      },
+      {
+        "level": "国家级",
+        "category": "D/E",
+        "award": "三等奖",
+        "value": 1.5
+      },
+      {
+        "level": "省级",
+        "category": "A/B/C",
+        "award": "特等奖",
+        "value": 1.6
+      },
+      {
+        "level": "省级",
+        "category": "A/B/C",
+        "award": "一等奖",
+        "value": 1.5
+      },
+      {
+        "level": "省级",
+        "category": "A/B/C",
+        "award": "二等奖",
+        "value": 1.4
+      },
+      {
+        "level": "省级",
+        "category": "A/B/C",
+        "award": "三等奖",
+        "value": 1.3
+      },
+      {
+        "level": "省级",
+        "category": "D/E",
+        "award": "特等奖",
+        "value": 1.4
+      },
+      {
+        "level": "省级",
+        "category": "D/E",
+        "award": "一等奖",
+        "value": 1.3
+      },
+      {
+        "level": "省级",
+        "category": "D/E",
+        "award": "二等奖",
+        "value": 1.2
+      }
+    ],
+    "sports_arts": [
+      {
+        "level": "国家级",
+        "award": "第一名/一等奖",
+        "value": 1.8
+      },
+      {
+        "level": "国家级",
+        "award": "第二名/二等奖",
+        "value": 1.7
+      },
+      {
+        "level": "国家级",
+        "award": "第三名/三等奖",
+        "value": 1.6
+      },
+      {
+        "level": "国家级",
+        "award": "第四至第六名/优秀奖",
+        "value": 1.5
+      },
+      {
+        "level": "省级",
+        "award": "第一名/一等奖",
+        "value": 1.6
+      },
+      {
+        "level": "省级",
+        "award": "第二名/二等奖",
+        "value": 1.5
+      },
+      {
+        "level": "省级",
+        "award": "第三名/三等奖",
+        "value": 1.4
+      },
+      {
+        "level": "省级",
+        "award": "第四至第六名",
+        "value": 1.3
+      }
+    ]
+  }
+}

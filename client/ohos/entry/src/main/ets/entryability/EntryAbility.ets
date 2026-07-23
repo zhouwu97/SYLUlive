@@ -5,7 +5,10 @@ import OhosPathProviderPlugin from '../plugins/OhosPathProviderPlugin';
 import OhosSecureStoragePlugin from '../plugins/OhosSecureStoragePlugin';
 import OhosExternalNavigatorPlugin from '../plugins/OhosExternalNavigatorPlugin';
 import OhosPreferencesPlugin from '../plugins/OhosPreferencesPlugin';
-
+import OhosSharePlugin from '../plugins/OhosSharePlugin';
+import OhosCalendarPlugin from '../plugins/OhosCalendarPlugin';
+import OhosNotificationsPlugin from '../plugins/OhosNotificationsPlugin';
+import OhosMockPlugins from '../plugins/OhosMockPlugins';
 export default class EntryAbility extends FlutterAbility {
   configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
@@ -16,5 +19,11 @@ export default class EntryAbility extends FlutterAbility {
     flutterEngine.getPlugins()?.add(new OhosSecureStoragePlugin())
     flutterEngine.getPlugins()?.add(new OhosExternalNavigatorPlugin(this.context))
     flutterEngine.getPlugins()?.add(new OhosPreferencesPlugin())
+    
+    // 自定义业务层插件及外部库桥接平替
+    flutterEngine.getPlugins()?.add(new OhosSharePlugin(this.context))
+    flutterEngine.getPlugins()?.add(new OhosCalendarPlugin(this.context))
+    flutterEngine.getPlugins()?.add(new OhosNotificationsPlugin(this.context))
+    flutterEngine.getPlugins()?.add(new OhosMockPlugins())
   }
 }

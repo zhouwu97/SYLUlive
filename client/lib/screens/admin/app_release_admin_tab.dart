@@ -171,6 +171,9 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     final title = TextEditingController();
     final changelog = TextEditingController();
     final minimum = TextEditingController();
+    final actionUrl = TextEditingController();
+    String selectedPlatform = 'android';
+    String selectedDeliveryMode = 'direct_package';
     final formKey = GlobalKey<FormState>();
 
     final payload = await showDialog<_DraftPayload>(
@@ -186,31 +189,72 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        final selected = await FilePicker.platform.pickFiles(
-                          type: FileType.custom,
-                          allowedExtensions: const ['apk'],
-                          allowMultiple: false,
-                          withData: false,
-                        );
-                        final file = selected?.files.singleOrNull;
-                        if (file == null) return;
-                        if (file.path == null || file.size <= 0) {
-                          if (dialogContext.mounted) {
-                            ScaffoldMessenger.of(dialogContext).showSnackBar(
-                              const SnackBar(
-                                  content: Text('无法读取 APK 文件，请重新选择')),
-                            );
-                          }
-                          return;
+                    DropdownButtonFormField<String>(
+                      value: selectedPlatform,
+                      decoration: const InputDecoration(labelText: '发布平台'),
+                      items: const [
+                        DropdownMenuItem(value: 'android', child: Text('Android')),
+                        DropdownMenuItem(value: 'ohos', child: Text('HarmonyOS')),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDialogState(() {
+                            selectedPlatform = v;
+                            if (v == 'ohos') {
+                              selectedDeliveryMode = 'external_market';
+                            }
+                          });
                         }
-                        setDialogState(() => apk = file);
                       },
-                      icon: const Icon(Icons.upload_file_outlined),
-                      label: Text(apk == null ? '选择 APK' : apk!.name),
                     ),
                     const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedDeliveryMode,
+                      decoration: const InputDecoration(labelText: '交付模式'),
+                      items: const [
+                        DropdownMenuItem(value: 'direct_package', child: Text('直接安装包')),
+                        DropdownMenuItem(value: 'external_market', child: Text('外部市场')),
+                      ],
+                      onChanged: selectedPlatform == 'ohos'
+                          ? null
+                          : (v) {
+                              if (v != null) {
+                                setDialogState(() => selectedDeliveryMode = v);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 12),
+                    if (selectedDeliveryMode == 'direct_package') ...[
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final selected = await FilePicker.platform.pickFiles(
+                            type: FileType.custom,
+                            allowedExtensions: const ['apk'],
+                            allowMultiple: false,
+                            withData: false,
+                          );
+                          final file = selected?.files.singleOrNull;
+                          if (file == null) return;
+                          if (file.path == null || file.size <= 0) {
+                            if (dialogContext.mounted) {
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                const SnackBar(
+                                    content: Text('无法读取 APK 文件，请重新选择')),
+                              );
+                            }
+                            return;
+                          }
+                          setDialogState(() => apk = file);
+                        },
+                        icon: const Icon(Icons.upload_file_outlined),
+                        label: Text(apk == null ? '选择 APK' : apk!.name),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (selectedDeliveryMode == 'external_market') ...[
+                      _field(actionUrl, '跳转链接 (以 http:// 或 https:// 开头)'),
+                      const SizedBox(height: 12),
+                    ],
                     _field(versionName, '展示版本号，例如 1.6.3'),
                     _field(versionCode, '构建号，例如 1603', numeric: true),
                     _field(title, '更新标题'),
@@ -228,7 +272,19 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
             ),
             FilledButton(
               onPressed: () {
-                if (apk == null || !formKey.currentState!.validate()) return;
+                if (!formKey.currentState!.validate()) return;
+                if (selectedDeliveryMode == 'direct_package' && apk == null) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(content: Text('直接安装包模式下必须选择 APK')),
+                  );
+                  return;
+                }
+                if (selectedDeliveryMode == 'external_market' && actionUrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(content: Text('外部市场模式下必须填写跳转链接')),
+                  );
+                  return;
+                }
                 final code = int.tryParse(versionCode.text.trim());
                 final min = int.tryParse(minimum.text.trim());
                 if (code == null || min == null || min > code) {
@@ -240,7 +296,10 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                 Navigator.pop(
                   dialogContext,
                   _DraftPayload(
-                    apk: apk!,
+                    apk: apk,
+                    platform: selectedPlatform,
+                    deliveryMode: selectedDeliveryMode,
+                    actionUrl: actionUrl.text.trim(),
                     versionName: versionName.text.trim(),
                     versionCode: code,
                     title: title.text.trim(),
@@ -260,27 +319,33 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     title.dispose();
     changelog.dispose();
     minimum.dispose();
+    actionUrl.dispose();
     if (payload == null) return;
 
-    final path = payload.apk.path;
-    if (path == null) {
+    final path = payload.apk?.path;
+    if (payload.deliveryMode == 'direct_package' && path == null) {
       _showMessage('APK 路径不可用，请重新选择', isError: true);
       return;
     }
     await _run(() async {
+      final Map<String, dynamic> data = {
+        'platform': payload.platform,
+        'channel': 'stable',
+        'delivery_mode': payload.deliveryMode,
+        'action_url': payload.actionUrl,
+        'version_name': payload.versionName,
+        'version_code': payload.versionCode.toString(),
+        'title': payload.title,
+        'changelog': payload.changelog,
+        'minimum_supported_version_code':
+            payload.minimumSupportedVersionCode.toString(),
+      };
+      if (payload.deliveryMode == 'direct_package') {
+        data['apk'] = await MultipartFile.fromFile(path!, filename: payload.apk!.name);
+      }
       await widget.dio.post(
         '/super/app-releases',
-        data: FormData.fromMap({
-          'apk': await MultipartFile.fromFile(path, filename: payload.apk.name),
-          'platform': 'android',
-          'channel': 'stable',
-          'version_name': payload.versionName,
-          'version_code': payload.versionCode.toString(),
-          'title': payload.title,
-          'changelog': payload.changelog,
-          'minimum_supported_version_code':
-              payload.minimumSupportedVersionCode.toString(),
-        }),
+        data: FormData.fromMap(data),
       );
       _showMessage('草稿已创建，请核对后发布');
     });
@@ -439,7 +504,10 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
 enum _ReleaseAction { edit, publish, withdraw, delete }
 
 class _DraftPayload {
-  final PlatformFile apk;
+  final PlatformFile? apk;
+  final String platform;
+  final String deliveryMode;
+  final String actionUrl;
   final String versionName;
   final int versionCode;
   final String title;
@@ -448,6 +516,9 @@ class _DraftPayload {
 
   const _DraftPayload({
     required this.apk,
+    required this.platform,
+    required this.deliveryMode,
+    required this.actionUrl,
     required this.versionName,
     required this.versionCode,
     required this.title,

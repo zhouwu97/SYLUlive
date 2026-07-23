@@ -87,6 +87,40 @@ ALTER TABLE IF EXISTS edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS expec
 ALTER TABLE IF EXISTS edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS revoked_at timestamptz;
 ALTER TABLE IF EXISTS edu_credential_cleanup_jobs ADD COLUMN IF NOT EXISTS delete_identity boolean NOT NULL DEFAULT false;
 
+-- 合并历史上同一用户、同一授权代次的重复任务。永久删除身份是更强语义，
+-- 必须保留在唯一的待处理任务中，普通撤销任务不能将其提前完成。
+WITH pending AS (
+  SELECT user_id, expected_generation, MIN(id) AS keep_id, BOOL_OR(delete_identity) AS delete_identity
+  FROM edu_credential_cleanup_jobs
+  WHERE completed_at IS NULL
+  GROUP BY user_id, expected_generation
+)
+UPDATE edu_credential_cleanup_jobs AS job
+SET delete_identity = pending.delete_identity
+FROM pending
+WHERE job.id = pending.keep_id;
+
+WITH pending AS (
+  SELECT user_id, expected_generation, MIN(id) AS keep_id
+  FROM edu_credential_cleanup_jobs
+  WHERE completed_at IS NULL
+  GROUP BY user_id, expected_generation
+)
+UPDATE edu_credential_cleanup_jobs AS job
+SET completed_at = now(),
+    last_error = '已合并到同一授权代次的清理任务',
+    locked_at = NULL,
+    lock_token = ''
+FROM pending
+WHERE job.user_id = pending.user_id
+  AND job.expected_generation = pending.expected_generation
+  AND job.id <> pending.keep_id
+  AND job.completed_at IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_edu_cleanup_pending_generation
+ON edu_credential_cleanup_jobs(user_id, expected_generation)
+WHERE completed_at IS NULL;
+
 -- 原索引无法同时保留注册和后续教务绑定的独立专项授权证据。
 DROP INDEX IF EXISTS idx_user_legal_document_version;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_legal_document_version_scene

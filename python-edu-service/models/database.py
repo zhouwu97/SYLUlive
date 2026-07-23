@@ -29,6 +29,11 @@ async def init_db():
             user.encrypted_password = None
             user.cookie = None
             user.bound = False
+            # 已清除历史明文凭据时，不能保留可自动重登的授权会话状态。
+            user.authorized = False
+            user.session_state = "revoked"
+            user.auto_relogin = False
+            user.revoked_at = datetime.now()
         await session.commit()
         deleted = await clear_legacy_course_cache(session)
         if any(deleted.values()):
@@ -69,6 +74,28 @@ def _migrate_edu_user_schema(conn):
         WHERE bound = 1 AND authorized = 0 AND session_state = 'unbound'
     """))
 
+    # 旧 SQLite 表可能没有 student_id 唯一约束。先报告冲突而不是静默选择
+    # 一个账号保留，避免两个 Go user_id 继续共享同一教务身份。
+    duplicates = conn.execute(text("""
+        SELECT student_id, COUNT(*) AS duplicate_count
+        FROM edu_users
+        GROUP BY student_id
+        HAVING COUNT(*) > 1
+        ORDER BY student_id
+        LIMIT 10
+    """)).all()
+    if duplicates:
+        conflicts = ", ".join(
+            f"{row.student_id} ({row.duplicate_count})" for row in duplicates
+        )
+        raise RuntimeError(
+            f"教务数据库存在重复学号，无法启动并创建唯一索引: {conflicts}"
+        )
+    conn.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_edu_users_student_id
+        ON edu_users(student_id)
+    """))
+
 
 def _verify_edu_user_schema(conn):
     """启动时检查既有数据库结构，避免请求期间才因缺列失败。"""
@@ -84,6 +111,17 @@ def _verify_edu_user_schema(conn):
     missing = sorted(required - columns)
     if missing:
         raise RuntimeError(f"教务数据库结构不完整，缺少字段: {', '.join(missing)}")
+    unique_indexes = inspector.get_indexes("edu_users")
+    unique_constraints = inspector.get_unique_constraints("edu_users")
+    student_id_unique = any(
+        index.get("unique") and index.get("column_names") == ["student_id"]
+        for index in unique_indexes
+    ) or any(
+        constraint.get("column_names") == ["student_id"]
+        for constraint in unique_constraints
+    )
+    if not student_id_unique:
+        raise RuntimeError("教务数据库缺少 edu_users.student_id 唯一约束")
 
 
 async def get_db():

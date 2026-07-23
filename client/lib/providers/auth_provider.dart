@@ -1050,6 +1050,14 @@ class AuthProvider extends ChangeNotifier {
         data: {'old_password': oldPassword, 'new_password': newPassword},
       );
       if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is! Map || data['token'] is! String || data['user'] is! Map) {
+          return AuthResult.failure('密码已修改，但会话刷新失败，请重新登录');
+        }
+        await applyAuthPayload(
+          data['token'] as String,
+          Map<String, dynamic>.from(data['user'] as Map),
+        );
         return AuthResult.success();
       }
       return AuthResult.failure('修改密码失败');

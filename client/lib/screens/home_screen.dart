@@ -47,18 +47,7 @@ Future<void> loadInitialFeedBeforeUpdateCheck({
   await initializeUpdateCheck();
 }
 
-/// 首页首屏请求结束后再检查更新，避免更新状态覆盖开屏与帖子加载过程。
-Future<void> loadInitialFeedBeforeUpdateCheck({
-  required Future<void> Function() loadInitialFeed,
-  required Future<void> Function() initializeUpdateCheck,
-}) async {
-  try {
-    await loadInitialFeed();
-  } catch (error) {
-    debugPrint('首页帖子首次加载失败，继续执行更新检查: $error');
-  }
-  await initializeUpdateCheck();
-}
+
 
 class HomeScreen extends StatefulWidget {
   final int initialTab;

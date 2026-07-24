@@ -8,7 +8,7 @@ final class RankingTokens {
 
   // ── Base palette (shared with campus / competition) ────────────────
   static Color pageBg(bool isDark) =>
-      isDark ? const Color(0xFF111315) : const Color(0xFFF6F7F8);
+      isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4);
 
   static Color cardBg(bool isDark) =>
       isDark ? const Color(0xFF1E2226) : Colors.white;

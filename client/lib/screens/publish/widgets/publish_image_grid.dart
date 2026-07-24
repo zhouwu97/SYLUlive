@@ -7,10 +7,10 @@ import '../../../config/api_constants.dart';
 import '../../../models/post.dart';
 import 'dashed_outline.dart';
 
-/// 发布表单图片网格。
+/// 发布表单图片网格�?
 ///
-/// 以三列方形网格展示已上传图片和本地新选图片。第一张图片会标记为「封面」。
-/// 空图片状态下仍展示添加入口，水帖页会将其渲染成单个虚线上传卡片。
+/// 以三列方形网格展示已上传图片和本地新选图片。第一张图片会标记为「封面」�?
+/// 空图片状态下仍展示添加入口，水帖页会将其渲染成单个虚线上传卡片�?
 class PublishImageGrid extends StatelessWidget {
   static const Color _marketAccent = Color(0xFFFF7A45);
 
@@ -66,7 +66,7 @@ class PublishImageGrid extends StatelessWidget {
       );
     }
 
-    // 至少保留一个添加入口；已有图片且还能继续添加时，入口放在末尾。
+    // 至少保留一个添加入口；已有图片且还能继续添加时，入口放在末尾�?
     final int cellCount =
         max(1, totalImages) + (canAddMore && totalImages > 0 ? 1 : 0);
 
@@ -86,7 +86,7 @@ class PublishImageGrid extends StatelessWidget {
           return _buildAddCell(isDark);
         }
 
-        // ---- 图片缩略图 ----
+        // ---- 图片缩略�?----
         final isExisting = index < existingImages.length;
         final isFirst = index == 0;
 
@@ -349,7 +349,7 @@ class PublishImageGrid extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            '首张默认为封面',
+            '首张默认为封�?,
             style: TextStyle(
               fontSize: 12,
               color: isDark

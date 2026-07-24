@@ -51,7 +51,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('清空日志'),
-        content: const Text('确定要清空所有诊断日志吗？此操作无法恢复。'),
+        content: const Text('确定要清空所有诊断日志吗？此操作无法恢复�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -82,7 +82,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
   void _copyAll() {
     if (_logs.isEmpty) return;
 
-    // 正序输出，便于从前往后分析
+    // 正序输出，便于从前往后分�?
     final sortedLogs = List<DiagnosticLogEntry>.from(_logs)
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
@@ -124,7 +124,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
     Clipboard.setData(ClipboardData(text: sb.toString()));
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('已复制全部日志到剪贴板')));
+    ).showSnackBar(const SnackBar(content: Text('已复制全部日志到剪贴�?)));
   }
 
   @override
@@ -144,7 +144,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
       );
       final latest = DateTime.fromMillisecondsSinceEpoch(_logs.first.timestamp);
       final fmt = DateFormat('MM-dd HH:mm');
-      timeRange = '最早 ${fmt.format(earliest)} · 最近 ${fmt.format(latest)}';
+      timeRange = '最�?${fmt.format(earliest)} · 最�?${fmt.format(latest)}';
     }
 
     return Scaffold(
@@ -183,7 +183,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '共 ${_logs.length} 条${timeRange.isNotEmpty ? ' · $timeRange' : ''}',
+                  '�?${_logs.length} �?{timeRange.isNotEmpty ? ' · $timeRange' : ''}',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
@@ -296,7 +296,7 @@ class _LogEntryCardState extends State<_LogEntryCard> {
     Clipboard.setData(ClipboardData(text: sb.toString()));
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('已复制日志详情')));
+    ).showSnackBar(const SnackBar(content: Text('已复制日志详�?)));
   }
 
   @override
@@ -381,7 +381,7 @@ class _LogEntryCardState extends State<_LogEntryCard> {
                   Padding(
                     padding: const EdgeInsets.only(top: 4.0),
                     child: Text(
-                      '重复 ${entry.repeatCount} 次',
+                      '重复 ${entry.repeatCount} �?,
                       style: const TextStyle(
                         fontSize: 12,
                         color: Colors.orange,
@@ -440,14 +440,14 @@ class _LogEntryCardState extends State<_LogEntryCard> {
                             ),
                           ),
                           child: const Text(
-                            '这是界面布局溢出：一般是固定高度太小、padding 太大、文字或图标挤不下。'
-                            '优先检查日志里给出的文件和行号，不是服务器错误。',
+                            '这是界面布局溢出：一般是固定高度太小、padding 太大、文字或图标挤不下�?
+                            '优先检查日志里给出的文件和行号，不是服务器错误�?,
                             style: TextStyle(fontSize: 12.5, height: 1.35),
                           ),
                         ),
                       ],
                       SelectableText(
-                        entry.detail.isEmpty ? '无详细信息' : entry.detail,
+                        entry.detail.isEmpty ? '无详细信�? : entry.detail,
                         style: const TextStyle(
                           fontSize: 12,
                           fontFamily: 'monospace',

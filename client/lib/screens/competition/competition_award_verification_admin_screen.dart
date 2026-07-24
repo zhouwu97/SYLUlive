@@ -133,8 +133,8 @@ class _CompetitionAwardVerificationAdminScreenState
             SegmentedButton<String>(
               key: const Key('award-verification-filter'),
               segments: const [
-                ButtonSegment(value: 'pending', label: Text('待核验')),
-                ButtonSegment(value: 'verified', label: Text('已核验')),
+                ButtonSegment(value: 'pending', label: Text('待核�?)),
+                ButtonSegment(value: 'verified', label: Text('已核�?)),
                 ButtonSegment(value: 'rejected', label: Text('未通过')),
               ],
               selected: {_status},
@@ -165,7 +165,7 @@ class _CompetitionAwardVerificationAdminScreenState
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   IconButton(
-                    tooltip: '上一页',
+                    tooltip: '上一�?,
                     onPressed: _page <= 1
                         ? null
                         : () {
@@ -182,7 +182,7 @@ class _CompetitionAwardVerificationAdminScreenState
                     ),
                   ),
                   IconButton(
-                    tooltip: '下一页',
+                    tooltip: '下一�?,
                     onPressed: _page >= totalPages
                         ? null
                         : () {
@@ -221,7 +221,7 @@ class _CompetitionAwardVerificationAdminScreenState
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Text(
-            '${item.userNickname} · ${item.competitionYear}\n$result · $status · ${item.evidenceCount} 份材料',
+            '${item.userNickname} · ${item.competitionYear}\n$result · $status · ${item.evidenceCount} 份材�?,
           ),
         ),
         trailing: const Icon(Icons.chevron_right_rounded),
@@ -341,12 +341,12 @@ class _CompetitionAwardVerificationDetailScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(approve ? '确认通过材料核验？' : '驳回材料核验？'),
+        title: Text(approve ? '确认通过材料核验�? : '驳回材料核验�?),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(approve ? '仅确认材料与填写信息一致，不代表学校或教务认证。' : '请明确说明材料不足或信息不一致之处。'),
+            Text(approve ? '仅确认材料与填写信息一致，不代表学校或教务认证�? : '请明确说明材料不足或信息不一致之处�?),
             const SizedBox(height: 12),
             TextField(
               key: const Key('award-verification-note'),
@@ -354,7 +354,7 @@ class _CompetitionAwardVerificationDetailScreenState
               maxLines: 4,
               onChanged: (value) => note = value.trim(),
               decoration: InputDecoration(
-                labelText: approve ? '核验说明（选填）' : '驳回原因',
+                labelText: approve ? '核验说明（选填�? : '驳回原因',
                 border: const OutlineInputBorder(),
               ),
             ),
@@ -434,21 +434,21 @@ class _CompetitionAwardVerificationDetailScreenState
                   style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 10),
-              Text('用户：$_nickname'),
-              Text('年份：${award.competitionYear}'),
-              Text('奖项：${award.awardLevel} ${award.awardName}'.trim()),
-              Text('赛道：${award.trackName.isEmpty ? '未填写' : award.trackName}'),
+              Text('用户�?_nickname'),
+              Text('年份�?{award.competitionYear}'),
+              Text('奖项�?{award.awardLevel} ${award.awardName}'.trim()),
+              Text('赛道�?{award.trackName.isEmpty ? '未填�? : award.trackName}'),
               Text(
-                  '角色：${competitionAwardRoleLabels[award.role] ?? award.role}'),
+                  '角色�?{competitionAwardRoleLabels[award.role] ?? award.role}'),
               const SizedBox(height: 10),
               Text(award.contributionSummary.isEmpty
-                  ? '未填写贡献描述'
+                  ? '未填写贡献描�?
                   : award.contributionSummary),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        Text('证明材料（${award.evidenceFileIds.length}）',
+        Text('证明材料�?{award.evidenceFileIds.length}�?,
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         ...award.evidenceFileIds.asMap().entries.map(

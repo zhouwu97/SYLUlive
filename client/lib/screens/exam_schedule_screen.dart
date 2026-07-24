@@ -33,7 +33,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   List<String> get _availableSemesters {
     final s = _exams.map((e) => e.semester).where((s) => s.isNotEmpty).toSet();
     final now = DateTime.now();
-    int startYear = now.year - 4; // 默认往前推4年
+    int startYear = now.year - 4; // 默认往前推4�?
 
     try {
       startYear = context.read<EduProvider>().enrollmentYear;
@@ -134,8 +134,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       if (Platform.isAndroid) {
         backupDir = await getExternalStorageDirectory();
         // 如果想要存到 Download/沈理考试/，这里应该拿到外部存储根目录
-        // 但 getExternalStorageDirectory() 给的是 Android/data/...
-        // 所以我们需要构造路径
+        // �?getExternalStorageDirectory() 给的�?Android/data/...
+        // 所以我们需要构造路�?
         backupDir = Directory('/storage/emulated/0/Download/沈理考试');
       } else {
         backupDir = await getApplicationDocumentsDirectory();
@@ -164,7 +164,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('已成功存档至：${file.path}'),
+            content: Text('已成功存档至�?{file.path}'),
             duration: const Duration(seconds: 5),
             action: SnackBarAction(
               label: '分享/打开',
@@ -219,7 +219,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
 
               _saveToLocal();
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('成功导入 $addedCount 场考试安排！')),
+                SnackBar(content: Text('成功导入 $addedCount 场考试安排�?)),
               );
             });
           }
@@ -257,24 +257,24 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     if (start.year == end.year &&
         start.month == end.month &&
         start.day == end.day) {
-      return '${start.month}月${start.day}日 ${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')} - ${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
+      return '${start.month}�?{start.day}�?${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')} - ${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
     } else {
       return '${_formatTime(start)} - ${_formatTime(end)}';
     }
   }
 
   String _formatTime(DateTime time) {
-    return '${time.month}月${time.day}日 ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    return '${time.month}�?{time.day}�?${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
   String generateExamPrompt() {
     final now = DateTime.now();
     return '''
-你是一个专业的教务数据提取助手。请从以下文本中提取考试信息。
-当前系统时间为：${now.year}年${now.month}月${now.day}日。
-如果文本中只包含月日，请结合当前系统时间推算最合理的年份（例如，当前是12月，考试时间是1月，则年份应为下一年）。
+你是一个专业的教务数据提取助手。请从以下文本中提取考试信息�?
+当前系统时间为：${now.year}�?{now.month}�?{now.day}日�?
+如果文本中只包含月日，请结合当前系统时间推算最合理的年份（例如，当前是12月，考试时间�?月，则年份应为下一年）�?
 
-请严格输出 JSON 数组格式，不要包含任何其他解释性文字，字段要求如下：
+请严格输�?JSON 数组格式，不要包含任何其他解释性文字，字段要求如下�?
 [
   {
     "name": "科目名称(如：大学物理)",
@@ -398,7 +398,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                             ),
                           ),
                           Text(
-                            '2. 将提示词与考试安排发给AI；',
+                            '2. 将提示词与考试安排发给AI�?,
                             style: TextStyle(
                               fontSize: 13,
                               color: Theme.of(
@@ -407,7 +407,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                             ),
                           ),
                           Text(
-                            '3. 在下方粘贴 AI 回复的 JSON 代码。',
+                            '3. 在下方粘�?AI 回复�?JSON 代码�?,
                             style: TextStyle(
                               fontSize: 13,
                               color: Theme.of(
@@ -421,7 +421,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
                       icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('一键复制 AI 提示词'),
+                      label: const Text('一键复�?AI 提示�?),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Theme.of(
                           context,
@@ -435,7 +435,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                           ClipboardData(text: generateExamPrompt()),
                         );
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('提示词已复制！请前往 AI 助手处粘贴。')),
+                          const SnackBar(content: Text('提示词已复制！请前往 AI 助手处粘贴�?)),
                         );
                       },
                     ),
@@ -445,7 +445,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                       maxLines: 8,
                       minLines: 5,
                       decoration: InputDecoration(
-                        hintText: '在此粘贴 AI 生成的 JSON 代码...',
+                        hintText: '在此粘贴 AI 生成�?JSON 代码...',
                         border: const OutlineInputBorder(),
                         filled: true,
                         fillColor: Theme.of(
@@ -499,7 +499,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                           border: OutlineInputBorder(),
                         ),
                         child: Text(
-                          '${examDate.year}年${examDate.month}月${examDate.day}日',
+                          '${examDate.year}�?{examDate.month}�?{examDate.day}�?,
                         ),
                       ),
                     ),
@@ -534,7 +534,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                             },
                             child: InputDecorator(
                               decoration: const InputDecoration(
-                                labelText: '开始时间',
+                                labelText: '开始时�?,
                                 border: OutlineInputBorder(),
                               ),
                               child: Text(
@@ -594,7 +594,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                             final code = jsonController.text.trim();
                             if (code.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('请粘贴 JSON 代码！')),
+                                const SnackBar(content: Text('请粘�?JSON 代码�?)),
                               );
                               return;
                             }
@@ -623,7 +623,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                               Navigator.pop(ctx);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('成功导入 ${newExams.length} 场考试！'),
+                                  content: Text('成功导入 ${newExams.length} 场考试�?),
                                 ),
                               );
                             } catch (e) {
@@ -660,7 +660,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
 
                             if (endDateTime.isBefore(startDateTime)) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('结束时间不能早于开始时间')),
+                                const SnackBar(content: Text('结束时间不能早于开始时�?)),
                               );
                               return;
                             }
@@ -779,7 +779,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.widgets_outlined),
-            tooltip: '桌面小组件',
+            tooltip: '桌面小组�?,
             onPressed: () async {
               _syncTimer?.cancel();
               await HomeWidgetService.syncExamData(
@@ -837,7 +837,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '点击右上角 + 号添加',
+                    '点击右上�?+ 号添�?,
                     style: TextStyle(
                       color: isDark ? Colors.white38 : Colors.grey[500],
                       fontSize: 13,
@@ -900,7 +900,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     _saveToLocal();
                     ScaffoldMessenger.of(
                       context,
-                    ).showSnackBar(SnackBar(content: Text('已删除 ${exam.name}')));
+                    ).showSnackBar(SnackBar(content: Text('已删�?${exam.name}')));
                   },
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 12.0),
@@ -981,7 +981,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                     Text(
                                       exam.location.isNotEmpty
                                           ? exam.location
-                                          : '未指定',
+                                          : '未指�?,
                                       style: const TextStyle(
                                         color: Color(0xFF6366F1),
                                         fontWeight: FontWeight.w700,
@@ -999,7 +999,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                       ? Colors.white70
                                       : Colors.grey[600],
                                 ),
-                                tooltip: '添加到系统日历',
+                                tooltip: '添加到系统日�?,
                                 onPressed: () => _addToCalendar(exam),
                               ),
                             ],

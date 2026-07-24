@@ -3,16 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../platform/contracts/external_navigator.dart';
 
-import '../main.dart';
+import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../services/campus_article_service.dart';
 import '../utils/app_feedback.dart';
 
-/// 文章详情页。
-///
+/// 文章详情页�?///
 /// 接收摘要信息（标题、分类、日期等）用于即时显示页面框架，
-/// 然后异步拉取完整详情（正文、附件）。
-class CampusArticleDetailScreen extends StatefulWidget {
+/// 然后异步拉取完整详情（正文、附件）�?class CampusArticleDetailScreen extends StatefulWidget {
   final CampusArticleSummary summary;
 
   const CampusArticleDetailScreen({super.key, required this.summary});
@@ -76,10 +74,8 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     }
   }
 
-  /// 打开外部浏览器访问指定 URL。
-  ///
-  /// 仅允许白名单域名的 HTTPS 链接。
-  Future<void> _openExternalUrl(String url, {String? errorText}) async {
+  /// 打开外部浏览器访问指�?URL�?  ///
+  /// 仅允许白名单域名�?HTTPS 链接�?  Future<void> _openExternalUrl(String url, {String? errorText}) async {
     if (!isSafeCampusUrl(url)) {
       AppFeedback.showSnackBar(
         context,
@@ -93,12 +89,12 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       final opened = await ExternalNavigator.current().open(uri);
       if (!opened) {
         if (context.mounted) {
-          AppFeedback.showSnackBar(context, '无法打开浏览器', isError: true);
+          AppFeedback.showSnackBar(context, '无法打开浏览�?, isError: true);
         }
       }
     } catch (e) {
       if (mounted) {
-        AppFeedback.showSnackBar(context, '无法打开浏览器', isError: true);
+        AppFeedback.showSnackBar(context, '无法打开浏览�?, isError: true);
       }
     }
   }
@@ -144,8 +140,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     }
 
     if (detail == null) {
-      // 理论上不会走到这里，但防御性处理
-      return _buildLoadingState(isDark);
+      // 理论上不会走到这里，但防御性处�?      return _buildLoadingState(isDark);
     }
 
     return ListView(
@@ -168,7 +163,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     );
   }
 
-  // ── 加载状态 ───────────────────────────────────────────────────
+  // ── 加载状�?───────────────────────────────────────────────────
 
   Widget _buildLoadingState(bool isDark) {
     return ListView(
@@ -227,7 +222,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     );
   }
 
-  // ── 错误状态 ───────────────────────────────────────────────────
+  // ── 错误状�?───────────────────────────────────────────────────
 
   Widget _buildErrorState(bool isDark, String message) {
     return ListView(
@@ -341,7 +336,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   Widget _buildContentSection(bool isDark, CampusArticleDetail detail) {
     final hasAttachments = detail.attachments.isNotEmpty;
 
-    // 弱正文且有附件 → 显示附件提示
+    // 弱正文且有附�?�?显示附件提示
     if (detail.isWeakContent && hasAttachments) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -363,7 +358,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                '该通知的主要内容位于附件中，请前往学校网站验证后下载。',
+                '该通知的主要内容位于附件中，请前往学校网站验证后下载�?,
                 style: TextStyle(
                   fontSize: 14,
                   height: 1.6,
@@ -376,7 +371,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       );
     }
 
-    // 有正文 → 显示正文
+    // 有正�?�?显示正文
     if (detail.contentText.trim().isNotEmpty) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -400,7 +395,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       );
     }
 
-    // 正文为空且无附件 → 引导查看原文
+    // 正文为空且无附件 �?引导查看原文
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -421,7 +416,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              '该通知未提取到正文内容，请查看学校原文获取完整信息。',
+              '该通知未提取到正文内容，请查看学校原文获取完整信息�?,
               style: TextStyle(
                 fontSize: 14,
                 height: 1.6,
@@ -444,7 +439,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '附件（${attachments.length}）',
+          '附件�?{attachments.length}�?,
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -452,8 +447,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        // 验证码提示
-        Container(
+        // 验证码提�?        Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: (isDark ? Colors.amber : Colors.orange).withValues(
@@ -471,7 +465,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '学校附件需要输入验证码，请在浏览器中完成验证。',
+                  '学校附件需要输入验证码，请在浏览器中完成验证�?,
                   style: TextStyle(
                     fontSize: 12,
                     color:
@@ -506,8 +500,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       ),
       child: Row(
         children: [
-          // 扩展名图标
-          Container(
+          // 扩展名图�?          Container(
             width: 44,
             height: 44,
             decoration: BoxDecoration(
@@ -517,7 +510,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
             child: Icon(attachment.icon, color: primary, size: 22),
           ),
           const SizedBox(width: 12),
-          // 文件名 + 提示
+          // 文件�?+ 提示
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -550,7 +543,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  isUrlSafe ? '需前往学校网站验证后下载' : '附件地址无效',
+                  isUrlSafe ? '需前往学校网站验证后下�? : '附件地址无效',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: isDark ? Colors.white38 : Colors.black45,
@@ -585,7 +578,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '前往浏览器下载',
+                  '前往浏览器下�?,
                   style: TextStyle(
                     fontSize: 12.5,
                     color: isUrlSafe

@@ -178,7 +178,7 @@ class _TeamRecruitmentCenterScreenState
                         ),
                         const SizedBox(width: 6),
                         IconButton(
-                          tooltip: '更多筛选',
+                          tooltip: '更多筛�?,
                           onPressed: _showMoreStatus,
                           icon: Icon(Icons.tune_rounded,
                               size: 20, color: TeamUiTokens.subtitle(isDark)),
@@ -193,7 +193,7 @@ class _TeamRecruitmentCenterScreenState
                             Text(
                                 const {
                                       'recommended': '推荐',
-                                      'latest': '最新',
+                                      'latest': '最�?,
                                       'deadline': '截止'
                                     }[provider.currentSort] ??
                                     '推荐',
@@ -207,7 +207,7 @@ class _TeamRecruitmentCenterScreenState
                     if (provider.viewState == TeamFeedViewState.content)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
-                        child: Text('共 ${provider.publicTotal} 个招募',
+                        child: Text('�?${provider.publicTotal} 个招�?,
                             style: TextStyle(
                                 fontSize: 12,
                                 color: TeamUiTokens.subtitle(isDark))),
@@ -243,16 +243,16 @@ class _TeamRecruitmentCenterScreenState
         final emptyTitle = switch (_status) {
           'recruiting' => '还没有正在招募的队伍',
           'deadline_soon' => '还没有即将截止的队伍',
-          'full' => '还没有已满员的队伍',
-          'closed' => '还没有已关闭的队伍',
-          'expired' => '还没有已截止的队伍',
-          _ => '还没有组队招募',
+          'full' => '还没有已满员的队�?,
+          'closed' => '还没有已关闭的队�?,
+          'expired' => '还没有已截止的队�?,
+          _ => '还没有组队招�?,
         };
         return SliverToBoxAdapter(
           child: _TeamFeedStateView(
             icon: Icons.groups_2_outlined,
             title: emptyTitle,
-            description: '换个分类看看，或者发起新的组队',
+            description: '换个分类看看，或者发起新的组�?,
             actionLabel: '发起组队',
             actionIcon: Icons.add_rounded,
             onAction: () => _openCreate(provider),
@@ -265,8 +265,8 @@ class _TeamRecruitmentCenterScreenState
             title: '组队服务暂未上线',
             description: kDebugMode
                 ? '当前客户端已包含组队大厅，\nGET /api/team/recruitments · ${provider.publicStatusCode ?? 404}'
-                : '当前客户端已包含组队大厅，\n服务器接口还没有完成部署。',
-            actionLabel: '重新检测',
+                : '当前客户端已包含组队大厅，\n服务器接口还没有完成部署�?,
+            actionLabel: '重新检�?,
             actionIcon: Icons.refresh_rounded,
             onAction: _load,
           ),
@@ -276,7 +276,7 @@ class _TeamRecruitmentCenterScreenState
           child: _TeamFeedStateView(
             icon: Icons.wifi_off_rounded,
             title: '网络连接失败',
-            description: '请检查网络后重新加载。',
+            description: '请检查网络后重新加载�?,
             actionLabel: '重新加载',
             actionIcon: Icons.refresh_rounded,
             onAction: _load,
@@ -286,8 +286,8 @@ class _TeamRecruitmentCenterScreenState
         return SliverToBoxAdapter(
           child: _TeamFeedStateView(
             icon: Icons.cloud_off_outlined,
-            title: '组队服务暂时不可用',
-            description: '服务器正在处理异常，请稍后重试。',
+            title: '组队服务暂时不可�?,
+            description: '服务器正在处理异常，请稍后重试�?,
             actionLabel: '重新加载',
             actionIcon: Icons.refresh_rounded,
             onAction: _load,
@@ -343,15 +343,15 @@ class _TeamRecruitmentCenterScreenState
       builder: (sheetContext) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
-            title: const Text('全部状态'),
+            title: const Text('全部状�?),
             onTap: () => _selectMoreStatus(sheetContext, null),
           ),
           ListTile(
-            title: const Text('已关闭'),
+            title: const Text('已关�?),
             onTap: () => _selectMoreStatus(sheetContext, 'closed'),
           ),
           ListTile(
-            title: const Text('已截止'),
+            title: const Text('已截�?),
             onTap: () => _selectMoreStatus(sheetContext, 'expired'),
           ),
         ]),
@@ -368,7 +368,7 @@ class _TeamRecruitmentCenterScreenState
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           for (final option in const [
             ('推荐排序', 'recommended'),
-            ('最新发布', 'latest'),
+            ('最新发�?, 'latest'),
             ('临近截止', 'deadline')
           ])
             ListTile(
@@ -463,9 +463,9 @@ class _StatusSegment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const values = [
-      ('招募中', 'recruiting'),
+      ('招募�?, 'recruiting'),
       ('即将截止', 'deadline_soon'),
-      ('已满员', 'full'),
+      ('已满�?, 'full'),
     ];
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(children: [
@@ -531,7 +531,7 @@ class _SearchBar extends StatelessWidget {
         onChanged: onChanged,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
-          hintText: '搜索竞赛、项目、技能或关键词',
+          hintText: '搜索竞赛、项目、技能或关键�?,
           prefixIcon: const Icon(Icons.search_rounded),
           filled: true,
           fillColor: Theme.of(context).colorScheme.surfaceContainerLowest,

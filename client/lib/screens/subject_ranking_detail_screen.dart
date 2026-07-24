@@ -193,7 +193,7 @@ class _SubjectRankingDetailScreenState
                     children: [
                       _buildMetric(
                         isDark,
-                        '教师数',
+                        '教师�?,
                         '${sorted.length}',
                         Icons.groups_2_outlined,
                         accent,
@@ -270,7 +270,7 @@ class _SubjectRankingDetailScreenState
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${teacher.averageStar.toStringAsFixed(1)} 分 · ${teacher.ratingCount} 条评价',
+                                    '${teacher.averageStar.toStringAsFixed(1)} �?· ${teacher.ratingCount} 条评�?,
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: RankingTokens.subColor(isDark),

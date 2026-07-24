@@ -89,8 +89,7 @@ class _WaterSectionDisplayEditScreenState
         section.coverSquareUrl.isNotEmpty ? section.coverSquareUrl : null;
     _avatarUrl = section.avatarUrl.isNotEmpty ? section.avatarUrl : null;
 
-    // 添加监听，为了实时预览
-    _titleController.addListener(_onFieldChanged);
+    // 添加监听，为了实时预�?    _titleController.addListener(_onFieldChanged);
     _subtitleController.addListener(_onFieldChanged);
     _descriptionController.addListener(_onFieldChanged);
     _publishActionController.addListener(_onFieldChanged);
@@ -213,15 +212,15 @@ class _WaterSectionDisplayEditScreenState
       final sourcePath = picked.path;
       final portraitUrl = await _cropAndUpload(sourcePath, '裁剪手机版块背景 (3:4)',
           const CropAspectRatio(ratioX: 3, ratioY: 4));
-      if (portraitUrl == null) throw Exception('取消或失败');
+      if (portraitUrl == null) throw Exception('取消或失�?);
 
       final landscapeUrl = await _cropAndUpload(sourcePath, '裁剪横向封面 (16:9)',
           const CropAspectRatio(ratioX: 16, ratioY: 9));
-      if (landscapeUrl == null) throw Exception('取消或失败');
+      if (landscapeUrl == null) throw Exception('取消或失�?);
 
       final squareUrl = await _cropAndUpload(sourcePath, '裁剪方形封面 (1:1)',
           const CropAspectRatio(ratioX: 1, ratioY: 1));
-      if (squareUrl == null) throw Exception('取消或失败');
+      if (squareUrl == null) throw Exception('取消或失�?);
 
       if (mounted) {
         setState(() {
@@ -233,7 +232,7 @@ class _WaterSectionDisplayEditScreenState
         _showSnack('三组封面图已上传，保存后生效');
       }
     } catch (e) {
-      if (mounted) _showSnack('上传中断或失败: $e');
+      if (mounted) _showSnack('上传中断或失�? $e');
     } finally {
       if (mounted) setState(() => _isUploadingCover = false);
     }
@@ -249,7 +248,7 @@ class _WaterSectionDisplayEditScreenState
     try {
       final avatarUrl = await _cropAndUpload(picked.path, '裁剪版块头像 (1:1)',
           const CropAspectRatio(ratioX: 1, ratioY: 1));
-      if (avatarUrl == null) throw Exception('取消或失败');
+      if (avatarUrl == null) throw Exception('取消或失�?);
 
       if (mounted) {
         final provider = context.read<WaterSectionProvider>();
@@ -260,11 +259,11 @@ class _WaterSectionDisplayEditScreenState
           setState(() {
             _pendingIconReview = review;
           });
-          _showSnack('图标审核申请已提交，等待管理员审核');
+          _showSnack('图标审核申请已提交，等待管理员审�?);
         }
       }
     } catch (e) {
-      if (mounted) _showSnack('上传中断或失败: $e');
+      if (mounted) _showSnack('上传中断或失�? $e');
     } finally {
       if (mounted) setState(() => _isUploadingAvatar = false);
     }
@@ -315,11 +314,11 @@ class _WaterSectionDisplayEditScreenState
     }
     if (_colorHex.isNotEmpty &&
         !RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(_colorHex)) {
-      _showSnack('颜色必须为空或符合 #RRGGBB');
+      _showSnack('颜色必须为空或符�?#RRGGBB');
       return;
     }
     if (questions.length > 10) {
-      _showSnack('引导问题最多 10 条');
+      _showSnack('引导问题最�?10 �?);
       return;
     }
 
@@ -350,7 +349,7 @@ class _WaterSectionDisplayEditScreenState
     setState(() => _isSubmitting = false);
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已保存版块展示设置')),
+        const SnackBar(content: Text('已保存版块展示设�?)),
       );
       Navigator.pop(context, true);
     } else {
@@ -448,7 +447,7 @@ class _WaterSectionDisplayEditScreenState
         _titleController.text.isNotEmpty ? _titleController.text : '校园生活';
     final subtitle = _subtitleController.text.isNotEmpty
         ? _subtitleController.text
-        : '日常、宿舍、食堂、校园见闻';
+        : '日常、宿舍、食堂、校园见�?;
     final desc = _descriptionController.text.isNotEmpty
         ? _descriptionController.text
         : '分享校园日常...';
@@ -617,7 +616,7 @@ class _WaterSectionDisplayEditScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '头像更新审核中',
+                        '头像更新审核�?,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -627,7 +626,7 @@ class _WaterSectionDisplayEditScreenState
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '您有一条更换版块头像的申请正在等待管理员审核。',
+                        '您有一条更换版块头像的申请正在等待管理员审核�?,
                         style: TextStyle(
                           fontSize: 12,
                           color:
@@ -697,7 +696,7 @@ class _WaterSectionDisplayEditScreenState
                               width: 14,
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('更换新头像', style: TextStyle(fontSize: 13)),
+                          : const Text('更换新头�?, style: TextStyle(fontSize: 13)),
                     ),
                   ],
                 ),
@@ -706,9 +705,8 @@ class _WaterSectionDisplayEditScreenState
           ),
         const SizedBox(height: 20),
 
-        // 背景图
-        Text(
-          '版块背景图',
+        // 背景�?        Text(
+          '版块背景�?,
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -761,7 +759,7 @@ class _WaterSectionDisplayEditScreenState
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              '建议上传 16:9 或 3:4，系统自动适配',
+              '建议上传 16:9 �?3:4，系统自动适配',
               style: TextStyle(
                   fontSize: 12,
                   color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
@@ -799,8 +797,7 @@ class _WaterSectionDisplayEditScreenState
         ),
         const SizedBox(height: 20),
 
-        // 主题色
-        Text(
+        // 主题�?        Text(
           '主题颜色',
           style: TextStyle(
             fontSize: 14,
@@ -863,7 +860,7 @@ class _WaterSectionDisplayEditScreenState
         const SizedBox(height: 12),
         TextField(
           controller: _subtitleController,
-          decoration: _inputDecoration('副标题', isDark: isDark),
+          decoration: _inputDecoration('副标�?, isDark: isDark),
         ),
         const SizedBox(height: 12),
         TextField(
@@ -899,7 +896,7 @@ class _WaterSectionDisplayEditScreenState
 
   Widget _buildPublishEmptyCard(bool isDark) {
     return _buildCard(
-      title: '发布与空状态',
+      title: '发布与空状�?,
       isDark: isDark,
       children: [
         TextField(
@@ -909,13 +906,13 @@ class _WaterSectionDisplayEditScreenState
         const SizedBox(height: 12),
         TextField(
           controller: _emptyTitleController,
-          decoration: _inputDecoration('空状态标题', isDark: isDark),
+          decoration: _inputDecoration('空状态标�?, isDark: isDark),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _emptyDescriptionController,
           maxLines: 2,
-          decoration: _inputDecoration('空状态描述', isDark: isDark),
+          decoration: _inputDecoration('空状态描�?, isDark: isDark),
         ),
         const SizedBox(height: 12),
         TextField(
@@ -930,13 +927,13 @@ class _WaterSectionDisplayEditScreenState
   Widget _buildPromptQuestionsCard(bool isDark) {
     return _buildCard(
       title: '引导问题',
-      subtitle: '每行一个，展示在空状态或发帖引导中',
+      subtitle: '每行一个，展示在空状态或发帖引导�?,
       isDark: isDark,
       children: [
         TextField(
           controller: _starterQuestionsController,
           maxLines: 6,
-          decoration: _inputDecoration('每行输入一个问题', isDark: isDark).copyWith(
+          decoration: _inputDecoration('每行输入一个问�?, isDark: isDark).copyWith(
             hintText: '食堂哪家强？\n宿舍怎么样？',
           ),
         ),

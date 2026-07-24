@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../config/api_constants.dart';
-import '../../main.dart';
+import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
 import '../../services/exam_paper_service.dart';
 import '../../widgets/cached_avatar.dart';
@@ -149,7 +149,7 @@ class _ExamPaperDetailScreenState extends State<ExamPaperDetailScreen> {
                       label: '发布时间',
                       value: DateFormat('yyyy-MM-dd HH:mm').format(publishedAt),
                     ),
-                    _InfoRow(label: '下载量', value: '$_downloadCount'),
+                    _InfoRow(label: '下载�?, value: '$_downloadCount'),
                   ],
                 ),
               ),
@@ -179,7 +179,7 @@ class _ExamPaperDetailScreenState extends State<ExamPaperDetailScreen> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            '贡献者 · Lv.${paper.contributor.level}',
+                            '贡献�?· Lv.${paper.contributor.level}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
@@ -198,7 +198,7 @@ class _ExamPaperDetailScreenState extends State<ExamPaperDetailScreen> {
                     child: OutlinedButton.icon(
                       onPressed: _preview,
                       icon: const Icon(Icons.visibility_outlined),
-                      label: const Text('应用内预览'),
+                      label: const Text('应用内预�?),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -212,7 +212,7 @@ class _ExamPaperDetailScreenState extends State<ExamPaperDetailScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.download_outlined),
-                      label: Text(_downloading ? '下载中…' : '下载 / 分享'),
+                      label: Text(_downloading ? '下载中�? : '下载 / 分享'),
                     ),
                   ),
                 ],

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../main.dart';
+import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/exam_paper_service.dart';
@@ -208,13 +208,13 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('试卷审核与管理'),
+          title: const Text('试卷审核与管�?),
           backgroundColor: Colors.transparent,
           bottom: TabBar(
             controller: _tabController,
             tabs: [
-              Tab(text: '待审核 (${_pending.length})'),
-              Tab(text: '已发布 (${_published.length})'),
+              Tab(text: '待审�?(${_pending.length})'),
+              Tab(text: '已发�?(${_published.length})'),
             ],
           ),
         ),
@@ -273,7 +273,7 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
                   controller: _contributorController,
                   onChanged: _onFilterChanged,
                   decoration: const InputDecoration(
-                    hintText: '搜索投稿人',
+                    hintText: '搜索投稿�?,
                     prefixIcon: Icon(Icons.person_search_outlined, size: 20),
                   ),
                 ),
@@ -287,8 +287,8 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
               value: _sort,
               borderRadius: BorderRadius.circular(10),
               items: const [
-                DropdownMenuItem(value: 'oldest', child: Text('最早提交')),
-                DropdownMenuItem(value: 'latest', child: Text('最新提交')),
+                DropdownMenuItem(value: 'oldest', child: Text('最早提�?)),
+                DropdownMenuItem(value: 'latest', child: Text('最新提�?)),
               ],
               onChanged: (value) {
                 if (value == null) return;
@@ -331,8 +331,8 @@ class _AdminExamPapersScreenState extends State<AdminExamPapersScreen>
                 icon: pending
                     ? Icons.task_alt_outlined
                     : Icons.library_books_outlined,
-                title: pending ? '当前没有待处理投稿' : '暂无已发布试卷',
-                message: pending ? '新的投稿会显示在这里。' : '发布后的试卷会显示在这里。',
+                title: pending ? '当前没有待处理投�? : '暂无已发布试�?,
+                message: pending ? '新的投稿会显示在这里�? : '发布后的试卷会显示在这里�?,
               ),
             ),
           ],

@@ -96,8 +96,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('放弃编辑？'),
-        content: const Text('当前填写的内容还没有发布，返回后会丢失。'),
+        title: const Text('放弃编辑�?),
+        content: const Text('当前填写的内容还没有发布，返回后会丢失�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -120,11 +120,11 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   List<String> get _availableMarketTags {
     switch (_postType) {
       case 'sell':
-        return ['自提', '可送宿舍楼下', '可小刀', '急出'];
+        return ['自提', '可送宿舍楼�?, '可小刀', '急出'];
       case 'buy':
-        return ['自提', '可上门', '长期求', '急需'];
+        return ['自提', '可上�?, '长期�?, '急需'];
       case 'proxy':
-        return ['可跑腿', '当日完成', '可议价'];
+        return ['可跑�?, '当日完成', '可议�?];
       default:
         return const [];
     }
@@ -235,7 +235,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   String get _contentHint {
     switch (_postType) {
       case 'exposure':
-        return '详细描述被骗经过，上传截图证据...';
+        return '详细描述被骗经过，上传截图证�?..';
       case 'lost':
         return '描述丢失物品、时间、地点和联系方式...';
       case 'found':
@@ -243,7 +243,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       case 'proxy':
         return '描述要办的事情、时间地点、预算和具体要求...';
       default:
-        return '描述物品成色、使用情况、瑕疵、配件和交易要求……';
+        return '描述物品成色、使用情况、瑕疵、配件和交易要求…�?;
     }
   }
 
@@ -320,7 +320,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (!_showsTitleField) return null;
     final v = (value ?? '').trim();
     if (v.isEmpty) {
-      return '请输入$_titleLabel';
+      return '请输�?_titleLabel';
     }
     return null;
   }
@@ -329,19 +329,19 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (!_showsPriceField) return null;
     final v = (value ?? '').trim();
     if (v.isEmpty) {
-      return _postType == 'exposure' ? null : '请输入价格';
+      return _postType == 'exposure' ? null : '请输入价�?;
     }
     final price = double.tryParse(v);
-    if (price == null) return '请输入合法价格';
+    if (price == null) return '请输入合法价�?;
     if (price < 0) return '价格不能小于 0';
     return null;
   }
 
   String? _validateContent(String? value) {
     final v = (value ?? '').trim();
-    if (v.isEmpty) return '请输入详细描述';
+    if (v.isEmpty) return '请输入详细描�?;
     if (v.length > _maxDescriptionLength) {
-      return '描述不能超过 $_maxDescriptionLength 字';
+      return '描述不能超过 $_maxDescriptionLength �?;
     }
     return null;
   }
@@ -351,10 +351,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (_contactType.isEmpty && contact.isEmpty) return null;
     if (_contactType.isEmpty) return '请选择联系方式类型';
     if (contact.isEmpty) return marketContactInputHint(_contactType);
-    if (contact.runes.length > 100) return '联系方式不能超过 100 个字符';
+    if (contact.runes.length > 100) return '联系方式不能超过 100 个字�?;
     if (_contactType == marketContactTypeOther &&
         (!_isEditing || contact != widget.editingPost!.contact)) {
-      return '请重新选择微信、QQ或电话';
+      return '请重新选择微信、QQ或电�?;
     }
     return null;
   }
@@ -415,7 +415,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('毕业用户仅可发布普通帖子，不能在集市发帖'),
+            content: Text('毕业用户仅可发布普通帖子，不能在集市发�?),
             backgroundColor: Colors.red,
           ),
         );
@@ -505,7 +505,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('发布失败：$e'),
+            content: Text('发布失败�?e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -732,7 +732,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               field: _PublishField.title,
               label: _titleLabel,
               controller: _titleController,
-              hint: '请输入$_titleLabel',
+              hint: '请输�?_titleLabel',
               validator: _validateTitle,
             ),
           if (_showsTitleField && _showsPriceField)
@@ -742,7 +742,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               field: _PublishField.price,
               label: _priceLabel,
               controller: _priceController,
-              hint: '请输入价格',
+              hint: '请输入价�?,
               prefixText: '¥ ',
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
@@ -843,7 +843,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
                 children: [
                   _buildDescriptionChip('自提', Icons.shopping_bag_outlined),
                   const SizedBox(width: 6),
-                  _buildDescriptionChip('可送宿舍楼下', Icons.delivery_dining),
+                  _buildDescriptionChip('可送宿舍楼�?, Icons.delivery_dining),
                   const SizedBox(width: 6),
                   _buildDescriptionChip('可小刀', Icons.local_offer_outlined),
                   const SizedBox(width: 6),
@@ -1011,7 +1011,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               ),
               const SizedBox(width: 4),
               Text(
-                _postType == 'exposure' ? '曝光举报（已选中）' : '发现违规或诈骗？前往曝光举报',
+                _postType == 'exposure' ? '曝光举报（已选中�? : '发现违规或诈骗？前往曝光举报',
                 style: TextStyle(
                   fontSize: 13,
                   color: _postType == 'exposure'
@@ -1145,7 +1145,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           active: needsAttention,
           controller: _shakeController,
           child: const Text(
-            '联系方式（选填）',
+            '联系方式（选填�?,
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
         ),
@@ -1248,7 +1248,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   // ---------------------------------------------------------------------------
-  // Shared plain input decoration (no border — used inside containers)
+  // Shared plain input decoration (no border �?used inside containers)
   // ---------------------------------------------------------------------------
 
   Widget _buildRequiredLabel(String text, _PublishField field) {

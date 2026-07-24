@@ -105,8 +105,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                   controller: titleCtrl,
                   decoration: const InputDecoration(
                     labelText: '公告标题',
-                    hintText: '例如：校园社区使用规范更新',
-                    helperText: '显示在首页公告卡片的标题位置。',
+                    hintText: '例如：校园社区使用规范更�?,
+                    helperText: '显示在首页公告卡片的标题位置�?,
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -117,7 +117,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                   decoration: const InputDecoration(
                     labelText: '公告正文',
                     hintText: '填写通知详情、执行时间和注意事项',
-                    helperText: '支持完整说明公告事项，发布后所有用户可见。',
+                    helperText: '支持完整说明公告事项，发布后所有用户可见�?,
                     helperMaxLines: 2,
                     border: OutlineInputBorder(),
                   ),
@@ -137,15 +137,15 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                 DropdownButtonFormField<String>(
                   value: status,
                   decoration: const InputDecoration(
-                    labelText: '发布状态',
+                    labelText: '发布状�?,
                     border: OutlineInputBorder(),
                     contentPadding:
                         EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   ),
                   items: const [
                     DropdownMenuItem(value: 'draft', child: Text('草稿')),
-                    DropdownMenuItem(value: 'published', child: Text('已发布')),
-                    DropdownMenuItem(value: 'archived', child: Text('已归档')),
+                    DropdownMenuItem(value: 'published', child: Text('已发�?)),
+                    DropdownMenuItem(value: 'archived', child: Text('已归�?)),
                   ],
                   onChanged: (v) {
                     if (v != null) {
@@ -179,15 +179,15 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                 DropdownButtonFormField<String>(
                   value: priority,
                   decoration: const InputDecoration(
-                    labelText: '优先级',
+                    labelText: '优先�?,
                     border: OutlineInputBorder(),
                     contentPadding:
                         EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'normal', child: Text('普通')),
+                    DropdownMenuItem(value: 'normal', child: Text('普�?)),
                     DropdownMenuItem(value: 'important', child: Text('重要')),
-                    DropdownMenuItem(value: 'urgent', child: Text('紧急')),
+                    DropdownMenuItem(value: 'urgent', child: Text('紧�?)),
                   ],
                   onChanged: (v) {
                     if (v != null) {
@@ -274,7 +274,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                   value: includeNewUsers,
                   contentPadding: EdgeInsets.zero,
                   title: const Text('向公告发布后注册的新用户展示'),
-                  subtitle: const Text('开启后，新注册用户也能看到此公告'),
+                  subtitle: const Text('开启后，新注册用户也能看到此公�?),
                   onChanged: (value) async {
                     setDialogState(() => includeNewUsers = value);
                     await saveDraft();
@@ -331,7 +331,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(isEditing ? '公告已更新' : '公告已发布'),
+              content: Text(isEditing ? '公告已更�? : '公告已发�?),
               backgroundColor: Colors.green,
             ),
           );
@@ -362,7 +362,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
         break;
       default:
         c = Colors.green;
-        label = '已发布';
+        label = '已发�?;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -383,7 +383,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     switch (p) {
       case 'urgent':
         c = Colors.red;
-        label = '紧急';
+        label = '紧�?;
         break;
       case 'important':
         c = Colors.orange;
@@ -391,7 +391,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
         break;
       default:
         c = Colors.blue;
-        label = '普通';
+        label = '普�?;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -513,8 +513,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(a['is_pinned'] == true
-                                          ? '已取消置顶'
-                                          : '已置顶公告'),
+                                          ? '已取消置�?
+                                          : '已置顶公�?),
                                       backgroundColor: Colors.green,
                                     ),
                                   );
@@ -528,7 +528,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                        content: Text('公告已删除'),
+                                        content: Text('公告已删�?),
                                         backgroundColor: Colors.green),
                                   );
                                   _refresh();

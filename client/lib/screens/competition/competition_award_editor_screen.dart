@@ -151,7 +151,7 @@ class _CompetitionAwardEditorScreenState
       if (_skills.length >= 12) {
         AppFeedback.showSnackBar(
           context,
-          '技能标签最多选择 12 个',
+          '技能标签最多选择 12 �?,
           isError: true,
         );
         return;
@@ -165,7 +165,7 @@ class _CompetitionAwardEditorScreenState
     if (!_manualCompetition && _competitionEventId == null) {
       AppFeedback.showSnackBar(
         context,
-        '请选择目录赛事，或切换为手动填写',
+        '请选择目录赛事，或切换为手动填�?,
         isError: true,
       );
       return;
@@ -174,7 +174,7 @@ class _CompetitionAwardEditorScreenState
     if (year == null || year < 2000 || year > DateTime.now().year + 1) {
       AppFeedback.showSnackBar(
         context,
-        '比赛年份应在 2000 到 ${DateTime.now().year + 1} 之间',
+        '比赛年份应在 2000 �?${DateTime.now().year + 1} 之间',
         isError: true,
       );
       return;
@@ -274,7 +274,7 @@ class _CompetitionAwardEditorScreenState
                           DropdownMenuItem(
                             value: _competitionEventId,
                             child: Text(
-                              '${widget.initial?.competitionTitle ?? '原关联赛事'}（目录中不可用）',
+                              '${widget.initial?.competitionTitle ?? '原关联赛�?}（目录中不可用）',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -309,7 +309,7 @@ class _CompetitionAwardEditorScreenState
                             },
                     ),
                   const SizedBox(height: 12),
-                  _textField(_trackController, '赛道（选填）',
+                  _textField(_trackController, '赛道（选填�?,
                       maxLength: 100, enabled: !_coreLocked),
                   const SizedBox(height: 12),
                   _textField(_yearController, '比赛年份',
@@ -319,14 +319,14 @@ class _CompetitionAwardEditorScreenState
               ),
             ),
             _section(
-              '结果与贡献',
+              '结果与贡�?,
               isDark,
               Column(
                 children: [
                   _textField(_awardController, '奖项名称',
                       maxLength: 100, enabled: !_coreLocked),
                   const SizedBox(height: 12),
-                  _textField(_awardLevelController, '奖项级别（选填）',
+                  _textField(_awardLevelController, '奖项级别（选填�?,
                       maxLength: 50, enabled: !_coreLocked),
                   const SizedBox(height: 12),
                   _dropdown('竞赛阶段', _stage, competitionAwardStageLabels,
@@ -337,13 +337,13 @@ class _CompetitionAwardEditorScreenState
                       (value) => setState(() => _role = value),
                       enabled: !_coreLocked),
                   const SizedBox(height: 12),
-                  _textField(_contributionController, '贡献描述（选填）',
+                  _textField(_contributionController, '贡献描述（选填�?,
                       maxLength: 1000, maxLines: 4, enabled: !_coreLocked),
                 ],
               ),
             ),
             _section(
-              '技能标签',
+              '技能标�?,
               isDark,
               Wrap(
                 spacing: 8,
@@ -376,7 +376,7 @@ class _CompetitionAwardEditorScreenState
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.upload_file_outlined),
-                    label: Text(_uploading ? '上传中' : '添加图片材料'),
+                    label: Text(_uploading ? '上传�? : '添加图片材料'),
                   ),
                   if (_evidenceFileIds.isNotEmpty) ...[
                     const SizedBox(height: 8),
@@ -395,7 +395,7 @@ class _CompetitionAwardEditorScreenState
                     ),
                   ],
                   const SizedBox(height: 6),
-                  Text('材料仅用于后续平台核验，不会自动公开。最多 6 份。',
+                  Text('材料仅用于后续平台核验，不会自动公开。最�?6 份�?,
                       style: TextStyle(
                           fontSize: 12,
                           color: CompetitionUiTokens.subColor(isDark))),
@@ -413,7 +413,7 @@ class _CompetitionAwardEditorScreenState
                       competitionAwardVisibilityLabels,
                       (value) => setState(() => _visibility = value)),
                   const SizedBox(height: 8),
-                  Text('当前版本仅保存此设置，暂不接入公开主页或组队推荐。',
+                  Text('当前版本仅保存此设置，暂不接入公开主页或组队推荐�?,
                       style: TextStyle(
                           fontSize: 12,
                           color: CompetitionUiTokens.subColor(isDark))),
@@ -437,7 +437,7 @@ class _CompetitionAwardEditorScreenState
                       dimension: 17,
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.save_outlined),
-              label: Text(_saving ? '保存中' : '保存'),
+              label: Text(_saving ? '保存�? : '保存'),
             ),
           ),
         ),
@@ -467,9 +467,9 @@ class _CompetitionAwardEditorScreenState
           Expanded(
             child: Text(
               locked
-                  ? '当前状态：$status。核心信息和证明材料暂不可修改，仅可调整可见范围。'
+                  ? '当前状态：$status。核心信息和证明材料暂不可修改，仅可调整可见范围�?
                   : widget.initial?.verificationStatus == 'rejected'
-                      ? '当前状态：$status。可修改信息和材料，保存后再重新提交核验。'
+                      ? '当前状态：$status。可修改信息和材料，保存后再重新提交核验�?
                       : '当前状态：$status',
               style: TextStyle(
                 fontSize: 13,
@@ -519,7 +519,7 @@ class _CompetitionAwardEditorScreenState
           if ((controller == _titleController && _manualCompetition) ||
               controller == _awardController ||
               controller == _yearController) {
-            if ((value ?? '').trim().isEmpty) return '请填写$label';
+            if ((value ?? '').trim().isEmpty) return '请填�?label';
           }
           return null;
         },

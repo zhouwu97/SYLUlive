@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../main.dart';
+import '../../app_bootstrap.dart';
 import '../../models/exam_paper.dart';
 import '../../services/exam_paper_service.dart';
 import '../../widgets/glass_container.dart';
@@ -112,7 +112,7 @@ class _ExamPaperAdminEditorScreenState
       _showMessage('下架理由不能为空');
       return;
     }
-    final confirmed = await _confirm('确认下架并删除该 PDF 吗？经验不会追回。');
+    final confirmed = await _confirm('确认下架并删除该 PDF 吗？经验不会追回�?);
     if (confirmed != true) return;
     await _run(
       () => widget.service.unpublish(id: widget.paper.id, reason: reason),
@@ -123,7 +123,7 @@ class _ExamPaperAdminEditorScreenState
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('请确认'),
+        title: const Text('请确�?),
         content: Text(content),
         actions: [
           TextButton(
@@ -171,7 +171,7 @@ class _ExamPaperAdminEditorScreenState
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: Text(_isPending ? '审核试卷' : '管理已发布试卷'),
+          title: Text(_isPending ? '审核试卷' : '管理已发布试�?),
           backgroundColor: Colors.transparent,
           actions: [
             IconButton(
@@ -194,10 +194,10 @@ class _ExamPaperAdminEditorScreenState
                     TextFormField(
                       controller: _courseController,
                       maxLength: 100,
-                      decoration: const InputDecoration(labelText: '课程名'),
+                      decoration: const InputDecoration(labelText: '课程�?),
                       onChanged: (_) => setState(() {}),
                       validator: (value) =>
-                          (value?.trim().isEmpty ?? true) ? '课程名不能为空' : null,
+                          (value?.trim().isEmpty ?? true) ? '课程名不能为�? : null,
                     ),
                     DropdownButtonFormField<String>(
                       initialValue: _year,
@@ -276,7 +276,7 @@ class _ExamPaperAdminEditorScreenState
                   maxLength: 500,
                   maxLines: 4,
                   decoration: InputDecoration(
-                    labelText: _isPending ? '审核理由（通过可选，拒绝必填）' : '下架理由（下架时必填）',
+                    labelText: _isPending ? '审核理由（通过可选，拒绝必填�? : '下架理由（下架时必填�?,
                     alignLabelWithHint: true,
                   ),
                 ),
@@ -299,7 +299,7 @@ class _ExamPaperAdminEditorScreenState
                       child: FilledButton.icon(
                         onPressed: _approve,
                         icon: const Icon(Icons.check),
-                        label: const Text('通过并奖励'),
+                        label: const Text('通过并奖�?),
                       ),
                     ),
                   ],
@@ -312,7 +312,7 @@ class _ExamPaperAdminEditorScreenState
                       child: FilledButton.icon(
                         onPressed: _savePublished,
                         icon: const Icon(Icons.save_outlined),
-                        label: const Text('保存元数据'),
+                        label: const Text('保存元数�?),
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -322,7 +322,7 @@ class _ExamPaperAdminEditorScreenState
                         onPressed: _unpublish,
                         icon: const Icon(Icons.archive_outlined,
                             color: Colors.redAccent),
-                        label: const Text('填写理由后下架'),
+                        label: const Text('填写理由后下�?),
                       ),
                     ),
                   ],

@@ -126,16 +126,16 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         post.marketTags.isNotEmpty;
   }
 
-  /// 当前主页用户的 id，作为详情页作者跳转的来源锚点。
+  /// 当前主页用户�?id，作为详情页作者跳转的来源锚点�?
   int? get _profileUserId {
     return _user?.id ?? widget.userId ?? context.read<AuthProvider>().user?.id;
   }
 
-  /// 从个人主页统一打开帖子/商品详情。
+  /// 从个人主页统一打开帖子/商品详情�?
   ///
-  /// 进入详情后点头像的行为由来源决定：
-  /// - 点到当前主页用户自己：maybePop 返回来源主页，避免 UserHome(A)->Detail(A)->UserHome(A) 套娃。
-  /// - 点到其他用户：pushReplacement 进入对方主页，栈深度不增长，返回时回到来源主页。
+  /// 进入详情后点头像的行为由来源决定�?
+  /// - 点到当前主页用户自己：maybePop 返回来源主页，避�?UserHome(A)->Detail(A)->UserHome(A) 套娃�?
+  /// - 点到其他用户：pushReplacement 进入对方主页，栈深度不增长，返回时回到来源主页�?
   Future<void> _openProfilePostDetail(
     Post post, {
     bool isMarket = false,
@@ -154,7 +154,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
   String get _marketTabText {
     if (_currentTabIndex == 1) {
-      return '售出 $_marketSoldCount单';
+      return '售出 $_marketSoldCount�?;
     }
     return '商品 $_marketTotal';
   }
@@ -191,7 +191,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         ? const Color(0xFF111214)
         : Theme.of(context).scaffoldBackgroundColor;
 
-    // 标签栏和内容区共用的面板色
+    // 标签栏和内容区共用的面板�?
     final panelColor = isDark ? const Color(0xFF1A1B1E) : Colors.white;
 
     return LayoutBuilder(
@@ -235,7 +235,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 左侧资料栏
+          // 左侧资料�?
           SizedBox(
             width: width >= 1000 ? 380 : 320,
             child: CustomScrollView(
@@ -249,7 +249,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                         color: panelColor,
                         child: Column(
                           children: [
-                            // 顶部背景和资料堆叠
+                            // 顶部背景和资料堆�?
                             SizedBox(
                               height: 480,
                               child: Stack(
@@ -273,7 +273,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                     ),
                                   ),
 
-                                  // 左上角返回
+                                  // 左上角返�?
                                   Positioned(
                                     top: 12,
                                     left: 12,
@@ -399,7 +399,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   background: Stack(
                     fit: StackFit.expand,
                     children: [
-                      // 背景图
+                      // 背景�?
                       _buildProfileBackground(context, user),
 
                       // 下部渐暗遮罩
@@ -418,7 +418,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                         ),
                       ),
 
-                      // 顶部按钮行（返回 + 私信）
+                      // 顶部按钮行（返回 + 私信�?
                       Positioned(
                         top: MediaQuery.of(context).padding.top + 8,
                         left: 12,
@@ -447,7 +447,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                         ),
                       ),
 
-                      // 所有资料覆盖在背景图下半部分
+                      // 所有资料覆盖在背景图下半部�?
                       Positioned(
                         left: 20,
                         right: 20,
@@ -458,7 +458,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   ),
                 ),
 
-                // 底部圆角标签栏
+                // 底部圆角标签�?
                 bottom: PreferredSize(
                   preferredSize: const Size.fromHeight(46),
                   child: Container(
@@ -578,7 +578,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     );
   }
 
-  // ============ 主页背景图（单层原图，cover 裁切，无模糊）============
+  // ============ 主页背景图（单层原图，cover 裁切，无模糊�?===========
 
   Widget _buildProfileBackground(BuildContext context, User user) {
     if (user.background.isEmpty) {
@@ -623,7 +623,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     );
   }
 
-  // ============ 覆盖在背景上的个人资料 ============
+  // ============ 覆盖在背景上的个人资�?============
 
   Widget _buildProfileOverlay(BuildContext context, User user, bool isMe) {
     return Column(
@@ -737,7 +737,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           ],
         ),
 
-        // 统计数据：获赞、关注、粉丝
+        // 统计数据：获赞、关注、粉�?
         const SizedBox(height: 14),
         Row(
           children: [
@@ -794,7 +794,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     );
   }
 
-  // ============ 覆盖层辅助组件 ============
+  // ============ 覆盖层辅助组�?============
 
   Widget _buildOverlayButton({
     required String text,
@@ -824,7 +824,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   Widget _buildFollowButton(BuildContext context, User user) {
     if (user.isFollowing) {
       return _buildOverlayButton(
-        text: '已关注',
+        text: '已关�?,
         onPressed: () async {
           final success = await context.read<SocialProvider>().unfollow(
                 user.id,
@@ -901,7 +901,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     );
   }
 
-  // ---------------- 编辑资料悬浮窗 ----------------
+  // ---------------- 编辑资料悬浮�?----------------
   void _showEditSheet(BuildContext context, User user) {
     showDialog(
       context: context,
@@ -998,7 +998,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       compressQuality: 85,
       uiSettings: [
         AndroidUiSettings(
-          toolbarTitle: '调整背景图',
+          toolbarTitle: '调整背景�?,
           toolbarColor: Colors.black,
           toolbarWidgetColor: Colors.white,
           statusBarColor: Colors.black,
@@ -1006,7 +1006,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           lockAspectRatio: false,
         ),
         IOSUiSettings(
-          title: '调整背景图',
+          title: '调整背景�?,
           aspectRatioLockEnabled: false,
           resetAspectRatioEnabled: true,
         ),
@@ -1052,7 +1052,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(
-            const SnackBar(content: Text('背景图上传失败，请稍后重试')),
+            const SnackBar(content: Text('背景图上传失败，请稍后重�?)),
           );
         }
       }
@@ -1064,7 +1064,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(
-          const SnackBar(content: Text('背景图上传失败，请稍后重试')),
+          const SnackBar(content: Text('背景图上传失败，请稍后重�?)),
         );
       }
     } catch (e) {
@@ -1073,7 +1073,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(
-          const SnackBar(content: Text('背景图上传失败，请稍后重试')),
+          const SnackBar(content: Text('背景图上传失败，请稍后重�?)),
         );
       }
     } finally {
@@ -1104,7 +1104,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         Navigator.pop(context);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('资料已保存')));
+        ).showSnackBar(const SnackBar(content: Text('资料已保�?)));
       }
     } catch (e) {
       if (mounted) {
@@ -1150,7 +1150,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 拖动条
+              // 拖动�?
               Container(
                 width: 40,
                 height: 4,
@@ -1185,7 +1185,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                     children: [
                       const Icon(Icons.image, color: Colors.blue),
                       const SizedBox(width: 12),
-                      const Expanded(child: Text('更改主页背景图')),
+                      const Expanded(child: Text('更改主页背景�?)),
                       Icon(Icons.chevron_right, color: Colors.grey[500]),
                     ],
                   ),
@@ -1193,7 +1193,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               ),
               const SizedBox(height: 16),
 
-              // 竞赛经历是私有档案入口，不在公开主页直接展示。
+              // 竞赛经历是私有档案入口，不在公开主页直接展示�?
               InkWell(
                 key: const Key('profile-competition-award-entry'),
                 onTap: _isSaving
@@ -1238,7 +1238,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               ),
               const SizedBox(height: 16),
 
-              // 性别：上下布局，三段按钮独占整行，避免系统显示缩放时被挤换行。
+              // 性别：上下布局，三段按钮独占整行，避免系统显示缩放时被挤换行�?
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

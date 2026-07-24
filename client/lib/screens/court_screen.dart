@@ -17,7 +17,7 @@ class CourtScreen extends StatelessWidget {
             const SizedBox(height: 16),
             Text('申诉投票', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
-            const Text('请仔细阅读帖子内容和删除理由\n做出公正的判断', textAlign: TextAlign.center),
+            const Text('请仔细阅读帖子内容和删除理由\n做出公正的判�?, textAlign: TextAlign.center),
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,

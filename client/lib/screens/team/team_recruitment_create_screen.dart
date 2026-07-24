@@ -64,7 +64,7 @@ class _TeamRecruitmentCreateScreenState
     if (value.isEmpty || _roles.contains(value)) return;
     if (value.length > 20 || _roles.length >= 8) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('方向最多 8 项，每项不超过 20 字')));
+          .showSnackBar(const SnackBar(content: Text('方向最�?8 项，每项不超�?20 �?)));
       return;
     }
     setState(() {
@@ -198,7 +198,7 @@ class _TeamRecruitmentCreateScreenState
                 style: TeamUiTokens.primaryButtonStyle(isDark),
                 onPressed: submitting ? null : _submit,
                 child: Text(submitting
-                    ? '提交中…'
+                    ? '提交中�?
                     : (widget.initialValue == null ? '发布组队' : '保存修改')),
               ),
             ),
@@ -262,7 +262,7 @@ class _TeamRecruitmentCreateScreenState
                   maxLength: 100,
                   cursorColor: TeamUiTokens.accent(isDark),
                   decoration:
-                      inputDecoration.copyWith(hintText: '例如：数学建模国赛寻找队友'),
+                      inputDecoration.copyWith(hintText: '例如：数学建模国赛寻找队�?),
                   validator: (v) =>
                       (v ?? '').trim().length < 2 ? '标题至少 2 个字' : null,
                 ),
@@ -277,7 +277,7 @@ class _TeamRecruitmentCreateScreenState
                   maxLength: 5000,
                   cursorColor: TeamUiTokens.accent(isDark),
                   decoration:
-                      inputDecoration.copyWith(hintText: '介绍参赛目标、已有成员和计划……'),
+                      inputDecoration.copyWith(hintText: '介绍参赛目标、已有成员和计划…�?),
                   validator: (v) =>
                       (v ?? '').trim().length < 10 ? '说明至少 10 个字' : null,
                 ),
@@ -290,7 +290,7 @@ class _TeamRecruitmentCreateScreenState
                 Row(
                   children: [
                     const Expanded(
-                        child: Text('计划招募总人数', style: TextStyle(fontSize: 15))),
+                        child: Text('计划招募总人�?, style: TextStyle(fontSize: 15))),
                     IconButton(
                       onPressed: int.parse(_needed.text) > 1
                           ? () => setState(() => _needed.text =
@@ -311,7 +311,7 @@ class _TeamRecruitmentCreateScreenState
                 ),
                 if (widget.initialValue != null)
                   Text(
-                    '当前已加入 ${widget.initialValue!.acceptedCount} 人，修改后还缺 ${(int.parse(_needed.text) - widget.initialValue!.acceptedCount).clamp(0, 20)} 人',
+                    '当前已加�?${widget.initialValue!.acceptedCount} 人，修改后还�?${(int.parse(_needed.text) - widget.initialValue!.acceptedCount).clamp(0, 20)} �?,
                     style: TextStyle(
                         fontSize: 12, color: TeamUiTokens.subtitle(isDark)),
                   ),
@@ -376,7 +376,7 @@ class _TeamRecruitmentCreateScreenState
                         ),
                       Text(
                         _deadline == null
-                            ? '不设置'
+                            ? '不设�?
                             : '${_deadline!.year}-${_deadline!.month.toString().padLeft(2, '0')}-${_deadline!.day.toString().padLeft(2, '0')}',
                         style: TextStyle(color: TeamUiTokens.subtitle(isDark)),
                       ),
@@ -471,7 +471,7 @@ class _TeamRecruitmentCreateScreenState
             ),
             const SizedBox(height: 12),
             Text(
-              '提示：联系方式无需直接写在正文中，\n申请通过后可通过站内私信联系。',
+              '提示：联系方式无需直接写在正文中，\n申请通过后可通过站内私信联系�?,
               style:
                   TextStyle(fontSize: 12, color: TeamUiTokens.subtitle(isDark)),
             ),

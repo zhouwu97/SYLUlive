@@ -20,7 +20,7 @@ class MarketExposureScreen extends StatelessWidget {
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('曝光台'),
+        title: const Text('曝光�?),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),

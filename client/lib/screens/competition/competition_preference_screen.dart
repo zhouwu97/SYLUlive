@@ -133,7 +133,7 @@ class _CompetitionPreferenceScreenState
       if (!target.remove(value)) {
         if (target.length >= limit) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('最多选择 $limit 项')),
+            SnackBar(content: Text('最多选择 $limit �?)),
           );
           return;
         }
@@ -168,7 +168,7 @@ class _CompetitionPreferenceScreenState
       );
       setState(() => _applyPreference(saved));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('竞赛目标已保存')),
+        const SnackBar(content: Text('竞赛目标已保�?)),
       );
     } catch (error) {
       if (!mounted) return;
@@ -248,7 +248,7 @@ class _CompetitionPreferenceScreenState
                               isDark: isDark,
                             ),
                             _section(
-                              title: '你擅长或想提升的技能',
+                              title: '你擅长或想提升的技�?,
                               child: _plainChips(
                                   competitionSkillOptions,
                                   _skills,
@@ -257,13 +257,13 @@ class _CompetitionPreferenceScreenState
                               isDark: isDark,
                             ),
                             _section(
-                              title: '你更愿意承担的角色',
+                              title: '你更愿意承担的角�?,
                               child: _chips(competitionRoleLabels, _roles,
                                   (value) => _toggle(_roles, value, 3), isDark),
                               isDark: isDark,
                             ),
                             _section(
-                              title: '每周可投入时间',
+                              title: '每周可投入时�?,
                               child: _singleChoiceChips(
                                 competitionWeeklyHourLabels,
                                 _weeklyHours,
@@ -278,7 +278,7 @@ class _CompetitionPreferenceScreenState
                                 segments: const [
                                   ButtonSegment(value: true, label: Text('接受')),
                                   ButtonSegment(
-                                      value: false, label: Text('更偏好短期项目')),
+                                      value: false, label: Text('更偏好短期项�?)),
                                 ],
                                 selected: {_acceptLongTermTraining},
                                 onSelectionChanged: (value) => setState(() =>
@@ -289,7 +289,7 @@ class _CompetitionPreferenceScreenState
                             ),
                             _section(
                               title: '当前竞赛经验',
-                              subtitle: '仅用于偏好匹配，不作为获奖核验证据',
+                              subtitle: '仅用于偏好匹配，不作为获奖核验证�?,
                               child: _singleChoiceChips(
                                 competitionExperienceLabels,
                                 _experienceLevel,
@@ -300,13 +300,13 @@ class _CompetitionPreferenceScreenState
                               isDark: isDark,
                             ),
                             _section(
-                              title: '职业方向（选填）',
+                              title: '职业方向（选填�?,
                               child: TextField(
                                 controller: _careerController,
                                 maxLength: 80,
                                 maxLines: 1,
                                 decoration: const InputDecoration(
-                                  hintText: '例如：后端开发、机械设计、数据分析',
+                                  hintText: '例如：后端开发、机械设计、数据分�?,
                                   border: OutlineInputBorder(),
                                 ),
                               ),
@@ -333,7 +333,7 @@ class _CompetitionPreferenceScreenState
                                         strokeWidth: 2),
                                   )
                                 : const Icon(Icons.save_outlined),
-                            label: Text(_saving ? '保存中' : '保存'),
+                            label: Text(_saving ? '保存�? : '保存'),
                           ),
                         ),
                       ),
@@ -448,7 +448,7 @@ class _CompetitionPreferenceScreenState
           Icon(Icons.info_outline_rounded,
               size: 18, color: CompetitionUiTokens.warningColor(isDark)),
           const SizedBox(width: 8),
-          const Expanded(child: Text('“毕业补齐”仅表示你的参赛目标，不代表比赛一定可以获得毕业学分。')),
+          const Expanded(child: Text('“毕业补齐”仅表示你的参赛目标，不代表比赛一定可以获得毕业学分�?)),
         ],
       ),
     );

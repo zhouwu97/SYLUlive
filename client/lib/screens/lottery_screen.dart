@@ -131,7 +131,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final diff = target.difference(DateTime.now());
 
     if (diff <= Duration.zero) {
-      return '即将开奖';
+      return '即将开�?;
     }
 
     final days = diff.inDays;
@@ -140,14 +140,14 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final seconds = diff.inSeconds % 60;
 
     if (days > 0) {
-      return '$days天 $hours时 $minutes分';
+      return '$days�?$hours�?$minutes�?;
     }
 
     if (hours > 0) {
-      return '$hours时 $minutes分';
+      return '$hours�?$minutes�?;
     }
 
-    return '$minutes分 $seconds秒';
+    return '$minutes�?$seconds�?;
   }
 
   Future<void> _joinLottery() async {
@@ -156,7 +156,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
     try {
       final response = await _dio.post('/lottery/${_event!.id}/join');
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '参与成功！');
+      AppFeedback.showSnackBar(context, '参与成功�?);
       setState(() {
         _joined = true;
         _myWeight = response.data['weight'] ?? 0;
@@ -178,8 +178,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
     if (_event == null || _isSubmitting) return;
     final confirm = await AppFeedback.confirmDanger(
       context,
-      title: '手动开奖',
-      message: '确定要立即对该活动开奖吗？此操作不可逆，将立刻按权重抽取一名幸运儿。',
+      title: '手动开�?,
+      message: '确定要立即对该活动开奖吗？此操作不可逆，将立刻按权重抽取一名幸运儿�?,
     );
     if (!mounted) return;
     if (!confirm) return;
@@ -194,7 +194,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
-        AppFeedback.dioErrorMessage(e, fallback: '开奖失败'),
+        AppFeedback.dioErrorMessage(e, fallback: '开奖失�?),
         isError: true,
       );
       setState(() => _isSubmitting = false);
@@ -357,7 +357,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                 onPressed: _adminDraw,
                 icon: const Icon(Icons.flash_on, color: Colors.orange),
                 label: const Text(
-                  '管理员手动开奖',
+                  '管理员手动开�?,
                   style: TextStyle(color: Colors.orange),
                 ),
                 style: TextButton.styleFrom(
@@ -375,7 +375,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
             if (!isOngoing) ...[
               const SizedBox(height: 32),
               Text(
-                '已结束 · 感谢参与',
+                '已结�?· 感谢参与',
                 style: TextStyle(
                   fontSize: 13,
                   color: isDark ? Colors.white54 : const Color(0xFF7D8A97),
@@ -399,7 +399,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '开奖结果',
+            '开奖结�?,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -417,7 +417,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                         color: Color(0xFFF59E0B), size: 32),
                     const SizedBox(height: 12),
                     Text(
-                      '暂未开奖',
+                      '暂未开�?,
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -479,7 +479,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Text('中奖奖品：',
+                    Text('中奖奖品�?,
                         style: TextStyle(
                             fontSize: 14,
                             color: isDark
@@ -500,7 +500,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
             const Center(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 20),
-                child: Text('暂无中奖者', style: TextStyle(color: Colors.grey)),
+                child: Text('暂无中奖�?, style: TextStyle(color: Colors.grey)),
               ),
             ),
         ],
@@ -590,7 +590,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                         const Text('·', style: TextStyle(color: Colors.grey)),
                         const SizedBox(width: 8),
                         Text(
-                          isOngoing ? '进行中' : '已开奖',
+                          isOngoing ? '进行�? : '已开�?,
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -655,7 +655,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '$_participantCount 人',
+                      '$_participantCount �?,
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -670,7 +670,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isOngoing ? '距离开奖' : '开奖状态',
+                      isOngoing ? '距离开�? : '开奖状�?,
                       style: TextStyle(
                         fontSize: 13,
                         color:
@@ -679,7 +679,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      isOngoing ? _formatCountdown(event.drawTime) : '已结束',
+                      isOngoing ? _formatCountdown(event.drawTime) : '已结�?,
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -721,7 +721,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '已成功参与',
+                  '已成功参�?,
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -730,7 +730,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '当前等级权重：$_myWeight 份，开奖前按最新等级重算',
+                  '当前等级权重�?_myWeight 份，开奖前按最新等级重�?,
                   style: TextStyle(
                     fontSize: 12,
                     color: isDark ? Colors.white60 : const Color(0xFF747B82),
@@ -785,21 +785,21 @@ class _LotteryScreenState extends State<LotteryScreen> {
           const SizedBox(height: 16),
           _buildRuleRow(
             Icons.person_outline_rounded,
-            '每个账号仅可参与一次',
+            '每个账号仅可参与一�?,
             primary,
             textColor,
           ),
           const SizedBox(height: 12),
           _buildRuleRow(
             Icons.trending_up_rounded,
-            '用户等级就是抽奖权重，Lv.几就是几份权重',
+            '用户等级就是抽奖权重，Lv.几就是几份权�?,
             primary,
             textColor,
           ),
           const SizedBox(height: 12),
           _buildRuleRow(
             Icons.verified_user_outlined,
-            '系统按参与者权重随机抽取中奖者',
+            '系统按参与者权重随机抽取中奖�?,
             primary,
             textColor,
           ),

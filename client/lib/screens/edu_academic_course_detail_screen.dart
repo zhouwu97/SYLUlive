@@ -32,9 +32,9 @@ class EduAcademicCourseDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           _section(context, [
-            _row('最大成绩', course.maxGrade),
-            _row('原成绩', course.grade),
-            _row('补考', course.makeupGrade),
+            _row('最大成�?, course.maxGrade),
+            _row('原成�?, course.grade),
+            _row('补�?, course.makeupGrade),
             _row('重修', course.retakeGrade),
             _row('绩点', course.gpa?.toStringAsFixed(2)),
           ]),
@@ -43,8 +43,8 @@ class EduAcademicCourseDetailScreen extends StatelessWidget {
             _row('学分', course.credits.toStringAsFixed(1)),
             _row('课程性质', course.courseNature),
             _row('课程类别', course.courseCategory),
-            _row('学位课', course.isDegree ? '是' : '否'),
-            _row('课程号', course.courseCode.isEmpty ? null : course.courseCode),
+            _row('学位�?, course.isDegree ? '�? : '�?),
+            _row('课程�?, course.courseCode.isEmpty ? null : course.courseCode),
           ]),
           const SizedBox(height: 12),
           _section(context, [

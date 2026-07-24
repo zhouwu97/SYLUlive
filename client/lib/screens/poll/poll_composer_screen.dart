@@ -24,7 +24,7 @@ class PollComposerScreen extends StatefulWidget {
 class _PollComposerScreenState extends State<PollComposerScreen> {
   static const _accent = CampusTheme.primary;
   static const _categoryNames = {'campus_life': '校园生活', 'study': '学习', 'activity': '活动', 'other': '其他'};
-  static const _visibilityNames = {'always': '始终可见', 'after_vote': '投票后可见', 'after_end': '结束后可见'};
+  static const _visibilityNames = {'always': '始终可见', 'after_vote': '投票后可�?, 'after_end': '结束后可�?};
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _titleFocus = FocusNode();
@@ -122,7 +122,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   String? _validate() {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
-      setState(() => _titleError = '请输入投票标题');
+      setState(() => _titleError = '请输入投票标�?);
       _titleFocus.requestFocus();
       return _titleError;
     }
@@ -258,7 +258,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
           children: [
-            if (_rulesLocked) const _Notice(text: '已有用户参与，为保证公平，只能修改补充说明和图片。'),
+            if (_rulesLocked) const _Notice(text: '已有用户参与，为保证公平，只能修改补充说明和图片�?),
             Stack(
               alignment: Alignment.bottomRight,
               children: [
@@ -329,7 +329,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
             ),
             const SizedBox(height: 14),
             Row(children: [
-              Expanded(child: _sectionTitle('图片（最多 3 张）')),
+              Expanded(child: _sectionTitle('图片（最�?3 张）')),
               Text('${_existingImages.length + _newImages.length}/3',
                   style: const TextStyle(fontSize: 13, color: CampusTheme.subText)),
             ]),
@@ -486,10 +486,10 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                                 (_optionControllers.length - 1).clamp(1, 9),
                                 (index) => index + 2)
                             .map((value) => PopupMenuItem(
-                                value: value, child: Text('$value 项', style: const TextStyle(fontSize: 14))))
+                                value: value, child: Text('$value �?, style: const TextStyle(fontSize: 14))))
                             .toList(),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Text('${_maxChoices.clamp(2, _optionControllers.length)} 项', style: const TextStyle(fontSize: 14)),
+                          Text('${_maxChoices.clamp(2, _optionControllers.length)} �?, style: const TextStyle(fontSize: 14)),
                           const SizedBox(width: 4),
                           const Icon(Icons.chevron_right, size: 20, color: CampusTheme.subText),
                         ]),
@@ -515,10 +515,10 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 1, child: Text('1 小时')),
-                        PopupMenuItem(value: 24, child: Text('1 天')),
-                        PopupMenuItem(value: 72, child: Text('3 天')),
-                        PopupMenuItem(value: 168, child: Text('7 天')),
-                        PopupMenuItem(value: -1, child: Text('自定义')),
+                        PopupMenuItem(value: 24, child: Text('1 �?)),
+                        PopupMenuItem(value: 72, child: Text('3 �?)),
+                        PopupMenuItem(value: 168, child: Text('7 �?)),
+                        PopupMenuItem(value: -1, child: Text('自定�?)),
                       ],
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         Text(_durationLabel(), style: const TextStyle(fontSize: 14)),
@@ -571,7 +571,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
               children: [
                 Icon(Icons.security, size: 14, color: CampusTheme.primary),
                 SizedBox(width: 4),
-                Text('投票默认匿名，仅展示汇总结果',
+                Text('投票默认匿名，仅展示汇总结�?,
                     style: TextStyle(fontSize: 12, color: CampusTheme.subText)),
               ],
             ),
@@ -610,18 +610,18 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
       case 1:
         return '1 小时';
       case 24:
-        return '1 天';
+        return '1 �?;
       case 72:
-        return '3 天';
+        return '3 �?;
       case 168:
-        return '7 天';
+        return '7 �?;
       default:
-        return '自定义';
+        return '自定�?;
     }
   }
 
   String _formatDate(DateTime value) =>
-      '${value.month}月${value.day}日 ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+      '${value.month}�?{value.day}�?${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
   Widget _buildSelectionControl() {
     return Container(
@@ -634,8 +634,8 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildSegment('single', '单选', true),
-          _buildSegment('multiple', '多选', false),
+          _buildSegment('single', '单�?, true),
+          _buildSegment('multiple', '多�?, false),
         ],
       ),
     );

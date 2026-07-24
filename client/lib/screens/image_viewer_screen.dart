@@ -119,7 +119,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         return _ImageBytesResult(bytes, '原图', ext, _guessMimeType(ext));
       }
     } catch (_) {
-      // 网络不可用
+      // 网络不可�?
     }
 
     // 尝试本地缓存
@@ -135,7 +135,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return _ImageBytesResult(visible, '重新编码图片', 'png', 'image/png');
     }
 
-    throw Exception('原图不可用，且本机没有找到缓存');
+    throw Exception('原图不可用，且本机没有找到缓�?);
   }
 
   Future<Uint8List> _normalizeImageBytes(List<int> bytes) async {
@@ -224,7 +224,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
           if (!mounted) return;
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('需要相册权限才能保存图片')));
+          ).showSnackBar(const SnackBar(content: Text('需要相册权限才能保存图�?)));
           if (mounted) setState(() => _isSaving = false);
           return;
         }

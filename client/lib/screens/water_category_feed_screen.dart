@@ -55,8 +55,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     super.initState();
     _sheetController = DraggableScrollableController();
 
-    // 常规入口已经携带完整的版块快照，首帧即可用于帖子查询。
-    // 权限、等级和远端版块配置属于辅助信息，不应阻塞帖子空态上屏。
+    // 常规入口已经携带完整的版块快照，首帧即可用于帖子查询�?
+    // 权限、等级和远端版块配置属于辅助信息，不应阻塞帖子空态上屏�?
     if (widget.section != null) {
       _resolvedSection = widget.section;
       _sectionReady = true;
@@ -98,7 +98,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       return;
     }
 
-    // 兼容直接传入旧分类、没有版块快照的调用方式。
+    // 兼容直接传入旧分类、没有版块快照的调用方式�?
     await _resolveSection(updateSortFromFreshSection: true);
     if (!mounted) return;
     await Future.wait<void>([
@@ -115,7 +115,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       await provider.loadSections();
     }
     if (!mounted) return;
-    // 进入版块页时强制刷新权限，避免切号或罢免后残留管理入口。
+    // 进入版块页时强制刷新权限，避免切号或罢免后残留管理入口�?
     final slug = widget.section?.slug ?? widget.category.value;
     await moderatorProvider.loadMyPermission(slug, forceRefresh: true);
     final fresh =
@@ -340,7 +340,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('知道了'),
+                  child: const Text('知道�?),
                 ),
               ],
             ),
@@ -436,7 +436,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(!isFollowed ? '已关注' : '已取消关注')),
+          SnackBar(content: Text(!isFollowed ? '已关�? : '已取消关�?)),
         );
       }
     } catch (e) {
@@ -446,7 +446,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           _optimisticIsFollowed = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败：$e')),
+          SnackBar(content: Text('操作失败�?e')),
         );
       }
     }
@@ -471,7 +471,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     const heroActionsGap = 18.0;
 
     // 默认状态只露出：图标、标题、副标题、等级条、关注行
-    // 不要露到“今日成长”和“版块说明”
+    // 不要露到“今日成长”和“版块说明�?
     const summaryHeight = 196.0;
     const sheetGap = 10.0;
 
@@ -514,7 +514,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── Layer 1: Hero（背景 + 版块信息 + 等级 + 频道卡）──
+              // ── Layer 1: Hero（背�?+ 版块信息 + 等级 + 频道卡）──
               SectionHeroHeader(
                 section: section,
                 accentColor: categoryColor,
@@ -542,7 +542,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               // ── Layer 3: 可拖拽圆角内容板 ──
               _buildContentSheet(section, categoryColor, isDark),
 
-              // ── Layer 4: 悬浮按钮组 ──
+              // ── Layer 4: 悬浮按钮�?──
               Positioned(
                 right: 20,
                 bottom: 24 + MediaQuery.paddingOf(context).bottom,
@@ -555,7 +555,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     );
   }
 
-  /// 顶部操作栏：返回、管理、发帖
+  /// 顶部操作栏：返回、管理、发�?
   Widget _buildTopActionsBar(Color categoryColor, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -570,13 +570,13 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     );
   }
 
-  /// DraggableScrollableSheet：圆角白板 + 排序/标签/帖子列表
+  /// DraggableScrollableSheet：圆角白�?+ 排序/标签/帖子列表
   ///
   /// 状态语义：
-  /// - 默认 [initialChildSize]：内容板停在关注行下方，盖住“今日成长”等展开卡片。
-  /// - 下拉 [minChildSize=0.30]：内容板收起到底部一小截，完整展示上方
-  ///   版块背景和 Hero 头部内容（含频道卡）。
-  /// - 上拉 [maxChildSize=0.94]：内容板展开到接近全屏，分类栏吸顶刷帖子。
+  /// - 默认 [initialChildSize]：内容板停在关注行下方，盖住“今日成长”等展开卡片�?
+  /// - 下拉 [minChildSize=0.30]：内容板收起到底部一小截，完整展示上�?
+  ///   版块背景�?Hero 头部内容（含频道卡）�?
+  /// - 上拉 [maxChildSize=0.94]：内容板展开到接近全屏，分类栏吸顶刷帖子�?
   Widget _buildContentSheet(
       WaterSection section, Color categoryColor, bool isDark) {
     // sheet 用略亮的暗色当作 elevated surface，与 background 0xFF0D1117 区分
@@ -602,12 +602,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         maxSheetSize,
       ],
       builder: (context, scrollController) {
-        // 存储 scrollController 供 _changeSort 滚动到顶部使用
+        // 存储 scrollController �?_changeSort 滚动到顶部使�?
         _sheetScrollController = scrollController;
 
         return Container(
-          // 关键：clipBehavior 让内部 pinned header 的纯色背景
-          // 被裁剪在外层圆角内，避免覆盖圆角造成“上方是方的”视觉问题
+          // 关键：clipBehavior 让内�?pinned header 的纯色背�?
+          // 被裁剪在外层圆角内，避免覆盖圆角造成“上方是方的”视觉问�?
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: sheetColor,
@@ -738,7 +738,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         controller: scrollController,
         physics: const ClampingScrollPhysics(),
         slivers: [
-          // 吸顶：小横条 + 排序/标签单行筛选
+          // 吸顶：小横条 + 排序/标签单行筛�?
           SliverPersistentHeader(
             pinned: true,
             delegate: _SheetPinnedHeaderDelegate(
@@ -807,7 +807,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                   padding: EdgeInsets.fromLTRB(0, 0, 0, listBottomPadding),
                   child: Center(
                     child: Text(
-                      '已经到底了',
+                      '已经到底�?,
                       style: TextStyle(
                         fontSize: 12,
                         color:
@@ -826,8 +826,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   /// sheet 吸顶头部：小横条 + 单行筛选栏
   ///
   /// 注意：颜色必须与 sheetColor 保持一致（dark: 0xFF171B24），否则
-  /// 吸顶时白色块会与 sheet 圆角形成色差，看起来像两块拼接。
-  /// 圆角由外层 Container 的 clipBehavior 负责，这里用纯色填充即可。
+  /// 吸顶时白色块会与 sheet 圆角形成色差，看起来像两块拼接�?
+  /// 圆角由外�?Container �?clipBehavior 负责，这里用纯色填充即可�?
   Widget _buildSheetPinnedHeader(
       bool isDark, Color categoryColor, WaterSection section) {
     return Container(
@@ -865,7 +865,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
             isDark: isDark,
             onFilterChanged: _changeFilter,
           ),
-          // 底部分隔线
+          // 底部分隔�?
           Container(
             height: 1,
             color: isDark
@@ -1079,28 +1079,28 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   String _emptyTitleFor(WaterSection section) {
     switch (section.slug) {
       case 'freshman_help':
-        return '还没有相关问题';
+        return '还没有相关问�?;
       case 'competition':
-        return '还没有竞赛内容';
+        return '还没有竞赛内�?;
       case 'campus_life':
-        return '这里还没有内容';
+        return '这里还没有内�?;
       default:
         if (section.emptyTitle.isNotEmpty &&
             !section.emptyTitle.contains('相关帖子')) {
           return section.emptyTitle;
         }
-        return '这里还没有内容';
+        return '这里还没有内�?;
     }
   }
 
   String _emptyDescriptionFor(WaterSection section) {
     switch (section.slug) {
       case 'freshman_help':
-        return '可以先问宿舍、报到、校园卡、军训这些新生最容易卡住的事。';
+        return '可以先问宿舍、报到、校园卡、军训这些新生最容易卡住的事�?;
       case 'competition':
-        return '可以发通知、找队友、写经验，也可以问学校认不认。';
+        return '可以发通知、找队友、写经验，也可以问学校认不认�?;
       case 'campus_life':
-        return '可以分享食堂、宿舍、校园卡、随手拍或校园见闻。';
+        return '可以分享食堂、宿舍、校园卡、随手拍或校园见闻�?;
       default:
         if (section.emptyDescription.isNotEmpty) {
           return section.emptyDescription;
@@ -1123,7 +1123,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 }
 
-/// sheet 吸顶头部 delegate：小横条 + 单行筛选栏固定在面板顶部
+/// sheet 吸顶头部 delegate：小横条 + 单行筛选栏固定在面板顶�?
 class _SheetPinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
   final double height;
   final Widget child;

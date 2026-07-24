@@ -115,9 +115,9 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   controller: resultController,
                   maxLines: 2,
                   decoration: InputDecoration(
-                    labelText: '处理结果（必填，不会删除内容）',
+                    labelText: '处理结果（必填，不会删除内容�?,
                     hintText: '例如：举报不成立；已警告发布者；内容无需处理',
-                    helperText: '用于管理员处理记录，用户内容会保留。',
+                    helperText: '用于管理员处理记录，用户内容会保留�?,
                     helperMaxLines: 2,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -131,7 +131,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   decoration: InputDecoration(
                     labelText: '删除理由（选填，填写后将删除内容）',
                     hintText: '例如：包含辱骂、人身攻击或违规联系方式',
-                    helperText: '留空表示不删除；填写后内容会被软删除，发布者申诉时可看到。',
+                    helperText: '留空表示不删除；填写后内容会被软删除，发布者申诉时可看到�?,
                     helperMaxLines: 3,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -178,7 +178,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         setState(() => _reports.removeWhere((r) => r['id'] == report['id']));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(action == 'handled' ? '已处理并删除' : '已忽略'),
+            content: Text(action == 'handled' ? '已处理并删除' : '已忽�?),
             backgroundColor: action == 'handled' ? Colors.green : Colors.grey,
           ),
         );
@@ -228,18 +228,18 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         padding: const EdgeInsets.all(12),
         children: [
           if (pending.isNotEmpty) ...[
-            _buildSectionHeader('待处理 (${pending.length})', Icons.warning_amber,
+            _buildSectionHeader('待处�?(${pending.length})', Icons.warning_amber,
                 Colors.orange, isDark),
             ...pending.map((r) => _buildReportCard(r, isDark)),
           ],
           if (pending.isEmpty)
             const Center(
                 child: Padding(
-                    padding: EdgeInsets.all(32), child: Text('暂无待处理举报'))),
+                    padding: EdgeInsets.all(32), child: Text('暂无待处理举�?))),
           if (handled.isNotEmpty) ...[
             const SizedBox(height: 16),
             _buildSectionHeader(
-                '已处理 (${handled.length})', Icons.history, Colors.grey, isDark),
+                '已处�?(${handled.length})', Icons.history, Colors.grey, isDark),
             ...handled.map((r) => _buildHandledReportCard(r, isDark)),
           ],
         ],
@@ -273,7 +273,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final reasonMap = {
       'spam': '垃圾广告',
       'porn': '色情低俗',
-      'violence': '暴力血腥',
+      'violence': '暴力血�?,
       'fake': '虚假信息',
       'privacy': '侵犯隐私',
       'harassment': '人身攻击',
@@ -346,7 +346,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                              content: Text('已忽略'),
+                              content: Text('已忽�?),
                               backgroundColor: Colors.grey),
                         );
                         setState(() => _reports
@@ -386,7 +386,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     final reasonMap = {
       'spam': '垃圾广告',
       'porn': '色情低俗',
-      'violence': '暴力血腥',
+      'violence': '暴力血�?,
       'fake': '虚假信息',
       'privacy': '侵犯隐私',
       'harassment': '人身攻击',
@@ -420,7 +420,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  isHandled ? '已删除' : '已忽略',
+                  isHandled ? '已删�? : '已忽�?,
                   style: TextStyle(
                     fontSize: 11,
                     color: isHandled ? Colors.green[300] : Colors.grey[500],

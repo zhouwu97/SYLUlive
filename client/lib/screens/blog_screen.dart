@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import '../platform/contracts/external_navigator.dart';
 
-// ---- 瑞士极客风博客页面 ----
+// ---- 瑞士极客风博客页�?----
 
 void _showDevSnackBar(BuildContext context) {
   ScaffoldMessenger.of(context).showSnackBar(
@@ -36,32 +36,32 @@ class _BlogScreenState extends State<BlogScreen> {
           _buildHeroCard(),
           const SizedBox(height: 20),
           _buildArticleCard(
-            title: 'Flutter 状态管理深度对比',
+            title: 'Flutter 状态管理深度对�?,
             date: '2026-04-28',
             excerpt:
-                'Provider、Riverpod、Bloc、GetX — 四种主流方案的优劣分析，以及在不同场景下的选型建议...',
-            tags: ['Flutter', '状态管理', '架构'],
+                'Provider、Riverpod、Bloc、GetX �?四种主流方案的优劣分析，以及在不同场景下的选型建议...',
+            tags: ['Flutter', '状态管�?, '架构'],
           ),
           const SizedBox(height: 14),
           _buildArticleCard(
             title: 'Go 语言并发模式实战',
             date: '2026-04-25',
             excerpt:
-                '从 goroutine 到 channel，从 sync 到 context，深入理解 Go 并发编程的核心模式与陷阱...',
+                '�?goroutine �?channel，从 sync �?context，深入理�?Go 并发编程的核心模式与陷阱...',
             tags: ['Go', '并发', '后端'],
           ),
           const SizedBox(height: 14),
           _buildArticleCard(
             title: 'PostgreSQL 查询优化指南',
             date: '2026-04-20',
-            excerpt: '索引策略、EXPLAIN ANALYZE 解读、慢查询定位 — 让你的数据库查询快 10 倍...',
-            tags: ['PostgreSQL', '数据库', '性能'],
+            excerpt: '索引策略、EXPLAIN ANALYZE 解读、慢查询定位 �?让你的数据库查询�?10 �?..',
+            tags: ['PostgreSQL', '数据�?, '性能'],
           ),
           const SizedBox(height: 14),
           _buildArticleCard(
-            title: 'Android 签名机制与 APK 安全',
+            title: 'Android 签名机制�?APK 安全',
             date: '2026-04-18',
-            excerpt: 'V1/V2/V3 签名方案的区别，release APK 网络权限陷阱，以及常见签名错误排查...',
+            excerpt: 'V1/V2/V3 签名方案的区别，release APK 网络权限陷阱，以及常见签名错误排�?..',
             tags: ['Android', '安全', 'APK'],
           ),
           // 订阅卡片
@@ -103,14 +103,14 @@ class _BlogScreenState extends State<BlogScreen> {
     );
   }
 
-  // ---- 顶部精选卡片 ----
+  // ---- 顶部精选卡�?----
 
   Widget _buildHeroCard() {
     return GestureDetector(
       onTap: () => _openArticle(
-        title: 'Flutter 状态管理深度对比',
+        title: 'Flutter 状态管理深度对�?,
         content: _sampleFlutterArticle,
-        tags: ['Flutter', '状态管理', '架构'],
+        tags: ['Flutter', '状态管�?, '架构'],
         date: '2026-04-28',
       ),
       child: Container(
@@ -179,7 +179,7 @@ class _BlogScreenState extends State<BlogScreen> {
                           ),
                         ),
                         child: const Text(
-                          '精选',
+                          '精�?,
                           style: TextStyle(
                             color: Color(0xFF22C55E),
                             fontSize: 10,
@@ -194,7 +194,7 @@ class _BlogScreenState extends State<BlogScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Flutter 状态管理深度对比',
+                        'Flutter 状态管理深度对�?,
                         style: TextStyle(
                           color: Color(0xFFF1F5F9),
                           fontSize: 20,
@@ -205,7 +205,7 @@ class _BlogScreenState extends State<BlogScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Provider、Riverpod、Bloc、GetX — 四种方案的深入分析',
+                        'Provider、Riverpod、Bloc、GetX �?四种方案的深入分�?,
                         style: TextStyle(
                           color: const Color(0xFF94A3B8),
                           fontSize: 13,
@@ -353,7 +353,7 @@ class _BlogScreenState extends State<BlogScreen> {
   }
 }
 
-// ---- 文章阅读器 ----
+// ---- 文章阅读�?----
 
 class _ArticleReader extends StatefulWidget {
   final String title;
@@ -375,8 +375,8 @@ class _ArticleReader extends StatefulWidget {
 class _ArticleReaderState extends State<_ArticleReader> {
   final _commentController = TextEditingController();
   final List<_BlogComment> _comments = [
-    _BlogComment(author: 'Doeuny', text: '好文章！状态管理这块一直很困扰我', time: '2小时前'),
-    _BlogComment(author: '管理员', text: '建议加上 GetX 的详细对比', time: '1天前'),
+    _BlogComment(author: 'Doeuny', text: '好文章！状态管理这块一直很困扰�?, time: '2小时�?),
+    _BlogComment(author: '管理�?, text: '建议加上 GetX 的详细对�?, time: '1天前'),
   ];
 
   void _launchUrl(String url) async {
@@ -392,7 +392,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
       setState(() {
         _comments.insert(
           0,
-          _BlogComment(author: '我', text: _commentController.text, time: '刚刚'),
+          _BlogComment(author: '�?, text: _commentController.text, time: '刚刚'),
         );
       });
     _commentController.clear();
@@ -487,7 +487,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
               ),
               const SizedBox(height: 8),
               const Text(
-                '作者: 沈理校园 · 阅读 5 min',
+                '作�? 沈理校园 · 阅读 5 min',
                 style: TextStyle(
                   color: Color(0xFF64748B),
                   fontSize: 12,
@@ -499,14 +499,14 @@ class _ArticleReaderState extends State<_ArticleReader> {
               const SizedBox(height: 20),
               _buildRichContent(widget.content),
               const SizedBox(height: 14),
-              // ---- 紧凑评论区 ----
+              // ---- 紧凑评论�?----
               _buildComments(),
               const SizedBox(height: 20),
-              // 互动栏
+              // 互动�?
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildActionChip(Icons.thumb_up_outlined, '赞'),
+                  _buildActionChip(Icons.thumb_up_outlined, '�?),
                   _buildActionChip(Icons.bookmark_outline, '收藏'),
                   _buildActionChip(Icons.share, '分享'),
                 ],
@@ -544,10 +544,10 @@ class _ArticleReaderState extends State<_ArticleReader> {
           ],
         ),
         const SizedBox(height: 10),
-        // 评论列表 — 最多显示 4 条
+        // 评论列表 �?最多显�?4 �?
         ..._comments.take(4).map((c) => _buildCommentItem(c)),
         const SizedBox(height: 10),
-        // 快速回复
+        // 快速回�?
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           decoration: BoxDecoration(
@@ -566,7 +566,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
                     fontFamily: 'monospace',
                   ),
                   decoration: const InputDecoration(
-                    hintText: '写下你的问题或想法...',
+                    hintText: '写下你的问题或想�?..',
                     hintStyle: TextStyle(
                       color: Color(0xFF475569),
                       fontSize: 12,
@@ -685,7 +685,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
     // 解析链接和代码块
     final urlRegex = RegExp(r'(https?://[^\s]+)');
 
-    // 按行渲染，处理特殊格式
+    // 按行渲染，处理特殊格�?
     final lines = text.split('\n');
     final List<InlineSpan> spans = [];
     bool inCodeBlock = false;
@@ -717,7 +717,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
       if (line.startsWith('- ')) {
         spans.add(
           TextSpan(
-            text: '  › ${line.substring(2)}\n',
+            text: '  �?${line.substring(2)}\n',
             style: const TextStyle(
               color: Color(0xFFCBD5E1),
               fontSize: 15,
@@ -835,7 +835,7 @@ class _BlogComment {
   });
 }
 
-// ---- 点阵背景绘制器 ----
+// ---- 点阵背景绘制�?----
 
 class _DotGridPainter extends CustomPainter {
   @override
@@ -861,12 +861,12 @@ class _DotGridPainter extends CustomPainter {
 const _sampleFlutterArticle = '''
 ## 引言
 
-Flutter 生态中有多种状态管理方案，选择哪一种往往让人纠结。
-本文将从实际项目出发，对比四种主流方案的优劣。
+Flutter 生态中有多种状态管理方案，选择哪一种往往让人纠结�?
+本文将从实际项目出发，对比四种主流方案的优劣�?
 
-## Provider — 官方推荐
+## Provider �?官方推荐
 
-Provider 是 Flutter 团队推荐的方案，基于 InheritedWidget 封装：
+Provider �?Flutter 团队推荐的方案，基于 InheritedWidget 封装�?
 
 ```dart
 class CounterProvider extends ChangeNotifier {
@@ -876,26 +876,26 @@ class CounterProvider extends ChangeNotifier {
 }
 ```
 
-Provider 的优点在于简单直观，学习曲线平缓。但对于复杂应用，
-多层嵌套的 Consumer 会导致代码可读性下降。
+Provider 的优点在于简单直观，学习曲线平缓。但对于复杂应用�?
+多层嵌套�?Consumer 会导致代码可读性下降�?
 
-## Riverpod — Provider 的进化版
+## Riverpod �?Provider 的进化版
 
-Riverpod 解决了 Provider 的一些痛点：
+Riverpod 解决�?Provider 的一些痛点：
 - 编译时安全，不会出现 ProviderNotFoundException
 
 详细信息请查阅官方文档：
 https://riverpod.dev
 
-## Bloc — 企业级方案
+## Bloc �?企业级方�?
 
-Bloc 基于事件驱动，强制分离 UI 和业务逻辑。
-适合大型团队协作，但模板代码较多。
+Bloc 基于事件驱动，强制分�?UI 和业务逻辑�?
+适合大型团队协作，但模板代码较多�?
 
 ## 总结
 
 - 小型项目：Provider
 - 中型项目：Riverpod
 - 大型项目：Bloc
-- 不建议：GetX（过度封装，测试困难）
+- 不建议：GetX（过度封装，测试困难�?
 ''';

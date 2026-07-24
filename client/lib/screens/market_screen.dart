@@ -103,13 +103,13 @@ class _MarketScreenState extends State<MarketScreen> {
 
   String _emptyTitle() {
     if (_searchQuery.isNotEmpty) return '没有找到匹配内容';
-    if (_typeFilter != 'all') return '还没有${_typeLabel(_typeFilter)}';
-    return '还没有商品';
+    if (_typeFilter != 'all') return '还没�?{_typeLabel(_typeFilter)}';
+    return '还没有商�?;
   }
 
   String _emptySubtitle() {
-    if (_searchQuery.isNotEmpty) return '换个关键词试试';
-    if (_typeFilter != 'all') return '发布第一条${_typeLabel(_typeFilter)}信息';
+    if (_searchQuery.isNotEmpty) return '换个关键词试�?;
+    if (_typeFilter != 'all') return '发布第一�?{_typeLabel(_typeFilter)}信息';
     return '发布第一条闲置、求购或办事信息';
   }
 
@@ -243,14 +243,14 @@ class _MarketScreenState extends State<MarketScreen> {
   String _sortLabel() {
     switch (_sortType) {
       case 'price':
-        return '价格低到高';
+        return '价格低到�?;
       case 'price_desc':
-        return '价格高到低';
+        return '价格高到�?;
       case 'score':
         return '综合排序';
       case 'time':
       default:
-        return '最新发布';
+        return '最新发�?;
     }
   }
 
@@ -293,7 +293,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                _buildSortOption('time', '最新发布'),
+                _buildSortOption('time', '最新发�?),
                 _buildSortOption('price', '价格从低到高'),
                 _buildSortOption('price_desc', '价格从高到低'),
                 _buildSortOption('score', '综合排序'),
@@ -375,7 +375,7 @@ class _MarketScreenState extends State<MarketScreen> {
                     Row(
                       children: [
                         Text(
-                          '筛选',
+                          '筛�?,
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
@@ -906,7 +906,7 @@ class _MarketScreenState extends State<MarketScreen> {
           border: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 13),
-          hintText: '搜索商品、用户或关键词',
+          hintText: '搜索商品、用户或关键�?,
           hintStyle: TextStyle(
             fontSize: 14,
             color: isDark ? Colors.white38 : const Color(0xFF98A2B3),
@@ -999,7 +999,7 @@ class _MarketScreenState extends State<MarketScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          count > 0 ? '共 $count 条' : '',
+          count > 0 ? '�?$count �? : '',
           style: TextStyle(
             fontSize: 12,
             color: _MarketTokens.subColor(isDark),
@@ -1018,7 +1018,7 @@ class _MarketScreenState extends State<MarketScreen> {
             const SizedBox(width: 8),
             _buildPillButton(
               isDark: isDark,
-              label: '筛选',
+              label: '筛�?,
               icon: Icons.tune_rounded,
               accent: accent,
               onTap: _showFilterBottomSheet,

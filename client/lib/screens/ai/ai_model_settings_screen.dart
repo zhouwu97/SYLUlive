@@ -113,7 +113,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
     );
   }
 
-  /// 只读取服务端模型列表；选择模型不会隐式触发联通或 Tool Calling 测试。
+  /// 只读取服务端模型列表；选择模型不会隐式触发联通或 Tool Calling 测试�?
   Future<void> _discoverModels() async {
     AIModelProvider? provider;
     setState(() {
@@ -140,8 +140,8 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
       setState(() {
         _models = capabilities.models;
         _discoveringModels = false;
-        _probeSuccess = _models.isEmpty ? null : '已发现 ${_models.length} 个可用模型';
-        if (_models.isEmpty) _error = '服务已连接，但没有返回可用模型';
+        _probeSuccess = _models.isEmpty ? null : '已发�?${_models.length} 个可用模�?;
+        if (_models.isEmpty) _error = '服务已连接，但没有返回可用模�?;
       });
       if (_models.length == 1) {
         _modelController.text = _models.single;
@@ -160,7 +160,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
     }
   }
 
-  /// 只验证当前表单中的模型和 Tool Calling 能力，不查询或改写模型列表。
+  /// 只验证当前表单中的模型和 Tool Calling 能力，不查询或改写模型列表�?
   Future<void> _testConnection() async {
     setState(() {
       _testingConnection = true;
@@ -244,7 +244,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                '共发现 ${models.length} 个模型，选择后可单独测试连接。',
+                '共发�?${models.length} 个模型，选择后可单独测试连接�?,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: CampusTheme.subText,
                 ),
@@ -324,12 +324,12 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
     try {
       if (kIsWeb) {
         throw const AIModelProviderException(
-          '为保护 API Key，请在 App 客户端配置第三方模型服务',
+          '为保�?API Key，请�?App 客户端配置第三方模型服务',
         );
       }
       AIEndpointPolicy.parseBaseEndpoint(_endpointController.text);
       if (_modelController.text.trim().isEmpty) {
-        throw const AIModelProviderException('请先选择或填写模型名称');
+        throw const AIModelProviderException('请先选择或填写模型名�?);
       }
       await _store.saveOpenAICompatible(
         endpoint: _endpointController.text,
@@ -351,8 +351,8 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除模型配置？'),
-        content: const Text('会同时删除该配置的 API Key。'),
+        title: const Text('删除模型配置�?),
+        content: const Text('会同时删除该配置�?API Key�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -435,13 +435,13 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '个人 Skill 仅使用这里配置的第三方模型；校园公益 AI 不能接收个人数据，也不能执行个人 Skill。',
+                  '个人 Skill 仅使用这里配置的第三方模型；校园公益 AI 不能接收个人数据，也不能执行个人 Skill�?,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 18),
                 if (!_hasStoredConfig && _hasStoredApiKey) ...[
                   Text(
-                    '检测到残留密钥，请清除后再保存新的模型配置。',
+                    '检测到残留密钥，请清除后再保存新的模型配置�?,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
                     ),
@@ -472,7 +472,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                   enableSuggestions: false,
                   decoration: InputDecoration(
                     labelText: 'API Key',
-                    hintText: _hasStoredApiKey ? '已安全保存，留空则保持不变' : null,
+                    hintText: _hasStoredApiKey ? '已安全保存，留空则保持不�? : null,
                   ),
                 ),
                 const SizedBox(height: 18),
@@ -510,11 +510,11 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                 Text(
                   switch (_wireApi) {
                     OpenAIWireApi.auto =>
-                      '优先使用 Responses API，不兼容时自动回退到 Chat Completions。',
+                      '优先使用 Responses API，不兼容时自动回退�?Chat Completions�?,
                     OpenAIWireApi.responses =>
-                      '适用于配置中 wire_api = responses 的服务。',
+                      '适用于配置中 wire_api = responses 的服务�?,
                     OpenAIWireApi.chatCompletions =>
-                      '适用于 DeepSeek 等 OpenAI Chat Completions 兼容服务。',
+                      '适用�?DeepSeek �?OpenAI Chat Completions 兼容服务�?,
                   },
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -557,7 +557,7 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                 if (_models.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Text(
-                    '已发现 ${_models.length} 个模型',
+                    '已发�?${_models.length} 个模�?,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],

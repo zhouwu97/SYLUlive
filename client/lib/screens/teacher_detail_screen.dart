@@ -52,7 +52,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('确认删除'),
-        content: Text('确定要删除教师「${widget.teacherName}」吗？此操作不可撤销。'),
+        content: Text('确定要删除教师�?{widget.teacherName}」吗？此操作不可撤销�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -71,7 +71,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     try {
       await dio.delete('/teachers/${widget.teacherId}/reject');
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('教师已删除')));
+        messenger.showSnackBar(const SnackBar(content: Text('教师已删�?)));
         navigator.pop(true);
       }
     } catch (e) {
@@ -96,7 +96,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除评价'),
-        content: const Text('确定删除自己的这条评价吗？删除后评分会重新计算。'),
+        content: const Text('确定删除自己的这条评价吗？删除后评分会重新计算�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -124,7 +124,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
 
     messenger.showSnackBar(
       SnackBar(
-        content: Text(ok ? '评价已删除' : '删除失败，请稍后再试'),
+        content: Text(ok ? '评价已删�? : '删除失败，请稍后再试'),
         backgroundColor: ok ? Colors.green : Colors.redAccent,
       ),
     );
@@ -260,7 +260,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     onTap: () {
                       if (!context.read<AuthProvider>().isLoggedIn) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('请先登录后评价')),
+                          const SnackBar(content: Text('请先登录后评�?)),
                         );
                         return;
                       }
@@ -268,7 +268,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                         context: context,
                         initialStar: provider.myRating?.star ?? 0,
                         initialComment: provider.myRating?.comment ?? '',
-                        title: provider.myRating == null ? '写评价' : '修改评价',
+                        title: provider.myRating == null ? '写评�? : '修改评价',
                         maxCommentLength: 200,
                         accentOverride: accent,
                         onSubmit: (star, comment) async {
@@ -340,7 +340,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '最新',
+                        '最�?,
                         style: TextStyle(
                           fontSize: 12,
                           color: RankingTokens.subColor(isDark),
@@ -362,14 +362,14 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
           const SizedBox(height: 6),
           const RatingPolicyTip(
             type: RatingPolicyType.warning,
-            text: '请只评价课堂体验，避免人身攻击和隐私信息。',
+            text: '请只评价课堂体验，避免人身攻击和隐私信息�?,
           ),
           if (provider.ratings.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 20, bottom: 20),
               child: Center(
                 child: Text(
-                  '还没有同学评价',
+                  '还没有同学评�?,
                   style: TextStyle(
                     fontSize: 13,
                     color: RankingTokens.subColor(isDark),
@@ -408,11 +408,11 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                                 if (success && mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                        content: Text('举报已提交，我们会尽快处理')),
+                                        content: Text('举报已提交，我们会尽快处�?)),
                                   );
                                 } else if (!success && mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('举报失败或已提交过')),
+                                    const SnackBar(content: Text('举报失败或已提交�?)),
                                   );
                                 }
                                 return success;

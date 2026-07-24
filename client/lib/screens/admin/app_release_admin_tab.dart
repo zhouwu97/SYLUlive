@@ -3,8 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 /// 超级管理员的 APK 发布管理页。APK 先创建不可下载的 draft，再由管理员显式
-/// 发布；这样上传中断或元数据填写错误都不会让客户端拿到半成品安装包。
-class AppReleaseAdminTab extends StatefulWidget {
+/// 发布；这样上传中断或元数据填写错误都不会让客户端拿到半成品安装包�?class AppReleaseAdminTab extends StatefulWidget {
   final Dio dio;
 
   const AppReleaseAdminTab({super.key, required this.dio});
@@ -82,7 +81,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     final status = release['status']?.toString() ?? '';
     final versionName = release['version_name']?.toString() ?? '-';
     final versionCode = release['version_code']?.toString() ?? '-';
-    final title = release['title']?.toString() ?? '未命名版本';
+    final title = release['title']?.toString() ?? '未命名版�?;
     final minimum =
         release['minimum_supported_version_code']?.toString() ?? '-';
     final size = _formatBytes(_asInt(release['file_size']));
@@ -100,7 +99,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
       ),
       title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '$versionName+$versionCode  ·  最低支持 $minimum\n$status  ·  $size',
+        '$versionName+$versionCode  ·  最低支�?$minimum\n$status  ·  $size',
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
@@ -119,7 +118,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
           ],
           if (status == 'published') ...[
             const PopupMenuItem(
-                value: _ReleaseAction.edit, child: Text('调整最低支持版本')),
+                value: _ReleaseAction.edit, child: Text('调整最低支持版�?)),
             const PopupMenuItem(
                 value: _ReleaseAction.withdraw, child: Text('下架')),
           ],
@@ -137,16 +136,16 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
         await _showEditDialog(release);
       case _ReleaseAction.publish:
         await _confirmAndRun(
-          title: '发布 ${release['version_name']}+${release['version_code']}？',
-          content: '发布后客户端将能检测并下载此 APK。请确认版本号、安装包和最低支持构建号均正确。',
+          title: '发布 ${release['version_name']}+${release['version_code']}�?,
+          content: '发布后客户端将能检测并下载�?APK。请确认版本号、安装包和最低支持构建号均正确�?,
           actionText: '发布',
           action: () =>
               widget.dio.post('/super/app-releases/${release['id']}/publish'),
         );
       case _ReleaseAction.withdraw:
         await _confirmAndRun(
-          title: '下架 ${release['version_name']}+${release['version_code']}？',
-          content: '下架后不再允许新客户端下载。系统至少必须保留一个已发布版本。',
+          title: '下架 ${release['version_name']}+${release['version_code']}�?,
+          content: '下架后不再允许新客户端下载。系统至少必须保留一个已发布版本�?,
           actionText: '下架',
           destructive: true,
           action: () =>
@@ -154,8 +153,8 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
         );
       case _ReleaseAction.delete:
         await _confirmAndRun(
-          title: '删除草稿？',
-          content: '将同时删除服务器中的未发布 APK，此操作不可恢复。',
+          title: '删除草稿�?,
+          content: '将同时删除服务器中的未发�?APK，此操作不可恢复�?,
           actionText: '删除',
           destructive: true,
           action: () =>
@@ -212,7 +211,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                       value: selectedDeliveryMode,
                       decoration: const InputDecoration(labelText: '交付模式'),
                       items: const [
-                        DropdownMenuItem(value: 'direct_package', child: Text('直接安装包')),
+                        DropdownMenuItem(value: 'direct_package', child: Text('直接安装�?)),
                         DropdownMenuItem(value: 'external_market', child: Text('外部市场')),
                       ],
                       onChanged: selectedPlatform == 'ohos'
@@ -252,7 +251,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                       const SizedBox(height: 12),
                     ],
                     if (selectedDeliveryMode == 'external_market') ...[
-                      _field(actionUrl, '跳转链接 (以 http:// 或 https:// 开头)'),
+                      _field(actionUrl, '跳转链接 (�?http:// �?https:// 开�?'),
                       const SizedBox(height: 12),
                     ],
                     _field(versionName, '展示版本号，例如 1.6.3'),
@@ -281,7 +280,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
                 }
                 if (selectedDeliveryMode == 'external_market' && actionUrl.text.trim().isEmpty) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('外部市场模式下必须填写跳转链接')),
+                    const SnackBar(content: Text('外部市场模式下必须填写跳转链�?)),
                   );
                   return;
                 }
@@ -364,7 +363,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     final update = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(isDraft ? '编辑草稿' : '调整最低支持版本'),
+        title: Text(isDraft ? '编辑草稿' : '调整最低支持版�?),
         content: SizedBox(
           width: 420,
           child: Form(
@@ -410,7 +409,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
     await _run(() async {
       await widget.dio
           .patch('/super/app-releases/${release['id']}', data: update);
-      _showMessage('版本策略已更新');
+      _showMessage('版本策略已更�?);
     });
   }
 
@@ -425,7 +424,7 @@ class _AppReleaseAdminTabState extends State<AppReleaseAdminTab> {
       keyboardType: numeric ? TextInputType.number : TextInputType.text,
       maxLines: maxLines,
       validator: (value) =>
-          value == null || value.trim().isEmpty ? '请填写$label' : null,
+          value == null || value.trim().isEmpty ? '请填�?label' : null,
       decoration: InputDecoration(labelText: label),
     );
   }

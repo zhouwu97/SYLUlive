@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../platform/contracts/external_navigator.dart';
-import '../main.dart';
+import '../app_bootstrap.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
@@ -27,15 +27,15 @@ class ToolboxScreen extends StatefulWidget {
 class _ToolboxScreenState extends State<ToolboxScreen> {
   static const List<_WebsiteDirectoryItem> _websiteDirectoryItems = [
     _WebsiteDirectoryItem(
-      title: '省大创平台',
+      title: '省大创平�?,
       subtitle: '创新创业训练计划',
       icon: Icons.lightbulb_outline,
       color: Color(0xFF55B97A),
       url: 'https://cxcy.upln.cn/',
     ),
     _WebsiteDirectoryItem(
-      title: '教务处',
-      subtitle: '教务通知与公告',
+      title: '教务�?,
+      subtitle: '教务通知与公�?,
       icon: Icons.school_outlined,
       color: Color(0xFF826FE8),
       url: 'https://jwc.sylu.edu.cn/',
@@ -48,29 +48,29 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       url: 'https://cxcyxy.sylu.edu.cn/',
     ),
     _WebsiteDirectoryItem(
-      title: '查二课',
+      title: '查二�?,
       subtitle: 'WebVPN 入口',
       icon: Icons.vpn_key_outlined,
       color: Color(0xFF35B7C4),
       url: 'https://webvpn.sylu.edu.cn/',
     ),
     _WebsiteDirectoryItem(
-      title: '图书馆',
-      subtitle: '馆藏与资源服务',
+      title: '图书�?,
+      subtitle: '馆藏与资源服�?,
       icon: Icons.local_library_outlined,
       color: Color(0xFF5B8DEF),
       url: 'https://tsg.sylu.edu.cn/',
     ),
     _WebsiteDirectoryItem(
-      title: '沈理就业网',
+      title: '沈理就业�?,
       subtitle: '招聘就业信息',
       icon: Icons.work_outline,
       color: Color(0xFFEE5C8A),
       url: 'https://job.sylu.edu.cn/',
     ),
     _WebsiteDirectoryItem(
-      title: '蓝桥杯成绩',
-      subtitle: '竞赛成绩快速查询',
+      title: '蓝桥杯成�?,
+      subtitle: '竞赛成绩快速查�?,
       icon: Icons.military_tech_outlined,
       color: Color(0xFF0EA5A4),
       url: 'https://c16h22o4.github.io/',
@@ -113,7 +113,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '工具箱',
+                '工具�?,
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
@@ -201,8 +201,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 context,
                                 icon: Icons.school_outlined,
                                 color: const Color(0xFF55B97A),
-                                title: '二课分查询',
-                                subtitle: '支持 WebVPN 穿透',
+                                title: '二课分查�?,
+                                subtitle: '支持 WebVPN 穿�?,
                                 onTap: () => Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -225,7 +225,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 icon: Icons.event_note,
                                 color: const Color(0xFF826FE8),
                                 title: '考试日程',
-                                subtitle: 'AI一键提取',
+                                subtitle: 'AI一键提�?,
                                 onTap: () => Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -263,7 +263,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                           ),
                           const SizedBox(height: 24),
                           _buildSectionTitle(
-                            '校园与娱乐',
+                            '校园与娱�?,
                             isDark,
                             useCustomBackground,
                           ),
@@ -284,7 +284,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 context,
                                 icon: Icons.sports_esports,
                                 color: const Color(0xFF35B7C4),
-                                title: '云原神',
+                                title: '云原�?,
                                 subtitle: '点击即玩',
                                 onTap: () => _launchCloudGenshin(context),
                                 useCustomBackground: useCustomBackground,
@@ -294,7 +294,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 icon: Icons.card_giftcard,
                                 color: const Color(0xFFEE5C8A),
                                 title: '抽奖活动',
-                                subtitle: '公平福利派送',
+                                subtitle: '公平福利派�?,
                                 onTap: () => Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -826,7 +826,7 @@ class _WebsiteDirectoryItem {
   final String url;
 }
 
-/// 体测密码输入门控 — 独立的 StatefulWidget，避免 controller 生命周期问题
+/// 体测密码输入门控 �?独立�?StatefulWidget，避�?controller 生命周期问题
 class _PhysicalTestGate extends StatefulWidget {
   final String appUserId;
   final String username;
@@ -858,15 +858,15 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     final pwd = await _credentialStore.read(widget.username);
     if (pwd != null && pwd.isNotEmpty) {
       _realPwd = pwd;
-      _pwdCtrl.text = '•' * pwd.length;
+      _pwdCtrl.text = '�? * pwd.length;
       if (mounted) setState(() {});
     }
   }
 
   void _onPwdChanged(String val) {
-    final placeholder = '•' * _realPwd.length;
+    final placeholder = '�? * _realPwd.length;
     if (_realPwd.isNotEmpty && val != placeholder) {
-      final newText = val.replaceAll('•', '');
+      final newText = val.replaceAll('�?, '');
       _realPwd = '';
       _pwdCtrl.value = TextEditingValue(
         text: newText,
@@ -877,12 +877,12 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
 
   void _queryManual() {
     final inputPwd = _pwdCtrl.text;
-    final pwd = inputPwd == ('•' * _realPwd.length) ? _realPwd : inputPwd;
+    final pwd = inputPwd == ('�? * _realPwd.length) ? _realPwd : inputPwd;
 
     if (pwd.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('请输入体测密码')));
+      ).showSnackBar(const SnackBar(content: Text('请输入体测密�?)));
       return;
     }
     Navigator.pushReplacement(
@@ -927,7 +927,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        '学号 ${widget.username} 已自动识别，请输入体测密码查询',
+                        '学号 ${widget.username} 已自动识别，请输入体测密码查�?,
                         style: TextStyle(
                           fontSize: 13,
                           color: isDark ? Colors.white70 : Colors.black87,
@@ -961,7 +961,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                         ),
                         const Spacer(),
                         Text(
-                          '初始密码默认为111111',
+                          '初始密码默认�?11111',
                           style: TextStyle(
                             fontSize: 10,
                             color: isDark ? Colors.white38 : Colors.grey[500],
@@ -1016,7 +1016,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                     elevation: 0,
                   ),
                   child: const Text(
-                    '开始查询',
+                    '开始查�?,
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),

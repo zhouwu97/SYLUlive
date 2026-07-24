@@ -4,7 +4,7 @@ import '../../widgets/glass_container.dart';
 /// Exposure-specific UI rendered inside [MarketPublishForm] when the post type
 /// is 'exposure'.
 ///
-/// This is a StatelessWidget — all controller state is owned by the parent
+/// This is a StatelessWidget �?all controller state is owned by the parent
 /// form.  If exposure ever gains unique required fields it can be promoted to
 /// StatefulWidget without changing callers.
 class ExposurePublishForm extends StatelessWidget {
@@ -23,7 +23,7 @@ class ExposurePublishForm extends StatelessWidget {
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
-              '曝光骗子需提供充分证据，我们会对内容进行审核',
+              '曝光骗子需提供充分证据，我们会对内容进行审�?,
               style: TextStyle(fontSize: 13),
             ),
           ),

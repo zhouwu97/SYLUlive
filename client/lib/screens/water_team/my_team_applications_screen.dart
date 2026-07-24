@@ -5,7 +5,7 @@ import '../../models/water_team.dart';
 import '../../providers/water_team_provider.dart';
 import '../post_detail_screen.dart';
 
-/// 当前用户提交过的组队申请。
+/// 当前用户提交过的组队申请�?
 class MyTeamApplicationsScreen extends StatefulWidget {
   const MyTeamApplicationsScreen({super.key});
 
@@ -71,7 +71,7 @@ class _MyTeamApplicationsScreenState extends State<MyTeamApplicationsScreen> {
                         if (apps.isEmpty && provider.myApplicationsError == null)
                           const Padding(
                               padding: EdgeInsets.only(top: 160),
-                              child: Center(child: Text('还没有组队申请'))),
+                              child: Center(child: Text('还没有组队申�?))),
                       ])),
     );
   }
@@ -103,9 +103,9 @@ class _MyTeamApplicationsScreenState extends State<MyTeamApplicationsScreen> {
   String _label(String status) =>
       const {
         'pending': '等待处理',
-        'accepted': '已加入',
+        'accepted': '已加�?,
         'rejected': '未通过',
-        'cancelled': '已取消'
+        'cancelled': '已取�?
       }[status] ??
       status;
 }
@@ -143,13 +143,13 @@ class _MyApplicationCard extends StatelessWidget {
                           maxLines: 2, overflow: TextOverflow.ellipsis),
                       if (application.ownerReply.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        Text('回复：${application.ownerReply}',
+                        Text('回复�?{application.ownerReply}',
                             style: TextStyle(
                                 fontSize: 12, color: Colors.grey.shade700))
                       ],
                       const SizedBox(height: 8),
                       Text(
-                          '申请于 ${application.createdAt.month} 月 ${application.createdAt.day} 日',
+                          '申请�?${application.createdAt.month} �?${application.createdAt.day} �?,
                           style: TextStyle(
                               fontSize: 12, color: Colors.grey.shade500)),
                       if (application.status == 'pending')
@@ -184,7 +184,7 @@ class _MyApplicationCard extends StatelessWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(result.isSuccess
-            ? '申请已取消'
+            ? '申请已取�?
             : (result.error ?? '取消申请失败'))));
     if (result.isSuccess) await provider.loadMyApplications(force: true);
   }
@@ -196,10 +196,10 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Chip(
       label: Text(const {
-            'pending': '待处理',
+            'pending': '待处�?,
             'accepted': '已通过',
-            'rejected': '已拒绝',
-            'cancelled': '已取消'
+            'rejected': '已拒�?,
+            'cancelled': '已取�?
           }[status] ??
           status),
       visualDensity: VisualDensity.compact);

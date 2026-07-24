@@ -7,7 +7,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../config/api_constants.dart';
-import '../main.dart';
+import '../app_bootstrap.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
@@ -34,7 +34,7 @@ import 'image_viewer_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 
-/// 首页首屏请求结束后再检查更新，避免更新状态覆盖开屏与帖子加载过程。
+/// 首页首屏请求结束后再检查更新，避免更新状态覆盖开屏与帖子加载过程�?
 Future<void> loadInitialFeedBeforeUpdateCheck({
   required Future<void> Function() loadInitialFeed,
   required Future<void> Function() initializeUpdateCheck,
@@ -42,7 +42,7 @@ Future<void> loadInitialFeedBeforeUpdateCheck({
   try {
     await loadInitialFeed();
   } catch (error) {
-    debugPrint('首页帖子首次加载失败，继续执行更新检查: $error');
+    debugPrint('首页帖子首次加载失败，继续执行更新检�? $error');
   }
   await initializeUpdateCheck();
 }
@@ -202,7 +202,7 @@ class _HomeScreenState extends State<HomeScreen>
       },
     ));
 
-    // 1. 当前页仍按原逻辑加载；相同的帖子请求由 PostProvider 自动合并。
+    // 1. 当前页仍按原逻辑加载；相同的帖子请求�?PostProvider 自动合并�?
 
     // 2. Delay lightweight badges (notices unread-count, messages unread-count)
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -441,12 +441,12 @@ class _HomeScreenState extends State<HomeScreen>
           final topId = _announcementId(top);
           if (!(await _isSnoozed(topId, auth.user?.id ?? 0))) {
             await _showSingleUrgentModal(top);
-            // Do NOT chain another modal — next check will catch remaining
+            // Do NOT chain another modal �?next check will catch remaining
           }
         }
       }
     } catch (e) {
-      debugPrint('检查未读公告失败: $e');
+      debugPrint('检查未读公告失�? $e');
     } finally {
       _isCheckingAnnouncements = false;
     }
@@ -480,7 +480,7 @@ class _HomeScreenState extends State<HomeScreen>
             ? const Color(0xFFFF9800)
             : Theme.of(context).primaryColor;
     final label = isUrgent
-        ? '紧急'
+        ? '紧�?
         : isImportant
             ? '重要'
             : '公告';
@@ -740,7 +740,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  '请及时查看',
+                                  '请及时查�?,
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: isDark
@@ -906,7 +906,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     switch (result) {
       case 'snooze':
-        // 稍后再看：4 hours snooze, keeps unread
+        // 稍后再看�? hours snooze, keeps unread
         await _snoozeAnnouncement(announcementId, userId);
         break;
       case 'dismiss':
@@ -1115,7 +1115,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     const SizedBox(height: 8),
                                     Text(
                                       unread.length > 1
-                                          ? '第 ${current + 1} 条，共 ${unread.length} 条'
+                                          ? '�?${current + 1} 条，�?${unread.length} �?
                                           : '请及时查看最新校园通知',
                                       style: TextStyle(
                                         fontSize: 12,
@@ -1312,7 +1312,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 Icons.chevron_left_rounded,
                                 size: 18,
                               ),
-                              label: const Text('上一条'),
+                              label: const Text('上一�?),
                               style: OutlinedButton.styleFrom(
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
@@ -1328,7 +1328,7 @@ class _HomeScreenState extends State<HomeScreen>
                           if (unread.length > 1 && current < unread.length - 1)
                             TextButton(
                               onPressed: () => setLocal(() => current++),
-                              child: const Text('下一条'),
+                              child: const Text('下一�?),
                             ),
                           const SizedBox(width: 8),
                           ElevatedButton.icon(
@@ -1347,7 +1347,7 @@ class _HomeScreenState extends State<HomeScreen>
                             },
                             icon: const Icon(Icons.done_all_rounded, size: 18),
                             label: Text(
-                              current < unread.length - 1 ? '已读并继续' : '我知道了',
+                              current < unread.length - 1 ? '已读并继�? : '我知道了',
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Theme.of(context).primaryColor,
@@ -1514,7 +1514,7 @@ class _HomeScreenState extends State<HomeScreen>
       _visitedTabs.add(targetIndex);
       _getOrCreateTabPage(targetIndex);
       _mainTargetIndex = targetIndex;
-      // 拖动阶段只锁定目标页；底栏在页面切换完成后再补动画。
+      // 拖动阶段只锁定目标页；底栏在页面切换完成后再补动画�?
     });
   }
 
@@ -1710,7 +1710,7 @@ class _HomeScreenState extends State<HomeScreen>
     final themeProvider = context.watch<ThemeProvider>();
     final authProvider = context.watch<AuthProvider>();
 
-    // 宽屏默认按 Pad 版处理；开启悬浮底栏时，宽屏也切到浮动导航。
+    // 宽屏默认�?Pad 版处理；开启悬浮底栏时，宽屏也切到浮动导航�?
     final useSideRail = useDesktopShell && !themeProvider.floatingNavBar;
     final useBottomNav = !useSideRail;
     final showFloatingNavBar = themeProvider.floatingNavBar;
@@ -1736,7 +1736,7 @@ class _HomeScreenState extends State<HomeScreen>
         extendBodyBehindAppBar: true,
         body: Stack(
           children: [
-            // 实际内容区
+            // 实际内容�?
             useSideRail
                 ? _buildWideLayout(bottomSafe, authProvider, false)
                 : _buildNarrowLayout(bottomSafe, authProvider),
@@ -1782,7 +1782,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     return Row(
       children: [
-        // 美化 NavigationRail，增加 GlassContainer 包裹
+        // 美化 NavigationRail，增�?GlassContainer 包裹
         SafeArea(
           right: false,
           child: Container(

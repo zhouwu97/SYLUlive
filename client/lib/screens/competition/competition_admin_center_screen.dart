@@ -191,7 +191,7 @@ class _CompetitionAdminCenterScreenState
         elevation: 0,
         centerTitle: true,
         title: const Text(
-          '竞赛库管理',
+          '竞赛库管�?,
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
         actions: [
@@ -232,9 +232,9 @@ class _CompetitionAdminCenterScreenState
   Widget _buildStats(bool isDark) {
     final items = [
       ('草稿', '$_adminDraftCount', () => _selectStatus('draft')),
-      ('缺时间', '$_timePendingCount', () => _selectMaintenance('time_pending')),
-      ('已发布', '$_adminPublishedCount', () => _selectStatus('published')),
-      ('待核验', '$_unverifiedCount', () => _selectMaintenance('unverified')),
+      ('缺时�?, '$_timePendingCount', () => _selectMaintenance('time_pending')),
+      ('已发�?, '$_adminPublishedCount', () => _selectStatus('published')),
+      ('待核�?, '$_unverifiedCount', () => _selectMaintenance('unverified')),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -421,7 +421,7 @@ class _CompetitionAdminCenterScreenState
                 _selectionMode ? Icons.close_rounded : Icons.checklist_rounded,
                 size: 18,
               ),
-              label: Text(_selectionMode ? '退出批量' : '批量管理'),
+              label: Text(_selectionMode ? '退出批�? : '批量管理'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: _selectionMode
                     ? CompetitionUiTokens.dangerColor(isDark)
@@ -455,9 +455,9 @@ class _CompetitionAdminCenterScreenState
                 const SizedBox(width: 8),
                 _statusChip('草稿', 'draft', isDark),
                 const SizedBox(width: 8),
-                _statusChip('已发布', 'published', isDark),
+                _statusChip('已发�?, 'published', isDark),
                 const SizedBox(width: 8),
-                _statusChip('已归档', 'archived', isDark),
+                _statusChip('已归�?, 'archived', isDark),
               ],
             ),
           ),
@@ -466,7 +466,7 @@ class _CompetitionAdminCenterScreenState
             children: [
               _softButton(
                 icon: Icons.filter_list_rounded,
-                label: _activeFilterCount > 0 ? '筛选 $_activeFilterCount' : '筛选',
+                label: _activeFilterCount > 0 ? '筛�?$_activeFilterCount' : '筛�?,
                 isDark: isDark,
                 highlight: _activeFilterCount > 0,
                 onTap: _openAdminFilters,
@@ -484,8 +484,8 @@ class _CompetitionAdminCenterScreenState
       allItemsSelected: _selectionScope == _AdminSelectionScope.allMatching &&
           _excludedEventIds.isEmpty,
       allItemsLabel: _selectionScope == _AdminSelectionScope.allMatching
-          ? '全选 $_filteredTotal 项 (已选符合筛选的所有项目)'
-          : '选择符合当前筛选的全部 $_filteredTotal 项',
+          ? '全�?$_filteredTotal �?(已选符合筛选的所有项�?'
+          : '选择符合当前筛选的全部 $_filteredTotal �?,
       onToggleSelectAll: () {
         setState(() {
           if (_selectionScope == _AdminSelectionScope.allMatching) {
@@ -543,7 +543,7 @@ class _CompetitionAdminCenterScreenState
           ),
           const SizedBox(height: 4),
           Text(
-            '当前显示 ${(_currentPage - 1) * _pageSize + 1}–${(_currentPage - 1) * _pageSize + _events.length}，共 $_filteredTotal 条',
+            '当前显示 ${(_currentPage - 1) * _pageSize + 1}�?{(_currentPage - 1) * _pageSize + _events.length}，共 $_filteredTotal �?,
             style: TextStyle(
               fontSize: 13,
               color: CompetitionUiTokens.subColor(isDark),
@@ -565,8 +565,8 @@ class _CompetitionAdminCenterScreenState
     }
     if (_events.isEmpty) {
       return CompetitionEmptyState(
-        title: '列表还没有内容',
-        message: '可以 AI 导入或手动新建官方草稿。',
+        title: '列表还没有内�?,
+        message: '可以 AI 导入或手动新建官方草稿�?,
         primaryText: 'AI导入',
         onPrimaryTap: _openAdminImport,
         secondaryText: '新建比赛',
@@ -604,7 +604,7 @@ class _CompetitionAdminCenterScreenState
           ),
           const SizedBox(width: 16),
           Text(
-            '第 $_currentPage / $_totalPages 页',
+            '�?$_currentPage / $_totalPages �?,
             style: TextStyle(
               color: CompetitionUiTokens.titleColor(isDark),
               fontSize: 14,
@@ -796,7 +796,7 @@ class _CompetitionAdminCenterScreenState
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('确认$actionName'),
-        content: Text('确认要将该比赛$actionName吗？'),
+        content: Text('确认要将该比�?actionName吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -831,7 +831,7 @@ class _CompetitionAdminCenterScreenState
       if (_adminStatusFilter == 'archived' || _adminStatusFilter == 'all')
         const CompetitionBatchAction(
             value: 'restore_to_draft',
-            label: '恢复为草稿',
+            label: '恢复为草�?,
             icon: Icons.restore_page_outlined),
       const CompetitionBatchAction(
           value: 'delete',
@@ -847,7 +847,7 @@ class _CompetitionAdminCenterScreenState
     String actionName = '操作';
     if (backendAction == 'publish') actionName = '发布';
     if (backendAction == 'archive') actionName = '归档';
-    if (backendAction == 'restore_to_draft') actionName = '恢复为草稿';
+    if (backendAction == 'restore_to_draft') actionName = '恢复为草�?;
     if (backendAction == 'delete') actionName = '删除';
 
     final payload = <String, dynamic>{
@@ -876,7 +876,7 @@ class _CompetitionAdminCenterScreenState
       };
     }
 
-    // 先执行预检查
+    // 先执行预检�?
     payload['dry_run'] = true;
     try {
       final dryRes = await _dio.post('/admin/competitions/events/batch-action',
@@ -891,7 +891,7 @@ class _CompetitionAdminCenterScreenState
         context: context,
         builder: (ctx) => CompetitionBatchConfirmDialog(
           title: '确认批量$actionName',
-          content: '当前请求：$requested 项\n预计成功：$success 项\n预计跳过：$skipped 项',
+          content: '当前请求�?requested 项\n预计成功�?success 项\n预计跳过�?skipped �?,
           confirmLabel: '确认',
           isDanger: backendAction == 'delete',
         ),
@@ -913,7 +913,7 @@ class _CompetitionAdminCenterScreenState
       final success = data?['success_count'] ?? 0;
       final skipped = data?['skipped_count'] ?? 0;
       AppFeedback.showSnackBar(
-          context, '$actionName完成：成功 $success，跳过 $skipped');
+          context, '$actionName完成：成�?$success，跳�?$skipped');
     } catch (_) {
       if (!mounted) return;
       AppFeedback.showSnackBar(context, '批量操作失败', isError: true);
@@ -988,7 +988,7 @@ class _CompetitionAdminCenterScreenState
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '维护筛选',
+                      '维护筛�?,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
@@ -1004,10 +1004,10 @@ class _CompetitionAdminCenterScreenState
                 const SizedBox(height: 16),
                 _maintenanceOption('全部', null, isDark),
                 _maintenanceOption('AI导入草稿', 'ai_draft', isDark),
-                _maintenanceOption('缺时间', 'time_pending', isDark),
+                _maintenanceOption('缺时�?, 'time_pending', isDark),
                 _maintenanceOption('可能过期', 'stale', isDark),
                 _maintenanceOption('临近截止', 'ending_soon', isDark),
-                _maintenanceOption('已结束', 'expired', isDark),
+                _maintenanceOption('已结�?, 'expired', isDark),
               ],
             ),
           ),
@@ -1130,7 +1130,7 @@ class _AdminFilterSheetState extends State<_AdminFilterSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        '筛选维护列表',
+                        '筛选维护列�?,
                         style: TextStyle(
                           fontSize: 19,
                           fontWeight: FontWeight.w900,
@@ -1186,12 +1186,12 @@ class _AdminFilterSheetState extends State<_AdminFilterSheet> {
                       children: {
                         'S': 'S强烈推荐',
                         'A': 'A推荐',
-                        'B+': 'B+较推荐',
-                        'B': 'B可参加',
-                        'B-': 'B-补充项',
+                        'B+': 'B+较推�?,
+                        'B': 'B可参�?,
+                        'B-': 'B-补充�?,
                         'C': 'C兴趣',
                         'D': 'D低优先级',
-                        'E': 'E资料项',
+                        'E': 'E资料�?,
                       }.entries.map((entry) {
                         return _choiceChip(
                           entry.value,
@@ -1284,13 +1284,13 @@ String _maintenanceLabel(String? value) {
     case 'ai_draft':
       return 'AI导入草稿';
     case 'time_pending':
-      return '缺时间';
+      return '缺时�?;
     case 'stale':
       return '可能过期';
     case 'ending_soon':
       return '临近截止';
     case 'expired':
-      return '已结束';
+      return '已结�?;
     default:
       return '全部';
   }

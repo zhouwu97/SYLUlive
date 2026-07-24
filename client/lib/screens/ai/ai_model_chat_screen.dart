@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../features/ai_runtime/ai_model_provider.dart';
 import '../../features/ai_runtime/ai_model_runtime.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
-import '../../main.dart';
+import '../../app_bootstrap.dart';
 import '../../services/account_session_cleanup_coordinator.dart';
 import '../../services/ai_assistant_service.dart';
 import 'ai_model_settings_screen.dart';
@@ -75,7 +75,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
       animation: _controller,
       builder: (context, _) => Scaffold(
         appBar: AppBar(
-          title: Text(_controller.config?.kind.displayName ?? '普通聊天'),
+          title: Text(_controller.config?.kind.displayName ?? '普通聊�?),
           actions: [
             IconButton(
               tooltip: '模型设置',
@@ -127,7 +127,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
                               _controller.isConfigured ? '输入消息' : '请先设置模型',
                           border: const OutlineInputBorder(),
                           suffixIcon: IconButton(
-                            tooltip: '发送',
+                            tooltip: '发�?,
                             onPressed:
                                 _controller.isConfigured && !_controller.sending
                                     ? _send
@@ -162,7 +162,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
       );
     }
     if (_controller.messages.isEmpty) {
-      return const Center(child: Text('开始新的对话'));
+      return const Center(child: Text('开始新的对�?));
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

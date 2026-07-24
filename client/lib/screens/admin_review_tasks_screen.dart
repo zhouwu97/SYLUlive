@@ -70,10 +70,10 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final user = (inv['user'] as Map?) ?? {};
     final reason = await _showReasonDialog(
-      title: '同意 ${user['nickname'] ?? '该用户'} 成为管理员',
+      title: '同意 ${user['nickname'] ?? '该用�?} 成为管理�?,
       label: '同意审批理由',
       hint: '例如：候选人信用良好，且持续参与社区维护',
-      helperText: '用于审批记录，说明你投同意票的依据。',
+      helperText: '用于审批记录，说明你投同意票的依据�?,
       confirmText: '确认同意',
     );
     if (!mounted || reason == null) return;
@@ -86,7 +86,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       if (!mounted) return;
       final message = (res.data is Map && res.data['message'] != null)
           ? res.data['message'].toString()
-          : '已同意';
+          : '已同�?;
       messenger.showSnackBar(
         SnackBar(content: Text(message), backgroundColor: Colors.green),
       );
@@ -106,9 +106,9 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     final admin = (removal['admin'] as Map?) ?? {};
     final reason = await _showReasonDialog(
       title: '同意罢免 ${admin['nickname'] ?? '该管理员'}',
-      label: '同意罢免的投票理由',
+      label: '同意罢免的投票理�?,
       hint: '例如：多次滥用权限，已有明确处理记录',
-      helperText: '用于罢免投票记录，请填写可核实的具体依据。',
+      helperText: '用于罢免投票记录，请填写可核实的具体依据�?,
       confirmText: '确认投票',
     );
     if (!mounted || reason == null) return;
@@ -121,7 +121,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       if (!mounted) return;
       final message = (res.data is Map && res.data['message'] != null)
           ? res.data['message'].toString()
-          : '已投票';
+          : '已投�?;
       messenger.showSnackBar(
         SnackBar(content: Text(message), backgroundColor: Colors.green),
       );
@@ -147,7 +147,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         setState(() => _pendingTeachers.removeWhere((t) => t['id'] == id));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(approve ? '已审核通过' : '已拒绝'),
+            content: Text(approve ? '已审核通过' : '已拒�?),
             backgroundColor: Colors.green,
           ),
         );
@@ -173,7 +173,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         setState(() => _pendingMajors.removeWhere((m) => m['id'] == id));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(approve ? '已审核通过' : '已拒绝'),
+            content: Text(approve ? '已审核通过' : '已拒�?),
             backgroundColor: Colors.green,
           ),
         );
@@ -296,13 +296,13 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
               ),
               title: Text('管理员邀请：${user['nickname'] ?? '未知用户'}'),
               subtitle: Text(
-                '邀请人：${inviter['nickname'] ?? '未知'}\n'
-                '理由：${inv['reason'] ?? '未填写'}\n'
-                '进度：$votes/$requiredVotes',
+                '邀请人�?{inviter['nickname'] ?? '未知'}\n'
+                '理由�?{inv['reason'] ?? '未填�?}\n'
+                '进度�?votes/$requiredVotes',
               ),
               isThreeLine: true,
               trailing: myVote
-                  ? const Chip(label: Text('已同意'))
+                  ? const Chip(label: Text('已同�?))
                   : FilledButton(
                       onPressed: () => _voteInvitation(inv),
                       child: const Text('同意'),
@@ -334,15 +334,15 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
                 backgroundColor: Color(0xFFEF4444),
                 child: Icon(Icons.person_remove, color: Colors.white),
               ),
-              title: Text('罢免管理员：${admin['nickname'] ?? '未知管理员'}'),
+              title: Text('罢免管理员：${admin['nickname'] ?? '未知管理�?}'),
               subtitle: Text(
                 '申请人：${initiator['nickname'] ?? '未知'}\n'
-                '理由：${removal['reason'] ?? '未填写'}\n'
-                '进度：$votes/$requiredVotes',
+                '理由�?{removal['reason'] ?? '未填�?}\n'
+                '进度�?votes/$requiredVotes',
               ),
               isThreeLine: true,
               trailing: myVote
-                  ? const Chip(label: Text('已投票'))
+                  ? const Chip(label: Text('已投�?))
                   : FilledButton(
                       onPressed: canVote ? () => _voteRemoval(removal) : null,
                       style:
@@ -422,7 +422,7 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     if (items.isEmpty) {
       return Center(
         child: Text(
-          '暂无管理员代办',
+          '暂无管理员代�?,
           style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]),
         ),
       );

@@ -36,3 +36,12 @@ jobs:
       - name: Build OHOS HAP
         shell: pwsh
         run: ./tool/build_harmony.ps1 -Mode debug -SkipTests
+
+      - name: Remove temporary OHOS signing profile
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item `
+            "./ohos/build-profile.local.json5" `
+            -Force `
+            -ErrorAction SilentlyContinue

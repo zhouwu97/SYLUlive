@@ -46,7 +46,7 @@ class _CompetitionCalendarItemDetailScreenState
     );
 
     if (changed == true && mounted) {
-      // 当前没有单项重新获取接口，编辑成功后返回上一页并由父页面刷新。
+      // 当前没有单项重新获取接口，编辑成功后返回上一页并由父页面刷新�?
       Navigator.pop(context, true);
     }
   }
@@ -56,7 +56,7 @@ class _CompetitionCalendarItemDetailScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('归档比赛'),
-        content: Text('确定归档「${_item['title'] ?? '未命名比赛'}」吗？归档后将移至已结束分组。'),
+        content: Text('确定归档�?{_item['title'] ?? '未命名比�?}」吗？归档后将移至已结束分组�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -71,7 +71,7 @@ class _CompetitionCalendarItemDetailScreenState
     );
     if (confirmed != true || !mounted) return;
 
-    // 按原有字段结构组装编辑数据
+    // 按原有字段结构组装编辑数�?
     final data = Map<String, dynamic>.from(_item);
     data['plan_status'] = 'archived';
 
@@ -81,7 +81,7 @@ class _CompetitionCalendarItemDetailScreenState
           .dio
           .put('/user/competition-calendar/items/${_item['id']}', data: data);
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '已归档比赛');
+      AppFeedback.showSnackBar(context, '已归档比�?);
       Navigator.pop(context, true);
     } on DioException catch (e) {
       if (!mounted) return;
@@ -98,7 +98,7 @@ class _CompetitionCalendarItemDetailScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除比赛'),
-        content: Text('确定从我的计划删除「${_item['title'] ?? '未命名比赛'}」吗？'),
+        content: Text('确定从我的计划删除�?{_item['title'] ?? '未命名比�?}」吗�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -116,7 +116,7 @@ class _CompetitionCalendarItemDetailScreenState
     try {
       await dio.delete('/user/competition-calendar/items/${_item['id']}');
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '已删除比赛');
+      AppFeedback.showSnackBar(context, '已删除比�?);
       Navigator.pop(context, true);
     } on DioException catch (e) {
       if (!mounted) return;
@@ -145,7 +145,7 @@ class _CompetitionCalendarItemDetailScreenState
     if (text.contains('预计') || text.contains('暂定') || text.contains('计划')) {
       return 'estimated';
     }
-    if (text.contains('往年') || text.contains('历年') || text.contains('通常')) {
+    if (text.contains('往�?) || text.contains('历年') || text.contains('通常')) {
       return 'historical';
     }
     return 'pending';
@@ -154,32 +154,32 @@ class _CompetitionCalendarItemDetailScreenState
   String _planStatusLabel(String value) {
     switch (value) {
       case 'preparing':
-        return '准备中';
+        return '准备�?;
       case 'registered':
-        return '已报名';
+        return '已报�?;
       case 'submitted':
-        return '已提交';
+        return '已提�?;
       case 'finished':
-        return '已结束';
+        return '已结�?;
       case 'archived':
-        return '已归档';
+        return '已归�?;
       default:
-        return '关注中';
+        return '关注�?;
     }
   }
 
   String _timeStatusLabel(String value) {
     switch (value) {
       case 'confirmed':
-        return '时间已确认';
+        return '时间已确�?;
       case 'estimated':
         return '预计时间';
       case 'historical':
-        return '参考往届';
+        return '参考往�?;
       case 'pending':
-        return '时间待公布';
+        return '时间待公�?;
       default:
-        return '时间待公布';
+        return '时间待公�?;
     }
   }
 
@@ -242,7 +242,7 @@ class _CompetitionCalendarItemDetailScreenState
     final pageBg = CompetitionUiTokens.pageBg(isDark);
     final titleColor = CompetitionUiTokens.titleColor(isDark);
 
-    final title = '${_item['title'] ?? '未命名比赛'}';
+    final title = '${_item['title'] ?? '未命名比�?}';
     final summary = '${_item['summary'] ?? ''}';
     final description =
         cleanCompetitionDescription('${_item['description'] ?? ''}');
@@ -251,13 +251,13 @@ class _CompetitionCalendarItemDetailScreenState
     final regText = '${_item['registration_time_text'] ?? ''}';
     final regDisplay = regEnd.isNotEmpty
         ? regEnd
-        : (regText.isNotEmpty ? regText : '原表未提供报名时间');
+        : (regText.isNotEmpty ? regText : '原表未提供报名时�?);
 
     final evStart = '${_item['event_start'] ?? ''}';
     final evText = '${_item['event_time_text'] ?? ''}';
     final evDisplay = evStart.isNotEmpty
         ? evStart
-        : (evText.isNotEmpty ? evText : '原表未提供比赛时间');
+        : (evText.isNotEmpty ? evText : '原表未提供比赛时�?);
 
     final source = competitionSourceLabel('${_item['source_type'] ?? ''}');
     final planStatus = _planStatusLabel(_calendarPlanStatus());
@@ -371,7 +371,7 @@ class _CompetitionCalendarItemDetailScreenState
                 _buildRow('比赛时间', evDisplay, isDark),
                 _buildRow(
                     '举办地点',
-                    isOnline ? '线上比赛' : (location.isEmpty ? '未提供' : location),
+                    isOnline ? '线上比赛' : (location.isEmpty ? '未提�? : location),
                     isDark),
               ],
               isDark),
@@ -404,11 +404,11 @@ class _CompetitionCalendarItemDetailScreenState
 
           // 学校认定信息
           _buildSection(
-              '评级与认定',
+              '评级与认�?,
               [
                 _buildRow('人工评级',
                     recommendation.isEmpty ? '暂未评级' : recommendation, isDark),
-                _buildRow('认定状态', recognitionStatus, isDark),
+                _buildRow('认定状�?, recognitionStatus, isDark),
                 _buildRow(
                     '认定等级',
                     recognitionGrade.isEmpty ? '暂无等级' : recognitionGrade,
@@ -419,7 +419,7 @@ class _CompetitionCalendarItemDetailScreenState
 
           // 来源信息
           _buildSection(
-              '来源与链接',
+              '来源与链�?,
               [
                 _buildRow('数据来源', source, isDark),
                 _buildRow(
@@ -469,7 +469,7 @@ String cleanCompetitionDescription(String raw) {
   return raw
       .replaceFirst(
         RegExp(
-          r'^\s*学校目录类别[：:]\s*[^；;，,\n]+[；;，,]\s*人工评级[：:]\s*[^；;，,\n]+[；;，,]?\s*',
+          r'^\s*学校目录类别[�?]\s*[^�?�?\n]+[�?�?]\s*人工评级[�?]\s*[^�?�?\n]+[�?�?]?\s*',
         ),
         '',
       )

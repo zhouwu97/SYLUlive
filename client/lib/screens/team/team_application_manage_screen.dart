@@ -67,7 +67,7 @@ class _TeamApplicationManageScreenState
           maxLines: 3,
           cursorColor: TeamUiTokens.accent(isDark),
           decoration: inputDeco.copyWith(
-            labelText: accepted ? '给申请人的回复（选填）' : '简要说明原因（选填）',
+            labelText: accepted ? '给申请人的回复（选填�? : '简要说明原因（选填�?,
           ),
         ),
         actions: [
@@ -98,7 +98,7 @@ class _TeamApplicationManageScreenState
         .review(app.id, accepted: accepted, reply: reply);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error ?? (accepted ? '已通过申请' : '已拒绝申请'))));
+        SnackBar(content: Text(error ?? (accepted ? '已通过申请' : '已拒绝申�?))));
     if (error == null) _load();
   }
 
@@ -125,7 +125,7 @@ class _TeamApplicationManageScreenState
     final error = await context.read<TeamRecruitmentProvider>().remove(app.id);
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(error ?? '已移除成员')));
+        .showSnackBar(SnackBar(content: Text(error ?? '已移除成�?)));
     if (error == null) _load();
   }
 
@@ -154,12 +154,12 @@ class _TeamApplicationManageScreenState
           padding: const EdgeInsets.all(12),
           child: Row(
             children: const [
-              ('待审核', 'pending'),
+              ('待审�?, 'pending'),
               ('已通过', 'accepted'),
-              ('已拒绝', 'rejected'),
-              ('已取消', 'cancelled'),
-              ('已退出', 'withdrawn'),
-              ('已移除', 'removed'),
+              ('已拒�?, 'rejected'),
+              ('已取�?, 'cancelled'),
+              ('已退�?, 'withdrawn'),
+              ('已移�?, 'removed'),
             ]
                 .map((item) => Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -316,7 +316,7 @@ class _ApplicationCard extends StatelessWidget {
                       style: TeamUiTokens.primaryButtonStyle(isDark),
                       onPressed:
                           reviewing ? null : () => onReview(application, true),
-                      child: Text(reviewing ? '处理中…' : '通过'))
+                      child: Text(reviewing ? '处理中�? : '通过'))
                 ])
               ] else if (application.status == 'accepted') ...[
                 const SizedBox(height: 12),
@@ -329,7 +329,7 @@ class _ApplicationCard extends StatelessWidget {
                     ),
                     onPressed: reviewing ? null : () => onRemove(application),
                     icon: const Icon(Icons.person_remove_outlined),
-                    label: Text(reviewing ? '处理中…' : '移除成员'),
+                    label: Text(reviewing ? '处理中�? : '移除成员'),
                   ),
                 ),
               ],

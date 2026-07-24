@@ -144,7 +144,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                   }
                 },
                 icon: const Icon(Icons.login),
-                label: const Text('去登录'),
+                label: const Text('去登�?),
               ),
             ],
           ),
@@ -296,7 +296,7 @@ class _ChatListScreenState extends State<ChatListScreen>
           children: [
             Icon(Icons.forum_outlined, size: 72, color: Colors.grey.shade400),
             const SizedBox(height: 16),
-            Text('选择左侧会话开始聊天', style: TextStyle(color: Colors.grey.shade600)),
+            Text('选择左侧会话开始聊�?, style: TextStyle(color: Colors.grey.shade600)),
           ],
         ),
       );
@@ -380,7 +380,7 @@ class _ChatListScreenState extends State<ChatListScreen>
           Icon(Icons.forum_outlined, size: 72, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           const Center(
-            child: Text('暂无私信\n可以从其他用户主页发起聊天', textAlign: TextAlign.center),
+            child: Text('暂无私信\n可以从其他用户主页发起聊�?, textAlign: TextAlign.center),
           ),
         ],
       );

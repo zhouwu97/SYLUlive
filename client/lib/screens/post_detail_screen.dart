@@ -94,7 +94,7 @@ class _PinPostDialogState extends State<_PinPostDialog> {
     }
 
     return AlertDialog(
-      title: const Text('置顶到首页'),
+      title: const Text('置顶到首�?),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -107,7 +107,7 @@ class _PinPostDialogState extends State<_PinPostDialog> {
                   .map(
                     (days) => DropdownMenuItem(
                       value: days,
-                      child: Text('$days 天'),
+                      child: Text('$days �?),
                     ),
                   )
                   .toList(),
@@ -117,7 +117,7 @@ class _PinPostDialogState extends State<_PinPostDialog> {
               },
             ),
             const SizedBox(height: 18),
-            Text('权重：${_weight.round()}'),
+            Text('权重�?{_weight.round()}'),
             Slider(
               value: _weight,
               min: 0,
@@ -301,7 +301,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (targetReply == null) return;
 
     if (targetReply.parentReplyId != null) {
-      // 目标是子回复时，在面板改版后我们依然只高亮/滚动到顶级父回复
+      // 目标是子回复时，在面板改版后我们依然只高�?滚动到顶级父回复
       // 因为子回复现在包裹在 BottomSheet 里面
     }
 
@@ -468,7 +468,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       context.read<PostProvider>().updatePostInCache(_post!);
     }
 
-    // 后台静默发送
+    // 后台静默发�?
     try {
       final formData = FormData.fromMap({
         'content': content,
@@ -498,7 +498,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         rollbackOptimisticReply();
         AppFeedback.showSnackBar(
           context,
-          AppFeedback.dioErrorMessage(e, fallback: '发送失败'),
+          AppFeedback.dioErrorMessage(e, fallback: '发送失�?),
           isError: true,
         );
       }
@@ -506,7 +506,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } catch (_) {
       if (mounted) {
         rollbackOptimisticReply();
-        AppFeedback.showSnackBar(context, '发送失败', isError: true);
+        AppFeedback.showSnackBar(context, '发送失�?, isError: true);
       }
       return false;
     }
@@ -548,11 +548,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ? sectionAward.sectionTitle
           : waterCategoryLabelOf(_post?.postType ?? '');
       final title = sectionAward.titleAfter.isNotEmpty
-          ? '「${sectionAward.titleAfter}」'
+          ? '�?{sectionAward.titleAfter}�?
           : '';
-      lines.add('$sectionName升级到 Lv.${sectionAward.levelAfter}$title');
+      lines.add('$sectionName升级�?Lv.${sectionAward.levelAfter}$title');
     } else if (globalAward != null && globalAward.levelUp) {
-      lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
+      lines.add('全站等级升级�?Lv.${globalAward.levelAfter}');
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -585,14 +585,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '删除帖子',
-      message: '确定要删除这条帖子吗？删除后普通用户不可见，此操作不可撤销。',
+      message: '确定要删除这条帖子吗？删除后普通用户不可见，此操作不可撤销�?,
     );
     if (!confirmed) return;
 
     final result = await postProvider.deletePostDetailed(post.id);
     if (!mounted) return;
     if (result.success) {
-      AppFeedback.showSnackBar(context, '帖子已删除');
+      AppFeedback.showSnackBar(context, '帖子已删�?);
       Navigator.pop(context, true);
     } else {
       AppFeedback.showSnackBar(
@@ -627,14 +627,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '取消精华',
-      message: '确定取消该帖精华吗？取消后将从精华列表移除。',
+      message: '确定取消该帖精华吗？取消后将从精华列表移除�?,
     );
     if (!confirmed) return;
     try {
       await _dio.post('/admin/posts/${post.id}/unfeature');
       if (mounted) {
-        AppFeedback.showSnackBar(context, '已取消精华');
-        _loadPost(); // 刷新状态
+        AppFeedback.showSnackBar(context, '已取消精�?);
+        _loadPost(); // 刷新状�?
       }
     } catch (e) {
       if (mounted) {
@@ -690,7 +690,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '取消置顶',
-      message: '确定取消这条帖子的首页置顶吗？',
+      message: '确定取消这条帖子的首页置顶吗�?,
       confirmText: '取消置顶',
     );
     if (!confirmed) return;
@@ -714,7 +714,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         refreshFeatured: updated.isFeatured,
       );
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '已取消置顶');
+      AppFeedback.showSnackBar(context, '已取消置�?);
     } else {
       AppFeedback.showSnackBar(
         context,
@@ -726,7 +726,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<String?> _askReason({
     required String title,
-    String hint = '请输入原因',
+    String hint = '请输入原�?,
     String confirmText = '确认',
   }) async {
     final result = await showDialog<String>(
@@ -754,11 +754,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       builder: (ctx) => _PremiumOptionsDialog<int>(
         title: '版块置顶时长',
         options: const [1, 3, 7],
-        labelBuilder: (d) => '$d 天',
+        labelBuilder: (d) => '$d �?,
       ),
     );
     if (daysResult == null) return;
-    final reason = await _askReason(title: '置顶原因', hint: '为什么置顶这篇帖子');
+    final reason = await _askReason(title: '置顶原因', hint: '为什么置顶这篇帖�?);
     if (reason == null) return;
     if (reason.length < 2) {
       if (mounted) {
@@ -771,7 +771,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '版块置顶',
-      message: '该帖子会在当前版块内优先展示 $daysResult 天。确认继续吗？',
+      message: '该帖子会在当前版块内优先展示 $daysResult 天。确认继续吗�?,
       confirmText: '确认置顶',
     );
     if (!confirmed) return;
@@ -821,7 +821,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!mounted) return;
     if (ok) {
-      AppFeedback.showSnackBar(context, '已取消版块置顶');
+      AppFeedback.showSnackBar(context, '已取消版块置�?);
       setState(() => _post = _post?.copyWith(
             waterSectionPinned: false,
           ));
@@ -841,7 +841,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final sectionSlug = post.postType;
     if (sectionSlug.isEmpty) return;
 
-    final reason = await _askReason(title: '加精原因', hint: '为什么设为精华');
+    final reason = await _askReason(title: '加精原因', hint: '为什么设为精�?);
     if (reason == null) return;
     if (reason.length < 2) {
       if (mounted) {
@@ -854,7 +854,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '版块精华',
-      message: '设为精华后将在版块的精华区展示，并会自动提交首页精华审核。确认继续吗？',
+      message: '设为精华后将在版块的精华区展示，并会自动提交首页精华审核。确认继续吗�?,
       confirmText: '设为精华',
     );
     if (!confirmed) return;
@@ -868,7 +868,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!mounted) return;
     if (ok) {
-      AppFeedback.showSnackBar(context, '已入版块精华 · 首页推荐待审核');
+      AppFeedback.showSnackBar(context, '已入版块精华 · 首页推荐待审�?);
       setState(() => _post = _post?.copyWith(
             waterSectionFeatured: true,
             homeFeaturedPending: true,
@@ -891,7 +891,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '取消版块精华',
-      message: '确定要取消该帖子的版块精华吗？',
+      message: '确定要取消该帖子的版块精华吗�?,
       confirmText: '取消精华',
     );
     if (!confirmed) return;
@@ -904,7 +904,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!mounted) return;
     if (ok) {
-      AppFeedback.showSnackBar(context, '已取消版块精华');
+      AppFeedback.showSnackBar(context, '已取消版块精�?);
       setState(() => _post = _post?.copyWith(
             waterSectionFeatured: false,
           ));
@@ -924,7 +924,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final sectionSlug = post.postType;
     if (sectionSlug.isEmpty) return;
 
-    final reason = await _askReason(title: '删除原因', hint: '请填写删除原因（至少 2 个字）');
+    final reason = await _askReason(title: '删除原因', hint: '请填写删除原因（至少 2 个字�?);
     if (reason == null || reason.length < 2) {
       if (mounted) {
         AppFeedback.showSnackBar(context, '删除原因至少 2 个字', isError: true);
@@ -936,7 +936,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '版主删除',
-      message: '删除后该帖子将从列表隐藏，并记录管理日志。确认继续吗？',
+      message: '删除后该帖子将从列表隐藏，并记录管理日志。确认继续吗�?,
       confirmText: '确认删除',
     );
     if (!confirmed) return;
@@ -950,7 +950,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!mounted) return;
     if (ok) {
-      AppFeedback.showSnackBar(context, '帖子已删除');
+      AppFeedback.showSnackBar(context, '帖子已删�?);
       await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -960,7 +960,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  // ── 禁言作者 ──
+  // ── 禁言作�?──
 
   Future<void> _muteAuthor() async {
     final post = _post;
@@ -974,11 +974,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       builder: (ctx) => _PremiumOptionsDialog<int>(
         title: '禁言时长',
         options: const [1, 3, 7],
-        labelBuilder: (d) => '$d 天',
+        labelBuilder: (d) => '$d �?,
       ),
     );
     if (daysResult == null) return;
-    final reason = await _askReason(title: '禁言原因', hint: '请填写禁言原因（至少 2 个字）');
+    final reason = await _askReason(title: '禁言原因', hint: '请填写禁言原因（至�?2 个字�?);
     if (reason == null || reason.length < 2) {
       if (mounted) {
         AppFeedback.showSnackBar(context, '禁言原因至少 2 个字', isError: true);
@@ -989,8 +989,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!mounted) return;
     final confirmed = await AppFeedback.confirmDanger(
       context,
-      title: '禁言作者',
-      message: '禁言仅在该版块生效。被禁言期间该用户暂时不能在本版块发帖或编辑内容。确认禁言 $daysResult 天吗？',
+      title: '禁言作�?,
+      message: '禁言仅在该版块生效。被禁言期间该用户暂时不能在本版块发帖或编辑内容。确认禁言 $daysResult 天吗�?,
       confirmText: '确认禁言',
     );
     if (!confirmed) return;
@@ -1005,7 +1005,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!mounted) return;
     if (ok) {
-      AppFeedback.showSnackBar(context, '已禁言该用户。如需隐藏内容请另行删除帖子');
+      AppFeedback.showSnackBar(context, '已禁言该用户。如需隐藏内容请另行删除帖�?);
       await context.read<WaterModerationProvider>().loadMutes(sectionSlug);
     } else {
       AppFeedback.showSnackBar(context, provider.error ?? '禁言失败',
@@ -1020,7 +1020,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     final reason = await _askReason(
       title: '申请精华',
-      hint: '说明这篇帖子为什么值得成为精华。恶意或低质量申请可能被管理员扣诚信分。',
+      hint: '说明这篇帖子为什么值得成为精华。恶意或低质量申请可能被管理员扣诚信分�?,
     );
     if (reason == null) return;
     try {
@@ -1032,7 +1032,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       setState(() {
         _hasPendingFeaturedApp = true;
       });
-      AppFeedback.showSnackBar(context, '精华申请已提交');
+      AppFeedback.showSnackBar(context, '精华申请已提�?);
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
@@ -1050,7 +1050,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     final reason = await _askReason(
       title: '申请共同创作',
-      hint: '说明你想补充或改进哪些内容。',
+      hint: '说明你想补充或改进哪些内容�?,
     );
     if (reason == null) return;
     try {
@@ -1059,7 +1059,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         data: {'reason': reason},
       );
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '共同创作申请已提交');
+      AppFeedback.showSnackBar(context, '共同创作申请已提�?);
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
@@ -1190,7 +1190,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         'change_summary': summaryController.text.trim(),
       });
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '修改版本已提交给原作者');
+      AppFeedback.showSnackBar(context, '修改版本已提交给原作�?);
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
@@ -1210,7 +1210,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final status = item['status']?.toString() ?? '';
     return Card(
       child: ListTile(
-        title: Text(applicant?['nickname']?.toString() ?? '申请人'),
+        title: Text(applicant?['nickname']?.toString() ?? '申请�?),
         subtitle: Text('${item['reason'] ?? ''}\n状态：$status'),
         isThreeLine: true,
         trailing: status == 'pending'
@@ -1241,7 +1241,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ? item['proposed_title'].toString()
             : '修改版本'),
         subtitle: Text(
-          '${proposer?['nickname'] ?? '提交者'}：${item['change_summary'] ?? ''}\n状态：$status',
+          '${proposer?['nickname'] ?? '提交�?}�?{item['change_summary'] ?? ''}\n状态：$status',
         ),
         isThreeLine: true,
         trailing: status == 'pending'
@@ -1269,7 +1269,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       data: {'reply': approve ? '同意共同创作' : '暂不接受'},
     );
     if (!mounted) return;
-    AppFeedback.showSnackBar(context, approve ? '已同意' : '已拒绝');
+    AppFeedback.showSnackBar(context, approve ? '已同�? : '已拒�?);
     Navigator.pop(context);
     _openCreationManagement();
   }
@@ -1281,7 +1281,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         data: {'reply': approve ? '发布修改版本' : '暂不发布'},
       );
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, approve ? '已发布' : '已驳回');
+      AppFeedback.showSnackBar(context, approve ? '已发�? : '已驳�?);
       Navigator.pop(context);
       _openCreationManagement();
     } on DioException catch (e) {
@@ -1303,7 +1303,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: actionLabel,
-      message: '确认后这条发布会保留在主页和集市记录中，并显示为$actionLabel，不会删除这条发布。',
+      message: '确认后这条发布会保留在主页和集市记录中，并显示为$actionLabel，不会删除这条发布�?,
       confirmText: actionLabel,
     );
     if (!confirmed) return;
@@ -1330,9 +1330,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final postProvider = context.read<PostProvider>();
     final confirmed = await AppFeedback.confirmDanger(
       context,
-      title: '标记已售出',
-      message: '标记后商品会保留在主页和集市记录中，并显示为已售出，不会删除这条发布。',
-      confirmText: '标记已售出',
+      title: '标记已售�?,
+      message: '标记后商品会保留在主页和集市记录中，并显示为已售出，不会删除这条发布�?,
+      confirmText: '标记已售�?,
     );
     if (!confirmed) return;
 
@@ -1343,7 +1343,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!mounted) return;
     if (updated != null) {
       setState(() => _post = updated);
-      AppFeedback.showSnackBar(context, '已标记为已售出');
+      AppFeedback.showSnackBar(context, '已标记为已售�?);
     } else {
       AppFeedback.showSnackBar(context, '标记失败', isError: true);
     }
@@ -1658,7 +1658,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           entries.add(
             const AppPopupAction(
               value: 'mute_author',
-              label: '禁言作者',
+              label: '禁言作�?,
               icon: Icons.volume_off_outlined,
             ),
           );
@@ -1672,7 +1672,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       entries.add(
         AppPopupAction(
           value: _post!.isActivePinned ? 'unpin' : 'pin',
-          label: _post!.isActivePinned ? '取消首页置顶' : '置顶到首页',
+          label: _post!.isActivePinned ? '取消首页置顶' : '置顶到首�?,
           icon: _post!.isActivePinned
               ? Icons.vertical_align_top_outlined
               : Icons.home_filled,
@@ -1710,7 +1710,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         entries.add(
           const AppPopupAction(
             value: 'pending_featured',
-            label: '精华申请待审核',
+            label: '精华申请待审�?,
             icon: Icons.hourglass_top_rounded,
             enabled: false,
           ),
@@ -1741,7 +1741,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         entries.add(
           const AppPopupAction(
             value: 'mark_sold',
-            label: '标记已售出',
+            label: '标记已售�?,
             icon: Icons.check_circle_outline_rounded,
           ),
         );
@@ -1826,7 +1826,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 错误 / 空 ----
+  // ---- 错误 / �?----
 
   Widget _buildErrorView(bool isDark) {
     return Center(
@@ -1876,7 +1876,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildEmptyView(bool isDark) {
     return Center(
       child: Text(
-        '帖子不存在',
+        '帖子不存�?,
         style: TextStyle(
           color: isDark ? Colors.white54 : Colors.grey[500],
           fontSize: 15,
@@ -2231,7 +2231,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         children: [
-          // 白色内容卡片：作者 + 标题 + 正文 + 图片 + 信息 + 操作栏
+          // 白色内容卡片：作�?+ 标题 + 正文 + 图片 + 信息 + 操作�?
           Container(
             color: isDark ? const Color(0xFF131720) : Colors.white,
             child: Column(
@@ -2257,7 +2257,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             height: 8,
             color: isDark ? const Color(0xFF1A1E28) : const Color(0xFFF0F0F0),
           ),
-          // 白色评论区卡片
+          // 白色评论区卡�?
           Container(
             color: isDark ? const Color(0xFF131720) : Colors.white,
             child: _buildWaterCommentsSection(isDark),
@@ -2269,7 +2269,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 水帖作者头部（紧凑，无灰色背景） ----
+  // ---- 水帖作者头部（紧凑，无灰色背景�?----
 
   Widget _buildWaterAuthorHeader(Post p, bool isDark) {
     return GestureDetector(
@@ -2416,13 +2416,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             _buildWaterMetaPill(
               isDark,
               Icons.forum_outlined,
-              '版块：$sectionLabel',
+              '版块�?sectionLabel',
             ),
           if (tag != null)
             _buildWaterMetaPill(
               isDark,
               Icons.sell_outlined,
-              '标签：${tag.name}',
+              '标签�?{tag.name}',
             ),
         ],
       ),
@@ -2484,7 +2484,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 单张图：按图片原比例展示，不额外生成虚化或裁切背景。
+  /// 单张图：按图片原比例展示，不额外生成虚化或裁切背景�?
   Widget _buildSingleWaterImage(String url, bool isDark) {
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -2521,7 +2521,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 两张图：左右并排的等宽方格。
+  /// 两张图：左右并排的等宽方格�?
   Widget _buildTwoWaterImages(List<String> urls, bool isDark) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
@@ -2568,7 +2568,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 三张及以上普通帖子图片：最多 9 张，统一按 3 列方格展示。
+  /// 三张及以上普通帖子图片：最�?9 张，统一�?3 列方格展示�?
   Widget _buildMultiWaterImageGrid(List<String> urls, bool isDark) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
@@ -2615,7 +2615,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 水帖操作栏 ----
+  // ---- 水帖操作�?----
 
   Widget _buildWaterActionBar(bool isDark) {
     return Container(
@@ -2683,7 +2683,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
           const Spacer(),
-          // 浏览量
+          // 浏览�?
           Icon(
             Icons.visibility_outlined,
             size: 14,
@@ -2702,7 +2702,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 水帖评论区 ----
+  // ---- 水帖评论�?----
 
   Widget _buildWaterCommentsSection(bool isDark) {
     return Column(
@@ -2732,7 +2732,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 水帖底部回复栏 ----
+  // ---- 水帖底部回复�?----
 
   Widget _buildComposerBody(bool isDark) {
     final viewInsets = MediaQuery.viewInsetsOf(context);
@@ -2878,7 +2878,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return _buildComposerBody(isDark);
     }
 
-    // 折叠状态：说点什么… 入口
+    // 折叠状态：说点什么�?入口
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF131720) : Colors.white,
@@ -3308,7 +3308,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 评论区 ----
+  // ---- 评论�?----
 
   Widget _buildCommentsHeader(bool isDark) {
     return Row(
@@ -3373,7 +3373,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     _ReplyThread buildNode(Reply reply) {
-      // 所有子回复扁平化
+      // 所有子回复扁平�?
       final flatChildren = flattenChildren(reply.id);
       return _ReplyThread(parent: reply, children: flatChildren);
     }
@@ -3428,9 +3428,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 主评论
+          // 主评�?
           _buildMainReply(thread.parent, isDark),
-          // 子回复区域（摘要展示）
+          // 子回复区域（摘要展示�?
           if (visibleChildren.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(left: 44, top: 4),
@@ -3460,7 +3460,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              '共 ${allChildren.length} 条回复 ',
+                              '�?${allChildren.length} 条回�?',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -3503,7 +3503,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return result;
   }
 
-  /// 主评论（顶级）
+  /// 主评论（顶级�?
   Widget _buildMainReply(Reply r, bool isDark) {
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
@@ -3649,7 +3649,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               TextSpan(
                 children: [
                   TextSpan(
-                    text: '${r.author?.nickname ?? '匿名'}：',
+                    text: '${r.author?.nickname ?? '匿名'}�?,
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w400,
@@ -4033,7 +4033,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '相关回复共 ${children.length} 条',
+                '相关回复�?${children.length} �?,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -4041,7 +4041,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
               ),
               Text(
-                '按时间',
+                '按时�?,
                 style: TextStyle(
                   fontSize: 12,
                   color: isDark ? Colors.white30 : Colors.grey[400],
@@ -4248,7 +4248,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     onTap: onTap,
                     decoration: InputDecoration(
                       hintText:
-                          targetName.isEmpty ? '说点什么...' : '回复 @$targetName',
+                          targetName.isEmpty ? '说点什�?..' : '回复 @$targetName',
                       hintStyle: TextStyle(
                         fontSize: 14,
                         color: isDark ? Colors.white38 : Colors.grey[500],
@@ -4332,7 +4332,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 解析子回复内容中的 @用户名 并高亮
+  /// 解析子回复内容中�?@用户�?并高�?
   Widget _buildChildContent(Reply r, bool isDark) {
     final content = r.content;
     final atRegex = RegExp(r'^@(\S+)\s');
@@ -4398,8 +4398,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final now = DateTime.now();
     final diff = now.difference(dt);
     if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-    if (diff.inHours < 24) return '${diff.inHours}小时前';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟�?;
+    if (diff.inHours < 24) return '${diff.inHours}小时�?;
     if (diff.inDays < 7) return '${diff.inDays}天前';
     return '${dt.month}/${dt.day}';
   }
@@ -4407,20 +4407,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String _marketCompleteLabel(String postType) {
     switch (postType) {
       case 'sell':
-        return '已售出';
+        return '已售�?;
       case 'buy':
-        return '已买到';
+        return '已买�?;
       case 'proxy':
-        return '已完成';
+        return '已完�?;
       case 'lost':
       case 'found':
-        return '已解决';
+        return '已解�?;
       default:
-        return '已处理';
+        return '已处�?;
     }
   }
 
-  /// 查找回复的顶级评论id（楼中楼的根）
+  /// 查找回复的顶级评论id（楼中楼的根�?
   int _findTopLevelParentId(Reply r) {
     // 查找这条回复的顶级父评论
     final parentMap = <int, int>{}; // replyId -> parentReplyId
@@ -4585,7 +4585,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               onTap: () {
                 Clipboard.setData(ClipboardData(text: r.content));
                 Navigator.pop(ctx);
-                AppFeedback.showSnackBar(context, '已复制');
+                AppFeedback.showSnackBar(context, '已复�?);
               },
             ),
             if (isOwn)
@@ -4607,13 +4607,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '删除回复',
-      message: '确定要删除这条回复吗？',
+      message: '确定要删除这条回复吗�?,
     );
     if (!confirmed) return;
     try {
       await _dio.delete('/replies/${r.id}');
       if (mounted) {
-        AppFeedback.showSnackBar(context, '已删除');
+        AppFeedback.showSnackBar(context, '已删�?);
         if (_post != null && _post!.replyCount > 0) {
           if (mounted)
             setState(() {
@@ -4715,7 +4715,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildUnreadReplyBanner(bool isDark) {
     if (_unreadReplyNotifications.isEmpty) return const SizedBox.shrink();
     final count = _unreadReplyNotifications.length;
-    final text = count <= 3 ? '$count 条未读回复 · 查看' : '$count 条未读回复 · 查看列表';
+    final text = count <= 3 ? '$count 条未读回�?· 查看' : '$count 条未读回�?· 查看列表';
 
     return GestureDetector(
       onTap: () {
@@ -4860,7 +4860,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 }
 
-/// 楼中楼数据结构（扁平化子回复）
+/// 楼中楼数据结构（扁平化子回复�?
 class _ReplyThread {
   final Reply parent;
   final List<Reply> children; // 直接子回复列表，不再递归

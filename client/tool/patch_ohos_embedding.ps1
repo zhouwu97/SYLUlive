@@ -16,8 +16,7 @@ $nativeLibraryDirectory = switch ($TargetPlatform) {
     'ohos-x64' { 'x86_64' }
 }
 
-$embeddingRoots = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'ohos\oh_modules\.ohpm') `
-    -Directory -Filter '@ohos+flutter_ohos*' -ErrorAction SilentlyContinue
+$embeddingRoots = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'ohos\oh_modules\.ohpm') -Directory -Filter '@ohos+flutter_ohos*' -ErrorAction SilentlyContinue
 
 if ($embeddingRoots.Count -eq 0) {
     throw '未找到 @ohos/flutter_ohos。请先执行 flutter pub get。'
@@ -25,8 +24,7 @@ if ($embeddingRoots.Count -eq 0) {
 
 $patchedCount = 0
 foreach ($embeddingRoot in $embeddingRoots) {
-    $loaderPath = Join-Path $embeddingRoot.FullName `
-        'oh_modules\@ohos\flutter_ohos\src\main\ets\embedding\engine\loader\ApplicationInfoLoader.ets'
+    $loaderPath = Join-Path -Path $embeddingRoot.FullName -ChildPath 'oh_modules\@ohos\flutter_ohos\src\main\ets\embedding\engine\loader\ApplicationInfoLoader.ets'
     if (-not (Test-Path -LiteralPath $loaderPath)) {
         continue
     }
@@ -36,8 +34,7 @@ foreach ($embeddingRoot in $embeddingRoots) {
         throw "未在嵌入层中找到原生库路径：$loaderPath"
     }
 
-    $patched = $source -replace "context\.bundleCodeDir \+ '/libs/[^']+'", `
-        "context.bundleCodeDir + '/libs/$nativeLibraryDirectory'"
+    $patched = $source -replace "context\.bundleCodeDir \+ '/libs/[^']+'", "context.bundleCodeDir + '/libs/$nativeLibraryDirectory'"
     if ($patched -ne $source) {
         Set-Content -LiteralPath $loaderPath -Value $patched -Encoding utf8 -NoNewline
     }

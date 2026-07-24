@@ -1108,6 +1108,52 @@ func (h *EduHandler) GetGradeDetail(c *gin.Context) {
 	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
 }
 
+// GetCreditRequirements 获取官方学分要求/学籍预警数据（通过Python服务访问教务系统）
+func (h *EduHandler) GetCreditRequirements(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	if err := h.db.First(&models.User{}, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	client := resty.New()
+	client.SetTimeout(45 * time.Second)
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
+		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
+		SetBody(map[string]interface{}{
+			"user_id": fmt.Sprintf("%d", userID),
+		}).
+		Post(strings.TrimRight(EduServiceConfig.BaseURL, "/") + "/api/edu/credit-requirements/")
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
+		return
+	}
+
+	if !json.Valid(resp.Body()) {
+		log.Printf(
+			"[EDU] credit requirements returned non-JSON: status=%d content_type=%q",
+			resp.StatusCode(),
+			resp.Header().Get("Content-Type"),
+		)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "教务服务返回异常，请稍后再试",
+		})
+		return
+	}
+
+	if resp.StatusCode() != 200 {
+		mapEduServiceError(c, resp.StatusCode(), resp.Body())
+		return
+	}
+
+	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
+}
+
 func classifyEduLoginFailure(statusCode int, body string) error {
 	if strings.Contains(body, "用户名或密码错误") ||
 		strings.Contains(body, "账号或密码错误") ||

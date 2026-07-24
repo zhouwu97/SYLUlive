@@ -141,7 +141,7 @@ class _AiInputComposerState extends State<AiInputComposer> {
                           ? widget.onCancel
                           : (canSend ? _send : null),
                       style: IconButton.styleFrom(
-                        backgroundColor: colors.primary,
+                        backgroundColor: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF),
                         disabledBackgroundColor: colors.surfaceContainerHighest.withValues(alpha: 0.5),
                         foregroundColor: Colors.white,
                         disabledForegroundColor: colors.onSurfaceVariant.withValues(alpha: 0.3),

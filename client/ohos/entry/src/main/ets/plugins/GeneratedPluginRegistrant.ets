@@ -1,5 +1,6 @@
 import { FlutterEngine, Log } from '@ohos/flutter_ohos';
 import PhotoManagerPlugin from 'photo_manager';
+import JpushHarmonySdkPlugin from 'jpush_flutter';
 
 /**
  * Generated file. Do not edit.
@@ -14,6 +15,7 @@ export class GeneratedPluginRegistrant {
   static registerWith(flutterEngine: FlutterEngine) {
     try {
       flutterEngine.getPlugins()?.add(new PhotoManagerPlugin());
+      flutterEngine.getPlugins()?.add(new JpushHarmonySdkPlugin());
     } catch (e) {
       Log.e(
         TAG,

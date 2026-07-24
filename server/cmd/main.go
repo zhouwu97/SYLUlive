@@ -1589,7 +1589,7 @@ func main() {
 		majorAuth.POST("/:id/rate", majorHandler.Rate)
 
 		majorAuth.DELETE("/rating/:id", majorHandler.DeleteRating)
-		
+
 		majorAuth.PUT("/ratings/:id/vote", majorHandler.VoteRating)
 
 	}

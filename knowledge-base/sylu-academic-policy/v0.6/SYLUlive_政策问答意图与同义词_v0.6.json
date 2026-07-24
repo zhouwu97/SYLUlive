@@ -1,0 +1,110 @@
+{
+  "version": "2026-07-23-v0.6",
+  "purpose": "在RAG检索前进行确定性的学生口语到学校制度术语映射，不能仅依赖模糊搜索。",
+  "intents": [
+    {
+      "intent": "failed_course_flow",
+      "user_terms": [
+        "挂科",
+        "没及格",
+        "不及格",
+        "考试没过",
+        "课程没过",
+        "没拿到学分"
+      ],
+      "canonical_terms": [
+        "课程首次考核不合格",
+        "未取得相应学分",
+        "二次考试",
+        "重新学习",
+        "重修"
+      ],
+      "preferred_document_types": [
+        "school_undergraduate_status_policy",
+        "school_undergraduate_retake_policy",
+        "school_policy_reasoning_card"
+      ]
+    },
+    {
+      "intent": "second_exam",
+      "user_terms": [
+        "补考",
+        "开学补考",
+        "二考",
+        "二次考试",
+        "补考什么时候"
+      ],
+      "canonical_terms": [
+        "二次考试",
+        "二考",
+        "开学初",
+        "免费二次考试机会",
+        "首次考试未取得学分"
+      ],
+      "preferred_document_types": [
+        "school_policy_reasoning_card",
+        "school_undergraduate_status_policy",
+        "historical_school_second_exam_policy"
+      ]
+    },
+    {
+      "intent": "second_exam_gpa",
+      "user_terms": [
+        "补考绩点",
+        "补考成绩怎么算",
+        "补考60",
+        "补考100",
+        "二考绩点",
+        "补考过了多少绩点"
+      ],
+      "canonical_terms": [
+        "二考成绩及格不及格",
+        "等级D或F",
+        "绩点1或0",
+        "补考成绩记载",
+        "二次考试成绩"
+      ],
+      "preferred_document_types": [
+        "school_policy_reasoning_card",
+        "historical_school_second_exam_policy",
+        "school_undergraduate_status_policy"
+      ],
+      "required_answer_boundary": "二考D/F及绩点1/0来自2004年校内正式文件，当前执行以教务系统和当学期通知为最终口径。"
+    },
+    {
+      "intent": "retake",
+      "user_terms": [
+        "重修",
+        "补考没过",
+        "二考没过",
+        "刷分",
+        "重新学习",
+        "重修几门",
+        "重修成绩"
+      ],
+      "canonical_terms": [
+        "课程重修",
+        "未取得相应学分",
+        "重修考核",
+        "实际成绩记载",
+        "最高分记载",
+        "弹性学制"
+      ],
+      "preferred_document_types": [
+        "school_undergraduate_retake_policy",
+        "school_policy_reasoning_card"
+      ]
+    }
+  ],
+  "retrieval_rule": {
+    "exact_alias_expansion_first": true,
+    "full_text_search_second": true,
+    "vector_search_third": true,
+    "trigram_search_fallback_only": true,
+    "minimum_unique_documents": 2,
+    "deduplicate_by": [
+      "document_id",
+      "section_title"
+    ]
+  }
+}

@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -71,7 +72,7 @@ func (h *MajorHandler) GetDetail(c *gin.Context) {
 	sortMode := c.Query("review_sort")
 	var ratings []models.MajorRating
 	query := h.db.Where("major_id = ? AND status = 'normal' AND deleted_at IS NULL", id).Preload("User")
-	
+
 	if sortMode == "best" {
 		query = query.Order("(helpful_count - unhelpful_count * 2) DESC, CASE WHEN TRIM(comment) <> '' THEN 1 ELSE 0 END DESC, helpful_count DESC, created_at DESC")
 	} else {
@@ -88,7 +89,7 @@ func (h *MajorHandler) GetDetail(c *gin.Context) {
 		if r.User != nil {
 			userName = r.User.Nickname
 		}
-		
+
 		isOwn := false
 		if userID, exists := c.Get("user_id"); exists {
 			isOwn = r.UserID == userID.(uint)

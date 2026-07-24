@@ -22,25 +22,25 @@ type Major struct {
 
 // MajorRating 专业评价
 type MajorRating struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	MajorID   uint      `gorm:"index;not null" json:"major_id"`
-	UserID    uint      `gorm:"index;not null" json:"user_id"`
-	Star      int       `gorm:"not null" json:"star"`
-	Comment   string    `gorm:"size:500" json:"comment"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	MajorID   uint           `gorm:"index;not null" json:"major_id"`
+	UserID    uint           `gorm:"index;not null" json:"user_id"`
+	Star      int            `gorm:"not null" json:"star"`
+	Comment   string         `gorm:"size:500" json:"comment"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	HelpfulCount   int     `gorm:"not null;default:0" json:"helpful_count"`
-	UnhelpfulCount int     `gorm:"not null;default:0" json:"unhelpful_count"`
+	HelpfulCount   int `gorm:"not null;default:0" json:"helpful_count"`
+	UnhelpfulCount int `gorm:"not null;default:0" json:"unhelpful_count"`
 
 	Status           string     `gorm:"size:20;not null;default:normal;index" json:"status"`
 	ModeratedBy      *uint      `gorm:"index" json:"moderated_by,omitempty"`
 	ModeratedAt      *time.Time `json:"moderated_at,omitempty"`
 	ModerationReason string     `gorm:"size:500" json:"-"`
 
-	User          *User  `gorm:"foreignKey:UserID" json:"-"`
-	UserName      string `gorm:"-" json:"user_name"`
-	UserStudentID string `gorm:"-" json:"user_student_id"`
+	User          *User   `gorm:"foreignKey:UserID" json:"-"`
+	UserName      string  `gorm:"-" json:"user_name"`
+	UserStudentID string  `gorm:"-" json:"user_student_id"`
 	MyVote        *string `gorm:"-" json:"my_vote"`
 }

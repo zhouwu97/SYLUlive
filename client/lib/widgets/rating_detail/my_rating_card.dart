@@ -27,7 +27,9 @@ class MyRatingCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
-        color: isDark ? accent.withValues(alpha: 0.1) : accent.withValues(alpha: 0.06),
+        color: isDark
+            ? accent.withValues(alpha: 0.1)
+            : accent.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -53,7 +55,8 @@ class MyRatingCard extends StatelessWidget {
               else
                 PopupMenuButton<String>(
                   child: Padding(
-                    padding: const EdgeInsets.only(left: 8, right: 0, top: 4, bottom: 4),
+                    padding: const EdgeInsets.only(
+                        left: 8, right: 0, top: 4, bottom: 4),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

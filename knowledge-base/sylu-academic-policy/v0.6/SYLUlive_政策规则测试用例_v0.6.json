@@ -1,0 +1,134 @@
+{
+  "version": "v0.6",
+  "purpose": "用于后端规则引擎、RAG回答和回归测试；expected仅依据本次官方文件。",
+  "cases": [
+    {
+      "case_id": "competition-original-49",
+      "question": "某门课原始成绩49分，获得国家级A类一等奖，能否申请奖励成绩？",
+      "expected": "不能。奖励课程原始成绩须不低于50分。",
+      "source": "沈理工校〔2024〕54号第四条"
+    },
+    {
+      "case_id": "competition-makeup-55",
+      "question": "补考成绩55分，获得竞赛奖后能否奖励这门课？",
+      "expected": "不能。成绩奖励不包括补考成绩。",
+      "source": "沈理工校〔2024〕54号第四条"
+    },
+    {
+      "case_id": "competition-cap-95",
+      "question": "原始成绩60分，国家级A类一等奖，奖励后多少分？",
+      "expected": "60×1.8=108，但记载成绩上限为95分，因此记95分。",
+      "source": "沈理工校〔2024〕54号第五条及表3"
+    },
+    {
+      "case_id": "competition-credit-exclusive",
+      "question": "同一竞赛成果已经申请成绩奖励，还能申请创新创业学分吗？",
+      "expected": "不能兼得。",
+      "source": "沈理工校〔2024〕54号第六条第2项"
+    },
+    {
+      "case_id": "retake-four-courses-term4",
+      "question": "第四学期能否同时重修4门课？",
+      "expected": "不能。第二至七学期每学期不得超过3门。",
+      "source": "沈理工教〔2025〕6号第四部分第4项"
+    },
+    {
+      "case_id": "retake-improve-passed",
+      "question": "课程已经及格，还能重修提高成绩吗？",
+      "expected": "可以，成绩合格但本人选择继续修读提升属于重修范围。",
+      "source": "沈理工教〔2025〕6号第一部分第2项"
+    },
+    {
+      "case_id": "retake-highest",
+      "question": "重修多次后成绩如何记载？",
+      "expected": "通过时按实际成绩记载；不合格可继续重修，最终以该课程重修考核所得最高分记载，且受弹性学制限制。",
+      "source": "沈理工教〔2025〕6号第五部分"
+    },
+    {
+      "case_id": "transfer-top20",
+      "question": "学业优秀类转专业的排名要求是什么？",
+      "expected": "修满原专业一年级全部计划课程，所修课程学分绩点排名在本专业前20%以内，不含全校任选课。",
+      "source": "沈理工教〔2020〕4号第五部分第1项"
+    },
+    {
+      "case_id": "transfer-replacement",
+      "question": "前20%的学生放弃转专业后，第21%的学生能递补吗？",
+      "expected": "不能递补。",
+      "source": "沈理工教〔2020〕4号第八部分第2项"
+    },
+    {
+      "case_id": "exam-phone-carry",
+      "question": "闭卷考试把手机带进考场但未使用，如何处理？",
+      "expected": "属于考试作弊，课程考试成绩无效，并给予记过处分。",
+      "source": "沈理工校〔2024〕17号第十七条"
+    },
+    {
+      "case_id": "exam-phone-use",
+      "question": "考试过程中使用手机，如何处理？",
+      "expected": "课程考试成绩无效，并给予留校察看处分。",
+      "source": "沈理工校〔2024〕17号第二十五条"
+    },
+    {
+      "case_id": "academic-warning",
+      "question": "前三学年某学年只取得29学分，会怎样？",
+      "expected": "提出学业警告，通知学生本人及家长，并随下一年级修读。",
+      "source": "沈理工校〔2024〕23号第二十九条"
+    },
+    {
+      "case_id": "second-warning",
+      "question": "第二次受到学业警告会怎样？",
+      "expected": "予以退学，包括休学前后累计。",
+      "source": "沈理工校〔2024〕23号第三十条第2项"
+    },
+    {
+      "case_id": "completion-90",
+      "question": "在规定年限内获得毕业所需学分的90%，但未达到毕业要求，是什么状态？",
+      "expected": "准予结业，发给结业证书。",
+      "source": "沈理工校〔2024〕23号第四十条"
+    },
+    {
+      "case_id": "second-exam-colloquial-failed",
+      "question": "挂科了怎么办",
+      "expected": "识别挂科为首次考核不合格。回答二次考试或重新学习；补充历史规则中开学初二考、未过进入缴费重修，并标注当前安排以教务通知为准。",
+      "must_not_answer": "当前资料不足",
+      "sources": [
+        "沈理工校〔2024〕23号第九条",
+        "2004年课程免听、免修及重修规定"
+      ]
+    },
+    {
+      "case_id": "second-exam-gpa",
+      "question": "补考成绩怎么算",
+      "expected": "说明历史校内规则中二考只记D/F，对应绩点1/0；补考60与100在该口径下均为D、绩点1.0。同时提示当前执行以教务系统和当期通知为准。",
+      "must_not_answer": "无法回答",
+      "sources": [
+        "2004年课程免听、免修及重修规定"
+      ]
+    },
+    {
+      "case_id": "second-exam-100-gpa",
+      "question": "补考考100分有多少绩点",
+      "expected": "按历史二考D/F口径，及格统一为D、绩点1.0，不按100分正常绩点换算；提示版本边界。",
+      "sources": [
+        "2004年课程免听、免修及重修规定"
+      ]
+    },
+    {
+      "case_id": "second-exam-failed-to-retake",
+      "question": "补考还是没过怎么办",
+      "expected": "进入重修；当前2025重修办法规定重修通过按实际成绩记载并取得学分，不合格可继续重修，取重修考核最高分。",
+      "sources": [
+        "沈理工教〔2025〕6号"
+      ]
+    },
+    {
+      "case_id": "practice-failed",
+      "question": "实验课挂科也能开学补考吗",
+      "expected": "不能直接承诺。历史免费二考规则排除实践环节；当前2025办法明确实践教学环节不合格可重修。",
+      "sources": [
+        "2004年课程免听、免修及重修规定",
+        "沈理工教〔2025〕6号"
+      ]
+    }
+  ]
+}

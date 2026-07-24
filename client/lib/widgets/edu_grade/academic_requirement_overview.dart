@@ -1,6 +1,5 @@
-/// 学分要求总览组件。
-///
-/// 展示全部学分模块列表，含标题和加载/缓存/错误状态。
+// 学分要求总览组件。
+// 展示全部学分模块列表，含标题和加载/缓存/错误状态。
 
 import 'package:flutter/material.dart';
 import '../../models/edu_credit_requirement.dart';
@@ -13,7 +12,6 @@ class AcademicRequirementOverview extends StatefulWidget {
   final String? errorMessage;
   final bool hasCache;
   final VoidCallback? onRetry;
-  final void Function(EduCreditRequirementModule module)? onModuleTap;
 
   const AcademicRequirementOverview({
     super.key,
@@ -23,7 +21,6 @@ class AcademicRequirementOverview extends StatefulWidget {
     this.errorMessage,
     this.hasCache = false,
     this.onRetry,
-    this.onModuleTap,
   });
 
   @override
@@ -80,13 +77,15 @@ class _AcademicRequirementOverviewState
               widget.requirements!.modules.isNotEmpty) ...[
             for (final module in widget.requirements!.modules)
               AcademicRequirementCard(
+                key: ValueKey(module.id),
                 module: module,
-                onTap: widget.onModuleTap != null
-                    ? () => widget.onModuleTap!(module)
-                    : null,
               ),
           ] else if (widget.errorMessage != null && !widget.hasCache) ...[
-            _buildErrorCard(isDark, subColor),
+            _buildErrorCard(
+              isDark,
+              subColor,
+              widget.errorMessage!,
+            ),
           ] else if (widget.requirements != null &&
               widget.requirements!.modules.isEmpty) ...[
             Padding(
@@ -117,11 +116,9 @@ class _AcademicRequirementOverviewState
   }
 
   Widget _buildSkeletonCard(bool isDark) {
-    final cardBg =
-        isDark ? const Color(0xFF1A1D21) : Colors.white;
-    final shimmer = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : const Color(0xFFE6E9EC);
+    final cardBg = isDark ? const Color(0xFF1A1D21) : Colors.white;
+    final shimmer =
+        isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFE6E9EC);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -176,13 +173,15 @@ class _AcademicRequirementOverviewState
     );
   }
 
-  Widget _buildErrorCard(bool isDark, Color subColor) {
+  Widget _buildErrorCard(
+    bool isDark,
+    Color subColor,
+    String errorMessage,
+  ) {
     final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
-    final cardBg =
-        isDark ? const Color(0xFF1A1D21) : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : const Color(0xFFE2E6EB);
+    final cardBg = isDark ? const Color(0xFF1A1D21) : Colors.white;
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFE2E6EB);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -198,7 +197,7 @@ class _AcademicRequirementOverviewState
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '暂时无法获取学分要求',
+              _errorTitle(errorMessage),
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
@@ -207,7 +206,8 @@ class _AcademicRequirementOverviewState
             ),
             const SizedBox(height: 6),
             Text(
-              '请检查教务登录状态后重试',
+              errorMessage,
+              textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: subColor),
             ),
             const SizedBox(height: 14),
@@ -224,5 +224,26 @@ class _AcademicRequirementOverviewState
         ),
       ),
     );
+  }
+
+  String _errorTitle(String message) {
+    if (message.contains('会话') ||
+        message.contains('登录') ||
+        message.contains('授权')) {
+      return '教务会话需要恢复';
+    }
+    if (message.contains('连接') ||
+        message.contains('网络') ||
+        message.contains('超时') ||
+        message.contains('不可用')) {
+      return '教务服务连接失败';
+    }
+    if (message.contains('协议') || message.contains('格式')) {
+      return '教务查询接口已变化';
+    }
+    if (message.contains('解析') || message.contains('结构')) {
+      return '学分要求解析失败';
+    }
+    return '暂时无法获取学分要求';
   }
 }

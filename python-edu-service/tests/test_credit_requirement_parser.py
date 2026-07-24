@@ -2,8 +2,15 @@
 
 覆盖模块解析、提高课程分离、结构变化保护和边界情况。"""
 
+import httpx
 import pytest
-from services.crawler import parse_credit_requirement_html
+from services.crawler import (
+    ACADEMIC_REQUIREMENT_QUERY_URL,
+    ACADEMIC_REQUIREMENT_URL,
+    EduCrawler,
+    parse_credit_requirement_html,
+    parse_credit_requirement_json,
+)
 
 
 def _minimal_page(content: str = "") -> str:
@@ -296,6 +303,128 @@ def test_parser_version():
     """测试解析器版本号。"""
     result = parse_credit_requirement_html(_minimal_page())
     assert result["parser_version"] == "credit-requirement-v1"
+
+
+# ============== 真实 JSON 查询协议 ==============
+
+def _credit_requirement_json():
+    return [
+        {
+            "xfyqjd_id": "module-1",
+            "xfyqjdmc": "美育模块（限选）",
+            "yqzdxf": "2",
+            "kczdms": "1",
+            "jdkcsx": "1",
+            "kcList": [
+                {
+                    "kch": "001",
+                    "kcmc": "音乐鉴赏",
+                    "xf": "1.5",
+                    "jyxdxnmc": "2024-2025",
+                    "jyxdxqmc": "1",
+                    "xnmc": "2024-2025",
+                    "xqmc": "2",
+                    "xbx": "通识教育理论选修",
+                    "cj": "优秀",
+                    "bfzcj": "90",
+                    "tdbj": "0",
+                    "yxxf": "1.5",
+                }
+            ],
+        },
+        {
+            "xfyqjd_id": "improvement",
+            "xfyqjdmc": "提高课程",
+            "yqzdxf": "0",
+            "kczdms": "0",
+            "jdkcsx": "1",
+            "kcList": [
+                {
+                    "kch": "002",
+                    "kcmc": "大学外语提高",
+                    "xf": "2",
+                    "xnmc": "2025-2026",
+                    "xqmc": "2",
+                    "xbx": "通识教育理论选修",
+                    "cj": "86.9",
+                    "bfzcj": "86.9",
+                    "tdbj": "0",
+                    "yxxf": "2",
+                }
+            ],
+        },
+    ]
+
+
+def test_parse_credit_requirement_json_tree():
+    result = parse_credit_requirement_json(
+        _credit_requirement_json(),
+        query_context={
+            "college_name": "信息科学与工程学院",
+            "enrollment_grade": "2024",
+            "major_name": "通信工程(0306)",
+        },
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "available"
+    assert len(result["modules"]) == 1
+    assert len(result["improvement_courses"]) == 1
+
+    module = result["modules"][0]
+    assert module["name"] == "美育模块（限选）"
+    assert module["required_credits"] == 2
+    assert module["required_course_count"] == 1
+    assert module["earned_credits"] == 1.5
+    assert module["completed_course_count"] == 1
+    assert module["status"] == "in_progress"
+    assert module["is_optional"] is True
+
+    course = module["courses"][0]
+    assert course["course_code"] == "001"
+    assert course["course_name"] == "音乐鉴赏"
+    assert course["suggested_year"] == "2024-2025"
+    assert course["actual_semester"] == "2"
+    assert course["raw_status"] == "通过"
+    assert course["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_credit_requirements_uses_ajax_query_protocol():
+    entry_html = """
+    <html><body>
+      <form id="searchForm">
+        <select name="jg_id"><option value="college" selected>某学院</option></select>
+        <select name="njdm_id"><option value="2024" selected>2024</option></select>
+        <select name="zyh_id"><option value="major" selected>某专业</option></select>
+        <button id="search_go" type="button">查询</button>
+      </form>
+    </body></html>
+    """
+    requests = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if str(request.url).startswith(ACADEMIC_REQUIREMENT_URL):
+            return httpx.Response(200, text=entry_html, request=request)
+        if str(request.url) == ACADEMIC_REQUIREMENT_QUERY_URL:
+            return httpx.Response(200, json=_credit_requirement_json(), request=request)
+        return httpx.Response(404, request=request)
+
+    crawler = EduCrawler()
+    crawler.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        result = await crawler.fetch_credit_requirements("session-cookie")
+    finally:
+        await crawler.client.aclose()
+
+    assert result["success"] is True
+    assert len(result["modules"]) == 1
+    assert len(requests) == 2
+    assert requests[1].method == "POST"
+    assert str(requests[1].url) == ACADEMIC_REQUIREMENT_QUERY_URL
+    assert requests[1].headers["x-requested-with"] == "XMLHttpRequest"
+    assert requests[1].content == b"jg_id=college&njdm_id=2024&zyh_id=major"
 
 
 def test_source_url():

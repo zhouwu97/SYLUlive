@@ -19,7 +19,6 @@ import '../widgets/edu_grade/grade_center_section_tabs.dart';
 import '../widgets/edu_grade/academic_requirement_overview.dart';
 import '../widgets/edu_grade/improvement_course_section.dart';
 import 'edu_grade_detail_screen.dart';
-import 'academic_requirement_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
@@ -63,6 +62,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   bool _isRequirementLoading = false;
   String? _requirementError;
   int _requirementRequestGeneration = 0;
+  Future<void>? _creditRequirementsLoadFuture;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _termScrollController = ScrollController();
@@ -113,6 +113,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _requestGeneration++;
       _academicRequestGeneration++;
       _requirementRequestGeneration++;
+      _creditRequirementsLoadFuture = null;
       setState(() {
         _grades = [];
         _academicSituation = null;
@@ -127,7 +128,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _isInitialLoading = true;
         _isRefreshing = false;
         _isAcademicLoading = true;
-        _isRequirementLoading = true;
+        _isRequirementLoading = false;
       });
       _resetSectionScrollPositions();
 
@@ -218,9 +219,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     await _loadGrades();
     if (!mounted) return;
 
-    // 后台加载 GPA 和学分要求，不阻塞学期成绩首屏
+    // GPA 在后台预取；学分要求仅进入总览时查询，避免拖慢成绩首屏。
     unawaited(_loadAcademicSituation());
-    unawaited(_loadCreditRequirements());
   }
 
   bool _tryUseInitialSemester(String userId) {
@@ -282,7 +282,23 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     });
   }
 
-  Future<void> _loadCreditRequirements({bool forceRefresh = false}) async {
+  Future<void> _loadCreditRequirements({bool forceRefresh = false}) {
+    final activeRequest = _creditRequirementsLoadFuture;
+    if (activeRequest != null) return activeRequest;
+
+    late final Future<void> request;
+    request = _performLoadCreditRequirements(forceRefresh: forceRefresh);
+    _creditRequirementsLoadFuture = request;
+    return request.whenComplete(() {
+      if (identical(_creditRequirementsLoadFuture, request)) {
+        _creditRequirementsLoadFuture = null;
+      }
+    });
+  }
+
+  Future<void> _performLoadCreditRequirements({
+    bool forceRefresh = false,
+  }) async {
     final provider = _eduProvider;
     if (provider == null) return;
 
@@ -746,18 +762,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           errorMessage: _requirementError,
           hasCache: _creditRequirements != null,
           onRetry: () => _loadCreditRequirements(forceRefresh: true),
-          onModuleTap: (module) {
-            Navigator.of(context).push(
-              PageRouteBuilder(
-                transitionDuration: const Duration(milliseconds: 260),
-                reverseTransitionDuration:
-                    const Duration(milliseconds: 200),
-                pageBuilder: (_, __, ___) =>
-                    AcademicRequirementDetailScreen(module: module),
-                transitionsBuilder: _detailTransition,
-              ),
-            );
-          },
         ),
       ),
 
@@ -904,8 +908,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1D2024) : Colors.white,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: SafeArea(
             top: false,
@@ -928,8 +931,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
                 ),
                 const Text(
                   '筛选课程',
-                  style:
-                      TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 12),
                 for (final option in options)
@@ -983,8 +985,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
                   ),
                 ),
               ),
-              if (selected)
-                Icon(Icons.check_rounded, size: 20, color: accent),
+              if (selected) Icon(Icons.check_rounded, size: 20, color: accent),
             ],
           ),
         ),

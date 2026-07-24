@@ -863,7 +863,7 @@ class EduCrawler:
 
         soup = BeautifulSoup(body or "", "html.parser")
         plain_text = _normalize_text(soup.get_text(" ", strip=True))
-        logger.info(
+        logger.warning(
             "[EDU-CREDIT-REQ] "
             "status=%s final_url=%s content_type=%r "
             "title=%r body_length=%s forms=%s tables=%s "

@@ -37,6 +37,7 @@ import '../../providers/ai_assistant_provider.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/ai_assistant_service.dart';
 import '../../widgets/ai/ai_empty_state.dart';
+import '../../widgets/ai/ai_personal_empty_state.dart';
 import '../../widgets/ai/ai_error_card.dart';
 import '../../widgets/ai/ai_evidence_card.dart';
 import '../../widgets/ai/ai_input_composer.dart';
@@ -722,52 +723,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   Widget _buildPersonalBody() {
     if (_personalMessages.isEmpty) {
-      const actions = <(IconData, String, String)>[
-        (Icons.today_outlined, '今天安排', '我今天有什么课？'),
-        (Icons.school_outlined, '我的学业', '计算我的 GPA 和学分情况。'),
-        (Icons.emoji_events_outlined, '竞赛搜索', '搜索近期公开竞赛。'),
-        (Icons.fitness_center_outlined, '运动计划', '帮我安排本周运动时间。'),
-        if (BetaReleasePolicy.aiGraduationAssistant)
-          (Icons.fact_check_outlined, '毕业清单', '我的毕业要求还有哪些未完成？'),
-        (Icons.dashboard_outlined, '二课概览', '我还差多少二课分？'),
-      ];
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-        children: [
-          if (_personalError != null)
-            AiErrorCard(
-              message: _personalError!,
-              actionLabel: _personalNeedsModelConfiguration ? '去配置' : '关闭',
-              onAction: _personalNeedsModelConfiguration
-                  ? () => _openAiSetting('model')
-                  : () => setState(() => _personalError = null),
-            ),
-          if (_personalError != null) const SizedBox(height: 12),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisExtent: 84,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-            ),
-            itemCount: actions.length,
-            itemBuilder: (context, index) {
-              final action = actions[index];
-              return OutlinedButton.icon(
-                onPressed: () {
-                  _inputController.text = action.$3;
-                  _inputController.selection = TextSelection.collapsed(
-                    offset: action.$3.length,
-                  );
-                },
-                icon: Icon(action.$1),
-                label: Text(action.$2),
-              );
-            },
-          ),
-        ],
+      return AiPersonalEmptyState(
+        needsModelConfiguration: _personalNeedsModelConfiguration,
+        onConfigureModel: () => _openAiSetting('model'),
+        onActionSelected: (prompt) {
+          _inputController.text = prompt;
+          _inputController.selection = TextSelection.collapsed(
+            offset: prompt.length,
+          );
+        },
       );
     }
     return ListView(
@@ -856,7 +820,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               ? PersonalAIRuntimeLimits.maximumInputCharacters
               : capabilities.maxMessageChars;
           return Scaffold(
-            backgroundColor: CampusTheme.pageBackground(context),
+            backgroundColor: const Color(0xFFF7F8F6),
             appBar: AppPageAppBar(
               title: const AiAppBarTitle(),
               actions: [
@@ -932,7 +896,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       : provider.messages.isEmpty
                       ? ListView(
                           children: [
-                            AiEmptyState(
+                            AiPublicEmptyState(
                               chatEnabled: capabilities.chatEnabled,
                               quickPrompts: provider.quickPrompts,
                               onPromptSelected: (prompt) {
@@ -996,6 +960,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       : provider.isRunning,
                   onSend: _submit,
                   onCancel: _personalMode ? _cancelPersonal : provider.cancel,
+                  hintText: _personalMode ? '问问你的课程、成绩或计划' : '输入校园问题',
                 ),
               ],
             ),

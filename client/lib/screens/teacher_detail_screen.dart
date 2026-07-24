@@ -185,11 +185,12 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         ),
         body: Consumer<TeacherProvider>(
           builder: (context, provider, _) {
-            if (provider.isLoading) {
+            final detail = provider.detailOf(widget.teacherId);
+            if (detail.isLoading && detail.teacher == null) {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final teacher = provider.selectedTeacher;
+            final teacher = detail.teacher;
             if (teacher == null) return const Center(child: Text('加载失败'));
 
             return Stack(
@@ -205,23 +206,23 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     ),
                     const SizedBox(height: 8),
                     RatingScorePanel(
-                      averageStar: provider.averageStar,
-                      ratingCount: provider.ratingCount,
-                      starCounts: provider.starCounts,
+                      averageStar: detail.averageStar,
+                      ratingCount: detail.ratingCount,
+                      starCounts: detail.starCounts,
                       accentOverride: accent,
                     ),
                     const SizedBox(height: 10),
-                    if (provider.myRating != null) ...[
+                    if (detail.myRating != null) ...[
                       MyRatingCard(
-                        currentStar: provider.myRating!.star,
-                        currentComment: provider.myRating!.comment,
+                        currentStar: detail.myRating!.star,
+                        currentComment: detail.myRating!.comment,
                         isDeleting: _isDeletingRating,
                         accentOverride: accent,
                         onEdit: () {
                           showRatingInputSheet(
                             context: context,
-                            initialStar: provider.myRating!.star,
-                            initialComment: provider.myRating!.comment,
+                            initialStar: detail.myRating!.star,
+                            initialComment: detail.myRating!.comment,
                             title: '修改评价',
                             maxCommentLength: 200,
                             accentOverride: accent,
@@ -244,11 +245,11 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                           );
                         },
                         onDelete: () =>
-                            _confirmDeleteRating(provider.myRating!),
+                            _confirmDeleteRating(detail.myRating!),
                       ),
                       const SizedBox(height: 10),
                     ],
-                    _buildRatingSection(provider, isDark, accent),
+                    _buildRatingSection(provider, detail, isDark, accent),
                   ],
                 ),
                 Positioned(
@@ -266,9 +267,9 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                       }
                       showRatingInputSheet(
                         context: context,
-                        initialStar: provider.myRating?.star ?? 0,
-                        initialComment: provider.myRating?.comment ?? '',
-                        title: provider.myRating == null ? '写评价' : '修改评价',
+                        initialStar: detail.myRating?.star ?? 0,
+                        initialComment: detail.myRating?.comment ?? '',
+                        title: detail.myRating == null ? '写评价' : '修改评价',
                         maxCommentLength: 200,
                         accentOverride: accent,
                         onSubmit: (star, comment) async {
@@ -301,6 +302,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
 
   Widget _buildRatingSection(
     TeacherProvider provider,
+    TeacherDetailState detail,
     bool isDark,
     Color accent,
   ) {
@@ -312,7 +314,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
           Row(
             children: [
               Text(
-                '全部评价 / ${provider.ratingCount}',
+                '全部评价 / ${detail.ratingCount}',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
@@ -364,7 +366,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             type: RatingPolicyType.warning,
             text: '请只评价课堂体验，避免人身攻击和隐私信息。',
           ),
-          if (provider.ratings.isEmpty)
+          if (detail.ratings.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 20, bottom: 20),
               child: Center(
@@ -379,7 +381,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             )
           else
             Column(
-              children: provider.ratings
+              children: detail.ratings
                   .map((r) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: RatingItemCard(
@@ -392,8 +394,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                           helpfulCount: r.helpfulCount,
                           unhelpfulCount: r.unhelpfulCount,
                           myVote: r.myVote,
-                          onHelpful: () => provider.voteRating(r.id, 'up'),
-                          onUnhelpful: () => provider.voteRating(r.id, 'down'),
+                          onHelpful: () => provider.voteRating(r.id, widget.teacherId, 'up'),
+                          onUnhelpful: () => provider.voteRating(r.id, widget.teacherId, 'down'),
                           onReport: () {
                             showRatingReportSheet(
                               context: context,
@@ -402,6 +404,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                               onSubmit: (code, desc) async {
                                 final success = await provider.reportRating(
                                   r.id,
+                                  widget.teacherId,
                                   code,
                                   desc,
                                 );

@@ -1,6 +1,7 @@
 import '../app_platform.dart';
 import '../android/android_reminder_notification_client.dart';
 import '../ohos/ohos_reminder_notification_client.dart';
+import '../other/unsupported_reminder_notification_client.dart';
 
 abstract class ReminderNotificationClient {
   static ReminderNotificationClient? _instance;
@@ -8,9 +9,9 @@ abstract class ReminderNotificationClient {
   static ReminderNotificationClient get instance {
     if (_instance != null) return _instance!;
     _instance = switch (AppPlatforms.current) {
-      AppPlatform.android || AppPlatform.web || AppPlatform.other =>
-        AndroidReminderNotificationClient(),
+      AppPlatform.android => AndroidReminderNotificationClient(),
       AppPlatform.ohos => OhosReminderNotificationClient(),
+      AppPlatform.web || AppPlatform.other => UnsupportedReminderNotificationClient(),
     };
     return _instance!;
   }

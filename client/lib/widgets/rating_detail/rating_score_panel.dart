@@ -99,7 +99,9 @@ class RatingScorePanel extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 6),
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withValues(alpha: 0.04) : RankingTokens.pageBg(isDark),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.04)
+                  : RankingTokens.pageBg(isDark),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(

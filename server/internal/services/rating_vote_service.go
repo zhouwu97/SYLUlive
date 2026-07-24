@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // VoteResult 投票结果
@@ -55,9 +56,9 @@ func ToggleRatingVote(
 		}
 
 		if err := tx.Table(tableName).
+			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("id, user_id, helpful_count, unhelpful_count, status").
 			Where("id = ? AND deleted_at IS NULL", ratingID).
-			Set("gorm:query_option", "FOR UPDATE").
 			First(&rating).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("评价不存在或已删除")

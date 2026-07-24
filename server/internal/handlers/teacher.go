@@ -68,7 +68,7 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 	sortMode := c.Query("review_sort")
 	var ratings []models.TeacherRating
 	query := h.db.Where("teacher_id = ? AND status = 'normal' AND deleted_at IS NULL", id).Preload("User")
-	
+
 	if sortMode == "best" {
 		query = query.Order("(helpful_count - unhelpful_count * 2) DESC, CASE WHEN TRIM(comment) <> '' THEN 1 ELSE 0 END DESC, helpful_count DESC, created_at DESC")
 	} else {
@@ -85,7 +85,7 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 		if r.User != nil {
 			userName = r.User.Nickname
 		}
-		
+
 		isOwn := false
 		if userID, exists := c.Get("user_id"); exists {
 			isOwn = r.UserID == userID.(uint)

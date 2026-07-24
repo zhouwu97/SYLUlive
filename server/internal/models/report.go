@@ -28,10 +28,10 @@ type Report struct {
 	HandlerID      *uint        `json:"handler_id"`
 	Result         string       `gorm:"size:500" json:"result"`        // 处理结果说明
 	DeleteReason   string       `gorm:"size:500" json:"delete_reason"` // 删除理由
-	CreatedAt    time.Time    `json:"created_at"`
-	HandledAt    *time.Time   `json:"handled_at"`
-	Reporter     User         `gorm:"foreignKey:ReporterID" json:"reporter"`
-	Handler      *User        `gorm:"foreignKey:HandlerID" json:"handler"`
+	CreatedAt      time.Time    `json:"created_at"`
+	HandledAt      *time.Time   `json:"handled_at"`
+	Reporter       User         `gorm:"foreignKey:ReporterID" json:"reporter"`
+	Handler        *User        `gorm:"foreignKey:HandlerID" json:"handler"`
 }
 
 // AppealStatus 申诉状态

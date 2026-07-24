@@ -30,7 +30,10 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 	uid := userID.(uint)
 
 	var count int64
-	if err := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Count(&count).Error; err != nil {
+	if err := h.db.Model(&models.Notification{}).
+		Where("user_id = ? AND is_read = ?", uid, false).
+		Where("type != ?", models.RetiredNotificationTypeMarketPost).
+		Count(&count).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读数量失败"})
 		return
 	}
@@ -47,6 +50,7 @@ func (h *NotificationHandler) GetNotifications(c *gin.Context) {
 
 	var notifications []models.Notification
 	if err := h.db.Where("user_id = ?", uid).
+		Where("type != ?", models.RetiredNotificationTypeMarketPost).
 		Order("created_at desc").
 		Limit(100).
 		Find(&notifications).Error; err != nil {

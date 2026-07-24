@@ -67,7 +67,7 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = widget.accentOverride ?? RankingTokens.teacherAccent(isDark);
+    final accent = isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF);
     final viewInsets = MediaQuery.of(context).viewInsets;
 
     return Container(

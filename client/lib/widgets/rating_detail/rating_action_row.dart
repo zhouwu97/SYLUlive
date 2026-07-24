@@ -6,11 +6,11 @@ class RatingActionRow extends StatelessWidget {
   final int helpfulCount;
   final int unhelpfulCount;
   final String? myVote; // 'up', 'down', or null/'none'
-  
+
   final VoidCallback? onHelpful;
   final VoidCallback? onUnhelpful;
   final VoidCallback? onReport;
-  
+
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
@@ -39,7 +39,8 @@ class RatingActionRow extends StatelessWidget {
             onPressed: onEdit,
             style: TextButton.styleFrom(
               foregroundColor: RankingTokens.subColor(isDark),
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              textStyle:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
               minimumSize: const Size(0, 0),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             ),
@@ -50,7 +51,8 @@ class RatingActionRow extends StatelessWidget {
             onPressed: onDelete,
             style: TextButton.styleFrom(
               foregroundColor: Colors.redAccent,
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              textStyle:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
               minimumSize: const Size(0, 0),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             ),
@@ -62,7 +64,7 @@ class RatingActionRow extends StatelessWidget {
 
     final hasVotedUp = myVote == 'up';
     final hasVotedDown = myVote == 'down';
-    
+
     return Row(
       children: [
         _buildVoteButton(

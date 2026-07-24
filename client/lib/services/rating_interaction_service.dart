@@ -5,7 +5,8 @@ class RatingInteractionService {
 
   RatingInteractionService(this._dio);
 
-  Future<Map<String, dynamic>?> voteTeacherRating(int ratingId, String vote) async {
+  Future<Map<String, dynamic>?> voteTeacherRating(
+      int ratingId, String vote) async {
     try {
       final res = await _dio.put(
         '/teachers/ratings/$ratingId/vote',
@@ -17,7 +18,8 @@ class RatingInteractionService {
     }
   }
 
-  Future<Map<String, dynamic>?> voteMajorRating(int ratingId, String vote) async {
+  Future<Map<String, dynamic>?> voteMajorRating(
+      int ratingId, String vote) async {
     try {
       final res = await _dio.put(
         '/majors/ratings/$ratingId/vote',

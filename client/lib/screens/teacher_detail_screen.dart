@@ -328,9 +328,12 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                 },
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
+                    color: isDark
+                        ? Colors.white10
+                        : Colors.black.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -384,7 +387,6 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                           comment: r.comment,
                           star: r.star,
                           isOwn: _isOwnRating(r),
-                          onLongPress: () => _confirmDeleteRating(r),
                           createdAt: r.createdAt,
                           updatedAt: r.updatedAt,
                           helpfulCount: r.helpfulCount,
@@ -405,7 +407,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                                 );
                                 if (success && mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('举报已提交，我们会尽快处理')),
+                                    const SnackBar(
+                                        content: Text('举报已提交，我们会尽快处理')),
                                   );
                                 } else if (!success && mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -416,25 +419,29 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                               },
                             );
                           },
-                          onEdit: _isOwnRating(r) ? () {
-                            showRatingInputSheet(
-                              context: context,
-                              initialStar: r.star,
-                              initialComment: r.comment,
-                              title: '修改评价',
-                              maxCommentLength: 200,
-                              accentOverride: accent,
-                              onSubmit: (star, comment) async {
-                                final ok = await provider.rateTeacher(
-                                    widget.teacherId, star, comment);
-                                if (ok) {
-                                  _didChange = true;
+                          onEdit: _isOwnRating(r)
+                              ? () {
+                                  showRatingInputSheet(
+                                    context: context,
+                                    initialStar: r.star,
+                                    initialComment: r.comment,
+                                    title: '修改评价',
+                                    maxCommentLength: 200,
+                                    accentOverride: accent,
+                                    onSubmit: (star, comment) async {
+                                      final ok = await provider.rateTeacher(
+                                          widget.teacherId, star, comment);
+                                      if (ok) {
+                                        _didChange = true;
+                                      }
+                                      return ok;
+                                    },
+                                  );
                                 }
-                                return ok;
-                              },
-                            );
-                          } : null,
-                          onDelete: _isOwnRating(r) ? () => _confirmDeleteRating(r) : null,
+                              : null,
+                          onDelete: _isOwnRating(r)
+                              ? () => _confirmDeleteRating(r)
+                              : null,
                         ),
                       ))
                   .toList(),

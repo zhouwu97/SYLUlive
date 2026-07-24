@@ -149,6 +149,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void _handleAccountContextChanged() {
     if (!mounted) return;
     _synchronizePersonalAccount();
+    unawaited(_provider.retryBootstrap());
   }
 
   void _synchronizePersonalAccount() {
@@ -916,10 +917,14 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                   message: provider.error!,
                                   actionLabel: provider.canRetry
                                       ? '重试'
-                                      : '重新连接',
+                                      : provider.canReconnectRun
+                                          ? '重新连接'
+                                          : '重试加载',
                                   onAction: provider.canRetry
                                       ? provider.retryLast
-                                      : provider.reconnect,
+                                      : provider.canReconnectRun
+                                          ? provider.reconnect
+                                          : provider.retryBootstrap,
                                 ),
                               ),
                           ],
@@ -940,10 +945,16 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                             if (provider.error != null)
                               AiErrorCard(
                                 message: provider.error!,
-                                actionLabel: provider.canRetry ? '重试' : '重新连接',
+                                actionLabel: provider.canRetry
+                                    ? '重试'
+                                    : provider.canReconnectRun
+                                        ? '重新连接'
+                                        : '重试加载',
                                 onAction: provider.canRetry
                                     ? provider.retryLast
-                                    : provider.reconnect,
+                                    : provider.canReconnectRun
+                                        ? provider.reconnect
+                                        : provider.retryBootstrap,
                               ),
                           ],
                         ),

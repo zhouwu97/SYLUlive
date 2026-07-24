@@ -73,6 +73,9 @@ class _ProfileScreenState extends State<ProfileScreen>
   int _unreadMessageCount = 0;
   bool _startOnTimetable = false;
   int? _postCount;
+  Future<Map<String, int>>? _adminOverviewFuture;
+  Future<Response<dynamic>>? _invitationsFuture;
+  int? _loadedSessionGeneration;
 
   @override
   void initState() {
@@ -164,6 +167,17 @@ class _ProfileScreenState extends State<ProfileScreen>
     final authProvider = context.watch<AuthProvider>();
     final themeProvider = context.watch<ThemeProvider>();
     final user = authProvider.user;
+
+    if (_loadedSessionGeneration != authProvider.sessionGeneration) {
+      _loadedSessionGeneration = authProvider.sessionGeneration;
+      _adminOverviewFuture = user?.isAdmin == true
+          ? _loadAdminOverview(authProvider, user)
+          : null;
+      _invitationsFuture = authProvider.isLoggedIn
+          ? authProvider.dio.get('/user/invitations')
+          : null;
+    }
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
     final overlayStyle = (cleanLightMode
@@ -605,9 +619,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildAdminSection(BuildContext context, user, bool isDark) {
-    final auth = context.read<AuthProvider>();
     return FutureBuilder<Map<String, int>>(
-      future: _loadAdminOverview(auth, user),
+      future: _adminOverviewFuture,
       builder: (_, snap) {
         final overview = snap.data ?? const {'admin': 0, 'super': 0};
         final adminTodo = overview['admin'] ?? 0;
@@ -1241,7 +1254,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     bool isDark,
   ) {
     return FutureBuilder(
-      future: auth.dio.get('/user/invitations'),
+      future: _invitationsFuture,
       builder: (_, snap) {
         if (!snap.hasData) return const SizedBox.shrink();
         final list = (snap.data!.data as List?) ?? [];

@@ -79,8 +79,12 @@ class AiAssistantScreen extends StatefulWidget {
 
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
   late final AiAssistantProvider _provider;
-  final TextEditingController _inputController = TextEditingController();
+  final ScrollController _messagesScrollController = ScrollController();
   final FocusNode _inputFocusNode = FocusNode();
+  final TextEditingController _inputController = TextEditingController();
+
+  String? _lastBootstrapAuthKey;
+
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final List<PersonalConversationEntry> _personalConversationEntries =
       <PersonalConversationEntry>[];
@@ -149,6 +153,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void _handleAccountContextChanged() {
     if (!mounted) return;
     _synchronizePersonalAccount();
+    
+    final auth = _authProvider;
+    final authKey = auth == null
+        ? null
+        : '${auth.user?.id}:${auth.isLoggedIn}:${auth.accountSessionEpoch}';
+
+    if (authKey == _lastBootstrapAuthKey) return;
+    _lastBootstrapAuthKey = authKey;
+
     unawaited(_provider.retryBootstrap());
   }
 

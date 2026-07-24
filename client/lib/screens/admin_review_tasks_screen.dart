@@ -32,19 +32,19 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     });
     try {
       final dio = context.read<AuthProvider>().dio;
-      final teachersRes = await _loadOptionalList(dio, '/teachers/pending');
-      final majorsRes = await _loadOptionalList(dio, '/majors/pending');
-      final invitationsRes =
-          await _loadOptionalList(dio, '/admin/invitations/pending');
-      final removalsRes =
-          await _loadOptionalList(dio, '/admin/removals/pending');
+      final results = await Future.wait([
+        _loadOptionalList(dio, '/teachers/pending'),
+        _loadOptionalList(dio, '/majors/pending'),
+        _loadOptionalList(dio, '/admin/invitations/pending'),
+        _loadOptionalList(dio, '/admin/removals/pending'),
+      ]);
 
       if (!mounted) return;
       setState(() {
-        _pendingTeachers = teachersRes;
-        _pendingMajors = majorsRes;
-        _pendingInvitations = invitationsRes;
-        _pendingRemovals = removalsRes;
+        _pendingTeachers = results[0];
+        _pendingMajors = results[1];
+        _pendingInvitations = results[2];
+        _pendingRemovals = results[3];
         _isLoading = false;
       });
     } catch (e) {
@@ -58,7 +58,10 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
 
   Future<List<dynamic>> _loadOptionalList(Dio dio, String path) async {
     try {
-      final response = await dio.get(path);
+      final response = await dio.get(
+        path,
+        options: Options(receiveTimeout: const Duration(seconds: 10)),
+      );
       return (response.data as List?) ?? [];
     } catch (_) {
       return [];

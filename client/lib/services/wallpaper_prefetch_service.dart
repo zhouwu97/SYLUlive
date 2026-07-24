@@ -15,11 +15,6 @@ class WallpaperPrefetchService {
     'tablet_landscape_01.png',
     'tablet_landscape_02.png',
     'tablet_landscape_03.png',
-    'tablet_landscape_04.png',
-    'tablet_landscape_05.png',
-    'tablet_landscape_06.png',
-    'tablet_landscape_07.png',
-    'tablet_landscape_08.png',
   ];
 
   static void start() {

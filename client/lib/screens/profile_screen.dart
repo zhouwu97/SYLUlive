@@ -75,7 +75,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   int? _postCount;
   Future<Map<String, int>>? _adminOverviewFuture;
   Future<Response<dynamic>>? _invitationsFuture;
-  int? _loadedSessionGeneration;
+  int? _loadedAccountSessionEpoch;
 
   @override
   void initState() {
@@ -168,8 +168,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     final themeProvider = context.watch<ThemeProvider>();
     final user = authProvider.user;
 
-    if (_loadedSessionGeneration != authProvider.sessionGeneration) {
-      _loadedSessionGeneration = authProvider.sessionGeneration;
+    if (_loadedAccountSessionEpoch != authProvider.accountSessionEpoch) {
+      _loadedAccountSessionEpoch = authProvider.accountSessionEpoch;
       _adminOverviewFuture = user?.isAdmin == true
           ? _loadAdminOverview(authProvider, user)
           : null;

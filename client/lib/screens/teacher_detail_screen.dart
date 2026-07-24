@@ -191,7 +191,26 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             }
 
             final teacher = detail.teacher;
-            if (teacher == null) return const Center(child: Text('加载失败'));
+            if (teacher == null) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(detail.errorMessage ?? '教师信息加载失败'),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () {
+                        provider.loadTeacherDetail(
+                          widget.teacherId,
+                          force: true,
+                        );
+                      },
+                      child: const Text('重新加载'),
+                    ),
+                  ],
+                ),
+              );
+            }
 
             return Stack(
               children: [

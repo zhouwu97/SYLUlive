@@ -283,6 +283,7 @@ class AuthProvider extends ChangeNotifier {
   bool _initialized = false;
   Future<void>? _initializationFuture;
   int _sessionGeneration = 0;
+  int _accountSessionEpoch = 0;
   bool _applyingConsentRestriction = false;
   AuthState _authState = AuthState.unknown;
 
@@ -301,6 +302,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   int get sessionGeneration => _sessionGeneration;
+  int get accountSessionEpoch => _accountSessionEpoch;
   Dio get dio => _dio;
   PersistCookieJar? _cookieJar;
 
@@ -564,6 +566,7 @@ class AuthProvider extends ChangeNotifier {
     _token = candidate.token;
     _user = candidate.user;
     _sessionGeneration++;
+    _accountSessionEpoch++;
     _applyAuthHeader();
   }
 
@@ -856,7 +859,10 @@ class AuthProvider extends ChangeNotifier {
     if (_authState != AuthState.expired) {
       _setAuthState(AuthState.guest);
     }
-    if (hadSession) _sessionGeneration++;
+    if (hadSession) {
+      _sessionGeneration++;
+      _accountSessionEpoch++;
+    }
     _applyAuthHeader();
     notifyListeners();
 

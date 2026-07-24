@@ -138,30 +138,65 @@ class TeacherProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final resp = await _dio.get('/teachers/$teacherId');
-      if (resp.statusCode == 200) {
-        final data = resp.data;
-        _details[teacherId] = _details[teacherId]!.copyWith(
-          teacher: Teacher.fromJson(data['teacher']),
-          ratings: (data['ratings'] as List)
-              .map((j) => TeacherRating.fromJson(j))
-              .toList(),
-          ratingCount: data['rating_count'] ?? 0,
-          averageStar: (data['average_star'] ?? 0).toDouble(),
-          myRating: data['my_rating'] != null
-              ? TeacherRating.fromJson(data['my_rating'])
-              : null,
-          isLoading: false,
-          clearError: true,
-        );
-      } else {
-        _details[teacherId] = _details[teacherId]!.copyWith(
-            isLoading: false, errorMessage: '加载失败');
+      final raw = resp.data;
+
+      if (raw is! Map) {
+        throw const FormatException('教师详情响应不是对象');
       }
-    } on DioException catch (e) {
-      _details[teacherId] = _details[teacherId]!.copyWith(
-          isLoading: false, errorMessage: _parseError(e));
+
+      final data = Map<String, dynamic>.from(raw);
+      final rawTeacher = data['teacher'];
+      final rawRatings = data['ratings'];
+
+      if (rawTeacher is! Map) {
+        throw const FormatException('教师信息为空');
+      }
+
+      final teacher = Teacher.fromJson(
+        Map<String, dynamic>.from(rawTeacher),
+      );
+
+      final ratings = rawRatings is List
+          ? rawRatings
+              .whereType<Map>()
+              .map(
+                (item) => TeacherRating.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList()
+          : <TeacherRating>[];
+
+      TeacherRating? myRating;
+      if (data['my_rating'] is Map) {
+        myRating = TeacherRating.fromJson(
+          Map<String, dynamic>.from(data['my_rating'] as Map),
+        );
+      }
+
+      _details[teacherId] = TeacherDetailState(
+        teacher: teacher,
+        ratings: ratings,
+        myRating: myRating,
+        ratingCount: (data['rating_count'] as num?)?.toInt() ?? ratings.length,
+        averageStar: (data['average_star'] as num?)?.toDouble() ?? 0,
+        isLoading: false,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('教师详情解析或加载失败 teacher=$teacherId: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      _details[teacherId] = detailOf(teacherId).copyWith(
+        isLoading: false,
+        errorMessage: error is DioException ? _parseError(error) : '教师数据解析失败',
+      );
+    } finally {
+      final state = detailOf(teacherId);
+      if (state.isLoading) {
+        _details[teacherId] = state.copyWith(isLoading: false);
+      }
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<bool> addTeacher(String name, String course) async {

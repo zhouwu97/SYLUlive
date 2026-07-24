@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum GradeCenterSection { term, overview, graduationWarning }
+enum GradeCenterSection { term, overview }
 
 class GradeCenterSectionTabs extends StatelessWidget {
   final GradeCenterSection selected;
@@ -21,6 +21,7 @@ class GradeCenterSectionTabs extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: SegmentedButton<GradeCenterSection>(
         key: const ValueKey('grade_section_tabs'),
+        showSelectedIcon: false,
         segments: const [
           ButtonSegment<GradeCenterSection>(
             value: GradeCenterSection.term,
@@ -31,11 +32,6 @@ class GradeCenterSectionTabs extends StatelessWidget {
             value: GradeCenterSection.overview,
             label: Text('学业总览'),
             icon: Icon(Icons.insights_outlined, size: 17),
-          ),
-          ButtonSegment<GradeCenterSection>(
-            value: GradeCenterSection.graduationWarning,
-            label: Text('毕业预警'),
-            icon: Icon(Icons.warning_amber_outlined, size: 17),
           ),
         ],
         selected: <GradeCenterSection>{selected},

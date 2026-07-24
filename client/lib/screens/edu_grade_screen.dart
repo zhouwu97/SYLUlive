@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/edu_academic_situation.dart';
+import '../models/edu_credit_requirement.dart';
 import '../models/edu_grade.dart';
 import '../utils/app_motion.dart';
 import '../utils/edu_semester_utils.dart';
@@ -16,11 +17,12 @@ import '../widgets/edu_grade/grade_empty_state.dart';
 import '../widgets/edu_grade/grade_gpa_hero_card.dart';
 import '../widgets/edu_grade/academic_course_item.dart';
 import '../widgets/edu_grade/academic_course_status_state.dart';
-import '../widgets/edu_grade/academic_credit_overview.dart';
 import '../widgets/edu_grade/academic_privacy_notice.dart';
 import '../widgets/edu_grade/grade_center_section_tabs.dart';
-import '../widgets/edu_grade/graduation_warning_empty_state.dart';
+import '../widgets/edu_grade/academic_requirement_overview.dart';
+import '../widgets/edu_grade/improvement_course_section.dart';
 import 'edu_grade_detail_screen.dart';
+import 'academic_requirement_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
@@ -59,10 +61,15 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   String? _academicError;
   GradeCenterSection _section = GradeCenterSection.term;
 
+  // Credit requirement state
+  EduCreditRequirementOverview? _creditRequirements;
+  bool _isRequirementLoading = false;
+  String? _requirementError;
+  int _requirementRequestGeneration = 0;
+
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _termScrollController = ScrollController();
   final ScrollController _overviewScrollController = ScrollController();
-  final ScrollController _warningScrollController = ScrollController();
 
   EduProvider? _eduProvider;
 
@@ -77,7 +84,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     GradeScreenRegistry.unregister(this);
     _termScrollController.dispose();
     _overviewScrollController.dispose();
-    _warningScrollController.dispose();
     super.dispose();
   }
 
@@ -109,18 +115,22 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       // 立即废弃旧用户的所有进行中请求并清空页面
       _requestGeneration++;
       _academicRequestGeneration++;
+      _requirementRequestGeneration++;
       setState(() {
         _grades = [];
         _academicSituation = null;
+        _creditRequirements = null;
         _lastUpdatedAt = null;
         _activeFilter = '全部';
         _errorMessage = null;
         _academicError = null;
+        _requirementError = null;
         _section = GradeCenterSection.term;
         _pageState = GradePageState.loading;
         _isInitialLoading = true;
         _isRefreshing = false;
         _isAcademicLoading = true;
+        _isRequirementLoading = true;
       });
       _resetSectionScrollPositions();
 
@@ -160,12 +170,15 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     setState(() {
       _grades = const <EduGrade>[];
       _academicSituation = null;
+      _creditRequirements = null;
       _pageState = GradePageState.error;
       _errorMessage = message;
       _academicError = message;
+      _requirementError = message;
       _isInitialLoading = false;
       _isRefreshing = false;
       _isAcademicLoading = false;
+      _isRequirementLoading = false;
     });
   }
 
@@ -207,7 +220,10 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     if (mounted) setState(() {});
     await _loadGrades();
     if (!mounted) return;
-    await _loadAcademicSituation();
+
+    // 后台加载 GPA 和学分要求，不阻塞学期成绩首屏
+    unawaited(_loadAcademicSituation());
+    unawaited(_loadCreditRequirements());
   }
 
   bool _tryUseInitialSemester(String userId) {
@@ -267,6 +283,58 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _isAcademicLoading = false;
       _academicError = result.errorMessage ?? '官方 GPA 获取失败';
     });
+  }
+
+  Future<void> _loadCreditRequirements({bool forceRefresh = false}) async {
+    final provider = _eduProvider;
+    if (provider == null) return;
+
+    final cache = provider.getCachedCreditRequirements();
+    final hasCache = cache != null;
+
+    if (cache != null && !forceRefresh) {
+      setState(() {
+        _creditRequirements = cache.data;
+        _isRequirementLoading = false;
+        _requirementError = null;
+      });
+    } else {
+      setState(() {
+        _isRequirementLoading = _creditRequirements == null;
+        _requirementError = null;
+      });
+    }
+
+    final gen = ++_requirementRequestGeneration;
+    final result = await provider.fetchCreditRequirements();
+
+    if (!mounted || _requirementRequestGeneration != gen) return;
+
+    if (result.success && result.data != null) {
+      setState(() {
+        _creditRequirements = result.data!;
+        _isRequirementLoading = false;
+        _requirementError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isRequirementLoading = false;
+      _requirementError = result.errorMessage ?? '学分要求获取失败';
+    });
+  }
+
+  Future<bool> _refreshCreditRequirements({
+    bool showMessage = true,
+  }) async {
+    if (_isRequirementLoading) return false;
+    await _loadCreditRequirements(forceRefresh: true);
+    final success = _requirementError == null && _creditRequirements != null;
+    if (mounted && showMessage) {
+      _showSnackBar(success ? '学分要求已更新' : '学分要求获取失败');
+    }
+    return success;
   }
 
   Future<void> _loadGrades() async {
@@ -376,12 +444,42 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     return _refreshGrades(silent: silent);
   }
 
-  Future<bool> _refreshAcademicSituation() async {
+  Future<bool> _refreshAcademicSituation({bool showMessage = true}) async {
     if (_isAcademicLoading) return false;
     await _loadAcademicSituation(forceRefresh: true);
     final success = _academicError == null && _academicSituation != null;
-    if (mounted) _showSnackBar(success ? '学业情况已更新' : '刷新失败，请稍后重试');
+    if (mounted && showMessage) {
+      _showSnackBar(success ? '学业情况已更新' : '刷新失败，请稍后重试');
+    }
     return success;
+  }
+
+  /// 刷新学业总览：同时刷新 GPA 和学分要求。
+  Future<bool> _refreshAcademicOverview() async {
+    final gpaSuccess = await _refreshAcademicSituation(showMessage: false);
+
+    final requirementSuccess =
+        await _refreshCreditRequirements(showMessage: false);
+
+    if (!mounted) return false;
+
+    if (gpaSuccess && requirementSuccess) {
+      _showSnackBar('学业总览已更新');
+      return true;
+    }
+
+    if (gpaSuccess) {
+      _showSnackBar('GPA已更新，学分要求获取失败');
+      return false;
+    }
+
+    if (requirementSuccess) {
+      _showSnackBar('学分要求已更新，GPA获取失败');
+      return false;
+    }
+
+    _showSnackBar('学业总览刷新失败');
+    return false;
   }
 
   /// Atomically switch semester — old grades stay visible during load.
@@ -536,8 +634,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         onSemesterChanged: _switchSemester,
         onRefreshGrades: _refreshCurrentView,
         academicSituation: _academicSituation,
-        isAcademicRefreshing: _isAcademicLoading,
-        onRefreshAcademic: _refreshAcademicSituation,
+        isAcademicRefreshing: _isAcademicLoading || _isRequirementLoading,
+        onRefreshAcademic: _refreshAcademicOverview,
       ),
       appBar: AppBar(
         leading: const BackButton(),
@@ -580,16 +678,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
                 controller: _overviewScrollController,
                 slivers: _buildAcademicContent(),
               ),
-              CustomScrollView(
-                key: const ValueKey('grade_warning_scroll_view'),
-                controller: _warningScrollController,
-                slivers: const [
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: GraduationWarningEmptyState(),
-                  ),
-                ],
-              ),
             ],
           ),
         ),
@@ -609,13 +697,30 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _jumpToTop(_controllerFor(section));
       });
     }
+
+    // If switching to overview and no cached data, trigger loads
+    if (section == GradeCenterSection.overview) {
+      _ensureAcademicContentLoaded();
+    }
+  }
+
+  void _ensureAcademicContentLoaded() {
+    if (_academicSituation == null &&
+        _academicError == null &&
+        !_isAcademicLoading) {
+      unawaited(_loadAcademicSituation());
+    }
+    if (_creditRequirements == null &&
+        _requirementError == null &&
+        !_isRequirementLoading) {
+      unawaited(_loadCreditRequirements());
+    }
   }
 
   ScrollController _controllerFor(GradeCenterSection section) {
     return switch (section) {
       GradeCenterSection.term => _termScrollController,
       GradeCenterSection.overview => _overviewScrollController,
-      GradeCenterSection.graduationWarning => _warningScrollController,
     };
   }
 
@@ -623,7 +728,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _jumpToTop(_termScrollController);
       _jumpToTop(_overviewScrollController);
-      _jumpToTop(_warningScrollController);
     });
   }
 
@@ -633,7 +737,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
   List<Widget> _buildAcademicContent() {
     final situation = _academicError == null ? _academicSituation : null;
+
     return [
+      // 官方 GPA 卡片
       SliverToBoxAdapter(
         child: GradeGpaHeroCard(
           situation: situation,
@@ -642,43 +748,41 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           onRetry: _refreshAcademicSituation,
         ),
       ),
-      if (situation != null)
-        SliverToBoxAdapter(
-          child: AcademicCreditOverview(situation: situation),
-        ),
-      if (situation != null && situation.courses.isNotEmpty) ...[
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Text(
-              '课程明细',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white
-                    : const Color(0xFF1F2328),
+
+      // 学分要求模块
+      SliverToBoxAdapter(
+        child: AcademicRequirementOverview(
+          requirements: _creditRequirements,
+          isLoading: _isRequirementLoading,
+          isBackgroundRefresh:
+              _isRequirementLoading && _creditRequirements != null,
+          errorMessage: _requirementError,
+          hasCache: _creditRequirements != null,
+          onRetry: () => _loadCreditRequirements(forceRefresh: true),
+          onModuleTap: (module) {
+            Navigator.of(context).push(
+              PageRouteBuilder(
+                transitionDuration: const Duration(milliseconds: 260),
+                reverseTransitionDuration:
+                    const Duration(milliseconds: 200),
+                pageBuilder: (_, __, ___) =>
+                    AcademicRequirementDetailScreen(module: module),
+                transitionsBuilder: _detailTransition,
               ),
-            ),
-          ),
+            );
+          },
         ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => AcademicCourseItem(
-                course: situation.courses[index],
-              ),
-              childCount: situation.courses.length,
-            ),
-          ),
-        ),
-      ] else if (situation != null && !_isAcademicLoading)
+      ),
+
+      // 提高课程
+      if (_creditRequirements != null &&
+          _creditRequirements!.improvementCourses.isNotEmpty)
         SliverToBoxAdapter(
-          child: AcademicCourseStatusState(
-            status: situation.coursesStatus,
+          child: ImprovementCourseSection(
+            courses: _creditRequirements!.improvementCourses,
           ),
         ),
+
       const SliverToBoxAdapter(child: AcademicPrivacyNotice()),
       const SliverToBoxAdapter(child: SizedBox(height: 32)),
     ];
@@ -741,8 +845,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       ],
     ];
   }
-
-  // Academic course detail navigation removed
 
   void _openTermGradeDetail(EduGrade grade) {
     Navigator.of(context).push(
@@ -815,7 +917,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1D2024) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: SafeArea(
             top: false,
@@ -838,7 +941,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
                 ),
                 const Text(
                   '筛选课程',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  style:
+                      TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 12),
                 for (final option in options)
@@ -892,7 +996,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
                   ),
                 ),
               ),
-              if (selected) Icon(Icons.check_rounded, size: 20, color: accent),
+              if (selected)
+                Icon(Icons.check_rounded, size: 20, color: accent),
             ],
           ),
         ),

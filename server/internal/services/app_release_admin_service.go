@@ -87,7 +87,7 @@ func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDra
 		storageKey = buildAppReleaseStorageKey(input.VersionName, input.VersionCode, sha)
 		fileNameForDb = buildAppReleaseFileName(input.VersionName, input.VersionCode)
 		finalPath = filepath.Join(s.releaseDir, filepath.FromSlash(storageKey))
-		
+
 		if err := os.MkdirAll(filepath.Dir(finalPath), 0o750); err != nil {
 			return nil, fmt.Errorf("创建 APK 发布目录: %w", err)
 		}

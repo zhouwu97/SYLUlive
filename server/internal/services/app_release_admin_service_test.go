@@ -181,7 +181,7 @@ func TestAppReleaseAdminServiceOhosExternalMarketLifecycle(t *testing.T) {
 	// Delete Draft
 	err = svc.DeleteDraft(context.Background(), draft2.ID, admin.ID)
 	require.NoError(t, err)
-	
+
 	var count int64
 	require.NoError(t, db.Model(&models.AppRelease{}).Where("id = ?", draft2.ID).Count(&count).Error)
 	require.Zero(t, count)

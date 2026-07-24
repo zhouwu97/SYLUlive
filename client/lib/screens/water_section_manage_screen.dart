@@ -11,8 +11,8 @@ import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
 import 'water/water_section_display_edit_screen.dart';
 
-/// 版块管理页�?
-/// 按当前用户权限展示任免、禁言列表和操作日志�?
+/// 版块管理页。
+/// 按当前用户权限展示任免、禁言列表和操作日志。
 class WaterSectionManageScreen extends StatefulWidget {
   final WaterSection section;
 
@@ -34,7 +34,7 @@ class _ManageTabItem {
 }
 
 class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
-  // 等级称号管理状�?
+  // 等级称号管理状态
   List<WaterSectionLevelTitle>? _levelTitles;
   final List<TextEditingController> _levelTitleControllers =
       List.generate(8, (_) => TextEditingController());
@@ -63,7 +63,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           .read<WaterModeratorProvider>()
           .loadModerators(widget.section.slug);
     } catch (e) {
-      // silently ignore �?403 etc means user has no access
+      // silently ignore — 403 etc means user has no access
     } finally {
       if (mounted) setState(() {});
     }
@@ -222,7 +222,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '你没有该版块的管理权�?,
+              '你没有该版块的管理权限',
               style: TextStyle(
                   fontSize: 13,
                   color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
@@ -285,7 +285,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       length: tabs.length,
       child: Column(
         children: [
-          // ── 轻量版块头部�?──
+          // ── 轻量版块头部卡 ──
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             padding: const EdgeInsets.all(12),
@@ -344,7 +344,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    '管理�?,
+                    '管理中',
                     style: TextStyle(
                         fontSize: 11,
                         color: accent,
@@ -355,7 +355,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             ),
           ),
 
-          // ── 胶囊工具�?──
+          // ── 胶囊工具栏 ──
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             padding: const EdgeInsets.all(4),
@@ -479,7 +479,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      section.title.isNotEmpty ? section.title : '未命名版�?,
+                      section.title.isNotEmpty ? section.title : '未命名版块',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
@@ -490,7 +490,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     Text(
                       section.subtitle.isNotEmpty
                           ? section.subtitle
-                          : '这里可以写一句简单的副标�?,
+                          : '这里可以写一句简单的副标题',
                       style: TextStyle(
                         fontSize: 13,
                         color:
@@ -581,7 +581,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           _buildConfigItem(isDark, '默认排序', _sortLabel(section.defaultSort)),
           _buildConfigItem(
             isDark,
-            '空状�?,
+            '空状态',
             section.emptyTitle.isNotEmpty ? section.emptyTitle : '默认',
             subtitle: section.emptyDescription,
           ),
@@ -770,7 +770,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         if (tags.isEmpty)
           _buildEmptyList(isDark, '暂无标签')
         else ...[
-          _buildTagGroupHeader('启用�?, enabledTags.length, isDark),
+          _buildTagGroupHeader('启用中', enabledTags.length, isDark),
           if (enabledTags.isEmpty)
             _buildEmptyList(isDark, '暂无启用标签')
           else
@@ -819,7 +819,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          _buildTagGroupHeader('已归�?, count, isDark),
+          _buildTagGroupHeader('已归档', count, isDark),
           const Spacer(),
           TextButton.icon(
             onPressed: () {
@@ -874,7 +874,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        tag.isEnabled ? '启用' : '已归�?,
+                        tag.isEnabled ? '启用' : '已归档',
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
@@ -979,7 +979,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         return '默认排序';
       case 'time':
       case 'latest':
-        return '最新发�?;
+        return '最新发布';
       case 'featured':
         return '精华内容';
       case 'following':
@@ -1026,8 +1026,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         title: Text(willEnable ? '恢复标签' : '归档标签'),
         content: Text(
           willEnable
-              ? '恢复后，学生发帖时可以重新选择�?{tag.name}」，版块页也会重新显示该标签入口�?
-              : '归档后，学生发帖时不能再选择�?{tag.name}」，版块页也不再显示该标签入口。已有帖子不会删除，仍会出现在综合、最新、精华、推荐中�?,
+              ? '恢复后，学生发帖时可以重新选择「${tag.name}」，版块页也会重新显示该标签入口。'
+              : '归档后，学生发帖时不能再选择「${tag.name}」，版块页也不再显示该标签入口。已有帖子不会删除，仍会出现在综合、最新、精华、推荐中。',
         ),
         actions: [
           TextButton(
@@ -1056,7 +1056,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                 SnackBar(
                   content: Text(
                     ok
-                        ? (willEnable ? '标签已恢�? : '标签已归�?)
+                        ? (willEnable ? '标签已恢复' : '标签已归档')
                         : provider.error ?? '操作失败',
                   ),
                 ),
@@ -1120,7 +1120,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            '点击上方“添加版主”任命该版块的管理�?,
+            '点击上方“添加版主”任命该版块的管理者',
             style: TextStyle(
                 fontSize: 12,
                 color: isDark ? Colors.white38 : const Color(0xFF9CA3AF)),
@@ -1304,8 +1304,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('罢免版主'),
-        content: Text('确认要罢免�?{mod.displayName}」在'
-            '�?{widget.section.title}」版块的版主权限吗？'),
+        content: Text('确认要罢免「${mod.displayName}」在'
+            '「${widget.section.title}」版块的版主权限吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1321,7 +1321,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     );
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已罢免版�?)),
+                    const SnackBar(content: Text('已罢免版主')),
                   );
                 }
               } catch (e) {
@@ -1378,7 +1378,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                 const Center(child: CircularProgressIndicator(strokeWidth: 2)),
           )
         else if (mutes.isEmpty)
-          _buildEmptyList(isDark, '暂无正在禁言的用�?)
+          _buildEmptyList(isDark, '暂无正在禁言的用户')
         else
           ...mutes.map((m) => _buildMuteCard(m, isDark)),
       ],
@@ -1387,7 +1387,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   Widget _buildMuteCard(WaterSectionMute mute, bool isDark) {
     final untilText = mute.until != null
-        ? '�?${mute.until!.toLocal().toString().substring(0, 16)}'
+        ? '至 ${mute.until!.toLocal().toString().substring(0, 16)}'
         : '永久';
     final isExpired =
         mute.until != null && mute.until!.isBefore(DateTime.now());
@@ -1427,7 +1427,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     color: Colors.orange.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text('已过�?,
+                  child: const Text('已过期',
                       style: TextStyle(fontSize: 10, color: Colors.orange)),
                 )
               else
@@ -1463,7 +1463,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('解除禁言'),
-        content: Text('确认解除�?{mute.displayName}」在本版块的禁言吗？'),
+        content: Text('确认解除「${mute.displayName}」在本版块的禁言吗？'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
@@ -1603,7 +1603,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                                     ? Colors.white
                                     : const Color(0xFF20232A))),
                         const SizedBox(height: 4),
-                        Text(log.reason.isNotEmpty ? log.reason : '无原�?,
+                        Text(log.reason.isNotEmpty ? log.reason : '无原因',
                             style: TextStyle(
                                 fontSize: 12,
                                 color: isDark
@@ -1667,7 +1667,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
               maxLength: 100,
               decoration: const InputDecoration(
                 labelText: '恢复原因',
-                hintText: '可�?,
+                hintText: '可选',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -1698,7 +1698,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     if (!mounted) return;
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('帖子已恢�?)),
+        const SnackBar(content: Text('帖子已恢复')),
       );
       _loadLogs();
     } else {
@@ -1748,7 +1748,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       await _loadLevelTitles();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('等级称号已保�?)),
+        const SnackBar(content: Text('等级称号已保存')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -1783,7 +1783,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '自定义称�?,
+                '自定义称号',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
@@ -1792,7 +1792,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                '自定义版�?Lv.1 �?Lv.8 的称号，留空则沿用默认称�?,
+                '自定义版块 Lv.1 – Lv.8 的称号，留空则沿用默认称号',
                 style: TextStyle(
                   fontSize: 12,
                   color: isDark ? Colors.white54 : const Color(0xFF7B818C),
@@ -1901,8 +1901,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     final now = DateTime.now();
     final diff = now.difference(local);
     if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inHours < 1) return '${diff.inMinutes}分钟�?;
-    if (diff.inDays < 1) return '${diff.inHours}小时�?;
+    if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
+    if (diff.inDays < 1) return '${diff.inHours}小时前';
     final month = local.month.toString().padLeft(2, '0');
     final day = local.day.toString().padLeft(2, '0');
     final hour = local.hour.toString().padLeft(2, '0');
@@ -1973,11 +1973,11 @@ class _TagFormSheetState extends State<_TagFormSheet> {
       return;
     }
     if (name.runes.length > 40) {
-      _showSnack('标签名称最�?40 �?);
+      _showSnack('标签名称最多 40 字');
       return;
     }
     if (_descriptionController.text.trim().runes.length > 200) {
-      _showSnack('标签描述最�?200 �?);
+      _showSnack('标签描述最多 200 字');
       return;
     }
 
@@ -2013,7 +2013,7 @@ class _TagFormSheetState extends State<_TagFormSheet> {
     setState(() => _isSubmitting = false);
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isEditing ? '标签已保�? : '标签已新�?)),
+        SnackBar(content: Text(_isEditing ? '标签已保存' : '标签已新增')),
       );
       Navigator.pop(context);
     } else {
@@ -2050,7 +2050,7 @@ class _TagFormSheetState extends State<_TagFormSheet> {
             _buildTextField(_nameController, '标签名称', isDark),
             _buildTextField(_descriptionController, '标签描述', isDark,
                 maxLines: 3),
-            _buildTextField(_sortOrderController, '排序�?, isDark,
+            _buildTextField(_sortOrderController, '排序值', isDark,
                 keyboardType: TextInputType.number),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -2241,7 +2241,7 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
       final userIdText = _userIdController.text.trim();
       if (userIdText.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请输入用�?ID')),
+          const SnackBar(content: Text('请输入用户 ID')),
         );
         return;
       }
@@ -2267,7 +2267,7 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
             );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已任命版�?)),
+            const SnackBar(content: Text('已任命版主')),
           );
           Navigator.pop(context);
         }
@@ -2305,7 +2305,7 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
             );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('权限已更�?)),
+            const SnackBar(content: Text('权限已更新')),
           );
           Navigator.pop(context);
         }
@@ -2331,8 +2331,8 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
   String _mapDioError(DioException e) {
     final statusCode = e.response?.statusCode;
     if (statusCode == 400) return '用户不存在或不能任命管理员为版主';
-    if (statusCode == 409) return '该用户已经是该版块版�?;
-    if (statusCode == 403) return '没有权限执行此操�?;
+    if (statusCode == 409) return '该用户已经是该版块版主';
+    if (statusCode == 403) return '没有权限执行此操作';
     return '操作失败，请稍后重试';
   }
 
@@ -2403,7 +2403,7 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
               children: [
                 _buildRoleChip('moderator', '版主', isDark),
                 const SizedBox(width: 10),
-                _buildRoleChip('owner', '负责�?, isDark),
+                _buildRoleChip('owner', '负责人', isDark),
               ],
             ),
             const SizedBox(height: 14),
@@ -2432,7 +2432,7 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
               maxLines: 2,
               decoration: InputDecoration(
                 labelText: '任命原因（可选）',
-                hintText: '例如：负责课程学习版块维�?,
+                hintText: '例如：负责课程学习版块维护',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),

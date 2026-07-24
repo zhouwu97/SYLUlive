@@ -278,8 +278,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         setState(() {
           _stateLoading = false;
           _stateError = error is DioException
-              ? AppFeedback.dioErrorMessage(error, fallback: '计划状态加载失�?)
-              : '计划状态解析失�?;
+              ? AppFeedback.dioErrorMessage(error, fallback: '计划状态加载失败')
+              : '计划状态解析失败';
         });
       }
     }
@@ -411,7 +411,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     parts.addAll(_sources.map(_sourceLabel));
     if (parts.isEmpty) return '全部比赛';
     if (parts.length <= 3) return parts.join(' · ');
-    return '已�?${parts.length} �?;
+    return '已选 ${parts.length} 项';
   }
 
   @override
@@ -468,7 +468,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         title: _studentFocusTitle,
         subtitle: _eventsLoading
             ? '正在加载比赛'
-            : '�?$_eventTotal 个结�?· ${_filterSummary == '全部比赛' ? '全部分类' : _filterSummary}',
+            : '共 $_eventTotal 个结果 · ${_filterSummary == '全部比赛' ? '全部分类' : _filterSummary}',
         isDark: isDark,
       ),
       _buildEventList(isAdmin: false, isDark: isDark),
@@ -541,7 +541,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             children: [
               _buildSoftButton(
                 icon: Icons.tune_rounded,
-                label: _categoriesLoading ? '分类�? : '分类',
+                label: _categoriesLoading ? '分类…' : '分类',
                 isDark: isDark,
                 highlight: _filterSummary != '全部比赛',
                 onTap: _openFilters,
@@ -586,14 +586,14 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   Widget _buildStudentOverview(bool isDark) {
     final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
     final planValue = !isLoggedIn
-        ? '登录后使�?
+        ? '登录后使用'
         : _stateError != null
             ? '重试'
             : (_stateLoading && _calendarCount == null)
-                ? '�?
+                ? '—'
                 : '${_calendarCount ?? 0}';
     final deadlineValue = _overviewLoading
-        ? '�?
+        ? '—'
         : _overviewError != null
             ? '重试'
             : '$_deadlineSoonCount';
@@ -637,7 +637,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     } else if (_preferenceLoading && preference == null) {
       subtitle = '正在读取你的竞赛目标';
     } else if (_preferenceError != null && preference == null) {
-      subtitle = '读取失败，点击重�?;
+      subtitle = '读取失败，点击重试';
     } else if (preference?.configured == true) {
       title = '我的竞赛目标';
       final parts = <String>[];
@@ -775,7 +775,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        isLoggedIn ? '记录参赛、获奖和团队贡献' : '登录后管理你的私有竞赛档�?,
+                        isLoggedIn ? '记录参赛、获奖和团队贡献' : '登录后管理你的私有竞赛档案',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -862,7 +862,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        isLoggedIn ? '查看经历与目标的结构化汇�? : '登录后查看你的竞赛能力画�?,
+                        isLoggedIn ? '查看经历与目标的结构化汇总' : '登录后查看你的竞赛能力画像',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -973,8 +973,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       if (BetaReleasePolicy.competitionRecommendations) ('recommended', '推荐'),
       ('deadline', '临近截止'),
       ('recognized', '学校认定'),
-      if (BetaReleasePolicy.aiCompetitionFit && _profileReady) ('fit', '适合�?),
-      ('pending', '时间待公�?),
+      if (BetaReleasePolicy.aiCompetitionFit && _profileReady) ('fit', '适合我'),
+      ('pending', '时间待公布'),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -1067,8 +1067,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         );
       }
       return CompetitionEmptyState(
-        title: isAdmin ? '列表还没有内�? : '暂时没有符合条件的比�?,
-        message: isAdmin ? '可以 AI 导入或手动新建官方草稿�? : '换一个筛选条件看看，或先导入同学整理的计划�?,
+        title: isAdmin ? '列表还没有内容' : '暂时没有符合条件的比赛',
+        message: isAdmin ? '可以 AI 导入或手动新建官方草稿。' : '换一个筛选条件看看，或先导入同学整理的计划。',
         primaryText: '导入计划',
         onPrimaryTap: _openShareImport,
         secondaryText: '刷新',
@@ -1091,7 +1091,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             TextButton.icon(
               onPressed: () => _loadEvents(reset: false),
               icon: const Icon(Icons.refresh_rounded),
-              label: Text('下一页加载失败，点击重试�?_eventsError'),
+              label: Text('下一页加载失败，点击重试：$_eventsError'),
             ),
         ],
       ),
@@ -1105,9 +1105,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       case 'recognized':
         return '学校认定';
       case 'fit':
-        return '适合�?;
+        return '适合我';
       case 'pending':
-        return '时间待公�?;
+        return '时间待公布';
       case 'recommended':
         return '推荐关注';
       default:
@@ -1208,12 +1208,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         }
       });
       AppFeedback.showSnackBar(
-          context, alreadyExists ? '比赛已在我的计划�? : '已加入我的竞赛计�?);
+          context, alreadyExists ? '比赛已在我的计划中' : '已加入我的竞赛计划');
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
-        AppFeedback.dioErrorMessage(e, fallback: '加入失败，请先登�?),
+        AppFeedback.dioErrorMessage(e, fallback: '加入失败，请先登录'),
         isError: true,
       );
     } finally {
@@ -1328,12 +1328,12 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
       await context.read<AuthProvider>().dio.post(
           '/user/competition-calendar/items/copy-from-official/${event.id}');
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '已加入我的计�?);
+      AppFeedback.showSnackBar(context, '已加入我的计划');
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
-        AppFeedback.dioErrorMessage(e, fallback: '加入失败，请先登�?),
+        AppFeedback.dioErrorMessage(e, fallback: '加入失败，请先登录'),
         isError: true,
       );
     }
@@ -1354,7 +1354,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : event == null
-              ? const Center(child: Text('比赛不存�?))
+              ? const Center(child: Text('比赛不存在'))
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
@@ -1376,7 +1376,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           children: [
                             if (BetaReleasePolicy.competitionRecommendations)
                               _detailChip('${event.recommendationLevel}推荐'),
-                            _detailChip(event.primaryCategory?.name ?? '未分�?),
+                            _detailChip(event.primaryCategory?.name ?? '未分类'),
                             _detailChip(_competitionTimeState(event).label),
                           ],
                         ),
@@ -1399,10 +1399,10 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                       children: [
                         _detailInfo(
                           _competitionTimeLine(event)?.label ?? '报名安排',
-                          _competitionTimeLine(event)?.value ?? '时间待公�?,
+                          _competitionTimeLine(event)?.value ?? '时间待公布',
                         ),
                         _detailInfo('比赛时间', event.eventTimeText),
-                        _detailInfo('时间状�?, _competitionTimeState(event).label),
+                        _detailInfo('时间状态', _competitionTimeState(event).label),
                         _detailInfo('时间精度', event.timePrecisionLabel),
                         _detailInfo('时间说明', event.timeNote),
                       ],
@@ -1427,7 +1427,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                     _detailCard(
                       title: '基本信息',
                       children: [
-                        _detailInfo('主办�?, event.organizer),
+                        _detailInfo('主办方', event.organizer),
                         _detailInfo('比赛级别', event.competitionLevel),
                         _detailInfo(
                             '地点', event.isOnline ? '线上' : event.location),
@@ -1633,7 +1633,7 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
                   children: [
                     const Expanded(
                       child: Text(
-                        '筛选比�?,
+                        '筛选比赛',
                         style: TextStyle(
                           fontSize: 19,
                           fontWeight: FontWeight.w900,
@@ -1680,7 +1680,7 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
                         {
                           'S': 'S强烈推荐',
                           'A': 'A推荐',
-                          'B': 'B可参�?,
+                          'B': 'B可参加',
                           'C': 'C兴趣',
                         },
                         _recommendations,
@@ -1688,9 +1688,9 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
                     _sheetMulti(
                       '学校认定',
                       {
-                        'recognized': '已认�?,
-                        'not_recognized': '未认�?,
-                        'pending': '待确�?,
+                        'recognized': '已认定',
+                        'not_recognized': '未认定',
+                        'pending': '待确认',
                         'unknown': '未知',
                       },
                       _recognitions,
@@ -1703,7 +1703,7 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
                         'college_notice': '学院通知',
                         'industry_association': '行业协会',
                         'platform': '平台赛事',
-                        'admin_manual': '管理员精�?,
+                        'admin_manual': '管理员精选',
                         'ai_import': 'AI导入',
                       },
                       _sources,
@@ -1876,12 +1876,12 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
       final code = '${resp.data['share_code'] ?? ''}';
       await Clipboard.setData(ClipboardData(text: code));
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '分享码已复制�?code');
+      AppFeedback.showSnackBar(context, '分享码已复制：$code');
     } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
-        AppFeedback.dioErrorMessage(e, fallback: '生成分享码失�?),
+        AppFeedback.dioErrorMessage(e, fallback: '生成分享码失败'),
         isError: true,
       );
     }
@@ -1889,7 +1889,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
 
   Future<void> _openEditor({Map<String, dynamic>? item}) async {
     if (_categories.isEmpty) {
-      AppFeedback.showSnackBar(context, '分类加载失败，暂时无法编辑比�?, isError: true);
+      AppFeedback.showSnackBar(context, '分类加载失败，暂时无法编辑比赛', isError: true);
       return;
     }
     final changed = await Navigator.push<bool>(
@@ -1928,7 +1928,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除比赛'),
-        content: Text('确定从我的计划删除�?{item['title'] ?? '未命名比�?}」吗�?),
+        content: Text('确定从我的计划删除「${item['title'] ?? '未命名比赛'}」吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1945,7 +1945,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     try {
       await dio.delete('/user/competition-calendar/items/${item['id']}');
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '已删除比�?);
+      AppFeedback.showSnackBar(context, '已删除比赛');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -1965,7 +1965,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
           .dio
           .put('/user/competition-calendar/items/${item['id']}', data: data);
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '已归档比�?);
+      AppFeedback.showSnackBar(context, '已归档比赛');
       await _load();
     } on DioException catch (e) {
       if (!mounted) return;
@@ -2049,7 +2049,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
                     allItemsSelected:
                         _selectedEventIds.length == items.length &&
                             items.isNotEmpty,
-                    allItemsLabel: '全�?(${items.length})',
+                    allItemsLabel: '全选 (${items.length})',
                     onToggleSelectAll: () {
                       setState(() {
                         if (_selectedEventIds.length == items.length) {
@@ -2082,9 +2082,9 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
                           padding: const EdgeInsets.all(16),
                           sliver: SliverToBoxAdapter(
                             child: CompetitionEmptyState(
-                              title: '还没有加入竞赛计�?,
-                              message: '时间不确定也可以先关注比赛，后续看到学校通知后再补充准确时间�?,
-                              primaryText: '去发现比�?,
+                              title: '还没有加入竞赛计划',
+                              message: '时间不确定也可以先关注比赛，后续看到学校通知后再补充准确时间。',
+                              primaryText: '去发现比赛',
                               onPrimaryTap: () => Navigator.maybePop(context),
                               secondaryText: '手动添加',
                               onSecondaryTap: () => _openEditor(),
@@ -2120,7 +2120,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
       'now': '现在该做',
       'soon': '近期关注',
       'later': '长期关注',
-      'done': '已结�?,
+      'done': '已结束',
     };
     final flattened = <dynamic>[];
     for (final key in groups.keys) {
@@ -2293,19 +2293,19 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
               icon: Icons.visibility_outlined),
           CompetitionBatchAction(
               value: 'preparing',
-              label: '设为准备�?,
+              label: '设为准备中',
               icon: Icons.model_training_rounded),
           CompetitionBatchAction(
               value: 'registered',
-              label: '设为已报�?,
+              label: '设为已报名',
               icon: Icons.how_to_reg_rounded),
           CompetitionBatchAction(
               value: 'submitted',
-              label: '设为已提�?,
+              label: '设为已提交',
               icon: Icons.upload_file_rounded),
           CompetitionBatchAction(
               value: 'finished',
-              label: '标记已结�?,
+              label: '标记已结束',
               icon: Icons.emoji_events_outlined),
           CompetitionBatchAction(
               value: 'archived', label: '归档', icon: Icons.inventory_2_outlined),
@@ -2318,10 +2318,10 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
         onActionSelected: (value) {
           final labels = {
             'watching': '恢复关注',
-            'preparing': '设为准备�?,
-            'registered': '设为已报�?,
-            'submitted': '设为已提�?,
-            'finished': '标记已结�?,
+            'preparing': '设为准备中',
+            'registered': '设为已报名',
+            'submitted': '设为已提交',
+            'finished': '标记已结束',
             'archived': '归档',
             'delete': '删除',
           };
@@ -2342,8 +2342,8 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
       context: context,
       builder: (ctx) => CompetitionBatchConfirmDialog(
         title: '确认批量$actionLabel',
-        content: '即将对选中�?${ids.length} 项比赛执�?actionLabel�?
-            '${isDelete ? '\n\n注意：这些项目只会从“我的竞赛计划”移除，不会删除官方竞赛库中的比赛�? : ''}',
+        content: '即将对选中的 ${ids.length} 项比赛执行$actionLabel。'
+            '${isDelete ? '\n\n注意：这些项目只会从“我的竞赛计划”移除，不会删除官方竞赛库中的比赛。' : ''}',
         confirmLabel: '确认',
         isDanger: isDelete,
       ),
@@ -2364,7 +2364,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
       final skipped = (data?['skipped_count'] as num?)?.toInt() ?? 0;
       AppFeedback.showSnackBar(
         context,
-        '批量$actionLabel完成：成�?$success，跳�?$skipped',
+        '批量$actionLabel完成：成功 $success，跳过 $skipped',
       );
       setState(() {
         _selectionMode = false;
@@ -2373,7 +2373,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
       await _load();
     } catch (_) {
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '批量$actionLabel部分或全部失�?, isError: true);
+      AppFeedback.showSnackBar(context, '批量$actionLabel部分或全部失败', isError: true);
       await _load();
     }
   }
@@ -2462,10 +2462,10 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     }
     final text =
         '${item['registration_time_text'] ?? ''} ${item['event_time_text'] ?? ''}';
-    if (_containsAny(text, const ['预计', '暂定', '计划', '大概', '�?])) {
+    if (_containsAny(text, const ['预计', '暂定', '计划', '大概', '约'])) {
       return 'estimated';
     }
-    if (_containsAny(text, const ['往�?, '历年', '通常', '一�?, '参�?])) {
+    if (_containsAny(text, const ['往年', '历年', '通常', '一般', '参考'])) {
       return 'historical';
     }
     return 'pending';
@@ -2506,17 +2506,17 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
   String _planStatusLabel(String value) {
     switch (value) {
       case 'preparing':
-        return '准备�?;
+        return '准备中';
       case 'registered':
-        return '已报�?;
+        return '已报名';
       case 'submitted':
-        return '已提�?;
+        return '已提交';
       case 'finished':
-        return '已结�?;
+        return '已结束';
       case 'archived':
-        return '已归�?;
+        return '已归档';
       default:
-        return '关注�?;
+        return '关注中';
     }
   }
 }
@@ -2607,7 +2607,7 @@ class _CompetitionCalendarItemEditorScreenState
   Future<void> _save() async {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
-      AppFeedback.showSnackBar(context, '请填写比赛名�?, isError: true);
+      AppFeedback.showSnackBar(context, '请填写比赛名称', isError: true);
       return;
     }
     if (_categoryId == null || _categoryId == 0) {
@@ -2649,7 +2649,7 @@ class _CompetitionCalendarItemEditorScreenState
         await dio.post('/user/competition-calendar/items', data: data);
       }
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, _isEditing ? '已更新比�? : '已新增比�?);
+      AppFeedback.showSnackBar(context, _isEditing ? '已更新比赛' : '已新增比赛');
       Navigator.pop(context, true);
     } on DioException catch (e) {
       if (!mounted) return;
@@ -2701,7 +2701,7 @@ class _CompetitionCalendarItemEditorScreenState
               ],
               isDark),
           _buildFormGroup(
-              '分类与推�?,
+              '分类与推荐',
               [
                 DropdownButtonFormField<int>(
                   initialValue: _categoryId,
@@ -2724,7 +2724,7 @@ class _CompetitionCalendarItemEditorScreenState
                         items: const [
                           DropdownMenuItem(value: 'S', child: Text('S 强烈推荐')),
                           DropdownMenuItem(value: 'A', child: Text('A 推荐')),
-                          DropdownMenuItem(value: 'B', child: Text('B 可参�?)),
+                          DropdownMenuItem(value: 'B', child: Text('B 可参加')),
                           DropdownMenuItem(value: 'C', child: Text('C 兴趣')),
                         ],
                         onChanged: (value) =>
@@ -2738,11 +2738,11 @@ class _CompetitionCalendarItemEditorScreenState
                         decoration: _inputDecoration('学校认定', isDark),
                         items: const [
                           DropdownMenuItem(
-                              value: 'recognized', child: Text('已认�?)),
+                              value: 'recognized', child: Text('已认定')),
                           DropdownMenuItem(
-                              value: 'not_recognized', child: Text('未认�?)),
+                              value: 'not_recognized', child: Text('未认定')),
                           DropdownMenuItem(
-                              value: 'pending', child: Text('待确�?)),
+                              value: 'pending', child: Text('待确认')),
                           DropdownMenuItem(value: 'unknown', child: Text('未知')),
                         ],
                         onChanged: (value) =>
@@ -2761,7 +2761,7 @@ class _CompetitionCalendarItemEditorScreenState
                 const SizedBox(height: 12),
                 _input(_registrationTextController, '报名时间说明', isDark: isDark),
                 const SizedBox(height: 12),
-                _input(_eventStartController, '比赛开始日�?YYYY-MM-DD',
+                _input(_eventStartController, '比赛开始日期 YYYY-MM-DD',
                     isDark: isDark),
                 const SizedBox(height: 12),
                 _input(_eventTextController, '比赛时间说明', isDark: isDark),
@@ -2777,7 +2777,7 @@ class _CompetitionCalendarItemEditorScreenState
               ],
               isDark),
           _buildFormGroup(
-              '地点与链�?,
+              '地点与链接',
               [
                 _input(_locationController, '地点', isDark: isDark),
                 const SizedBox(height: 12),
@@ -2800,7 +2800,7 @@ class _CompetitionCalendarItemEditorScreenState
                 borderRadius: BorderRadius.circular(18),
               ),
             ),
-            child: Text(_saving ? '保存�?..' : '保存比赛'),
+            child: Text(_saving ? '保存中...' : '保存比赛'),
           ),
         ),
       ),
@@ -2969,7 +2969,7 @@ class _CompetitionShareImportScreenState
         if (!mounted) return;
         AppFeedback.showSnackBar(
           context,
-          'JSON 顶层必须�?{"events": [...]}',
+          'JSON 顶层必须是 {"events": [...]}',
           isError: true,
         );
         return;
@@ -2989,7 +2989,7 @@ class _CompetitionShareImportScreenState
         _preview = Map<String, dynamic>.from(resp.data['preview']);
       });
 
-      AppFeedback.showSnackBar(context, '已读�?${file.name}');
+      AppFeedback.showSnackBar(context, '已读取 ${file.name}');
     } on FormatException {
       AppFeedback.showSnackBar(
         context,
@@ -3000,7 +3000,7 @@ class _CompetitionShareImportScreenState
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
-        AppFeedback.dioErrorMessage(e, fallback: '读取 JSON 文件或预览失�?),
+        AppFeedback.dioErrorMessage(e, fallback: '读取 JSON 文件或预览失败'),
         isError: true,
       );
     } catch (e) {
@@ -3041,7 +3041,7 @@ class _CompetitionShareImportScreenState
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
-        '导入失败�?e',
+        '导入失败：$e',
         isError: true,
       );
     }
@@ -3059,7 +3059,7 @@ class _CompetitionShareImportScreenState
             segments: const [
               ButtonSegment(
                 value: _ImportMode.shareCode,
-                label: Text('分享码导�?),
+                label: Text('分享码导入'),
               ),
               ButtonSegment(
                 value: _ImportMode.jsonFile,
@@ -3078,7 +3078,7 @@ class _CompetitionShareImportScreenState
           if (_mode == _ImportMode.shareCode) ...[
             TextField(
               controller: _controller,
-              decoration: const InputDecoration(labelText: '分享�?),
+              decoration: const InputDecoration(labelText: '分享码'),
             ),
             const SizedBox(height: 12),
             FilledButton(onPressed: _previewShare, child: const Text('预览')),
@@ -3101,7 +3101,7 @@ class _CompetitionShareImportScreenState
                   OutlinedButton.icon(
                     onPressed: _readingJsonFile ? null : _pickJsonFile,
                     icon: const Icon(Icons.upload_file_rounded, size: 18),
-                    label: Text(_readingJsonFile ? '读取�?..' : '选择 JSON 文件'),
+                    label: Text(_readingJsonFile ? '读取中...' : '选择 JSON 文件'),
                   ),
                 ],
               ),
@@ -3109,7 +3109,7 @@ class _CompetitionShareImportScreenState
           ],
           if (_preview != null) ...[
             const SizedBox(height: 16),
-            Text('预览 ${items.length} 个比�?,
+            Text('预览 ${items.length} 个比赛',
                 style: const TextStyle(fontWeight: FontWeight.w800)),
             ...items.map((e) => ListTile(title: Text(e['title'] ?? ''))),
             Row(children: [
@@ -3167,12 +3167,12 @@ _CompetitionTimeState _competitionTimeState(CompetitionEvent event) {
   if (deadline != null) {
     if (deadline.isBefore(DateTime.now())) {
       return const _CompetitionTimeState(
-        label: '已截�?,
+        label: '已截止',
         color: _competitionDanger,
       );
     }
     return const _CompetitionTimeState(
-      label: '已确�?,
+      label: '已确认',
       color: _competitionPrimary,
       highlight: true,
     );
@@ -3182,7 +3182,7 @@ _CompetitionTimeState _competitionTimeState(CompetitionEvent event) {
     switch (event.timeStatus) {
       case 'confirmed':
         return const _CompetitionTimeState(
-          label: '已确�?,
+          label: '已确认',
           color: _competitionPrimary,
           highlight: true,
         );
@@ -3194,33 +3194,33 @@ _CompetitionTimeState _competitionTimeState(CompetitionEvent event) {
         );
       case 'historical':
         return const _CompetitionTimeState(
-          label: '往年参�?,
+          label: '往年参考',
           color: _competitionPrimaryDark,
         );
       default:
         return const _CompetitionTimeState(
-          label: '时间待公�?,
+          label: '时间待公布',
           color: _competitionMuted,
         );
     }
   }
 
   final text = '${event.registrationTimeText} ${event.eventTimeText}';
-  if (_containsAny(text, const ['预计', '暂定', '计划', '大概', '�?])) {
+  if (_containsAny(text, const ['预计', '暂定', '计划', '大概', '约'])) {
     return const _CompetitionTimeState(
       label: '预计时间',
       color: _competitionOrange,
       highlight: true,
     );
   }
-  if (_containsAny(text, const ['往�?, '历年', '通常', '一�?, '参�?])) {
+  if (_containsAny(text, const ['往年', '历年', '通常', '一般', '参考'])) {
     return const _CompetitionTimeState(
-      label: '往年参�?,
+      label: '往年参考',
       color: _competitionPrimaryDark,
     );
   }
   return const _CompetitionTimeState(
-    label: '时间待公�?,
+    label: '时间待公布',
     color: _competitionMuted,
   );
 }
@@ -3252,7 +3252,7 @@ _CompetitionTimeLine? _competitionTimeLine(CompetitionEvent event) {
     return _CompetitionTimeLine(
       icon: Icons.event_note_rounded,
       label: '预计月份',
-      value: '${event.sortMonth} 月左�?,
+      value: '${event.sortMonth} 月左右',
     );
   }
   return null;
@@ -3286,15 +3286,15 @@ String _calendarItemTimeText(
 String _timeStatusLabel(String value) {
   switch (value) {
     case 'confirmed':
-      return '已确�?;
+      return '已确认';
     case 'estimated':
       return '预计时间';
     case 'historical':
-      return '往年参�?;
+      return '往年参考';
     case 'pending':
-      return '时间待公�?;
+      return '时间待公布';
     default:
-      return value.isEmpty ? '时间待公�? : value;
+      return value.isEmpty ? '时间待公布' : value;
   }
 }
 
@@ -3315,7 +3315,7 @@ String _sourceLabel(String value) {
     case 'user_submitted':
       return '用户补充';
     case 'admin_manual':
-      return '管理员精�?;
+      return '管理员精选';
     case 'ai_import':
       return 'AI导入';
     default:

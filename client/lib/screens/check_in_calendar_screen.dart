@@ -348,9 +348,9 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
       builder: (dialogContext) {
         final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
         return AlertDialog(
-          title: const Text('使用补签�?),
+          title: const Text('使用补签卡'),
           content: Text(
-            '确定补签 ${date.month} �?${date.day} 日吗？\n将消�?1 张补签卡，并按连续签到规则补发经验�?,
+            '确定补签 ${date.month} 月 ${date.day} 日吗？\n将消耗 1 张补签卡，并按连续签到规则补发经验。',
           ),
           actions: [
             TextButton(
@@ -393,13 +393,13 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
       unawaited(auth.refreshUser());
       if (!mounted) return;
       if (already) {
-        AppFeedback.showSnackBar(context, '该日期已经签�?);
+        AppFeedback.showSnackBar(context, '该日期已经签到');
       } else {
         HapticFeedback.lightImpact();
         final cardMessage = cardsAwarded > 0 ? '，获得补签卡 +$cardsAwarded' : '';
         AppFeedback.showSnackBar(
           context,
-          '补签成功，经�?+$earnedExp$cardMessage',
+          '补签成功，经验 +$earnedExp$cardMessage',
         );
       }
     } on DioException catch (error) {
@@ -496,7 +496,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '连续 $streakDays �?· 经验 +$earnedExp',
+                  '连续 $streakDays 天 · 经验 +$earnedExp',
                   style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 20),
@@ -504,7 +504,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
                   width: double.infinity,
                   child: FilledButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('知道�?),
+                    child: const Text('知道了'),
                   ),
                 ),
               ],
@@ -578,7 +578,7 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
     final selection = _selectedDaySelection;
     final selectedDateText = _selectedDate == null
         ? ''
-        : '${_selectedDate!.month} �?${_selectedDate!.day} �?;
+        : '${_selectedDate!.month} 月 ${_selectedDate!.day} 日';
     final blocksAction = selection == _CalendarDaySelection.signed ||
         selection == _CalendarDaySelection.noMakeupCard ||
         selection == _CalendarDaySelection.outsideMonth ||
@@ -603,18 +603,18 @@ class _CheckInCalendarScreenState extends State<CheckInCalendarScreen> {
         _checkedInToday ? Icons.check_circle_rounded : Icons.task_alt_rounded,
     };
     final actionLabel = _makingUp
-        ? '补签�?
+        ? '补签中'
         : _checkingIn
-            ? '签到�?
+            ? '签到中'
             : switch (selection) {
-                _CalendarDaySelection.makeup => '使用补签卡补�?$selectedDateText',
-                _CalendarDaySelection.signed => '$selectedDateText已签�?,
-                _CalendarDaySelection.noMakeupCard => '暂无补签�?,
-                _CalendarDaySelection.outsideMonth => '非本月日期不可补�?,
+                _CalendarDaySelection.makeup => '使用补签卡补签 $selectedDateText',
+                _CalendarDaySelection.signed => '$selectedDateText已签到',
+                _CalendarDaySelection.noMakeupCard => '暂无补签卡',
+                _CalendarDaySelection.outsideMonth => '非本月日期不可补签',
                 _CalendarDaySelection.future => '未来日期不可补签',
                 _CalendarDaySelection.today ||
                 null =>
-                  _checkedInToday ? '今日已签�? : '签到领取 $_nextExp 经验',
+                  _checkedInToday ? '今日已签到' : '签到领取 $_nextExp 经验',
               };
     return Scaffold(
       appBar: AppBar(
@@ -832,7 +832,7 @@ class _CheckInSummary extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      checkedInToday ? '今天已完成签�? : '今天还未签到',
+                      checkedInToday ? '今天已完成签到' : '今天还未签到',
                       style: TextStyle(
                         color: foreground,
                         fontSize: 16,
@@ -842,7 +842,7 @@ class _CheckInSummary extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       checkedInToday
-                          ? '明天继续可领�?$nextExp 经验'
+                          ? '明天继续可领取 $nextExp 经验'
                           : '签到后可领取 $nextExp 经验',
                       style: TextStyle(
                         color: foreground.withValues(alpha: 0.68),
@@ -854,7 +854,7 @@ class _CheckInSummary extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Semantics(
-                label: '补签�?$makeupCards �?,
+                label: '补签卡 $makeupCards 张',
                 excludeSemantics: true,
                 child: Column(
                   children: [
@@ -879,7 +879,7 @@ class _CheckInSummary extends StatelessWidget {
                     ),
                     const SizedBox(height: 1),
                     Text(
-                      '补签�?,
+                      '补签卡',
                       style: TextStyle(
                         color: foreground.withValues(alpha: 0.58),
                         fontSize: 10.5,
@@ -908,7 +908,7 @@ class _CheckInSummary extends StatelessWidget {
               Expanded(
                 child: _SummaryMetric(
                   value: '$longestStreak',
-                  label: '最长连�?,
+                  label: '最长连续',
                   foreground: foreground,
                 ),
               ),
@@ -981,7 +981,7 @@ class _MonthHeader extends StatelessWidget {
     return Row(
       children: [
         IconButton(
-          tooltip: '上个�?,
+          tooltip: '上个月',
           onPressed: onPrevious,
           icon: const Icon(Icons.chevron_left_rounded),
         ),
@@ -989,7 +989,7 @@ class _MonthHeader extends StatelessWidget {
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 160),
             child: Text(
-              '${month.year}�?{month.month}�?,
+              '${month.year}年${month.month}月',
               key: ValueKey(_formatMonth(month)),
               textAlign: TextAlign.center,
               style: const TextStyle(
@@ -1000,7 +1000,7 @@ class _MonthHeader extends StatelessWidget {
           ),
         ),
         IconButton(
-          tooltip: '下个�?,
+          tooltip: '下个月',
           onPressed: canGoNext ? onNext : null,
           icon: const Icon(Icons.chevron_right_rounded),
         ),
@@ -1032,7 +1032,7 @@ class CheckInMonthCalendar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const weekdayLabels = ['�?, '一', '�?, '�?, '�?, '�?, '�?];
+    const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
     final firstDay = DateTime(month.year, month.month, 1);
     final leadingEmptyDays = firstDay.weekday % 7;
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
@@ -1128,7 +1128,7 @@ class _CalendarDay extends StatelessWidget {
                 ? scheme.onSurface.withValues(alpha: 0.25)
                 : scheme.onSurface;
     final dateState = isToday
-        ? (isSigned ? '，今天，已签�? : '，今�?)
+        ? (isSigned ? '，今天，已签到' : '，今天')
         : isSigned
             ? (record!.isMakeup ? '，已补签' : '，已签到')
             : isMissed
@@ -1137,7 +1137,7 @@ class _CalendarDay extends StatelessWidget {
     final semanticsState = '$dateState${selected ? '，已选择' : ''}';
 
     return Semantics(
-      label: '${date.month}�?{date.day}�?semanticsState',
+      label: '${date.month}月${date.day}日$semanticsState',
       button: onTap != null,
       excludeSemantics: true,
       child: Center(
@@ -1214,7 +1214,7 @@ class _CalendarLegend extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Text(
-          '已签�?,
+          '已签到',
           style: TextStyle(
             color: theme.colorScheme.onSurfaceVariant,
             fontSize: 12,
@@ -1229,7 +1229,7 @@ class _CalendarLegend extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Text(
-          '未签�?,
+          '未签到',
           style: TextStyle(
             color: theme.colorScheme.onSurfaceVariant,
             fontSize: 12,

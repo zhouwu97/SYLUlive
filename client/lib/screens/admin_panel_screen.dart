@@ -96,7 +96,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           backgroundColor: Colors.transparent,
           extendBodyBehindAppBar: true,
           appBar: AppBar(
-            title: const Text('管理员面�?),
+            title: const Text('管理员面板'),
             backgroundColor: Colors.transparent,
             elevation: 0,
             systemOverlayStyle: (isDark
@@ -126,7 +126,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           icon: Icons.gavel,
                           iconColor: Colors.orange,
                           title: '举报处理',
-                          subtitle: '内容投诉与违规处�?,
+                          subtitle: '内容投诉与违规处理',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                                   context,
@@ -139,7 +139,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           icon: Icons.forum_outlined,
                           iconColor: Colors.blue,
                           title: '水帖版块',
-                          subtitle: '版主、标签、禁言与日�?,
+                          subtitle: '版主、标签、禁言与日志',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                                   context,
@@ -152,7 +152,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           icon: Icons.star_border,
                           iconColor: Colors.amber,
                           title: '精华申请',
-                          subtitle: '内容推荐与审�?,
+                          subtitle: '内容推荐与审核',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                                   context,
@@ -178,7 +178,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           icon: Icons.history,
                           iconColor: Colors.teal,
                           title: '操作日志',
-                          subtitle: '管理员处理记�?,
+                          subtitle: '管理员处理记录',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                                   context,
@@ -235,14 +235,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       ],
                     ),
                     _AdminSectionGroup(
-                      title: '管理员协�?,
+                      title: '管理员协作',
                       isDark: isDark,
                       children: [
                         _AdminActionPill(
                           icon: Icons.group_add_outlined,
                           iconColor: Colors.purple,
-                          title: '管理员候�?,
-                          subtitle: '搜索并邀请普通用�?,
+                          title: '管理员候选',
+                          subtitle: '搜索并邀请普通用户',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                                   context,
@@ -254,8 +254,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                         _AdminActionPill(
                           icon: Icons.how_to_reg,
                           iconColor: Colors.green,
-                          title: '邀�?/ 罢免',
-                          subtitle: '管理员协作代�?,
+                          title: '邀请 / 罢免',
+                          subtitle: '管理员协作代办',
                           isDark: isDark,
                           onTap: () => Navigator.push(
                                   context,
@@ -287,7 +287,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           icon: Icons.card_giftcard,
                           iconColor: Colors.orange,
                           title: '签到弹窗预览',
-                          subtitle: '预览用户签到成功的展示效�?,
+                          subtitle: '预览用户签到成功的展示效果',
                           isDark: isDark,
                           onTap: () {
                             HapticFeedback.lightImpact();
@@ -341,7 +341,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8, top: 4),
           child: Text(
-            '待处�?,
+            '待处理',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
@@ -399,7 +399,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   .then((_) => _loadCounts()),
             ),
             _AdminMetricPill(
-              title: '管理员代�?,
+              title: '管理员代办',
               count: _adminTasksCount,
               isLoading: _isLoading,
               isDark: isDark,

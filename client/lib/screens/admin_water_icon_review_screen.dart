@@ -126,10 +126,10 @@ class _AdminWaterIconReviewScreenState
               _loadReviews();
             },
             itemBuilder: (context) => const [
-              PopupMenuItem(value: 'pending', child: Text('待审�?)),
+              PopupMenuItem(value: 'pending', child: Text('待审核')),
               PopupMenuItem(value: 'approved', child: Text('已通过')),
-              PopupMenuItem(value: 'rejected', child: Text('已拒�?)),
-              PopupMenuItem(value: 'cancelled', child: Text('已撤�?)),
+              PopupMenuItem(value: 'rejected', child: Text('已拒绝')),
+              PopupMenuItem(value: 'cancelled', child: Text('已撤回')),
             ],
             icon: const Icon(Icons.filter_list),
           ),
@@ -172,7 +172,7 @@ class _AdminWaterIconReviewScreenState
                             ),
                             const SizedBox(height: 8),
                             Text(
-                                '申请�? ${review.requesterName ?? "未知"} (ID: ${review.requestedBy})'),
+                                '申请人: ${review.requesterName ?? "未知"} (ID: ${review.requestedBy})'),
                             const SizedBox(height: 4),
                             Text('申请理由: ${review.reason}',
                                 style: const TextStyle(color: Colors.grey)),
@@ -182,7 +182,7 @@ class _AdminWaterIconReviewScreenState
                               children: [
                                 Column(
                                   children: [
-                                    const Text('旧头�?,
+                                    const Text('旧头像',
                                         style: TextStyle(
                                             fontSize: 12, color: Colors.grey)),
                                     const SizedBox(height: 4),
@@ -193,7 +193,7 @@ class _AdminWaterIconReviewScreenState
                                     color: Colors.grey),
                                 Column(
                                   children: [
-                                    const Text('新头�?,
+                                    const Text('新头像',
                                         style: TextStyle(
                                             fontSize: 12, color: Colors.grey)),
                                     const SizedBox(height: 4),
@@ -277,7 +277,7 @@ class _AdminWaterIconReviewScreenState
     switch (status) {
       case 'pending':
         color = Colors.orange;
-        text = '待审�?;
+        text = '待审核';
         break;
       case 'approved':
         color = Colors.green;
@@ -285,7 +285,7 @@ class _AdminWaterIconReviewScreenState
         break;
       case 'rejected':
         color = Colors.red;
-        text = '已拒�?;
+        text = '已拒绝';
         break;
       case 'cancelled':
         color = Colors.grey;

@@ -87,8 +87,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final now = DateTime.now();
     final diff = now.difference(dateTime);
     if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟�?;
-    if (diff.inHours < 24) return '${diff.inHours}小时�?;
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
+    if (diff.inHours < 24) return '${diff.inHours}小时前';
     if (diff.inDays < 7) return '${diff.inDays}天前';
     return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')}';
   }
@@ -175,7 +175,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     String actionText = '';
     String titleText = '系统通知';
     if (type == 'reply') {
-      actionText = '回复了您的帖�?;
+      actionText = '回复了您的帖子';
       titleText = fromUser?['nickname'] ?? '匿名用户';
     } else if (type == 'featured_application') {
       actionText = '精华申请通知';
@@ -192,7 +192,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     } else if (type == 'team_member_left') {
       actionText = '有成员退出了你的组队';
     } else if (type == 'team_member_removed') {
-      actionText = '你已被移出组�?;
+      actionText = '你已被移出组队';
     }
 
     return InkWell(
@@ -407,7 +407,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 }
               },
               icon: const Icon(Icons.login),
-              label: const Text('去登�?),
+              label: const Text('去登录'),
             ),
           ],
         ),

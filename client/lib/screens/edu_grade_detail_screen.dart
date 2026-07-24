@@ -7,7 +7,7 @@ enum _TagTone { neutral, danger }
 
 /// Full-screen course grade detail page.
 ///
-/// Replaces [GradeDetailSheet] �?pushed via [Navigator.push] instead
+/// Replaces [GradeDetailSheet] — pushed via [Navigator.push] instead
 /// of a bottom sheet.
 class EduGradeDetailScreen extends StatefulWidget {
   final EduGrade grade;
@@ -144,7 +144,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
 
   Future<void> _loadDetail({bool forceRefresh = false}) async {
     if (grade.classId.isEmpty) {
-      setState(() => _detailError = '缺少教学班信息，暂未获取到成绩构�?);
+      setState(() => _detailError = '缺少教学班信息，暂未获取到成绩构成');
       return;
     }
 
@@ -167,10 +167,10 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
       if (result.success && result.data != null) {
         _detail = result.data;
         if (!result.data!.success || result.data!.components.isEmpty) {
-          _detailError = result.data!.message ?? '暂未获取到成绩构�?;
+          _detailError = result.data!.message ?? '暂未获取到成绩构成';
         }
       } else {
-        _detailError = result.errorMessage ?? '暂未获取到成绩构�?;
+        _detailError = result.errorMessage ?? '暂未获取到成绩构成';
       }
     });
   }
@@ -249,7 +249,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                _detailError ?? '暂未获取到成绩构�?,
+                _detailError ?? '暂未获取到成绩构成',
                 style: TextStyle(fontSize: 13, color: _subColor(isDark)),
               ),
             ),
@@ -299,7 +299,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
 
   Widget _componentRow(BuildContext context, GradeComponent component) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isTotal = component.name.contains('�?);
+    final isTotal = component.name.contains('总');
 
     final scoreValue = double.tryParse(component.score.trim());
     final isFailing = scoreValue != null && scoreValue < 60;
@@ -532,7 +532,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _tag(context, grade.isDegree ? '学位�? : '非学位课', _TagTone.neutral),
+              _tag(context, grade.isDegree ? '学位课' : '非学位课', _TagTone.neutral),
               if (grade.examType != null)
                 _tag(context, grade.examType!, _TagTone.neutral),
               if (grade.assessmentMethod != null)
@@ -593,7 +593,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   Widget _buildCourseInfoPanel(BuildContext context, bool isDark) {
     final rows = <Widget>[
       if (grade.teacher != null) _infoRow(context, '任课教师', grade.teacher!),
-      _infoRow(context, '总成�?, grade.displayGrade),
+      _infoRow(context, '总成绩', grade.displayGrade),
       if (grade.fraction != null)
         _infoRow(context, '百分成绩', _formatDouble(grade.fraction!)),
       if (grade.gpa != null)
@@ -601,9 +601,9 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
       _infoRow(context, '学分', _formatDouble(grade.credits)),
       if (grade.gradePoints != null)
         _infoRow(context, '学分绩点', grade.gradePoints!.toStringAsFixed(2)),
-      _infoRow(context, '课程类型', grade.isDegree ? '学位�? : '非学位课'),
+      _infoRow(context, '课程类型', grade.isDegree ? '学位课' : '非学位课'),
       if (grade.courseCategory != null)
-        _infoRow(context, '开课类�?, grade.courseCategory!),
+        _infoRow(context, '开课类别', grade.courseCategory!),
       if (grade.examType != null) _infoRow(context, '考试性质', grade.examType!),
       if (grade.assessmentMethod != null)
         _infoRow(context, '考核方式', grade.assessmentMethod!),
@@ -682,7 +682,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
     double weightSum = 0;
 
     for (final component in components) {
-      if (component.name.contains('�?)) continue;
+      if (component.name.contains('总')) continue;
 
       final weight = _parseWeightPercent(component.weight);
       final score = double.tryParse(component.score.trim());

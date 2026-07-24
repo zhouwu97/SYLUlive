@@ -8,9 +8,12 @@ import '../services/campus_article_service.dart';
 import '../utils/app_feedback.dart';
 import 'campus_article_detail_screen.dart';
 
-/// 全部校园资讯列表页�?///
-/// 支持分类筛选（全部 / 教务通知 / 教务公告）和分页加载�?class CampusArticleListScreen extends StatefulWidget {
-  /// 用于测试注入的可�?Service。生产环境传 null，内部使�?getSharedDio()�?  final CampusArticleService? service;
+/// 全部校园资讯列表页。
+///
+/// 支持分类筛选（全部 / 教务通知 / 教务公告）和分页加载。
+class CampusArticleListScreen extends StatefulWidget {
+  /// 用于测试注入的可选 Service。生产环境传 null，内部使用 getSharedDio()。
+  final CampusArticleService? service;
 
   const CampusArticleListScreen({super.key, this.service});
 
@@ -19,7 +22,8 @@ import 'campus_article_detail_screen.dart';
       _CampusArticleListScreenState();
 }
 
-/// 分类筛选选项�?class _CategoryFilter {
+/// 分类筛选选项。
+class _CategoryFilter {
   final String label;
   final String? slug;
 
@@ -37,17 +41,21 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
   late CampusArticleService _service;
   late ScrollController _scrollController;
 
-  // 当前选中的分�?  int _selectedFilterIndex = 0;
+  // 当前选中的分类
+  int _selectedFilterIndex = 0;
 
   // 文章列表
   List<CampusArticleSummary> _articles = [];
   int _currentPage = 1;
   bool _hasMore = true;
 
-  // 状�?  bool _isLoading = false; // 首次加载 / 刷新
+  // 状态
+  bool _isLoading = false; // 首次加载 / 刷新
   bool _isLoadingMore = false; // 分页加载
-  String? _errorMessage; // 首次加载错误（分页错误用 snackbar�?
-  // 防止分类切换后旧请求覆盖新状�?  int _requestToken = 0;
+  String? _errorMessage; // 首次加载错误（分页错误用 snackbar）
+
+  // 防止分类切换后旧请求覆盖新状态
+  int _requestToken = 0;
 
   @override
   void initState() {
@@ -76,10 +84,12 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     }
   }
 
-  /// 当前分类�?slug�?  String? get _currentCategorySlug =>
+  /// 当前分类的 slug。
+  String? get _currentCategorySlug =>
       _categoryFilters[_selectedFilterIndex].slug;
 
-  /// 加载第一页（首次加载或刷新）�?  Future<void> _loadFirstPage() async {
+  /// 加载第一页（首次加载或刷新）。
+  Future<void> _loadFirstPage() async {
     final token = ++_requestToken;
     setState(() {
       _isLoading = true;
@@ -126,7 +136,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     }
   }
 
-  /// 加载下一页�?  Future<void> _loadMore() async {
+  /// 加载下一页。
+  Future<void> _loadMore() async {
     if (_isLoadingMore || !_hasMore) return;
 
     final token = _requestToken;
@@ -141,10 +152,11 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
         categorySlug: _currentCategorySlug,
       );
       if (!mounted || token != _requestToken) {
-        // 旧请求被分类切换作废，不修改状�?        return;
+        // 旧请求被分类切换作废，不修改状态
+        return;
       }
 
-      // �?id 去重
+      // 按 id 去重
       final existingIds = _articles.map((a) => a.id).toSet();
       final newItems =
           page.items.where((a) => !existingIds.contains(a.id)).toList();
@@ -179,7 +191,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     }
   }
 
-  /// 切换分类筛选�?  void _switchFilter(int index) {
+  /// 切换分类筛选。
+  void _switchFilter(int index) {
     if (index == _selectedFilterIndex) return;
     HapticFeedback.selectionClick();
     setState(() {
@@ -188,7 +201,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     _loadFirstPage();
   }
 
-  /// 打开文章详情�?  void _openDetail(CampusArticleSummary summary) {
+  /// 打开文章详情。
+  void _openDetail(CampusArticleSummary summary) {
     HapticFeedback.selectionClick();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -215,12 +229,13 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // 副标�?            Padding(
+            // 副标题
+            Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '校内通知与竞赛信�?,
+                  '校内通知与竞赛信息',
                   style: TextStyle(
                     fontSize: 12.5,
                     color: isDark ? Colors.white54 : Colors.black54,
@@ -229,7 +244,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            // 分类筛�?            _buildFilterTabs(isDark),
+            // 分类筛选
+            _buildFilterTabs(isDark),
             const SizedBox(height: 8),
             // 列表
             Expanded(
@@ -241,7 +257,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     );
   }
 
-  // ── 分类筛选标�?───────────────────────────────────────────────
+  // ── 分类筛选标签 ───────────────────────────────────────────────
 
   Widget _buildFilterTabs(bool isDark) {
     final primary = Theme.of(context).colorScheme.primary;
@@ -293,7 +309,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
   // ── 列表内容 ───────────────────────────────────────────────────
 
   Widget _buildListContent(bool isDark) {
-    // 首次加载�?    if (_isLoading) {
+    // 首次加载中
+    if (_isLoading) {
       return _buildSkeletonList(isDark);
     }
 
@@ -302,7 +319,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
       return _buildErrorState(isDark, _errorMessage!);
     }
 
-    // 空数�?    if (_articles.isEmpty) {
+    // 空数据
+    if (_articles.isEmpty) {
       return _buildEmptyState(isDark);
     }
 
@@ -396,7 +414,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                // 部门 · 附件状�?                Row(
+                // 部门 · 附件状态
+                Row(
                   children: [
                     if (article.authorDepartment.isNotEmpty) ...[
                       Icon(
@@ -435,7 +454,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '含附�?,
+                        '含附件',
                         style: TextStyle(
                           fontSize: 12,
                           color: isDark ? Colors.white38 : Colors.black45,
@@ -452,7 +471,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     );
   }
 
-  // ── 骨架�?─────────────────────────────────────────────────────
+  // ── 骨架屏 ─────────────────────────────────────────────────────
 
   Widget _buildSkeletonList(bool isDark) {
     final shimmerColor = isDark ? Colors.white10 : const Color(0xFFEDEBF3);
@@ -507,7 +526,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     );
   }
 
-  // ── 空状�?─────────────────────────────────────────────────────
+  // ── 空状态 ─────────────────────────────────────────────────────
 
   Widget _buildEmptyState(bool isDark) {
     return Center(
@@ -537,7 +556,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     );
   }
 
-  // ── 错误状�?───────────────────────────────────────────────────
+  // ── 错误状态 ───────────────────────────────────────────────────
 
   Widget _buildErrorState(bool isDark, String message) {
     return Center(
@@ -592,7 +611,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Center(
           child: Text(
-            '没有更多�?,
+            '没有更多了',
             style: TextStyle(
               fontSize: 12.5,
               color: isDark ? Colors.white24 : Colors.black26,

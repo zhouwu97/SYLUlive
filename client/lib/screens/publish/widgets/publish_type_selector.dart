@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-/// 集市发布类型选择器�?
+/// 集市发布类型选择器。
 class PublishTypeSelector extends StatelessWidget {
   static const _accent = Color(0xFFFF7A45);
 

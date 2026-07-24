@@ -252,7 +252,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                                   isDark,
                                   icon: Icons.mark_email_unread_outlined,
                                   title: '未读公告',
-                                  subtitle: '${unread.length} 条等待查�?,
+                                  subtitle: '${unread.length} 条等待查看',
                                   accent: Colors.red,
                                 ),
                                 const SizedBox(height: 10),
@@ -277,7 +277,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                                   isDark,
                                   icon: Icons.history_rounded,
                                   title: '历史公告',
-                                  subtitle: '${history.length} 条，可随时查�?,
+                                  subtitle: '${history.length} 条，可随时查看',
                                   accent: Theme.of(context).primaryColor,
                                 ),
                                 const SizedBox(height: 10),
@@ -386,8 +386,8 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
     final diff = now.difference(dateTime);
 
     if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟�?;
-    if (diff.inHours < 24) return '${diff.inHours}小时�?;
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
+    if (diff.inHours < 24) return '${diff.inHours}小时前';
     if (diff.inDays < 7) return '${diff.inDays}天前';
 
     return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')}';
@@ -498,7 +498,7 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                 // Status indicators
                 if (_isExpired()) ...[
                   const SizedBox(width: 6),
-                  _buildStatusBadge('已过�?, Colors.grey),
+                  _buildStatusBadge('已过期', Colors.grey),
                 ],
                 if (_isScheduled()) ...[
                   const SizedBox(width: 6),
@@ -596,7 +596,7 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
     if (p == 'normal') return const SizedBox.shrink();
     final isUrgent = p == 'urgent';
     final color = isUrgent ? Colors.red : Colors.orange;
-    final label = isUrgent ? '紧�? : '重要';
+    final label = isUrgent ? '紧急' : '重要';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -630,7 +630,7 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
     );
   }
 
-  /// 将文字中�?URL 渲染为可点击链接
+  /// 将文字中的 URL 渲染为可点击链接
   Widget _buildRichContent(String text, bool isDark) {
     final urlRegex = RegExp(r'(https?://[^\s]+)');
     final matches = urlRegex.allMatches(text);

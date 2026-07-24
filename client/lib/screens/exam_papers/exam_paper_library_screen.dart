@@ -267,7 +267,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
     );
     if (!mounted || result == null) return;
     _showMessage(
-      result.isPublished ? '试卷已直接发�? : '投稿成功，等待管理员审核',
+      result.isPublished ? '试卷已直接发布' : '投稿成功，等待管理员审核',
     );
     await _load(refresh: true);
   }
@@ -326,7 +326,7 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('试卷�?),
+          title: const Text('试卷库'),
           backgroundColor: Colors.transparent,
           elevation: 0,
           actions: [
@@ -423,11 +423,11 @@ class _ExamPaperLibraryScreenState extends State<ExamPaperLibraryScreen> {
               height: 430,
               child: ExamPaperEmptyState(
                 icon: Icons.library_books_outlined,
-                title: _hasQuery ? '没有找到匹配的试�? : '还没有试�?,
-                message: _hasQuery ? '可以清除当前条件，或投稿这门课的试卷�? : '分享历年试卷，帮助更多同学复习�?,
-                primaryActionLabel: _hasQuery ? '清除筛�? : '投稿第一份试�?,
+                title: _hasQuery ? '没有找到匹配的试卷' : '还没有试卷',
+                message: _hasQuery ? '可以清除当前条件，或投稿这门课的试卷。' : '分享历年试卷，帮助更多同学复习。',
+                primaryActionLabel: _hasQuery ? '清除筛选' : '投稿第一份试卷',
                 onPrimaryAction: _hasQuery ? _clearFilters : _openUpload,
-                secondaryActionLabel: _hasQuery ? '投稿这门课试�? : null,
+                secondaryActionLabel: _hasQuery ? '投稿这门课试卷' : null,
                 onSecondaryAction: _hasQuery
                     ? () => _openUpload(
                           initialCourseName: _searchController.text.trim(),

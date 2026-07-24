@@ -154,7 +154,7 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
   Widget build(BuildContext context) {
     final titlePreview = ExamPaperMetadata.buildTitle(
       courseName:
-          _courseController.text.isEmpty ? '课程�? : _courseController.text,
+          _courseController.text.isEmpty ? '课程名' : _courseController.text,
       academicYear: _academicYear,
       semester: _semester,
       examType: _examType,
@@ -181,7 +181,7 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.cloud_upload_outlined),
-              label: Text(_uploading ? '上传中�? : '确认投稿'),
+              label: Text(_uploading ? '上传中…' : '确认投稿'),
             ),
           ),
         ),
@@ -205,8 +205,8 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
                   children: [
                     Text(
                       widget.isAdmin
-                          ? '管理员上传后将直接发布，且不奖励经验�?
-                          : '投稿将等待管理员审核，通过后奖�?10 经验�?,
+                          ? '管理员上传后将直接发布，且不奖励经验。'
+                          : '投稿将等待管理员审核，通过后奖励 10 经验。',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w600,
@@ -217,14 +217,14 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
                       controller: _courseController,
                       maxLength: 100,
                       decoration: const InputDecoration(
-                        labelText: '课程�?,
-                        hintText: '例如：高等数�?,
+                        labelText: '课程名',
+                        hintText: '例如：高等数学',
                         prefixIcon: Icon(Icons.menu_book_outlined),
                       ),
                       validator: (value) {
                         final text = value?.trim() ?? '';
                         if (text.isEmpty) return '请输入课程名';
-                        if (text.runes.length > 100) return '课程名不能超�?00个字�?;
+                        if (text.runes.length > 100) return '课程名不能超过100个字符';
                         return null;
                       },
                     ),
@@ -316,7 +316,7 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
                         leading: const Icon(Icons.picture_as_pdf_outlined),
                         title: Text(_file?.name ?? '选择 PDF 文件'),
                         subtitle: _file == null
-                            ? const Text('仅支�?PDF，最�?20 MiB')
+                            ? const Text('仅支持 PDF，最大 20 MiB')
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -348,8 +348,8 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
                             : (value) => setState(
                                   () => _privacyConfirmed = value ?? false,
                                 ),
-                        title: const Text('我确认文件不含个人隐私信息，并拥有分享权�?),
-                        subtitle: const Text('投稿内容将由管理员复核�?),
+                        title: const Text('我确认文件不含个人隐私信息，并拥有分享权限'),
+                        subtitle: const Text('投稿内容将由管理员复核。'),
                         controlAffinity: ListTileControlAffinity.leading,
                       ),
                     ),
@@ -359,7 +359,7 @@ class _ExamPaperUploadScreenState extends State<ExamPaperUploadScreen> {
                           value: _progress == 0 ? null : _progress),
                       const SizedBox(height: 6),
                       Text(
-                          '正在安全校验并上�?${(100 * _progress).toStringAsFixed(0)}%'),
+                          '正在安全校验并上传 ${(100 * _progress).toStringAsFixed(0)}%'),
                     ],
                   ],
                 ),

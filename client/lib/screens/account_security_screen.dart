@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 
-/// 账号身份、邮箱与教务连接的私有设置页�?
+/// 账号身份、邮箱与教务连接的私有设置页。
 class AccountSecurityScreen extends StatefulWidget {
   const AccountSecurityScreen({super.key});
 
@@ -84,7 +84,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                   keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(labelText: '邮箱'),
                   validator: (value) =>
-                      value == null || !value.contains('@') ? '请输入有效邮�? : null,
+                      value == null || !value.contains('@') ? '请输入有效邮箱' : null,
                 ),
                 Row(
                   children: [
@@ -92,9 +92,9 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                       child: TextFormField(
                         controller: code,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: '验证�?),
+                        decoration: const InputDecoration(labelText: '验证码'),
                         validator: (value) =>
-                            value?.trim().length != 6 ? '请输�?6 位验证码' : null,
+                            value?.trim().length != 6 ? '请输入 6 位验证码' : null,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -112,8 +112,8 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                               messenger.showSnackBar(
                                 SnackBar(
                                     content: Text(result.success
-                                        ? '验证码已发�?
-                                        : result.errorMessage ?? '发送失�?)),
+                                        ? '验证码已发送'
+                                        : result.errorMessage ?? '发送失败')),
                               );
                             },
                       icon: const Icon(Icons.send_outlined),
@@ -125,7 +125,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                   obscureText: true,
                   decoration: const InputDecoration(labelText: '当前 APP 密码'),
                   validator: (value) =>
-                      value?.isEmpty == true ? '请输入当前密�? : null,
+                      value?.isEmpty == true ? '请输入当前密码' : null,
                 ),
               ],
             ),
@@ -197,7 +197,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
-                  result.success ? '邮箱已解�? : result.errorMessage ?? '解除失败')),
+                  result.success ? '邮箱已解除' : result.errorMessage ?? '解除失败')),
         );
         if (result.success) await _reload();
       }
@@ -224,14 +224,14 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                 controller: oldPassword,
                 obscureText: true,
                 decoration: const InputDecoration(labelText: '当前 APP 密码'),
-                validator: (value) => value?.isEmpty == true ? '请输入当前密�? : null,
+                validator: (value) => value?.isEmpty == true ? '请输入当前密码' : null,
               ),
               TextFormField(
                 controller: newPassword,
                 obscureText: true,
-                decoration: const InputDecoration(labelText: '�?APP 密码'),
+                decoration: const InputDecoration(labelText: '新 APP 密码'),
                 validator: (value) =>
-                    value == null || value.length < 8 ? '密码至少 8 �? : null,
+                    value == null || value.length < 8 ? '密码至少 8 位' : null,
               ),
             ],
           ),
@@ -255,7 +255,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                 messenger.showSnackBar(
                   SnackBar(
                       content: Text(result.success
-                          ? '密码已修�?
+                          ? '密码已修改'
                           : result.errorMessage ?? '修改失败')),
                 );
               }
@@ -303,7 +303,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
                 title: const Text('同意教务数据专项授权'),
-                subtitle: const Text('用于验证学生身份并保存教务授权状态，可随时撤销�?),
+                subtitle: const Text('用于验证学生身份并保存教务授权状态，可随时撤销。'),
                 onChanged: submitting
                     ? null
                     : (value) => setDialogState(
@@ -318,7 +318,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                           builder: (context) => AlertDialog(
                             title: const Text('教务数据专项授权说明'),
                             content: const Text(
-                              '系统仅在你明确同意后，将教务账号凭据交由教务服务验证，并保存授权状态与必要的学籍信息。撤销授权后会停止使用并清理凭据�?,
+                              '系统仅在你明确同意后，将教务账号凭据交由教务服务验证，并保存授权状态与必要的学籍信息。撤销授权后会停止使用并清理凭据。',
                             ),
                             actions: [
                               TextButton(
@@ -401,13 +401,13 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
       case 'active':
         return '在线';
       case 'logged_out':
-        return '已退�?;
+        return '已退出';
       case 'expired':
-        return '已过�?;
+        return '已过期';
       case 'revoked':
         return '已撤销';
       default:
-        return '未连�?;
+        return '未连接';
     }
   }
 
@@ -432,7 +432,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     }
     final edu = context.read<EduProvider>();
     return Scaffold(
-      appBar: AppBar(title: const Text('账号与安�?)),
+      appBar: AppBar(title: const Text('账号与安全')),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: ListView(
@@ -443,11 +443,11 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                 leading: const Icon(Icons.badge_outlined),
                 title: Text(_studentVerified ? '主账号：$_studentId' : '尚未认证学生'),
                 subtitle:
-                    Text(_studentVerified ? '学生身份已认�? : '完成教务绑定后，学号将成为主账号'),
+                    Text(_studentVerified ? '学生身份已认证' : '完成教务绑定后，学号将成为主账号'),
               ),
               ListTile(
                 leading: const Icon(Icons.email_outlined),
-                title: Text(_emailBound ? '邮箱�?_emailLabel' : '邮箱未绑�?),
+                title: Text(_emailBound ? '邮箱：$_emailLabel' : '邮箱未绑定'),
                 trailing: IconButton(
                   tooltip: _emailBound ? '修改邮箱' : '绑定邮箱',
                   onPressed: _showEmailEditor,
@@ -458,18 +458,18 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                 ListTile(
                   leading: const Icon(Icons.link_off_outlined),
                   title: const Text('解除邮箱'),
-                  subtitle: const Text('学生认证账号可解除辅助邮�?),
+                  subtitle: const Text('学生认证账号可解除辅助邮箱'),
                   onTap: _removeEmail,
                 ),
             ]),
-            _section(context, '登录与找�?, [
+            _section(context, '登录与找回', [
               ListTile(
                 leading: const Icon(Icons.key_outlined),
                 title: const Text('APP 密码'),
                 subtitle: Text(
                     (_security?['login_methods'] as List? ?? const [])
                         .map((method) => method == 'student_id' ? '学号' : '邮箱')
-                        .join('�?)),
+                        .join('、')),
               ),
               ListTile(
                 leading: const Icon(Icons.password_outlined),
@@ -481,20 +481,20 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               ListTile(
                 leading: const Icon(Icons.school_outlined),
                 title: Text(_eduAuthorized ? '教务授权：已授权' : '教务授权：已撤销'),
-                subtitle: Text('教务会话�?{_sessionLabel(_sessionState)}'),
+                subtitle: Text('教务会话：${_sessionLabel(_sessionState)}'),
               ),
               if (!_studentVerified)
                 ListTile(
                   leading: const Icon(Icons.verified_user_outlined),
                   title: const Text('完成学生认证'),
-                  subtitle: const Text('验证学号并授权连接教务系�?),
+                  subtitle: const Text('验证学号并授权连接教务系统'),
                   onTap: _showEduBindDialog,
                 ),
               if (_studentVerified && !_eduAuthorized)
                 ListTile(
                   leading: const Icon(Icons.link_outlined),
                   title: const Text('重新授权教务'),
-                  subtitle: const Text('重新连接教务服务以恢复相关功�?),
+                  subtitle: const Text('重新连接教务服务以恢复相关功能'),
                   onTap: _showEduBindDialog,
                 ),
               if (_eduAuthorized && _sessionState != 'active')
@@ -506,7 +506,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               if (_eduAuthorized && _sessionState == 'active')
                 ListTile(
                   leading: const Icon(Icons.logout_outlined),
-                  title: const Text('退出教务登�?),
+                  title: const Text('退出教务登录'),
                   subtitle: const Text('保留授权和学生身份，不会自动恢复'),
                   onTap: () => _runEduAction(edu.logoutSession),
                 ),
@@ -514,7 +514,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
                 ListTile(
                   leading: const Icon(Icons.delete_outline),
                   title: const Text('撤销教务授权'),
-                  subtitle: const Text('删除教务凭据和会话，保留学号与学生身�?),
+                  subtitle: const Text('删除教务凭据和会话，保留学号与学生身份'),
                   onTap: () => _runEduAction(edu.revokeAuthorization),
                 ),
             ]),

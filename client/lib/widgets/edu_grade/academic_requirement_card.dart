@@ -1,5 +1,6 @@
-// 可折叠的学分要求模块。
-// 标题行展示最低要求和已获学分，点击后在当前页面展开课程明细。
+/// 可折叠的学分要求模块。
+///
+/// 标题行展示最低要求和已获学分，点击后在当前页面展开课程明细。
 
 import 'package:flutter/material.dart';
 import '../../models/edu_credit_requirement.dart';

@@ -92,6 +92,7 @@ class AcademicVaultSnapshot {
     required this.expiresAt,
     required this.isStale,
     this.situation,
+    this.creditRequirements,
     this.isGradeSyncComplete = false,
   }) : terms = Map<String, AcademicTermSnapshot>.unmodifiable(terms);
 
@@ -100,6 +101,7 @@ class AcademicVaultSnapshot {
   final DateTime? expiresAt;
   final bool isStale;
   final AcademicSituationSnapshot? situation;
+  final Map<String, dynamic>? creditRequirements;
   final bool isGradeSyncComplete;
 }
 
@@ -172,6 +174,9 @@ class AcademicCacheStore {
             : AcademicSituationSnapshot.fromPayload(
                 Map<String, dynamic>.from(rawSituation as Map),
               ),
+        creditRequirements: payload['credit_requirements'] is Map
+            ? Map<String, dynamic>.from(payload['credit_requirements'] as Map)
+            : null,
         isGradeSyncComplete: payload['grade_sync_complete'] == true,
       );
     } on FormatException {
@@ -231,6 +236,19 @@ class AcademicCacheStore {
     });
   }
 
+  /// 写入学分要求数据到加密快照。
+  Future<void> writeCreditRequirements({
+    required Map<String, dynamic> data,
+    DateTime? fetchedAt,
+  }) async {
+    _validateNamespace();
+    await _serializeMutation(() async {
+      final payload = await _readPayload() ?? _emptyPayload();
+      payload['credit_requirements'] = _copyAcademicMap(data);
+      await _writePayload(payload);
+    });
+  }
+
   Future<void> clearAll() async {
     _validateNamespace();
     await _serializeMutation(
@@ -256,6 +274,7 @@ class AcademicCacheStore {
   Map<String, dynamic> _emptyPayload() => <String, dynamic>{
         'grade_terms': <String, dynamic>{},
         'academic_situation': null,
+        'credit_requirements': null,
         'grade_sync_complete': false,
       };
 

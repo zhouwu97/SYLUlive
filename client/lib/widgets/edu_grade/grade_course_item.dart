@@ -93,15 +93,18 @@ class GradeCourseItem extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                grade.displayGrade,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: _scoreFontSize(grade.displayGrade),
-                  height: 1,
-                  fontWeight: FontWeight.w800,
-                  color: scoreColor,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 88),
+                child: Text(
+                  grade.displayGrade,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: _scoreFontSize(grade.displayGrade),
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                    color: scoreColor,
+                  ),
                 ),
               ),
               if (onTap != null) ...[

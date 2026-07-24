@@ -1431,6 +1431,8 @@ func main() {
 
 		edu.POST("/academic-situation", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetAcademicSituation)
 
+		edu.POST("/credit-requirements", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCreditRequirements)
+
 		edu.POST("/pre_verify", eduHandler.PreVerify) // 注册前验证教务账号
 
 	}

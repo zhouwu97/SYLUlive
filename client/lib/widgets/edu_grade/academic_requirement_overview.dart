@@ -1,5 +1,6 @@
-// 学分要求总览组件。
-// 展示全部学分模块列表，含标题和加载/缓存/错误状态。
+/// 学分要求总览组件。
+///
+/// 展示全部学分模块列表，含标题和加载/缓存/错误状态。
 
 import 'package:flutter/material.dart';
 import '../../models/edu_credit_requirement.dart';

@@ -4,47 +4,81 @@ import 'package:dio/dio.dart';
 import '../models/teacher.dart';
 import '../services/rating_interaction_service.dart';
 
-class TeacherProvider extends ChangeNotifier {
-  final Dio _dio;
-  final RatingInteractionService _interactionService;
+class TeacherDetailState {
+  final Teacher? teacher;
+  final List<TeacherRating> ratings;
+  final TeacherRating? myRating;
+  final int ratingCount;
+  final double averageStar;
+  final bool isLoading;
+  final String? errorMessage;
 
-  List<Teacher> _teachers = [];
-  List<Teacher> _allTeachers = [];
-  Teacher? _selectedTeacher;
-  List<TeacherRating> _ratings = [];
-  TeacherRating? _myRating;
-  int _ratingCount = 0;
-  double _averageStar = 0;
-  bool _isLoading = false;
-  String? _errorMessage;
+  TeacherDetailState({
+    this.teacher,
+    this.ratings = const [],
+    this.myRating,
+    this.ratingCount = 0,
+    this.averageStar = 0.0,
+    this.isLoading = false,
+    this.errorMessage,
+  });
 
-  List<Teacher> get teachers => _teachers;
-
-  /// 完整教师列表缓存，供添加授课教师抽屉生成课程候选/重复校验用。
-  /// 不受首页搜索框 loadTeachers(query) 过滤影响。
-  List<Teacher> get allTeachers => _allTeachers;
-  Teacher? get selectedTeacher => _selectedTeacher;
-  List<TeacherRating> get ratings => _ratings;
-  TeacherRating? get myRating => _myRating;
-  int get ratingCount => _ratingCount;
-  double get averageStar => _averageStar;
-  bool get isLoading => _isLoading;
-  String? get errorMessage => _errorMessage;
+  TeacherDetailState copyWith({
+    Teacher? teacher,
+    List<TeacherRating>? ratings,
+    TeacherRating? myRating,
+    int? ratingCount,
+    double? averageStar,
+    bool? isLoading,
+    String? errorMessage,
+    bool clearError = false,
+  }) {
+    return TeacherDetailState(
+      teacher: teacher ?? this.teacher,
+      ratings: ratings ?? this.ratings,
+      myRating: myRating ?? this.myRating,
+      ratingCount: ratingCount ?? this.ratingCount,
+      averageStar: averageStar ?? this.averageStar,
+      isLoading: isLoading ?? this.isLoading,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+    );
+  }
 
   List<int> get starCounts {
     final counts = [0, 0, 0, 0, 0];
-    for (var r in _ratings) {
+    for (var r in ratings) {
       if (r.star >= 1 && r.star <= 5) {
         counts[r.star - 1]++;
       }
     }
     return counts;
   }
+}
+
+class TeacherProvider extends ChangeNotifier {
+  final Dio _dio;
+  final RatingInteractionService _interactionService;
+
+  List<Teacher> _teachers = [];
+  List<Teacher> _allTeachers = [];
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  final Map<int, TeacherDetailState> _details = {};
+  final Map<int, Future<void>> _detailRequests = {};
+
+  List<Teacher> get teachers => _teachers;
+  List<Teacher> get allTeachers => _allTeachers;
+  bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+
+  TeacherDetailState detailOf(int teacherId) {
+    return _details[teacherId] ?? TeacherDetailState();
+  }
 
   TeacherProvider(this._dio)
       : _interactionService = RatingInteractionService(_dio);
 
-  /// 获取教师列表（支持搜索）
   Future<void> loadTeachers({String? query}) async {
     _isLoading = true;
     notifyListeners();
@@ -69,8 +103,6 @@ class TeacherProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 加载完整教师列表到 allTeachers 缓存（不带搜索词）。
-  /// 仅用于添加授课教师抽屉的课程候选/重复校验，不影响 teachers 展示列表，不触发 UI 重建。
   Future<void> loadAllTeachersForSuggestions() async {
     try {
       final resp = await _dio.get('/teachers');
@@ -86,34 +118,52 @@ class TeacherProvider extends ChangeNotifier {
     }
   }
 
-  /// 获取教师详情（含评价列表）
-  Future<void> loadTeacherDetail(int teacherId) async {
-    _isLoading = true;
+  Future<void> loadTeacherDetail(int teacherId, {bool force = false}) {
+    if (!force) {
+      final existing = _detailRequests[teacherId];
+      if (existing != null) return existing;
+    }
+
+    final future = _loadTeacherDetailInternal(teacherId, force: force)
+        .whenComplete(() {
+      _detailRequests.remove(teacherId);
+    });
+
+    _detailRequests[teacherId] = future;
+    return future;
+  }
+
+  Future<void> _loadTeacherDetailInternal(int teacherId, {bool force = false}) async {
+    _details[teacherId] = detailOf(teacherId).copyWith(isLoading: true, clearError: true);
     notifyListeners();
     try {
       final resp = await _dio.get('/teachers/$teacherId');
       if (resp.statusCode == 200) {
         final data = resp.data;
-        _selectedTeacher = Teacher.fromJson(data['teacher']);
-        _ratings = (data['ratings'] as List)
-            .map((j) => TeacherRating.fromJson(j))
-            .toList();
-        _ratingCount = data['rating_count'] ?? 0;
-        _averageStar = (data['average_star'] ?? 0).toDouble();
-        if (data['my_rating'] != null) {
-          _myRating = TeacherRating.fromJson(data['my_rating']);
-        } else {
-          _myRating = null;
-        }
+        _details[teacherId] = _details[teacherId]!.copyWith(
+          teacher: Teacher.fromJson(data['teacher']),
+          ratings: (data['ratings'] as List)
+              .map((j) => TeacherRating.fromJson(j))
+              .toList(),
+          ratingCount: data['rating_count'] ?? 0,
+          averageStar: (data['average_star'] ?? 0).toDouble(),
+          myRating: data['my_rating'] != null
+              ? TeacherRating.fromJson(data['my_rating'])
+              : null,
+          isLoading: false,
+          clearError: true,
+        );
+      } else {
+        _details[teacherId] = _details[teacherId]!.copyWith(
+            isLoading: false, errorMessage: '加载失败');
       }
     } on DioException catch (e) {
-      _errorMessage = _parseError(e);
+      _details[teacherId] = _details[teacherId]!.copyWith(
+          isLoading: false, errorMessage: _parseError(e));
     }
-    _isLoading = false;
     notifyListeners();
   }
 
-  /// 添加教师
   Future<bool> addTeacher(String name, String course) async {
     try {
       final resp = await _dio.post(
@@ -131,7 +181,6 @@ class TeacherProvider extends ChangeNotifier {
     return false;
   }
 
-  /// 评价教师（创建或更新）
   Future<bool> rateTeacher(int teacherId, int star, String comment) async {
     try {
       final resp = await _dio.post(
@@ -139,11 +188,11 @@ class TeacherProvider extends ChangeNotifier {
         data: {'star': star, 'comment': comment},
       );
       if (resp.statusCode == 200 || resp.statusCode == 201) {
-        await loadTeacherDetail(teacherId);
+        await loadTeacherDetail(teacherId, force: true);
         return true;
       }
     } on DioException catch (e) {
-      _errorMessage = _parseError(e);
+      _details[teacherId] = detailOf(teacherId).copyWith(errorMessage: _parseError(e));
       notifyListeners();
     }
     return false;
@@ -153,24 +202,26 @@ class TeacherProvider extends ChangeNotifier {
     try {
       final resp = await _dio.delete('/teachers/rating/$ratingId');
       if (resp.statusCode == 200) {
-        await loadTeacherDetail(teacherId);
+        await loadTeacherDetail(teacherId, force: true);
         return true;
       }
     } on DioException catch (e) {
-      _errorMessage = _parseError(e);
+      _details[teacherId] = detailOf(teacherId).copyWith(errorMessage: _parseError(e));
       notifyListeners();
     }
     return false;
   }
 
-  Future<void> voteRating(int ratingId, String voteType) async {
+  Future<void> voteRating(int ratingId, int teacherId, String voteType) async {
     final result =
         await _interactionService.voteTeacherRating(ratingId, voteType);
     if (result != null) {
-      final idx = _ratings.indexWhere((r) => r.id == ratingId);
+      final state = detailOf(teacherId);
+      final newRatings = List<TeacherRating>.of(state.ratings);
+      final idx = newRatings.indexWhere((r) => r.id == ratingId);
       if (idx != -1) {
-        final r = _ratings[idx];
-        _ratings[idx] = TeacherRating(
+        final r = newRatings[idx];
+        newRatings[idx] = TeacherRating(
           id: r.id,
           teacherId: r.teacherId,
           userId: r.userId,
@@ -184,13 +235,14 @@ class TeacherProvider extends ChangeNotifier {
           myVote: result['my_vote'],
           isOwn: r.isOwn,
         );
+        _details[teacherId] = state.copyWith(ratings: newRatings);
         notifyListeners();
       }
     }
   }
 
   Future<bool> reportRating(
-      int ratingId, String reasonCode, String reason) async {
+      int ratingId, int teacherId, String reasonCode, String reason) async {
     try {
       return await _interactionService.reportRating(
         targetType: 'teacher_rating',
@@ -199,7 +251,7 @@ class TeacherProvider extends ChangeNotifier {
         reason: reason,
       );
     } on DioException catch (e) {
-      _errorMessage = _parseError(e);
+      _details[teacherId] = detailOf(teacherId).copyWith(errorMessage: _parseError(e));
       notifyListeners();
     }
     return false;

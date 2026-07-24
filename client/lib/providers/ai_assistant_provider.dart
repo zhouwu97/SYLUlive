@@ -79,6 +79,7 @@ class AiAssistantProvider extends ChangeNotifier {
   bool get loading => _loading;
   bool get loadingConversations => _loadingConversations;
   bool get canRetry => _lastFailedMessage != null && !isRunning;
+  bool get canReconnectRun => _run != null && !isRunning;
   bool get isRunning =>
       _connectionState == AiConnectionState.connecting ||
       _connectionState == AiConnectionState.streaming;
@@ -108,8 +109,32 @@ class AiAssistantProvider extends ChangeNotifier {
     return prompts;
   }
 
+  Future<void>? _bootstrapFuture;
+
+  Future<void> retryBootstrap() {
+    return _bootstrapFuture ??= _retryBootstrapInternal().whenComplete(() {
+      _bootstrapFuture = null;
+    });
+  }
+
+  Future<void> _retryBootstrapInternal() async {
+    _error = null;
+    _loading = true;
+    _notify();
+
+    try {
+      await Future.wait([
+        refreshCapabilities(silent: true),
+        loadConversations(),
+      ]);
+    } finally {
+      _loading = false;
+      _notify();
+    }
+  }
+
   Future<void> initialize() async {
-    await Future.wait([refreshCapabilities(silent: true), loadConversations()]);
+    await retryBootstrap();
   }
 
   Future<void> refreshCapabilities({bool silent = false}) async {

@@ -298,6 +298,83 @@ func TestTeamApplicationLengthValidation(t *testing.T) {
 	}
 }
 
+func TestDeleteTeamRecruitmentAuthorizationAndVisibility(t *testing.T) {
+	db, handler, owner, applicant, recruitment := setupTeamContractFixture(t)
+	if err := db.Model(&recruitment).Update("status", models.RecruitmentStatusClosed).Error; err != nil {
+		t.Fatalf("close recruitment: %v", err)
+	}
+	application := models.WaterTeamApplication{
+		RecruitmentID: recruitment.ID,
+		PostID:        recruitment.PostID,
+		ApplicantID:   applicant.ID,
+		OwnerID:       owner.ID,
+		Message:       "这是一条用于验证删除的申请",
+		Status:        models.ApplicationStatusPending,
+	}
+	if err := db.Create(&application).Error; err != nil {
+		t.Fatalf("create application: %v", err)
+	}
+	params := gin.Params{{Key: "id", Value: fmt.Sprint(recruitment.ID)}}
+
+	forbidden := performTeamJSONRequest(t, handler.DeleteTeamRecruitment, http.MethodDelete, "/api/team/recruitments/1", applicant.ID, params, nil)
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("non-owner delete status=%d body=%s", forbidden.Code, forbidden.Body.String())
+	}
+
+	deleted := performTeamJSONRequest(t, handler.DeleteTeamRecruitment, http.MethodDelete, "/api/team/recruitments/1", owner.ID, params, nil)
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("owner delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+
+	var post models.Post
+	if err := db.First(&post, recruitment.PostID).Error; err != nil {
+		t.Fatalf("load deleted post: %v", err)
+	}
+	if post.Status != models.PostStatusDeleted {
+		t.Fatalf("post status=%s, want deleted", post.Status)
+	}
+	if err := db.First(&recruitment, recruitment.ID).Error; err != nil {
+		t.Fatalf("load retained recruitment: %v", err)
+	}
+	if recruitment.Status != models.RecruitmentStatusClosed {
+		t.Fatalf("recruitment status=%s, want closed", recruitment.Status)
+	}
+	var retainedApplications int64
+	if err := db.Model(&models.WaterTeamApplication{}).Where("recruitment_id = ?", recruitment.ID).Count(&retainedApplications).Error; err != nil {
+		t.Fatalf("count retained applications: %v", err)
+	}
+	if retainedApplications != 1 {
+		t.Fatalf("retained applications=%d, want 1", retainedApplications)
+	}
+
+	detail := performTeamJSONRequest(t, handler.GetTeamRecruitment, http.MethodGet, "/api/team/recruitments/1", owner.ID, params, nil)
+	if detail.Code != http.StatusNotFound {
+		t.Fatalf("deleted detail status=%d body=%s", detail.Code, detail.Body.String())
+	}
+	list := performTeamJSONRequest(t, handler.ListTeamRecruitments, http.MethodGet, "/api/team/recruitments", 0, nil, nil)
+	var listBody struct {
+		Total int64 `json:"total"`
+	}
+	decodeTeamResponse(t, list, &listBody)
+	if listBody.Total != 0 {
+		t.Fatalf("deleted recruitment remains in public list: total=%d", listBody.Total)
+	}
+	mine := performTeamJSONRequest(t, handler.GetMyTeamRecruitments, http.MethodGet, "/api/team/recruitments/mine", owner.ID, nil, nil)
+	var mineBody struct {
+		Total int64 `json:"total"`
+	}
+	decodeTeamResponse(t, mine, &mineBody)
+	if mineBody.Total != 0 {
+		t.Fatalf("deleted recruitment remains in owner list: total=%d", mineBody.Total)
+	}
+	myApplications := performTeamJSONRequest(t, handler.GetMyApplications, http.MethodGet, "/api/team/my_applications", applicant.ID, nil, nil)
+	var applicationBody []models.WaterTeamApplication
+	decodeTeamResponse(t, myApplications, &applicationBody)
+	if len(applicationBody) != 0 {
+		t.Fatalf("deleted recruitment remains in applicant list: count=%d", len(applicationBody))
+	}
+}
+
 func TestTeamRecruitmentEffectiveStatusFilters(t *testing.T) {
 	db, handler, owner, _, base := setupTeamContractFixture(t)
 	createRecruitment := func(title, status string, accepted, needed int, deadline *time.Time) models.WaterTeamRecruitment {

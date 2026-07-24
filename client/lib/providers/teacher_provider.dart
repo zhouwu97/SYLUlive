@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import '../models/teacher.dart';
@@ -355,6 +354,7 @@ class TeacherProvider extends ChangeNotifier {
           star: r.star,
           comment: r.comment,
           userName: r.userName,
+          userAvatar: r.userAvatar,
           createdAt: r.createdAt,
           updatedAt: r.updatedAt,
           helpfulCount: result['helpful_count'] ?? 0,

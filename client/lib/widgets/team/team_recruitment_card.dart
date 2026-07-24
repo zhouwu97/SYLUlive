@@ -5,12 +5,19 @@ import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/team/team_ui_tokens.dart';
 import '../../widgets/cached_avatar.dart';
 import '../../config/api_constants.dart';
+
 class TeamRecruitmentCard extends StatelessWidget {
   final TeamRecruitment recruitment;
   final VoidCallback onTap;
+  final VoidCallback? onDelete;
+  final bool isDeleting;
 
   const TeamRecruitmentCard(
-      {super.key, required this.recruitment, required this.onTap});
+      {super.key,
+      required this.recruitment,
+      required this.onTap,
+      this.onDelete,
+      this.isDeleting = false});
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +54,34 @@ class TeamRecruitmentCard extends StatelessWidget {
                     label: _categoryLabel(recruitment.category), color: color),
                 const Spacer(),
                 TeamStatusBadge(status: status),
+                if (onDelete != null) ...[
+                  const SizedBox(width: 2),
+                  PopupMenuButton<String>(
+                    tooltip: '组队操作',
+                    enabled: !isDeleting,
+                    padding: EdgeInsets.zero,
+                    icon: isDeleting
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.more_vert_rounded, size: 20),
+                    onSelected: (value) {
+                      if (value == 'delete') onDelete?.call();
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(children: [
+                          Icon(Icons.delete_outline_rounded,
+                              color: Color(0xFFE54848)),
+                          SizedBox(width: 10),
+                          Text('删除组队'),
+                        ]),
+                      ),
+                    ],
+                  ),
+                ],
               ]),
               const SizedBox(height: 10),
               Text(recruitment.title,

@@ -134,6 +134,9 @@ class TeamRecruitmentService {
       _dio.patch('/team/recruitments/$recruitmentId/status',
           data: {'status': status});
 
+  Future<void> delete(int recruitmentId) =>
+      _dio.delete('/team/recruitments/$recruitmentId');
+
   static Map<String, dynamic> _map(dynamic value) =>
       value is Map ? value.cast<String, dynamic>() : <String, dynamic>{};
 

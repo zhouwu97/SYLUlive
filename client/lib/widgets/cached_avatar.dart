@@ -37,12 +37,18 @@ class CachedAvatar extends StatefulWidget {
   final String? imageUrl;
   final double radius;
   final String? fallbackText;
+  final IconData? fallbackIcon;
+  final Color? fallbackBackgroundColor;
+  final Color? fallbackIconColor;
 
   const CachedAvatar({
     super.key,
     this.imageUrl,
     this.radius = 18,
     this.fallbackText,
+    this.fallbackIcon,
+    this.fallbackBackgroundColor,
+    this.fallbackIconColor,
   });
 
   @override
@@ -132,7 +138,8 @@ class _CachedAvatarState extends State<CachedAvatar> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? Colors.white12 : Colors.grey[200]!;
+    final bgColor = widget.fallbackBackgroundColor ??
+        (isDark ? Colors.white12 : Colors.grey[200]!);
 
     if (widget.imageUrl == null || widget.imageUrl!.isEmpty) {
       return _buildFallbackAvatar(isDark, bgColor);
@@ -165,34 +172,37 @@ class _CachedAvatarState extends State<CachedAvatar> {
     return CircleAvatar(
       radius: widget.radius,
       backgroundColor: bgColor,
-      child: widget.fallbackText != null && widget.fallbackText!.isNotEmpty
-          ? Text(
-              widget.fallbackText![0].toUpperCase(),
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: widget.radius * 0.6,
-                color: isDark ? Colors.white60 : Colors.grey[600],
-              ),
-            )
-          : const Icon(Icons.person, size: 14, color: Colors.grey),
+      child: _buildFallbackChild(isDark),
     );
   }
 
   Widget _buildFallback(bool isDark, Color bgColor) {
     return ColoredBox(
       color: bgColor,
-      child: Center(
-        child: widget.fallbackText != null && widget.fallbackText!.isNotEmpty
-            ? Text(
-                widget.fallbackText![0].toUpperCase(),
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: widget.radius * 0.6,
-                  color: isDark ? Colors.white60 : Colors.grey[600],
-                ),
-              )
-            : const Icon(Icons.person, size: 14, color: Colors.grey),
-      ),
+      child: Center(child: _buildFallbackChild(isDark)),
     );
+  }
+
+  Widget _buildFallbackChild(bool isDark) {
+    final iconColor = widget.fallbackIconColor ??
+        (isDark ? Colors.white60 : Colors.grey[600]!);
+    if (widget.fallbackIcon != null) {
+      return Icon(
+        widget.fallbackIcon,
+        size: widget.radius * 1.05,
+        color: iconColor,
+      );
+    }
+    if (widget.fallbackText != null && widget.fallbackText!.isNotEmpty) {
+      return Text(
+        widget.fallbackText![0].toUpperCase(),
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: widget.radius * 0.6,
+          color: iconColor,
+        ),
+      );
+    }
+    return Icon(Icons.person, size: widget.radius * 0.8, color: iconColor);
   }
 }

@@ -26,7 +26,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _pendingRemovals = [];
   bool _isLoading = true;
-  String? _errorMessage;
+  String? _fatalError;
+  String? _warningMessage;
 
   @override
   void initState() {
@@ -38,7 +39,8 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
+      _fatalError = null;
+      _warningMessage = null;
     });
     try {
       final dio = context.read<AuthProvider>().dio;
@@ -59,18 +61,18 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
         _pendingInvitations = results[2].items;
         _pendingRemovals = results[3].items;
         _isLoading = false;
-        
+
         if (failedCount == 4) {
-          _errorMessage = '加载审核任务失败';
+          _fatalError = '加载审核任务失败';
         } else if (failedCount > 0) {
-          _errorMessage = '部分数据加载失败';
+          _warningMessage = '部分数据加载失败，下拉或点击可重试';
         }
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = '加载审核任务失败';
+        _fatalError = '加载审核任务失败';
       });
     }
   }
@@ -262,13 +264,48 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    Widget body;
+    if (_isLoading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_fatalError != null) {
+      body = Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_fatalError!),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _loadData,
+              child: const Text('重新加载'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      body = Column(
+        children: [
+          if (_warningMessage != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              color: Colors.amber.withOpacity(0.2),
+              child: Text(
+                _warningMessage!,
+                style: TextStyle(
+                  color: isDark ? Colors.amber[200] : Colors.amber[900],
+                  fontSize: 13,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          Expanded(child: _buildReviewTasksContent(isDark)),
+        ],
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('审核代办')),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(child: Text(_errorMessage!))
-              : _buildReviewTasksContent(isDark),
+      body: body,
     );
   }
 

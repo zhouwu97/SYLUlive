@@ -34,6 +34,7 @@ class TeacherRating {
   final int star;
   final String comment;
   final String userName;
+  final String userAvatar;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final int helpfulCount;
@@ -48,6 +49,7 @@ class TeacherRating {
     required this.star,
     required this.comment,
     this.userName = '',
+    this.userAvatar = '',
     this.createdAt,
     this.updatedAt,
     this.helpfulCount = 0,
@@ -64,6 +66,7 @@ class TeacherRating {
       star: json['star'] ?? 0,
       comment: json['comment'] ?? '',
       userName: json['user_name'] ?? '',
+      userAvatar: json['user_avatar'] ?? '',
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'])
           : null,

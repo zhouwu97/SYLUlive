@@ -42,7 +42,7 @@ readlink -f /proc/$(pgrep -o shenliyuan)/exe
 `
 ```bash
 mkdir -p /opt/shenliyuan
-git clone -b fwqtest https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan-src
+git clone -b main https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan-src
 
 cd /opt/shenliyuan-src/server
 go mod download
@@ -77,8 +77,8 @@ deploy-shenliyuan
 ```bash
 cd /opt/shenliyuan-src
 git fetch origin
-git checkout fwqtest
-git pull --ff-only origin fwqtest
+git checkout main
+git pull --ff-only origin main
 
 cd /opt/shenliyuan-src/server
 go mod download
@@ -121,7 +121,7 @@ systemctl restart shenliyuan
 
 ## 国内环境：Gitee 拉取并部署 Python 教务服务
 
-Python 教务服务通常部署在国内服务器，GitHub 访问可能不稳定。国内服务器更新教务服务时，优先从 Gitee 拉取 `fwqtest` 分支，然后重启 `shenliyuan-edu.service`。
+Python 教务服务通常部署在国内服务器，GitHub 访问可能不稳定。国内服务器更新教务服务时，优先从 Gitee 拉取 `main` 分支，然后重启 `shenliyuan-edu.service`。
 
 ### 部署位置
 
@@ -139,8 +139,8 @@ Python 教务服务通常部署在国内服务器，GitHub 访问可能不稳定
 
 ```bash
 cd /root/SYLUlive
-git fetch gitee fwqtest
-git checkout fwqtest
+git fetch gitee main
+git checkout main
 git merge --ff-only FETCH_HEAD
 
 git log -1 --oneline
@@ -154,8 +154,8 @@ export GITEE_USER="你的 Gitee 用户名"
 export GITEE_TOKEN="你的 Gitee 令牌"
 
 cd /root/SYLUlive
-git fetch "https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/chunhezi/SYLUlive.git" fwqtest
-git checkout fwqtest
+git fetch "https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/chunhezi/SYLUlive.git" main
+git checkout main
 git merge --ff-only FETCH_HEAD
 
 unset GITEE_TOKEN
@@ -311,7 +311,7 @@ sudo -u postgres psql -c "DROP DATABASE IF EXISTS shenliyuan;"
 sudo -u postgres psql -c "DROP USER IF EXISTS shenliyuan;"
 `
 mkdir -p /opt/shenliyuan
-git clone -b fwqtest https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan-src
+git clone -b main https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan-src
 `
 cd /opt/shenliyuan-src/server
 go mod download

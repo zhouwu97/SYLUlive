@@ -10,6 +10,16 @@ class AdminReviewTasksScreen extends StatefulWidget {
   State<AdminReviewTasksScreen> createState() => _AdminReviewTasksScreenState();
 }
 
+class OptionalListResult {
+  final List<dynamic> items;
+  final bool failed;
+
+  const OptionalListResult({
+    required this.items,
+    required this.failed,
+  });
+}
+
 class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   List<dynamic> _pendingTeachers = [];
   List<dynamic> _pendingMajors = [];
@@ -40,12 +50,21 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
       ]);
 
       if (!mounted) return;
+      final failedCount = results.where((r) => r.failed).length;
+
+      if (!mounted) return;
       setState(() {
-        _pendingTeachers = results[0];
-        _pendingMajors = results[1];
-        _pendingInvitations = results[2];
-        _pendingRemovals = results[3];
+        _pendingTeachers = results[0].items;
+        _pendingMajors = results[1].items;
+        _pendingInvitations = results[2].items;
+        _pendingRemovals = results[3].items;
         _isLoading = false;
+        
+        if (failedCount == 4) {
+          _errorMessage = '加载审核任务失败';
+        } else if (failedCount > 0) {
+          _errorMessage = '部分数据加载失败';
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -56,15 +75,22 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     }
   }
 
-  Future<List<dynamic>> _loadOptionalList(Dio dio, String path) async {
+  Future<OptionalListResult> _loadOptionalList(Dio dio, String path) async {
     try {
       final response = await dio.get(
         path,
-        options: Options(receiveTimeout: const Duration(seconds: 10)),
+        options: Options(
+          connectTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
       );
-      return (response.data as List?) ?? [];
+      return OptionalListResult(
+        items: (response.data as List?) ?? [],
+        failed: false,
+      );
     } catch (_) {
-      return [];
+      return const OptionalListResult(items: [], failed: true);
     }
   }
 

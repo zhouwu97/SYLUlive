@@ -11,6 +11,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: AiInputComposer(
+            hintText: 'Enter prompt...',
             controller: controller,
             maxCharacters: 20,
             enabled: true,

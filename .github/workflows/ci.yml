@@ -48,22 +48,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - run: python -m compileall -q .
-      - run: python -m pytest -q
-
-  rag-service:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: python-rag-service
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
       - run: pip install -r requirements-test.txt
       - run: python -m compileall -q .
       - run: python -m pytest -q
@@ -155,3 +139,5 @@ jobs:
             echo "Found direct usage of Android plugins without platform abstraction."
             exit 1
           fi
+
+

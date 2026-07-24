@@ -1,0 +1,99 @@
+{
+  "version": "v0.6",
+  "generated_at": "2026-07-23",
+  "uploaded_official_sources": [
+    {
+      "source_key": "competition_policy",
+      "file_name": "沈阳理工大学鼓励本科生参加课外活动（竞赛）的有关规定-沈理工校〔2024〕54号.pdf",
+      "size_bytes": 1043955,
+      "sha256": "0b9a11fc9ecc22e930f315fa13bdce1655e2476e6e6a9786186c0e82de15444b",
+      "file_type": "pdf"
+    },
+    {
+      "source_key": "student_status",
+      "file_name": "沈阳理工大学本科生学籍管理规定-沈理工校〔2024〕23号.pdf",
+      "size_bytes": 195946,
+      "sha256": "04c32afe451fc685726b74159d516c296b4919eb7f5702a9febbd374ddcba9f9",
+      "file_type": "pdf"
+    },
+    {
+      "source_key": "competition_forms",
+      "file_name": "沈理工校〔2024〕54号附件.doc",
+      "size_bytes": 75776,
+      "sha256": "cc80b7cef705e784208d834757e98ccf3336762ee28057a667e5d1c5e9200474",
+      "file_type": "doc"
+    },
+    {
+      "source_key": "retake",
+      "file_name": "沈理工教〔2025〕6号-关于印发《沈阳理工大学本科生课程重修管理办法》的通知.doc",
+      "size_bytes": 36457,
+      "sha256": "4c582aaa19b561fc4073f0209e6a372f2bee511097029fa8dc86410540f9ae4f",
+      "file_type": "doc"
+    },
+    {
+      "source_key": "major_transfer",
+      "file_name": "沈阳理工大学本科生转专业管理办法.doc",
+      "size_bytes": 34816,
+      "sha256": "50fb4ac2bcaa94c4fda55ae9e40eed0eb29c6b5ecb989072be595bcce2686719",
+      "file_type": "doc"
+    },
+    {
+      "source_key": "exam_misconduct",
+      "file_name": "沈理工校〔2024〕17号.docx",
+      "size_bytes": 28114,
+      "sha256": "5b4d85da550b72b9af506118d993f2d79e97796a6ea022ba1ff88a9712648e37",
+      "file_type": "docx"
+    },
+    {
+      "source_key": "teaching_management_compilation",
+      "file_name": "教学管理文件汇编.pdf",
+      "size_bytes": 1795725,
+      "sha256": "5437c5cf6953467dec23aa147b1c139548710554b4f15d2551375a67d8b4df0b",
+      "file_type": "pdf",
+      "authority_status": "official_historical_compilation",
+      "currentness": "historical",
+      "relevant_pages": "35-58",
+      "usage_boundary": "只补充当前文件未写明的历史细节，不覆盖2024/2025现行规则。"
+    }
+  ],
+  "supersession": [
+    {
+      "current": "沈理工校〔2024〕23号",
+      "supersedes": [
+        "沈理工校〔2017〕40号"
+      ],
+      "scope": "本科生学籍管理"
+    },
+    {
+      "current": "沈理工教〔2025〕6号",
+      "supersedes": [
+        "沈理工教〔2020〕5号",
+        "沈理工教〔2022〕19号"
+      ],
+      "scope": "本科生课程重修"
+    },
+    {
+      "current": "沈理工校〔2024〕17号",
+      "supersedes": [
+        "沈理工校〔2012〕74号",
+        "沈理工校〔2012〕75号"
+      ],
+      "scope": "考试违纪和作弊"
+    },
+    {
+      "current": "沈理工校〔2024〕54号",
+      "supersedes": [
+        "原《沈阳理工大学鼓励本科生参加竞赛的有关规定》",
+        "《关于调整本科生发表一般期刊论文成绩奖励的通知》",
+        "《关于〈沈阳理工大学鼓励本科生参加竞赛的有关规定〉专利部分的补充说明》",
+        "《沈阳理工大学鼓励学生考研的有关措施》"
+      ],
+      "scope": "课外活动和竞赛成绩奖励"
+    }
+  ],
+  "currentness_notes": [
+    "沈理工教〔2020〕4号转专业办法为完整学校正式文件；上传资料中未发现明确废止或替代文件。",
+    "第二课堂、综合测评、一般学生违纪处分、学位授予完整细则、各专业培养方案仍未补齐。",
+    "《教学管理文件汇编》中二考D/F、绩点1/0和开学初二考来自2004年文件；当前执行需用教务系统或当期通知复核。"
+  ]
+}

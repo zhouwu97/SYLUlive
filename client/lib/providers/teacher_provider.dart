@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import '../models/teacher.dart';
+import '../services/rating_interaction_service.dart';
 
 class TeacherProvider extends ChangeNotifier {
   final Dio _dio;
+  final RatingInteractionService _interactionService;
 
   List<Teacher> _teachers = [];
   List<Teacher> _allTeachers = [];
@@ -39,7 +41,8 @@ class TeacherProvider extends ChangeNotifier {
     return counts;
   }
 
-  TeacherProvider(this._dio);
+  TeacherProvider(this._dio)
+      : _interactionService = RatingInteractionService(_dio);
 
   /// 获取教师列表（支持搜索）
   Future<void> loadTeachers({String? query}) async {
@@ -146,7 +149,6 @@ class TeacherProvider extends ChangeNotifier {
     return false;
   }
 
-  /// 删除自己的评价
   Future<bool> deleteRating(int ratingId, int teacherId) async {
     try {
       final resp = await _dio.delete('/teachers/rating/$ratingId');
@@ -161,11 +163,41 @@ class TeacherProvider extends ChangeNotifier {
     return false;
   }
 
-  /// 举报评价
-  Future<bool> reportRating(int ratingId) async {
+  Future<void> voteRating(int ratingId, String voteType) async {
+    final result =
+        await _interactionService.voteTeacherRating(ratingId, voteType);
+    if (result != null) {
+      final idx = _ratings.indexWhere((r) => r.id == ratingId);
+      if (idx != -1) {
+        final r = _ratings[idx];
+        _ratings[idx] = TeacherRating(
+          id: r.id,
+          teacherId: r.teacherId,
+          userId: r.userId,
+          star: r.star,
+          comment: r.comment,
+          userName: r.userName,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+          helpfulCount: result['helpful_count'] ?? 0,
+          unhelpfulCount: result['unhelpful_count'] ?? 0,
+          myVote: result['my_vote'],
+          isOwn: r.isOwn,
+        );
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> reportRating(
+      int ratingId, String reasonCode, String reason) async {
     try {
-      await _dio.post('/teachers/rating/$ratingId/report');
-      return true;
+      return await _interactionService.reportRating(
+        targetType: 'teacher_rating',
+        targetId: ratingId,
+        reasonCode: reasonCode,
+        reason: reason,
+      );
     } on DioException catch (e) {
       _errorMessage = _parseError(e);
       notifyListeners();

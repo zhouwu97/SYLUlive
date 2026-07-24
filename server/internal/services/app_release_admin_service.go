@@ -87,7 +87,7 @@ func (s *AppReleaseService) CreateDraft(ctx context.Context, input AppReleaseDra
 		storageKey = buildAppReleaseStorageKey(input.VersionName, input.VersionCode, sha)
 		fileNameForDb = buildAppReleaseFileName(input.VersionName, input.VersionCode)
 		finalPath = filepath.Join(s.releaseDir, filepath.FromSlash(storageKey))
-		
+
 		if err := os.MkdirAll(filepath.Dir(finalPath), 0o750); err != nil {
 			return nil, fmt.Errorf("创建 APK 发布目录: %w", err)
 		}
@@ -376,6 +376,11 @@ func validateDraftInput(input *AppReleaseDraftInput) error {
 	input.VersionName = strings.TrimSpace(input.VersionName)
 	input.Title = strings.TrimSpace(input.Title)
 	input.Changelog = strings.TrimSpace(input.Changelog)
+
+	if input.DeliveryMode != models.AppReleaseDeliveryModeDirectPackage &&
+		input.DeliveryMode != models.AppReleaseDeliveryModeExternalMarket {
+		return fmt.Errorf("%w: 不支持的 delivery_mode", ErrAppReleaseInvalid)
+	}
 
 	if input.Channel != models.AppReleaseChannelStable {
 		return fmt.Errorf("%w: 当前仅支持 stable 通道", ErrAppReleaseInvalid)

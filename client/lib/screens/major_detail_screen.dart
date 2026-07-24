@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../providers/major_provider.dart';
 import '../widgets/rating_detail/ranking_tokens.dart';
 import '../widgets/rating_detail/rating_subject_header.dart';
+import '../widgets/rating_detail/rating_report_sheet.dart';
 import '../widgets/rating_detail/rating_score_panel.dart';
 import '../widgets/rating_detail/my_rating_card.dart';
 import '../widgets/rating_detail/rating_item_card.dart';
@@ -29,6 +30,7 @@ class MajorDetailScreen extends StatefulWidget {
 
 class _MajorDetailScreenState extends State<MajorDetailScreen> {
   bool _isDeletingRating = false;
+  bool _didChange = false;
 
   @override
   void initState() {
@@ -288,12 +290,41 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                 ),
               ),
               const Spacer(),
-              Text(
-                '最新',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: RankingTokens.subColor(isDark),
-                  fontWeight: FontWeight.w600,
+              InkWell(
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('排序功能正在开发中')),
+                  );
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white10
+                        : Colors.black.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '最新',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: RankingTokens.subColor(isDark),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 14,
+                        color: RankingTokens.subColor(isDark),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -317,31 +348,85 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
               ),
             )
           else
-            Container(
-              decoration: RankingTokens.cardDecoration(isDark),
-              child: Column(
-                children: [
-                  ...m.ratings.map((r) => RatingItemCard(
+            Column(
+              children: [
+                ...m.ratings.map((r) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: RatingItemCard(
                         userName: r.userName,
                         comment: r.comment,
                         star: r.star,
                         isOwn: _isOwnRating(r),
-                        onLongPress: () => _confirmDeleteRating(r),
-                      )),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10, bottom: 10),
-                    child: Center(
-                      child: Text(
-                        '更多评价等待同学补充',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: RankingTokens.subColor(isDark),
-                        ),
+                        createdAt: r.createdAt,
+                        updatedAt: r.updatedAt,
+                        helpfulCount: r.helpfulCount,
+                        unhelpfulCount: r.unhelpfulCount,
+                        myVote: r.myVote,
+                        onHelpful: () => m.voteRating(r.id, 'up'),
+                        onUnhelpful: () => m.voteRating(r.id, 'down'),
+                        onReport: () {
+                          showRatingReportSheet(
+                            context: context,
+                            targetType: 'major_rating',
+                            targetId: r.id,
+                            onSubmit: (code, desc) async {
+                              final success = await m.reportRating(
+                                r.id,
+                                code,
+                                desc,
+                              );
+                              if (success && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('举报已提交，我们会尽快处理')),
+                                );
+                              } else if (!success && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('举报失败或已提交过')),
+                                );
+                              }
+                              return success;
+                            },
+                          );
+                        },
+                        onEdit: _isOwnRating(r)
+                            ? () {
+                                showRatingInputSheet(
+                                  context: context,
+                                  initialStar: r.star,
+                                  initialComment: r.comment,
+                                  title: '修改评价',
+                                  maxCommentLength: 500,
+                                  accentOverride: accent,
+                                  onSubmit: (star, comment) async {
+                                    final ok = await m.rate(
+                                        widget.majorId, star, comment);
+                                    if (ok) {
+                                      _didChange = true;
+                                    }
+                                    return ok;
+                                  },
+                                );
+                              }
+                            : null,
+                        onDelete: _isOwnRating(r)
+                            ? () => _confirmDeleteRating(r)
+                            : null,
+                      ),
+                    )),
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 10),
+                  child: Center(
+                    child: Text(
+                      '更多评价等待同学补充',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: RankingTokens.subColor(isDark),
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
         ],
       ),

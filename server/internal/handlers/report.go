@@ -25,8 +25,9 @@ func NewReportHandler(db *gorm.DB) *ReportHandler {
 
 // CreateReportInput 创建举报输入
 type CreateReportInput struct {
-	TargetType string `json:"target_type" binding:"required"` // post/reply
+	TargetType string `json:"target_type" binding:"required"` // post/reply/teacher_rating/major_rating
 	TargetID   uint   `json:"target_id" binding:"required"`
+	ReasonCode string `json:"reason_code"`
 	Reason     string `json:"reason" binding:"required"`
 }
 
@@ -39,8 +40,8 @@ func (h *ReportHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if input.TargetType != "post" && input.TargetType != "reply" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "target_type 仅支持 post 或 reply"})
+	if input.TargetType != "post" && input.TargetType != "reply" && input.TargetType != "teacher_rating" && input.TargetType != "major_rating" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的 target_type"})
 		return
 	}
 	if reasonLength := len([]rune(input.Reason)); reasonLength < 2 || reasonLength > 500 {
@@ -48,20 +49,39 @@ func (h *ReportHandler) Create(c *gin.Context) {
 		return
 	}
 	var targetOwner uint
-	if input.TargetType == "post" {
+	var snapshot string
+
+	switch input.TargetType {
+	case "post":
 		var post models.Post
 		if err := h.db.Select("author_id", "status").First(&post, input.TargetID).Error; err != nil || post.Status == models.PostStatusDeleted {
 			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在或已删除"})
 			return
 		}
 		targetOwner = post.AuthorID
-	} else {
+	case "reply":
 		var reply models.Reply
 		if err := h.db.Select("author_id", "status").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
 			c.JSON(http.StatusNotFound, gin.H{"error": "回复不存在或已删除"})
 			return
 		}
 		targetOwner = reply.AuthorID
+	case "teacher_rating":
+		var tr models.TeacherRating
+		if err := h.db.First(&tr, input.TargetID).Error; err != nil || tr.Status != "normal" || tr.DeletedAt.Valid {
+			c.JSON(http.StatusNotFound, gin.H{"error": "评价不存在或已删除"})
+			return
+		}
+		targetOwner = tr.UserID
+		snapshot = fmt.Sprintf(`{"star":%d,"comment":"%s"}`, tr.Star, tr.Comment)
+	case "major_rating":
+		var mr models.MajorRating
+		if err := h.db.First(&mr, input.TargetID).Error; err != nil || mr.Status != "normal" || mr.DeletedAt.Valid {
+			c.JSON(http.StatusNotFound, gin.H{"error": "评价不存在或已删除"})
+			return
+		}
+		targetOwner = mr.UserID
+		snapshot = fmt.Sprintf(`{"star":%d,"comment":"%s"}`, mr.Star, mr.Comment)
 	}
 	if targetOwner == userID.(uint) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不能举报自己的内容"})
@@ -77,11 +97,14 @@ func (h *ReportHandler) Create(c *gin.Context) {
 	}
 
 	report := models.Report{
-		ReporterID: userID.(uint),
-		TargetType: input.TargetType,
-		TargetID:   input.TargetID,
-		Reason:     input.Reason,
-		Status:     models.ReportStatusPending,
+		ReporterID:     userID.(uint),
+		TargetType:     input.TargetType,
+		TargetID:       input.TargetID,
+		ReasonCode:     input.ReasonCode,
+		Reason:         input.Reason,
+		TargetAuthorID: &targetOwner,
+		TargetSnapshot: snapshot,
+		Status:         models.ReportStatusPending,
 	}
 
 	if err := h.db.Create(&report).Error; err != nil {
@@ -187,6 +210,34 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 					return err
 				}
 				targetUserID = reply.AuthorID
+			case "teacher_rating":
+				var tr models.TeacherRating
+				if err := tx.First(&tr, report.TargetID).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&tr).Updates(map[string]interface{}{
+					"status":            "hidden",
+					"moderated_by":      userID.(uint),
+					"moderation_reason": input.DeleteReason,
+					"moderated_at":      time.Now(),
+				}).Error; err != nil {
+					return err
+				}
+				targetUserID = tr.UserID
+			case "major_rating":
+				var mr models.MajorRating
+				if err := tx.First(&mr, report.TargetID).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&mr).Updates(map[string]interface{}{
+					"status":            "hidden",
+					"moderated_by":      userID.(uint),
+					"moderation_reason": input.DeleteReason,
+					"moderated_at":      time.Now(),
+				}).Error; err != nil {
+					return err
+				}
+				targetUserID = mr.UserID
 			default:
 				return fmt.Errorf("invalid_target_type")
 			}

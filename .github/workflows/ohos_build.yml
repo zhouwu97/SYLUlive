@@ -1,0 +1,47 @@
+name: OHOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fwqtest
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  client-ohos-build:
+    runs-on: [self-hosted, Windows, X64, ohos]
+    environment: ohos-signing
+
+    defaults:
+      run:
+        working-directory: client
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Restore local OHOS signing profile
+        shell: pwsh
+        run: |
+          Copy-Item `
+            "D:\actions-secrets\sylulive-ohos\build-profile.local.json5" `
+            "./ohos/build-profile.local.json5" `
+            -Force
+
+      - name: Build OHOS HAP
+        shell: pwsh
+        run: ./tool/build_harmony.ps1 -Mode debug -SkipTests
+
+      - name: Remove temporary OHOS signing profile
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item `
+            "./ohos/build-profile.local.json5" `
+            -Force `
+            -ErrorAction SilentlyContinue

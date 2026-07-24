@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../main.dart';
+import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../services/campus_article_service.dart';
 import '../utils/app_feedback.dart';

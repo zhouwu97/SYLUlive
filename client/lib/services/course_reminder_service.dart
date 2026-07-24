@@ -2,10 +2,11 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/services.dart';
-import 'package:timezone/data/latest.dart' as tz_data;
-import 'package:timezone/timezone.dart' as tz;
+
+import '../providers/course_schedule_provider.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/platform/contracts/reminder_notification_client.dart';
 
 import '../providers/course_schedule_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -97,41 +98,12 @@ class CourseReminderService {
   // 标准学期周数
   static const int _semesterTotalWeeks = 20;
 
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
   Future<void> initialize() async {
     if (_initialized) return;
 
-    tz_data.initializeTimeZones();
-    try {
-      tz.setLocalLocation(tz.getLocation('Asia/Shanghai'));
-    } catch (_) {}
-
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const darwin = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-      defaultPresentSound: false,
-    );
-    const settings = InitializationSettings(android: android, iOS: darwin);
-
-    await _plugin.initialize(settings);
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(
-          const AndroidNotificationChannel(
-            _channelId,
-            _channelName,
-            description: '上课前 5 分钟静音提醒',
-            importance: Importance.defaultImportance,
-            playSound: false,
-            enableVibration: false,
-          ),
-        );
+    await ReminderNotificationClient.instance.initializeCourseReminders();
 
     _initialized = true;
   }
@@ -248,12 +220,12 @@ class CourseReminderService {
     for (final reminder in pendingReminders) {
       final scheduled = await _scheduleReminder(
         reminder,
-        AndroidScheduleMode.exactAllowWhileIdle,
+        true,
       );
       if (scheduled ||
           await _scheduleReminder(
             reminder,
-            AndroidScheduleMode.inexactAllowWhileIdle,
+            false,
           )) {
         ids.add(reminder.id.toString());
       }
@@ -271,37 +243,7 @@ class CourseReminderService {
   }
 
   Future<bool> requestPermissions() async {
-    if (Platform.isAndroid) {
-      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-
-      if (androidPlugin == null) return false;
-
-      // 1. 请求普通通知权限
-      final bool? notiGranted =
-          await androidPlugin.requestNotificationsPermission();
-
-      // 2. 请求精确闹钟权限 (关键：必须捕获返回值)
-      final bool? alarmGranted =
-          await androidPlugin.requestExactAlarmsPermission();
-
-      debugPrint('通知权限: $notiGranted, 精确闹钟权限: $alarmGranted');
-
-      // 两者都为 true (或 null 代表该版本不需要) 才算成功
-      return (notiGranted ?? false) && (alarmGranted ?? false);
-    } else if (Platform.isIOS) {
-      final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin>();
-
-      final bool? iosGranted = await iosPlugin?.requestPermissions(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      return iosGranted ?? false;
-    }
-
-    return true;
+    return await ReminderNotificationClient.instance.requestCourseReminderPermissions();
   }
 
   Future<CourseBackgroundKeepAliveStatus> backgroundKeepAliveStatus() async {
@@ -350,25 +292,19 @@ class CourseReminderService {
 
   Future<bool> _scheduleReminder(
     _CourseReminderEntry reminder,
-    AndroidScheduleMode androidScheduleMode,
+    bool exactAllowWhileIdle,
   ) async {
-    try {
-      await _plugin.zonedSchedule(
-        reminder.id,
-        reminder.title,
-        reminder.body,
-        tz.TZDateTime.from(reminder.time, tz.local),
-        _notificationDetails(reminder),
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        androidScheduleMode: androidScheduleMode,
-        payload: reminder.payload,
-      );
-      return true;
-    } catch (e) {
-      debugPrint('课程提醒排程失败[$androidScheduleMode]: $e');
-      return false;
-    }
+    return await ReminderNotificationClient.instance.scheduleCourseReminder(
+      id: reminder.id,
+      title: reminder.title,
+      body: reminder.body,
+      detailText: reminder.detailText,
+      scheduledTime: reminder.time,
+      classStart: reminder.classStart,
+      payload: reminder.payload,
+      ticker: _tickerFor(reminder.course),
+      exactAllowWhileIdle: exactAllowWhileIdle,
+    );
   }
 
   Future<void> cancelCourseReminders() async {
@@ -379,7 +315,7 @@ class CourseReminderService {
       final notificationId = int.tryParse(id);
       if (notificationId != null) {
         notificationIds.add(notificationId);
-        await _plugin.cancel(notificationId);
+        await ReminderNotificationClient.instance.cancelCourseReminder(notificationId);
       }
     }
     await _cancelAndroidLiveReminders(notificationIds);
@@ -400,48 +336,7 @@ class CourseReminderService {
     }
   }
 
-  NotificationDetails _notificationDetails(_CourseReminderEntry reminder) {
-    final teacher = reminder.course.teacher?.trim();
-    return NotificationDetails(
-      android: AndroidNotificationDetails(
-        _channelId,
-        _channelName,
-        channelDescription: '上课前 5 分钟静音提醒',
-        importance: Importance.defaultImportance,
-        priority: Priority.defaultPriority,
-        styleInformation: BigTextStyleInformation(
-          reminder.detailText,
-          contentTitle: reminder.title,
-          summaryText: '静音提醒 · 即将上课',
-        ),
-        playSound: false,
-        enableVibration: false,
-        silent: true,
-        autoCancel: false,
-        ongoing: true,
-        onlyAlertOnce: true,
-        timeoutAfter: const Duration(minutes: 6).inMilliseconds,
-        ticker: _tickerFor(reminder.course),
-        category: AndroidNotificationCategory.reminder,
-        visibility: NotificationVisibility.public,
-        color: const Color(0xFF4F46E5),
-        colorized: false,
-        subText: '课前静音提醒',
-        when: reminder.classStart.millisecondsSinceEpoch,
-        usesChronometer: true,
-        chronometerCountDown: true,
-      ),
-      iOS: DarwinNotificationDetails(
-        presentAlert: true,
-        presentBanner: true,
-        presentList: true,
-        presentSound: false,
-        subtitle: teacher == null || teacher.isEmpty ? null : teacher,
-        interruptionLevel: InterruptionLevel.active,
-        threadIdentifier: 'course_reminders',
-      ),
-    );
-  }
+
 
   List<_CourseReminderEntry> _buildReminderEntries(
     List<CourseBlock> courses,

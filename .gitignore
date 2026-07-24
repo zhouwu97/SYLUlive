@@ -101,3 +101,10 @@ python-edu-service/tools/*/output/
 /scratch/privacy-server-deploy
 /artifacts/checkin-*.png
 /artifacts/window-*.xml
+# Ignore local temp and artifacts
+.omo/
+artifacts/
+scratch/
+client/scratch/
+*.patch
+client/ohos/entry/oh-package-lock.json5

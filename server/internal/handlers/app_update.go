@@ -173,13 +173,13 @@ func (h *AppUpdateHandler) CheckUpdate(c *gin.Context) {
 	if decision != services.UpdateNone {
 		resp.Title = latest.Title
 		resp.Changelog = latest.Changelog
-		
+
 		deliveryMode := latest.DeliveryMode
 		if deliveryMode == "" {
 			deliveryMode = models.AppReleaseDeliveryModeDirectPackage
 		}
 		resp.DeliveryMode = deliveryMode
-		
+
 		if deliveryMode == models.AppReleaseDeliveryModeExternalMarket {
 			resp.ActionURL = latest.ActionURL
 		} else {
@@ -187,7 +187,7 @@ func (h *AppUpdateHandler) CheckUpdate(c *gin.Context) {
 			resp.SHA256 = latest.SHA256
 			resp.DownloadURL = formatAPKDownloadURL(latest.ID)
 		}
-		
+
 		if latest.PublishedAt != nil {
 			resp.PublishedAt = latest.PublishedAt.UTC().Format(time.RFC3339)
 		}

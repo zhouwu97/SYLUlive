@@ -28,7 +28,7 @@ class MajorItem {
 
 class MajorRating {
   final int id, majorId, userId, star;
-  final String comment, userName;
+  final String comment, userName, userAvatar;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final int helpfulCount;
@@ -43,6 +43,7 @@ class MajorRating {
     required this.star,
     required this.comment,
     this.userName = '',
+    this.userAvatar = '',
     this.createdAt,
     this.updatedAt,
     this.helpfulCount = 0,
@@ -57,6 +58,7 @@ class MajorRating {
         star: j['star'] ?? 0,
         comment: j['comment'] ?? '',
         userName: j['user_name'] ?? '',
+        userAvatar: j['user_avatar'] ?? '',
         createdAt:
             j['created_at'] != null ? DateTime.tryParse(j['created_at']) : null,
         updatedAt:
@@ -187,6 +189,7 @@ class MajorProvider extends ChangeNotifier {
           star: r.star,
           comment: r.comment,
           userName: r.userName,
+          userAvatar: r.userAvatar,
           createdAt: r.createdAt,
           updatedAt: r.updatedAt,
           helpfulCount: result['helpful_count'] ?? 0,

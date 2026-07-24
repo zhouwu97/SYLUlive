@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/team_recruitment.dart';
 import '../../models/water_team.dart';
 import '../../providers/team_recruitment_provider.dart';
 import '../../widgets/team/team_recruitment_card.dart';
@@ -42,6 +43,41 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
   }
 
   Future<void> _load() => context.read<TeamRecruitmentProvider>().loadMine();
+
+  Future<void> _deleteRecruitment(TeamRecruitment item) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('删除组队'),
+            content: Text('“${item.title}”将从组队大厅和相关列表中移除，删除后无法恢复。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFE54848),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('确认删除'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    final error = await context
+        .read<TeamRecruitmentProvider>()
+        .deleteRecruitment(item.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error ?? '组队已删除')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TeamRecruitmentProvider>();
@@ -79,6 +115,8 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
                           final item = provider.myCreated[index];
                           return TeamRecruitmentCard(
                             recruitment: item,
+                            isDeleting: provider.deletingIds.contains(item.id),
+                            onDelete: () => _deleteRecruitment(item),
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(

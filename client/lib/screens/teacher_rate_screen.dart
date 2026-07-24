@@ -162,7 +162,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     };
     final accentSoft = switch (index) {
       0 => RankingTokens.canteenAccentSoft(isDark),
-      1 => RankingTokens.teacherAccentSoft(isDark),
+      1 => isDark
+          ? const Color(0xFF66BB6A).withValues(alpha: 0.16)
+          : const Color(0xFFE8F5E9),
       _ => RankingTokens.majorAccentSoft(isDark),
     };
 

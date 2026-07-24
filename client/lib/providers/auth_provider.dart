@@ -1002,11 +1002,20 @@ class AuthProvider extends ChangeNotifier {
     }
 
     final nextUser = User.fromJson(userJson);
-    final candidate = _AuthSessionCandidate(token, nextUser);
 
-    // 先完成持久化，成功后再更新内存
-    await _saveAndCommitAuthSession(candidate, prefetchWallpaper: false);
+    await _credentialStore.write(
+      token: token,
+      userJson: jsonEncode(nextUser.toJson()),
+    );
+
+    _commitUserSnapshot(nextUser);
     notifyListeners();
+  }
+
+  void _commitUserSnapshot(User nextUser) {
+    _user = nextUser;
+    _sessionGeneration++;
+    // 不修改 _accountSessionEpoch
   }
 
   Future<AuthResult> updateAvatar(Uint8List avatarBytes) async {

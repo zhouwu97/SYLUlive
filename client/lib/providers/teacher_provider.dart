@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
@@ -66,6 +67,10 @@ class TeacherProvider extends ChangeNotifier {
 
   final Map<int, TeacherDetailState> _details = {};
   final Map<int, Future<void>> _detailRequests = {};
+  final Map<int, int> _detailGenerations = {};
+  
+  Timer? _searchDebounce;
+  int _searchGeneration = 0;
 
   List<Teacher> get teachers => _teachers;
   List<Teacher> get allTeachers => _allTeachers;
@@ -80,6 +85,28 @@ class TeacherProvider extends ChangeNotifier {
       : _interactionService = RatingInteractionService(_dio);
 
   Future<void> loadTeachers({String? query}) async {
+    _searchDebounce?.cancel();
+    _searchGeneration++;
+    final generation = _searchGeneration;
+
+    // Small debounce if query is present to avoid rapid firing
+    if (query != null && query.isNotEmpty) {
+      final completer = Completer<void>();
+      _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+        if (generation != _searchGeneration) {
+          completer.complete();
+          return;
+        }
+        await _performLoadTeachers(query, generation);
+        completer.complete();
+      });
+      return completer.future;
+    } else {
+      return _performLoadTeachers(query, generation);
+    }
+  }
+
+  Future<void> _performLoadTeachers(String? query, int generation) async {
     _isLoading = true;
     notifyListeners();
     try {
@@ -89,6 +116,9 @@ class TeacherProvider extends ChangeNotifier {
         '/teachers',
         queryParameters: params.isEmpty ? null : params,
       );
+      
+      if (generation != _searchGeneration) return;
+
       if (resp.statusCode == 200) {
         final seen = <int>{};
         _teachers = (resp.data as List)
@@ -97,10 +127,14 @@ class TeacherProvider extends ChangeNotifier {
             .toList();
       }
     } on DioException catch (e) {
+      if (generation != _searchGeneration) return;
       _errorMessage = _parseError(e);
     }
-    _isLoading = false;
-    notifyListeners();
+    
+    if (generation == _searchGeneration) {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> loadAllTeachersForSuggestions() async {
@@ -119,21 +153,31 @@ class TeacherProvider extends ChangeNotifier {
   }
 
   Future<void> loadTeacherDetail(int teacherId, {bool force = false}) {
-    if (!force) {
-      final existing = _detailRequests[teacherId];
-      if (existing != null) return existing;
-    }
+    final existing = _detailRequests[teacherId];
+    if (existing != null && !force) return existing;
 
-    final future = _loadTeacherDetailInternal(teacherId, force: force)
+    final generation = (_detailGenerations[teacherId] ?? 0) + 1;
+    _detailGenerations[teacherId] = generation;
+
+    late final Future<void> future;
+    future = _loadTeacherDetailInternal(teacherId, generation: generation)
         .whenComplete(() {
-      _detailRequests.remove(teacherId);
+      if (identical(_detailRequests[teacherId], future)) {
+        _detailRequests.remove(teacherId);
+      }
     });
 
     _detailRequests[teacherId] = future;
     return future;
   }
 
-  Future<void> _loadTeacherDetailInternal(int teacherId, {bool force = false}) async {
+  bool _ownsTeacherRequest(int teacherId, int generation) {
+    return _detailGenerations[teacherId] == generation;
+  }
+
+  Future<void> _loadTeacherDetailInternal(int teacherId, {required int generation}) async {
+    if (!_ownsTeacherRequest(teacherId, generation)) return;
+    
     _details[teacherId] = detailOf(teacherId).copyWith(isLoading: true, clearError: true);
     notifyListeners();
     try {
@@ -174,6 +218,7 @@ class TeacherProvider extends ChangeNotifier {
         );
       }
 
+      if (!_ownsTeacherRequest(teacherId, generation)) return;
       _details[teacherId] = TeacherDetailState(
         teacher: teacher,
         ratings: ratings,
@@ -186,16 +231,19 @@ class TeacherProvider extends ChangeNotifier {
       debugPrint('教师详情解析或加载失败 teacher=$teacherId: $error');
       debugPrintStack(stackTrace: stackTrace);
 
+      if (!_ownsTeacherRequest(teacherId, generation)) return;
       _details[teacherId] = detailOf(teacherId).copyWith(
         isLoading: false,
         errorMessage: error is DioException ? _parseError(error) : '教师数据解析失败',
       );
     } finally {
-      final state = detailOf(teacherId);
-      if (state.isLoading) {
-        _details[teacherId] = state.copyWith(isLoading: false);
+      if (_ownsTeacherRequest(teacherId, generation)) {
+        final state = detailOf(teacherId);
+        if (state.isLoading) {
+          _details[teacherId] = state.copyWith(isLoading: false);
+        }
+        notifyListeners();
       }
-      notifyListeners();
     }
   }
 

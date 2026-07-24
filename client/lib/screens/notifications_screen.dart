@@ -179,6 +179,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       titleText = fromUser?['nickname'] ?? '匿名用户';
     } else if (type == 'featured_application') {
       actionText = '精华申请通知';
+    } else if (type == 'market_post') {
+      actionText = '集市上新';
     } else if (type == 'water_moderation') {
       actionText = '水帖管理通知';
     } else if (type == 'team_application') {
@@ -195,11 +197,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     return InkWell(
       onTap: () async {
-        final auth = context.read<AuthProvider>();
         if (!isRead && id != null) {
           setState(() {
             notification['is_read'] = true;
           });
+          final auth = context.read<AuthProvider>();
           try {
             await auth.dio.post('/notifications/read-selected', data: {
               'ids': [id]
@@ -209,19 +211,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
         if (postId != null) {
           try {
-            final response = await auth.dio.get('/posts/$postId');
+            final response = await context.read<AuthProvider>().dio.get('/posts/$postId');
             if (!mounted) return;
-            final post =
-                Post.fromJson(Map<String, dynamic>.from(response.data as Map));
-            await Navigator.push(
-                context,
-                buildPostDetailRoute(post,
-                    targetReplyId: type == 'reply' ? relatedId : null));
+            final post = Post.fromJson(Map<String, dynamic>.from(response.data as Map));
+            await Navigator.push(context, buildPostDetailRoute(post, targetReplyId: type == 'reply' ? relatedId : null));
           } on DioException catch (error) {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(
-                    AppFeedback.dioErrorMessage(error, fallback: '打开帖子失败'))));
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppFeedback.dioErrorMessage(error, fallback: '打开帖子失败'))));
           }
         }
       },

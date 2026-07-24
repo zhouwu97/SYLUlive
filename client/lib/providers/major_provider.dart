@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import '../services/rating_interaction_service.dart';
 
 class MajorItem {
   final int id;
@@ -28,6 +29,13 @@ class MajorItem {
 class MajorRating {
   final int id, majorId, userId, star;
   final String comment, userName;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final int helpfulCount;
+  final int unhelpfulCount;
+  final String? myVote;
+  final bool isOwn;
+
   MajorRating({
     required this.id,
     required this.majorId,
@@ -35,6 +43,12 @@ class MajorRating {
     required this.star,
     required this.comment,
     this.userName = '',
+    this.createdAt,
+    this.updatedAt,
+    this.helpfulCount = 0,
+    this.unhelpfulCount = 0,
+    this.myVote,
+    this.isOwn = false,
   });
   factory MajorRating.fromJson(Map<String, dynamic> j) => MajorRating(
         id: j['id'] ?? 0,
@@ -43,11 +57,20 @@ class MajorRating {
         star: j['star'] ?? 0,
         comment: j['comment'] ?? '',
         userName: j['user_name'] ?? '',
+        createdAt:
+            j['created_at'] != null ? DateTime.tryParse(j['created_at']) : null,
+        updatedAt:
+            j['updated_at'] != null ? DateTime.tryParse(j['updated_at']) : null,
+        helpfulCount: j['helpful_count'] ?? 0,
+        unhelpfulCount: j['unhelpful_count'] ?? 0,
+        myVote: j['my_vote'],
+        isOwn: j['is_own'] ?? false,
       );
 }
 
 class MajorProvider extends ChangeNotifier {
   final Dio _dio;
+  final RatingInteractionService _interactionService;
   List<MajorItem> _majors = [];
   MajorItem? _selected;
   List<MajorRating> _ratings = [];
@@ -74,7 +97,8 @@ class MajorProvider extends ChangeNotifier {
     return counts;
   }
 
-  MajorProvider(this._dio);
+  MajorProvider(this._dio)
+      : _interactionService = RatingInteractionService(_dio);
 
   Future<void> loadMajors() async {
     _isLoading = true;
@@ -144,6 +168,46 @@ class MajorProvider extends ChangeNotifier {
       await _dio.delete('/majors/rating/$ratingId');
       await loadDetail(majorId);
       return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> voteRating(int ratingId, String voteType) async {
+    final result =
+        await _interactionService.voteMajorRating(ratingId, voteType);
+    if (result != null) {
+      final idx = _ratings.indexWhere((r) => r.id == ratingId);
+      if (idx != -1) {
+        final r = _ratings[idx];
+        _ratings[idx] = MajorRating(
+          id: r.id,
+          majorId: r.majorId,
+          userId: r.userId,
+          star: r.star,
+          comment: r.comment,
+          userName: r.userName,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+          helpfulCount: result['helpful_count'] ?? 0,
+          unhelpfulCount: result['unhelpful_count'] ?? 0,
+          myVote: result['my_vote'],
+          isOwn: r.isOwn,
+        );
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> reportRating(
+      int ratingId, String reasonCode, String reason) async {
+    try {
+      return await _interactionService.reportRating(
+        targetType: 'major_rating',
+        targetId: ratingId,
+        reasonCode: reasonCode,
+        reason: reason,
+      );
     } catch (_) {
       return false;
     }

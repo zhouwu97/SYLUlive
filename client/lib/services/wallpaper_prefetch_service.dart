@@ -12,10 +12,6 @@ class WallpaperPrefetchService {
   static Future<void>? _prefetchTask;
 
   static const List<String> bundledWallpaperNames = [
-    'phone_wallpaper_01.png',
-    'phone_wallpaper_02.png',
-    'phone_wallpaper_03.png',
-    'phone_wallpaper_04.png',
     'tablet_landscape_01.png',
     'tablet_landscape_02.png',
     'tablet_landscape_03.png',

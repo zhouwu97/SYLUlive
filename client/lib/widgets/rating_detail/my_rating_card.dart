@@ -25,13 +25,12 @@ class MyRatingCard extends StatelessWidget {
     final accent = accentOverride ?? RankingTokens.teacherAccent(isDark);
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
-        color: RankingTokens.cardBg(isDark),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: accent.withValues(alpha: isDark ? 0.18 : 0.14),
-        ),
+        color: isDark
+            ? accent.withValues(alpha: 0.1)
+            : accent.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -41,24 +40,42 @@ class MyRatingCard extends StatelessWidget {
               Text(
                 '我的评价',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  color: RankingTokens.titleColor(isDark),
+                  color: accent,
                 ),
               ),
               const Spacer(),
               if (isDeleting)
                 const SizedBox(
-                  width: 16,
-                  height: 16,
+                  width: 14,
+                  height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               else
                 PopupMenuButton<String>(
-                  icon: Icon(
-                    Icons.more_horiz,
-                    color: RankingTokens.subColor(isDark),
-                    size: 18,
+                  child: Padding(
+                    padding: const EdgeInsets.only(
+                        left: 8, right: 0, top: 4, bottom: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '编辑',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: accent,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 14,
+                          color: accent,
+                        ),
+                      ],
+                    ),
                   ),
                   padding: EdgeInsets.zero,
                   onSelected: (value) {
@@ -72,7 +89,7 @@ class MyRatingCard extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -80,7 +97,7 @@ class MyRatingCard extends StatelessWidget {
                 radius: 12,
                 backgroundColor: isDark
                     ? accent.withValues(alpha: 0.18)
-                    : accent.withValues(alpha: 0.08),
+                    : accent.withValues(alpha: 0.1),
                 child: Text(
                   '我',
                   style: TextStyle(
@@ -103,7 +120,7 @@ class MyRatingCard extends StatelessWidget {
               Text(
                 '★' * currentStar + '☆' * (5 - currentStar),
                 style: const TextStyle(
-                  fontSize: 13,
+                  fontSize: 12,
                   color: Colors.amber,
                   letterSpacing: 1.0,
                 ),

@@ -23,16 +23,42 @@ class PrivacyCenterScreen extends StatefulWidget {
 }
 
 class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
+  List<Map<String, dynamic>> _requests = const [];
+  bool _loadingRequests = true;
   bool _loadingData = false;
   bool _exporting = false;
   bool _revoking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRequests();
+  }
+
+  Future<void> _loadRequests() async {
+    try {
+      final response = await context.read<AuthProvider>().dio.get('/user/privacy/requests');
+      final items = response.data is Map ? response.data['items'] : null;
+      if (mounted) {
+        setState(() {
+          _requests = items is List
+              ? items.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList()
+              : const [];
+          _loadingRequests = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingRequests = false);
+    }
+  }
+
+
 
   Future<void> _showPersonalData() async {
     if (_loadingData) return;
     setState(() => _loadingData = true);
     try {
-      final response =
-          await context.read<AuthProvider>().dio.get('/user/privacy/data');
+      final response = await context.read<AuthProvider>().dio.get('/user/privacy/data');
       if (response.data is! Map) throw const FormatException('个人信息响应无效');
       if (!mounted) return;
       await Navigator.of(context).push(
@@ -55,8 +81,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final response =
-          await context.read<AuthProvider>().dio.get('/user/privacy/export');
+      final response = await context.read<AuthProvider>().dio.get('/user/privacy/export');
       final directory = await getTemporaryDirectory();
       final file = File('${directory.path}/shenliyuan-personal-data.json');
       await file.writeAsString(
@@ -117,8 +142,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
     if (confirmed != true || password.isEmpty || !mounted) return;
 
     setState(() => _revoking = true);
-    final result =
-        await context.read<AuthProvider>().withdrawLegalConsents(password);
+    final result = await context.read<AuthProvider>().withdrawLegalConsents(password);
     if (!mounted) return;
     setState(() => _revoking = false);
     if (!result.success) {
@@ -196,9 +220,9 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
+
 
   Future<void> _showAuthorizationManagementSheet() async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -238,8 +262,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                   _PrivacyActionTile(
                     icon: Icons.school_outlined,
                     title: '教务数据',
-                    subtitle:
-                        (auth.user?.eduAuthorized ?? false) ? '已授权' : '未授权',
+                    subtitle: (auth.user?.eduAuthorized ?? false) ? '已授权' : '未授权',
                     trailing: const SizedBox.shrink(),
                   ),
                   _PrivacyActionTile(
@@ -249,16 +272,14 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                     trailing: const SizedBox.shrink(),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     child: SizedBox(
                       width: double.infinity,
                       child: TextButton(
                         style: TextButton.styleFrom(
                           foregroundColor: Theme.of(context).colorScheme.error,
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          textStyle: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600),
+                          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                         onPressed: () {
                           Navigator.pop(sheetContext);
@@ -290,10 +311,10 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final restricted =
-        widget.restricted || !(auth.user?.legalConsentsActive ?? true);
+    final restricted = widget.restricted || !(auth.user?.legalConsentsActive ?? true);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+    final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
 
     return Scaffold(
       backgroundColor: bg,
@@ -321,6 +342,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
             _RestrictedNotice(),
             const SizedBox(height: 18),
           ],
+          
           const _PrivacySectionTitle('协议与说明'),
           const SizedBox(height: 10),
           _PrivacySectionCard(
@@ -335,6 +357,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
             ],
           ),
           const SizedBox(height: 18),
+          
           const _PrivacySectionTitle('你的数据'),
           const SizedBox(height: 10),
           _PrivacySectionCard(
@@ -356,9 +379,11 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                 trailing: _exporting ? _loadingWidget : null,
                 onTap: _exporting ? null : _exportData,
               ),
+
             ],
           ),
           const SizedBox(height: 18),
+
           const _PrivacySectionTitle('授权管理'),
           const SizedBox(height: 10),
           if (restricted)
@@ -385,6 +410,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
               ],
             ),
           const SizedBox(height: 18),
+
           const _PrivacySectionTitle('账号管理'),
           const SizedBox(height: 10),
           _PrivacySectionCard(
@@ -427,10 +453,7 @@ class _RestrictedNotice extends StatelessWidget {
               children: [
                 Text(
                   '授权已撤销',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: errorColor,
-                      fontSize: 15),
+                  style: TextStyle(fontWeight: FontWeight.w600, color: errorColor, fontSize: 15),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -490,8 +513,7 @@ class _PrivacySectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? CampusTheme.darkCard : CampusTheme.card;
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
+    final borderColor = isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
 
     return Container(
       decoration: BoxDecoration(
@@ -528,8 +550,7 @@ class _PrivacyDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final borderColor =
-        isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
+    final borderColor = isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder;
 
     return Divider(
       height: 1,
@@ -566,9 +587,7 @@ class _PrivacyActionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = isDark ? const Color(0xFF62CDBD) : CampusTheme.primary;
-    final subText = isDark
-        ? Theme.of(context).colorScheme.onSurfaceVariant
-        : CampusTheme.subText;
+    final subText = isDark ? Theme.of(context).colorScheme.onSurfaceVariant : CampusTheme.subText;
     final onSurface = Theme.of(context).colorScheme.onSurface;
     final errorColor = Theme.of(context).colorScheme.error;
 
@@ -780,9 +799,7 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
                     size: 20,
                     color: revoked
                         ? Theme.of(context).colorScheme.error
-                        : (isDark
-                            ? const Color(0xFF62CDBD)
-                            : CampusTheme.primary),
+                        : (isDark ? const Color(0xFF62CDBD) : CampusTheme.primary),
                   ),
                 );
               }).toList(growable: false),
@@ -823,10 +840,10 @@ class _DataRow extends StatelessWidget {
           SizedBox(
             width: 76,
             child: Text(
-              label,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+               label,
+               style: TextStyle(
+                 color: Theme.of(context).colorScheme.onSurfaceVariant,
+               ),
             ),
           ),
           const SizedBox(width: 10),

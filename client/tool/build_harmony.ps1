@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [ValidateSet('debug', 'release')]
     [string]$Mode = 'debug',
@@ -96,7 +96,7 @@ Set-Content -LiteralPath $appJson5Path -Value $appJson5Modified -Encoding utf8 -
 # 签名材料只允许存在于已忽略的本地文件中，构建结束后立即恢复无凭据模板。
 Copy-Item -LiteralPath $localSigningProfile -Destination $buildProfile -Force
 try {
-    & $flutter build hap "--$Mode" --no-pub --dart-define=APP_PLATFORM=ohos `
+    & $flutter build hap "--$Mode" --no-pub -t lib/main_ohos.dart --dart-define=APP_PLATFORM=ohos `
         "--dart-define=APP_VERSION_NAME=$versionName" `
         "--dart-define=APP_VERSION_CODE=$versionCode" `
         --target-platform=$TargetPlatform `

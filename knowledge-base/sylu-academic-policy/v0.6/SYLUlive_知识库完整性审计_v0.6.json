@@ -1,0 +1,35 @@
+{
+  "version": "v0.6",
+  "generated_at": "2026-07-23",
+  "document_count": 14,
+  "new_school_full_text_document_count": 6,
+  "link_only_documents": 0,
+  "empty_content_documents": [],
+  "invalid_json_files": [],
+  "source_file_hash_count": 6,
+  "rule_count": 57,
+  "test_case_count": 19,
+  "checks": {
+    "all_import_docs_have_content": true,
+    "all_new_docs_have_source_file": true,
+    "competition_tables_structured": true,
+    "supersession_recorded": true,
+    "high_risk_rules_have_source_locator": true,
+    "second_exam_answer_card_present": true,
+    "historical_currentness_boundary_present": true
+  },
+  "supersedes_knowledge_base_versions": [
+    "v0.1",
+    "v0.2",
+    "v0.3",
+    "v0.4"
+  ],
+  "production_note": "先将旧知识库文档标记为superseded或撤销发布，再导入v0.5，避免旧规则与新正式文件同时召回。",
+  "new_features": [
+    "挂科/补考/二考/重修确定性同义词映射",
+    "当前规则与历史细则分层",
+    "二考D/F及绩点1/0规则卡",
+    "RAG与Skill代码修复方案",
+    "补考问答回归用例"
+  ]
+}

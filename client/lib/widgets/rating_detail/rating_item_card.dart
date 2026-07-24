@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../config/api_constants.dart';
+import '../cached_avatar.dart';
 import 'ranking_tokens.dart';
 import '../../utils/rating_time_formatter.dart';
 import 'rating_action_row.dart';
@@ -7,6 +9,7 @@ class RatingItemCard extends StatelessWidget {
   final String userName;
   final String comment;
   final int star;
+  final String? userAvatar;
   final bool isOwn;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -24,6 +27,7 @@ class RatingItemCard extends StatelessWidget {
     required this.userName,
     required this.comment,
     required this.star,
+    this.userAvatar,
     this.isOwn = false,
     this.createdAt,
     this.updatedAt,
@@ -52,18 +56,12 @@ class RatingItemCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor:
-                      isDark ? Colors.white12 : Colors.grey.shade200,
-                  child: Text(
-                    userName.isNotEmpty ? userName[0] : '?',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white70 : Colors.black54,
-                    ),
-                  ),
+                CachedAvatar(
+                  radius: 18,
+                  imageUrl: userAvatar?.trim().isNotEmpty == true
+                      ? ApiConstants.fullUrl(userAvatar!.trim())
+                      : null,
+                  fallbackText: userName,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -106,7 +104,7 @@ class RatingItemCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Padding(
-              padding: const EdgeInsets.only(left: 36),
+              padding: const EdgeInsets.only(left: 44),
               child: comment.trim().isNotEmpty
                   ? Text(
                       comment.trim(),
@@ -127,7 +125,7 @@ class RatingItemCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Padding(
-              padding: const EdgeInsets.only(left: 36),
+              padding: const EdgeInsets.only(left: 44),
               child: RatingActionRow(
                 isOwn: isOwn,
                 helpfulCount: helpfulCount,

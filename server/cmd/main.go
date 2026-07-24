@@ -291,6 +291,14 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	accountRepair, err := models.RepairLegacyAccountIdentityState(db)
+	if err != nil {
+		log.Fatal("历史账号身份状态修复失败:", err)
+	}
+	if accountRepair.VerifiedStudents > 0 || accountRepair.RestoredAuthorizations > 0 {
+		log.Printf("历史账号身份状态已修复: verified_students=%d restored_authorizations=%d",
+			accountRepair.VerifiedStudents, accountRepair.RestoredAuthorizations)
+	}
 	// 新推送授权默认关闭，旧 Token 不得被视为用户已主动同意。
 	if err := db.Model(&models.User{}).
 		Where("push_data_processing_enabled = ?", false).

@@ -1049,6 +1049,7 @@ func main() {
 	{
 		teamAuth.POST("/recruitments", waterTeamHandler.CreateTeamRecruitment)
 		teamAuth.PATCH("/recruitments/:id", waterTeamHandler.UpdateTeamRecruitment)
+		teamAuth.DELETE("/recruitments/:id", waterTeamHandler.DeleteTeamRecruitment)
 		teamAuth.GET("/recruitments/mine", waterTeamHandler.GetMyTeamRecruitments)
 
 		// 申请相关（复用旧 Handler 方法）

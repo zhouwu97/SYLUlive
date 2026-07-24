@@ -63,6 +63,7 @@ class TeamRecruitmentProvider extends ChangeNotifier {
   String? mineError;
   final Set<int> applyingIds = {};
   final Set<int> closingIds = {};
+  final Set<int> deletingIds = {};
   final Set<int> reviewingApplicationIds = {};
   final Set<int> loadingApplicationIds = {};
   final Map<int, String> applicationErrors = {};
@@ -108,6 +109,7 @@ class TeamRecruitmentProvider extends ChangeNotifier {
     mineError = null;
     applyingIds.clear();
     closingIds.clear();
+    deletingIds.clear();
     reviewingApplicationIds.clear();
     updatingIds.clear();
     loadingApplicationIds.clear();
@@ -515,6 +517,40 @@ class TeamRecruitmentProvider extends ChangeNotifier {
     } finally {
       if (sessionVersion == _sessionVersion) {
         closingIds.remove(recruitmentId);
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<String?> deleteRecruitment(int recruitmentId) async {
+    if (deletingIds.contains(recruitmentId)) return '正在删除，请勿重复操作';
+    final sessionVersion = _sessionVersion;
+    deletingIds.add(recruitmentId);
+    notifyListeners();
+    try {
+      await _service.delete(recruitmentId);
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
+
+      final removedFromPublic =
+          publicItems.any((item) => item.id == recruitmentId);
+      publicItems = publicItems
+          .where((item) => item.id != recruitmentId)
+          .toList(growable: false);
+      myCreated = myCreated
+          .where((item) => item.id != recruitmentId)
+          .toList(growable: false);
+      myApplications = myApplications
+          .where((item) => item.recruitmentId != recruitmentId)
+          .toList(growable: false);
+      _applications.remove(recruitmentId);
+      if (removedFromPublic && publicTotal > 0) publicTotal--;
+      return null;
+    } catch (error) {
+      if (sessionVersion != _sessionVersion) return '登录状态已变化，请重试';
+      return _error(error);
+    } finally {
+      if (sessionVersion == _sessionVersion) {
+        deletingIds.remove(recruitmentId);
         notifyListeners();
       }
     }

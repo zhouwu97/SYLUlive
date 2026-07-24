@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
 import 'ranking_tokens.dart';
+import '../../utils/rating_time_formatter.dart';
+import 'rating_action_row.dart';
 
 class RatingItemCard extends StatelessWidget {
   final String userName;
   final String comment;
   final int star;
-  final bool isOwn;
-  final VoidCallback? onLongPress;
-  final String? createdAt;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final int helpfulCount;
+  final int unhelpfulCount;
+  final String? myVote;
+  final VoidCallback? onHelpful;
+  final VoidCallback? onUnhelpful;
+  final VoidCallback? onReport;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   const RatingItemCard({
     super.key,
@@ -15,8 +24,16 @@ class RatingItemCard extends StatelessWidget {
     required this.comment,
     required this.star,
     this.isOwn = false,
-    this.onLongPress,
     this.createdAt,
+    this.updatedAt,
+    this.helpfulCount = 0,
+    this.unhelpfulCount = 0,
+    this.myVote,
+    this.onHelpful,
+    this.onUnhelpful,
+    this.onReport,
+    this.onEdit,
+    this.onDelete,
   });
 
   @override
@@ -26,9 +43,7 @@ class RatingItemCard extends StatelessWidget {
     return Container(
       decoration: RankingTokens.cardDecoration(isDark),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onLongPress: onLongPress,
-        child: Padding(
+      child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -67,7 +82,7 @@ class RatingItemCard extends StatelessWidget {
                         if (createdAt != null) ...[
                           const SizedBox(height: 2),
                           Text(
-                            createdAt!,
+                            formatRatingTime(createdAt, updatedAt),
                             style: TextStyle(
                               fontSize: 10,
                               color: RankingTokens.mutedColor(isDark),
@@ -109,10 +124,24 @@ class RatingItemCard extends StatelessWidget {
                         ),
                       ),
               ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 36),
+                child: RatingActionRow(
+                  isOwn: isOwn,
+                  helpfulCount: helpfulCount,
+                  unhelpfulCount: unhelpfulCount,
+                  myVote: myVote,
+                  onHelpful: onHelpful,
+                  onUnhelpful: onUnhelpful,
+                  onReport: onReport,
+                  onEdit: onEdit,
+                  onDelete: onDelete,
+                ),
+              ),
             ],
           ),
         ),
-      ),
     );
   }
 }

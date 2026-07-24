@@ -12,6 +12,8 @@ import '../widgets/rating_detail/rating_score_panel.dart';
 import '../widgets/rating_detail/my_rating_card.dart';
 import '../widgets/rating_detail/rating_item_card.dart';
 import '../widgets/rating_detail/rating_policy_tip.dart';
+import '../widgets/rating_detail/rating_action_row.dart';
+import '../widgets/rating_detail/rating_report_sheet.dart';
 import '../widgets/rating_detail/rating_bottom_input_bar.dart';
 import '../widgets/rating_detail/rating_input_sheet.dart';
 
@@ -383,6 +385,56 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                           star: r.star,
                           isOwn: _isOwnRating(r),
                           onLongPress: () => _confirmDeleteRating(r),
+                          createdAt: r.createdAt,
+                          updatedAt: r.updatedAt,
+                          helpfulCount: r.helpfulCount,
+                          unhelpfulCount: r.unhelpfulCount,
+                          myVote: r.myVote,
+                          onHelpful: () => provider.voteRating(r.id, 'up'),
+                          onUnhelpful: () => provider.voteRating(r.id, 'down'),
+                          onReport: () {
+                            showRatingReportSheet(
+                              context: context,
+                              targetType: 'teacher_rating',
+                              targetId: r.id,
+                              onSubmit: (code, desc) async {
+                                final success = await provider.reportRating(
+                                  r.id,
+                                  code,
+                                  desc,
+                                );
+                                if (success && mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('举报已提交，我们会尽快处理')),
+                                  );
+                                } else if (!success && mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('举报失败或已提交过')),
+                                  );
+                                }
+                                return success;
+                              },
+                            );
+                          },
+                          onEdit: _isOwnRating(r) ? () {
+                            showRatingInputSheet(
+                              context: context,
+                              initialStar: r.star,
+                              initialComment: r.comment,
+                              title: '修改评价',
+                              maxCommentLength: 200,
+                              accentOverride: accent,
+                              onSubmit: (star, comment) async {
+                                final ok = await provider.rateTeacher(
+                                    widget.teacherId, star, comment);
+                                if (ok) {
+                                  _didChange = true;
+                                }
+                                return ok;
+                              },
+                            );
+                          } : null,
+                          onDelete: _isOwnRating(r) ? () => _confirmDeleteRating(r) : null,
                         ),
                       ))
                   .toList(),

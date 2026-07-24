@@ -150,11 +150,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('0/20'), findsOneWidget);
+    
+    // Counter is hidden when empty in public mode
+    expect(find.text('0/20'), findsNothing);
 
     await tester.tap(find.text('个人助手'));
     await tester.pumpAndSettle();
-    expect(find.text('0/8000'), findsOneWidget);
+    // Counter is hidden when empty in personal mode
+    expect(find.text('0/8000'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'a');
+    await tester.pumpAndSettle();
+    expect(find.text('1/8000'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '二十一字符以上的个人助手问题仍然应该允许发送');
     await tester.pump();

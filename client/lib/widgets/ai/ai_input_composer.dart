@@ -10,6 +10,7 @@ class AiInputComposer extends StatefulWidget {
   final bool running;
   final ValueChanged<String> onSend;
   final VoidCallback? onCancel;
+  final String hintText;
 
   const AiInputComposer({
     super.key,
@@ -20,6 +21,7 @@ class AiInputComposer extends StatefulWidget {
     required this.running,
     required this.onSend,
     this.onCancel,
+    required this.hintText,
   });
 
   @override
@@ -77,21 +79,23 @@ class _AiInputComposerState extends State<AiInputComposer> {
     final canSend =
         widget.enabled && !widget.running && _count > 0 && !overLimit;
     final colors = Theme.of(context).colorScheme;
+    final showCounter = _count > 0 || overLimit;
 
     return SafeArea(
       top: false,
       child: Container(
+        color: Colors.white, // ensure white bottom bar
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 56,
-              padding: const EdgeInsets.fromLTRB(16, 0, 6, 0),
+              height: 48,
+              padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
               decoration: BoxDecoration(
                 color: colors.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
               ),
               child: Row(
                 children: [
@@ -107,31 +111,40 @@ class _AiInputComposerState extends State<AiInputComposer> {
                         if (_inlineError != null) _inlineError = null;
                       },
                       decoration: InputDecoration(
-                        hintText: widget.enabled ? '问一个校园问题' : '基础设施测试中',
+                        hintText: widget.enabled ? widget.hintText : '基础设施测试中',
                         border: InputBorder.none,
                         isDense: true,
+                        hintStyle: TextStyle(
+                          color: colors.onSurfaceVariant.withValues(alpha: 0.7),
+                          fontSize: 14,
+                        ),
+                      ),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  if (showCounter) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '$_count/${widget.maxCharacters}',
+                      style: TextStyle(
+                        color: overLimit ? colors.error : colors.onSurfaceVariant,
+                        fontSize: 11,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '$_count/${widget.maxCharacters}',
-                    style: TextStyle(
-                      color: overLimit ? colors.error : colors.onSurfaceVariant,
-                      fontSize: 11,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
+                  ],
+                  const SizedBox(width: 6),
                   SizedBox(
-                    width: 44,
-                    height: 44,
+                    width: 40,
+                    height: 40,
                     child: IconButton.filled(
                       onPressed: widget.running
                           ? widget.onCancel
                           : (canSend ? _send : null),
                       style: IconButton.styleFrom(
                         backgroundColor: colors.primary,
-                        disabledBackgroundColor: colors.surfaceContainerHighest,
+                        disabledBackgroundColor: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+                        foregroundColor: Colors.white,
+                        disabledForegroundColor: colors.onSurfaceVariant.withValues(alpha: 0.3),
                         shape: const CircleBorder(),
                         padding: EdgeInsets.zero,
                       ),

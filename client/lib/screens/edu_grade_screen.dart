@@ -14,9 +14,6 @@ import '../services/grade_reminder_service.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
-import '../widgets/edu_grade/grade_gpa_hero_card.dart';
-import '../widgets/edu_grade/academic_course_item.dart';
-import '../widgets/edu_grade/academic_course_status_state.dart';
 import '../widgets/edu_grade/academic_privacy_notice.dart';
 import '../widgets/edu_grade/grade_center_section_tabs.dart';
 import '../widgets/edu_grade/academic_requirement_overview.dart';
@@ -290,7 +287,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     if (provider == null) return;
 
     final cache = provider.getCachedCreditRequirements();
-    final hasCache = cache != null;
 
     if (cache != null && !forceRefresh) {
       setState(() {
@@ -319,6 +315,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       return;
     }
 
+    debugPrint(
+      '[CREDIT-REQ] load failed: ${result.errorMessage ?? '学分要求获取失败'}',
+    );
     setState(() {
       _isRequirementLoading = false;
       _requirementError = result.errorMessage ?? '学分要求获取失败';
@@ -736,19 +735,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   List<Widget> _buildAcademicContent() {
-    final situation = _academicError == null ? _academicSituation : null;
-
     return [
-      // 官方 GPA 卡片
-      SliverToBoxAdapter(
-        child: GradeGpaHeroCard(
-          situation: situation,
-          isLoading: _isAcademicLoading,
-          errorMessage: _academicError,
-          onRetry: _refreshAcademicSituation,
-        ),
-      ),
-
       // 学分要求模块
       SliverToBoxAdapter(
         child: AcademicRequirementOverview(

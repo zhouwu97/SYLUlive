@@ -861,6 +861,25 @@ class EduCrawler:
         if _looks_like_login_page(body):
             raise CookieLapseError("Cookie已失效")
 
+        soup = BeautifulSoup(body or "", "html.parser")
+        plain_text = _normalize_text(soup.get_text(" ", strip=True))
+        logger.info(
+            "[EDU-CREDIT-REQ] "
+            "status=%s final_url=%s content_type=%r "
+            "title=%r body_length=%s forms=%s tables=%s "
+            "has_query=%s has_minimum=%s has_improvement=%s",
+            resp.status_code,
+            str(resp.url),
+            resp.headers.get("content-type", ""),
+            self._page_title(body),
+            len(body or ""),
+            len(soup.select("form")),
+            len(soup.select("table")),
+            "查询" in plain_text,
+            "要求最低" in plain_text,
+            "提高课程" in plain_text,
+        )
+
         return parse_credit_requirement_html(body)
 
 

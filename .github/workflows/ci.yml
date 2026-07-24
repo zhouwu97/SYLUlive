@@ -139,3 +139,16 @@ jobs:
             echo "Found direct usage of Android plugins without platform abstraction."
             exit 1
           fi
+
+  client-ohos-build:
+    runs-on: [self-hosted, ohos]
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build OHOS HAP
+        shell: pwsh
+        run: ./tool/build_harmony.ps1 -Mode debug -SkipTests

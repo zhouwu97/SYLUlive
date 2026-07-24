@@ -2,7 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import '../platform/contracts/reminder_notification_client.dart';
 
 import '../config/api_constants.dart';
 import '../models/edu_grade.dart';
@@ -20,8 +21,6 @@ class GradeReminderService {
     'shenliyuan/grade_reminders',
   );
 
-  final FlutterLocalNotificationsPlugin _notifications =
-      FlutterLocalNotificationsPlugin();
   bool _notificationsInitialized = false;
 
   /// 使用构建目标而非 Flutter 运行时平台；OHOS Flutter 当前会报告 Android。
@@ -212,17 +211,12 @@ class GradeReminderService {
   Future<bool> requestNotificationPermission() async {
     if (!Platform.isAndroid) return true;
     await _ensureNotificationsInitialized();
-    final androidPlugin = _notifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (androidPlugin == null) return false;
-    return await androidPlugin.requestNotificationsPermission() ?? false;
+    return await ReminderNotificationClient.instance.requestGradeReminderPermissions();
   }
 
   Future<void> _ensureNotificationsInitialized() async {
     if (_notificationsInitialized) return;
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const settings = InitializationSettings(android: android);
-    await _notifications.initialize(settings);
+    await ReminderNotificationClient.instance.initializeGradeReminders();
     _notificationsInitialized = true;
   }
 }

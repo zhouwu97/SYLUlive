@@ -1162,6 +1162,64 @@ func (h *WaterTeamHandler) UpdateTeamRecruitment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
 }
 
+// DeleteTeamRecruitment DELETE /api/team/recruitments/:id
+// 组队记录和申请用于保留成员关系与审计历史，用户删除时仅关闭招募并软删除底层帖子。
+func (h *WaterTeamHandler) DeleteTeamRecruitment(c *gin.Context) {
+	userID, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的招募ID"})
+		return
+	}
+
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var recruitment models.WaterTeamRecruitment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&recruitment, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("recruitment_not_found")
+			}
+			return err
+		}
+
+		var post models.Post
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&post, recruitment.PostID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("recruitment_not_found")
+			}
+			return err
+		}
+		if post.AuthorID != userID {
+			return fmt.Errorf("unauthorized")
+		}
+		if post.Status == models.PostStatusDeleted {
+			return fmt.Errorf("recruitment_not_found")
+		}
+
+		if err := tx.Model(&recruitment).Update("status", models.RecruitmentStatusClosed).Error; err != nil {
+			return err
+		}
+		return tx.Model(&post).Update("status", models.PostStatusDeleted).Error
+	})
+
+	if err != nil {
+		switch err.Error() {
+		case "recruitment_not_found":
+			c.JSON(http.StatusNotFound, gin.H{"error": "招募信息不存在"})
+		case "unauthorized":
+			c.JSON(http.StatusForbidden, gin.H{"error": "只能删除自己发起的组队"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "删除组队失败"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
 // GetMyTeamRecruitments GET /api/team/recruitments/mine
 func (h *WaterTeamHandler) GetMyTeamRecruitments(c *gin.Context) {
 	userID, ok := h.currentUserOr401(c)
@@ -1614,7 +1672,10 @@ func (h *WaterTeamHandler) GetMyApplications(c *gin.Context) {
 	}
 
 	var apps []models.WaterTeamApplication
-	if err := h.db.Preload("Recruitment").Preload("Post").Preload("Post.Author").Where("applicant_id = ?", userID).Order("created_at desc").Find(&apps).Error; err != nil {
+	if err := h.db.Preload("Recruitment").Preload("Post").Preload("Post.Author").
+		Joins("JOIN posts ON posts.id = water_team_applications.post_id").
+		Where("water_team_applications.applicant_id = ? AND posts.status != ?", userID, models.PostStatusDeleted).
+		Order("water_team_applications.created_at desc").Find(&apps).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取申请列表失败"})
 		return
 	}

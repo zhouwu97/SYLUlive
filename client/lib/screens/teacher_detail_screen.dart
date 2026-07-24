@@ -10,9 +10,8 @@ import '../widgets/rating_detail/ranking_tokens.dart';
 import '../widgets/rating_detail/rating_subject_header.dart';
 import '../widgets/rating_detail/rating_score_panel.dart';
 import '../widgets/rating_detail/my_rating_card.dart';
-import '../widgets/rating_detail/rating_item_card.dart';
+import '../widgets/rating_detail/teacher_rating_item_card.dart';
 import '../widgets/rating_detail/rating_policy_tip.dart';
-import '../widgets/rating_detail/rating_action_row.dart';
 import '../widgets/rating_detail/rating_report_sheet.dart';
 import '../widgets/rating_detail/rating_bottom_input_bar.dart';
 import '../widgets/rating_detail/rating_input_sheet.dart';
@@ -222,6 +221,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                       subtitle: teacher.course,
                       initial: teacher.name,
                       accentOverride: accent,
+                      showInitialBadge: false,
                     ),
                     const SizedBox(height: 8),
                     RatingScorePanel(
@@ -250,7 +250,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                                   widget.teacherId, star, comment);
                               if (ok) {
                                 _didChange = true;
-                                if (mounted) {
+                                if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text('评价修改成功'),
@@ -277,6 +277,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                   bottom: 0,
                   child: RatingBottomInputBar(
                     hintText: '写下你的课堂体验...',
+                    accentOverride: accent,
                     onTap: () {
                       if (!context.read<AuthProvider>().isLoggedIn) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -296,7 +297,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                               widget.teacherId, star, comment);
                           if (ok) {
                             _didChange = true;
-                            if (mounted) {
+                            if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('评价成功'),
@@ -403,10 +404,12 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
               children: detail.ratings
                   .map((r) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: RatingItemCard(
+                        child: TeacherRatingItemCard(
                           userName: r.userName,
+                          userAvatar: r.userAvatar,
                           comment: r.comment,
                           star: r.star,
+                          accent: accent,
                           isOwn: _isOwnRating(r),
                           createdAt: r.createdAt,
                           updatedAt: r.updatedAt,

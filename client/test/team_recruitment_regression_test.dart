@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/team_recruitment_provider.dart';
+import 'package:shenliyuan/screens/team/my_team_recruitments_screen.dart';
 import 'package:shenliyuan/screens/team/team_recruitment_center_screen.dart';
 import 'package:shenliyuan/services/team_recruitment_service.dart';
 import 'package:shenliyuan/widgets/team/team_application_sheet.dart';
@@ -108,6 +109,121 @@ void main() {
       imageFileIds: const [],
     );
     expect((requests.first.data as Map)['image_file_ids'], isEmpty);
+  });
+
+  test('删除组队后同步清理大厅和我的组队缓存', () async {
+    final dio = Dio();
+    final requests = <RequestOptions>[];
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      requests.add(options);
+      if (options.method == 'DELETE') {
+        handler.resolve(Response<dynamic>(
+          requestOptions: options,
+          statusCode: 200,
+          data: const {'message': '删除成功'},
+        ));
+        return;
+      }
+      if (options.path.endsWith('/team/recruitments/mine')) {
+        handler.resolve(Response<dynamic>(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'items': [_recruitmentJson(id: 7, title: '待删除组队')],
+          },
+        ));
+        return;
+      }
+      if (options.path.endsWith('/team/my_applications')) {
+        handler.resolve(Response<dynamic>(
+          requestOptions: options,
+          statusCode: 200,
+          data: const <Map<String, dynamic>>[],
+        ));
+        return;
+      }
+      handler.resolve(Response<dynamic>(
+        requestOptions: options,
+        statusCode: 200,
+        data: {
+          'items': [_recruitmentJson(id: 7, title: '待删除组队')],
+          'total': 1,
+          'page': 1,
+          'has_more': false,
+        },
+      ));
+    }));
+    final provider = TeamRecruitmentProvider(dio);
+
+    await provider.loadPublic();
+    await provider.loadMine();
+    expect(provider.publicItems, hasLength(1));
+    expect(provider.myCreated, hasLength(1));
+
+    final error = await provider.deleteRecruitment(7);
+
+    expect(error, isNull);
+    expect(provider.publicItems, isEmpty);
+    expect(provider.myCreated, isEmpty);
+    expect(provider.publicTotal, 0);
+    expect(provider.deletingIds, isEmpty);
+    expect(requests.last.method, 'DELETE');
+    expect(requests.last.path, '/team/recruitments/7');
+  });
+
+  testWidgets('我的组队卡片可确认删除并立即从列表移除', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.method == 'DELETE') {
+        handler.resolve(Response<dynamic>(
+          requestOptions: options,
+          statusCode: 200,
+          data: const {'message': '删除成功'},
+        ));
+        return;
+      }
+      if (options.path.endsWith('/team/recruitments/mine')) {
+        handler.resolve(Response<dynamic>(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'items': [_recruitmentJson(id: 7, title: '可删除的组队')],
+          },
+        ));
+        return;
+      }
+      handler.resolve(Response<dynamic>(
+        requestOptions: options,
+        statusCode: 200,
+        data: const <Map<String, dynamic>>[],
+      ));
+    }));
+
+    await tester.pumpWidget(ChangeNotifierProvider(
+      create: (_) => TeamRecruitmentProvider(dio),
+      child: const MaterialApp(home: MyTeamRecruitmentsScreen()),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('可删除的组队'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.more_vert_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除组队'));
+    await tester.pumpAndSettle();
+    expect(find.text('确认删除'), findsOneWidget);
+
+    await tester.tap(find.text('确认删除'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('可删除的组队'), findsNothing);
+    expect(find.text('还没有发起组队'), findsOneWidget);
+    expect(find.text('组队已删除'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   test('加载更多期间切换筛选会立即复位分页状态', () async {

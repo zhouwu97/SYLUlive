@@ -76,7 +76,7 @@ class RatingActionRow extends StatelessWidget {
           isActive: hasVotedUp,
           onTap: onHelpful,
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         _buildVoteButton(
           isDark: isDark,
           icon: Icons.thumb_down_alt_outlined,
@@ -87,13 +87,21 @@ class RatingActionRow extends StatelessWidget {
           onTap: onUnhelpful,
         ),
         const Spacer(),
-        IconButton(
-          onPressed: onReport,
-          icon: const Icon(Icons.more_horiz),
-          iconSize: 20,
-          color: RankingTokens.mutedColor(isDark),
-          constraints: const BoxConstraints(),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        SizedBox.square(
+          dimension: 32,
+          child: IconButton(
+            onPressed: onReport,
+            tooltip: '更多操作',
+            icon: const Icon(Icons.more_horiz),
+            iconSize: 19,
+            color: RankingTokens.mutedColor(isDark),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            style: IconButton.styleFrom(
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
         ),
       ],
     );
@@ -116,7 +124,7 @@ class RatingActionRow extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 3),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -125,7 +133,7 @@ class RatingActionRow extends StatelessWidget {
               size: 16,
               color: color,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Text(
               count > 0 ? '$label $count' : label,
               style: TextStyle(

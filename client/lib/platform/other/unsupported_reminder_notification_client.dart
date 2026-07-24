@@ -5,7 +5,7 @@ class UnsupportedReminderNotificationClient implements ReminderNotificationClien
   Future<void> initializeCourseReminders() async {}
 
   @override
-  Future<bool> requestCourseReminderPermissions() async => true;
+  Future<bool> requestCourseReminderPermissions() async => false;
 
   @override
   Future<bool> scheduleCourseReminder({
@@ -27,5 +27,5 @@ class UnsupportedReminderNotificationClient implements ReminderNotificationClien
   Future<void> initializeGradeReminders() async {}
 
   @override
-  Future<bool> requestGradeReminderPermissions() async => true;
+  Future<bool> requestGradeReminderPermissions() async => false;
 }

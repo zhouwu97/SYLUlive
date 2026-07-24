@@ -1030,6 +1030,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                 const SizedBox(width: 8),
                 IconButton.filled(
                   onPressed: (sending || blocked) ? null : _sendMessage,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF),
+                    foregroundColor: Colors.white,
+                  ),
                   icon: sending
                       ? const SizedBox(
                           width: 18,

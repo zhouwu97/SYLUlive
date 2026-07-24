@@ -68,9 +68,10 @@ class TeacherProvider extends ChangeNotifier {
   final Map<int, TeacherDetailState> _details = {};
   final Map<int, Future<void>> _detailRequests = {};
   final Map<int, int> _detailGenerations = {};
-  
+
   Timer? _searchDebounce;
   int _searchGeneration = 0;
+  Completer<void>? _searchCompleter;
 
   List<Teacher> get teachers => _teachers;
   List<Teacher> get allTeachers => _allTeachers;
@@ -84,56 +85,95 @@ class TeacherProvider extends ChangeNotifier {
   TeacherProvider(this._dio)
       : _interactionService = RatingInteractionService(_dio);
 
-  Future<void> loadTeachers({String? query}) async {
+  Future<void> loadTeachers({String? query}) {
     _searchDebounce?.cancel();
-    _searchGeneration++;
-    final generation = _searchGeneration;
 
-    // Small debounce if query is present to avoid rapid firing
-    if (query != null && query.isNotEmpty) {
-      final completer = Completer<void>();
-      _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
-        if (generation != _searchGeneration) {
-          completer.complete();
-          return;
-        }
-        await _performLoadTeachers(query, generation);
-        completer.complete();
-      });
-      return completer.future;
-    } else {
-      return _performLoadTeachers(query, generation);
+    final previousCompleter = _searchCompleter;
+    if (previousCompleter != null && !previousCompleter.isCompleted) {
+      previousCompleter.complete();
     }
+
+    final generation = ++_searchGeneration;
+
+    if (query == null || query.trim().isEmpty) {
+      _searchCompleter = null;
+      return _performLoadTeachers(null, generation);
+    }
+
+    final completer = Completer<void>();
+    _searchCompleter = completer;
+
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        if (generation == _searchGeneration) {
+          await _performLoadTeachers(query.trim(), generation);
+        }
+      } finally {
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+        if (identical(_searchCompleter, completer)) {
+          _searchCompleter = null;
+        }
+      }
+    });
+
+    return completer.future;
   }
 
-  Future<void> _performLoadTeachers(String? query, int generation) async {
+  Future<void> _performLoadTeachers(
+    String? query,
+    int generation,
+  ) async {
+    if (generation != _searchGeneration) return;
+
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
+
     try {
       final params = <String, dynamic>{};
-      if (query != null && query.isNotEmpty) params['q'] = query;
-      final resp = await _dio.get(
+      if (query != null && query.isNotEmpty) {
+        params['q'] = query;
+      }
+
+      final response = await _dio.get(
         '/teachers',
         queryParameters: params.isEmpty ? null : params,
       );
-      
+
       if (generation != _searchGeneration) return;
 
-      if (resp.statusCode == 200) {
-        final seen = <int>{};
-        _teachers = (resp.data as List)
-            .map((j) => Teacher.fromJson(j))
-            .where((t) => seen.add(t.id))
-            .toList();
+      final raw = response.data;
+      if (raw is! List) {
+        throw const FormatException('教师列表响应不是数组');
       }
-    } on DioException catch (e) {
+
+      final teachersData = raw
+          .whereType<Map>()
+          .map(
+            (item) => Teacher.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
+          .toList();
+
+      final seen = <int>{};
+      _teachers =
+          teachersData.where((teacher) => seen.add(teacher.id)).toList();
+      _errorMessage = null;
+    } catch (error, stackTrace) {
       if (generation != _searchGeneration) return;
-      _errorMessage = _parseError(e);
-    }
-    
-    if (generation == _searchGeneration) {
-      _isLoading = false;
-      notifyListeners();
+
+      debugPrint('加载教师列表失败 query=$query: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      _errorMessage = error is DioException ? _parseError(error) : '教师列表数据解析失败';
+    } finally {
+      if (generation == _searchGeneration) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -175,10 +215,12 @@ class TeacherProvider extends ChangeNotifier {
     return _detailGenerations[teacherId] == generation;
   }
 
-  Future<void> _loadTeacherDetailInternal(int teacherId, {required int generation}) async {
+  Future<void> _loadTeacherDetailInternal(int teacherId,
+      {required int generation}) async {
     if (!_ownsTeacherRequest(teacherId, generation)) return;
-    
-    _details[teacherId] = detailOf(teacherId).copyWith(isLoading: true, clearError: true);
+
+    _details[teacherId] =
+        detailOf(teacherId).copyWith(isLoading: true, clearError: true);
     notifyListeners();
     try {
       final resp = await _dio.get('/teachers/$teacherId');
@@ -275,7 +317,8 @@ class TeacherProvider extends ChangeNotifier {
         return true;
       }
     } on DioException catch (e) {
-      _details[teacherId] = detailOf(teacherId).copyWith(errorMessage: _parseError(e));
+      _details[teacherId] =
+          detailOf(teacherId).copyWith(errorMessage: _parseError(e));
       notifyListeners();
     }
     return false;
@@ -289,7 +332,8 @@ class TeacherProvider extends ChangeNotifier {
         return true;
       }
     } on DioException catch (e) {
-      _details[teacherId] = detailOf(teacherId).copyWith(errorMessage: _parseError(e));
+      _details[teacherId] =
+          detailOf(teacherId).copyWith(errorMessage: _parseError(e));
       notifyListeners();
     }
     return false;
@@ -334,7 +378,8 @@ class TeacherProvider extends ChangeNotifier {
         reason: reason,
       );
     } on DioException catch (e) {
-      _details[teacherId] = detailOf(teacherId).copyWith(errorMessage: _parseError(e));
+      _details[teacherId] =
+          detailOf(teacherId).copyWith(errorMessage: _parseError(e));
       notifyListeners();
     }
     return false;
@@ -345,5 +390,17 @@ class TeacherProvider extends ChangeNotifier {
       return e.response!.data['error'];
     }
     return '网络异常';
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+
+    final completer = _searchCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
+
+    super.dispose();
   }
 }

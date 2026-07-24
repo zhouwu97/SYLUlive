@@ -81,10 +81,12 @@ class _AiInputComposerState extends State<AiInputComposer> {
     final colors = Theme.of(context).colorScheme;
     final showCounter = _count > 0 || overLimit;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return SafeArea(
       top: false,
       child: Container(
-        color: Colors.white, // ensure white bottom bar
+        color: isDark ? colors.surface : Colors.white, // ensure bottom bar bg
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -94,7 +96,7 @@ class _AiInputComposerState extends State<AiInputComposer> {
               height: 48,
               padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
               decoration: BoxDecoration(
-                color: colors.surfaceContainerHighest,
+                color: isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Row(

@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // Major 专业
 type Major struct {
@@ -25,8 +29,18 @@ type MajorRating struct {
 	Comment   string    `gorm:"size:500" json:"comment"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+	HelpfulCount   int     `gorm:"not null;default:0" json:"helpful_count"`
+	UnhelpfulCount int     `gorm:"not null;default:0" json:"unhelpful_count"`
+
+	Status           string     `gorm:"size:20;not null;default:normal;index" json:"status"`
+	ModeratedBy      *uint      `gorm:"index" json:"moderated_by,omitempty"`
+	ModeratedAt      *time.Time `json:"moderated_at,omitempty"`
+	ModerationReason string     `gorm:"size:500" json:"-"`
 
 	User          *User  `gorm:"foreignKey:UserID" json:"-"`
 	UserName      string `gorm:"-" json:"user_name"`
 	UserStudentID string `gorm:"-" json:"user_student_id"`
+	MyVote        *string `gorm:"-" json:"my_vote"`
 }

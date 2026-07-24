@@ -124,7 +124,7 @@ class _PhysicalPercentileReportScreenState
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  '你的运动表现超过�?groupText ${report.sportAveragePercentile}% 的大学生',
+                  '你的运动表现超过了$groupText ${report.sportAveragePercentile}% 的大学生',
                   style: TextStyle(
                     fontSize: 18,
                     height: 1.35,
@@ -148,7 +148,7 @@ class _PhysicalPercentileReportScreenState
           ),
           const SizedBox(height: 10),
           Text(
-            '娱乐参考结果，按匿名样本分布计算，不代表官方排名�?,
+            '娱乐参考结果，按匿名样本分布计算，不代表官方排名。',
             style: TextStyle(
               fontSize: 12,
               color: isDark ? Colors.white54 : const Color(0xFF737B8C),
@@ -220,7 +220,7 @@ class _PhysicalPercentileReportScreenState
       return _SurfaceCard(
         isDark: isDark,
         child: Text(
-          '暂无可展示亮�?,
+          '暂无可展示亮点',
           style: TextStyle(
               color: isDark ? Colors.white60 : const Color(0xFF737B8C)),
         ),
@@ -314,7 +314,7 @@ class _PhysicalPercentileReportScreenState
             ),
             const SizedBox(height: 6),
             Text(
-              '原体测成绩查询不受影响，可以稍后再试�?,
+              '原体测成绩查询不受影响，可以稍后再试。',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
@@ -332,7 +332,7 @@ class _PhysicalPercentileReportScreenState
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Text(
-          '当前成绩里没有可用于对比的体测项�?,
+          '当前成绩里没有可用于对比的体测项目',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 14,
@@ -432,7 +432,7 @@ class _MetricRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '成绩�?{metric.studentResult.rawResult}',
+                      '成绩：${metric.studentResult.rawResult}',
                       style: TextStyle(
                         fontSize: 12,
                         color:

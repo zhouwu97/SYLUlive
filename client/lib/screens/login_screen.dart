@@ -52,8 +52,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   String? _validateAppPassword(String? v) {
-    if (v == null || v.isEmpty) return '请输入密�?;
-    if (v.length < 8) return '密码至少8个字�?;
+    if (v == null || v.isEmpty) return '请输入密码';
+    if (v.length < 8) return '密码至少8个字符';
     if (!RegExp(r'[0-9]').hasMatch(v)) return '密码需包含数字';
     if (!RegExp(r'[a-zA-Z]').hasMatch(v)) return '密码需包含字母';
     return null;
@@ -131,12 +131,12 @@ class _LoginScreenState extends State<LoginScreen> {
               await _showForgotPasswordDialog();
             },
             style: TextButton.styleFrom(foregroundColor: subText),
-            child: const Text('去忘记密�?),
+            child: const Text('去忘记密码'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext),
             style: FilledButton.styleFrom(backgroundColor: accent),
-            child: const Text('知道�?),
+            child: const Text('知道了'),
           ),
         ],
       ),
@@ -188,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (mounted) setState(() => _isLoading = false);
 
     if (result.success && mounted) {
-      // 先设�?Authorization header，再刷新 EduProvider
+      // 先设置 Authorization header，再刷新 EduProvider
       if (authProvider.token != null) {
         authProvider.dio.options.headers['Authorization'] =
             'Bearer ${authProvider.token}';
@@ -258,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result.errorMessage ?? '发送失�?),
+          content: Text(result.errorMessage ?? '发送失败'),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -308,8 +308,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Text(
                         useEmail
-                            ? '通过已绑定邮箱验证后重置 APP 密码�?
-                            : '通过已认证学号和教务密码验证后重�?APP 密码�?,
+                            ? '通过已绑定邮箱验证后重置 APP 密码。'
+                            : '通过已认证学号和教务密码验证后重置 APP 密码。',
                         style: TextStyle(
                           fontSize: 13,
                           height: 1.4,
@@ -338,7 +338,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           validator: (value) =>
                               value == null || !value.contains('@')
-                                  ? '请输入有效邮�?
+                                  ? '请输入有效邮箱'
                                   : null,
                         ),
                         const SizedBox(height: 12),
@@ -350,11 +350,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                 keyboardType: TextInputType.number,
                                 decoration: _inputDecoration(
                                   context,
-                                  label: '验证�?,
+                                  label: '验证码',
                                   icon: Icons.verified_outlined,
                                 ),
                                 validator: (value) => value?.trim().length != 6
-                                    ? '请输�?6 位验证码'
+                                    ? '请输入 6 位验证码'
                                     : null,
                               ),
                             ),
@@ -369,8 +369,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                         content: Text(result.success
-                                            ? '验证码已发�?
-                                            : result.errorMessage ?? '发送失�?)),
+                                            ? '验证码已发送'
+                                            : result.errorMessage ?? '发送失败')),
                                   );
                                 }
                               },
@@ -389,7 +389,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             icon: Icons.person_outline,
                           ).copyWith(counterText: ''),
                           validator: (value) =>
-                              value?.trim().length != 10 ? '请输�?10 位学�? : null,
+                              value?.trim().length != 10 ? '请输入 10 位学号' : null,
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
@@ -409,7 +409,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           validator: (value) =>
-                              value?.isEmpty == true ? '请输入教务密�? : null,
+                              value?.isEmpty == true ? '请输入教务密码' : null,
                         ),
                       ],
                       const SizedBox(height: 12),
@@ -420,7 +420,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           context,
                           label: '新的软件密码',
                           icon: Icons.lock_reset,
-                          helperText: '8位以上，需包含数字和字�?,
+                          helperText: '8位以上，需包含数字和字母',
                           suffixIcon: IconButton(
                             onPressed: () => setLocalState(
                               () => obscureNewPassword = !obscureNewPassword,
@@ -440,7 +440,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         obscureText: obscureConfirmPassword,
                         decoration: _inputDecoration(
                           context,
-                          label: '确认新密�?,
+                          label: '确认新密码',
                           icon: Icons.check_circle_outline,
                           suffixIcon: IconButton(
                             onPressed: () => setLocalState(
@@ -457,7 +457,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         validator: (v) {
                           if (v == null || v.isEmpty) return '请再次输入新密码';
                           if (v != newPasswordController.text) {
-                            return '两次输入的密码不一�?;
+                            return '两次输入的密码不一致';
                           }
                           return null;
                         },
@@ -686,7 +686,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (_isRegister) ...[
                               Row(
                                 children: [
-                                  _buildRegisterSegment('campus', '在校生注�?,
+                                  _buildRegisterSegment('campus', '在校生注册',
                                       accent, accentSoft, border, subText),
                                   const SizedBox(width: 12),
                                   _buildRegisterSegment('email', '邮箱注册', accent,
@@ -705,8 +705,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 child: Text(
                                   _isEmailRegister
-                                      ? '邮箱用于登录和找�?APP 密码。完成教务绑定后，学号将成为主账号，当前邮箱仍可使用�?
-                                      : '在校生使用学号与教务密码完成认证，注册成功后可使用校园全部功能�?,
+                                      ? '邮箱用于登录和找回 APP 密码。完成教务绑定后，学号将成为主账号，当前邮箱仍可使用。'
+                                      : '在校生使用学号与教务密码完成认证，注册成功后可使用校园全部功能。',
                                   style: TextStyle(
                                     fontSize: 12.5,
                                     height: 1.45,
@@ -735,19 +735,19 @@ class _LoginScreenState extends State<LoginScreen> {
                                 icon: Icons.person_outline,
                                 helperText: _isRegister
                                     ? (_isEmailRegister
-                                        ? '用于登录和找�?APP 密码'
+                                        ? '用于登录和找回 APP 密码'
                                         : '仅在校生使用学号注册')
-                                    : '已认证学生可用学号或已绑定邮箱登�?,
+                                    : '已认证学生可用学号或已绑定邮箱登录',
                               ).copyWith(counterText: ''),
                               validator: (v) {
                                 if (v == null || v.isEmpty) {
                                   if (_isRegister) {
-                                    return _isEmailRegister ? '请输入邮�? : '请输入学�?;
+                                    return _isEmailRegister ? '请输入邮箱' : '请输入学号';
                                   }
                                   return '请输入学号或邮箱';
                                 }
                                 if (_isEmailRegister && !v.contains('@')) {
-                                  return '请输入有效邮�?;
+                                  return '请输入有效邮箱';
                                 }
                                 return null;
                               },
@@ -759,7 +759,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 controller: _nicknameController,
                                 decoration: _inputDecoration(
                                   context,
-                                  label: '昵称（选填�?,
+                                  label: '昵称（选填）',
                                   icon: Icons.badge_outlined,
                                   helperText: '将显示在帖子和评论中',
                                 ),
@@ -774,7 +774,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     context,
                                     label: '教务密码',
                                     icon: Icons.lock_outline,
-                                    helperText: '用于验证学号真实�?,
+                                    helperText: '用于验证学号真实性',
                                     suffixIcon: IconButton(
                                       onPressed: () => setState(() {
                                         _obscureEduPassword =
@@ -788,7 +788,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ),
                                   validator: (v) => (v == null || v.isEmpty)
-                                      ? '请输入教务密�?
+                                      ? '请输入教务密码'
                                       : null,
                                 )
                               else
@@ -800,13 +800,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                         keyboardType: TextInputType.number,
                                         decoration: _inputDecoration(
                                           context,
-                                          label: '验证�?,
+                                          label: '验证码',
                                           icon: Icons.verified_outlined,
-                                          helperText: '10 分钟内有�?,
+                                          helperText: '10 分钟内有效',
                                         ),
                                         validator: (v) =>
                                             (v == null || v.trim().length != 6)
-                                                ? '请输�?位验证码'
+                                                ? '请输入6位验证码'
                                                 : null,
                                       ),
                                     ),
@@ -844,7 +844,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 label: _isRegister ? 'APP密码' : '密码',
                                 icon: Icons.lock_outline,
                                 helperText:
-                                    _isRegister ? '8位以上，需包含数字和字�? : null,
+                                    _isRegister ? '8位以上，需包含数字和字母' : null,
                                 suffixIcon: IconButton(
                                   onPressed: () => setState(() {
                                     _obscureAppPassword = !_obscureAppPassword;
@@ -859,7 +859,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               validator: _isRegister
                                   ? _validateAppPassword
                                   : (v) =>
-                                      (v == null || v.isEmpty) ? '请输入密�? : null,
+                                      (v == null || v.isEmpty) ? '请输入密码' : null,
                             ),
 
                             if (!_isRegister) ...[
@@ -872,7 +872,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       : _showForgotPasswordDialog,
                                   style: TextButton.styleFrom(
                                       foregroundColor: accent),
-                                  child: const Text('忘记密码�?),
+                                  child: const Text('忘记密码？'),
                                 ),
                               ),
                             ] else ...[
@@ -968,7 +968,7 @@ class _LoginScreenState extends State<LoginScreen> {
           context,
           checkboxKey: const ValueKey('registration-user-agreement'),
           value: _userAgreementAccepted,
-          title: '我已阅读并同意《用户协议�?,
+          title: '我已阅读并同意《用户协议》',
           documentId: 'user_agreement',
           onChanged: (value) => setState(() => _userAgreementAccepted = value),
         ),
@@ -976,7 +976,7 @@ class _LoginScreenState extends State<LoginScreen> {
           context,
           checkboxKey: const ValueKey('registration-privacy-policy'),
           value: _privacyPolicyAccepted,
-          title: '我已阅读并同意《隐私政策�?,
+          title: '我已阅读并同意《隐私政策》',
           documentId: 'privacy_policy',
           onChanged: (value) => setState(() => _privacyPolicyAccepted = value),
         ),
@@ -986,7 +986,7 @@ class _LoginScreenState extends State<LoginScreen> {
             context,
             checkboxKey: const ValueKey('registration-edu-consent'),
             value: _eduDataConsentAccepted,
-            title: '我同意《教务数据专项授权�?,
+            title: '我同意《教务数据专项授权》',
             documentId: 'edu_data_consent',
             onChanged: (value) =>
                 setState(() => _eduDataConsentAccepted = value),
@@ -995,7 +995,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ],
         const SizedBox(height: 4),
         Text(
-          '社区规则在首次发布、评论、私信、集市或组队写操作前单独确认；其他说明可在文档中心随时查看�?,
+          '社区规则在首次发布、评论、私信、集市或组队写操作前单独确认；其他说明可在文档中心随时查看。',
           style: TextStyle(fontSize: 11, height: 1.4, color: subText),
         ),
       ],

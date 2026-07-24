@@ -71,7 +71,7 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
                             _buildBadge('标签: ${section.tags.length}',
                                 Colors.blue, isDark),
                             const SizedBox(width: 8),
-                            _buildBadge('敏感�? ${section.sensitiveLevel}',
+                            _buildBadge('敏感度: ${section.sensitiveLevel}',
                                 Colors.orange, isDark),
                           ],
                         ),

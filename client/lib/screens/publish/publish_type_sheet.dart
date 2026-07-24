@@ -65,7 +65,7 @@ class _PublishTypeSheetState extends State<PublishTypeSheet> {
                 child: _PublishChoice(
                   icon: Icons.edit_note,
                   title: '发布水帖',
-                  description: '分享生活、学习\n求助与经�?,
+                  description: '分享生活、学习\n求助与经验',
                   color: const Color(0xFF16A34A),
                   onTap: () => _choose(PublishType.waterPost),
                 ),

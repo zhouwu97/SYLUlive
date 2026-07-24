@@ -40,7 +40,7 @@ class _SocialListScreenState extends State<SocialListScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('关注与粉�?),
+        title: const Text('关注与粉丝'),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -252,7 +252,7 @@ class _UserListState extends State<_UserList> {
           context.read<PostProvider>().invalidateFollowingFeed();
         }
       },
-      child: Text(user.isFollowing ? '已关�? : '关注'),
+      child: Text(user.isFollowing ? '已关注' : '关注'),
     );
   }
 }

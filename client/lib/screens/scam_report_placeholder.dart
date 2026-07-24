@@ -14,7 +14,7 @@ class ScamReportPlaceholder extends StatelessWidget {
             Icon(Icons.construction, size: 80, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              '即将开�?,
+              '即将开放',
               style: Theme.of(
                 context,
               ).textTheme.headlineSmall?.copyWith(color: Colors.grey[600]),

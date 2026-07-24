@@ -70,7 +70,7 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
                 color: TeamUiTokens.accent(isDark),
                 onRefresh: _load,
                 child: provider.myCreated.isEmpty
-                    ? _emptyList('还没有发起组�?, isDark)
+                    ? _emptyList('还没有发起组队', isDark)
                     : ListView.separated(
                         padding: const EdgeInsets.all(16),
                         itemCount: provider.myCreated.length,
@@ -95,7 +95,7 @@ class _MyTeamRecruitmentsScreenState extends State<MyTeamRecruitmentsScreen>
                   color: TeamUiTokens.accent(isDark),
                   onRefresh: _load,
                   child: provider.myApplications.isEmpty
-                      ? _emptyList('还没有组队申�?, isDark)
+                      ? _emptyList('还没有组队申请', isDark)
                       : ListView.separated(
                           padding: const EdgeInsets.all(16),
                           itemCount: provider.myApplications.length,
@@ -147,11 +147,11 @@ class _ApplicationItem extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final label = const {
           'pending': '等待审核',
-          'accepted': '已加�?,
+          'accepted': '已加入',
           'rejected': '未通过',
-          'cancelled': '已取�?,
-          'withdrawn': '已退�?,
-          'removed': '已移�?
+          'cancelled': '已取消',
+          'withdrawn': '已退出',
+          'removed': '已移除'
         }[application.status] ??
         application.status;
     final statusColor = const {
@@ -184,7 +184,7 @@ class _ApplicationItem extends StatelessWidget {
           subtitle: Text(
               application.ownerReply.isEmpty
                   ? application.message
-                  : '回复�?{application.ownerReply}',
+                  : '回复：${application.ownerReply}',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: TeamUiTokens.subtitle(isDark))),
@@ -207,7 +207,7 @@ class _ApplicationItem extends StatelessWidget {
                                     builder: (dialogContext) => AlertDialog(
                                       title: const Text('撤回申请'),
                                       content:
-                                          const Text('撤回后可在需要时重新申请，确定继续吗�?),
+                                          const Text('撤回后可在需要时重新申请，确定继续吗？'),
                                       actions: [
                                         TextButton(
                                           style: TextButton.styleFrom(
@@ -236,10 +236,10 @@ class _ApplicationItem extends StatelessWidget {
                                   .cancel(application.id);
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(error ?? '已取消申�?)));
+                                  SnackBar(content: Text(error ?? '已取消申请')));
                               if (error == null) onCancelled();
                             },
-                      child: Text(cancelling ? '处理中�? : '撤回'))
+                      child: Text(cancelling ? '处理中…' : '撤回'))
                 else if (application.status == 'accepted')
                   TextButton(
                     style: TextButton.styleFrom(
@@ -250,7 +250,7 @@ class _ApplicationItem extends StatelessWidget {
                             final confirmed = await showDialog<bool>(
                                   context: context,
                                   builder: (dialogContext) => AlertDialog(
-                                    title: const Text('退出队�?),
+                                    title: const Text('退出队伍'),
                                     content: const Text('退出后名额会重新开放，确定继续吗？'),
                                     actions: [
                                       TextButton(
@@ -261,7 +261,7 @@ class _ApplicationItem extends StatelessWidget {
                                       FilledButton(
                                         onPressed: () =>
                                             Navigator.pop(dialogContext, true),
-                                        child: const Text('确认退�?),
+                                        child: const Text('确认退出'),
                                       ),
                                     ],
                                   ),
@@ -273,10 +273,10 @@ class _ApplicationItem extends StatelessWidget {
                                 .leave(application.id);
                             if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(error ?? '已退出队�?)));
+                                SnackBar(content: Text(error ?? '已退出队伍')));
                             if (error == null) onCancelled();
                           },
-                    child: Text(cancelling ? '处理中�? : '退出队�?),
+                    child: Text(cancelling ? '处理中…' : '退出队伍'),
                   )
               ]),
         ));

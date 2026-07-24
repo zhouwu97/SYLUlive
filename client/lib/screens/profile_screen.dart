@@ -112,7 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           _postCount = MyContentScreen.globalPostCount;
         });
       }
-      // 不直�?return，在后台静默刷新以保证数据一致�?
+      // 不直接 return，在后台静默刷新以保证数据一致性
     }
 
     try {
@@ -210,7 +210,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         _buildInvitationSection(context, authProvider, isDark),
                   ),
 
-                // 教务版块（绑定状�?+ 题库入口�?
+                // 教务版块（绑定状态 + 题库入口）
                 SliverToBoxAdapter(
                   child: _buildEduSection(context, authProvider, isDark),
                 ),
@@ -255,7 +255,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 左侧：头�?
+          // 左侧：头像
           GestureDetector(
             onTap: () {
               if (authProvider.isLoggedIn) {
@@ -300,7 +300,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
           const SizedBox(width: 16),
 
-          // 右侧：信息与箭头 (整个区域可点击进入主�?
+          // 右侧：信息与箭头 (整个区域可点击进入主页)
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -321,7 +321,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // 第一行：昵称与编辑按�?
+                        // 第一行：昵称与编辑按钮
                         GestureDetector(
                           onTap: () {
                             if (authProvider.isLoggedIn) {
@@ -333,7 +333,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             children: [
                               Flexible(
                                 child: Text(
-                                  user?.nickname ?? '未登�?,
+                                  user?.nickname ?? '未登录',
                                   style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.w700,
@@ -359,7 +359,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                         const SizedBox(height: 8),
 
-                        // 第二行：学院专业标签 (如果�?
+                        // 第二行：学院专业标签 (如果有)
                         if (user?.eduCollege != null &&
                             user!.eduCollege!.isNotEmpty) ...[
                           Text(
@@ -618,9 +618,9 @@ class _ProfileScreenState extends State<ProfileScreen>
             isDark: isDark,
             icon: Icons.admin_panel_settings,
             iconColor: Colors.red,
-            title: '管理�?,
+            title: '管理处',
             subtitle: adminTodo > 0
-                ? '处理举报、审核教师和专业 · $adminTodo 条待�?
+                ? '处理举报、审核教师和专业 · $adminTodo 条待办'
                 : '处理举报、审核教师和专业',
             badgeText: adminTodo > 0 ? '$adminTodo' : null,
             onTap: () {
@@ -638,10 +638,10 @@ class _ProfileScreenState extends State<ProfileScreen>
               isDark: isDark,
               icon: Icons.security,
               iconColor: Colors.deepPurple,
-              title: '超级管理�?,
+              title: '超级管理员',
               subtitle: superTodo > 0
-                  ? '管理用户、审批管理员邀�?· $superTodo 条待�?
-                  : '管理用户、审批管理员邀�?,
+                  ? '管理用户、审批管理员邀请 · $superTodo 条待办'
+                  : '管理用户、审批管理员邀请',
               badgeText: superTodo > 0 ? '$superTodo' : null,
               onTap: () {
                 Navigator.push(
@@ -656,7 +656,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             icon: Icons.groups_2_outlined,
             iconColor: Colors.indigo,
             title: '管理人员',
-            subtitle: '查看管理员与超级管理员列�?,
+            subtitle: '查看管理员与超级管理员列表',
             onTap: () {
               Navigator.push(
                 context,
@@ -666,7 +666,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ];
 
-        return _buildSectionLayout(context, '管理�?, items, isDark);
+        return _buildSectionLayout(context, '管理员', items, isDark);
       },
     );
   }
@@ -899,7 +899,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           icon: Icons.bug_report_outlined,
           iconColor: Colors.green,
           title: '功能建议 (Bug提交)',
-          subtitle: '提交的建议会发送至开发者邮�?,
+          subtitle: '提交的建议会发送至开发者邮箱',
           isDark: isDark,
           onTap: () => Navigator.push(
             context,
@@ -925,7 +925,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           title: '教务',
           subtitle: eduProvider.isBound
               ? '${eduProvider.studentId} | ${eduProvider.college}'
-              : '绑定后可查询课表、成�?,
+              : '绑定后可查询课表、成绩',
           isDark: isDark,
           onTap: () {
             Navigator.push(
@@ -940,7 +940,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           icon: _startOnTimetable ? Icons.calendar_today : Icons.home_rounded,
           iconColor: const Color(0xFF667EEA),
           title: '下次直接进入课表',
-          subtitle: _startOnTimetable ? '已开�? : '已关�?,
+          subtitle: _startOnTimetable ? '已开启' : '已关闭',
           isDark: isDark,
           trailing: Switch(
             value: _startOnTimetable,
@@ -994,7 +994,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  /// 独立的设置卡片行（每个设置项单独一张毛玻璃卡片�?
+  /// 独立的设置卡片行（每个设置项单独一张毛玻璃卡片）
   Widget _buildSettingsRow({required Widget child}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
@@ -1234,7 +1234,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ---- 邀请版�?----
+  // ---- 邀请版块 ----
   Widget _buildInvitationSection(
     BuildContext context,
     AuthProvider auth,
@@ -1254,7 +1254,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  '收到管理员邀�?,
+                  '收到管理员邀请',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.white : Colors.black87,
@@ -1264,9 +1264,9 @@ class _ProfileScreenState extends State<ProfileScreen>
               ...list.map(
                 (inv) => ListTile(
                   leading: const Icon(Icons.person_add, color: Colors.blue),
-                  title: Text('${inv['inviter']?['nickname'] ?? ''} 邀请你成为管理�?),
+                  title: Text('${inv['inviter']?['nickname'] ?? ''} 邀请你成为管理员'),
                   subtitle: Text(
-                    '理由�?{inv['reason'] ?? '未填�?}\n${(inv['inviter']?['role'] == 'super_admin') ? '同意后将直接成为管理�? : '同意后会进入管理员代办，�?3 票后生效'}',
+                    '理由：${inv['reason'] ?? '未填写'}\n${(inv['inviter']?['role'] == 'super_admin') ? '同意后将直接成为管理员' : '同意后会进入管理员代办，满 3 票后生效'}',
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1292,7 +1292,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           final message =
                               (res.data is Map && res.data['message'] != null)
                                   ? res.data['message'].toString()
-                                  : '已接受邀�?;
+                                  : '已接受邀请';
                           if (mounted) {
                             messenger.showSnackBar(
                               SnackBar(

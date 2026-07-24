@@ -35,7 +35,7 @@ class _AIFeatureSettingsScreenState extends State<AIFeatureSettingsScreen> {
   Widget build(BuildContext context) {
     final values = _values;
     return Scaffold(
-      appBar: AppBar(title: const Text('AI 功能开�?)),
+      appBar: AppBar(title: const Text('AI 功能开关')),
       body: values == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -45,7 +45,7 @@ class _AIFeatureSettingsScreenState extends State<AIFeatureSettingsScreen> {
                       title: Text(_label(flag)),
                       subtitle: flag.availableInCurrentRelease
                           ? null
-                          : const Text('内测阶段暂不开�?),
+                          : const Text('内测阶段暂不开放'),
                       secondary: Icon(_icon(flag)),
                       value: values[flag]!,
                       onChanged: flag.availableInCurrentRelease
@@ -60,7 +60,7 @@ class _AIFeatureSettingsScreenState extends State<AIFeatureSettingsScreen> {
 
   String _label(AIFeatureFlag flag) => switch (flag) {
         AIFeatureFlag.chat => '校园 AI 问答',
-        AIFeatureFlag.customProvider => '自定义模�?,
+        AIFeatureFlag.customProvider => '自定义模型',
         AIFeatureFlag.personalGateway => '个人数据 Gateway',
         AIFeatureFlag.personalSkills => '个人 Skills',
         AIFeatureFlag.toolCalling => 'Tool Calling',

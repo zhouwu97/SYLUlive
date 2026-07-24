@@ -75,7 +75,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
       animation: _controller,
       builder: (context, _) => Scaffold(
         appBar: AppBar(
-          title: Text(_controller.config?.kind.displayName ?? '普通聊�?),
+          title: Text(_controller.config?.kind.displayName ?? '普通聊天'),
           actions: [
             IconButton(
               tooltip: '模型设置',
@@ -127,7 +127,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
                               _controller.isConfigured ? '输入消息' : '请先设置模型',
                           border: const OutlineInputBorder(),
                           suffixIcon: IconButton(
-                            tooltip: '发�?,
+                            tooltip: '发送',
                             onPressed:
                                 _controller.isConfigured && !_controller.sending
                                     ? _send
@@ -162,7 +162,7 @@ class _AIModelChatScreenState extends State<AIModelChatScreen> {
       );
     }
     if (_controller.messages.isEmpty) {
-      return const Center(child: Text('开始新的对�?));
+      return const Center(child: Text('开始新的对话'));
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

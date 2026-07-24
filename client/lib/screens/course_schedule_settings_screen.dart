@@ -154,7 +154,7 @@ class _CourseScheduleSettingsScreenState
         title: const Text('课表设置'),
         actions: [
           IconButton(
-            tooltip: '刷新状�?,
+            tooltip: '刷新状态',
             onPressed: _busy ? null : _refreshSnapshot,
             icon: _busy
                 ? const SizedBox(
@@ -177,19 +177,19 @@ class _CourseScheduleSettingsScreenState
             children: [
               _CourseSettingsTile(
                 icon: Icons.cloud_download_outlined,
-                title: '从教务刷新课�?,
+                title: '从教务刷新课表',
                 subtitle: '拉取最新数据并覆盖当前课表',
                 onTap: () => _runAndRefresh(widget.callbacks.refreshCourses),
               ),
               _CourseSettingsTile(
                 icon: Icons.collections_bookmark_outlined,
                 title: '课表存档',
-                subtitle: '保存、切换、导入本地课表存�?,
+                subtitle: '保存、切换、导入本地课表存档',
                 onTap: () => _runAndRefresh(widget.callbacks.openArchive),
               ),
               _CourseSettingsTile(
                 icon: Icons.event_outlined,
-                title: '设置开学第一�?,
+                title: '设置开学第一周',
                 subtitle: _snapshot.semesterStartText,
                 onTap: () => _runAndRefresh(widget.callbacks.pickSemesterStart),
               ),
@@ -206,8 +206,8 @@ class _CourseScheduleSettingsScreenState
             children: [
               _CourseSettingsTile(
                 icon: Icons.add_circle_outline,
-                title: '添加自定义课�?,
-                subtitle: '手动添加 / AI 识别课表图片或文�?,
+                title: '添加自定义课程',
+                subtitle: '手动添加 / AI 识别课表图片或文字',
                 onTap: () => _runAndRefresh(widget.callbacks.addCustomCourse),
               ),
             ],
@@ -251,7 +251,7 @@ class _CourseScheduleSettingsScreenState
             title: '课表显示',
             children: [
               _CourseDisplaySliderTile(
-                title: '课程块透明�?,
+                title: '课程块透明度',
                 value: _snapshot.scheduleCardOpacity,
                 min: 0.1,
                 max: 1,
@@ -267,7 +267,7 @@ class _CourseScheduleSettingsScreenState
                 },
               ),
               _CourseDisplaySliderTile(
-                title: '每节课高�?,
+                title: '每节课高度',
                 value: _snapshot.scheduleSlotHeight,
                 min: 55,
                 max: 120,
@@ -282,8 +282,8 @@ class _CourseScheduleSettingsScreenState
               ),
               _CourseSettingsTile(
                 icon: Icons.restart_alt_outlined,
-                title: '恢复课表显示默认�?,
-                subtitle: '仅重置课程块透明度和每节课高�?,
+                title: '恢复课表显示默认值',
+                subtitle: '仅重置课程块透明度和每节课高度',
                 onTap: () => _runAndRefresh(
                   widget.callbacks.resetScheduleDisplay,
                 ),
@@ -291,11 +291,11 @@ class _CourseScheduleSettingsScreenState
             ],
           ),
           _CourseSettingsSection(
-            title: '桌面小组�?,
+            title: '桌面小组件',
             children: [
               _CourseSettingsTile(
                 icon: Icons.widgets_outlined,
-                title: '管理桌面小组�?,
+                title: '管理桌面小组件',
                 subtitle: '课表、考试、样式与尺寸',
                 onTap: () => _runAndRefresh(widget.callbacks.openHomeWidgets),
               ),
@@ -306,8 +306,8 @@ class _CourseScheduleSettingsScreenState
             children: [
               _CourseSettingsTile(
                 icon: Icons.refresh_outlined,
-                title: '重新读取设置状�?,
-                subtitle: '检查本地设置、提醒和后台权限状�?,
+                title: '重新读取设置状态',
+                subtitle: '检查本地设置、提醒和后台权限状态',
                 onTap: _refreshSnapshot,
               ),
             ],
@@ -359,7 +359,7 @@ class _CourseSettingsHeaderCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '课表管理与显�?,
+            '课表管理与显示',
             style: TextStyle(
               color: scheme.primary,
               fontWeight: FontWeight.w800,
@@ -371,13 +371,13 @@ class _CourseSettingsHeaderCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _StatusChip(label: '当前 ${snapshot.courseCount} 门课�?),
+              _StatusChip(label: '当前 ${snapshot.courseCount} 门课程'),
               _StatusChip(
-                label: snapshot.reminderEnabled ? '课程提醒 已开�? : '课程提醒 未开�?,
+                label: snapshot.reminderEnabled ? '课程提醒 已开启' : '课程提醒 未开启',
               ),
               _StatusChip(
                 label:
-                    snapshot.backgroundKeepAliveReady ? '后台权限 已授�? : '后台权限 待检�?,
+                    snapshot.backgroundKeepAliveReady ? '后台权限 已授权' : '后台权限 待检查',
               ),
             ],
           ),

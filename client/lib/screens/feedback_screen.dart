@@ -60,7 +60,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
-          AppFeedback.showSnackBar(context, '感谢反馈�?);
+          AppFeedback.showSnackBar(context, '感谢反馈！');
           Navigator.pop(context);
         }
       } else {
@@ -70,7 +70,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       }
     } catch (e) {
       if (mounted) {
-        AppFeedback.showSnackBar(context, '网络异常或接口未部署，反馈提交失�?, isError: true);
+        AppFeedback.showSnackBar(context, '网络异常或接口未部署，反馈提交失败', isError: true);
         AppFeedback.showSnackBar(context, '反馈提交失败: $e', isError: true);
       }
     } finally {
@@ -129,7 +129,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    // 简洁模式亮色下用暖白底；暗色与自定义背景模式沿�?colorScheme.surface�?
+    // 简洁模式亮色下用暖白底；暗色与自定义背景模式沿用 colorScheme.surface。
     final pageBg = themeProvider.isCleanBackgroundMode && !isDark
         ? kCleanWarmBackgroundLight
         : Theme.of(context).colorScheme.surface;
@@ -199,7 +199,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                   null,
               decoration: InputDecoration(
                 hintText:
-                    _type == 'bug' ? '请描述您遇到的问题、设备型号及复现步骤...' : '请输入您的宝贵建�?..',
+                    _type == 'bug' ? '请描述您遇到的问题、设备型号及复现步骤...' : '请输入您的宝贵建议...',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -208,7 +208,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             ),
             const SizedBox(height: 24),
             const Text(
-              '相关截图 (最�?�?',
+              '相关截图 (最多4张)',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -227,7 +227,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             TextField(
               controller: _contactController,
               decoration: InputDecoration(
-                hintText: 'QQ/微信/手机�?,
+                hintText: 'QQ/微信/手机号',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -255,7 +255,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2.5),
                       )
                     : const Text(
-                        '�?�?,
+                        '提 交',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

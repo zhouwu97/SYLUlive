@@ -87,7 +87,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
     final sourceFingerprint =
         AccountCacheNamespace.fingerprint(widget.sourceAccountId);
     return Scaffold(
-      appBar: AppBar(title: const Text('个人数据保险�?)),
+      appBar: AppBar(title: const Text('个人数据保险箱')),
       body: FutureBuilder<List<_VaultStatus>>(
         future: _statuses,
         builder: (context, snapshot) {
@@ -107,13 +107,13 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
               ...snapshot.data!.map(_statusTile),
               const SizedBox(height: 16),
               OutlinedButton.icon(
-                onPressed: () => _confirm('清除当前账号数据�?, _clearCurrent),
+                onPressed: () => _confirm('清除当前账号数据？', _clearCurrent),
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('清除当前账号数据'),
               ),
               const SizedBox(height: 8),
               TextButton.icon(
-                onPressed: () => _confirm('清除全部本地个人数据�?, _clearAll),
+                onPressed: () => _confirm('清除全部本地个人数据？', _clearAll),
                 icon: const Icon(Icons.delete_sweep_outlined),
                 label: const Text('清除全部本地个人数据'),
               ),
@@ -135,10 +135,10 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
     final state = status.corrupted
         ? '密文校验失败'
         : status.fetchedAt == null
-            ? '未同�?
+            ? '未同步'
             : status.isStale
-                ? '已过�?
-                : '已同�?;
+                ? '已过期'
+                : '已同步';
     final time = status.fetchedAt == null
         ? ''
         : ' · ${DateFormat('yyyy-MM-dd HH:mm').format(status.fetchedAt!.toLocal())}';
@@ -160,7 +160,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: const Text('删除后需要重新同步，操作不可撤销�?),
+        content: const Text('删除后需要重新同步，操作不可撤销。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

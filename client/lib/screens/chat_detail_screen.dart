@@ -119,7 +119,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         await _settleInitialPosition();
       }
     } catch (error, stackTrace) {
-      debugPrint('初始化聊天页面失�? $error');
+      debugPrint('初始化聊天页面失败: $error');
       debugPrintStack(stackTrace: stackTrace);
     } finally {
       if (mounted) {
@@ -263,7 +263,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (content.runes.length > MessageProvider.maxMessageLength) {
       AppFeedback.showSnackBar(
         context,
-        '消息内容不能超过${MessageProvider.maxMessageLength}个字�?,
+        '消息内容不能超过${MessageProvider.maxMessageLength}个字符',
         isError: true,
       );
       return;
@@ -273,8 +273,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final message = await provider.sendMessage(widget.targetUser.id, content);
     if (!mounted) return;
     if (message == null) {
-      // 服务端可能给�?message_requires_reply_or_follow 拒绝；用统一文案进行提示并刷新状�?
-      final err = provider.messageError ?? '发送失败，请稍后再�?;
+      // 服务端可能给出 message_requires_reply_or_follow 拒绝；用统一文案进行提示并刷新状态
+      final err = provider.messageError ?? '发送失败，请稍后再试';
       AppFeedback.showSnackBar(
         context,
         err,
@@ -288,13 +288,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _syncCurrentConversationToPlatform(_conversationId).ignore();
     _lastMessageActivity = DateTime.now();
     _textController.clear();
-    // 发送成功后，陌生人限制可能再次触发，刷新发送状态用于决定是否锁定输�?
+    // 发送成功后，陌生人限制可能再次触发，刷新发送状态用于决定是否锁定输入
     unawaited(_refreshSendState());
     _startPolling();
     _scrollToBottom(stable: true);
   }
 
-  /// 拉取陌生人限制状态。失败时�?允许发�?宽松处理避免阻塞 UI�?
+  /// 拉取陌生人限制状态。失败时按"允许发送"宽松处理避免阻塞 UI。
   Future<void> _refreshSendState() async {
     if (!mounted) return;
     final provider = context.read<MessageProvider>();
@@ -637,7 +637,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               ),
               const SizedBox(height: 14),
               Text(
-                '�?${widget.targetUser.nickname} 打个招呼�?,
+                '向 ${widget.targetUser.nickname} 打个招呼吧',
                 style: TextStyle(color: Colors.grey.shade700),
               ),
             ],
@@ -857,7 +857,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         : ApiConstants.fullUrl(sender!.avatar);
     final senderName = sender?.nickname.isNotEmpty == true
         ? sender!.nickname
-        : (isMine ? '�? : widget.targetUser.nickname);
+        : (isMine ? '我' : widget.targetUser.nickname);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
@@ -996,7 +996,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     maxLines: 5,
                     textInputAction: TextInputAction.newline,
                     decoration: InputDecoration(
-                      hintText: blocked ? '等待对方回复后可继续发�? : '发送消�?,
+                      hintText: blocked ? '等待对方回复后可继续发送' : '发送消息',
                       isDense: true,
                       filled: true,
                       fillColor: blocked
@@ -1083,7 +1083,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              '对方未关注你。对方回复前，你只能发�?1 条消息�?,
+              '对方未关注你。对方回复前，你只能发送 1 条消息。',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.orange.shade800,

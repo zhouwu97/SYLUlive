@@ -255,7 +255,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     try {
       await store.replace(entries);
     } catch (_) {
-      // 会话仍保留在当前页面内存中，安全存储失败不影响本轮回答�?
+      // 会话仍保留在当前页面内存中，安全存储失败不影响本轮回答。
     }
   }
 
@@ -328,7 +328,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('校园 AI 问答当前已关�?)));
+        ).showSnackBar(const SnackBar(content: Text('校园 AI 问答当前已关闭')));
       }
       return;
     }
@@ -342,7 +342,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     if (!PersonalAIRuntimeLimits.acceptsInput(message)) {
       setState(() {
         _personalError =
-            '个人助手单条消息不能超过 ${PersonalAIRuntimeLimits.maximumInputCharacters} 个字�?;
+            '个人助手单条消息不能超过 ${PersonalAIRuntimeLimits.maximumInputCharacters} 个字符';
       });
       return;
     }
@@ -355,7 +355,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       AIFeatureFlag.toolCalling,
       AIFeatureFlag.customProvider,
     ].any((flag) => flags[flag] != true)) {
-      setState(() => _personalError = '个人助手当前已由安全开关关�?);
+      setState(() => _personalError = '个人助手当前已由安全开关关闭');
       return;
     }
     final auth = _authProvider!;
@@ -525,7 +525,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         setState(() {
           _personalError = outcome.warnings.isEmpty
               ? _toolStatusMessage(outcome.status)
-              : outcome.warnings.join('�?);
+              : outcome.warnings.join('；');
         });
       }
     } catch (error) {
@@ -554,8 +554,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   String _toolStatusMessage(ToolLoopStatus status) => switch (status) {
-    ToolLoopStatus.permissionDenied => '已取消个人数据授�?,
-    ToolLoopStatus.cancelled => '请求已取�?,
+    ToolLoopStatus.permissionDenied => '已取消个人数据授权',
+    ToolLoopStatus.cancelled => '请求已取消',
     ToolLoopStatus.rejected => '请求未通过本地安全校验',
     ToolLoopStatus.failed => '个人助手执行失败',
     ToolLoopStatus.completed => '',
@@ -630,8 +630,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('确认加入计划�?),
-        content: const Text('加入后会出现在我的计划中，不会自动报名，也不代表学校确认参赛资格�?),
+        title: const Text('确认加入计划？'),
+        content: const Text('加入后会出现在我的计划中，不会自动报名，也不代表学校确认参赛资格。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -657,7 +657,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('已加入我的竞赛计�?)));
+        ).showSnackBar(const SnackBar(content: Text('已加入我的竞赛计划')));
       }
     } on CompetitionPlanActionException catch (error) {
       if (!_isCurrentPersonalRequest(requestEpoch)) return;
@@ -750,7 +750,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         if (_personalError != null)
           AiErrorCard(
             message: _personalError!,
-            actionLabel: _personalNeedsModelConfiguration ? '去配�? : '关闭',
+            actionLabel: _personalNeedsModelConfiguration ? '去配置' : '关闭',
             onAction: _personalNeedsModelConfiguration
                 ? () => _openAiSetting('model')
                 : () => setState(() => _personalError = null),
@@ -763,7 +763,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     if (value == 'graduation' && !BetaReleasePolicy.aiGraduationAssistant) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('毕业助手在当前内测版本中暂未开�?)));
+      ).showSnackBar(const SnackBar(content: Text('毕业助手在当前内测版本中暂未开放')));
       return;
     }
     final auth = context.read<AuthProvider>();
@@ -788,7 +788,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               summary: '请先通过个人助手加载已审核的适用培养方案',
             ),
           ],
-          warnings: const <String>['当前没有可执行的已审核政策规�?],
+          warnings: const <String>['当前没有可执行的已审核政策规则'],
         ),
       ),
       _ => const AIFeatureSettingsScreen(),
@@ -804,7 +804,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('个人助手模型已保�?)));
+      ).showSnackBar(const SnackBar(content: Text('个人助手模型已保存')));
     }
   }
 
@@ -846,7 +846,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     ),
                     AppPopupAction(
                       value: 'data',
-                      label: '个人数据保险�?,
+                      label: '个人数据保险箱',
                       icon: Icons.shield_outlined,
                     ),
                     if (BetaReleasePolicy.aiGraduationAssistant)
@@ -857,7 +857,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       ),
                     AppPopupAction(
                       value: 'flags',
-                      label: '功能开�?,
+                      label: '功能开关',
                       icon: Icons.toggle_on_outlined,
                     ),
                   ],

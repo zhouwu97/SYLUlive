@@ -115,7 +115,7 @@ class _ExamPaperPreviewScreenState extends State<ExamPaperPreviewScreen> {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 14),
-            Text('正在准备安全预览�?),
+            Text('正在准备安全预览…'),
           ],
         ),
       );

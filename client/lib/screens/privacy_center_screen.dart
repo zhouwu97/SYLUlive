@@ -108,7 +108,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('撤销后，社区、教务、消息和其他依赖授权的功能将立即停止使用，已保存的教务凭证和推送标识会被清除�?),
+            const Text('撤销后，社区、教务、消息和其他依赖授权的功能将立即停止使用，已保存的教务凭证和推送标识会被清除。'),
             const SizedBox(height: 14),
             TextField(
               key: const ValueKey('withdraw-consent-password'),
@@ -171,7 +171,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('注销不可恢复。账号身份资料、教务凭证和推送标识将被清除或匿名化；必要的内容关联与审计记录会按适用法律保留�?),
+            const Text('注销不可恢复。账号身份资料、教务凭证和推送标识将被清除或匿名化；必要的内容关联与审计记录会按适用法律保留。'),
             const SizedBox(height: 16),
             TextField(
               controller: passwordController,
@@ -262,13 +262,13 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                   _PrivacyActionTile(
                     icon: Icons.school_outlined,
                     title: '教务数据',
-                    subtitle: (auth.user?.eduAuthorized ?? false) ? '已授�? : '未授�?,
+                    subtitle: (auth.user?.eduAuthorized ?? false) ? '已授权' : '未授权',
                     trailing: const SizedBox.shrink(),
                   ),
                   _PrivacyActionTile(
                     icon: Icons.alarm_on_outlined,
                     title: '本地课程和考试提醒',
-                    subtitle: '本地提醒不依赖远程推送，可在课表和考试功能中分别管�?,
+                    subtitle: '本地提醒不依赖远程推送，可在课表和考试功能中分别管理',
                     trailing: const SizedBox.shrink(),
                   ),
                   Padding(
@@ -324,11 +324,11 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: !widget.restricted,
-        title: const Text('隐私与数据权�?),
+        title: const Text('隐私与数据权利'),
         actions: [
           if (restricted)
             IconButton(
-              tooltip: '退出登�?,
+              tooltip: '退出登录',
               onPressed: auth.logout,
               icon: const Icon(Icons.logout),
             ),
@@ -343,14 +343,14 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
             const SizedBox(height: 18),
           ],
           
-          const _PrivacySectionTitle('协议与说�?),
+          const _PrivacySectionTitle('协议与说明'),
           const SizedBox(height: 10),
           _PrivacySectionCard(
             children: [
               _PrivacyActionTile(
                 icon: Icons.policy_outlined,
-                title: '查看协议、隐私政策与第三方服务说�?,
-                subtitle: '包含教务数据专项授权和投诉举报规�?,
+                title: '查看协议、隐私政策与第三方服务说明',
+                subtitle: '包含教务数据专项授权和投诉举报规则',
                 enabled: true,
                 onTap: () => LegalDocumentsScreen.open(context),
               ),
@@ -375,7 +375,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
                 key: const ValueKey('export-personal-data'),
                 icon: Icons.ios_share_outlined,
                 title: '导出个人数据',
-                subtitle: '生成可分�?JSON，不含认证凭�?,
+                subtitle: '生成可分享 JSON，不含认证凭证',
                 trailing: _exporting ? _loadingWidget : null,
                 onTap: _exporting ? null : _exportData,
               ),
@@ -403,7 +403,7 @@ class _PrivacyCenterScreenState extends State<PrivacyCenterScreen> {
               children: [
                 _PrivacyActionTile(
                   icon: Icons.tune_outlined,
-                  title: '按功能管理授�?,
+                  title: '按功能管理授权',
                   subtitle: '教务绑定、远程推送和本地提醒分别管理',
                   onTap: _showAuthorizationManagementSheet,
                 ),
@@ -668,7 +668,7 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
     'nickname': '昵称',
     'gender': '性别',
     'avatar_set': '头像',
-    'background_set': '背景�?,
+    'background_set': '背景图',
     'qq': 'QQ',
     'created_at': '注册时间',
     'edu_bound': '教务绑定',
@@ -676,7 +676,7 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
     'edu_grade': '年级',
     'edu_college': '学院',
     'edu_major': '专业',
-    'notification_on': '消息推�?,
+    'notification_on': '消息推送',
   };
 
   static const _documentLabels = <String, String>{
@@ -685,7 +685,7 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
     'community_rules': '社区规则',
     'minor_protection': '未成年人保护规则',
     'content_complaint_rules': '投诉举报规则',
-    'sdk_disclosure': '第三方服务说�?,
+    'sdk_disclosure': '第三方服务说明',
     'edu_data_consent': '教务数据专项授权',
   };
 
@@ -754,7 +754,7 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
           Row(
             children: [
               const Expanded(child: _PrivacySectionTitle('账户资料')),
-              Chip(label: Text(active ? '授权有效' : '授权未生�?)),
+              Chip(label: Text(active ? '授权有效' : '授权未生效')),
             ],
           ),
           const SizedBox(height: 10),
@@ -790,7 +790,7 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
                   dense: true,
                   title: Text(_documentLabels[document] ?? document),
                   subtitle: Text(
-                    '版本 ${consent['version'] ?? '-'} · ${revoked ? '已撤销' : '已同�?}',
+                    '版本 ${consent['version'] ?? '-'} · ${revoked ? '已撤销' : '已同意'}',
                   ),
                   trailing: Icon(
                     revoked
@@ -815,11 +815,11 @@ class _PersonalDataScreenState extends State<_PersonalDataScreen> {
   }
 
   String _formatValue(String key, dynamic value) {
-    if (value == null || value.toString().trim().isEmpty) return '未填�?;
+    if (value == null || value.toString().trim().isEmpty) return '未填写';
     if (key == 'avatar_set' || key == 'background_set') {
-      return value == true ? '已设�? : '未设�?;
+      return value == true ? '已设置' : '未设置';
     }
-    if (value is bool) return value ? '�? : '�?;
+    if (value is bool) return value ? '是' : '否';
     return value.toString();
   }
 }

@@ -22,7 +22,7 @@ class _PollCenterScreenState extends State<PollCenterScreen>
     with SingleTickerProviderStateMixin {
   static const _sorts = <String, String>{
     'recommend': '推荐',
-    'latest': '最�?,
+    'latest': '最新',
     'ending': '即将结束',
   };
   static const _categories = <String, String>{
@@ -90,7 +90,7 @@ class _PollCenterScreenState extends State<PollCenterScreen>
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Align(alignment: Alignment.centerLeft, child: Text('校园投票由用户发起，结果仅代表参与用户的选择�?, style: TextStyle(fontSize: 12, color: Colors.black54))),
+            child: Align(alignment: Alignment.centerLeft, child: Text('校园投票由用户发起，结果仅代表参与用户的选择。', style: TextStyle(fontSize: 12, color: Colors.black54))),
           ),
           TabBar(controller: _tabController, tabs: _sorts.values.map((label) => Tab(text: label)).toList()),
           SizedBox(

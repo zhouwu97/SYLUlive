@@ -144,9 +144,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         ),
         child: Row(
           children: [
-            Expanded(child: _buildSegmentItem(0, '食堂�?, isDark)),
-            Expanded(child: _buildSegmentItem(1, '学科�?, isDark)),
-            Expanded(child: _buildSegmentItem(2, '专业�?, isDark)),
+            Expanded(child: _buildSegmentItem(0, '食堂榜', isDark)),
+            Expanded(child: _buildSegmentItem(1, '学科榜', isDark)),
+            Expanded(child: _buildSegmentItem(2, '专业榜', isDark)),
           ],
         ),
       ),
@@ -247,7 +247,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '学科榜按课程聚合。添加授课教师时请选择标准课程名，例如"数据结构""高等数学A1"，避免同一课程被拆散�?,
+                '学科榜按课程聚合。添加授课教师时请选择标准课程名，例如"数据结构""高等数学A1"，避免同一课程被拆散。',
                 style: TextStyle(
                   fontSize: 12,
                   color: RankingTokens.subColor(isDark),
@@ -288,7 +288,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             decoration: InputDecoration(
               hintText: _tabCtrl.index == 0
                   ? '搜索食堂...'
-                  : (_tabCtrl.index == 1 ? '搜索学科或教�?..' : '搜索专业...'),
+                  : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
               hintStyle: TextStyle(
                 fontSize: 14,
                 color: RankingTokens.mutedColor(isDark),
@@ -346,7 +346,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
               average: group.averageStar,
               count: group.ratingCount,
-              extraLabel: '${group.teachers.length} 位教�?,
+              extraLabel: '${group.teachers.length} 位教师',
               icon: Icons.auto_stories_outlined,
               onTap: () => Navigator.push(
                 context,
@@ -589,7 +589,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                           _buildMetricChip(
                             isDark,
                             Icons.rate_review_outlined,
-                            '$count 条评�?,
+                            '$count 条评价',
                             accent,
                           ),
                           if (extraLabel.isNotEmpty) ...[
@@ -659,7 +659,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
 
     for (final teacher in teachers) {
       final subject =
-          teacher.course.trim().isEmpty ? '未分类课�? : teacher.course.trim();
+          teacher.course.trim().isEmpty ? '未分类课程' : teacher.course.trim();
       final hit = keyword == null ||
           subject.toLowerCase().contains(keyword) ||
           teacher.name.toLowerCase().contains(keyword);
@@ -733,7 +733,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                       context: context,
                       builder: (ctx) => AlertDialog(
                         title: const Text('删除店铺'),
-                        content: Text('确定要删除食�?店铺 "${canteen.name}" 吗？'),
+                        content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(ctx),
@@ -871,7 +871,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '填写名称并上传一张店铺图�?,
+                                  '填写名称并上传一张店铺图片',
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: RankingTokens.subColor(isDark),
@@ -887,7 +887,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         controller: nameCtrl,
                         textInputAction: TextInputAction.done,
                         decoration: InputDecoration(
-                          hintText: '请输入食�?/ 店铺�?,
+                          hintText: '请输入食堂 / 店铺名',
                           hintStyle: TextStyle(
                             color: RankingTokens.subColor(isDark),
                           ),
@@ -956,7 +956,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                         ScaffoldMessenger.of(sheetContext)
                                             .showSnackBar(
                                           const SnackBar(
-                                            content: Text('请输入食�?/ 店铺�?),
+                                            content: Text('请输入食堂 / 店铺名'),
                                           ),
                                         );
                                         return;
@@ -965,7 +965,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                         ScaffoldMessenger.of(sheetContext)
                                             .showSnackBar(
                                           const SnackBar(
-                                            content: Text('请上传一张食堂封面图�?),
+                                            content: Text('请上传一张食堂封面图片'),
                                           ),
                                         );
                                         return;
@@ -987,7 +987,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           const SnackBar(
-                                            content: Text('添加成功，经�?10'),
+                                            content: Text('添加成功，经验+10'),
                                           ),
                                         );
                                         await context
@@ -1283,7 +1283,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         accentSoft: accentSoft,
                         icon: Icons.school_rounded,
                         title: '添加授课教师',
-                        subtitle: '同名同课程不可重复；不同课程可分别添�?,
+                        subtitle: '同名同课程不可重复；不同课程可分别添加',
                       ),
                       const SizedBox(height: 18),
                       TextField(
@@ -1309,7 +1309,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         decoration: _addSheetFieldDecoration(
                           isDark: isDark,
                           accent: accent,
-                          hint: '搜索课程，例�?高等数学A2',
+                          hint: '搜索课程，例如 高等数学A2',
                           icon: Icons.book_rounded,
                         ),
                       ),
@@ -1333,7 +1333,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  '�?nameInput · $determinedCourse」已存在，不能再重复添加',
+                                  '「$nameInput · $determinedCourse」已存在，不能再重复添加',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -1380,14 +1380,14 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         _addSheetStatusChip(
                           isDark,
                           accent,
-                          '将添加到�?selectedCourse�?,
+                          '将添加到「$selectedCourse」',
                           Icons.check_circle_rounded,
                         )
                       else if (hasSimilar && !createNew)
                         _addSheetStatusChip(
                           isDark,
                           warningColor,
-                          '请选择已有课程，避免重复创�?,
+                          '请选择已有课程，避免重复创建',
                           Icons.warning_amber_rounded,
                         )
                       else if (trimmed.isEmpty)
@@ -1408,7 +1408,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         _addSheetStatusChip(
                           isDark,
                           accent,
-                          '将创建新课程�?trimmed�?,
+                          '将创建新课程「$trimmed」',
                           Icons.check_circle_rounded,
                         ),
                       Flexible(
@@ -1482,7 +1482,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                '${s.teacherCount} 位教�?· ${s.ratingCount} 条评�?,
+                                                '${s.teacherCount} 位教师 · ${s.ratingCount} 条评价',
                                                 style: TextStyle(
                                                   fontSize: 11,
                                                   color: RankingTokens.subColor(
@@ -1664,7 +1664,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         decoration: _addSheetFieldDecoration(
                           isDark: isDark,
                           accent: accent,
-                          hint: '搜索专业，例�?机械',
+                          hint: '搜索专业，例如 机械',
                           icon: Icons.school_rounded,
                         ),
                       ),
@@ -1685,7 +1685,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                             items: const [
                               DropdownMenuItem(value: '本科', child: Text('本科')),
                               DropdownMenuItem(
-                                  value: '研究�?, child: Text('研究�?)),
+                                  value: '研究生', child: Text('研究生')),
                             ],
                             onChanged: (v) {
                               if (v != null) {
@@ -1701,14 +1701,14 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         _addSheetStatusChip(
                           isDark,
                           accent,
-                          '将添加到�?selectedMajor�?,
+                          '将添加到「$selectedMajor」',
                           Icons.check_circle_rounded,
                         )
                       else if (hasSimilar && !createNew)
                         _addSheetStatusChip(
                           isDark,
                           warningColor,
-                          '请选择已有专业，避免重复创�?,
+                          '请选择已有专业，避免重复创建',
                           Icons.warning_amber_rounded,
                         )
                       else if (trimmed.isEmpty)
@@ -1729,7 +1729,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         _addSheetStatusChip(
                           isDark,
                           accent,
-                          '将创建新专业�?trimmed�?,
+                          '将创建新专业「$trimmed」',
                           Icons.check_circle_rounded,
                         ),
                       Flexible(
@@ -1805,7 +1805,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                '${s.level} · ${s.ratingCount} 条评�?,
+                                                '${s.level} · ${s.ratingCount} 条评价',
                                                 style: TextStyle(
                                                   fontSize: 11,
                                                   color: RankingTokens.subColor(
@@ -1954,9 +1954,9 @@ class _SubjectGroup {
 const Map<String, String> _courseAliases = {
   '高数': '高等数学',
   '大英': '大学英语',
-  '毛概': '毛泽东思想和中国特色社会主义理论体系概�?,
-  '马原': '马克思主义基本原�?,
-  '近代�?: '中国近现代史纲要',
+  '毛概': '毛泽东思想和中国特色社会主义理论体系概论',
+  '马原': '马克思主义基本原理',
+  '近代史': '中国近现代史纲要',
 };
 
 String _normalizeName(String input, [Map<String, String>? aliases]) {

@@ -45,7 +45,7 @@ class WaterCategoryFeedRoute extends StatelessWidget {
     } else if (legacyCategory != null) {
       resolved = WaterSection.fromLegacyCategory(legacyCategory!);
     } else {
-      // Only sectionSlug provided â€?lookup from provider
+      // Only sectionSlug provided â€” lookup from provider
       final provider = context.read<WaterSectionProvider>();
       resolved = provider.getBySlugOrFallback(sectionSlug!);
     }

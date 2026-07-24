@@ -155,11 +155,6 @@ func main() {
 		&models.PersonalDataRequest{},
 		&models.EduCredentialCleanupJob{},
 
-		&models.UserLegalConsent{},
-
-		&models.PersonalDataRequest{},
-		&models.EduCredentialCleanupJob{},
-
 		&models.Post{},
 		&models.Poll{},
 		&models.PollOption{},
@@ -234,6 +229,7 @@ func main() {
 		&models.Teacher{},
 
 		&models.TeacherRating{},
+		&models.TeacherRatingVote{},
 
 		&models.UserViolation{},
 
@@ -244,6 +240,7 @@ func main() {
 		&models.Major{},
 
 		&models.MajorRating{},
+		&models.MajorRatingVote{},
 
 		&models.AdminVote{},
 
@@ -323,13 +320,6 @@ func main() {
 	if err := models.BackfillLegacyMarketContacts(db); err != nil {
 		log.Fatal("历史集市联系方式回填失败:", err)
 	}
-	removedMarketNotifications, err := models.PurgeLegacyMarketPostNotifications(db)
-	if err != nil {
-		log.Fatal("历史集市广播通知清理失败:", err)
-	}
-	if removedMarketNotifications > 0 {
-		log.Printf("已清理 %d 条历史集市广播通知", removedMarketNotifications)
-	}
 
 	if err := models.EnsureExamPaperIndexes(db); err != nil {
 		log.Fatal("试卷索引迁移失败:", err)
@@ -385,6 +375,9 @@ func main() {
 	}
 	if err := models.EnsurePollSchema(db); err != nil {
 		log.Fatal("投票系统数据库约束未就绪:", err)
+	}
+	if err := models.EnsureRatingInteractionSchema(db); err != nil {
+		log.Fatal("评价交互系统数据库约束未就绪:", err)
 	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
@@ -1539,6 +1532,8 @@ func main() {
 
 		teacherAuth.DELETE("/rating/:id", teacherHandler.DeleteRating)
 
+		teacherAuth.PUT("/ratings/:id/vote", teacherHandler.VoteRating)
+
 		teacherAuth.POST("/rating/:id/report", teacherHandler.ReportRating)
 
 	}
@@ -1594,6 +1589,8 @@ func main() {
 		majorAuth.POST("/:id/rate", majorHandler.Rate)
 
 		majorAuth.DELETE("/rating/:id", majorHandler.DeleteRating)
+
+		majorAuth.PUT("/ratings/:id/vote", majorHandler.VoteRating)
 
 	}
 

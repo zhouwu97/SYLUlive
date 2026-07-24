@@ -22,13 +22,16 @@ class RatingDistributionBar extends StatelessWidget {
       height: 12,
       child: Row(
         children: [
-          Text(
-            '★' * star + '☆' * (5 - star),
-            style: TextStyle(
-              fontSize: 11,
-              height: 1.0,
-              color: RankingTokens.subColor(isDark),
-              letterSpacing: 1.0,
+          SizedBox(
+            width: 12,
+            child: Text(
+              '$star',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+                color: RankingTokens.subColor(isDark),
+              ),
             ),
           ),
           const SizedBox(width: 6),

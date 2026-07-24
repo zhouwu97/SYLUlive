@@ -4,7 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
-    show Clipboard, ClipboardData, MethodChannel, rootBundle;
+    show Clipboard, ClipboardData, MethodChannel;
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -31,6 +31,11 @@ import '../widgets/about_app_sheet.dart';
 import 'diagnostic_log_screen.dart';
 import 'privacy_center_screen.dart';
 import 'account_security_screen.dart';
+
+const List<String> phonePresetWallpaperAssets = [
+  'morenbeijing.jpeg',
+  'wallpaper_custom_01.png',
+];
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -461,23 +466,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         _buildSettingsRow(
           child: _buildSettingsTile(
-            icon: Icons.notifications_none_rounded,
-            iconColor: Colors.blueAccent,
-            title: '接收远程消息推送',
-            subtitle: '默认关闭，开启后会向极光提供设备推送标识',
-            trailing: Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: _pushEnabled,
-                onChanged: _pushLoading ? null : _setPushEnabled,
-                activeThumbColor: Theme.of(context).primaryColor,
-              ),
-            ),
-            isDark: isDark,
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
             icon: Icons.battery_saver,
             iconColor: Colors.green,
             title: '后台保活',
@@ -803,25 +791,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ThemeProvider themeProvider,
     bool isLandscape,
   ) {
-    final backgrounds = [
-      isLandscape ? 'tablet_default_landscape.png' : 'morenbeijing.jpeg',
-      if (isLandscape) ...[
-        'tablet_landscape_01.png',
-        'tablet_landscape_02.png',
-        'tablet_landscape_03.png',
-        'tablet_landscape_04.png',
-        'tablet_landscape_05.png',
-        'tablet_landscape_06.png',
-        'tablet_landscape_07.png',
-        'tablet_landscape_08.png',
-      ],
-      if (!isLandscape) ...[
-        'phone_wallpaper_01.png',
-        'phone_wallpaper_02.png',
-        'phone_wallpaper_03.png',
-        'phone_wallpaper_04.png',
-      ],
-    ];
+    final backgrounds = isLandscape
+        ? <String>[
+            'tablet_default_landscape.png',
+            'tablet_landscape_01.png',
+            'tablet_landscape_02.png',
+            'tablet_landscape_03.png',
+            'tablet_landscape_04.png',
+            'tablet_landscape_05.png',
+            'tablet_landscape_06.png',
+            'tablet_landscape_07.png',
+            'tablet_landscape_08.png',
+          ]
+        : phonePresetWallpaperAssets;
 
     showDialog(
       context: context,
@@ -908,37 +890,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   DecoratedBox(
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(12),
+                                      color: Colors.black12,
                                       image: DecorationImage(
                                         image: AssetImage(imagePath),
-                                        fit: BoxFit.cover,
+                                        fit: isLandscape
+                                            ? BoxFit.cover
+                                            : BoxFit.contain,
                                       ),
                                     ),
                                     child: const SizedBox.expand(),
-                                  ),
-                                  Positioned(
-                                    right: 8,
-                                    bottom: 8,
-                                    child: Material(
-                                      color: Colors.black.withOpacity(0.52),
-                                      borderRadius: BorderRadius.circular(18),
-                                      child: InkWell(
-                                        onTap: () => _editBundledBackground(
-                                          context,
-                                          themeProvider,
-                                          value,
-                                          isLandscape,
-                                        ),
-                                        borderRadius: BorderRadius.circular(18),
-                                        child: const Padding(
-                                          padding: EdgeInsets.all(8),
-                                          child: Icon(
-                                            Icons.crop,
-                                            color: Colors.white,
-                                            size: 18,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
                                   ),
                                 ],
                               ),
@@ -1088,94 +1048,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       savedPath,
     );
     return savedPath;
-  }
-
-  Future<void> _editBundledBackground(
-    BuildContext context,
-    ThemeProvider themeProvider,
-    String assetName,
-    bool isLandscape,
-  ) async {
-    if (kIsWeb) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('网页版可直接使用内置壁纸，编辑请从相册选择图片')));
-      return;
-    }
-
-    try {
-      final remoteUrl = _remoteWallpaperUrl(assetName);
-      final useRemote =
-          remoteUrl != null && context.read<AuthProvider>().isLoggedIn;
-
-      String? sourcePath;
-      if (useRemote) {
-        try {
-          sourcePath = await _downloadWallpaper(remoteUrl, assetName);
-        } catch (e) {
-          debugPrint('Download wallpaper for edit failed: $e');
-        }
-      }
-
-      sourcePath ??= await _copyAssetToTempFile(
-        _backgroundPreviewAsset(assetName),
-      );
-
-      String? savedPath;
-      try {
-        savedPath = await _cropAndSaveBackground(
-          sourcePath,
-          isLandscape: isLandscape,
-        );
-      } catch (e) {
-        debugPrint('Crop failed, possibly corrupted file: $e');
-        if (useRemote &&
-            sourcePath.isNotEmpty &&
-            !sourcePath.contains('background_source_')) {
-          try {
-            await File(sourcePath).delete();
-          } catch (_) {}
-          final fallbackSource = await _copyAssetToTempFile(
-            _backgroundPreviewAsset(assetName),
-          );
-          savedPath = await _cropAndSaveBackground(
-            fallbackSource,
-            isLandscape: isLandscape,
-          );
-        } else {
-          rethrow;
-        }
-      }
-
-      if (savedPath == null) return;
-      await _setBackground(
-        themeProvider,
-        isLandscape,
-        savedPath,
-        fillScreen: true,
-      );
-      if (context.mounted) Navigator.pop(context);
-    } catch (e) {
-      debugPrint('Edit bundled background failed: $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('编辑背景失败'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  Future<String> _copyAssetToTempFile(String assetName) async {
-    final data = await rootBundle.load(
-      ThemeProvider.resolveBundledAssetPath(assetName),
-    );
-    final tempDir = await getTemporaryDirectory();
-    final sourcePath = path.join(
-      tempDir.path,
-      'background_source_${DateTime.now().millisecondsSinceEpoch}_${path.basename(assetName)}',
-    );
-    await File(sourcePath).writeAsBytes(data.buffer.asUint8List());
-    return sourcePath;
   }
 
   Future<void> _pickGalleryBackground(

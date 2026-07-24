@@ -7,7 +7,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import '../platform/contracts/external_navigator.dart';
 import '../config/api_constants.dart';
-import '../main.dart';
+import '../app_bootstrap.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
@@ -46,6 +46,8 @@ Future<void> loadInitialFeedBeforeUpdateCheck({
   }
   await initializeUpdateCheck();
 }
+
+
 
 class HomeScreen extends StatefulWidget {
   final int initialTab;

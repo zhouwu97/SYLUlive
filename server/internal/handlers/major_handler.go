@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -47,7 +48,7 @@ func (h *MajorHandler) GetList(c *gin.Context) {
 	// 修复 N+1 查询
 	err := h.db.Table("majors").
 		Select("majors.*, COUNT(major_ratings.id) as rating_count, COALESCE(AVG(CAST(major_ratings.star AS FLOAT)), 0) as average_star").
-		Joins("LEFT JOIN major_ratings ON major_ratings.major_id = majors.id").
+		Joins("LEFT JOIN major_ratings ON major_ratings.major_id = majors.id AND major_ratings.status = 'normal' AND major_ratings.deleted_at IS NULL").
 		Where("majors.verified = ?", true).
 		Group("majors.id").
 		Order("average_star DESC, rating_count DESC, majors.created_at DESC").
@@ -68,32 +69,60 @@ func (h *MajorHandler) GetDetail(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "专业不存在"})
 		return
 	}
+	sortMode := c.Query("review_sort")
 	var ratings []models.MajorRating
-	if err := h.db.Where("major_id = ?", id).Preload("User").Order("created_at DESC").Find(&ratings).Error; err != nil {
+	query := h.db.Where("major_id = ? AND status = 'normal' AND deleted_at IS NULL", id).Preload("User")
+
+	if sortMode == "best" {
+		query = query.Order("(helpful_count - unhelpful_count * 2) DESC, CASE WHEN TRIM(comment) <> '' THEN 1 ELSE 0 END DESC, helpful_count DESC, created_at DESC")
+	} else {
+		query = query.Order("created_at DESC")
+	}
+
+	if err := query.Find(&ratings).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价列表失败"})
 		return
 	}
-	for i := range ratings {
-		if ratings[i].User != nil {
-			ratings[i].UserName = ratings[i].User.Nickname
-			ratings[i].UserStudentID = ratings[i].User.StudentID
+	var ratingDTOs []map[string]interface{}
+	for _, r := range ratings {
+		userName := ""
+		if r.User != nil {
+			userName = r.User.Nickname
 		}
+
+		isOwn := false
+		if userID, exists := c.Get("user_id"); exists {
+			isOwn = r.UserID == userID.(uint)
+		}
+
+		ratingDTOs = append(ratingDTOs, map[string]interface{}{
+			"id":              r.ID,
+			"star":            r.Star,
+			"comment":         r.Comment,
+			"user_name":       userName,
+			"created_at":      r.CreatedAt,
+			"updated_at":      r.UpdatedAt,
+			"helpful_count":   r.HelpfulCount,
+			"unhelpful_count": r.UnhelpfulCount,
+			"my_vote":         r.MyVote,
+			"is_own":          isOwn,
+		})
 	}
 	var count int64
 	var avg float64
-	h.db.Model(&models.MajorRating{}).Where("major_id = ?", id).Count(&count)
+	h.db.Model(&models.MajorRating{}).Where("major_id = ? AND status = 'normal' AND deleted_at IS NULL", id).Count(&count)
 	if count > 0 {
-		h.db.Model(&models.MajorRating{}).Where("major_id = ?", id).Select("AVG(CAST(star AS FLOAT))").Scan(&avg)
+		h.db.Model(&models.MajorRating{}).Where("major_id = ? AND status = 'normal' AND deleted_at IS NULL", id).Select("AVG(CAST(star AS FLOAT))").Scan(&avg)
 	}
 	var myRating *models.MajorRating
 	if userID, exists := c.Get("user_id"); exists {
 		var rating models.MajorRating
-		if err := h.db.Where("major_id = ? AND user_id = ?", id, userID).First(&rating).Error; err == nil {
+		if err := h.db.Where("major_id = ? AND user_id = ? AND deleted_at IS NULL", id, userID).First(&rating).Error; err == nil {
 			myRating = &rating
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"major": major, "ratings": ratings, "rating_count": count, "average_star": avg, "my_rating": myRating,
+		"major": major, "ratings": ratingDTOs, "rating_count": count, "average_star": avg, "my_rating": myRating,
 	})
 }
 
@@ -157,6 +186,40 @@ func (h *MajorHandler) Rate(c *gin.Context) {
 		}
 		c.JSON(http.StatusCreated, gin.H{"message": "评价成功"})
 	}
+}
+
+// VoteRating 给专业评价投票
+func (h *MajorHandler) VoteRating(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	ratingID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的评价ID"})
+		return
+	}
+	var input struct {
+		Vote string `json:"vote" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, err := services.ToggleRatingVote(h.db, "major", uint(ratingID), userID.(uint), input.Vote)
+	if err != nil {
+		if err.Error() == "不能给自己的评价投票" || err.Error() == "无法对该状态的评价进行投票" || err.Error() == "评价不存在或已删除" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "投票失败"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"rating_id":       ratingID,
+		"helpful_count":   result.HelpfulCount,
+		"unhelpful_count": result.UnhelpfulCount,
+		"my_vote":         result.MyVote,
+	})
 }
 
 // DeleteRating 删除自己的专业评价

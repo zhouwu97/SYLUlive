@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../features/ai_runtime/ai_model_provider.dart';
 import '../../features/ai_runtime/ai_model_runtime.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
-import '../../main.dart';
+import '../../app_bootstrap.dart';
 import '../../services/account_session_cleanup_coordinator.dart';
 import '../../services/ai_assistant_service.dart';
 import 'ai_model_settings_screen.dart';

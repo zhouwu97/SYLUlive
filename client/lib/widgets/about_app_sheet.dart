@@ -497,6 +497,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('知道了'),
             ),
+
           ],
         );
       },

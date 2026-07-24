@@ -34,8 +34,12 @@ class TeacherRating {
   final int star;
   final String comment;
   final String userName;
-  final String userStudentId;
-  final DateTime createdAt;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final int helpfulCount;
+  final int unhelpfulCount;
+  final String? myVote;
+  final bool isOwn;
 
   TeacherRating({
     required this.id,
@@ -44,8 +48,12 @@ class TeacherRating {
     required this.star,
     required this.comment,
     this.userName = '',
-    this.userStudentId = '',
-    required this.createdAt,
+    this.createdAt,
+    this.updatedAt,
+    this.helpfulCount = 0,
+    this.unhelpfulCount = 0,
+    this.myVote,
+    this.isOwn = false,
   });
 
   factory TeacherRating.fromJson(Map<String, dynamic> json) {
@@ -56,8 +64,16 @@ class TeacherRating {
       star: json['star'] ?? 0,
       comment: json['comment'] ?? '',
       userName: json['user_name'] ?? '',
-      userStudentId: json['user_student_id'] ?? '',
-      createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'])
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'])
+          : null,
+      helpfulCount: json['helpful_count'] ?? 0,
+      unhelpfulCount: json['unhelpful_count'] ?? 0,
+      myVote: json['my_vote'],
+      isOwn: json['is_own'] ?? false,
     );
   }
 }

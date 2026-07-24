@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../campus/campus_theme.dart';
 
 class AiModeSwitch extends StatelessWidget {
   final bool isPersonalMode;
@@ -12,15 +13,15 @@ class AiModeSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Container(
-        height: 40,
+        height: 42,
+        padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: colors.outlineVariant, width: 1),
+          color: const Color(0xFFE8F5F2), // primarySoft
+          borderRadius: BorderRadius.circular(21),
+          border: Border.all(color: const Color(0xFFE3E8E5), width: 1),
         ),
         child: Row(
           children: [
@@ -30,7 +31,6 @@ class AiModeSwitch extends StatelessWidget {
                 label: '校园问答',
                 isSelected: !isPersonalMode,
                 onTap: () => onModeChanged(false),
-                colors: colors,
               ),
             ),
             Expanded(
@@ -39,7 +39,6 @@ class AiModeSwitch extends StatelessWidget {
                 label: '个人助手',
                 isSelected: isPersonalMode,
                 onTap: () => onModeChanged(true),
-                colors: colors,
               ),
             ),
           ],
@@ -54,14 +53,12 @@ class _ModeButton extends StatelessWidget {
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
-  final ColorScheme colors;
 
   const _ModeButton({
     required this.icon,
     required this.label,
     required this.isSelected,
     required this.onTap,
-    required this.colors,
   });
 
   @override
@@ -71,8 +68,17 @@ class _ModeButton extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Container(
         decoration: BoxDecoration(
-          color: isSelected ? colors.primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(19),
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
         ),
         child: Center(
           child: Row(
@@ -80,16 +86,16 @@ class _ModeButton extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                size: 18,
-                color: isSelected ? colors.onPrimaryContainer : colors.onSurface,
+                size: 16,
+                color: isSelected ? CampusTheme.primary : const Color(0xFF7B8388),
               ),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 14,
-                  color: isSelected ? colors.onPrimaryContainer : colors.onSurface,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? CampusTheme.primary : const Color(0xFF7B8388),
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
             ],

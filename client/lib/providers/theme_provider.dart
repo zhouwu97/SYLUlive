@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 enum AppBackgroundMode {
   clean,
   custom,
@@ -32,6 +31,11 @@ class ThemeProvider extends ChangeNotifier {
   static const String _predictiveBackKey = 'predictive_back_enabled';
   static const String _startOnTimetableKey = 'start_on_timetable';
   static const String _marketIsListViewKey = 'market_is_list_view';
+  static final RegExp _retiredPhoneWallpaperPattern = RegExp(
+    r'(^|[\\/])(?:remote_)?phone_wallpaper_0[1-4]\.(?:png|jpe?g)(?:[?#].*)?$',
+    caseSensitive: false,
+  );
+  static const String _defaultPhoneWallpaper = 'morenbeijing.jpeg';
 
   bool _isDarkMode = false;
   String? _backgroundImage;
@@ -198,6 +202,15 @@ class ThemeProvider extends ChangeNotifier {
       _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
       _backgroundMode =
           _backgroundModeFromString(prefs.getString(_backgroundModeKey));
+
+      // 01-04 竖屏预设已下线，旧选择统一回退到黄帽子原图。
+      if (_backgroundImage != null &&
+          _retiredPhoneWallpaperPattern.hasMatch(_backgroundImage!)) {
+        _backgroundImage = _defaultPhoneWallpaper;
+        _backgroundFillScreen = false;
+        await prefs.setString(_backgroundImageKey, _defaultPhoneWallpaper);
+        await prefs.setBool(_backgroundFillScreenKey, false);
+      }
     } catch (error) {
       // 本地存储插件尚未接入的平台使用内存默认主题，不能阻断登录首屏。
       debugPrint('读取主题本地配置失败，使用默认主题: $error');

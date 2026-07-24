@@ -16,7 +16,7 @@ import 'poll/poll_composer_screen.dart';
 import 'dart:io' show File;
 
 /// 我的内容管理页面
-/// 查看并管理自己发布的帖子、评论、集市物品，支持多选删�?
+/// 查看并管理自己发布的帖子、评论、集市物品，支持多选删除
 class MyContentScreen extends StatefulWidget {
   const MyContentScreen({super.key});
 
@@ -82,7 +82,7 @@ class _MyContentScreenState extends State<MyContentScreen>
         return;
       }
 
-      // 直接�?API 获取用户所有帖子，不走 PostProvider �?board 分页
+      // 直接从 API 获取用户所有帖子，不走 PostProvider 的 board 分页
       final res = await authProvider.dio.get(
         '/user/$currentUserId/posts',
         queryParameters: {'limit': '999'},
@@ -92,7 +92,7 @@ class _MyContentScreenState extends State<MyContentScreen>
           .map((e) => Post.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      // �?board 拆分
+      // 按 board 拆分
       if (mounted)
         setState(() {
           _myPosts = allPosts.where((p) => p.boardId != 2).toList();
@@ -147,7 +147,7 @@ class _MyContentScreenState extends State<MyContentScreen>
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '确认删除',
-      message: '确定要删除选中�?${_selectedIds.length} 项内容吗？删除后普通用户不可见，此操作不可撤销�?,
+      message: '确定要删除选中的 ${_selectedIds.length} 项内容吗？删除后普通用户不可见，此操作不可撤销。',
     );
 
     if (!confirmed) return;
@@ -186,8 +186,8 @@ class _MyContentScreenState extends State<MyContentScreen>
         SnackBar(
           content: Text(
             errors.isEmpty
-                ? '已删�?$deletedCount �?
-                : '已删�?$deletedCount 项，${errors.first}',
+                ? '已删除 $deletedCount 项'
+                : '已删除 $deletedCount 项，${errors.first}',
           ),
           backgroundColor:
               errors.isEmpty && deletedCount > 0 ? Colors.green : Colors.red,
@@ -247,7 +247,7 @@ class _MyContentScreenState extends State<MyContentScreen>
               )
             : const BackButton(),
         title: _isSelectionMode
-            ? Text('已选择 ${_selectedIds.length} �?)
+            ? Text('已选择 ${_selectedIds.length} 项')
             : const Text('我的内容'),
         actions: [
           if (_isSelectionMode && _selectedIds.isNotEmpty)
@@ -265,7 +265,7 @@ class _MyContentScreenState extends State<MyContentScreen>
           SafeArea(
             child: Column(
               children: [
-                // Tab�?
+                // Tab栏
                 Container(
                   margin: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -323,7 +323,7 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    // 使用全局背景设置，与 profile_screen 保持一�?
+    // 使用全局背景设置，与 profile_screen 保持一致
     if (themeProvider.shouldShowCustomBackground &&
         themeProvider.getCustomBackgroundImageFor(context) != null) {
       final bgPath = themeProvider.getCustomBackgroundImageFor(context)!;
@@ -544,7 +544,7 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   Widget _buildMarketList(List<Post> posts, bool isDark) {
     if (posts.isEmpty) {
-      return _buildEmptyState('暂无商品', '发布你的商品�?, Icons.store_outlined, isDark);
+      return _buildEmptyState('暂无商品', '发布你的商品吧', Icons.store_outlined, isDark);
     }
 
     return RefreshIndicator(
@@ -586,7 +586,7 @@ class _MyContentScreenState extends State<MyContentScreen>
             ),
             const SizedBox(width: 8),
           ],
-          // 图片缩略�?
+          // 图片缩略图
           if (post.images.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
@@ -772,8 +772,8 @@ class _MyContentScreenState extends State<MyContentScreen>
     final now = DateTime.now();
     final diff = now.difference(dt);
     if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟�?;
-    if (diff.inHours < 24) return '${diff.inHours}小时�?;
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
+    if (diff.inHours < 24) return '${diff.inHours}小时前';
     if (diff.inDays < 7) return '${diff.inDays}天前';
     return '${dt.month}/${dt.day}';
   }

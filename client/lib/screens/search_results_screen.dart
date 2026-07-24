@@ -218,7 +218,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 decoration: InputDecoration(
                   border: InputBorder.none,
                   isDense: true,
-                  hintText: '搜索用户 ID、昵称或帖子关键�?,
+                  hintText: '搜索用户 ID、昵称或帖子关键词',
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.arrow_upward_rounded, size: 19),
@@ -240,7 +240,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         children: [
           Expanded(
             child: Text(
-              '搜索 �?_query�?,
+              '搜索 “$_query”',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -273,8 +273,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   Widget _buildSortBar(bool isDark) {
     final options = _type == 'posts'
-        ? const [('relevance', '综合'), ('latest', '最�?), ('hot', '热门')]
-        : const [('relevance', '综合'), ('newest', '最新注�?)];
+        ? const [('relevance', '综合'), ('latest', '最新'), ('hot', '热门')]
+        : const [('relevance', '综合'), ('newest', '最新注册')];
 
     return SizedBox(
       height: 45,
@@ -342,7 +342,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             return Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 10),
               child: Text(
-                '找到 $_total 条结�?,
+                '找到 $_total 条结果',
                 style: TextStyle(
                   fontSize: 12,
                   color: isDark ? Colors.white54 : Colors.black54,
@@ -357,7 +357,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 child: _isLoadingMore
                     ? const CircularProgressIndicator(strokeWidth: 2)
                     : Text(
-                        _hasMore ? '' : '已显示全部结�?,
+                        _hasMore ? '' : '已显示全部结果',
                         style: TextStyle(
                           fontSize: 12,
                           color: isDark ? Colors.white38 : Colors.black38,

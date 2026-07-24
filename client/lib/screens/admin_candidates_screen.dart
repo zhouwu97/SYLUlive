@@ -104,11 +104,11 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     final dio = context.read<AuthProvider>().dio;
     final messenger = ScaffoldMessenger.of(context);
     final reason = await _showReasonDialog(
-      title: '邀�?${candidate.nickname} 成为管理�?,
-      label: '给候选人的邀请理�?,
+      title: '邀请 ${candidate.nickname} 成为管理员',
+      label: '给候选人的邀请理由',
       hint: '例如：社区贡献活跃、处理问题客观，希望邀请你参与管理',
-      helperText: '该用户会看到这段文字，并决定是否接受邀请�?,
-      confirmText: '发送邀�?,
+      helperText: '该用户会看到这段文字，并决定是否接受邀请。',
+      confirmText: '发送邀请',
     );
     if (!mounted || reason == null) return;
 
@@ -128,7 +128,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
           () => _candidates.removeWhere((item) => item.id == candidate.id));
     } on DioException catch (e) {
       if (!mounted) return;
-      String msg = '邀请失�?;
+      String msg = '邀请失败';
       if (e.response?.data is Map) {
         msg = (e.response!.data as Map)['error']?.toString() ?? msg;
       }
@@ -219,7 +219,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildStatItem('总用�?, _totalUsers!, isDark),
+                    _buildStatItem('总用户', _totalUsers!, isDark),
                     _buildStatItem('教务账号', _eduUsers!, isDark),
                     _buildStatItem('其他', _otherUsers!, isDark),
                   ],
@@ -239,7 +239,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                 onSubmitted: (_) => _searchCandidates(),
                 decoration: InputDecoration(
                   icon: const Icon(Icons.search, color: Colors.grey),
-                  hintText: '输入用户 ID、学�?账号或昵称搜索候选人',
+                  hintText: '输入用户 ID、学号/账号或昵称搜索候选人',
                   hintStyle: const TextStyle(fontSize: 13),
                   border: InputBorder.none,
                   suffixIcon: _searchController.text.trim().isNotEmpty
@@ -307,7 +307,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                                   isThreeLine: true,
                                   trailing: FilledButton.tonal(
                                     onPressed: () => _inviteAdmin(candidate),
-                                    child: const Text('邀�?),
+                                    child: const Text('邀请'),
                                   ),
                                 ),
                               );

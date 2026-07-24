@@ -202,7 +202,8 @@ class _CompetitionOfficialEventEditorScreenState
         _majorOptions = _listValue(data['majors']);
       });
     } catch (_) {
-      // 画像选项只是录入建议，加载失败时仍允许管理员手动输入�?    }
+      // 画像选项只是录入建议，加载失败时仍允许管理员手动输入。
+    }
   }
 
   Future<void> _submit(String status) async {
@@ -281,7 +282,7 @@ class _CompetitionOfficialEventEditorScreenState
       );
     } catch (e) {
       if (!mounted) return;
-      AppFeedback.showSnackBar(context, '发生错误�?e', isError: true);
+      AppFeedback.showSnackBar(context, '发生错误：$e', isError: true);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -310,7 +311,7 @@ class _CompetitionOfficialEventEditorScreenState
               isDark,
               [
                 _input(_titleController, '比赛名称', isDark, required: true),
-                _input(_summaryController, '一句话简�?, isDark),
+                _input(_summaryController, '一句话简介', isDark),
                 _input(
                   _descriptionController,
                   '比赛说明',
@@ -323,7 +324,7 @@ class _CompetitionOfficialEventEditorScreenState
               ],
             ),
             _section(
-              '推荐与认�?,
+              '推荐与认定',
               Icons.workspace_premium_outlined,
               isDark,
               [
@@ -343,7 +344,7 @@ class _CompetitionOfficialEventEditorScreenState
                     Expanded(
                       child: _input(
                         _importanceController,
-                        '重要�?,
+                        '重要分',
                         isDark,
                         keyboardType: TextInputType.number,
                       ),
@@ -355,7 +356,7 @@ class _CompetitionOfficialEventEditorScreenState
                   children: [
                     Expanded(
                       child: _dropdown(
-                        label: '学校认定状�?,
+                        label: '学校认定状态',
                         value: _schoolRecognitionStatus,
                         items: const [
                           'recognized',
@@ -378,7 +379,7 @@ class _CompetitionOfficialEventEditorScreenState
                 _input(_targetAudienceController, '适合人群', isDark),
                 _multiValueEditor(
                   label: '适用入学年份',
-                  hint: '例如 2023；留空表示不�?,
+                  hint: '例如 2023；留空表示不限',
                   values: _eligibleEntryYears,
                   options: _entryYearOptions,
                   isDark: isDark,
@@ -409,7 +410,7 @@ class _CompetitionOfficialEventEditorScreenState
                     Expanded(
                       child: _input(
                         _teamSizeMinController,
-                        '最少人�?,
+                        '最少人数',
                         isDark,
                         keyboardType: TextInputType.number,
                       ),
@@ -418,7 +419,7 @@ class _CompetitionOfficialEventEditorScreenState
                     Expanded(
                       child: _input(
                         _teamSizeMaxController,
-                        '最多人�?,
+                        '最多人数',
                         isDark,
                         keyboardType: TextInputType.number,
                       ),
@@ -443,7 +444,7 @@ class _CompetitionOfficialEventEditorScreenState
                   children: [
                     Expanded(
                       child: _dropdown(
-                        label: '时间状�?,
+                        label: '时间状态',
                         value: _timeStatus,
                         items: const [
                           'confirmed',
@@ -484,7 +485,7 @@ class _CompetitionOfficialEventEditorScreenState
                     Expanded(
                       child: _input(
                         _registrationStartController,
-                        '报名开�?,
+                        '报名开始',
                         isDark,
                       ),
                     ),
@@ -497,7 +498,7 @@ class _CompetitionOfficialEventEditorScreenState
                 Row(
                   children: [
                     Expanded(
-                      child: _input(_eventStartController, '比赛开�?, isDark),
+                      child: _input(_eventStartController, '比赛开始', isDark),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -534,11 +535,11 @@ class _CompetitionOfficialEventEditorScreenState
               ],
             ),
             _section(
-              '来源与发�?,
+              '来源与发布',
               Icons.source_outlined,
               isDark,
               [
-                _input(_organizerController, '主办�?, isDark),
+                _input(_organizerController, '主办方', isDark),
                 _input(_hostUnitController, '承办/指导单位', isDark),
                 _input(_officialUrlController, '官网链接', isDark),
                 _input(_noticeUrlController, '通知链接', isDark),
@@ -610,7 +611,7 @@ class _CompetitionOfficialEventEditorScreenState
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: Text(_isSubmitting ? '提交�?..' : '发布'),
+                  child: Text(_isSubmitting ? '提交中...' : '发布'),
                 ),
               ),
             ],
@@ -861,7 +862,7 @@ class _CompetitionOfficialEventEditorScreenState
       return value
           .map((item) => '$item'.trim())
           .where((item) => item.isNotEmpty)
-          .join('�?);
+          .join('，');
     }
     return '${value ?? ''}'.trim();
   }
@@ -886,11 +887,11 @@ class _CompetitionOfficialEventEditorScreenState
 String _recognitionLabel(String value) {
   switch (value) {
     case 'recognized':
-      return '已认�?;
+      return '已认定';
     case 'not_recognized':
-      return '未认�?;
+      return '未认定';
     case 'pending':
-      return '待确�?;
+      return '待确认';
     case 'unknown':
       return '未知';
     default:
@@ -901,13 +902,13 @@ String _recognitionLabel(String value) {
 String _timeStatusLabel(String value) {
   switch (value) {
     case 'confirmed':
-      return '已确�?;
+      return '已确认';
     case 'estimated':
       return '预计时间';
     case 'historical':
-      return '往年参�?;
+      return '往年参考';
     case 'pending':
-      return '时间待公�?;
+      return '时间待公布';
     default:
       return value;
   }
@@ -918,7 +919,7 @@ String _timePrecisionLabel(String value) {
     case 'exact':
       return '精确到日';
     case 'month':
-      return '按月�?;
+      return '按月份';
     case 'month_range':
       return '月份范围';
     case 'quarter':
@@ -947,7 +948,7 @@ String _sourceLabel(String value) {
     case 'platform':
       return '平台赛事';
     case 'admin_manual':
-      return '管理员录�?;
+      return '管理员录入';
     case 'ai_import':
       return 'AI导入';
     default:

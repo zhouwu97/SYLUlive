@@ -132,7 +132,7 @@ class _MyExamPaperSubmissionsScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('撤回投稿'),
-        content: Text('确认撤回�?{paper.title}》吗？撤回后文件会被删除�?),
+        content: Text('确认撤回《${paper.title}》吗？撤回后文件会被删除。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -149,7 +149,7 @@ class _MyExamPaperSubmissionsScreenState
     try {
       await widget.service.withdraw(paper.id);
       if (!mounted) return;
-      _showMessage('投稿已撤�?);
+      _showMessage('投稿已撤回');
       await _load(refresh: true);
     } on ExamPaperApiException catch (error) {
       if (mounted) _showMessage(error.message);
@@ -168,11 +168,11 @@ class _MyExamPaperSubmissionsScreenState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('确认永久删除�?{paper.title}》吗？此操作不可恢复�?),
+              Text('确认永久删除《${paper.title}》吗？此操作不可恢复。'),
               if (paper.rewardRevocable) ...[
                 const SizedBox(height: 12),
                 Text(
-                  '删除后将扣回本次投稿奖励�?10 经验�?,
+                  '删除后将扣回本次投稿奖励的 10 经验。',
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ],
@@ -198,7 +198,7 @@ class _MyExamPaperSubmissionsScreenState
       final result = await widget.service.deleteSubmission(paper.id);
       if (!mounted) return;
       _showMessage(
-        result.expRevoked ? '投稿已永久删除，已扣�?10 经验' : '投稿已永久删�?,
+        result.expRevoked ? '投稿已永久删除，已扣回 10 经验' : '投稿已永久删除',
       );
       await _load(refresh: true);
     } on ExamPaperApiException catch (error) {
@@ -313,9 +313,9 @@ class _MyExamPaperSubmissionsScreenState
               height: 430,
               child: ExamPaperEmptyState(
                 icon: Icons.upload_file_outlined,
-                title: filtered ? '该状态下没有投稿' : '还没有试卷投�?,
-                message: filtered ? '可以切换其他状态查看投稿记录�? : '投稿通过管理员审核后会收录到试卷库�?,
-                primaryActionLabel: filtered ? null : '去投�?,
+                title: filtered ? '该状态下没有投稿' : '还没有试卷投稿',
+                message: filtered ? '可以切换其他状态查看投稿记录。' : '投稿通过管理员审核后会收录到试卷库。',
+                primaryActionLabel: filtered ? null : '去投稿',
                 onPrimaryAction: filtered ? null : _openUpload,
               ),
             ),
@@ -350,9 +350,9 @@ class _MyExamPaperSubmissionsScreenState
   Widget _buildStatusFilter() {
     const statuses = [
       ('all', '全部'),
-      ('pending', '待审�?),
+      ('pending', '待审核'),
       ('published', '已通过'),
-      ('unpublished', '已下�?),
+      ('unpublished', '已下架'),
     ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -400,7 +400,7 @@ class _MyExamPaperSubmissionsScreenState
           Icon(Icons.check_circle_outline,
               size: 16, color: Colors.green.shade700),
           const SizedBox(width: 6),
-          const Expanded(child: Text('已收录至试卷�?)),
+          const Expanded(child: Text('已收录至试卷库')),
           TextButton.icon(
             onPressed:
                 _deleting.contains(paper.id) ? null : () => _delete(paper),
@@ -413,13 +413,13 @@ class _MyExamPaperSubmissionsScreenState
       );
     }
     final reason = paper.unpublishReason.trim().isEmpty
-        ? '未提供下架原�?
+        ? '未提供下架原因'
         : paper.unpublishReason.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '原因�?reason',
+          '原因：$reason',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

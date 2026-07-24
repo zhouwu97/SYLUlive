@@ -35,14 +35,14 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   /// 0 = 毕业要求, 1 = 学年要求
   int _selectedMode = 0;
 
-  /// 强制显示登录表单（即使有缓存数据�?
+  /// 强制显示登录表单（即使有缓存数据）
   bool _forceShowLogin = false;
 
   static const _loadingMessages = [
-    '正在穿透学校内网，请稍候�?,
-    '正在通过统一认证�?,
-    '正在进入二课平台�?,
-    '正在抓取成绩数据�?,
+    '正在穿透学校内网，请稍候…',
+    '正在通过统一认证…',
+    '正在进入二课平台…',
+    '正在抓取成绩数据…',
   ];
 
   @override
@@ -109,7 +109,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Future<void> _queryScores() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      AppFeedback.showSnackBar(context, '请先在「我的」页面登录后再查�?, isError: true);
+      AppFeedback.showSnackBar(context, '请先在「我的」页面登录后再查询', isError: true);
       return;
     }
 
@@ -118,7 +118,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     final studentId = _studentIdCtrl.text.trim();
 
     if (casPwd.isEmpty || erkePwd.isEmpty || studentId.isEmpty) {
-      AppFeedback.showSnackBar(context, '请填写完整信�?);
+      AppFeedback.showSnackBar(context, '请填写完整信息');
       return;
     }
 
@@ -134,20 +134,20 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     _startMessageRotation();
 
     try {
-      _updateMessage('正在通过统一认证�?);
+      _updateMessage('正在通过统一认证…');
       final ok = await _repo.loginAndFetch(studentId, casPwd, erkePwd);
 
       if (!ok) {
         final message = _repo.fetchError ?? '查询失败';
-        AppFeedback.showSnackBar(context, '查询失败�?message', isError: true);
-        _forceShowLogin = false; // 保留旧缓存展�?
+        AppFeedback.showSnackBar(context, '查询失败：$message', isError: true);
+        _forceShowLogin = false; // 保留旧缓存展示
         if (mounted) setState(() {});
         return;
       }
 
       _forceShowLogin = false;
       if (mounted) setState(() {});
-      AppFeedback.showSnackBar(context, '查询并缓存成�?);
+      AppFeedback.showSnackBar(context, '查询并缓存成功');
     } catch (e) {
       final rawError = (_repo.fetchError?.trim().isNotEmpty == true)
           ? _repo.fetchError!
@@ -156,7 +156,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
       AppFeedback.showSnackBar(
         context,
-        '查询失败�?rawError',
+        '查询失败：$rawError',
         isError: true,
       );
     } finally {
@@ -170,7 +170,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Future<void> _switchYear(String targetYear) async {
     if (_switchingYear) return;
     if (!_repo.hasLiveSession) {
-      AppFeedback.showSnackBar(context, '会话已过期，请重新登�?, isError: true);
+      AppFeedback.showSnackBar(context, '会话已过期，请重新登录', isError: true);
       return;
     }
     _switchingYear = true;
@@ -284,7 +284,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   await _repo.clearCachedData();
                   _forceShowLogin = true;
                   if (context.mounted) {
-                    AppFeedback.showSnackBar(context, '本地缓存已清�?);
+                    AppFeedback.showSnackBar(context, '本地缓存已清除');
                     setState(() {});
                   }
                 }
@@ -312,7 +312,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Widget _buildLoginForm() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final studentId =
-        _studentIdCtrl.text.isNotEmpty ? _studentIdCtrl.text : '未登�?;
+        _studentIdCtrl.text.isNotEmpty ? _studentIdCtrl.text : '未登录';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -336,7 +336,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '学号 $studentId 已自动识别，请完成双重密码验�?,
+                    '学号 $studentId 已自动识别，请完成双重密码验证',
                     style: TextStyle(
                       fontSize: 13,
                       color: isDark ? Colors.white70 : const Color(0xFF147C72),
@@ -365,7 +365,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                       style:
                           TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                   const Spacer(),
-                  Text('VPN 穿透专�?,
+                  Text('VPN 穿透专用',
                       style: TextStyle(
                           fontSize: 12,
                           color: isDark ? Colors.white54 : Colors.grey[500])),
@@ -450,7 +450,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 elevation: 0,
               ),
               child: Text(
-                _isLoading ? '查询�?..' : '查询二课成绩',
+                _isLoading ? '查询中...' : '查询二课成绩',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -485,7 +485,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                         child: Text(
                           _loadingMessage.isNotEmpty
                               ? _loadingMessage
-                              : '系统正在自动完成 WebVPN 穿�?,
+                              : '系统正在自动完成 WebVPN 穿透',
                           style: TextStyle(
                             fontSize: 14,
                             color: isDark ? Colors.white70 : Colors.black87,
@@ -499,7 +499,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
           ] else ...[
             const SizedBox(height: 30),
-            Text('提示：系统会自动完成 WebVPN 穿�?,
+            Text('提示：系统会自动完成 WebVPN 穿透',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     fontSize: 12,
@@ -511,7 +511,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   // ==================================================================
-  //  Data View (登录�?
+  //  Data View (登录后)
   // ==================================================================
 
   Widget _buildDataView(bool isDark) {
@@ -519,7 +519,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       children: [
         // 模式切换
         _buildModeSwitcher(isDark),
-        // 内容�?
+        // 内容区
         Expanded(
           child: _selectedMode == 0
               ? _buildGraduationView(isDark)
@@ -529,7 +529,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     );
   }
 
-  // ---- 分段选择�?----
+  // ---- 分段选择器 ----
 
   Widget _buildModeSwitcher(bool isDark) {
     return Padding(
@@ -576,7 +576,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   // ==================================================================
-  //  毕业要求�?
+  //  毕业要求页
   // ==================================================================
 
   Widget _buildGraduationView(bool isDark) {
@@ -626,7 +626,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         children: [
           Row(
             children: [
-              const Text('毕业要求完成�?,
+              const Text('毕业要求完成度',
                   style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -658,17 +658,17 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           Row(
             children: [
               if (grad.graduationGap > 0) ...[
-                _infoTag('按分类最低还需 ${_formatScore(grad.graduationGap)} �?,
+                _infoTag('按分类最低还需 ${_formatScore(grad.graduationGap)} 分',
                     _warning(isDark)),
                 const SizedBox(width: 12),
               ] else ...[
-                _infoTag('已达�?�?, _success(isDark)),
+                _infoTag('已达标 ✓', _success(isDark)),
                 const SizedBox(width: 12),
               ],
               if (grad.unmetCount > 0)
-                _infoTag('分类未达�?${grad.unmetCount} �?, _warning(isDark))
+                _infoTag('分类未达标 ${grad.unmetCount} 项', _warning(isDark))
               else
-                _infoTag('全部分类已达�?, _success(isDark)),
+                _infoTag('全部分类已达标', _success(isDark)),
             ],
           ),
           if (grad.unmetCount > 0) ...[
@@ -676,7 +676,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             Text(
               grad.categories
                   .where((c) => !c.meetsNumerically)
-                  .map((c) => '${c.name}�?{_formatScore(c.gap)}')
+                  .map((c) => '${c.name}差${_formatScore(c.gap)}')
                   .join(' · '),
               style: const TextStyle(fontSize: 12, color: Color(0xFF8A8F9C)),
             ),
@@ -753,7 +753,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
-              isOk ? '已完�? : '�?${cat.gap.toStringAsFixed(1)}',
+              isOk ? '已完成' : '差 ${cat.gap.toStringAsFixed(1)}',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -777,11 +777,11 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     Color color = _success(isDark);
     if (conclusion.contains('严重') ||
         conclusion.contains('不可') ||
-        conclusion.contains('未满�?)) {
+        conclusion.contains('未满足')) {
       color = _danger(isDark);
     } else if (conclusion.contains('不足') ||
-        conclusion.contains('未达�?) ||
-        conclusion.contains('未完�?) ||
+        conclusion.contains('未达标') ||
+        conclusion.contains('未完成') ||
         conclusion.contains('还需') ||
         conclusion.contains('缺少')) {
       color = _warning(isDark);
@@ -799,7 +799,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           Icon(Icons.info_outline, size: 16, color: color),
           const SizedBox(width: 8),
           Expanded(
-            child: Text('官方结论�?conclusion',
+            child: Text('官方结论：$conclusion',
                 style: TextStyle(
                     fontSize: 13, color: color, fontWeight: FontWeight.w600)),
           ),
@@ -809,7 +809,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   // ==================================================================
-  //  学年要求�?
+  //  学年要求页
   // ==================================================================
 
   Widget _buildYearlyView(bool isDark) {
@@ -827,7 +827,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           const SizedBox(height: 16),
           const Padding(
             padding: EdgeInsets.only(left: 4, bottom: 8),
-            child: Text('本学年分类情�?,
+            child: Text('本学年分类情况',
                 style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -942,13 +942,13 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           const SizedBox(height: 12),
           if (yr.minimumGap > 0)
             _infoTag(
-                '按分类最低还需 ${_formatScore(yr.minimumGap)} �?, _warning(isDark))
+                '按分类最低还需 ${_formatScore(yr.minimumGap)} 分', _warning(isDark))
           else
-            _infoTag('已达�?�?, _success(isDark)),
+            _infoTag('已达标 ✓', _success(isDark)),
           const SizedBox(height: 8),
           Row(
             children: [
-              Text('本学年实际获�?${_formatScore(yr.yearEarnedTotal)}',
+              Text('本学年实际获得 ${_formatScore(yr.yearEarnedTotal)}',
                   style:
                       const TextStyle(fontSize: 13, color: Color(0xFF8A8F9C))),
               const Spacer(),
@@ -1000,7 +1000,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 第一行：名称 + 状�?+ 分�?
+          // 第一行：名称 + 状态 + 分值
           Row(children: [
             Expanded(
               child: Text(cat.name,
@@ -1018,7 +1018,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                isOk ? '已完�? : '本学年未达标',
+                isOk ? '已完成' : '本学年未达标',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -1060,14 +1060,14 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     final acts = _repo.activities;
     final title = year != null ? '$year 学年活动' : '全部活动';
 
-    // 收集分类用于筛�?
+    // 收集分类用于筛选
     final categorySet = <String>{};
     for (final a in acts) {
       if (a.category.isNotEmpty) categorySet.add(a.category);
     }
     final categories = categorySet.toList()..sort();
 
-    // 筛�?
+    // 筛选
     final filtered = _filterCategory == null
         ? acts
         : acts.where((a) => a.category == _filterCategory).toList();
@@ -1075,7 +1075,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 标题�?
+        // 标题行
         Row(children: [
           Text('$title ${filtered.length}',
               style: TextStyle(
@@ -1095,7 +1095,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('筛�?,
+                  Text('筛选',
                       style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -1111,7 +1111,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           Padding(
             padding: const EdgeInsets.all(32),
             child: Center(
-                child: Text('该分类暂无数�?,
+                child: Text('该分类暂无数据',
                     style: TextStyle(
                         color: isDark ? Colors.white54 : Colors.grey[600]))),
           )
@@ -1231,7 +1231,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   String _formatDate(String dateStr) {
     if (dateStr.isEmpty) return '';
-    String s = dateStr.replaceAll('-', '.').replaceAll('�?, '�?);
+    String s = dateStr.replaceAll('-', '.').replaceAll('至', '–');
     s = s.replaceAll(' 00:00:00', '');
     s = s.replaceAllMapped(
         RegExp(r'(\d{2}:\d{2}):00'), (match) => match.group(1)!);
@@ -1243,15 +1243,15 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       s = s.replaceFirstMapped(
           sameDayRegex,
           (match) =>
-              '${match.group(1)}${match.group(2)}�?{match.group(3)?.trim()}');
+              '${match.group(1)}${match.group(2)}–${match.group(3)?.trim()}');
     } else if (sameYearRegex.hasMatch(s)) {
       s = s.replaceFirstMapped(sameYearRegex,
-          (match) => '${match.group(1)}.${match.group(2)}�?{match.group(3)}');
+          (match) => '${match.group(1)}.${match.group(2)}–${match.group(3)}');
     }
     return s;
   }
 
-  // ---- 旧缓存迁移提�?----
+  // ---- 旧缓存迁移提示 ----
 
   Widget _buildNeedsRelogin(bool isDark, String mode) {
     return Center(
@@ -1273,7 +1273,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '需要重新验证账号以获取$mode和学年要求。\n已有活动记录已保留，不会丢失�?,
+              '需要重新验证账号以获取$mode和学年要求。\n已有活动记录已保留，不会丢失。',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 13,
@@ -1302,10 +1302,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                               child: CircularProgressIndicator(
                                   color: Colors.white, strokeWidth: 2)),
                           SizedBox(width: 10),
-                          Text('验证�?..', style: TextStyle(fontSize: 15)),
+                          Text('验证中...', style: TextStyle(fontSize: 15)),
                         ],
                       )
-                    : const Text('重新登录并补全数�?,
+                    : const Text('重新登录并补全数据',
                         style: TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w600)),
               ),
@@ -1316,7 +1316,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     );
   }
 
-  // ---- 格式�?----
+  // ---- 格式化 ----
 
   /// 保留必要小数：整数不显示小数，一位数据保留一位，两位保留两位
   static String _formatScore(double v) {

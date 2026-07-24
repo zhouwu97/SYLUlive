@@ -151,7 +151,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '当前�?${members.length} 名管理人�?,
+                              '当前共 ${members.length} 名管理人员',
                               style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w700,
@@ -160,7 +160,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '超级管理员与管理员统一收纳在这�?,
+                              '超级管理员与管理员统一收纳在这里',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: isDark ? Colors.white60 : Colors.black54,
@@ -248,7 +248,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(
-                                      isSuperAdmin ? '超级管理�? : '管理�?,
+                                      isSuperAdmin ? '超级管理员' : '管理员',
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.w700,

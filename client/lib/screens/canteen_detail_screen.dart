@@ -258,7 +258,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     _stars(rating, 18),
                     const SizedBox(width: 8),
                     Text(
-                      '$count 人评�?,
+                      '$count 人评价',
                       style: TextStyle(
                         fontSize: 13,
                         color: RankingTokens.subColor(isDark),
@@ -390,11 +390,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              _buildCountBadge('$count �?, isDark),
+              _buildCountBadge('$count 条', isDark),
               const Spacer(),
               _buildSortChip('best', '综合', isDark, accent),
               const SizedBox(width: 8),
-              _buildSortChip('latest', '最�?, isDark, accent),
+              _buildSortChip('latest', '最新', isDark, accent),
             ],
           ),
           const SizedBox(height: 8),
@@ -526,7 +526,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               _stars(rating, 14),
               const SizedBox(width: 8),
               Text(
-                '${rating.toStringAsFixed(1)}�?,
+                '${rating.toStringAsFixed(1)}分',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
@@ -771,18 +771,18 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       case 'low':
         return '暂无低分评价';
       default:
-        return '还没有评�?;
+        return '还没有评价';
     }
   }
 
   String _emptyReviewSubtitle() {
     switch (_reviewFilter) {
       case 'high':
-        return '也许还没有同学给�?4 分以上评�?;
+        return '也许还没有同学给出 4 分以上评价';
       case 'low':
-        return '目前还没有明显踩雷反�?;
+        return '目前还没有明显踩雷反馈';
       default:
-        return '快来成为第一个评价的同学�?;
+        return '快来成为第一个评价的同学吧';
     }
   }
 
@@ -790,7 +790,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     if (_isVoting) return;
     if (!context.read<AuthProvider>().isLoggedIn) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请先登录后操�?)));
+          .showSnackBar(const SnackBar(content: Text('请先登录后操作')));
       return;
     }
 
@@ -887,7 +887,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请先登录后评�?)));
+          .showSnackBar(const SnackBar(content: Text('请先登录后评价')));
       return;
     }
     if (auth.user?.studentVerified != true) {
@@ -964,7 +964,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                         ),
                         const SizedBox(height: 18),
                         Text(
-                          myRating == null ? '写评�? : '修改评价',
+                          myRating == null ? '写评价' : '修改评价',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
@@ -973,7 +973,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '给这个食堂打个分，顺便说说真实体�?,
+                          '给这个食堂打个分，顺便说说真实体验',
                           style: TextStyle(
                             fontSize: 13,
                             color: RankingTokens.subColor(isDark),
@@ -1012,7 +1012,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                           maxLength: 200,
                           enabled: !isSubmitting,
                           decoration: InputDecoration(
-                            hintText: '比如味道、价格、排队情况、推荐窗�?..',
+                            hintText: '比如味道、价格、排队情况、推荐窗口...',
                             hintStyle: TextStyle(
                                 color: RankingTokens.subColor(isDark)),
                             filled: true,
@@ -1102,7 +1102,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               if (isUploadingCover) return;
               if (pendingCoverFile == null || pendingCoverBytes == null) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('请先选择并裁剪封面图�?)),
+                  const SnackBar(content: Text('请先选择并裁剪封面图片')),
                 );
                 return;
               }
@@ -1129,7 +1129,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               if (result != null) {
                 Navigator.pop(sheetContext);
                 messenger.showSnackBar(
-                  const SnackBar(content: Text('食堂图片已更�?)),
+                  const SnackBar(content: Text('食堂图片已更新')),
                 );
                 setState(() {
                   _canteenData!['canteen'] = result;
@@ -1180,7 +1180,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '建议上传横向图片，可拖动和缩放裁剪区域，主体尽量放中�?,
+                        '建议上传横向图片，可拖动和缩放裁剪区域，主体尽量放中间',
                         style: TextStyle(
                           fontSize: 13,
                           color: RankingTokens.subColor(isDark),
@@ -1202,7 +1202,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                         onPressed: isUploadingCover ? null : pickCover,
                         icon: const Icon(Icons.crop_rounded),
                         label: Text(
-                          pendingCoverFile == null ? '选择图片并裁�? : '重新选择图片',
+                          pendingCoverFile == null ? '选择图片并裁剪' : '重新选择图片',
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: accent,

@@ -31,7 +31,7 @@ class LegalDocumentsScreen extends StatelessWidget {
         scrolledUnderElevation: 0,
         centerTitle: true,
         title: Text(
-          initial?.title ?? '协议与隐私政�?,
+          initial?.title ?? '协议与隐私政策',
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
         ),
       ),

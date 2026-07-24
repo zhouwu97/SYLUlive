@@ -105,7 +105,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           IconButton(
             icon: const Icon(Icons.save_alt),
             onPressed: _saveToFile,
-            tooltip: '保存为文�?,
+            tooltip: '保存为文件',
           ),
           IconButton(
             icon: const Icon(Icons.copy),
@@ -113,7 +113,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               Clipboard.setData(ClipboardData(text: _markdown));
               ScaffoldMessenger.of(
                 context,
-              ).showSnackBar(const SnackBar(content: Text('已复制到剪贴�?)));
+              ).showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
             },
             tooltip: '复制全文',
           ),
@@ -135,9 +135,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _statItem('总题�?, '${questions.length}'),
-                      _statItem('总分�?, '$totalScore'),
-                      _statItem('章节�?, '${chapters.length}'),
+                      _statItem('总题数', '${questions.length}'),
+                      _statItem('总分值', '$totalScore'),
+                      _statItem('章节数', '${chapters.length}'),
                     ],
                   ),
                 ),
@@ -160,14 +160,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         });
                       }),
                       const SizedBox(width: 4),
-                      _optionChip('标答�?, _markCorrect, (v) {
+                      _optionChip('标答案', _markCorrect, (v) {
                         setState(() {
                           _markCorrect = v;
                           _convert();
                         });
                       }),
                       const SizedBox(width: 4),
-                      _optionChip('按章�?, _groupByChapter, (v) {
+                      _optionChip('按章节', _groupByChapter, (v) {
                         setState(() {
                           _groupByChapter = v;
                           _convert();

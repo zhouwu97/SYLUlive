@@ -77,7 +77,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
             const SizedBox(height: 12),
             TextField(
               controller: deptCtrl,
-              decoration: const InputDecoration(labelText: '院系（选填�?),
+              decoration: const InputDecoration(labelText: '院系（选填）'),
             ),
           ],
         ),
@@ -109,7 +109,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('教师已提交，等待管理员验�?),
+            content: Text('教师已提交，等待管理员验证'),
             backgroundColor: Colors.green,
           ),
         );
@@ -133,11 +133,11 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('打分 ${teacher['name']}'),
-        content: const Text('请选择推荐或不推荐�?),
+        content: const Text('请选择推荐或不推荐。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'negative'),
-            child: const Text('👎 不推�?, style: TextStyle(color: Colors.red)),
+            child: const Text('👎 不推荐', style: TextStyle(color: Colors.red)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, 'positive'),
@@ -222,7 +222,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
                     unselectedLabelStyle: const TextStyle(fontSize: 12),
                     dividerColor: Colors.transparent,
                     tabs: const [
-                      Tab(text: '排行�?),
+                      Tab(text: '排行榜'),
                       Tab(text: '讨论'),
                     ],
                   ),
@@ -300,7 +300,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '严禁辱骂、攻击教师。违规：1次删帖禁言7天，2次禁言1个月�?次永久禁言�?,
+              '严禁辱骂、攻击教师。违规：1次删帖禁言7天，2次禁言1个月，3次永久禁言。',
               style: TextStyle(
                 fontSize: 11,
                 color: isDark ? Colors.white70 : Colors.red[800],
@@ -315,7 +315,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
 
   Widget _buildRankTab(bool isDark) {
     if (_teachers.isEmpty)
-      return _empty('暂无教师', '点击右上�?+ 添加教师', Icons.school, isDark);
+      return _empty('暂无教师', '点击右上角 + 添加教师', Icons.school, isDark);
     return RefreshIndicator(
       onRefresh: _loadData,
       child: ListView.builder(
@@ -387,7 +387,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: const Text(
-                                '待验�?,
+                                '待验证',
                                 style: TextStyle(
                                   fontSize: 9,
                                   color: Colors.orange,
@@ -442,7 +442,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       onRefresh: _loadData,
       child: _posts.isEmpty
           ? ListView(
-              children: [_empty('暂无讨论', '点击右下�?+ 发起讨论', Icons.forum, isDark)],
+              children: [_empty('暂无讨论', '点击右下角 + 发起讨论', Icons.forum, isDark)],
             )
           : ListView.builder(
               physics: const BouncingScrollPhysics(),

@@ -49,7 +49,7 @@ class WaterPostBottomBar extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    '$charCount/$maxContentLengthå­?,
+                    '$charCount/$maxContentLengthå­—',
                     style: TextStyle(fontSize: 13, color: textColor),
                   ),
                 ],

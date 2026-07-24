@@ -89,7 +89,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
           autofocus: true,
           maxLength: 12,
           decoration: const InputDecoration(
-            labelText: '小组件标�?,
+            labelText: '小组件标题',
             border: OutlineInputBorder(),
           ),
           onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
@@ -121,11 +121,11 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
     final result = await HomeWidgetService.requestPinWidget(kind, size);
     if (!mounted) return;
     final message = switch (result.status) {
-      HomeWidgetPinStatus.requested => '已向桌面发送添加请求，请在系统确认后查看桌面�?,
-      HomeWidgetPinStatus.unsupported => '当前桌面不支持应用内添加，请长按桌面进入“小组件”添加�?,
-      HomeWidgetPinStatus.rejected => '桌面未接受添加请求，请长按桌面手动添加�?,
+      HomeWidgetPinStatus.requested => '已向桌面发送添加请求，请在系统确认后查看桌面。',
+      HomeWidgetPinStatus.unsupported => '当前桌面不支持应用内添加，请长按桌面进入“小组件”添加。',
+      HomeWidgetPinStatus.rejected => '桌面未接受添加请求，请长按桌面手动添加。',
       HomeWidgetPinStatus.failed =>
-        result.message == null ? '添加请求失败，请稍后重试�? : '添加请求失败�?{result.message}',
+        result.message == null ? '添加请求失败，请稍后重试。' : '添加请求失败：${result.message}',
     };
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
@@ -141,7 +141,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
       _counts = counts;
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${_kindTitle(kind)}已同�?)),
+      SnackBar(content: Text('${_kindTitle(kind)}已同步')),
     );
   }
 
@@ -160,7 +160,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('桌面小组�?)),
+      appBar: AppBar(title: const Text('桌面小组件')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -180,11 +180,11 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.sync),
-                  label: const Text('同步全部小组�?),
+                  label: const Text('同步全部小组件'),
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  '系统桌面的网格尺寸和圆角由启动器决定，实际占位可能与预览略有差异�?,
+                  '系统桌面的网格尺寸和圆角由启动器决定，实际占位可能与预览略有差异。',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -232,7 +232,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
                   ),
                 ),
                 Text(
-                  '已添�?${_counts.totalFor(kind)} �?,
+                  '已添加 ${_counts.totalFor(kind)} 个',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -301,16 +301,16 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
             ),
             const Divider(height: 1),
             _WidgetSizeRow(
-              title: '2×2 紧凑�?,
+              title: '2×2 紧凑版',
               subtitle: kind == HomeWidgetKind.course
-                  ? '显示日期和最�?2 门课�?
-                  : '显示最�?1�? 场考试与倒计�?,
+                  ? '显示日期和最多 2 门课程'
+                  : '显示最近 1～2 场考试与倒计时',
               count: _counts.countFor(kind, HomeWidgetSize.size2x2),
               onAdd: () => _requestPin(kind, HomeWidgetSize.size2x2),
             ),
             const Divider(height: 1),
             _WidgetSizeRow(
-              title: '4×2 列表�?,
+              title: '4×2 列表版',
               subtitle: kind == HomeWidgetKind.course
                   ? '显示更多课程、教师与地点'
                   : '显示更多考试的日期、时间与地点',
@@ -320,7 +320,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
             const Divider(height: 1),
             _WidgetSettingRow(
               title: '立即同步',
-              subtitle: '刷新数据、主题、标题和倒计�?,
+              subtitle: '刷新数据、主题、标题和倒计时',
               trailing: TextButton.icon(
                 onPressed: () => _syncKind(kind),
                 icon: const Icon(Icons.sync, size: 18),
@@ -355,7 +355,7 @@ class _HomeWidgetPreview extends StatelessWidget {
       systemBrightness: Theme.of(context).brightness,
     );
     final isWide = size == HomeWidgetSize.size4x2;
-    final maxItems = 2; // 无论�?2x2 还是 4x2，因为高度都�?2，最多只显示 2 条内�?
+    final maxItems = 2; // 无论是 2x2 还是 4x2，因为高度都是 2，最多只显示 2 条内容
     final items = data.items.take(maxItems).toList();
 
     return Container(
@@ -377,7 +377,7 @@ class _HomeWidgetPreview extends StatelessWidget {
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
           width: isWide ? 310 : 170, // 增加基础宽度，避免内容被截断
-          height: 155, // 微调高度使其更协�?
+          height: 155, // 微调高度使其更协调
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: palette.background,
@@ -420,7 +420,7 @@ class _HomeWidgetPreview extends StatelessWidget {
               child: items.isEmpty
                   ? Center(
                       child: Text(
-                        kind == HomeWidgetKind.course ? '今天没有�? : '近期暂无考试',
+                        kind == HomeWidgetKind.course ? '今天没有课' : '近期暂无考试',
                         style:
                             TextStyle(color: palette.mutedText, fontSize: 11),
                       ),
@@ -598,7 +598,7 @@ class _WidgetSizeRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
                 if (count > 0)
-                  Text('桌面已有 $count �?,
+                  Text('桌面已有 $count 个',
                       style: Theme.of(context).textTheme.labelSmall),
               ],
             ),

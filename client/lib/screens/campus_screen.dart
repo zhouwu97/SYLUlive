@@ -32,7 +32,7 @@ import 'teacher_rate_screen.dart';
 import 'team/team_recruitment_center_screen.dart';
 
 class CampusScreen extends StatefulWidget {
-  /// 可选依赖仅用于测试；生产环境继续复用全局 Dio 与鉴权头�?
+  /// 可选依赖仅用于测试；生产环境继续复用全局 Dio 与鉴权头。
   final CampusArticleService? articleService;
   final AiAssistantService? aiService;
 
@@ -44,7 +44,7 @@ class CampusScreen extends StatefulWidget {
 
 class _CampusScreenState extends State<CampusScreen>
     with AutomaticKeepAliveClientMixin {
-  /// 公益 AI 不可用时仅作为页面结构占位，不会向校园模型发送请求�?
+  /// 公益 AI 不可用时仅作为页面结构占位，不会向校园模型发送请求。
   static const _personalOnlyCapabilities = AiCapabilities(
     enabled: false,
     accessAllowed: false,
@@ -63,12 +63,12 @@ class _CampusScreenState extends State<CampusScreen>
   late AiAssistantService _aiService;
   AiCapabilities? _aiCapabilities;
 
-  // 最新文�?
+  // 最新文章
   CampusArticleSummary? _latestArticle;
   String? _latestError;
   bool _latestLoaded = false;
 
-  // 最近文章列�?
+  // 最近文章列表
   List<CampusArticleSummary> _recentArticles = [];
   String? _recentError;
   bool _recentLoaded = false;
@@ -94,7 +94,7 @@ class _CampusScreenState extends State<CampusScreen>
     });
   }
 
-  /// 三路请求互不依赖；AI 探测失败时安静隐藏入口，不影响校园资讯�?
+  /// 三路请求互不依赖；AI 探测失败时安静隐藏入口，不影响校园资讯。
   Future<void> _loadAll() async {
     await Future.wait([
       _loadLatest(),
@@ -112,7 +112,7 @@ class _CampusScreenState extends State<CampusScreen>
         });
       }
     } catch (_) {
-      // 能力接口失败不能污染“校园”页；刷新成功前保持入口隐藏�?
+      // 能力接口失败不能污染“校园”页；刷新成功前保持入口隐藏。
       if (mounted) setState(() => _aiCapabilities = null);
     }
   }
@@ -146,7 +146,7 @@ class _CampusScreenState extends State<CampusScreen>
 
   Future<void> _loadRecent() async {
     try {
-      // 并行请求：通用最新列�?+ 比赛通知最新，保证比赛通知有曝光位
+      // 并行请求：通用最新列表 + 比赛通知最新，保证比赛通知有曝光位
       final results = await Future.wait([
         _articleService.getArticles(page: 1, pageSize: 6),
         _articleService.getArticles(
@@ -170,7 +170,7 @@ class _CampusScreenState extends State<CampusScreen>
         ...missingCompetitions,
       ];
 
-      // 按发布日期排�?
+      // 按发布日期排序
       merged.sort((a, b) => b.publishDate.compareTo(a.publishDate));
 
       if (mounted) {
@@ -200,9 +200,9 @@ class _CampusScreenState extends State<CampusScreen>
   String _currentSemesterText() {
     final now = DateTime.now();
     if (now.month >= 9) {
-      return '${now.year}�?{now.year + 1}学年 · 第一学期';
+      return '${now.year}—${now.year + 1}学年 · 第一学期';
     }
-    return '${now.year - 1}�?{now.year}学年 · 第二学期';
+    return '${now.year - 1}—${now.year}学年 · 第二学期';
   }
 
   Future<void> _openPage(Widget page) async {
@@ -221,8 +221,8 @@ class _CampusScreenState extends State<CampusScreen>
     );
   }
 
-  /// 用于显示�?最新文�?——优先取 _latestArticle�?
-  /// 如果最新加载失败但列表成功，用列表第一条�?
+  /// 用于显示的"最新文章"——优先取 _latestArticle；
+  /// 如果最新加载失败但列表成功，用列表第一条。
   CampusArticleSummary? get _displayLatest {
     if (_latestArticle != null) return _latestArticle;
     if (_latestError != null && _recentArticles.isNotEmpty) {
@@ -231,7 +231,7 @@ class _CampusScreenState extends State<CampusScreen>
     return null;
   }
 
-  /// 用于显示的最近列表——排除最新文章的 id，避免重复�?
+  /// 用于显示的最近列表——排除最新文章的 id，避免重复。
   List<CampusArticleSummary> get _displayRecent {
     final latest = _displayLatest;
     if (latest == null) return _recentArticles;
@@ -343,12 +343,12 @@ class _CampusScreenState extends State<CampusScreen>
     try {
       return context.read<AuthProvider>().user?.id.toString();
     } on ProviderNotFoundException {
-      // 未认证或隔离的页面测试不创建第三方模型配置上下文�?
+      // 未认证或隔离的页面测试不创建第三方模型配置上下文。
       return null;
     }
   }
 
-  // ── 最新文章卡�?───────────────────────────────────────────────
+  // ── 最新文章卡片 ───────────────────────────────────────────────
 
   Widget _buildLatestCard(bool isDark) {
     // 最新文章加载中
@@ -358,7 +358,7 @@ class _CampusScreenState extends State<CampusScreen>
 
     final latest = _displayLatest;
 
-    // 有数�?�?显示真实卡片
+    // 有数据 → 显示真实卡片
     if (latest != null) {
       return CampusFeatureNoticeCard(
         article: latest,
@@ -377,13 +377,13 @@ class _CampusScreenState extends State<CampusScreen>
       );
     }
 
-    // 最新失败但列表还在加载 �?显示骨架�?
+    // 最新失败但列表还在加载 → 显示骨架屏
     if (_latestError != null && !_recentLoaded) {
       return _LatestCardSkeleton(isDark: isDark);
     }
 
-    // 最新失败但列表有数�?�?_displayLatest 会返回列表第一�?
-    // 如果走到这里说明列表也为�?
+    // 最新失败但列表有数据 → _displayLatest 会返回列表第一条
+    // 如果走到这里说明列表也为空
     if (latest == null) {
       return _LatestCardEmpty(isDark: isDark);
     }
@@ -392,7 +392,7 @@ class _CampusScreenState extends State<CampusScreen>
     return _LatestCardSkeleton(isDark: isDark);
   }
 
-  // ── 最近文章列�?───────────────────────────────────────────────
+  // ── 最近文章列表 ───────────────────────────────────────────────
 
   Widget _buildRecentList(bool isDark) {
     // 最近列表加载中（独立于最新文章的加载状态）
@@ -402,7 +402,7 @@ class _CampusScreenState extends State<CampusScreen>
 
     final recent = _displayRecent;
 
-    // 列表加载失败但最新成�?
+    // 列表加载失败但最新成功
     if (_recentError != null && _displayLatest != null) {
       return _RecentListError(
         message: _recentError!,
@@ -413,11 +413,11 @@ class _CampusScreenState extends State<CampusScreen>
 
     // 列表加载失败且最新也失败
     if (_recentError != null && _displayLatest == null) {
-      // 已在上方卡片显示错误，这里不再重�?
+      // 已在上方卡片显示错误，这里不再重复
       return const SizedBox.shrink();
     }
 
-    // 空数�?
+    // 空数据
     if (recent.isEmpty && _displayLatest == null) {
       return _RecentListEmpty(isDark: isDark);
     }
@@ -476,7 +476,7 @@ class _CampusScreenState extends State<CampusScreen>
   }
 }
 
-/// 最新文章骨架屏�?
+/// 最新文章骨架屏。
 class _LatestCardSkeleton extends StatelessWidget {
   final bool isDark;
   const _LatestCardSkeleton({required this.isDark});
@@ -541,7 +541,7 @@ class _LatestCardSkeleton extends StatelessWidget {
   }
 }
 
-/// 最新文章错误状态�?
+/// 最新文章错误状态。
 class _LatestCardError extends StatelessWidget {
   final String message;
   final bool isDark;
@@ -584,7 +584,7 @@ class _LatestCardError extends StatelessWidget {
   }
 }
 
-/// 最新文章空状态�?
+/// 最新文章空状态。
 class _LatestCardEmpty extends StatelessWidget {
   final bool isDark;
   const _LatestCardEmpty({required this.isDark});
@@ -615,7 +615,7 @@ class _LatestCardEmpty extends StatelessWidget {
   }
 }
 
-/// 最近列表骨架屏�?
+/// 最近列表骨架屏。
 class _RecentListSkeleton extends StatelessWidget {
   final bool isDark;
   const _RecentListSkeleton({required this.isDark});
@@ -659,7 +659,7 @@ class _RecentListSkeleton extends StatelessWidget {
   }
 }
 
-/// 最近列表错误状态�?
+/// 最近列表错误状态。
 class _RecentListError extends StatelessWidget {
   final String message;
   final bool isDark;
@@ -702,7 +702,7 @@ class _RecentListError extends StatelessWidget {
   }
 }
 
-/// 最近列表空状态�?
+/// 最近列表空状态。
 class _RecentListEmpty extends StatelessWidget {
   final bool isDark;
   const _RecentListEmpty({required this.isDark});

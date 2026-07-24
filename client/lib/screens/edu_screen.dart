@@ -126,7 +126,7 @@ class _EduScreenState extends State<EduScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      eduProvider.isBound ? '已绑定教务账�? : '未绑定教务账�?,
+                      eduProvider.isBound ? '已绑定教务账号' : '未绑定教务账号',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
@@ -173,7 +173,7 @@ class _EduScreenState extends State<EduScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${eduProvider.grade.isNotEmpty ? eduProvider.grade : "未知"}�?· ${eduProvider.college.isNotEmpty ? eduProvider.college : "未知"}',
+                          '${eduProvider.grade.isNotEmpty ? eduProvider.grade : "未知"}级 · ${eduProvider.college.isNotEmpty ? eduProvider.college : "未知"}',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -394,7 +394,7 @@ class _EduScreenState extends State<EduScreen> {
   void _showBindDialog(BuildContext context, EduProvider eduProvider) {
     _studentIdController.clear();
     _passwordController.clear();
-    bool isBinding = false; // 本地加载状�?
+    bool isBinding = false; // 本地加载状态
     bool eduDataConsentAccepted = false;
 
     showDialog(
@@ -409,7 +409,7 @@ class _EduScreenState extends State<EduScreen> {
                 controller: _studentIdController,
                 decoration: const InputDecoration(
                   labelText: '教务学号',
-                  hintText: '请输�?0位学�?,
+                  hintText: '请输入10位学号',
                 ),
                 maxLength: 10,
                 enabled: !isBinding,
@@ -419,7 +419,7 @@ class _EduScreenState extends State<EduScreen> {
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
                 title: const Text('同意教务数据专项授权'),
-                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销�?),
+                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销。'),
                 onChanged: isBinding
                     ? null
                     : (value) => setDialogState(
@@ -566,7 +566,7 @@ class _EduScreenState extends State<EduScreen> {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('已导入，可到课表页查�?),
+          content: Text('已导入，可到课表页查看'),
           backgroundColor: CampusTheme.primary,
         ),
       );

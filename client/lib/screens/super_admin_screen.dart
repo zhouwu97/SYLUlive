@@ -108,7 +108,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           controller: ctrl,
           maxLines: 3,
           decoration: InputDecoration(
-            hintText: approve ? '填写同意该用户成为管理员的理�? : '填写驳回原因',
+            hintText: approve ? '填写同意该用户成为管理员的理由' : '填写驳回原因',
             border: const OutlineInputBorder(),
           ),
         ),
@@ -137,7 +137,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         data: {'reject': !approve, 'reason': reason},
       );
       if (mounted) {
-        // 本地移除该代�?
+        // 本地移除该代办
         if (mounted) {
           setState(
             () => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']),
@@ -145,7 +145,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(approve ? '已提交同意审�? : '已驳�?),
+            content: Text(approve ? '已提交同意审批' : '已驳回'),
             backgroundColor: approve ? Colors.green : Colors.red,
           ),
         );
@@ -173,14 +173,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('超级管理员面�?),
+        title: const Text('超级管理员面板'),
         leading: const BackButton(),
         actions: const [],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(text: '用户管理'),
-            Tab(text: '管理员审�?),
+            Tab(text: '管理员审批'),
             Tab(text: '管理日志'),
             Tab(text: '抽奖管理'),
             Tab(text: '应用版本'),
@@ -207,7 +207,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           padding: const EdgeInsets.all(8),
           child: TextField(
             decoration: const InputDecoration(
-              hintText: '搜索用户 ID、学�?账号或昵�?,
+              hintText: '搜索用户 ID、学号/账号或昵称',
               prefixIcon: Icon(Icons.search),
               border: OutlineInputBorder(),
             ),
@@ -313,21 +313,21 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                               ),
                             ),
                             Text(
-                              '用户 ID�?{user['id']}',
+                              '用户 ID：${user['id']}',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey,
                               ),
                             ),
                             Text(
-                              '学号/账号�?{user['student_id']} | 诚信�?{user['credit_score']}%',
+                              '学号/账号：${user['student_id']} | 诚信：${user['credit_score']}%',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey,
                               ),
                             ),
                             Text(
-                              '邀请人�?{inviter['nickname'] ?? '未知'}（ID�?{inviter['id'] ?? '-'}�?,
+                              '邀请人：${inviter['nickname'] ?? '未知'}（ID：${inviter['id'] ?? '-'}）',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey,
@@ -389,14 +389,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 _changeRole(user.id, 'user');
                 Navigator.pop(ctx);
               },
-              child: const Text('普通用�?),
+              child: const Text('普通用户'),
             ),
           TextButton(
             onPressed: () {
               _changeRole(user.id, 'admin');
               Navigator.pop(ctx);
             },
-            child: const Text('管理�?),
+            child: const Text('管理员'),
           ),
         ],
       ),
@@ -421,7 +421,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('密码已重�?)));
+        ).showSnackBar(const SnackBar(content: Text('密码已重置')));
       }
     } catch (_) {}
   }
@@ -453,11 +453,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     }
   }
 
-  // ====== 管理员日�?Tab ======
+  // ====== 管理员日志 Tab ======
 
   Widget _buildAdminLogsTab() {
     if (_adminLogs.isEmpty) {
-      return const Center(child: Text('暂无明显管理员操作日�?));
+      return const Center(child: Text('暂无明显管理员操作日志'));
     }
     return RefreshIndicator(
       onRefresh: _loadAll,
@@ -517,7 +517,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
               ],
             ),
             const SizedBox(height: 6),
-            Text('$action �?$target', style: const TextStyle(fontSize: 13)),
+            Text('$action — $target', style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 4),
             Text(
               _formatLogTime(createdAt),
@@ -550,7 +550,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('追回 $adminName 的管理经�?),
+        title: Text('追回 $adminName 的管理经验'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -600,7 +600,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   },
                 );
                 if (!mounted) return;
-                messenger.showSnackBar(const SnackBar(content: Text('经验已追�?)));
+                messenger.showSnackBar(const SnackBar(content: Text('经验已追回')));
                 _loadAdminLogs();
                 if (navigator.mounted) navigator.pop();
               } on DioException catch (e) {
@@ -696,14 +696,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   ),
                   const SizedBox(height: 8),
                   Text('奖品: ${event['prize_name'] ?? ''}'),
-                  Text('开奖时�? ${_formatLotteryDateTime(event['draw_time'])}'),
+                  Text('开奖时间: ${_formatLotteryDateTime(event['draw_time'])}'),
                   Text('参与人数: ${participants.length}'),
                 ],
               ),
             ),
             Expanded(
               child: participants.isEmpty
-                  ? const Center(child: Text('暂无参与�?))
+                  ? const Center(child: Text('暂无参与者'))
                   : ListView.builder(
                       itemCount: participants.length,
                       itemBuilder: (context, index) {
@@ -724,7 +724,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                           ),
                           title: Text(nickname),
                           subtitle: Text(
-                            '用户 ID�?{user['id']} | 权重: ${p['weight']}',
+                            '用户 ID：${user['id']} | 权重: ${p['weight']}',
                           ),
                           trailing: IconButton(
                             icon: const Icon(
@@ -811,7 +811,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除抽奖'),
-        content: const Text('确定删除当前抽奖吗？参与记录也会一起删除，此操作不可恢复�?),
+        content: const Text('确定删除当前抽奖吗？参与记录也会一起删除，此操作不可恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -832,7 +832,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('抽奖已删�?)));
+      ).showSnackBar(const SnackBar(content: Text('抽奖已删除')));
       _refreshLotteryTab();
     } on DioException catch (e) {
       final data = e.response?.data;
@@ -926,7 +926,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.event),
                   title: Text(_formatBeijingWallTime(drawTime)),
-                  subtitle: const Text('开奖时�?),
+                  subtitle: const Text('开奖时间'),
                   onTap: () async {
                     FocusManager.instance.primaryFocus?.unfocus();
                     final date = await showDatePicker(
@@ -980,7 +980,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 }
                 if (!_isFutureBeijingWallTime(drawTime)) {
                   messenger.showSnackBar(
-                    const SnackBar(content: Text('开奖时间必须晚于当前时�?)),
+                    const SnackBar(content: Text('开奖时间必须晚于当前时间')),
                   );
                   return;
                 }
@@ -1020,7 +1020,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     if (created == true && mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('抽奖已发�?)));
+      ).showSnackBar(const SnackBar(content: Text('抽奖已发布')));
       _refreshLotteryTab();
     }
   }

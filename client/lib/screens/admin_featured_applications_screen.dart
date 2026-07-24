@@ -76,7 +76,7 @@ class _AdminFeaturedApplicationsScreenState
           int points = 5;
           return StatefulBuilder(builder: (context, setState) {
             return AlertDialog(
-              title: const Text('恶意驳回并扣�?),
+              title: const Text('恶意驳回并扣分'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -84,7 +84,7 @@ class _AdminFeaturedApplicationsScreenState
                     controller: controller,
                     minLines: 2,
                     maxLines: 5,
-                    decoration: const InputDecoration(hintText: '说明恶意/低质量原�?),
+                    decoration: const InputDecoration(hintText: '说明恶意/低质量原因'),
                   ),
                   const SizedBox(height: 16),
                   const Text('选择扣除诚信分：'),
@@ -93,7 +93,7 @@ class _AdminFeaturedApplicationsScreenState
                     isExpanded: true,
                     items: [0, 2, 5, 10]
                         .map((e) =>
-                            DropdownMenuItem(value: e, child: Text('$e�?)))
+                            DropdownMenuItem(value: e, child: Text('$e分')))
                         .toList(),
                     onChanged: (val) {
                       if (val != null) setState(() => points = val);
@@ -227,8 +227,8 @@ class _AdminFeaturedApplicationsScreenState
                   const SizedBox(height: 6),
                   Text('作者：${post?['author']?['nickname'] ?? '未知'}'),
                   Text(
-                      '申请人：${applicant?['nickname'] ?? item['applicant_id']} (诚信�? ${applicant?['credit_score'] ?? '-'})'),
-                  Text('理由�?{item['reason'] ?? ''}'),
+                      '申请人：${applicant?['nickname'] ?? item['applicant_id']} (诚信分: ${applicant?['credit_score'] ?? '-'})'),
+                  Text('理由：${item['reason'] ?? ''}'),
                   Text('状态：${item['status'] ?? ''}'),
                   const SizedBox(height: 10),
                   Wrap(
@@ -249,7 +249,7 @@ class _AdminFeaturedApplicationsScreenState
                       if (item['status'] == 'pending') ...[
                         OutlinedButton(
                           onPressed: () => _rejectFeatured(item['id'], false),
-                          child: const Text('普通驳�?),
+                          child: const Text('普通驳回'),
                         ),
                         OutlinedButton(
                           onPressed: () => _rejectFeatured(item['id'], true),

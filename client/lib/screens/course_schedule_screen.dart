@@ -29,23 +29,23 @@ import '../widgets/course/course_semester_start_picker.dart';
 import '../widgets/campus/campus_theme.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-/// 每节课槽的默认高�?
+/// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
 
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
 
-/// 颜色池（5色，确保各不相同�?
+/// 颜色池（5色，确保各不相同）
 const List<Color> courseColors = [
-  Color(0xFF448AFF), // �?
-  Color(0xFF00C853), // �?
-  Color(0xFF9C27B0), // �?
-  Color(0xFFFF5252), // �?
-  Color(0xFFFF9800), // �?
+  Color(0xFF448AFF), // 蓝
+  Color(0xFF00C853), // 绿
+  Color(0xFF9C27B0), // 紫
+  Color(0xFFFF5252), // 红
+  Color(0xFFFF9800), // 橙
 ];
 
-/// 根据课程名哈希计算颜色索引（不同课程不同颜色，非随机�?
-/// 空名称时 fallback �?courseCode + location 做区�?
+/// 根据课程名哈希计算颜色索引（不同课程不同颜色，非随机）
+/// 空名称时 fallback 到 courseCode + location 做区分
 int getCourseColorIndex(String name, {String? courseCode, String? location}) {
   String input = name;
   if (name.isEmpty) {
@@ -76,9 +76,9 @@ Color getCourseColor(
 }
 
 /// 星期标签
-const _wd = ['一', '�?, '�?, '�?, '�?, '�?, '�?];
+const _wd = ['一', '二', '三', '四', '五', '六', '日'];
 
-/// 每节课开始时间（每节�?5分钟 + 10分钟课间�?
+/// 每节课开始时间（每节课45分钟 + 10分钟课间）
 const _starts = [
   '08:00',
   '08:55',
@@ -94,7 +94,7 @@ const _starts = [
   '19:25',
 ];
 
-/// 每节课结束时�?
+/// 每节课结束时间
 const _ends = [
   '08:45',
   '09:40',
@@ -110,7 +110,7 @@ const _ends = [
   '20:10',
 ];
 
-/// 格式化月/�?
+/// 格式化月/日
 String _md(DateTime d) => '${d.month}/${d.day}';
 
 class CourseScheduleScreen extends StatefulWidget {
@@ -142,7 +142,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _backgroundKeepAliveBusy = false;
   static const Duration _courseFetchTimeout = Duration(seconds: 25);
 
-  // 课程卡片层局部跟手切�?
+  // 课程卡片层局部跟手切周
   static const int _weekCenterPage = 10000;
   int? _weekDragPointer;
   Offset? _weekDragStartGlobal;
@@ -219,7 +219,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (sc.isLoading) return;
     _didLoad = true;
 
-    // 首次进课表页只读本机缓存。没有缓存时直接给导入提示，避免教务网络异常时长时间卡在加载中�?
+    // 首次进课表页只读本机缓存。没有缓存时直接给导入提示，避免教务网络异常时长时间卡在加载中。
     final hasCache = sc.courses.isNotEmpty ||
         await sc.loadCachedCoursesIfAvailable().timeout(
               const Duration(seconds: 2),
@@ -445,7 +445,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        // 课表路由�?GlobalBackgroundWrapper 提供页面背景，保持透明以展示自定义壁纸�?
+        // 课表路由由 GlobalBackgroundWrapper 提供页面背景，保持透明以展示自定义壁纸。
         backgroundColor: Colors.transparent,
         body: SafeArea(
           bottom: false,
@@ -458,8 +458,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 builder: (context, edu, sc, _) {
                   _autoLoad(edu, sc);
 
-                  // 学期或开学周发生变化时，都要同步周分页器的日期基准�?
-                  // 仅比较学�?ID 会遗漏同一学期内重新设置开学周的场景�?
+                  // 学期或开学周发生变化时，都要同步周分页器的日期基准。
+                  // 仅比较学期 ID 会遗漏同一学期内重新设置开学周的场景。
                   if (sc.currentTerm.id != _lastTermId ||
                       sc.semesterStart != _lastSemesterStart) {
                     _lastTermId = sc.currentTerm.id;
@@ -473,7 +473,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     });
                   }
 
-                  // 正在初始�?+ 没有数据 �?显示课表框架 + 加载动画
+                  // 正在初始化 + 没有数据 → 显示课表框架 + 加载动画
                   if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
                       sc.courses.isEmpty) {
                     return _buildLoadingOverlay(sc);
@@ -570,7 +570,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isRealToday ? '今日概览' : '�?{_wd[today.weekday - 1]}概览',
+                  isRealToday ? '今日概览' : '周${_wd[today.weekday - 1]}概览',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
@@ -579,7 +579,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${targetDate.month}�?{targetDate.day}�?�?{_wd[today.weekday - 1]}',
+                  '${targetDate.month}月${targetDate.day}日 周${_wd[today.weekday - 1]}',
                   style: TextStyle(
                     fontSize: 14,
                     color: isDark ? Colors.white54 : Colors.black54,
@@ -601,7 +601,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          '今日无课，好好休�?,
+                          '今日无课，好好休息',
                           style: TextStyle(
                             color: isDark ? Colors.white54 : Colors.black54,
                           ),
@@ -655,7 +655,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                 ),
                                 const Spacer(),
                                 Text(
-                                  '�?{c.startSection}-${c.endSection}�?,
+                                  '第${c.startSection}-${c.endSection}节',
                                   style: TextStyle(
                                     color: color.withOpacity(0.8),
                                     fontSize: 12,
@@ -734,7 +734,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  // ====== 加载覆盖�?======
+  // ====== 加载覆盖层 ======
   Widget _buildLoadingOverlay(CourseScheduleProvider sc) {
     return Column(
       children: [
@@ -751,7 +751,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 ),
                 SizedBox(height: 16),
                 Text(
-                  '正在加载课表�?,
+                  '正在加载课表…',
                   style: TextStyle(fontSize: 13, color: Colors.white54),
                 ),
               ],
@@ -791,7 +791,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       GestureDetector(
                         onTap: () => _pickSemesterStart(context),
                         child: Text(
-                          academicWeek != null ? '�?$academicWeek �? : '未设置开学周',
+                          academicWeek != null ? '第 $academicWeek 周' : '未设置开学周',
                           style: TextStyle(
                             color: titleColor,
                             fontSize: 28,
@@ -889,7 +889,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  // ====== 未登录引�?======
+  // ====== 未登录引导 ======
   Widget _buildLoginPrompt(BuildContext context, bool isDark) {
     return CourseEmptyStateCard(
       type: CourseEmptyStateType.unlogged,
@@ -934,7 +934,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 controller: sidCtrl,
                 decoration: const InputDecoration(
                   labelText: '教务学号',
-                  hintText: '请输�?0位学�?,
+                  hintText: '请输入10位学号',
                 ),
                 maxLength: 10,
                 enabled: !isLoading,
@@ -944,7 +944,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
                 title: const Text('同意教务数据专项授权'),
-                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销�?),
+                subtitle: const Text('用于验证学生身份并保存教务授权状态，可在账号与安全中撤销。'),
                 onChanged: isLoading
                     ? null
                     : (value) => setDialogState(
@@ -1032,7 +1032,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  // ====== 空状态视�?======
+  // ====== 空状态视图 ======
   Widget _buildNoScheduleState(BuildContext context, bool isDark) {
     final sc = context.watch<CourseScheduleProvider>();
     final isCurrentTerm = sc.currentTerm.isCurrent;
@@ -1127,7 +1127,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
-  /// 从教务系统重新获取课表�?
+  /// 从教务系统重新获取课表。
   Future<void> _fetchCourses(BuildContext context) async {
     if (_isFetchingCourses) return;
     final edu = context.read<EduProvider>();
@@ -1142,8 +1142,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('从教务刷�?),
-        content: const Text('将从教务系统重新拉取当前学期课表，并覆盖当前教务课表数据。自定义课程会保留�?),
+        title: const Text('从教务刷新'),
+        content: const Text('将从教务系统重新拉取当前学期课表，并覆盖当前教务课表数据。自定义课程会保留。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1168,7 +1168,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _initializing = sc.courses.isEmpty;
       });
 
-    // 弹出精美加载动画，防止用户乱�?
+    // 弹出精美加载动画，防止用户乱点
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1201,7 +1201,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 渐变圆形进度指示�?
+                // 渐变圆形进度指示器
                 Container(
                   width: 56,
                   height: 56,
@@ -1224,7 +1224,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  '正在从教务系统提取课�?,
+                  '正在从教务系统提取课表',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -1235,7 +1235,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '请耐心等待，数据量较大时可能需要几秒�?,
+                  '请耐心等待，数据量较大时可能需要几秒…',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.6),
                     fontSize: 13,
@@ -1264,7 +1264,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           context,
           title: '获取课表失败',
           message:
-              '这次没有拿到课表，页面会继续保留当前数据。\n\n可能原因：\n1. 教务系统临时不可用或网络波动。\n2. 教务登录状态过期，需要重新绑定。\n3. 当前学期暂时没有课表数据。\n\n详细原因�?errorMsg',
+              '这次没有拿到课表，页面会继续保留当前数据。\n\n可能原因：\n1. 教务系统临时不可用或网络波动。\n2. 教务登录状态过期，需要重新绑定。\n3. 当前学期暂时没有课表数据。\n\n详细原因：$errorMsg',
         );
         return;
       }
@@ -1275,7 +1275,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         AppFeedback.showErrorDialog(
           context,
           title: '没有可导入的课程',
-          message: '教务系统返回了空课表。请确认选择的是当前学期；如果学期正确，可能是学校暂未开放该学期课表�?,
+          message: '教务系统返回了空课表。请确认选择的是当前学期；如果学期正确，可能是学校暂未开放该学期课表。',
         );
         return;
       }
@@ -1291,14 +1291,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           _didLoad = true;
         });
 
-      // 给底�?Widget 预留微小的重绘时间，防止部分机型路由弹窗关闭时阻断下�?setState 渲染
+      // 给底层 Widget 预留微小的重绘时间，防止部分机型路由弹窗关闭时阻断下层 setState 渲染
       await Future.delayed(const Duration(milliseconds: 100));
       if (mounted) {
-        Navigator.pop(context); // 确保课表加载进状态后再关闭加载弹�?
+        Navigator.pop(context); // 确保课表加载进状态后再关闭加载弹窗
       }
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('课表已拉取。首次导入请点击顶部“设置周数”，选择开学第一天�?),
+          content: Text('课表已拉取。首次导入请点击顶部“设置周数”，选择开学第一天。'),
           duration: Duration(seconds: 4),
         ),
       );
@@ -1349,7 +1349,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        '导入成功�?,
+                        '导入成功！',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -1359,7 +1359,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '已为您更�?${sc.courses.length} 门课�?,
+                        '已为您更新 ${sc.courses.length} 门课程',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade600,
@@ -1387,7 +1387,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           context,
           title: '获取课表超时',
           message:
-              '已经等待 ${_courseFetchTimeout.inSeconds} 秒，教务系统仍未返回结果。\n\n你可以稍后重试，或先检查教务账号是否仍然有效；当前页面不会继续卡在加载中�?,
+              '已经等待 ${_courseFetchTimeout.inSeconds} 秒，教务系统仍未返回结果。\n\n你可以稍后重试，或先检查教务账号是否仍然有效；当前页面不会继续卡在加载中。',
         );
       }
     } catch (e) {
@@ -1396,7 +1396,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         AppFeedback.showErrorDialog(
           context,
           title: '导入过程异常',
-          message: '课表导入被中断，当前页面数据未被覆盖。\n\n详细原因�?e',
+          message: '课表导入被中断，当前页面数据未被覆盖。\n\n详细原因：$e',
         );
       }
     } finally {
@@ -1470,7 +1470,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              rawCount == 0 ? '该学期没有可导入的课程，请确认学期是否正�? : '课表已获取但解析失败，请检查课程字段格�?,
+              rawCount == 0 ? '该学期没有可导入的课程，请确认学期是否正确' : '课表已获取但解析失败，请检查课程字段格式',
             ),
           ),
         );
@@ -1491,14 +1491,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            sameTerm ? '当前学期课表已刷�? : '已拉取并切换�?${sc.currentTerm.title}',
+            sameTerm ? '当前学期课表已刷新' : '已拉取并切换到 ${sc.currentTerm.title}',
           ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('课表拉取失败�?e')),
+        SnackBar(content: Text('课表拉取失败：$e')),
       );
     } finally {
       if (mounted) {
@@ -1552,7 +1552,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (text == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('当前周暂无可分享的课�?)));
+      ).showSnackBar(const SnackBar(content: Text('当前周暂无可分享的课程')));
       return;
     }
     await Share.share(text, subject: '沈理校园课表');
@@ -1580,7 +1580,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       ..writeln(
         academicWeek == null
             ? '${_ymd(_weekStart)}-${_ymd(weekEnd)}'
-            : '�?$academicWeek �?${_ymd(_weekStart)}-${_ymd(weekEnd)}',
+            : '第 $academicWeek 周 ${_ymd(_weekStart)}-${_ymd(weekEnd)}',
       );
 
     var currentWeekday = 0;
@@ -1589,7 +1589,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         currentWeekday = course.weekday;
         buffer
           ..writeln()
-          ..writeln('�?{_wd[course.weekday - 1]}');
+          ..writeln('周${_wd[course.weekday - 1]}');
       }
 
       final startIndex = _sectionIndex(course.startSection);
@@ -1600,10 +1600,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       ];
       final teacher = course.teacher?.trim();
       final location = course.location?.trim();
-      if (teacher != null && teacher.isNotEmpty) parts.add('教师�?teacher');
-      if (location != null && location.isNotEmpty) parts.add('教室�?location');
+      if (teacher != null && teacher.isNotEmpty) parts.add('教师：$teacher');
+      if (location != null && location.isNotEmpty) parts.add('教室：$location');
       if (course.weeks.isNotEmpty) {
-        parts.add('周次�?{_formatWeeks(course.weeks)}');
+        parts.add('周次：${_formatWeeks(course.weeks)}');
       }
       buffer.writeln(parts.join('  '));
     }
@@ -1642,7 +1642,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   String _formatWeekRange(int start, int end) =>
       start == end ? '$start' : '$start-$end';
 
-  // ====== App 内课表显示设�?======
+  // ====== App 内课表显示设置 ======
   static const _scheduleOpacityKey = 'card_opacity';
   static const _scheduleSlotHeightKey = 'slot_height';
 
@@ -1661,7 +1661,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _settingsLoaded = true; // 立即放行 UI 渲染
       });
 
-      // 非关键路径：异步加载后台服务状态和提醒状态，不阻�?UI
+      // 非关键路径：异步加载后台服务状态和提醒状态，不阻塞 UI
       _loadBackgroundStatusAsync();
     } catch (e) {
       debugPrint('加载课表设置失败: ${e.runtimeType}');
@@ -1693,7 +1693,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         });
       }
     } catch (e) {
-      debugPrint('后台保活状态检查失�? ${e.runtimeType}');
+      debugPrint('后台保活状态检查失败: ${e.runtimeType}');
     }
   }
 
@@ -1758,15 +1758,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return CourseScheduleSettingsSnapshot(
       courseCount: sc.courses.length,
       semesterStartText: sc.semesterStart == null
-          ? '未设置，用于计算当前教学�?
-          : '当前�?{_ymd(sc.semesterStart!)}（周一�?,
+          ? '未设置，用于计算当前教学周'
+          : '当前：${_ymd(sc.semesterStart!)}（周一）',
       reminderEnabled: _courseReminderEnabled,
       reminderAdvanceMinutes: _reminderAdvanceMinutes,
       reminderBusy: _courseReminderBusy,
       scheduledReminderCount: _scheduledReminderCount,
       reminderSummary: _courseReminderEnabled
-          ? '提前 $_reminderAdvanceMinutes 分钟 · 已安�?$_scheduledReminderCount 个提�?
-          : '上课�?$_reminderAdvanceMinutes 分钟静音提醒',
+          ? '提前 $_reminderAdvanceMinutes 分钟 · 已安排 $_scheduledReminderCount 个提醒'
+          : '上课前 $_reminderAdvanceMinutes 分钟静音提醒',
       backgroundKeepAliveSubtitle: _backgroundKeepAliveSubtitle(),
       backgroundKeepAliveReady: _backgroundKeepAliveStatus.isReady,
       backgroundKeepAliveSupported: _backgroundKeepAliveStatus.supported,
@@ -1786,13 +1786,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (enabled && sc.semesterStart == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('请先选择开学第一�?)));
+      ).showSnackBar(const SnackBar(content: Text('请先选择开学第一天')));
       return;
     }
     if (enabled && sc.courses.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('请先从教务导入课�?)));
+      ).showSnackBar(const SnackBar(content: Text('请先从教务导入课表')));
       return;
     }
     if (enabled && !await _confirmCourseReminderEnable(context)) {
@@ -1846,9 +1846,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('后台保活授权'),
         content: const Text(
-          '请在系统页面允许忽略电池优化、精确闹钟、自启动或后台运行�?
-          '这样即使从任务卡片清除应用，课程提醒也能由系统闹钟唤起�?
-          '如果在系统设置里强行停止应用，Android 会禁止所有提醒�?,
+          '请在系统页面允许忽略电池优化、精确闹钟、自启动或后台运行。'
+          '这样即使从任务卡片清除应用，课程提醒也能由系统闹钟唤起。'
+          '如果在系统设置里强行停止应用，Android 会禁止所有提醒。',
         ),
         actions: [
           TextButton(
@@ -1857,7 +1857,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('去授�?),
+            child: const Text('去授权'),
           ),
         ],
       ),
@@ -1874,7 +1874,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     });
     AppFeedback.showSnackBar(
       context,
-      status.isReady ? '后台保活关键权限已开�? : '已打开系统授权页，返回后可再次点击继续设置',
+      status.isReady ? '后台保活关键权限已开启' : '已打开系统授权页，返回后可再次点击继续设置',
     );
   }
 
@@ -1923,7 +1923,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
     final missing = <String>[];
     if (!status.isIgnoringBatteryOptimizations) {
-      missing.add('电池优化白名�?);
+      missing.add('电池优化白名单');
     }
     if (!status.canScheduleExactAlarms) {
       missing.add('精确闹钟');
@@ -1931,7 +1931,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (missing.isEmpty) {
       return '已授权，清除任务卡后仍由系统闹钟唤起提醒';
     }
-    return '建议授权�?{missing.join('�?)}';
+    return '建议授权：${missing.join('、')}';
   }
 
   Future<bool> _confirmCourseReminderEnable(BuildContext context) async {
@@ -1939,28 +1939,28 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('开启课程提�?),
+        title: const Text('开启课程提醒'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('开启后，系统会根据当前课表在每节课开始前提前发送静音提醒�?),
+            const Text('开启后，系统会根据当前课表在每节课开始前提前发送静音提醒。'),
             const SizedBox(height: 12),
             _permissionHint(
               icon: Icons.notifications_none,
-              text: '通知权限用于显示上课提醒，不会改变你的系统铃声设置�?,
+              text: '通知权限用于显示上课提醒，不会改变你的系统铃声设置。',
               isDark: isDark,
             ),
             const SizedBox(height: 8),
             _permissionHint(
               icon: Icons.schedule,
-              text: '精确闹钟用于尽量按时提醒，尤其适合早八和晚课�?,
+              text: '精确闹钟用于尽量按时提醒，尤其适合早八和晚课。',
               isDark: isDark,
             ),
             const SizedBox(height: 8),
             _permissionHint(
               icon: Icons.battery_saver_outlined,
-              text: '后台保活用于清除任务卡片后仍能由系统唤起提醒�?,
+              text: '后台保活用于清除任务卡片后仍能由系统唤起提醒。',
               isDark: isDark,
             ),
           ],
@@ -1968,7 +1968,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('暂不开�?),
+            child: const Text('暂不开启'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
@@ -2057,7 +2057,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 顶部拖拽�?
+                // 顶部拖拽条
                 Padding(
                   padding: const EdgeInsets.only(top: 12, bottom: 6),
                   child: Center(
@@ -2072,7 +2072,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     ),
                   ),
                 ),
-                // 标题�?
+                // 标题栏
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
                   child: Row(
@@ -2100,7 +2100,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              '管理存档、刷新课�?,
+                              '管理存档、刷新课表',
                               style: TextStyle(
                                 fontSize: 13,
                                 color:
@@ -2113,7 +2113,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     ],
                   ),
                 ),
-                // 可滚动内�?
+                // 可滚动内容
                 Flexible(
                   child: SingleChildScrollView(
                     padding: EdgeInsets.fromLTRB(
@@ -2126,7 +2126,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 🔄 从教务系统刷�?
+                        // 🔄 从教务系统刷新
                         Container(
                           width: double.infinity,
                           decoration: BoxDecoration(
@@ -2200,8 +2200,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                         children: [
                                           Text(
                                             isRefreshing
-                                                ? '正在从教务系统拉取�?
-                                                : '从教务系统刷新课�?,
+                                                ? '正在从教务系统拉取…'
+                                                : '从教务系统刷新课表',
                                             style: TextStyle(
                                               fontSize: 15,
                                               fontWeight: FontWeight.w600,
@@ -2371,7 +2371,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                 Icons.file_upload_outlined,
                                 size: 16,
                               ),
-                              label: const Text('从文件导�?),
+                              label: const Text('从文件导入'),
                               style: TextButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
@@ -2513,7 +2513,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                   ).showSnackBar(
                                                     SnackBar(
                                                       content: Text(
-                                                        '已载入�?{archive.name}�?,
+                                                        '已载入「${archive.name}」',
                                                       ),
                                                     ),
                                                   );
@@ -2611,7 +2611,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                 size: 18,
                                               ),
                                               color: primary,
-                                              tooltip: '导出此存�?,
+                                              tooltip: '导出此存档',
                                               onPressed: () async {
                                                 await _exportArchive(
                                                   ctx,
@@ -2621,7 +2621,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                               },
                                             ),
                                             Text(
-                                              '�?滑动删除',
+                                              '← 滑动删除',
                                               style: TextStyle(
                                                 fontSize: 10,
                                                 color: isDark
@@ -2640,7 +2640,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           }),
                         const SizedBox(height: 10),
                         Text(
-                          '存档保存在本地，切换账号不会互相影响�?,
+                          '存档保存在本地，切换账号不会互相影响。',
                           style: TextStyle(
                             fontSize: 12,
                             color: isDark ? Colors.white30 : Colors.grey[400],
@@ -2659,7 +2659,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  /// 从文件导入课表存�?
+  /// 从文件导入课表存档
   Future<void> _importFromFile(
     BuildContext sheetCtx,
     CourseScheduleProvider sc,
@@ -2668,9 +2668,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final shouldProceed = await showDialog<bool>(
       context: sheetCtx,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('从文件导�?),
+        title: const Text('从文件导入'),
         content: const Text(
-          '请在接下来的文件选择器中选择你之前导出的课表 .json 文件。\n如果是通过微信/QQ等软件收发的，请前往对应软件的下载目录寻找�?,
+          '请在接下来的文件选择器中选择你之前导出的课表 .json 文件。\n如果是通过微信/QQ等软件收发的，请前往对应软件的下载目录寻找。',
         ),
         actions: [
           TextButton(
@@ -2702,7 +2702,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text('已导入存档�?fileName�?)));
+          ).showSnackBar(SnackBar(content: Text('已导入存档「$fileName」')));
         }
       }
     } catch (e) {
@@ -2714,7 +2714,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
-  /// 导出特定存档到文�?(使用分享/发送功能绕过安卓存储限�?
+  /// 导出特定存档到文件 (使用分享/发送功能绕过安卓存储限制)
   Future<void> _exportArchive(
     BuildContext context,
     String archiveId,
@@ -2722,9 +2722,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   ) async {
     try {
       final prefs = await AppPreferencesStore.getInstance();
-      // �?provider 中定义的常量：_archiveDataKeyPrefix = 'course_archive_data_v1_'
+      // 在 provider 中定义的常量：_archiveDataKeyPrefix = 'course_archive_data_v1_'
       final jsonStr = prefs.getString('course_archive_data_v1_$archiveId');
-      if (jsonStr == null) throw Exception('存档数据不存�?);
+      if (jsonStr == null) throw Exception('存档数据不存在');
 
       final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
       final tempDir = Directory.systemTemp;
@@ -2733,13 +2733,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('正在唤起系统菜单，请选择“发送给朋友”或“保存到手机”以导出文件�?)),
+          const SnackBar(content: Text('正在唤起系统菜单，请选择“发送给朋友”或“保存到手机”以导出文件。')),
         );
       }
 
       await Share.shareXFiles([
         XFile(file.path),
-      ], text: '这是我的沈理校园课表存档，可以在App�?从文件导�?功能中恢复�?);
+      ], text: '这是我的沈理校园课表存档，可以在App的"从文件导入"功能中恢复。');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -2773,7 +2773,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       await sc.setSemesterStart(picked);
       if (!mounted || !context.mounted) return;
 
-      // 保存后立即刷新当前周�?PageController 的共同基准，避免页面仍停留在旧周�?
+      // 保存后立即刷新当前周和 PageController 的共同基准，避免页面仍停留在旧周。
       setState(() {
         _lastTermId = sc.currentTerm.id;
         _lastSemesterStart = sc.semesterStart;
@@ -2786,20 +2786,20 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '开学第一周已更新�?{_ymd(savedStart)}（周一�?,
+            '开学第一周已更新：${_ymd(savedStart)}（周一）',
           ),
         ),
       );
     }
   }
 
-  // ====== 自定义课�?======
+  // ====== 自定义课程 ======
 
   Future<void> _showAddCourseDialog(
     BuildContext context, {
     CourseBlock? editCourse,
   }) {
-    // 原有的手动添加状�?
+    // 原有的手动添加状态
     final nameCtrl = TextEditingController(text: editCourse?.name ?? '');
     final teacherCtrl = TextEditingController(text: editCourse?.teacher ?? '');
     final locationCtrl = TextEditingController(
@@ -2816,11 +2816,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ? editCourse!.weeks.last
         : (wn + 15).clamp(wn, 20);
 
-    // AI 导入模式状�?
+    // AI 导入模式状态
     bool isAiMode = false;
     final TextEditingController jsonController = TextEditingController();
 
-    // 获取并计算班级号 (学号去掉后两�?
+    // 获取并计算班级号 (学号去掉后两位)
     final edu = context.read<EduProvider>();
     String studentId = edu.studentId;
     String classIdStr = '';
@@ -2829,21 +2829,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
     bool includeClassId = false;
     String classFilterRule =
-        '7. 班级过滤 (Class Filtering)：如果我提供了我的班级号，并且图片中包含班级信息，请严格对比后只提取属于我的课程行�?;
+        '7. 班级过滤 (Class Filtering)：如果我提供了我的班级号，并且图片中包含班级信息，请严格对比后只提取属于我的课程行。';
 
     String aiPromptTemplate =
-        """你现在是一个专业的“教务数据提取引擎”。请读取我提供的教学日历/课表图片或文字说明，提取其中的课程安排，并严格按照以�?JSON 格式输出数据�?
+        """你现在是一个专业的“教务数据提取引擎”。请读取我提供的教学日历/课表图片或文字说明，提取其中的课程安排，并严格按照以下 JSON 格式输出数据。
 
-【数据提取规则�?
-1. 操作类型 (action)：默认为 "add"。如果我额外说明了是删除，请改为 "delete"�?
-2. 周次处理 (weeks) [极度重要]：请将所有上课的周次展开，提取为一个包含纯数字的数组。例如：�?-4�? 6周”应转换�?[1, 2, 3, 4, 6]；�?-9单周”应转换�?[1, 3, 5, 7, 9]�?
-3. 数据类型：所有的星期、节次必须转化为纯数�?(int)。例如：“周三”转换为 3，“第5-6节”转换为 startNode: 5, endNode: 6�?
-4. 处理缺失值：如果图片或文字中缺少关键信息（如未写明教师或教室），请先向我提问确认。如果我回复确实没有，对应的 teacher �?location 字段再填入空字符�?""，绝对不要生造数据�?
-5. 拆分原则：如果一门课跨越了不同的星期或节次，请将其拆分为多个独立�?JSON 对象放入数组中�?
-6. 输出格式：请务必�?JSON 放在标准�?Markdown 代码块中（```json ... ```）。在输出 JSON 之后，请用中文简短地为我总结一下提取出的结果（“何时、何地、上什么课”），方便我进行核对�?
+【数据提取规则】
+1. 操作类型 (action)：默认为 "add"。如果我额外说明了是删除，请改为 "delete"。
+2. 周次处理 (weeks) [极度重要]：请将所有上课的周次展开，提取为一个包含纯数字的数组。例如：“1-4周, 6周”应转换为 [1, 2, 3, 4, 6]；“1-9单周”应转换为 [1, 3, 5, 7, 9]。
+3. 数据类型：所有的星期、节次必须转化为纯数字 (int)。例如：“周三”转换为 3，“第5-6节”转换为 startNode: 5, endNode: 6。
+4. 处理缺失值：如果图片或文字中缺少关键信息（如未写明教师或教室），请先向我提问确认。如果我回复确实没有，对应的 teacher 或 location 字段再填入空字符串 ""，绝对不要生造数据。
+5. 拆分原则：如果一门课跨越了不同的星期或节次，请将其拆分为多个独立的 JSON 对象放入数组中。
+6. 输出格式：请务必将 JSON 放在标准的 Markdown 代码块中（```json ... ```）。在输出 JSON 之后，请用中文简短地为我总结一下提取出的结果（“何时、何地、上什么课”），方便我进行核对。
 $classFilterRule
 
-【JSON 结构模板�?
+【JSON 结构模板】
 ```json
 {
   "action": "add",
@@ -2866,7 +2866,7 @@ $classFilterRule
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(editCourse == null ? '添加自定义课�? : '编辑自定义课�?),
+          title: Text(editCourse == null ? '添加自定义课程' : '编辑自定义课程'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2897,7 +2897,7 @@ $classFilterRule
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // 星期�?
+                  // 星期几
                   DropdownButtonFormField<int>(
                     value: weekday,
                     decoration: const InputDecoration(labelText: '星期'),
@@ -2905,7 +2905,7 @@ $classFilterRule
                         .map(
                           (d) => DropdownMenuItem(
                             value: d,
-                            child: Text('�?{_wd[d - 1]}'),
+                            child: Text('周${_wd[d - 1]}'),
                           ),
                         )
                         .toList(),
@@ -2918,12 +2918,12 @@ $classFilterRule
                       Expanded(
                         child: DropdownButtonFormField<int>(
                           value: startSection,
-                          decoration: const InputDecoration(labelText: '开始节�?),
+                          decoration: const InputDecoration(labelText: '开始节次'),
                           items: List.generate(12, (i) => i + 1)
                               .map(
                                 (s) => DropdownMenuItem(
                                   value: s,
-                                  child: Text('�?s�?),
+                                  child: Text('第$s节'),
                                 ),
                               )
                               .toList(),
@@ -2947,7 +2947,7 @@ $classFilterRule
                               .map(
                                 (s) => DropdownMenuItem(
                                   value: s,
-                                  child: Text('�?s�?),
+                                  child: Text('第$s节'),
                                 ),
                               )
                               .toList(),
@@ -2969,7 +2969,7 @@ $classFilterRule
                           items: List.generate(20, (i) => i + 1).map((w) {
                             return DropdownMenuItem(
                               value: w,
-                              child: Text('�?w�?),
+                              child: Text('第$w周'),
                             );
                           }).toList(),
                           onChanged: (v) {
@@ -2984,13 +2984,13 @@ $classFilterRule
                       Expanded(
                         child: DropdownButtonFormField<int>(
                           value: endWeek.clamp(startWeek, 20),
-                          decoration: const InputDecoration(labelText: '结束�?),
+                          decoration: const InputDecoration(labelText: '结束周'),
                           items: List.generate(20, (i) => i + 1)
                               .where((w) => w >= startWeek)
                               .map(
                                 (w) => DropdownMenuItem(
                                   value: w,
-                                  child: Text('�?w�?),
+                                  child: Text('第$w周'),
                                 ),
                               )
                               .toList(),
@@ -3058,7 +3058,7 @@ $classFilterRule
                           ),
                         ),
                         Text(
-                          '2. 发送提示词与课�?�?�?�?AI，建议关�?AI 的“快�?极速模式”；',
+                          '2. 发送提示词与课表(图/文)给 AI，建议关闭 AI 的“快速/极速模式”；',
                           style: TextStyle(
                             fontSize: 13,
                             color: Theme.of(
@@ -3067,7 +3067,7 @@ $classFilterRule
                           ),
                         ),
                         Text(
-                          '3. 粘贴 AI 的全部回复。请务必利用 AI 的中文总结核对时间地点�?,
+                          '3. 粘贴 AI 的全部回复。请务必利用 AI 的中文总结核对时间地点。',
                           style: TextStyle(
                             fontSize: 13,
                             color: Theme.of(
@@ -3081,8 +3081,8 @@ $classFilterRule
                           value: includeClassId,
                           title: const Text('在提示词中加入我的班级号'),
                           subtitle: Text(classIdStr.isEmpty
-                              ? '当前未读取到班级�?
-                              : '用于过滤 $classIdStr 班课�?),
+                              ? '当前未读取到班级号'
+                              : '用于过滤 $classIdStr 班课程'),
                           onChanged: classIdStr.isEmpty
                               ? null
                               : (value) {
@@ -3091,7 +3091,7 @@ $classFilterRule
                                 },
                         ),
                         Text(
-                          'AI 识别结果可能存在遗漏或错误。导入前请逐项核对课程名称、周次、时间、地点和班级范围，并以学校官方课表为准。未经用户确认的结果不会自动写入正式课表�?,
+                          'AI 识别结果可能存在遗漏或错误。导入前请逐项核对课程名称、周次、时间、地点和班级范围，并以学校官方课表为准。未经用户确认的结果不会自动写入正式课表。',
                           style: TextStyle(
                             fontSize: 11,
                             color: Theme.of(context).colorScheme.outline,
@@ -3103,7 +3103,7 @@ $classFilterRule
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.copy, size: 18),
-                    label: const Text('一键复�?AI 提示�?),
+                    label: const Text('一键复制 AI 提示词'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Theme.of(
                         context,
@@ -3116,14 +3116,14 @@ $classFilterRule
                       final prompt = includeClassId && classIdStr.isNotEmpty
                           ? aiPromptTemplate.replaceFirst(
                               classFilterRule,
-                              '7. 班级过滤 (Class Filtering)：当前用户的班级号是�?classIdStr班”。请仅提取属于该班级的课程行�?,
+                              '7. 班级过滤 (Class Filtering)：当前用户的班级号是“$classIdStr班”。请仅提取属于该班级的课程行。',
                             )
                           : aiPromptTemplate;
                       Clipboard.setData(ClipboardData(text: prompt));
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            '提示词已复制。请前往你选择的外�?AI 服务提交，处理规则由对应服务商决定�?,
+                            '提示词已复制。请前往你选择的外部 AI 服务提交，处理规则由对应服务商决定。',
                           ),
                         ),
                       );
@@ -3135,7 +3135,7 @@ $classFilterRule
                     maxLines: 8,
                     minLines: 5,
                     decoration: InputDecoration(
-                      hintText: '在此粘贴 AI 生成�?JSON 代码...',
+                      hintText: '在此粘贴 AI 生成的 JSON 代码...',
                       border: const OutlineInputBorder(),
                       filled: true,
                       fillColor: Theme.of(
@@ -3145,7 +3145,7 @@ $classFilterRule
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '请确保粘贴的内容包含完整�?{ } 结构',
+                    '请确保粘贴的内容包含完整的 { } 结构',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.outline,
@@ -3166,7 +3166,7 @@ $classFilterRule
                   if (nameCtrl.text.trim().isEmpty) {
                     ScaffoldMessenger.of(
                       context,
-                    ).showSnackBar(const SnackBar(content: Text('请输入课程名�?)));
+                    ).showSnackBar(const SnackBar(content: Text('请输入课程名称')));
                     return;
                   }
                   if (editCourse == null) {
@@ -3204,7 +3204,7 @@ $classFilterRule
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(editCourse == null ? '课程已添�? : '课程已更�?),
+                        content: Text(editCourse == null ? '课程已添加' : '课程已更新'),
                       ),
                     );
                     await _syncCourseReminders(sc);
@@ -3219,7 +3219,7 @@ $classFilterRule
                 onPressed: () {
                   _handleAiImport(dialogCtx, jsonController.text);
                 },
-                child: const Text('解析并导�?),
+                child: const Text('解析并导入'),
               ),
           ],
         ),
@@ -3232,7 +3232,7 @@ $classFilterRule
     });
   }
 
-  // ====== AI 导入与冲突检�?======
+  // ====== AI 导入与冲突检测 ======
 
   void _handleAiImport(BuildContext dialogCtx, String jsonStr) {
     if (jsonStr.trim().isEmpty) {
@@ -3243,10 +3243,10 @@ $classFilterRule
     }
 
     try {
-      // 1. 智能提取 JSON (支持 AI 输出带有中文总结的内�?
+      // 1. 智能提取 JSON (支持 AI 输出带有中文总结的内容)
       String cleanJson = jsonStr;
 
-      // 优先寻找 markdown 代码块中的内�?
+      // 优先寻找 markdown 代码块中的内容
       final RegExp jsonRegex = RegExp(
         r'```(?:json)?\s*(\{.*?\})\s*```',
         dotAll: true,
@@ -3256,7 +3256,7 @@ $classFilterRule
       if (match != null) {
         cleanJson = match.group(1)!;
       } else {
-        // 兜底方案：寻找第一�?{ 和最后一�?}
+        // 兜底方案：寻找第一个 { 和最后一个 }
         int start = jsonStr.indexOf('{');
         int end = jsonStr.lastIndexOf('}');
         if (start != -1 && end != -1 && end > start) {
@@ -3295,7 +3295,7 @@ $classFilterRule
         });
       }
 
-      // 4. 获取本地已有课程并进行冲突检�?
+      // 4. 获取本地已有课程并进行冲突检测
       final sc = context.read<CourseScheduleProvider>();
       List<CourseBlock> existingCourses = sc.courses;
 
@@ -3305,20 +3305,20 @@ $classFilterRule
       );
 
       if (conflictingCourses.isNotEmpty) {
-        // 提取冲突的老课名称，防止名称太长截�?
+        // 提取冲突的老课名称，防止名称太长截断
         String conflictNames = conflictingCourses
             .map(
               (c) =>
-                  "�?{c.name} (�?{c.weekday} �?{c.startSection}-${c.endSection}�?�?,
+                  "《${c.name} (周${c.weekday} 第${c.startSection}-${c.endSection}节)》",
             )
-            .join('�?);
+            .join('、');
 
-        // 发现冲突，弹出三选一对话�?
+        // 发现冲突，弹出三选一对话框
         showDialog(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text("时间重叠提醒"),
-            content: Text("检测到新导入的课程与已有课程\n\n$conflictNames\n\n存在时间重叠。请选择操作�?),
+            content: Text("检测到新导入的课程与已有课程\n\n$conflictNames\n\n存在时间重叠。请选择操作："),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
@@ -3362,7 +3362,7 @@ $classFilterRule
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '解析失败，请检查数据格式�?,
+            '解析失败，请检查数据格式。',
           ),
         ),
       );
@@ -3389,7 +3389,7 @@ $classFilterRule
         int end2 = existing.endSection;
 
         if (start1 <= end2 && end1 >= start2) {
-          debugPrint('课表冲突已拦�?);
+          debugPrint('课表冲突已拦截');
           if (!conflicts.contains(existing)) {
             conflicts.add(existing);
           }
@@ -3488,7 +3488,7 @@ $classFilterRule
     return LayoutBuilder(
       builder: (context, constraints) {
         final totalH = 12 * _scheduleSlotHeight;
-        // 在平板模式下，主课表区域不是全屏宽度，必须使�?LayoutBuilder 获取实际可用宽度
+        // 在平板模式下，主课表区域不是全屏宽度，必须使用 LayoutBuilder 获取实际可用宽度
         final screenW = constraints.maxWidth;
         final exactW = (screenW - timeColumnWidth) / 7;
 
@@ -3532,7 +3532,7 @@ $classFilterRule
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // 左侧时间�?
+        // 左侧时间轴
         Positioned(
           left: 0,
           top: 0,
@@ -3557,7 +3557,7 @@ $classFilterRule
             ),
           ),
         ),
-        // 网格线（7 �?× 12 节）
+        // 网格线（7 天 × 12 节）
         for (int d = 0; d < 7; d++)
           Positioned(
             left: timeColumnWidth + d * exactW,
@@ -3620,7 +3620,7 @@ $classFilterRule
     final wn = sc.getAcademicWeek(weekStart);
     final allActive = <CourseBlock>[];
     final allInactive = <CourseBlock>[];
-    // 先用活跃课程占据时间槽，非活跃课程只在槽位为空时才显�?
+    // 先用活跃课程占据时间槽，非活跃课程只在槽位为空时才显示
     final activeSlots = <String>{};
     final inactiveSeen = <String>{};
 
@@ -3628,7 +3628,7 @@ $classFilterRule
       if (c.weekday < 1 || c.weekday > 7) continue;
       final key = '${c.weekday}_${c.startSection}';
       if (wn == null || c.weeks.isEmpty || c.weeks.contains(wn)) {
-        // 当前周课程或未设置开学周：直接加入，优先级最�?
+        // 当前周课程或未设置开学周：直接加入，优先级最高
         if (!activeSlots.contains(key)) {
           allActive.add(c);
           activeSlots.add(key);
@@ -3636,8 +3636,8 @@ $classFilterRule
       }
     }
 
-    // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显�?
-    // 已完全结课的课程（所有周�?< 当前周）不显�?
+    // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显示
+    // 已完全结课的课程（所有周数 < 当前周）不显示
     for (final c in sc.courses) {
       if (c.weekday < 1 || c.weekday > 7) continue;
       final key = '${c.weekday}_${c.startSection}';
@@ -3692,7 +3692,7 @@ $classFilterRule
     final double scale = (exactW / 45.0).clamp(1.0, 1.35);
     final double paddingVal = exactW > 80 ? 6.0 : 3.0;
 
-    // 根据可用高度决定显示内容（优先课�?地点�?
+    // 根据可用高度决定显示内容（优先课名+地点）
     final bool isCompact = h < 70;
 
     return Positioned(
@@ -3828,12 +3828,12 @@ $classFilterRule
             _detailRow(
               Icons.access_time,
               '时间',
-              '�?wdn �?{c.startSection}-${c.endSection}�?,
+              '周$wdn 第${c.startSection}-${c.endSection}节',
             ),
             _detailRow(
               Icons.date_range,
               '周次',
-              c.weeks.isNotEmpty ? '�?{c.weeks.first}-${c.weeks.last}�? : '未知',
+              c.weeks.isNotEmpty ? '第${c.weeks.first}-${c.weeks.last}周' : '未知',
             ),
             if (c.note != null && c.note!.isNotEmpty)
               _detailRow(Icons.note_outlined, '备注', c.note!),
@@ -3889,7 +3889,7 @@ $classFilterRule
                         if (mounted) setState(() {});
                         ScaffoldMessenger.of(
                           context,
-                        ).showSnackBar(const SnackBar(content: Text('课程已删�?)));
+                        ).showSnackBar(const SnackBar(content: Text('课程已删除')));
                       }
                     },
                   ),
@@ -3908,7 +3908,7 @@ $classFilterRule
           children: [
             Icon(icon, size: 20, color: Colors.grey[600]),
             const SizedBox(width: 12),
-            Text('$l�?,
+            Text('$l：',
                 style: TextStyle(fontSize: 14, color: Colors.grey[600])),
             Expanded(
               child: Text(
@@ -3952,7 +3952,7 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('保存为存�?),
+      title: const Text('保存为存档'),
       content: TextField(
         controller: nameCtrl,
         maxLength: 20,
@@ -3976,7 +3976,7 @@ class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
             await widget.sc.saveCurrentAsArchive(name);
             widget.setSheetState(() {});
             scaffoldMessenger.showSnackBar(
-              SnackBar(content: Text('已保存存档�?name」\n如需提取文件，请点击该存档的分享按钮�?)),
+              SnackBar(content: Text('已保存存档「$name」\n如需提取文件，请点击该存档的分享按钮。')),
             );
           },
           child: const Text('保存'),

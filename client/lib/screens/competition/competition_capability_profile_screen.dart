@@ -104,7 +104,7 @@ class _CompetitionCapabilityProfileScreenState
       });
       AppFeedback.showSnackBar(
         context,
-        enabled ? '已允许 AI 使用能力画像' : '已关闭 AI 画像授权',
+        enabled ? '已允�?AI 使用能力画像' : '已关�?AI 画像授权',
       );
     } catch (error) {
       if (!mounted) return;
@@ -176,9 +176,9 @@ class _CompetitionCapabilityProfileScreenState
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
         children: [
           _countBand(profile, isDark),
-          _sectionTitle('技能', isDark),
+          _sectionTitle('技�?, isDark),
           if (profile.skillSummary.isEmpty)
-            _emptyLine('暂无可汇总的竞赛技能', isDark)
+            _emptyLine('暂无可汇总的竞赛技�?, isDark)
           else
             ...profile.skillSummary.map(
               (item) => _summaryRow(item.value, item, isDark),
@@ -205,10 +205,10 @@ class _CompetitionCapabilityProfileScreenState
             onChanged: _savingAccess ? null : _setAIAccess,
             activeTrackColor: CompetitionUiTokens.accent(isDark),
             title: const Text(
-              '允许 AI 使用此画像',
+              '允许 AI 使用此画�?,
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
-            subtitle: const Text('仅包含竞赛目标和本页汇总，不包含证明材料'),
+            subtitle: const Text('仅包含竞赛目标和本页汇总，不包含证明材�?),
           ),
         ],
       ),
@@ -225,7 +225,7 @@ class _CompetitionCapabilityProfileScreenState
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
         children: [
-          _countItem('已核验经历', profile.verifiedAwardCount, isDark),
+          _countItem('已核验经�?, profile.verifiedAwardCount, isDark),
           Container(
             width: 1,
             height: 38,
@@ -280,7 +280,7 @@ class _CompetitionCapabilityProfileScreenState
   ) {
     final counts = <String>[
       if (item.verifiedCount > 0) '${item.verifiedCount}项已核验',
-      if (item.selfReportedCount > 0) '${item.selfReportedCount}项本人填写',
+      if (item.selfReportedCount > 0) '${item.selfReportedCount}项本人填�?,
     ];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
@@ -314,13 +314,13 @@ class _CompetitionCapabilityProfileScreenState
     }
     final roleLabels = profile.preferredRoles
         .map((role) => competitionRoleLabels[role] ?? role)
-        .join('、');
+        .join('�?);
     final values = <(String, String)>[
       (
         '关注方向',
-        profile.directionTags.isEmpty ? '未设置' : profile.directionTags.join('、'),
+        profile.directionTags.isEmpty ? '未设�? : profile.directionTags.join('�?),
       ),
-      ('偏好角色', roleLabels.isEmpty ? '未设置' : roleLabels),
+      ('偏好角色', roleLabels.isEmpty ? '未设�? : roleLabels),
       ('每周投入', profile.weeklyHours == 0 ? '暂不确定' : '${profile.weeklyHours} 小时'),
       ('长期训练', profile.acceptLongTermTraining ? '可以接受' : '暂不考虑'),
     ];

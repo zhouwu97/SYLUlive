@@ -65,8 +65,8 @@ class GraduationChecklistScreen extends StatelessWidget {
       };
 
   String _label(RequirementState state) => switch (state) {
-        RequirementState.completed => '已完成',
-        RequirementState.notCompleted => '未完成',
+        RequirementState.completed => '已完�?,
+        RequirementState.notCompleted => '未完�?,
         RequirementState.unknown => '未知',
         RequirementState.blocked => '阻断',
         RequirementState.notApplicable => '不适用',

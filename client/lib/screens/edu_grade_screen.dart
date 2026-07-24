@@ -44,7 +44,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   int _selectedSemester = EduSemester.first;
   List<EduGrade> _grades = [];
   GradePageState _pageState = GradePageState.loading;
-  // Cache timestamp — currently not rendered in UI, retained for future use
+  // Cache timestamp �?currently not rendered in UI, retained for future use
   // ignore: unused_field
   DateTime? _lastUpdatedAt;
   bool _isInitialLoading = false;
@@ -53,7 +53,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   int _academicRequestGeneration = 0;
   String? _errorMessage;
   String? _lastUserId;
-  String _activeFilter = '全部'; // '全部' | '学位课' | '未通过'
+  String _activeFilter = '全部'; // '全部' | '学位�? | '未通过'
   EduAcademicSituation? _academicSituation;
   bool _isAcademicLoading = false;
   String? _academicError;
@@ -106,7 +106,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _eduProvider = eduProvider;
       _lastUserId = currentUserId;
 
-      // 立即废弃旧用户的所有进行中请求并清空页面
+      // 立即废弃旧用户的所有进行中请求并清空页�?
       _requestGeneration++;
       _academicRequestGeneration++;
       setState(() {
@@ -125,7 +125,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       _resetSectionScrollPositions();
 
       if (currentUserId != null) {
-        // 捕获局部变量防止异步期间 _lastUserId 变化
+        // 捕获局部变量防止异步期�?_lastUserId 变化
         final capturedUserId = currentUserId;
         eduProvider.setUserId(currentUserId);
         unawaited(
@@ -148,7 +148,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
         initFlow();
       } else {
-        _showUnavailableState('请先登录后查看成绩');
+        _showUnavailableState('请先登录后查看成�?);
         unawaited(
             GradeReminderService.instance.syncRuntimeConfig(userId: null));
       }
@@ -318,7 +318,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     } else {
       final errorMsg = result.errorMessage ?? '成绩加载失败';
       if (_grades.isNotEmpty) {
-        // Has previous data — keep it
+        // Has previous data �?keep it
         setState(() {
           _isInitialLoading = false;
           _isRefreshing = false;
@@ -346,7 +346,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         await _eduProvider!.fetchGrades(_selectedYear, _selectedSemester);
 
     if (!mounted || _requestGeneration != gen) {
-      // 页面已切换或用户变化 → 视为失败
+      // 页面已切换或用户变化 �?视为失败
       return null;
     }
 
@@ -363,7 +363,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
       _syncBaselineAndCancelNotification(
           _selectedYear, _selectedSemester, result.data!);
-      if (mounted && !silent) _showSnackBar('成绩已更新');
+      if (mounted && !silent) _showSnackBar('成绩已更�?);
       return result.data;
     }
 
@@ -380,11 +380,11 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     if (_isAcademicLoading) return false;
     await _loadAcademicSituation(forceRefresh: true);
     final success = _academicError == null && _academicSituation != null;
-    if (mounted) _showSnackBar(success ? '学业情况已更新' : '刷新失败，请稍后重试');
+    if (mounted) _showSnackBar(success ? '学业情况已更�? : '刷新失败，请稍后重试');
     return success;
   }
 
-  /// Atomically switch semester — old grades stay visible during load.
+  /// Atomically switch semester �?old grades stay visible during load.
   /// Returns true on success, false if failed or stale.
   Future<bool> _switchSemester(String year, int semester) async {
     if (year == _selectedYear && semester == _selectedSemester) {
@@ -418,7 +418,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       return true;
     }
 
-    // No cache — fetch from network. Old grades stay visible while loading.
+    // No cache �?fetch from network. Old grades stay visible while loading.
     final result = await provider.fetchGrades(year, semester);
 
     if (!mounted || generation != _requestGeneration) return false;
@@ -508,7 +508,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
   List<EduGrade> get _filteredGrades {
     switch (_activeFilter) {
-      case '学位课':
+      case '学位�?:
         return _grades.where((g) => g.isDegree).toList();
       case '未通过':
         return _grades.where((g) => g.isPassed == false).toList();
@@ -787,8 +787,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     final failedCount = _grades.where((g) => g.isPassed == false).length;
 
     switch (_activeFilter) {
-      case '学位课':
-        return '学位课 $degreeCount';
+      case '学位�?:
+        return '学位�?$degreeCount';
       case '未通过':
         return '未通过 $failedCount';
       default:
@@ -802,7 +802,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
     final options = <Map<String, String>>[
       {'key': '全部', 'label': '全部 ${_grades.length}'},
-      {'key': '学位课', 'label': '学位课 $degreeCount'},
+      {'key': '学位�?, 'label': '学位�?$degreeCount'},
       {'key': '未通过', 'label': '未通过 $failedCount'},
     ];
 
@@ -837,7 +837,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
                   ),
                 ),
                 const Text(
-                  '筛选课程',
+                  '筛选课�?,
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 12),

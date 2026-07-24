@@ -68,7 +68,7 @@ class _WaterSectionDirectoryScreenState
                               fontSize: 15,
                               color: isDark ? Colors.white70 : Colors.black87)),
                       const SizedBox(height: 8),
-                      Text('换个关键词试试',
+                      Text('换个关键词试�?,
                           style: TextStyle(
                               fontSize: 13,
                               color: isDark ? Colors.white38 : Colors.black38)),
@@ -108,13 +108,13 @@ class _WaterSectionDirectoryScreenState
               Row(children: [
                 const CircleAvatar(backgroundColor: Color(0xFFE9D5FF), child: Icon(Icons.poll_outlined, color: Color(0xFF7C3AED))),
                 const SizedBox(width: 12),
-                const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('校园投票', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 3), Text('参与校园话题、选择与意见征集', style: TextStyle(fontSize: 12))])),
+                const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('校园投票', style: TextStyle(fontWeight: FontWeight.w800)), SizedBox(height: 3), Text('参与校园话题、选择与意见征�?, style: TextStyle(fontSize: 12))])),
                 const Icon(Icons.chevron_right, color: Color(0xFF7C3AED)),
               ]),
               const SizedBox(height: 8),
               Wrap(spacing: 4, children: [
                 _pollShortcut('推荐', 'recommend'),
-                _pollShortcut('最新', 'latest'),
+                _pollShortcut('最�?, 'latest'),
                 _pollShortcut('即将结束', 'ending'),
               ]),
               const SizedBox(height: 4),
@@ -167,7 +167,7 @@ class _WaterSectionDirectoryScreenState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '按学习、生活、竞赛和求助来逛',
+                  '按学习、生活、竞赛和求助来�?,
                   style: TextStyle(
                     fontSize: 13,
                     color: isDark ? Colors.white54 : Colors.black54,
@@ -423,7 +423,7 @@ class _WaterSectionDirectoryScreenState
               children: [
                 _buildQuickActionBtn(isDark, '推荐', 'mode:recommend', section),
                 const SizedBox(width: 8),
-                _buildQuickActionBtn(isDark, '最新', 'mode:latest', section),
+                _buildQuickActionBtn(isDark, '最�?, 'mode:latest', section),
                 const SizedBox(width: 8),
                 _buildQuickActionBtn(isDark, '精华', 'mode:featured', section),
               ],

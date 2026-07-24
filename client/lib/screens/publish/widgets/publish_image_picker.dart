@@ -9,7 +9,7 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
   static final ImagePicker _picker = ImagePicker();
 
   // ---------------------------------------------------------------------------
-  // Abstract – the host State supplies these
+  // Abstract �?the host State supplies these
   // ---------------------------------------------------------------------------
 
   List<XFile> get selectedImages;
@@ -49,7 +49,7 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('最多只能添加 9 张图片')));
+          ).showSnackBar(const SnackBar(content: Text('最多只能添�?9 张图�?)));
         }
       }
     } catch (e) {

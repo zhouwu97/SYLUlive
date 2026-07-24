@@ -49,10 +49,10 @@ class FeedModeConfig {
   final String key;
   final String label;
 
-  /// 远程排序参数。为 null 表示该模式不支持远程加载。
+  /// 远程排序参数。为 null 表示该模式不支持远程加载�?
   final String? remoteSort;
 
-  /// 是否支持远程加载帖子。
+  /// 是否支持远程加载帖子�?
   final bool supportsRemoteLoading;
 
   const FeedModeConfig({
@@ -63,12 +63,12 @@ class FeedModeConfig {
   });
 }
 
-/// 标签显示顺序：最新、综合、精华、关注
-/// 默认选中：综合 (index 1)
+/// 标签显示顺序：最新、综合、精华、关�?
+/// 默认选中：综�?(index 1)
 const List<FeedModeConfig> kFeedModes = [
   FeedModeConfig(
     key: 'new',
-    label: '最新',
+    label: '最�?,
     remoteSort: 'time',
     supportsRemoteLoading: true,
   ),
@@ -183,7 +183,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       // 预热水帖版块缓存，供服务抽屉使用
       context.read<WaterSectionProvider>().loadSections();
 
-      // 延迟加载其他非核心数据
+      // 延迟加载其他非核心数�?
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) {
           _loadAnnouncements();
@@ -414,7 +414,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     List<Post> sortedPosts = List.from(posts);
 
     // 排序逻辑已下沉至服务端，客户端只需原样返回
-    // 但对于新帖过滤可以保留部分逻辑（如果服务端未实现new模式的话）
+    // 但对于新帖过滤可以保留部分逻辑（如果服务端未实现new模式的话�?
     if (mode == 'new') {
       final now = DateTime.now();
       final recent = sortedPosts
@@ -442,7 +442,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       postProvider.refresh(boardId: 1, sort: sortAtStart),
     ]);
     if (!mounted) return;
-    // 如果在刷新期间用户已切换了模式，丢弃本次结果，避免数据污染
+    // 如果在刷新期间用户已切换了模式，丢弃本次结果，避免数据污�?
     if (_feedMode != modeAtStart) return;
     if (_searchQuery.isNotEmpty) {
       await _runSearch(_searchQuery);
@@ -632,8 +632,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  /// 打开页面但不关闭校园服务侧边栏：直接在 rootNavigator 上 push，
-  /// 返回时露出下方仍在的侧边栏。与社区版块入口行为一致。
+  /// 打开页面但不关闭校园服务侧边栏：直接�?rootNavigator �?push�?
+  /// 返回时露出下方仍在的侧边栏。与社区版块入口行为一致�?
   void _openPageKeepingPanel(Widget page) {
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => page),
@@ -654,7 +654,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     });
   }
 
-  /// 打开成绩页（保留侧边栏），保留原有的渐入+轻位移+缩放动画与登录判断。
+  /// 打开成绩页（保留侧边栏），保留原有的渐入+轻位�?缩放动画与登录判断�?
   void _openGradeKeepingPanel() {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn || auth.user == null) {
@@ -808,7 +808,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
     final showCustomBackground = themeProvider.shouldShowCustomBackground;
 
-    // 阅读型首页在简洁模式下使用深色状态栏；自定义背景保留浅色图标。
+    // 阅读型首页在简洁模式下使用深色状态栏；自定义背景保留浅色图标�?
     SystemChrome.setSystemUIOverlayStyle(
       (cleanLightMode ? SystemUiOverlayStyle.dark : SystemUiOverlayStyle.light)
           .copyWith(
@@ -828,7 +828,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _wasLoggedIn = authProvider.isLoggedIn;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        // 登录/退出时清除关注信息流，避免跨账号数据残留
+        // 登录/退出时清除关注信息流，避免跨账号数据残�?
         context.read<PostProvider>().invalidateFollowingFeed();
         if (_currentConfig.supportsRemoteLoading &&
             _canLoadFeedMode(_feedMode)) {
@@ -981,7 +981,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       height: 44,
       child: Stack(
         children: [
-          // 指示条跟随手势连续移动，而不是等状态切完再跳转。
+          // 指示条跟随手势连续移动，而不是等状态切完再跳转�?
           Positioned(
             left: visualIndex * tabWidth + (tabWidth - 22) / 2,
             bottom: 3,
@@ -1034,14 +1034,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  // ---- 顶部导航栏 ----
+  // ---- 顶部导航�?----
   Widget _buildHomeTopBar(bool isDark) {
     return SizedBox(
       height: 48,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // 左侧三横线
+          // 左侧三横�?
           Positioned(
             left: 12,
             child: SizedBox(
@@ -1141,7 +1141,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: _buildHomeTopBar(isDark),
           ),
-          // 内容区
+          // 内容�?
           Expanded(child: _buildFeedContent(isDark)),
         ],
       ),
@@ -1158,7 +1158,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('关注动态',
+              Text('关注动�?,
                   style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -1197,13 +1197,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('还没有关注动态',
+                  Text('还没有关注动�?,
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
                           color: isDark ? Colors.white70 : Colors.black87)),
                   const SizedBox(height: 4),
-                  Text('关注版块后会在这里看到更新',
+                  Text('关注版块后会在这里看到更�?,
                       style: TextStyle(
                           fontSize: 13,
                           color: isDark ? Colors.white54 : Colors.black54)),
@@ -1381,7 +1381,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             onPressed: () => setState(() => _followingExpanded = false),
           ),
           const SizedBox(width: 4),
-          Text('关注动态',
+          Text('关注动�?,
               style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -1391,7 +1391,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  // ---- 关注模式未登录占位 ----
+  // ---- 关注模式未登录占�?----
   Widget _buildFollowingPlaceholder(bool isDark) {
     return Center(
       child: GlassContainer(
@@ -1409,7 +1409,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              '登录后查看关注动态',
+              '登录后查看关注动�?,
               style: TextStyle(
                 fontSize: 18,
                 color: isDark ? Colors.white70 : Colors.grey[600],
@@ -1430,7 +1430,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             OutlinedButton.icon(
               onPressed: () => Navigator.pushNamed(context, '/login'),
               icon: const Icon(Icons.login, size: 18),
-              label: const Text('去登录'),
+              label: const Text('去登�?),
               style: OutlinedButton.styleFrom(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1443,7 +1443,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  // ---- 关注模式已登录但无帖子 ----
+  // ---- 关注模式已登录但无帖�?----
   Widget _buildFollowingEmptyState(bool isDark) {
     return Center(
       child: GlassContainer(
@@ -1461,7 +1461,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              '还没有关注动态',
+              '还没有关注动�?,
               style: TextStyle(
                 fontSize: 18,
                 color: isDark ? Colors.white70 : Colors.grey[600],
@@ -1469,7 +1469,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              '关注的版块发布帖子后，会显示在这里',
+              '关注的版块发布帖子后，会显示在这�?,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
@@ -1786,7 +1786,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           border: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 9),
-          hintText: '搜索账号、用户或帖子关键词',
+          hintText: '搜索账号、用户或帖子关键�?,
           hintStyle: const TextStyle(fontSize: 14),
           prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon: _searchController.text.isEmpty
@@ -1862,7 +1862,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 }
 
-// ---- 搜索框折叠 SliverPersistentHeaderDelegate ----
+// ---- 搜索框折�?SliverPersistentHeaderDelegate ----
 class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   final TickerProvider _vsync;
   final Widget child;
@@ -1931,7 +1931,7 @@ class CheckInSuccessDialog extends StatelessWidget {
       return '已完成全部签到里程碑';
     }
 
-    return '距离连续签到 $next 天还差 ${next - days} 天';
+    return '距离连续签到 $next 天还�?${next - days} �?;
   }
 
   @override
@@ -1989,7 +1989,7 @@ class CheckInSuccessDialog extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                '已连续签到',
+                '已连续签�?,
                 style: TextStyle(
                   fontSize: 13,
                   color: isDark ? Colors.white54 : const Color(0xFF8B909A),
@@ -2009,7 +2009,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                       ),
                     ),
                     TextSpan(
-                      text: ' 天',
+                      text: ' �?,
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -2049,7 +2049,7 @@ class CheckInSuccessDialog extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '经验已到账',
+                      '经验已到�?,
                       style: TextStyle(
                         fontSize: 13,
                         color:

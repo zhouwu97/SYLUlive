@@ -16,9 +16,9 @@ import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/water_post_bottom_bar.dart';
 
-/// 水帖发布/编辑页（boardId == 1）。
+/// 水帖发布/编辑页（boardId == 1）�?
 ///
-/// 采用全屏编辑布局：顶部标题，中间正文自适应填充，底部保留图片和发布工具栏。
+/// 采用全屏编辑布局：顶部标题，中间正文自适应填充，底部保留图片和发布工具栏�?
 class WaterPostComposer extends StatefulWidget {
   final Post? editingPost;
   final String? initialPostType;
@@ -75,7 +75,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       setState(() => _existingImages.removeAt(index));
 
   // ---------------------------------------------------------------------------
-  // 辅助状态
+  // 辅助状�?
   // ---------------------------------------------------------------------------
 
   bool get _isEditing => widget.editingPost != null;
@@ -101,7 +101,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     final text = message ?? (_isEditing ? '更新失败' : '发布失败');
     if (text.contains('禁言')) {
       final action = _isEditing ? '编辑' : '发布';
-      return '$text\n如认为禁言有误，可在通知中查看处理原因，并联系版块管理员申诉。解除后可继续$action。';
+      return '$text\n如认为禁言有误，可在通知中查看处理原因，并联系版块管理员申诉。解除后可继�?action�?;
     }
     return text;
   }
@@ -202,7 +202,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('正文最多 2000 字'),
+            content: Text('正文最�?2000 �?),
             backgroundColor: Colors.red,
           ),
         );
@@ -303,7 +303,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('发布失败：$e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('发布失败�?e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -346,11 +346,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
           ? sectionAward.sectionTitle
           : _selectedSection.title;
       final title = sectionAward.titleAfter.isNotEmpty
-          ? '「${sectionAward.titleAfter}」'
+          ? '�?{sectionAward.titleAfter}�?
           : '';
-      lines.add('$sectionName升级到 Lv.${sectionAward.levelAfter}$title');
+      lines.add('$sectionName升级�?Lv.${sectionAward.levelAfter}$title');
     } else if (globalAward != null && globalAward.levelUp) {
-      lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
+      lines.add('全站等级升级�?Lv.${globalAward.levelAfter}');
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -619,7 +619,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text(
-                        '该版块内容更容易触发管理审核，请避免泄露隐私、攻击他人或发布无法核实的信息。',
+                        '该版块内容更容易触发管理审核，请避免泄露隐私、攻击他人或发布无法核实的信息�?,
                         style: TextStyle(
                           fontSize: 11.5,
                           height: 1.3,

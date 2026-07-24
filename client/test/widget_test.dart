@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:shenliyuan/main.dart';
+import 'package:shenliyuan/app_bootstrap.dart';
 import 'package:shenliyuan/services/app_update_coordinator.dart';
 import 'package:shenliyuan/widgets/app_update_gate.dart';
 

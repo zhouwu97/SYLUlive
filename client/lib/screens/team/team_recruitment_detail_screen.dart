@@ -84,7 +84,7 @@ class _TeamRecruitmentDetailScreenState
         );
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(error ?? '申请已提交')));
+        .showSnackBar(SnackBar(content: Text(error ?? '申请已提�?)));
     if (error == null) {
       _load();
     }
@@ -103,7 +103,7 @@ class _TeamRecruitmentDetailScreenState
         .updateStatus(item.id, status);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(error ?? (status == 'closed' ? '已关闭招募' : '已重新开启招募'))));
+        content: Text(error ?? (status == 'closed' ? '已关闭招�? : '已重新开启招�?))));
     if (error == null) {
       _load();
     }
@@ -136,7 +136,7 @@ class _TeamRecruitmentDetailScreenState
     }
     if (_item == null) {
       return Scaffold(
-          appBar: AppBar(), body: Center(child: Text(_error ?? '招募不存在')));
+          appBar: AppBar(), body: Center(child: Text(_error ?? '招募不存�?)));
     }
     final item = _item!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -240,12 +240,12 @@ class _TeamRecruitmentDetailScreenState
                     [
                       _infoRow(
                           Icons.group_outlined,
-                          '已加入 ${item.acceptedCount} / 计划招募 ${item.neededCount}，还缺 ${item.remainingCount} 人',
+                          '已加�?${item.acceptedCount} / 计划招募 ${item.neededCount}，还�?${item.remainingCount} �?,
                           isDark),
                       _infoRow(
                           Icons.event_outlined,
                           item.deadline == null
-                              ? '未设置截止日期'
+                              ? '未设置截止日�?
                               : '截止 ${item.deadline!.year}-${item.deadline!.month.toString().padLeft(2, '0')}-${item.deadline!.day.toString().padLeft(2, '0')}',
                           isDark),
                       if (item.roles.isNotEmpty) ...[
@@ -364,9 +364,9 @@ class _TeamRecruitmentDetailScreenState
                         ? () => _changeStatus(item, 'recruiting')
                         : () => _changeStatus(item, 'closed'),
                 child: Text(updatingStatus
-                    ? '处理中…'
+                    ? '处理中�?
                     : item.isClosed
-                        ? '重新开启'
+                        ? '重新开�?
                         : '关闭招募'))),
       ]);
     }
@@ -411,7 +411,7 @@ class _TeamRecruitmentDetailScreenState
                     final confirmed = await showDialog<bool>(
                           context: context,
                           builder: (dialogContext) => AlertDialog(
-                            title: const Text('退出队伍'),
+                            title: const Text('退出队�?),
                             content: const Text('退出后名额会重新开放，确定继续吗？'),
                             actions: [
                               TextButton(
@@ -422,7 +422,7 @@ class _TeamRecruitmentDetailScreenState
                               FilledButton(
                                 onPressed: () =>
                                     Navigator.pop(dialogContext, true),
-                                child: const Text('确认退出'),
+                                child: const Text('确认退�?),
                               ),
                             ],
                           ),
@@ -434,11 +434,11 @@ class _TeamRecruitmentDetailScreenState
                         .leave(applicationId);
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error ?? '已退出队伍')));
+                        SnackBar(content: Text(error ?? '已退出队�?)));
                     if (error == null) _load();
                   },
             icon: const Icon(Icons.logout_rounded),
-            label: Text(processing ? '处理中…' : '退出'),
+            label: Text(processing ? '处理中�? : '退�?),
           ),
         ),
       ]);
@@ -448,17 +448,17 @@ class _TeamRecruitmentDetailScreenState
           style: TeamUiTokens.primaryButtonStyle(isDark),
           onPressed: null,
           child: Text(item.isFull
-              ? '已满员'
+              ? '已满�?
               : item.isExpired
-                  ? '已截止'
-                  : '暂不可申请'));
+                  ? '已截�?
+                  : '暂不可申�?));
     }
     final applying =
         context.watch<TeamRecruitmentProvider>().applyingIds.contains(item.id);
     return FilledButton(
         style: TeamUiTokens.primaryButtonStyle(isDark),
         onPressed: applying ? null : () => _apply(item),
-        child: Text(applying ? '提交中…' : '申请加入'));
+        child: Text(applying ? '提交中�? : '申请加入'));
   }
 
   User _authorAsUser(TeamRecruitment item) => User(

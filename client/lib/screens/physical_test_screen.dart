@@ -56,7 +56,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   String _currentYear = '';
   late final List<String> _availableYears;
 
-  // year → {total_grade, total_score, scores[]}
+  // year �?{total_grade, total_score, scores[]}
   final Map<String, _YearData> _yearData = {};
 
   String _testCode = '';
@@ -107,7 +107,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
     // 尝试从本地缓存加载已有的年份数据
     await _loadCached();
-    // 自动选中最新有数据的年份：优先当前学年，无数据则取最近有缓存的
+    // 自动选中最新有数据的年份：优先当前学年，无数据则取最近有缓存�?
     final now = DateTime.now();
     final academicYear = now.month >= 9 ? now.year + 1 : now.year;
     final currentYearStr = academicYear.toString();
@@ -115,7 +115,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     if (mounted) {
       setState(() {
         _currentYear = _yearData[currentYearStr] != null
-            ? currentYearStr // 当前学年有数据，优先用
+            ? currentYearStr // 当前学年有数据，优先�?
             : _availableYears.firstWhere(
                 (y) => _yearData[y] != null,
                 orElse: () => currentYearStr, // 都没数据，用当前学年
@@ -127,7 +127,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     if (_yearData[_currentYear] == null) {
       _fetchYear(_currentYear);
     } else {
-      // 当前年有缓存，后台静默拉取最新数据
+      // 当前年有缓存，后台静默拉取最新数�?
       _fetchYear(_currentYear);
     }
   }
@@ -179,7 +179,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     };
     requestData['sign'] = SignUtils.generateSign(requestData);
 
-    _debugLog('--- [体测登录] 请求开始 ---');
+    _debugLog('--- [体测登录] 请求开�?---');
     _debugLog('URL: $_baseUrl/service/login/mobile/check');
     _debugLog('Payload keys: ${requestData.keys.toList()}');
 
@@ -236,7 +236,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             _debugLog('登录返回了数据，但未能解析到 userId');
           }
         } else {
-          _debugLog('登录返回的数据不是 Map 类型');
+          _debugLog('登录返回的数据不�?Map 类型');
         }
       }
     } catch (e, st) {
@@ -273,7 +273,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         if (data is Map) {
           if (data['testCode'] != null) {
             _testCode = data['testCode'].toString();
-            _debugLog('获取到 testCode: <redacted>, length=${_testCode.length}');
+            _debugLog('获取�?testCode: <redacted>, length=${_testCode.length}');
           }
           for (final key in ['sex', 'gender', 'xb', 'studentSex', 'userSex']) {
             final parsed = PhysicalPercentileService.parseGender(data[key]);
@@ -289,7 +289,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
   Future<void> _fetchYear(String year) async {
     if (_userId == null) {
-      _debugLog('获取成绩失败: _userId 为空！');
+      _debugLog('获取成绩失败: _userId 为空�?);
       return;
     }
     if (mounted) setState(() => _loadingYear = true);
@@ -299,7 +299,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final bodyData = <String, dynamic>{'user_id': _userId, 'school_year': year};
     bodyData['sign'] = SignUtils.generateSign(bodyData);
 
-    _debugLog('--- [体测成绩查询] 请求开始 ---');
+    _debugLog('--- [体测成绩查询] 请求开�?---');
     _debugLog('URL: $_baseUrl/service/mobile/gymResult/selectUserPlanScore');
     _debugLog('Headers Authorization: <redacted>, length=${authValue.length}');
     _debugLog('Payload keys: ${bodyData.keys.toList()}, schoolYear=$year');
@@ -346,14 +346,14 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           _yearData[year] = yearData;
           await _saveCache(year, yearData);
           if (mounted) {
-            AppFeedback.showSnackBar(context, '成绩已更新');
+            AppFeedback.showSnackBar(context, '成绩已更�?);
           }
         } else {
-          _debugLog('成绩查询返回的不是预期的 Map 或 data 字段不是 Map');
+          _debugLog('成绩查询返回的不是预期的 Map �?data 字段不是 Map');
         }
       }
     } catch (e, st) {
-      _debugLog('获取成绩失败，发生异常: ${e.runtimeType}');
+      _debugLog('获取成绩失败，发生异�? ${e.runtimeType}');
       if (kDebugMode) debugPrintStack(stackTrace: st);
     }
     if (mounted) setState(() => _loadingYear = false);
@@ -396,7 +396,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         children: [
           CircularProgressIndicator(),
           SizedBox(height: 16),
-          Text('正在登录…'),
+          Text('正在登录�?),
         ],
       ),
     );
@@ -498,7 +498,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                                   fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
                         ..._availableYears.map((y) => ListTile(
-                              title: Text('$y—${int.parse(y) + 1}',
+                              title: Text('$y�?{int.parse(y) + 1}',
                                   textAlign: TextAlign.center),
                               trailing: _currentYear == y
                                   ? const Icon(Icons.check,
@@ -521,7 +521,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             child: Row(
               children: [
                 Text(
-                  '${_currentYear.isNotEmpty ? _currentYear : "..."}—${_currentYear.isNotEmpty ? int.parse(_currentYear) + 1 : "..."}',
+                  '${_currentYear.isNotEmpty ? _currentYear : "..."}�?{_currentYear.isNotEmpty ? int.parse(_currentYear) + 1 : "..."}',
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
@@ -573,7 +573,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                     const SizedBox(width: 36),
                     Expanded(
                       child: Text(
-                        '体测身份码',
+                        '体测身份�?,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 19,
@@ -637,7 +637,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 ),
                 const SizedBox(height: 7),
                 Text(
-                  '学号：${widget.username}',
+                  '学号�?{widget.username}',
                   style: TextStyle(
                     fontSize: 12,
                     color: isDark ? Colors.white54 : Colors.grey[600],
@@ -662,7 +662,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             const Icon(Icons.qr_code_2, size: 20, color: Color(0xFF6366F1)),
             const SizedBox(width: 10),
             const Text(
-              '体测身份码',
+              '体测身份�?,
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
             const Spacer(),
@@ -696,7 +696,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     } else if (data.totalGrade == '及格') {
       gradeColor = const Color(0xFF5B6EE1);
       gradeBg = const Color(0xFFEEF0FF);
-    } else if (data.totalGrade == '不及格') {
+    } else if (data.totalGrade == '不及�?) {
       gradeColor = const Color(0xFFE45757);
       gradeBg = const Color(0xFFFDECEC);
     } else {
@@ -738,7 +738,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           ),
           const SizedBox(height: 6),
           Text(
-            '${data.totalScore} 分',
+            '${data.totalScore} �?,
             style: const TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
@@ -748,7 +748,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           Row(
             children: [
               Text(
-                '当前采用：${_currentYear.isNotEmpty ? _currentYear : ""}年体测标准',
+                '当前采用�?{_currentYear.isNotEmpty ? _currentYear : ""}年体测标�?,
                 style: TextStyle(
                   fontSize: 12,
                   color: isDark ? Colors.white54 : Colors.grey[600],
@@ -877,7 +877,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           } else if (item.grade == '及格') {
             gradeColor = const Color(0xFF5B6EE1);
             gradeBg = const Color(0xFFEEF0FF);
-          } else if (item.grade == '不及格') {
+          } else if (item.grade == '不及�?) {
             gradeColor = const Color(0xFFE45757);
             gradeBg = const Color(0xFFFDECEC);
           } else {
@@ -894,7 +894,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                '${item.score}分',
+                '${item.score}�?,
                 style: TextStyle(
                   color: gradeColor,
                   fontWeight: FontWeight.w600,
@@ -1062,7 +1062,7 @@ class _GymScoreItem {
   String get standardWeight {
     if (weight.isNotEmpty) return weight;
     if (subName.contains('BMI') || subName.contains('体重指数')) return '15';
-    if (subName.contains('肺活量')) return '15';
+    if (subName.contains('肺活�?)) return '15';
     if (subName.contains('50')) return '20';
     if (subName.contains('前屈')) return '10';
     if (subName.contains('跳远')) return '10';
@@ -1079,15 +1079,15 @@ class _GymScoreItem {
 
     String rawResult = '${json['result'] ?? ''} ${json['unit'] ?? ''}'.trim();
     rawResult = rawResult.replaceAll('ml', 'mL');
-    rawResult = rawResult.replaceAll('times', '次');
+    rawResult = rawResult.replaceAll('times', '�?);
     rawResult = rawResult.replaceAll(' min', ' 分钟');
 
     rawResult = rawResult.replaceAll(RegExp(r"m's['" + '"' + r"]*"), "");
     if (rawResult.contains("'") || rawResult.contains('"')) {
       rawResult = rawResult
-          .replaceAll("''", "″")
-          .replaceAll("'", "′")
-          .replaceAll("\"", "″");
+          .replaceAll("''", "�?)
+          .replaceAll("'", "�?)
+          .replaceAll("\"", "�?);
     }
     rawResult = rawResult.trim();
 

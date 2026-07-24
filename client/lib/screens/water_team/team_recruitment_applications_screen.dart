@@ -5,7 +5,7 @@ import '../../models/post.dart';
 import '../../models/water_team.dart';
 import '../../providers/water_team_provider.dart';
 
-/// 发起人审批组队申请的独立页面。
+/// 发起人审批组队申请的独立页面�?
 class TeamRecruitmentApplicationsScreen extends StatefulWidget {
   final Post post;
 
@@ -68,7 +68,7 @@ class _TeamRecruitmentApplicationsScreenState
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Text(
-              '招募：${widget.post.title.isEmpty ? '未命名帖子' : widget.post.title}',
+              '招募�?{widget.post.title.isEmpty ? '未命名帖�? : widget.post.title}',
               style: const TextStyle(fontWeight: FontWeight.w700)),
         ),
         _buildFilterBar(apps),
@@ -78,7 +78,7 @@ class _TeamRecruitmentApplicationsScreenState
               : filtered.isEmpty
                   ? Center(
                       child: Text(_filter == 'pending'
-                          ? '暂无待处理申请'
+                          ? '暂无待处理申�?
                           : '暂无${_statusLabel(_filter)}记录'))
                   : RefreshIndicator(
                       onRefresh: _load,
@@ -117,10 +117,10 @@ class _TeamRecruitmentApplicationsScreenState
 
   String _statusLabel(String status) =>
       const {
-        'pending': '待处理',
+        'pending': '待处�?,
         'accepted': '已通过',
-        'rejected': '已拒绝',
-        'cancelled': '已取消'
+        'rejected': '已拒�?,
+        'cancelled': '已取�?
       }[status] ??
       status;
 
@@ -132,7 +132,7 @@ class _TeamRecruitmentApplicationsScreenState
           context: context,
           builder: (_) => AlertDialog(
                 title: const Text('确认通过该申请？'),
-                content: const Text('通过后将占用一个招募名额。'),
+                content: const Text('通过后将占用一个招募名额�?),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(context, false),
@@ -161,7 +161,7 @@ class _TeamRecruitmentApplicationsScreenState
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(result.isSuccess
-            ? (accept ? '已通过申请' : '已拒绝申请')
+            ? (accept ? '已通过申请' : '已拒绝申�?)
             : (result.error ?? '操作失败'))));
     if (result.hasPost) {
       _latestPost = result.post!;
@@ -180,7 +180,7 @@ class _TeamRecruitmentApplicationsScreenState
                   maxLines: 4,
                   maxLength: 500,
                   decoration: const InputDecoration(
-                      hintText: '回复申请人（选填）', border: OutlineInputBorder())),
+                      hintText: '回复申请人（选填�?, border: OutlineInputBorder())),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(context),
@@ -247,7 +247,7 @@ class _ApplicationCard extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade700))
           ],
           const SizedBox(height: 8),
-          Text('申请于 ${_formatDate(application.createdAt)}',
+          Text('申请�?${_formatDate(application.createdAt)}',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
           if (isPending) ...[
             const SizedBox(height: 12),
@@ -270,7 +270,7 @@ class _ApplicationCard extends StatelessWidget {
           ],
           if (!isPending && application.ownerReply.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text('回复：${application.ownerReply}',
+            Text('回复�?{application.ownerReply}',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade700))
           ],
         ]),
@@ -279,7 +279,7 @@ class _ApplicationCard extends StatelessWidget {
   }
 
   String _formatDate(DateTime value) =>
-      '${value.month} 月 ${value.day} 日 ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+      '${value.month} �?${value.day} �?${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 }
 
 class _StatusBadge extends StatelessWidget {
@@ -288,10 +288,10 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = const {
-          'pending': '待处理',
+          'pending': '待处�?,
           'accepted': '已通过',
-          'rejected': '已拒绝',
-          'cancelled': '已取消'
+          'rejected': '已拒�?,
+          'cancelled': '已取�?
         }[status] ??
         status;
     return Container(

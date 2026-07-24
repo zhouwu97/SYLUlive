@@ -1,8 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shenliyuan/main.dart';
+import 'package:shenliyuan/app_bootstrap.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
 
 Future<ThemeProvider> _loadProvider(WidgetTester tester) async {
   final provider = ThemeProvider(loadOnStart: false);

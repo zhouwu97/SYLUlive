@@ -94,7 +94,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (!result.success) {
       messenger.showSnackBar(
-          SnackBar(content: Text(result.errorMessage ?? '关闭远程推送失败')));
+          SnackBar(content: Text(result.errorMessage ?? '关闭远程推送失�?)));
       return;
     }
 
@@ -296,7 +296,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: _buildSettingsTile(
             icon: Icons.security_outlined,
             iconColor: Colors.blue,
-            title: '账号与安全',
+            title: '账号与安�?,
             subtitle: '管理学号、邮箱、登录方式和教务连接',
             isDark: isDark,
             onTap: authProvider.isLoggedIn
@@ -312,8 +312,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: _buildSettingsTile(
             icon: Icons.light_mode,
             iconColor: Colors.blue,
-            title: '简洁模式',
-            subtitle: '使用干净背景，不删除已保存图片',
+            title: '简洁模�?,
+            subtitle: '使用干净背景，不删除已保存图�?,
             trailing: themeProvider.isCleanBackgroundMode
                 ? Icon(Icons.check_circle,
                     color: Theme.of(context).primaryColor)
@@ -326,8 +326,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: _buildSettingsTile(
             icon: Icons.wallpaper,
             iconColor: Colors.purple,
-            title: '自定义背景',
-            subtitle: '显示你选择的背景图片',
+            title: '自定义背�?,
+            subtitle: '显示你选择的背景图�?,
             trailing: themeProvider.backgroundMode == AppBackgroundMode.custom
                 ? Icon(Icons.check_circle,
                     color: Theme.of(context).primaryColor)
@@ -354,8 +354,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: _buildSettingsTile(
             icon: Icons.landscape,
             iconColor: Colors.purpleAccent,
-            title: '横屏自定义背景',
-            subtitle: '平板或宽屏下显示的专属横向背景',
+            title: '横屏自定义背�?,
+            subtitle: '平板或宽屏下显示的专属横向背�?,
             isDark: isDark,
             onTap: () => _showBackgroundPicker(context, themeProvider, true),
           ),
@@ -364,7 +364,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: _buildSettingsTile(
             icon: Icons.opacity,
             iconColor: Colors.teal,
-            title: '组件透明度',
+            title: '组件透明�?,
             trailing: SizedBox(
               width: 120,
               height: 32,
@@ -385,7 +385,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.delete_outline,
             iconColor: Colors.redAccent,
             title: '移除背景图片',
-            subtitle: '删除已保存的竖屏和横屏背景',
+            subtitle: '删除已保存的竖屏和横屏背�?,
             isDark: isDark,
             onTap: themeProvider.hasAnyBackground
                 ? () => _showClearBackgroundDialog(context, themeProvider)
@@ -395,12 +395,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         const SizedBox(height: 8),
 
-        // 视觉效果 — 独立卡片
+        // 视觉效果 �?独立卡片
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.blur_on,
             iconColor: Colors.indigo,
-            title: '液态玻璃效果',
+            title: '液态玻璃效�?,
             trailing: Transform.scale(
               scale: 0.8,
               child: Switch(
@@ -433,7 +433,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: _buildSettingsTile(
             icon: Icons.swipe,
             iconColor: Colors.blue,
-            title: '预测性返回手势',
+            title: '预测性返回手�?,
             subtitle: 'Android 侧滑返回时预览上一页，关闭后仅顶部返回按钮可用',
             trailing: Transform.scale(
               scale: 0.8,
@@ -451,8 +451,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: _buildSettingsTile(
               icon: Icons.notifications_none_rounded,
               iconColor: Colors.blueAccent,
-              title: '接收远程消息推送',
-              subtitle: '默认关闭，开启后会向极光提供设备推送标识',
+              title: '接收远程消息推�?,
+              subtitle: '默认关闭，开启后会向极光提供设备推送标�?,
               trailing: Transform.scale(
                 scale: 0.8,
                 child: Switch(
@@ -525,7 +525,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         const SizedBox(height: 8),
 
-        // 账号 — 独立卡片
+        // 账号 �?独立卡片
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.receipt_long_rounded,
@@ -545,8 +545,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: _buildSettingsTile(
               icon: Icons.troubleshoot,
               iconColor: Colors.teal,
-              title: '推送诊断',
-              subtitle: '查看极光推送、权限与渠道状态',
+              title: '推送诊�?,
+              subtitle: '查看极光推送、权限与渠道状�?,
               isDark: isDark,
               onTap: () => _showPushDiagnostics(context, isDark),
             ),
@@ -564,7 +564,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: _buildSettingsTile(
             icon: Icons.privacy_tip_outlined,
             iconColor: Colors.teal,
-            title: '隐私与数据权利',
+            title: '隐私与数据权�?,
             subtitle: '查看协议、导出数据或注销账号',
             isDark: isDark,
             onTap: authProvider.isLoggedIn
@@ -592,7 +592,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
 
-        // 退出登录
+        // 退出登�?
         if (authProvider.isLoggedIn) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -625,7 +625,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     if (userId != null) {
                       await GradeReminderService.instance.clearForUser(userId);
                     }
-                    // 登出前清空本机教务和课表状态，防止跨账号数据泄漏。
+                    // 登出前清空本机教务和课表状态，防止跨账号数据泄漏�?
                     await eduProvider.clearLocalSession();
                     courseProvider.clearAllUserState();
                     await authProvider.logout();
@@ -637,7 +637,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: EdgeInsets.symmetric(vertical: 14),
                     child: Center(
                       child: Text(
-                        '退出登录',
+                        '退出登�?,
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -656,21 +656,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _keepAliveSubtitle() {
-    if (!_keepAliveStatus.supported) return '当前平台不可用';
-    if (!_keepAliveStatus.enabled) return '开启后按提示加入后台白名单，提升提醒稳定性';
+    if (!_keepAliveStatus.supported) return '当前平台不可�?;
+    if (!_keepAliveStatus.enabled) return '开启后按提示加入后台白名单，提升提醒稳定�?;
     if (_keepAliveStatus.serviceRunning) {
       return _keepAliveStatus.isIgnoringBatteryOptimizations
-          ? '运行中，后台提醒更稳定'
+          ? '运行中，后台提醒更稳�?
           : '运行中，请允许自启动和后台无限制';
     }
     return '已开启，等待系统启动保活服务';
   }
 
   String _hideRecentsSubtitle() {
-    if (!_keepAliveStatus.supported) return '当前平台不可用';
+    if (!_keepAliveStatus.supported) return '当前平台不可�?;
     return _keepAliveStatus.hideRecentsEnabled
         ? '已隐藏最近任务卡片，默认关闭，可随时关掉'
-        : '默认关闭，开启后应用不会显示在最近任务列表';
+        : '默认关闭，开启后应用不会显示在最近任务列�?;
   }
 
   Future<void> _showKeepAliveGuideDialog() async {
@@ -681,11 +681,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('后台保活提示'),
         content: const Text(
           '请在接下来的系统页面里开启以下权限或设置：\n\n'
-          '• 电池使用：无限制\n'
-          '• 允许应用自启动\n'
-          '• 允许后台活动\n'
-          '• 最近任务中锁定应用\n\n'
-          '保活状态请看常驻通知或快捷设置开关。',
+          '�?电池使用：无限制\n'
+          '�?允许应用自启动\n'
+          '�?允许后台活动\n'
+          '�?最近任务中锁定应用\n\n'
+          '保活状态请看常驻通知或快捷设置开关�?,
         ),
         actions: [
           TextButton(
@@ -697,14 +697,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.pop(dialogContext);
               await KeepAliveService.instance.openSettings();
             },
-            child: const Text('去设置'),
+            child: const Text('去设�?),
           ),
         ],
       ),
     );
   }
 
-  /// 独立的设置卡片行（每个设置项单独一张毛玻璃卡片）
+  /// 独立的设置卡片行（每个设置项单独一张毛玻璃卡片�?
   Widget _buildSettingsRow({required Widget child}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
@@ -909,7 +909,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 16),
                     _pickerActionButton(
-                      label: '自定义背景',
+                      label: '自定义背�?,
                       icon: Icons.photo_library,
                       onTap: () => _pickGalleryBackground(
                         context,
@@ -1184,8 +1184,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('恢复简洁模式'),
-        content: const Text('将暂时不显示背景图片，但会保留已保存的竖屏和横屏背景。'),
+        title: const Text('恢复简洁模�?),
+        content: const Text('将暂时不显示背景图片，但会保留已保存的竖屏和横屏背景�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1219,7 +1219,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('移除背景图片'),
-        content: const Text('将删除已保存的竖屏和横屏背景，并切回简洁模式。此操作不会影响其他设置。'),
+        content: const Text('将删除已保存的竖屏和横屏背景，并切回简洁模式。此操作不会影响其他设置�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1232,7 +1232,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('已移除背景图片'),
+                  content: Text('已移除背景图�?),
                   backgroundColor: Colors.green,
                 ),
               );
@@ -1269,7 +1269,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
         content: const Text(
-          '液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。',
+          '液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿�?,
           style: TextStyle(height: 1.5),
         ),
         actions: [
@@ -1277,7 +1277,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: () {
               Navigator.pop(ctx);
             },
-            child: const Text('了解，但继续开启'),
+            child: const Text('了解，但继续开�?),
           ),
           ElevatedButton(
             onPressed: () {
@@ -1291,7 +1291,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('开启'),
+            child: const Text('开�?),
           ),
         ],
       ),
@@ -1354,13 +1354,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             TextField(
               controller: oldController,
-              decoration: const InputDecoration(labelText: '旧密码'),
+              decoration: const InputDecoration(labelText: '旧密�?),
               obscureText: true,
             ),
             const SizedBox(height: 16),
             TextField(
               controller: newController,
-              decoration: const InputDecoration(labelText: '新密码'),
+              decoration: const InputDecoration(labelText: '新密�?),
               obscureText: true,
             ),
           ],
@@ -1397,7 +1397,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     newController.dispose();
   }
 
-  // ── 推送诊断 ──
+  // ── 推送诊�?──
 
   static final _pushDiagChannel = MethodChannel(
     'shenliyuan/private_message_notifications',
@@ -1441,7 +1441,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 拖拽指示条
+                // 拖拽指示�?
                 Padding(
                   padding: const EdgeInsets.only(top: 12, bottom: 16),
                   child: Container(
@@ -1461,7 +1461,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Icon(Icons.troubleshoot, color: primary, size: 24),
                       const SizedBox(width: 10),
                       Text(
-                        '推送诊断',
+                        '推送诊�?,
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
@@ -1490,7 +1490,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           'RegistrationID',
                           info.registrationId != null
                               ? '***${info.registrationId!.length > 6 ? info.registrationId!.substring(info.registrationId!.length - 6) : info.registrationId}'
-                              : '未获取',
+                              : '未获�?,
                           info.registrationId != null
                               ? Icons.check_circle
                               : Icons.warning_amber_rounded,
@@ -1500,8 +1500,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           isDarkSheet,
                         ),
                         _diagRow(
-                          '通知总权限',
-                          info.notificationsEnabled ? '已开启' : '已关闭',
+                          '通知总权�?,
+                          info.notificationsEnabled ? '已开�? : '已关�?,
                           info.notificationsEnabled
                               ? Icons.check_circle
                               : Icons.cancel,
@@ -1511,10 +1511,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _diagRow(
                           '私信通知渠道',
                           !info.privateMessageChannelExists
-                              ? '渠道不存在'
+                              ? '渠道不存�?
                               : info.privateMessageChannelBlocked
-                                  ? '已关闭'
-                                  : '已开启',
+                                  ? '已关�?
+                                  : '已开�?,
                           !info.privateMessageChannelExists ||
                                   info.privateMessageChannelBlocked
                               ? Icons.cancel
@@ -1527,7 +1527,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         if (info.privateMessageChannelExists)
                           _diagRow(
-                            '渠道重要性',
+                            '渠道重要�?,
                             _importanceLabel(
                                 info.privateMessageChannelImportance),
                             info.privateMessageChannelImportance >= 4
@@ -1540,11 +1540,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         _diagRow(
                           info.storedAliasState == 'pending_bind'
-                              ? '本地待绑定 Alias'
-                              : '已存储 Alias',
+                              ? '本地待绑�?Alias'
+                              : '已存�?Alias',
                           info.storedAlias != null
                               ? '***${info.storedAlias!.length > 4 ? info.storedAlias!.substring(info.storedAlias!.length - 4) : info.storedAlias}'
-                              : '未存储',
+                              : '未存�?,
                           info.storedAlias != null
                               ? (info.storedAliasState == 'active'
                                   ? Icons.check_circle
@@ -1558,20 +1558,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           isDarkSheet,
                         ),
                         _diagRow(
-                          'Alias 最近状态',
-                          info.aliasLastStatus ?? '无记录',
+                          'Alias 最近状�?,
+                          info.aliasLastStatus ?? '无记�?,
                           info.aliasLastStatus == '成功'
                               ? Icons.check_circle
                               : info.aliasLastStatus == '失败'
                                   ? Icons.error
-                                  : info.aliasLastStatus == '待绑定'
+                                  : info.aliasLastStatus == '待绑�?
                                       ? Icons.hourglass_empty
                                       : Icons.help_outline,
                           info.aliasLastStatus == '成功'
                               ? Colors.green
                               : info.aliasLastStatus == '失败'
                                   ? Colors.red
-                                  : info.aliasLastStatus == '待绑定'
+                                  : info.aliasLastStatus == '待绑�?
                                       ? Colors.blue
                                       : Colors.grey,
                           isDarkSheet,
@@ -1627,7 +1627,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             },
                             icon: const Icon(Icons.receipt_long_rounded,
                                 size: 18),
-                            label: const Text('查看完整推送日志'),
+                            label: const Text('查看完整推送日�?),
                           ),
                         ),
                       ],
@@ -1663,12 +1663,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       errors.add('日志读取失败: $e');
     }
 
-    // 从日志中提取最近一次 Alias 绑定状态
+    // 从日志中提取最近一�?Alias 绑定状�?
     String? aliasLastStatus;
     String? aliasLastTime;
     String? aliasLastDetail;
     for (final log in logs) {
-      if (log.source != '推送') continue;
+      if (log.source != '推�?) continue;
       if (log.type == 'Alias 绑定成功' || log.type == 'Alias 恢复成功') {
         aliasLastStatus = '成功';
         final effectiveTime =
@@ -1699,11 +1699,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       aliasLastStatus = '成功';
     } else if (storedAliasState == 'pending_bind' && aliasLastStatus == null) {
-      aliasLastStatus = '待绑定';
+      aliasLastStatus = '待绑�?;
     }
 
     return _PushDiagnosticInfo(
-      // 使用原生返回的 RegistrationID，避免重复 JPush 插件查询
+      // 使用原生返回�?RegistrationID，避免重�?JPush 插件查询
       registrationId: native['registrationId']?.toString(),
       notificationsEnabled: native['notificationsEnabled'] == true,
       privateMessageChannelExists:
@@ -1726,23 +1726,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _PushDiagnosticInfo info,
   ) {
     final sb = StringBuffer();
-    sb.writeln('═══ 推送诊断 ═══');
+    sb.writeln('══�?推送诊�?══�?);
     sb.writeln('RegistrationID: ${_maskValue(info.registrationId, 6)}');
-    sb.writeln('通知总权限: ${info.notificationsEnabled ? "已开启" : "已关闭"}');
+    sb.writeln('通知总权�? ${info.notificationsEnabled ? "已开�? : "已关�?}');
     sb.writeln('私信通知渠道存在: ${info.privateMessageChannelExists}');
-    sb.writeln('私信通知渠道已关闭: ${info.privateMessageChannelBlocked}');
+    sb.writeln('私信通知渠道已关�? ${info.privateMessageChannelBlocked}');
     sb.writeln(
-      '渠道重要性: ${_importanceLabel(info.privateMessageChannelImportance)}',
+      '渠道重要�? ${_importanceLabel(info.privateMessageChannelImportance)}',
     );
     final aliasLabel =
-        info.storedAliasState == 'pending_bind' ? '本地待绑定 Alias' : '已存储 Alias';
+        info.storedAliasState == 'pending_bind' ? '本地待绑�?Alias' : '已存�?Alias';
     sb.writeln('$aliasLabel: ${_maskValue(info.storedAlias, 4)}');
     sb.writeln(
-      'Alias 最近状态: ${info.aliasLastStatus ?? "无记录"}'
+      'Alias 最近状�? ${info.aliasLastStatus ?? "无记�?}'
       '${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
     );
     if (info.aliasLastDetail != null) {
-      sb.writeln('Alias 最近详情: ${info.aliasLastDetail}');
+      sb.writeln('Alias 最近详�? ${info.aliasLastDetail}');
     }
     if (info.error != null) {
       sb.writeln('诊断异常: ${info.error}');
@@ -1758,9 +1758,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// 掩码敏感值，仅保留末 N 位
+  /// 掩码敏感值，仅保留末 N �?
   String _maskValue(String? value, int visibleLength) {
-    if (value == null || value.isEmpty) return '未获取';
+    if (value == null || value.isEmpty) return '未获�?;
     if (value.length <= visibleLength) return '***';
     return '***${value.substring(value.length - visibleLength)}';
   }
@@ -1768,17 +1768,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _importanceLabel(int importance) {
     switch (importance) {
       case 0:
-        return '无 (IMPORTANCE_NONE)';
+        return '�?(IMPORTANCE_NONE)';
       case 1:
-        return '最低 (IMPORTANCE_MIN)';
+        return '最�?(IMPORTANCE_MIN)';
       case 2:
-        return '低 (IMPORTANCE_LOW)';
+        return '�?(IMPORTANCE_LOW)';
       case 3:
         return '默认 (IMPORTANCE_DEFAULT)';
       case 4:
-        return '高 (IMPORTANCE_HIGH)';
+        return '�?(IMPORTANCE_HIGH)';
       case 5:
-        return '最高 (IMPORTANCE_MAX)';
+        return '最�?(IMPORTANCE_MAX)';
       default:
         return '未知 ($importance)';
     }
@@ -1846,7 +1846,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-/// 推送诊断信息
+/// 推送诊断信�?
 class _PushDiagnosticInfo {
   final String? registrationId;
   final bool notificationsEnabled;

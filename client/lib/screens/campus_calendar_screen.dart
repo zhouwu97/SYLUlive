@@ -228,9 +228,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
     return false;
   }
 
-  // 滚动通知可能在 PageView 的布局阶段发出。若此处直接 setState，
-  // 会让外层 AnimatedSize 在自身 performLayout 中再次请求布局。
-  void _scheduleMonthPagerScrolling(bool value) {
+  // 滚动通知可能�?PageView 的布局阶段发出。若此处直接 setState�?  // 会让外层 AnimatedSize 在自�?performLayout 中再次请求布局�?  void _scheduleMonthPagerScrolling(bool value) {
     _pendingMonthPagerScrolling = value;
     if (_monthPagerScrollUpdateScheduled) return;
     _monthPagerScrollUpdateScheduled = true;
@@ -377,7 +375,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(semester.name),
                   subtitle: Text(
-                    '${DateFormat('yyyy年M月d日').format(semester.startDate)} - ${DateFormat('yyyy年M月d日').format(semester.endDate)}',
+                    '${DateFormat('yyyy年M月d�?).format(semester.startDate)} - ${DateFormat('yyyy年M月d�?).format(semester.endDate)}',
                   ),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () {
@@ -443,7 +441,7 @@ class _CalendarActionSheet extends StatelessWidget {
             children: [
               _CalendarActionTile(
                 icon: Icons.event_note_rounded,
-                title: '本学期重要日程',
+                title: '本学期重要日�?,
                 color: _CalendarPalette.primary,
                 isDark: isDark,
                 onTap: onImportantEvents,
@@ -607,7 +605,7 @@ class _CalendarOverviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final weekLabel = selectedInfo.teachingWeek == null
         ? '非教学周'
-        : '第 ${selectedInfo.teachingWeek!.week} 教学周';
+        : '�?${selectedInfo.teachingWeek!.week} 教学�?;
     final titleColor = isDark ? Colors.white : _CalendarPalette.ink;
     final mutedColor = isDark ? Colors.white60 : _CalendarPalette.muted;
 
@@ -669,7 +667,7 @@ class _CalendarOverviewCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${DateFormat('M月d日').format(selectedInfo.date)} ${_weekdayLabel(selectedInfo.date)}',
+                    '${DateFormat('M月d�?).format(selectedInfo.date)} ${_weekdayLabel(selectedInfo.date)}',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -789,12 +787,12 @@ class _CalendarMonthCard extends StatelessWidget {
           const Row(
             children: [
               _WeekdayLabel('一'),
-              _WeekdayLabel('二'),
-              _WeekdayLabel('三'),
-              _WeekdayLabel('四'),
-              _WeekdayLabel('五'),
-              _WeekdayLabel('六', isWeekend: true),
-              _WeekdayLabel('日', isWeekend: true),
+              _WeekdayLabel('�?),
+              _WeekdayLabel('�?),
+              _WeekdayLabel('�?),
+              _WeekdayLabel('�?),
+              _WeekdayLabel('�?, isWeekend: true),
+              _WeekdayLabel('�?, isWeekend: true),
             ],
           ),
           const SizedBox(height: 6),
@@ -834,7 +832,7 @@ class _MonthNavigator extends StatelessWidget {
     return Row(
       children: [
         _MonthChangeButton(
-          tooltip: '上个月',
+          tooltip: '上个�?,
           icon: Icons.chevron_left_rounded,
           isDark: isDark,
           onPressed: onPrevious,
@@ -842,7 +840,7 @@ class _MonthNavigator extends StatelessWidget {
         Expanded(
           child: Center(
             child: Text(
-              DateFormat('yyyy年M月').format(month),
+              DateFormat('yyyy年M�?).format(month),
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
@@ -852,7 +850,7 @@ class _MonthNavigator extends StatelessWidget {
           ),
         ),
         _MonthChangeButton(
-          tooltip: '下个月',
+          tooltip: '下个�?,
           icon: Icons.chevron_right_rounded,
           isDark: isDark,
           onPressed: onNext,
@@ -1008,13 +1006,13 @@ class _CalendarDayCell extends StatelessWidget {
     final markers = [
       ...info.markers,
       for (final exam in exams)
-        CampusCalendarMarker(badge: '考', type: 'exam', title: exam.name),
+        CampusCalendarMarker(badge: '�?, type: 'exam', title: exam.name),
     ];
 
     return Semantics(
       button: true,
       selected: selected,
-      label: '${date.month}月${date.day}日',
+      label: '${date.month}�?{date.day}�?,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
@@ -1067,7 +1065,7 @@ class _MarkerRow extends StatelessWidget {
   Widget build(BuildContext context) {
     if (markers.isEmpty) return const SizedBox.shrink();
     final prominent = markers
-        .where((marker) => const {'休', '调', '考'}.contains(marker.badge))
+        .where((marker) => const {'�?, '�?, '�?}.contains(marker.badge))
         .take(1)
         .toList(growable: false);
     if (prominent.isNotEmpty) {
@@ -1139,15 +1137,15 @@ class _CalendarLegend extends StatelessWidget {
       runSpacing: 6,
       children: [
         _LegendItem(
-            label: '休 假期',
+            label: '�?假期',
             color: _markerColor('holiday'),
             textColor: textColor),
         _LegendItem(
-            label: '调 调课',
+            label: '�?调课',
             color: _markerColor('makeup_teaching'),
             textColor: textColor),
         _LegendItem(
-            label: '考 考试', color: _markerColor('exam'), textColor: textColor),
+            label: '�?考试', color: _markerColor('exam'), textColor: textColor),
       ],
     );
   }
@@ -1243,7 +1241,7 @@ class _DayDetailCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      DateFormat('yyyy年M月').format(info.date),
+                      DateFormat('yyyy年M�?).format(info.date),
                       style: TextStyle(fontSize: 13, color: muted),
                     ),
                   ],
@@ -1391,7 +1389,7 @@ class _ImportantEventTile extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         subtitle: Text(
-          '${DateFormat('M月d日').format(event.startDate)}${sameDay(event.startDate, event.endDate) ? '' : ' - ${DateFormat('M月d日').format(event.endDate)}'}',
+          '${DateFormat('M月d�?).format(event.startDate)}${sameDay(event.startDate, event.endDate) ? '' : ' - ${DateFormat('M月d�?).format(event.endDate)}'}',
         ),
       ),
     );
@@ -1529,7 +1527,7 @@ List<_DayDetailLine> _eventLines(CampusDayInfo info, List<ExamModel> exams) {
     return const [
       _DayDetailLine(
         title: '正常教学',
-        description: '按正常课程安排上课。',
+        description: '按正常课程安排上课�?,
         icon: Icons.school_rounded,
         color: _CalendarPalette.primary,
       ),
@@ -1539,7 +1537,7 @@ List<_DayDetailLine> _eventLines(CampusDayInfo info, List<ExamModel> exams) {
     return const [
       _DayDetailLine(
         title: '周末',
-        description: '非学校明确放假日，不显示法定假期标记。',
+        description: '非学校明确放假日，不显示法定假期标记�?,
         icon: Icons.weekend_rounded,
         color: _CalendarPalette.warm,
       ),
@@ -1548,7 +1546,7 @@ List<_DayDetailLine> _eventLines(CampusDayInfo info, List<ExamModel> exams) {
   return const [
     _DayDetailLine(
       title: '非教学周',
-      description: '寒暑假或非当前校历范围。',
+      description: '寒暑假或非当前校历范围�?,
       icon: Icons.event_available_rounded,
       color: _CalendarPalette.primary,
     ),
@@ -1563,7 +1561,7 @@ String _examScheduleLabel(ExamModel exam, {bool includeDate = true}) {
   final end = exam.endTime;
   final time =
       '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')} - ${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
-  final date = includeDate ? '${DateFormat('M月d日').format(start)} ' : '';
+  final date = includeDate ? '${DateFormat('M月d�?).format(start)} ' : '';
   return '$date$time${exam.location.isEmpty ? '' : ' · ${exam.location}'}';
 }
 
@@ -1581,12 +1579,12 @@ DateTime _monthStart(DateTime date) => DateTime(date.year, date.month);
 
 String _weekdayLabel(DateTime date) => switch (date.weekday) {
       DateTime.monday => '星期一',
-      DateTime.tuesday => '星期二',
-      DateTime.wednesday => '星期三',
-      DateTime.thursday => '星期四',
-      DateTime.friday => '星期五',
-      DateTime.saturday => '星期六',
-      _ => '星期日',
+      DateTime.tuesday => '星期�?,
+      DateTime.wednesday => '星期�?,
+      DateTime.thursday => '星期�?,
+      DateTime.friday => '星期�?,
+      DateTime.saturday => '星期�?,
+      _ => '星期�?,
     };
 
 IconData _detailIcon(String type) => switch (type) {

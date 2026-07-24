@@ -94,8 +94,8 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除竞赛经历？'),
-        content: Text('“${award.competitionTitle}”将从你的私有档案中删除。'),
+        title: const Text('删除竞赛经历�?),
+        content: Text('�?{award.competitionTitle}”将从你的私有档案中删除�?),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -114,7 +114,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
       setState(
           () => _items = _items.where((item) => item.id != award.id).toList());
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('竞赛经历已删除')));
+          .showSnackBar(const SnackBar(content: Text('竞赛经历已删�?)));
     } catch (error) {
       if (mounted) {
         AppFeedback.showSnackBar(
@@ -136,15 +136,15 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
   }) async {
     if (_changingVerification.contains(award.id)) return;
     if (submit && award.evidenceFileIds.isEmpty) {
-      AppFeedback.showSnackBar(context, '请先编辑经历并上传至少一份证明材料', isError: true);
+      AppFeedback.showSnackBar(context, '请先编辑经历并上传至少一份证明材�?, isError: true);
       return;
     }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(submit ? '提交材料核验？' : '取消材料核验？'),
+        title: Text(submit ? '提交材料核验�? : '取消材料核验�?),
         content: Text(
-            submit ? '提交后，比赛信息和证明材料在核验完成前不可修改。' : '取消后将恢复为“本人填写”，你可以继续修改材料。'),
+            submit ? '提交后，比赛信息和证明材料在核验完成前不可修改�? : '取消后将恢复为“本人填写”，你可以继续修改材料�?),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -167,7 +167,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
       if (mounted) {
         AppFeedback.showSnackBar(
           context,
-          submit ? '材料已提交核验' : '已取消材料核验',
+          submit ? '材料已提交核�? : '已取消材料核�?,
         );
       }
     } catch (error) {
@@ -175,8 +175,8 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
         AppFeedback.showSnackBar(
           context,
           error is DioException
-              ? AppFeedback.dioErrorMessage(error, fallback: '核验状态更新失败')
-              : '核验状态更新失败',
+              ? AppFeedback.dioErrorMessage(error, fallback: '核验状态更新失�?)
+              : '核验状态更新失�?,
           isError: true,
         );
       }
@@ -216,7 +216,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
       return Center(
         child: _AwardEmptyState(
           icon: Icons.workspace_premium_outlined,
-          title: '还没有竞赛经历',
+          title: '还没有竞赛经�?,
           subtitle: '记录参赛、获奖和你在团队中的贡献',
           actionLabel: '添加经历',
           onAction: _openEditor,
@@ -275,9 +275,9 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
                   spacing: 10,
                   runSpacing: 5,
                   children: [
-                    Text('角色：$role'),
+                    Text('角色�?role'),
                     Text('状态：$status'),
-                    Text('可见范围：$visibility'),
+                    Text('可见范围�?visibility'),
                   ]
                       .map((child) => DefaultTextStyle.merge(
                             style: TextStyle(
@@ -321,26 +321,26 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
       case 'pending':
         return _statusPanel(
           isDark,
-          '核验期间核心信息暂不可修改。',
+          '核验期间核心信息暂不可修改�?,
           OutlinedButton(
             key: Key('competition-award-cancel-${award.id}'),
             onPressed:
                 busy ? null : () => _changeVerification(award, submit: false),
-            child: Text(busy ? '处理中' : '取消核验'),
+            child: Text(busy ? '处理�? : '取消核验'),
           ),
         );
       case 'verified':
         return _statusPanel(
           isDark,
-          '平台仅核验提交材料与填写信息是否一致，不代表学校教务或官方认证。',
+          '平台仅核验提交材料与填写信息是否一致，不代表学校教务或官方认证�?,
           null,
         );
       case 'rejected':
         return _statusPanel(
           isDark,
           award.verificationNote.trim().isEmpty
-              ? '材料核验未通过，请修改后重新提交。'
-              : '原因：${award.verificationNote}',
+              ? '材料核验未通过，请修改后重新提交�?
+              : '原因�?{award.verificationNote}',
           Wrap(
             spacing: 8,
             children: [
@@ -353,7 +353,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
                 onPressed: busy
                     ? null
                     : () => _changeVerification(award, submit: true),
-                child: Text(busy ? '提交中' : '重新提交'),
+                child: Text(busy ? '提交�? : '重新提交'),
               ),
             ],
           ),
@@ -361,12 +361,12 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
       default:
         return _statusPanel(
           isDark,
-          '该经历尚未经过平台材料核验。',
+          '该经历尚未经过平台材料核验�?,
           FilledButton(
             key: Key('competition-award-submit-${award.id}'),
             onPressed:
                 busy ? null : () => _changeVerification(award, submit: true),
-            child: Text(busy ? '提交中' : '提交材料核验'),
+            child: Text(busy ? '提交�? : '提交材料核验'),
           ),
         );
     }

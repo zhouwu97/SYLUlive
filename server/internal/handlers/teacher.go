@@ -82,8 +82,10 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 	var ratingDTOs []map[string]interface{}
 	for _, r := range ratings {
 		userName := ""
+		userAvatar := ""
 		if r.User != nil {
 			userName = r.User.Nickname
+			userAvatar = r.User.Avatar
 		}
 
 		isOwn := false
@@ -93,9 +95,12 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 
 		ratingDTOs = append(ratingDTOs, map[string]interface{}{
 			"id":              r.ID,
+			"teacher_id":      r.TeacherID,
+			"user_id":         r.UserID,
 			"star":            r.Star,
 			"comment":         r.Comment,
 			"user_name":       userName,
+			"user_avatar":     userAvatar,
 			"created_at":      r.CreatedAt,
 			"updated_at":      r.UpdatedAt,
 			"helpful_count":   r.HelpfulCount,

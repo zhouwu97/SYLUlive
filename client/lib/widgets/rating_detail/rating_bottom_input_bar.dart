@@ -16,7 +16,8 @@ class RatingBottomInputBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF);
+    final accent = accentOverride ??
+        (isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF));
 
     return Container(
       padding: EdgeInsets.only(

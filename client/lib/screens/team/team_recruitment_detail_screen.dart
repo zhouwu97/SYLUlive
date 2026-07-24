@@ -109,6 +109,45 @@ class _TeamRecruitmentDetailScreenState
     }
   }
 
+  Future<void> _delete(TeamRecruitment item) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('删除组队'),
+            content: Text('“${item.title}”将从组队大厅和相关列表中移除，删除后无法恢复。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFE54848),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('确认删除'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    final error = await context
+        .read<TeamRecruitmentProvider>()
+        .deleteRecruitment(item.id);
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('组队已删除')));
+    Navigator.pop(context, true);
+  }
+
   Future<void> _share(TeamRecruitment item) async {
     final link = TeamShareLink.webUri(item.id).toString();
     final renderObject = context.findRenderObject();
@@ -168,6 +207,25 @@ class _TeamRecruitmentDetailScreenState
             icon: const Icon(Icons.ios_share_outlined),
             onPressed: () => _share(item),
           ),
+          if (item.isOwner)
+            IconButton(
+              tooltip: '删除组队',
+              icon: context
+                      .watch<TeamRecruitmentProvider>()
+                      .deletingIds
+                      .contains(item.id)
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_outline_rounded),
+              onPressed: context
+                      .watch<TeamRecruitmentProvider>()
+                      .deletingIds
+                      .contains(item.id)
+                  ? null
+                  : () => _delete(item),
+            ),
         ],
       ),
       bottomNavigationBar: DecoratedBox(

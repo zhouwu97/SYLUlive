@@ -8,9 +8,6 @@ import '../providers/course_schedule_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/platform/contracts/reminder_notification_client.dart';
 
-import '../providers/course_schedule_provider.dart';
-import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
 
 class CourseReminderResult {
   final bool enabled;
@@ -71,8 +68,6 @@ class CourseReminderService {
   static const String _enabledKey = 'course_reminder_enabled';
   static const String _advanceMinutesKey = 'course_reminder_advance_minutes';
   static const String _notificationIdsKey = 'course_reminder_notification_ids';
-  static const String _channelId = 'course_reminders_silent';
-  static const String _channelName = '课程提醒';
   static const int _maxPendingNotifications = 60;
   static const MethodChannel _platform = MethodChannel(
     'shenliyuan/course_reminders',

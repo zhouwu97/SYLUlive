@@ -149,6 +149,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Restore local OHOS signing profile
+        shell: pwsh
+        run: |
+          Copy-Item `
+            "D:\actions-secrets\sylulive-ohos\build-profile.local.json5" `
+            "./ohos/build-profile.local.json5" `
+            -Force
       - name: Build OHOS HAP
         shell: pwsh
         run: ./tool/build_harmony.ps1 -Mode debug -SkipTests

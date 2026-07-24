@@ -377,6 +377,11 @@ func validateDraftInput(input *AppReleaseDraftInput) error {
 	input.Title = strings.TrimSpace(input.Title)
 	input.Changelog = strings.TrimSpace(input.Changelog)
 
+	if input.DeliveryMode != models.AppReleaseDeliveryModeDirectPackage &&
+		input.DeliveryMode != models.AppReleaseDeliveryModeExternalMarket {
+		return fmt.Errorf("%w: 不支持的 delivery_mode", ErrAppReleaseInvalid)
+	}
+
 	if input.Channel != models.AppReleaseChannelStable {
 		return fmt.Errorf("%w: 当前仅支持 stable 通道", ErrAppReleaseInvalid)
 	}

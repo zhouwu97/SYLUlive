@@ -350,7 +350,7 @@ func setupTeamContractFixture(t *testing.T) (*gorm.DB, *WaterTeamHandler, models
 		t.Fatalf("get database handle: %v", err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&models.User{}, &models.Notification{}, &models.WaterSection{}, &models.WaterSectionTag{}, &models.WaterSectionMute{}, &models.Post{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Notification{}, &models.WaterSection{}, &models.WaterSectionTag{}, &models.WaterSectionMute{}, &models.Post{}, &models.PostImage{}, &models.WaterTeamRecruitment{}, &models.WaterTeamApplication{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	owner := models.User{StudentID: "fixture-owner", PasswordHash: "x", Nickname: "队长", EduBound: true}

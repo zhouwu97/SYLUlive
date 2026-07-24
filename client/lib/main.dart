@@ -581,25 +581,35 @@ Future<RemotePushEnableResult> setupPush(AuthProvider authProvider) async {
   );
 }
 
-Future<void> _ensurePrivateMessageNotificationsReady() async {
-  if (_privateMessageNotificationsReady) return;
-  _privateMessageNotificationsReady = true;
+Future<void>? _privateMessageNotificationsInitFuture;
 
-  await systemNotificationClient.initialize(
-    onNotificationTap: (payload) {
-      if (payload.isEmpty) return;
-      try {
-        final target =
-            privateMessageTargetFromLocalPayload(jsonEncode(payload));
-        if (target != null) {
-          _clearPrivateMessageNotifications(target.conversationId).ignore();
-          _openPrivateMessage(target);
-        }
-      } catch (e) {
-        debugPrint('解析私信本地通知 payload 失败: $e');
-      }
-    },
-  );
+Future<void> _ensurePrivateMessageNotificationsReady() {
+  if (_privateMessageNotificationsReady) return Future.value();
+
+  _privateMessageNotificationsInitFuture ??= () async {
+    try {
+      await systemNotificationClient.initialize(
+        onNotificationTap: (payload) {
+          if (payload.isEmpty) return;
+          try {
+            final target =
+                privateMessageTargetFromLocalPayload(jsonEncode(payload));
+            if (target != null) {
+              _clearPrivateMessageNotifications(target.conversationId).ignore();
+              _openPrivateMessage(target);
+            }
+          } catch (e) {
+            debugPrint('解析私信本地通知 payload 失败: $e');
+          }
+        },
+      );
+      _privateMessageNotificationsReady = true;
+    } finally {
+      _privateMessageNotificationsInitFuture = null;
+    }
+  }();
+
+  return _privateMessageNotificationsInitFuture!;
 }
 
 /// 已通过本地通知展示过的极光 msg_id，用于去重

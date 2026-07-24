@@ -22,17 +22,17 @@ type Teacher struct {
 
 // TeacherRating 教师评价
 type TeacherRating struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	TeacherID uint      `gorm:"index;not null" json:"teacher_id"`
-	UserID    uint      `gorm:"index;not null" json:"user_id"`
-	Star      int       `gorm:"not null" json:"star"`    // 1-5星
-	Comment   string    `gorm:"size:500" json:"comment"` // 评价内容
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	TeacherID uint           `gorm:"index;not null" json:"teacher_id"`
+	UserID    uint           `gorm:"index;not null" json:"user_id"`
+	Star      int            `gorm:"not null" json:"star"`    // 1-5星
+	Comment   string         `gorm:"size:500" json:"comment"` // 评价内容
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	HelpfulCount   int     `gorm:"not null;default:0" json:"helpful_count"`
-	UnhelpfulCount int     `gorm:"not null;default:0" json:"unhelpful_count"`
+	HelpfulCount   int `gorm:"not null;default:0" json:"helpful_count"`
+	UnhelpfulCount int `gorm:"not null;default:0" json:"unhelpful_count"`
 
 	Status           string     `gorm:"size:20;not null;default:normal;index" json:"status"`
 	ModeratedBy      *uint      `gorm:"index" json:"moderated_by,omitempty"`
@@ -40,8 +40,8 @@ type TeacherRating struct {
 	ModerationReason string     `gorm:"size:500" json:"-"`
 
 	// 关联数据（非数据库字段）
-	User          *User  `gorm:"foreignKey:UserID" json:"-"`
-	UserName      string `gorm:"-" json:"user_name"`
-	UserStudentID string `gorm:"-" json:"user_student_id"`
+	User          *User   `gorm:"foreignKey:UserID" json:"-"`
+	UserName      string  `gorm:"-" json:"user_name"`
+	UserStudentID string  `gorm:"-" json:"user_student_id"`
 	MyVote        *string `gorm:"-" json:"my_vote"`
 }

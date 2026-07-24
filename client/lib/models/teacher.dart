@@ -64,8 +64,12 @@ class TeacherRating {
       star: json['star'] ?? 0,
       comment: json['comment'] ?? '',
       userName: json['user_name'] ?? '',
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at']) : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'])
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'])
+          : null,
       helpfulCount: json['helpful_count'] ?? 0,
       unhelpfulCount: json['unhelpful_count'] ?? 0,
       myVote: json['my_vote'],

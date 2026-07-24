@@ -164,7 +164,8 @@ class TeacherProvider extends ChangeNotifier {
   }
 
   Future<void> voteRating(int ratingId, String voteType) async {
-    final result = await _interactionService.voteTeacherRating(ratingId, voteType);
+    final result =
+        await _interactionService.voteTeacherRating(ratingId, voteType);
     if (result != null) {
       final idx = _ratings.indexWhere((r) => r.id == ratingId);
       if (idx != -1) {
@@ -188,6 +189,16 @@ class TeacherProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> reportRating(
+      int ratingId, String reasonCode, String reason) async {
+    try {
+      return await _interactionService.reportRating(
+        targetType: 'teacher_rating',
+        targetId: ratingId,
+        reasonCode: reasonCode,
+        reason: reason,
+      );
+    } on DioException catch (e) {
       _errorMessage = _parseError(e);
       notifyListeners();
     }

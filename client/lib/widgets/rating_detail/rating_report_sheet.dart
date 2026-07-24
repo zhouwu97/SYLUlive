@@ -5,12 +5,14 @@ Future<void> showRatingReportSheet({
   required BuildContext context,
   required String targetType,
   required int targetId,
-  required Future<bool> Function(String reasonCode, String description) onSubmit,
+  required Future<bool> Function(String reasonCode, String description)
+      onSubmit,
 }) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: RankingTokens.pageBg(Theme.of(context).brightness == Brightness.dark),
+    backgroundColor:
+        RankingTokens.pageBg(Theme.of(context).brightness == Brightness.dark),
     builder: (ctx) => _RatingReportSheet(
       onSubmit: onSubmit,
     ),
@@ -41,7 +43,7 @@ class _RatingReportSheetState extends State<_RatingReportSheet> {
 
   Future<void> _submit() async {
     if (_selectedReason == null) return;
-    
+
     final desc = _descController.text.trim();
     if (_selectedReason == 'other' && desc.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -51,9 +53,9 @@ class _RatingReportSheetState extends State<_RatingReportSheet> {
     }
 
     setState(() => _isSubmitting = true);
-    
+
     final success = await widget.onSubmit(_selectedReason!, desc);
-    
+
     if (mounted) {
       setState(() => _isSubmitting = false);
       if (success) {
@@ -71,7 +73,7 @@ class _RatingReportSheetState extends State<_RatingReportSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -116,7 +118,7 @@ class _RatingReportSheetState extends State<_RatingReportSheet> {
                 },
                 selectedColor: isDark ? Colors.white24 : Colors.black12,
                 labelStyle: TextStyle(
-                  color: isSelected 
+                  color: isSelected
                       ? RankingTokens.titleColor(isDark)
                       : RankingTokens.subColor(isDark),
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
@@ -130,10 +132,13 @@ class _RatingReportSheetState extends State<_RatingReportSheet> {
             maxLines: 3,
             maxLength: 500,
             decoration: InputDecoration(
-              hintText: _selectedReason == 'other' ? '必填：请详细描述违规情况...' : '选填：补充说明',
+              hintText:
+                  _selectedReason == 'other' ? '必填：请详细描述违规情况...' : '选填：补充说明',
               hintStyle: TextStyle(color: RankingTokens.mutedColor(isDark)),
               filled: true,
-              fillColor: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
+              fillColor: isDark
+                  ? Colors.white10
+                  : Colors.black.withValues(alpha: 0.04),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
@@ -144,7 +149,8 @@ class _RatingReportSheetState extends State<_RatingReportSheet> {
           ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: (_selectedReason != null && !_isSubmitting) ? _submit : null,
+            onPressed:
+                (_selectedReason != null && !_isSubmitting) ? _submit : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: RankingTokens.teacherAccent(isDark),
               foregroundColor: Colors.white,
@@ -153,9 +159,15 @@ class _RatingReportSheetState extends State<_RatingReportSheet> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: _isSubmitting 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text('提交举报', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Text('提交举报',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           ),
           const SizedBox(height: 24),
         ],

@@ -8,6 +8,7 @@ import abilityAccessCtrl from '@ohos.abilityAccessCtrl';
 export default class OhosCalendarPlugin implements FlutterPlugin, MethodCallHandler {
   private channel: MethodChannel | null = null;
   private context: common.UIAbilityContext | null = null;
+  private recentInsertions: Set<string> = new Set();
 
   constructor(context?: common.UIAbilityContext) {
     if (context) {
@@ -55,6 +56,29 @@ export default class OhosCalendarPlugin implements FlutterPlugin, MethodCallHand
         result.error('NO_CONTEXT', 'UIAbilityContext is null', null);
         return;
       }
+
+      if (!title || title.trim() === '') {
+        result.error('INVALID_ARGUMENT', 'Title cannot be empty', null);
+        return;
+      }
+      if (typeof startDate !== 'number' || typeof endDate !== 'number' || isNaN(startDate) || isNaN(endDate)) {
+        result.error('INVALID_ARGUMENT', 'Invalid startDate or endDate', null);
+        return;
+      }
+      if (endDate <= startDate) {
+        result.error('INVALID_ARGUMENT', 'endDate must be greater than startDate', null);
+        return;
+      }
+
+      const dupKey = `${title}_${startDate}_${endDate}`;
+      if (this.recentInsertions.has(dupKey)) {
+        result.success(true); // Ignore duplicate click
+        return;
+      }
+      this.recentInsertions.add(dupKey);
+      setTimeout(() => {
+        this.recentInsertions.delete(dupKey);
+      }, 5000); // Clear after 5 seconds
 
       try {
         let atManager = abilityAccessCtrl.createAtManager();

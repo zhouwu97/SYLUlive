@@ -23,8 +23,8 @@ String formatRatingTime(DateTime? createdAt, DateTime? updatedAt) {
     timeString = DateFormat('yyyy年M月d日').format(createdAt);
   }
 
-  final edited = updatedAt != null &&
-      updatedAt.difference(createdAt).inSeconds >= 60;
+  final edited =
+      updatedAt != null && updatedAt.difference(createdAt).inSeconds >= 60;
 
   if (edited) {
     return '$timeString · 已编辑';

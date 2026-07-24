@@ -6,7 +6,6 @@ import '../providers/auth_provider.dart';
 import '../providers/major_provider.dart';
 import '../widgets/rating_detail/ranking_tokens.dart';
 import '../widgets/rating_detail/rating_subject_header.dart';
-import '../widgets/rating_detail/rating_stat_header.dart';
 import '../widgets/rating_detail/rating_report_sheet.dart';
 import '../widgets/rating_detail/rating_score_panel.dart';
 import '../widgets/rating_detail/my_rating_card.dart';
@@ -31,6 +30,7 @@ class MajorDetailScreen extends StatefulWidget {
 
 class _MajorDetailScreenState extends State<MajorDetailScreen> {
   bool _isDeletingRating = false;
+  bool _didChange = false;
 
   @override
   void initState() {
@@ -298,9 +298,12 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                 },
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
+                    color: isDark
+                        ? Colors.white10
+                        : Colors.black.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -354,28 +357,28 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                         comment: r.comment,
                         star: r.star,
                         isOwn: _isOwnRating(r),
-                        onLongPress: () => _confirmDeleteRating(r),
                         createdAt: r.createdAt,
                         updatedAt: r.updatedAt,
                         helpfulCount: r.helpfulCount,
                         unhelpfulCount: r.unhelpfulCount,
                         myVote: r.myVote,
-                        onHelpful: () => provider.voteRating(r.id, 'up'),
-                        onUnhelpful: () => provider.voteRating(r.id, 'down'),
+                        onHelpful: () => m.voteRating(r.id, 'up'),
+                        onUnhelpful: () => m.voteRating(r.id, 'down'),
                         onReport: () {
                           showRatingReportSheet(
                             context: context,
                             targetType: 'major_rating',
                             targetId: r.id,
                             onSubmit: (code, desc) async {
-                              final success = await provider.reportRating(
+                              final success = await m.reportRating(
                                 r.id,
                                 code,
                                 desc,
                               );
                               if (success && mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('举报已提交，我们会尽快处理')),
+                                  const SnackBar(
+                                      content: Text('举报已提交，我们会尽快处理')),
                                 );
                               } else if (!success && mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -386,25 +389,29 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                             },
                           );
                         },
-                        onEdit: _isOwnRating(r) ? () {
-                          showRatingInputSheet(
-                            context: context,
-                            initialStar: r.star,
-                            initialComment: r.comment,
-                            title: '修改评价',
-                            maxCommentLength: 500,
-                            accentOverride: accent,
-                            onSubmit: (star, comment) async {
-                              final ok = await provider.rateMajor(
-                                  widget.majorId, star, comment);
-                              if (ok) {
-                                _didChange = true;
+                        onEdit: _isOwnRating(r)
+                            ? () {
+                                showRatingInputSheet(
+                                  context: context,
+                                  initialStar: r.star,
+                                  initialComment: r.comment,
+                                  title: '修改评价',
+                                  maxCommentLength: 500,
+                                  accentOverride: accent,
+                                  onSubmit: (star, comment) async {
+                                    final ok = await m.rate(
+                                        widget.majorId, star, comment);
+                                    if (ok) {
+                                      _didChange = true;
+                                    }
+                                    return ok;
+                                  },
+                                );
                               }
-                              return ok;
-                            },
-                          );
-                        } : null,
-                        onDelete: _isOwnRating(r) ? () => _confirmDeleteRating(r) : null,
+                            : null,
+                        onDelete: _isOwnRating(r)
+                            ? () => _confirmDeleteRating(r)
+                            : null,
                       ),
                     )),
                 Padding(

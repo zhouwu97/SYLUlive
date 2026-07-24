@@ -229,6 +229,7 @@ func main() {
 		&models.Teacher{},
 
 		&models.TeacherRating{},
+		&models.TeacherRatingVote{},
 
 		&models.UserViolation{},
 
@@ -239,6 +240,7 @@ func main() {
 		&models.Major{},
 
 		&models.MajorRating{},
+		&models.MajorRatingVote{},
 
 		&models.AdminVote{},
 
@@ -373,6 +375,9 @@ func main() {
 	}
 	if err := models.EnsurePollSchema(db); err != nil {
 		log.Fatal("投票系统数据库约束未就绪:", err)
+	}
+	if err := models.EnsureRatingInteractionSchema(db); err != nil {
+		log.Fatal("评价交互系统数据库约束未就绪:", err)
 	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
@@ -1527,6 +1532,8 @@ func main() {
 
 		teacherAuth.DELETE("/rating/:id", teacherHandler.DeleteRating)
 
+		teacherAuth.PUT("/ratings/:id/vote", teacherHandler.VoteRating)
+
 		teacherAuth.POST("/rating/:id/report", teacherHandler.ReportRating)
 
 	}
@@ -1582,6 +1589,8 @@ func main() {
 		majorAuth.POST("/:id/rate", majorHandler.Rate)
 
 		majorAuth.DELETE("/rating/:id", majorHandler.DeleteRating)
+		
+		majorAuth.PUT("/ratings/:id/vote", majorHandler.VoteRating)
 
 	}
 

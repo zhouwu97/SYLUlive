@@ -288,12 +288,38 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                 ),
               ),
               const Spacer(),
-              Text(
-                '最新',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: RankingTokens.subColor(isDark),
-                  fontWeight: FontWeight.w600,
+              InkWell(
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('排序功能正在开发中')),
+                  );
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '最新',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: RankingTokens.subColor(isDark),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 14,
+                        color: RankingTokens.subColor(isDark),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -317,31 +343,31 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
               ),
             )
           else
-            Container(
-              decoration: RankingTokens.cardDecoration(isDark),
-              child: Column(
-                children: [
-                  ...m.ratings.map((r) => RatingItemCard(
+            Column(
+              children: [
+                ...m.ratings.map((r) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: RatingItemCard(
                         userName: r.userName,
                         comment: r.comment,
                         star: r.star,
                         isOwn: _isOwnRating(r),
                         onLongPress: () => _confirmDeleteRating(r),
-                      )),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10, bottom: 10),
-                    child: Center(
-                      child: Text(
-                        '更多评价等待同学补充',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: RankingTokens.subColor(isDark),
-                        ),
+                      ),
+                    )),
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 10),
+                  child: Center(
+                    child: Text(
+                      '更多评价等待同学补充',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: RankingTokens.subColor(isDark),
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
         ],
       ),

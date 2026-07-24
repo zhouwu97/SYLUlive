@@ -8,7 +8,7 @@ final class RankingTokens {
 
   // ── Base palette (shared with campus / competition) ────────────────
   static Color pageBg(bool isDark) =>
-      isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4);
+      isDark ? const Color(0xFF111315) : const Color(0xFFF6F7F8);
 
   static Color cardBg(bool isDark) =>
       isDark ? const Color(0xFF1E2226) : Colors.white;
@@ -67,7 +67,7 @@ final class RankingTokens {
 
   // ── Spacing / sizing ───────────────────────────────────────────────
   static const double pageH = 16.0;
-  static const double cardRadius = 18.0;
+  static const double cardRadius = 16.0;
   static const double chipRadius = 999.0;
   static const double cardPadding = 14.0;
   static const double cardGap = 10.0;
@@ -85,16 +85,10 @@ final class RankingTokens {
     return BoxDecoration(
       color: overrideColor ?? cardBg(isDark),
       borderRadius: BorderRadius.circular(cardRadius),
-      border: Border.all(color: borderOverride ?? borderColor(isDark)),
-      boxShadow: isDark
-          ? null
-          : [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.025),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
+      border: Border.all(
+        color: borderOverride ?? borderColor(isDark),
+        width: 0.5,
+      ),
     );
   }
 }

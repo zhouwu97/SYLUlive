@@ -7,6 +7,7 @@ class RatingItemCard extends StatelessWidget {
   final int star;
   final bool isOwn;
   final VoidCallback? onLongPress;
+  final String? createdAt;
 
   const RatingItemCard({
     super.key,
@@ -15,85 +16,103 @@ class RatingItemCard extends StatelessWidget {
     required this.star,
     this.isOwn = false,
     this.onLongPress,
+    this.createdAt,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final item = InkWell(
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor:
-                      isDark ? Colors.white12 : Colors.grey.shade200,
-                  child: Text(
-                    userName.isNotEmpty ? userName[0] : '?',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white70 : Colors.black54,
+    return Container(
+      decoration: RankingTokens.cardDecoration(isDark),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 14,
+                    backgroundColor:
+                        isDark ? Colors.white12 : Colors.grey.shade200,
+                    child: Text(
+                      userName.isNotEmpty ? userName[0] : '?',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white70 : Colors.black54,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    userName,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: RankingTokens.titleColor(isDark),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          userName,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: RankingTokens.titleColor(isDark),
+                            height: 1.2,
+                          ),
+                        ),
+                        if (createdAt != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            createdAt!,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: RankingTokens.mutedColor(isDark),
+                              height: 1.1,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                ),
-                Text(
-                  '★' * star + '☆' * (5 - star),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.amber,
-                    letterSpacing: 1.0,
+                  Text(
+                    '★' * star + '☆' * (5 - star),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.amber,
+                      letterSpacing: 1.0,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (comment.trim().isNotEmpty) ...[
-              const SizedBox(height: 4),
+                ],
+              ),
+              const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 36),
-                child: Text(
-                  comment.trim(),
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.45,
-                    color: RankingTokens.subColor(isDark),
-                  ),
-                ),
+                child: comment.trim().isNotEmpty
+                    ? Text(
+                        comment.trim(),
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.45,
+                          color: RankingTokens.subColor(isDark),
+                        ),
+                      )
+                    : Text(
+                        '仅评分，未填写文字评价',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic,
+                          color: RankingTokens.mutedColor(isDark),
+                        ),
+                      ),
               ),
             ],
-          ],
+          ),
         ),
       ),
-    );
-
-    return Column(
-      children: [
-        item,
-        Divider(
-          height: 1,
-          thickness: 1,
-          indent: 44,
-          color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
-        ),
-      ],
     );
   }
 }

@@ -354,6 +354,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: RatingItemCard(
                         userName: r.userName,
+                        userAvatar: r.userAvatar,
                         comment: r.comment,
                         star: r.star,
                         isOwn: _isOwnRating(r),

@@ -34,7 +34,7 @@ func newRuntimeTestDB(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
 		&models.AIConversation{}, &models.AIConversationMessage{}, &models.AIRun{},
-		&models.AIEvent{}, &models.AIToolCall{}, &models.AIQuotaEntry{},
+		&models.AIEvent{}, &models.AIToolCall{}, &models.AIRunResumeJob{}, &models.AIQuotaEntry{},
 		&models.AIUserBudget{}, &models.AIBudgetReservation{}, &models.AIUsageRecord{},
 	))
 	return db

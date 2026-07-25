@@ -90,4 +90,43 @@ void main() {
     expect(provider.streamedText, '奖学金评定规则见学生手册。');
     expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
   });
+
+  test('个人数据证据去重且等待状态使用真实设备文案', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: false,
+        chatEnabled: true,
+        phase: 'p2',
+        features: AiFeatures(policyRag: true, scheduleWindows: false),
+        quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
+        maxMessageChars: 20,
+      ),
+    );
+    addTearDown(provider.dispose);
+    final evidence = AiRunEvent.parseSse(
+      '{"run_id":"run-1","seq":1,"type":"personal_data.evidence",'
+      '"payload":{"evidence":[{"source":"server_snapshot",'
+      '"dataset":"grades","fetched_at":"2026-07-25T09:20:00Z"}]}}',
+    );
+
+    provider.applyRunEvent(evidence);
+    provider.applyRunEvent(AiRunEvent.parseSse(
+      '{"run_id":"run-1","seq":2,"type":"personal_data.evidence",'
+      '"payload":{"evidence":[{"source":"server_snapshot",'
+      '"dataset":"grades","fetched_at":"2026-07-25T09:20:00Z"}]}}',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-1',
+      seq: 3,
+      type: AiRunEventType.deviceWaiting,
+      datasets: ['schedule'],
+    ));
+
+    expect(provider.messages, hasLength(1));
+    expect(provider.messages.single.personalDataEvidence, hasLength(1));
+    expect(provider.friendlyRunStatus, '正在请求你的手机读取本地课表');
+  });
 }

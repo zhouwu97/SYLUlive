@@ -6,20 +6,38 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
 )
 
 // PersonalSnapshotHandler 提供用户主动授权的结构化二课快照接口。
 // 所有路由必须在 JWT 鉴权后注册，服务端不会接受二课凭据或原始页面内容。
 type PersonalSnapshotHandler struct {
-	service *services.PersonalSnapshotService
+	service     *services.PersonalSnapshotService
+	permissions *services.AIUserPermissionService
 }
 
 func NewPersonalSnapshotHandler(service *services.PersonalSnapshotService) *PersonalSnapshotHandler {
 	return &PersonalSnapshotHandler{service: service}
 }
 
+// SetAIUserPermissionService 允许应用装配层将“永不上传二课快照”策略接入已有上传接口。
+func (handler *PersonalSnapshotHandler) SetAIUserPermissionService(service *services.AIUserPermissionService) {
+	handler.permissions = service
+}
+
 func (handler *PersonalSnapshotHandler) PutErke(c *gin.Context) {
+	if handler.permissions != nil {
+		policy, err := handler.permissions.Policy(c.Request.Context(), c.GetUint("user_id"), models.AIUserPermissionErkeSnapshotUpload)
+		if err != nil {
+			writeAIUserPermissionError(c, err)
+			return
+		}
+		if policy == models.AIUserPermissionNever {
+			c.JSON(http.StatusForbidden, gin.H{"code": "erke_snapshot_upload_disabled", "message": "你已在隐私设置中关闭二课快照上传"})
+			return
+		}
+	}
 	var request services.ErkeSnapshotUpload
 	if err := decodeStrictJSON(c, &request, 520<<10); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_erke_snapshot", "message": "二课快照格式无效"})

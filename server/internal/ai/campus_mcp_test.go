@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"shenliyuan/internal/academic"
+	"shenliyuan/internal/models"
 )
 
 type fixedPersonalSnapshotReader struct {
@@ -18,6 +19,15 @@ type fixedPersonalSnapshotReader struct {
 
 func (reader fixedPersonalSnapshotReader) LookupErke(context.Context, uint) (academic.SnapshotLookup, error) {
 	return reader.lookup, reader.err
+}
+
+type fixedPersonalDataPermissionReader map[models.AIUserPermissionScope]models.AIUserPermissionPolicy
+
+func (reader fixedPersonalDataPermissionReader) Policy(_ context.Context, _ uint, scope models.AIUserPermissionScope) (models.AIUserPermissionPolicy, error) {
+	if policy, found := reader[scope]; found {
+		return policy, nil
+	}
+	return models.AIUserPermissionAsk, nil
 }
 
 func campusToolByName(t *testing.T, tools []PureReadTool, name string) PureReadTool {
@@ -84,4 +94,39 @@ func TestCampusMCPErkeOverviewReadsStructuredUploadedSnapshot(t *testing.T) {
 	require.Equal(t, 60.0, overview["required_total"])
 	require.Equal(t, "2025-2026", overview["year"])
 	require.Equal(t, 1, overview["activity_count"])
+}
+
+func TestCampusMCPNeverPolicyBlocksSnapshotsAndDeviceJobs(t *testing.T) {
+	permissions := fixedPersonalDataPermissionReader{
+		models.AIUserPermissionPersonalDataAccess: models.AIUserPermissionNever,
+	}
+	mcp := &campusMCP{permissions: permissions}
+	results, err := mcp.resolveSnapshots(context.Background(), 7, academic.ResolveContextRequest{
+		Datasets:  []academic.DatasetType{academic.DatasetGrades},
+		Freshness: academic.FreshnessPreferRecent,
+		Reason:    "failure_risk",
+	})
+	require.NoError(t, err)
+	require.Equal(t, academic.DataStatusPermissionRequired, results[academic.DatasetGrades].Status)
+
+	deviceJobs := 0
+	mcp.permissions = fixedPersonalDataPermissionReader{
+		models.AIUserPermissionDeviceCacheAccess: models.AIUserPermissionNever,
+	}
+	mcp.deviceJobs = DeviceJobSchedulerFunc(func(context.Context, DeviceJobRequest) (DeviceJobReference, error) {
+		deviceJobs++
+		return DeviceJobReference{ID: "device-job"}, nil
+	})
+	results = map[academic.DatasetType]academic.ContextResult{
+		academic.DatasetSchedule: personalContextUnavailable(academic.DataStatusMissing, "服务端没有可用快照"),
+	}
+	wait := mcp.waitForPersonalContext(
+		withToolCallContext(context.Background(), "run-1", "call-1", 7, "academic.resolve_context"),
+		7,
+		academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Reason: "schedule_availability"},
+		results,
+	)
+	require.Nil(t, wait)
+	require.Zero(t, deviceJobs)
+	require.Equal(t, academic.DataStatusPermissionRequired, results[academic.DatasetSchedule].Status)
 }

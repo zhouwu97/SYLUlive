@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"shenliyuan/internal/models"
 )
@@ -42,6 +43,15 @@ type toolLoopPause struct {
 	State    string
 	Messages []Message
 	Pending  []pendingToolWait
+}
+
+type personalDataEvidenceEvent struct {
+	Source    string     `json:"source"`
+	Dataset   string     `json:"dataset,omitempty"`
+	Title     string     `json:"title,omitempty"`
+	FetchedAt *time.Time `json:"fetched_at,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	IsStale   bool       `json:"is_stale"`
 }
 
 // executeToolLoop 执行受限的模型-工具循环。工具身份始终由 run.UserID 注入，
@@ -131,6 +141,7 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 			_, _ = r.appendEvent(ctx, run.ID, "tool.completed", map[string]interface{}{
 				"call_id": call.id, "tool_name": call.name, "success": success, "cached": cached,
 			}, true)
+			r.appendPersonalDataEvidence(ctx, run.ID, call.id, execution.Result)
 		}
 		messages = append(messages, Message{Role: "assistant", Content: answer, ToolCalls: assistantCallMessages})
 		messages = append(messages, toolResultMessages...)
@@ -154,6 +165,74 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 			outcome.failureCode = "tool_loop_state_conflict"
 			return outcome
 		}
+	}
+}
+
+// appendPersonalDataEvidence 只推送个人数据的来源元数据，绝不把工具结果正文写入 SSE。
+// 这样客户端可展示来源、更新时间与过期状态，同时不会把成绩或设备缓存扩散到事件流。
+func (r *Runtime) appendPersonalDataEvidence(ctx context.Context, runID, callID string, result json.RawMessage) {
+	evidence := extractPersonalDataEvidence(result)
+	if len(evidence) == 0 {
+		return
+	}
+	_, _ = r.appendEvent(ctx, runID, "personal_data.evidence", map[string]interface{}{
+		"call_id": callID, "evidence": evidence,
+	}, true)
+}
+
+func extractPersonalDataEvidence(result json.RawMessage) []personalDataEvidenceEvent {
+	if !json.Valid(result) {
+		return nil
+	}
+	var envelope struct {
+		Source    string                      `json:"source"`
+		Dataset   string                      `json:"dataset"`
+		FetchedAt *time.Time                  `json:"fetched_at"`
+		ExpiresAt *time.Time                  `json:"expires_at"`
+		IsStale   bool                        `json:"is_stale"`
+		Evidence  []personalDataEvidenceEvent `json:"evidence"`
+	}
+	if json.Unmarshal(result, &envelope) != nil {
+		return nil
+	}
+	items := make([]personalDataEvidenceEvent, 0, len(envelope.Evidence)+1)
+	items = append(items, envelope.Evidence...)
+	if len(items) == 0 {
+		items = append(items, personalDataEvidenceEvent{
+			Source: envelope.Source, Dataset: envelope.Dataset, FetchedAt: envelope.FetchedAt,
+			ExpiresAt: envelope.ExpiresAt, IsStale: envelope.IsStale,
+		})
+	}
+	resultItems := make([]personalDataEvidenceEvent, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if !isPersonalDataSource(item.Source) {
+			continue
+		}
+		// 证据事件仅用于来源提示，标题可能包含课程等业务字段，不能进入 SSE。
+		key := item.Source + "|" + item.Dataset
+		if item.FetchedAt != nil {
+			key += "|" + item.FetchedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		item.Title = ""
+		resultItems = append(resultItems, item)
+		if len(resultItems) == 8 {
+			break
+		}
+	}
+	return resultItems
+}
+
+func isPersonalDataSource(source string) bool {
+	switch source {
+	case "server_snapshot", "device_encrypted_cache", "remote_edu_fetch", "user_uploaded_snapshot":
+		return true
+	default:
+		return false
 	}
 }
 

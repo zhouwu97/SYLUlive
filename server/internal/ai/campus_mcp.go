@@ -65,6 +65,7 @@ type campusMCP struct {
 	snapshots         AcademicSnapshotReader
 	personalSnapshots PersonalSnapshotReader
 	deviceJobs        DeviceJobScheduler
+	permissions       PersonalDataPermissionReader
 	now               func() time.Time
 }
 
@@ -100,6 +101,17 @@ type CampusMCPOption func(*campusMCP)
 // WithCampusDeviceJobScheduler 启用“服务端快照未命中时请求手机缓存”的受控降级。
 func WithCampusDeviceJobScheduler(scheduler DeviceJobScheduler) CampusMCPOption {
 	return func(mcp *campusMCP) { mcp.deviceJobs = scheduler }
+}
+
+// PersonalDataPermissionReader 读取用户设置的长期个人数据访问偏好。
+// ask 保持逐次确认，never 必须在创建设备任务或读取云端快照前失败关闭。
+type PersonalDataPermissionReader interface {
+	Policy(context.Context, uint, models.AIUserPermissionScope) (models.AIUserPermissionPolicy, error)
+}
+
+// WithCampusPersonalDataPermissionReader 接入服务端持久化权限策略。
+func WithCampusPersonalDataPermissionReader(reader PersonalDataPermissionReader) CampusMCPOption {
+	return func(mcp *campusMCP) { mcp.permissions = reader }
 }
 
 // AcademicSnapshotReader 是校园 Agent 读取已授权学业快照所需的最小能力。
@@ -564,6 +576,15 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	if mcp.deviceJobs == nil {
 		return nil
 	}
+	if !mcp.personalAccessAllowed(ctx, userID, models.AIUserPermissionDeviceCacheAccess) {
+		for _, dataset := range request.Datasets {
+			result := results[dataset]
+			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
+				results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 读取手机本地缓存")
+			}
+		}
+		return nil
+	}
 	for _, dataset := range request.Datasets {
 		result := results[dataset]
 		if result.Status != academic.DataStatusMissing && result.Status != academic.DataStatusNeedsRefresh {
@@ -609,6 +630,12 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 		return nil, errors.New("mcp_not_configured")
 	}
 	results := make(map[academic.DatasetType]academic.ContextResult, len(request.Datasets))
+	if !mcp.personalAccessAllowed(ctx, userID, models.AIUserPermissionPersonalDataAccess) {
+		for _, dataset := range request.Datasets {
+			results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 的个人数据访问")
+		}
+		return results, nil
+	}
 	needsAcademicSnapshot := false
 	for _, dataset := range request.Datasets {
 		if dataset != academic.DatasetErke {
@@ -628,6 +655,10 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 	for _, dataset := range request.Datasets {
 		if dataset == academic.DatasetErke {
 			results[dataset] = mcp.resolveErkeSnapshot(ctx, userID, request.Freshness)
+			continue
+		}
+		if !mcp.personalAccessAllowed(ctx, userID, models.AIUserPermissionAcademicCloudStorage) {
+			results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 读取服务端学业快照")
 			continue
 		}
 		if generationErr != nil {
@@ -651,6 +682,14 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 		results[dataset] = result
 	}
 	return results, nil
+}
+
+func (mcp *campusMCP) personalAccessAllowed(ctx context.Context, userID uint, scope models.AIUserPermissionScope) bool {
+	if mcp.permissions == nil {
+		return true
+	}
+	policy, err := mcp.permissions.Policy(ctx, userID, scope)
+	return err == nil && policy != models.AIUserPermissionNever
 }
 
 func (mcp *campusMCP) resolveErkeSnapshot(ctx context.Context, userID uint, freshness academic.FreshnessPreference) academic.ContextResult {

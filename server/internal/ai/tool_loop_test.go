@@ -230,3 +230,29 @@ func TestRuntimeResumesWaitingUserConsent(t *testing.T) {
 	require.Equal(t, "tool", secondRequest.Messages[3].Role)
 	require.JSONEq(t, `{"status":"completed","consent_granted":true,"instruction":"请重新读取已授权数据"}`, secondRequest.Messages[3].Content)
 }
+
+func TestExtractPersonalDataEvidenceOnlyEmitsAllowedMetadata(t *testing.T) {
+	fetchedAt := time.Date(2026, time.July, 25, 9, 20, 0, 0, time.UTC)
+	result := json.RawMessage(`{
+		"data":{"grades":[{"course_name":"高等数学","score":92}]},
+		"source":"public_database",
+		"evidence":[
+			{"source":"server_snapshot","dataset":"grades","title":"高等数学：92","fetched_at":"2026-07-25T09:20:00Z","is_stale":false},
+			{"source":"server_snapshot","dataset":"grades","title":"线性代数：88","fetched_at":"2026-07-25T09:20:00Z","is_stale":false},
+			{"source":"public_database","dataset":"grades","title":"不应进入个人数据事件","fetched_at":"2026-07-25T09:20:00Z","is_stale":false}
+		]
+	}`)
+
+	evidence := extractPersonalDataEvidence(result)
+	require.Len(t, evidence, 1)
+	require.Equal(t, "server_snapshot", evidence[0].Source)
+	require.Equal(t, "grades", evidence[0].Dataset)
+	require.Equal(t, fetchedAt, *evidence[0].FetchedAt)
+	require.Empty(t, evidence[0].Title)
+
+	payload, err := json.Marshal(evidence)
+	require.NoError(t, err)
+	require.NotContains(t, string(payload), "高等数学")
+	require.NotContains(t, string(payload), "92")
+	require.NotContains(t, string(payload), "public_database")
+}

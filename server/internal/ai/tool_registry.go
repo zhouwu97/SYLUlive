@@ -24,6 +24,12 @@ type PureReadTool interface {
 	Execute(context.Context, uint, json.RawMessage) (interface{}, error)
 }
 
+// toolArgumentValidator 允许对高敏感工具在创建审计记录前执行严格参数校验。
+// 常规工具保持现有行为；实现该接口的工具可防止未声明的个人数据进入 arguments_json。
+type toolArgumentValidator interface {
+	ValidateToolArguments(json.RawMessage) error
+}
+
 // ToolWait 表示工具需要在外部操作完成后才能给出结果。
 // ResumeKey 仅保存作业标识，不能包含成绩、凭据或设备缓存内容。
 type ToolWait struct {
@@ -96,6 +102,11 @@ func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID
 	}
 	if !json.Valid(arguments) || containsForbiddenToolIdentity(arguments) {
 		return ToolExecutionResult{}, false, errors.New("invalid_tool_call")
+	}
+	if validator, ok := tool.(toolArgumentValidator); ok {
+		if err := validator.ValidateToolArguments(arguments); err != nil {
+			return ToolExecutionResult{}, false, errors.New("invalid_tool_call")
+		}
 	}
 	hash := sha256.Sum256(arguments)
 	hashText := hex.EncodeToString(hash[:])

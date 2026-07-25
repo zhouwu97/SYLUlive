@@ -15,6 +15,7 @@ import '../../features/personal_data_sync/personal_data_sync_result.dart';
 import '../../features/personal_data_sync/erke_snapshot_upload.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/webvpn_service.dart';
+import 'campus_personal_data_permission_screen.dart';
 
 class PersonalDataCenterScreen extends StatefulWidget {
   const PersonalDataCenterScreen({
@@ -278,6 +279,21 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
                 leading: const Icon(Icons.account_circle_outlined),
                 title: const Text('当前账号'),
                 subtitle: Text('App $appFingerprint · 来源 $sourceFingerprint'),
+              ),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.admin_panel_settings_outlined),
+                title: const Text('校园 Agent 数据权限'),
+                subtitle: const Text('管理服务器使用个人数据的长期授权'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => CampusPersonalDataPermissionScreen(
+                      dio: widget.dio,
+                    ),
+                  ),
+                ),
               ),
               const Divider(),
               SizedBox(

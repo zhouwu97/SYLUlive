@@ -154,6 +154,10 @@ func main() {
 
 		&models.PersonalDataRequest{},
 		&models.EduCredentialCleanupJob{},
+		&models.AcademicSnapshot{},
+		&models.PersonalUploadedSnapshot{},
+		&models.UserDevice{},
+		&models.DeviceToolJob{},
 
 		&models.Post{},
 		&models.Poll{},
@@ -477,6 +481,18 @@ func main() {
 
 	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
 	eduBindingRecovery := services.NewEduBindingRecoveryService(db, handlers.PythonEduBindingRecoveryRemote{}, eduCredentialCleanupJobs, time.Now)
+	academicSnapshotService := services.NewAcademicSnapshotService(db, time.Now)
+	personalSnapshotService := services.NewPersonalSnapshotService(db, time.Now)
+	eduClient := clients.NewEduClient(clients.EduClientOptions{
+		BaseURL: func() string { return cfg.EduServiceURL },
+		Token:   func() string { return cfg.EduServiceToken },
+	})
+	eduFetchOrchestrator := services.NewEduFetchOrchestrator(
+		db,
+		eduClient,
+		academicSnapshotService,
+		services.EduFetchOrchestratorOptions{},
+	)
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
 
 	userHandler := handlers.NewUserHandler(db)
@@ -569,7 +585,10 @@ func main() {
 		cfg.AppReleaseAccelPrefix,
 	)
 
-	eduHandler := handlers.NewEduHandlerWithLifecycle(db, cfg.JWTSecret, eduCredentialCleanupJobs)
+	eduHandler := handlers.NewEduHandlerWithAcademicFetch(db, cfg.JWTSecret, eduCredentialCleanupJobs, eduFetchOrchestrator)
+	deviceJobService := services.NewDeviceJobService(db)
+	deviceJobHandler := handlers.NewDeviceJobHandler(deviceJobService)
+	personalSnapshotHandler := handlers.NewPersonalSnapshotHandler(personalSnapshotService)
 
 	teacherHandler := handlers.NewTeacherHandler(db)
 
@@ -661,6 +680,23 @@ func main() {
 				log.Fatalf("AI Provider 初始化失败: %v", ragErr)
 			}
 		}
+		deviceJobScheduler := ai.DeviceJobSchedulerFunc(func(ctx context.Context, request ai.DeviceJobRequest) (ai.DeviceJobReference, error) {
+			job, err := deviceJobService.CreateJob(ctx, services.CreateDeviceJobRequest{
+				UserID: request.UserID, RunID: request.RunID, ToolCallID: request.ToolCallID,
+				ToolName: request.ToolName, Arguments: request.Arguments, RequiredDataTypes: request.RequiredDataTypes,
+				ExpiresAt: request.ExpiresAt,
+			})
+			if err != nil {
+				return ai.DeviceJobReference{}, err
+			}
+			return ai.DeviceJobReference{ID: job.ID}, nil
+		})
+		toolRegistry, registryErr := ai.NewToolRegistry(db, ai.NewCampusMCPTools(
+			db, academicSnapshotService, personalSnapshotService, ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
+		)...)
+		if registryErr != nil {
+			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
+		}
 		aiRuntime, ragErr = ai.NewRuntime(
 			db, provider, ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion), ai.NewEventBroker(),
 			ai.RuntimeConfig{
@@ -673,10 +709,13 @@ func main() {
 				OutputPriceMicroYuanPerMillion: cfg.AIOutputPriceMicroYuanPerMillionTokens,
 				AuditHashSecret:                cfg.JWTSecret,
 			},
+			toolRegistry,
 		)
 		if ragErr != nil {
 			log.Fatalf("AI Runtime 初始化失败: %v", ragErr)
 		}
+		deviceJobHandler.SetRunResumer(aiRuntime)
+		eduHandler.SetUserConsentRunResumer(aiRuntime)
 		if ragErr := aiRuntime.RecoverAbandonedRuns(appCtx); ragErr != nil {
 			log.Printf("[AI_RECOVERY_FAILED] %v", ragErr)
 		}
@@ -774,6 +813,28 @@ func main() {
 			},
 		})
 	})
+
+	// 设备工具桥接使用普通 JWT 鉴权，不能依赖校园 Agent 内测开关；
+	// 已登记安装实例仍须在每个 Handler 中按 user_id + installation_id 双重校验。
+	deviceAPI := r.Group("/api/device")
+	deviceAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		deviceAPI.PUT("/registration", deviceJobHandler.Register)
+		deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
+		deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
+		deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
+		deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
+		deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
+		deviceAPI.POST("/jobs/:id/cancel", deviceJobHandler.Cancel)
+	}
+
+	personalSnapshotsAPI := r.Group("/api/personal-snapshots")
+	personalSnapshotsAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		personalSnapshotsAPI.PUT("/erke", personalSnapshotHandler.PutErke)
+		personalSnapshotsAPI.GET("/erke", personalSnapshotHandler.GetErke)
+		personalSnapshotsAPI.DELETE("/erke", personalSnapshotHandler.DeleteErke)
+	}
 
 	// 静态文件服务
 

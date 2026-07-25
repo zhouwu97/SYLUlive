@@ -9,7 +9,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
+
+	"shenliyuan/internal/models"
 )
 
 type scriptedToolProvider struct {
@@ -142,4 +145,88 @@ func TestToolRegistryRejectsNestedModelUserID(t *testing.T) {
 	_, _, err = registry.Execute(context.Background(), "call_identity", uuid.NewString(), 7, "academic.get_overview", json.RawMessage(`{"nested":{"user_id":9}}`))
 	require.EqualError(t, err, "invalid_tool_call")
 	require.False(t, executed)
+}
+
+func TestRuntimeResumesWaitingDeviceJobOnlyOnce(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "device_call", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "device_call", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "已结合手机中的成绩摘要完成分析。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	tool := overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		return ToolWait{
+			State: models.AIRunStateWaitingDevice, EventType: "device.waiting", ResumeKey: "device-job-1",
+			Payload: map[string]interface{}{"datasets": []string{"grades"}},
+		}, nil
+	}}
+	runtime := newToolRuntime(t, db, provider, tool)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "分析成绩"})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateWaitingDevice)
+	require.Len(t, provider.Requests(), 1)
+
+	require.NoError(t, db.Create(&models.DeviceToolJob{
+		ID: "device-job-1", UserID: 7, RunID: run.ID, ToolCallID: "device_call",
+		InstallationID: "test-installation", ToolName: "device.academic.get_cached_overview",
+		ArgumentsJSON: datatypes.JSON([]byte(`{}`)), RequiredDataTypes: datatypes.JSON([]byte(`["academic"]`)),
+		Status: models.DeviceToolJobCompleted, StateVersion: 3, ExpiresAt: time.Now().Add(time.Minute),
+		ResultJSON: datatypes.JSON([]byte(`{"failed_course_count":1,"is_stale":false}`)),
+	}).Error)
+
+	require.NoError(t, runtime.ResumeDeviceJob(context.Background(), "device-job-1"))
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, "已结合手机中的成绩摘要完成分析。", completed.AnswerCheckpoint)
+
+	var call models.AIToolCall
+	require.NoError(t, db.First(&call, "call_id = ?", "device_call").Error)
+	require.Equal(t, "completed", call.Status)
+	require.JSONEq(t, `{"failed_course_count":1,"is_stale":false}`, string(call.ResultJSON))
+	require.Len(t, provider.Requests(), 2)
+
+	// 设备端网络重试可能重复上报完成，恢复入口必须保持幂等且不得再次调用 Provider。
+	require.NoError(t, runtime.ResumeDeviceJob(context.Background(), "device-job-1"))
+	time.Sleep(100 * time.Millisecond)
+	require.Len(t, provider.Requests(), 2)
+}
+
+func TestRuntimeResumesWaitingUserConsent(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "consent_call", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "consent_call", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "已在授权完成后重新读取最新数据。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	tool := overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		return ToolWait{
+			State: models.AIRunStateWaitingUserConsent, EventType: "consent.required",
+			Payload: map[string]interface{}{"datasets": []string{"grades"}},
+		}, nil
+	}}
+	runtime := newToolRuntime(t, db, provider, tool)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "刷新后分析成绩"})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateWaitingUserConsent)
+	require.NoError(t, runtime.ResumeUserConsent(context.Background(), 7))
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Len(t, provider.Requests(), 2)
+
+	secondRequest := provider.Requests()[1]
+	require.Len(t, secondRequest.Messages, 4)
+	require.Equal(t, "tool", secondRequest.Messages[3].Role)
+	require.JSONEq(t, `{"status":"completed","consent_granted":true,"instruction":"请重新读取已授权数据"}`, secondRequest.Messages[3].Content)
 }

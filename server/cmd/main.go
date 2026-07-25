@@ -23,6 +23,7 @@ import (
 
 	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/ai"
+	"shenliyuan/internal/ai/mcpclient"
 	"shenliyuan/internal/clients"
 
 	"shenliyuan/internal/config"
@@ -695,11 +696,59 @@ func main() {
 			}
 			return ai.DeviceJobReference{ID: job.ID}, nil
 		})
-		toolRegistry, registryErr := ai.NewToolRegistry(db, ai.NewCampusMCPTools(
+		tools := ai.NewCampusMCPTools(
 			db, academicSnapshotService, personalSnapshotService,
 			ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
 			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
-		)...)
+		)
+		if cfg.AIExternalMCPEnabled {
+			externalMCPClient, externalMCPErr := mcpclient.New(mcpclient.Config{
+				Enabled:           true,
+				Transport:         cfg.AIExternalMCPTransport,
+				Command:           cfg.AIExternalMCPCommand,
+				ToolTimeout:       time.Duration(cfg.AIExternalMCPToolTimeoutSeconds) * time.Second,
+				MaxCallsPerRun:    cfg.AIExternalMCPMaxCallsPerRun,
+				SSHHost:           cfg.AIExternalMCPSshHost,
+				SSHPort:           cfg.AIExternalMCPSshPort,
+				SSHUser:           cfg.AIExternalMCPSshUser,
+				SSHKeyPath:        cfg.AIExternalMCPSshKeyPath,
+				SSHKnownHostsPath: cfg.AIExternalMCPKnownHostsPath,
+			}, nil)
+			if externalMCPErr != nil {
+				log.Printf("[AI_EXTERNAL_MCP_CONFIGURATION_INVALID] %v", externalMCPErr)
+			} else {
+				defer func() {
+					if err := externalMCPClient.Close(); err != nil {
+						log.Printf("[AI_EXTERNAL_MCP_CLOSE_FAILED] %v", err)
+					}
+				}()
+				connectCtx, cancelConnect := context.WithTimeout(appCtx, time.Duration(cfg.AIExternalMCPToolTimeoutSeconds)*time.Second)
+				externalMCPErr = externalMCPClient.Connect(connectCtx)
+				cancelConnect()
+				if externalMCPErr != nil {
+					log.Printf("[AI_EXTERNAL_MCP_CONNECT_FAILED] code=%s", mcpclient.ErrorCode(externalMCPErr))
+				} else {
+					log.Printf("独立 Hy3 MCP 已完成 stdio 健康检查 transport=%s", cfg.AIExternalMCPTransport)
+					listCtx, cancelList := context.WithTimeout(appCtx, time.Duration(cfg.AIExternalMCPToolTimeoutSeconds)*time.Second)
+					definitions, listErr := externalMCPClient.ListTools(listCtx)
+					cancelList()
+					if listErr != nil {
+						log.Printf("[AI_EXTERNAL_MCP_TOOL_LIST_FAILED] code=%s", mcpclient.ErrorCode(listErr))
+					} else {
+						hy3Tools := ai.NewValidatedHy3DecisionTools(
+							db, academicSnapshotService, personalSnapshotService, externalMCPClient, definitions,
+							ai.WithHy3DecisionPersonalDataPermissionReader(aiUserPermissionService),
+						)
+						if len(hy3Tools) == 0 {
+							log.Printf("[AI_EXTERNAL_MCP_NO_COMPATIBLE_TOOLS]")
+						} else {
+							tools = append(tools, hy3Tools...)
+						}
+					}
+				}
+			}
+		}
+		toolRegistry, registryErr := ai.NewToolRegistry(db, tools...)
 		if registryErr != nil {
 			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
 		}

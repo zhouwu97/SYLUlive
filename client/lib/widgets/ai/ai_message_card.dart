@@ -6,6 +6,7 @@ import '../../models/ai_source.dart';
 import '../../models/competition_action_draft.dart';
 import '../campus/campus_theme.dart';
 import 'ai_competition_plan_draft_card.dart';
+import 'ai_evidence_card.dart';
 import 'ai_source_card.dart';
 
 class AiMessageCard extends StatelessWidget {
@@ -66,6 +67,8 @@ class AiMessageCard extends StatelessWidget {
                       ? null
                       : () => onViewCompetition!(draft.event.id),
                 ),
+              if (!isUser && message.personalDataEvidence.isNotEmpty)
+                AiCampusEvidenceCard(evidence: message.personalDataEvidence),
               for (final source in message.sources)
                 AiSourceCard(source: source, loadContent: loadSourceContent),
             ],

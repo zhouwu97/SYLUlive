@@ -91,6 +91,14 @@ class CampusPublicProvider implements AIModelProvider {
           case AiRunEventType.status:
           case AiRunEventType.sources:
           case AiRunEventType.heartbeat:
+          case AiRunEventType.toolRequested:
+          case AiRunEventType.toolExecuting:
+          case AiRunEventType.deviceWaiting:
+          case AiRunEventType.deviceClaimed:
+          case AiRunEventType.consentRequired:
+          case AiRunEventType.eduFetching:
+          case AiRunEventType.toolCompleted:
+          case AiRunEventType.personalDataEvidence:
           case AiRunEventType.unknown:
             break;
         }

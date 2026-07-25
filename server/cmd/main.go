@@ -156,6 +156,7 @@ func main() {
 		&models.EduCredentialCleanupJob{},
 		&models.AcademicSnapshot{},
 		&models.PersonalUploadedSnapshot{},
+		&models.AIUserPermission{},
 		&models.UserDevice{},
 		&models.DeviceToolJob{},
 
@@ -588,7 +589,10 @@ func main() {
 	eduHandler := handlers.NewEduHandlerWithAcademicFetch(db, cfg.JWTSecret, eduCredentialCleanupJobs, eduFetchOrchestrator)
 	deviceJobService := services.NewDeviceJobService(db)
 	deviceJobHandler := handlers.NewDeviceJobHandler(deviceJobService)
+	aiUserPermissionService := services.NewAIUserPermissionService(db)
+	aiUserPermissionHandler := handlers.NewAIUserPermissionHandler(aiUserPermissionService)
 	personalSnapshotHandler := handlers.NewPersonalSnapshotHandler(personalSnapshotService)
+	personalSnapshotHandler.SetAIUserPermissionService(aiUserPermissionService)
 
 	teacherHandler := handlers.NewTeacherHandler(db)
 
@@ -692,7 +696,9 @@ func main() {
 			return ai.DeviceJobReference{ID: job.ID}, nil
 		})
 		toolRegistry, registryErr := ai.NewToolRegistry(db, ai.NewCampusMCPTools(
-			db, academicSnapshotService, personalSnapshotService, ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
+			db, academicSnapshotService, personalSnapshotService,
+			ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
+			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
 		)...)
 		if registryErr != nil {
 			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
@@ -834,6 +840,13 @@ func main() {
 		personalSnapshotsAPI.PUT("/erke", personalSnapshotHandler.PutErke)
 		personalSnapshotsAPI.GET("/erke", personalSnapshotHandler.GetErke)
 		personalSnapshotsAPI.DELETE("/erke", personalSnapshotHandler.DeleteErke)
+	}
+
+	personalDataAccessAPI := r.Group("/api/ai/personal-data-access")
+	personalDataAccessAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		personalDataAccessAPI.GET("", aiUserPermissionHandler.List)
+		personalDataAccessAPI.PUT("", aiUserPermissionHandler.Update)
 	}
 
 	// 静态文件服务

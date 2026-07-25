@@ -209,6 +209,10 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 			return
 		}
 		messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(result)})
+		_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", map[string]interface{}{
+			"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false,
+		}, true)
+		r.appendPersonalDataEvidence(ctx, resume.RunID, item.CallID, result)
 	}
 
 	var run models.AIRun

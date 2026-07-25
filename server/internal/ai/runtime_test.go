@@ -35,7 +35,7 @@ func newRuntimeTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, db.AutoMigrate(
 		&models.AIConversation{}, &models.AIConversationMessage{}, &models.AIRun{},
 		&models.AIEvent{}, &models.AIToolCall{}, &models.AIRunResumeJob{}, &models.AIQuotaEntry{},
-		&models.AIUserBudget{}, &models.AIBudgetReservation{}, &models.AIUsageRecord{},
+		&models.AIUserBudget{}, &models.AIBudgetReservation{}, &models.AIUsageRecord{}, &models.DeviceToolJob{},
 	))
 	return db
 }

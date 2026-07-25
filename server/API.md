@@ -69,6 +69,30 @@
 | `POST` | `/api/exam/extract` | 融智云考题库一键提取 |
 | `POST` | `/api/erke/scores` | 青年之声（第二课堂）学分查询 |
 
+### 已授权二课快照
+
+以下接口均需 JWT。它们只接受手机已解析的结构化二课数据，用于校园 Agent 的后续分析；服务端拒绝密码、Cookie、会话、设备密钥和原始 HTML，客户端传入的哈希不会被信任。
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `PUT` | `/api/personal-snapshots/erke` | 按用户明确授权上传或替换二课结构化快照 |
+| `GET` | `/api/personal-snapshots/erke` | 读取当前用户已上传的二课快照及来源、更新时间、过期状态 |
+| `DELETE` | `/api/personal-snapshots/erke` | 删除已上传的二课快照，后续校园 Agent 不再读取 |
+
+`PUT /api/personal-snapshots/erke` 请求示例：
+
+```json
+{
+  "schema_version": 2,
+  "fetched_at": "2026-07-25T09:20:00+08:00",
+  "graduation": {"earned_total": 42.5, "required_total": 60},
+  "yearly": {"year": "2025-2026", "earned_total": 12},
+  "recent_activities": [{"name": "志愿服务", "credits": 1.5}]
+}
+```
+
+错误码：`invalid_erke_snapshot` 表示字段不符合结构、超过大小限制或含敏感字段；`personal_snapshot_not_found` 表示尚未上传或已经删除；`personal_snapshot_unavailable` 表示服务暂时不可用。
+
 ## 4. 帖子与社区 (Posts & Replies)
 
 **帖子 (Posts)**

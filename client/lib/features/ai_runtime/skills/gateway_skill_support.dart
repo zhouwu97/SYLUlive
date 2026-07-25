@@ -7,12 +7,8 @@ SkillEvidence gatewayEvidence<T>(
   required PersonalDataType dataType,
   required String scope,
 }) {
-  final source = switch (result.source) {
-    PersonalDataSource.localEncryptedVault => 'local_encrypted_vault',
-    PersonalDataSource.none => 'none',
-  };
   return SkillEvidence(
-    source: source,
+    source: result.source.wireValue,
     scope: scope,
     dataType: dataType,
     fetchedAt: result.fetchedAt,

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"shenliyuan/internal/academic"
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/services"
@@ -51,9 +52,17 @@ func (e *eduLoginError) Error() string {
 
 // EduHandler 教务处理器
 type EduHandler struct {
-	db          *gorm.DB
-	jwtSecret   string
-	cleanupJobs *services.EduCredentialCleanupJobService
+	db              *gorm.DB
+	jwtSecret       string
+	cleanupJobs     *services.EduCredentialCleanupJobService
+	academicFetcher *services.EduFetchOrchestrator
+	runResumer      UserConsentRunResumer
+}
+
+// UserConsentRunResumer 在教务授权后的首次成功刷新完成时，恢复对应用户等待授权的 AI Run。
+// Handler 只依赖这个最小接口，避免耦合 AI Runtime 的具体实现。
+type UserConsentRunResumer interface {
+	ResumeUserConsent(context.Context, uint) error
 }
 
 // NewEduHandler 创建教务处理器
@@ -64,6 +73,17 @@ func NewEduHandler(db *gorm.DB) *EduHandler {
 // NewEduHandlerWithLifecycle 创建具备授权撤销补偿和 Token 刷新能力的教务处理器。
 func NewEduHandlerWithLifecycle(db *gorm.DB, jwtSecret string, cleanupJobs *services.EduCredentialCleanupJobService) *EduHandler {
 	return &EduHandler{db: db, jwtSecret: jwtSecret, cleanupJobs: cleanupJobs}
+}
+
+// NewEduHandlerWithAcademicFetch 创建使用统一快照和拉取编排器的教务处理器。
+func NewEduHandlerWithAcademicFetch(db *gorm.DB, jwtSecret string, cleanupJobs *services.EduCredentialCleanupJobService, academicFetcher *services.EduFetchOrchestrator) *EduHandler {
+	return &EduHandler{db: db, jwtSecret: jwtSecret, cleanupJobs: cleanupJobs, academicFetcher: academicFetcher}
+}
+
+// SetUserConsentRunResumer 在 AI Runtime 初始化完成后接入授权恢复回调。
+// 未启用校园 Agent 时，教务刷新流程仍可独立运行。
+func (h *EduHandler) SetUserConsentRunResumer(resumer UserConsentRunResumer) {
+	h.runResumer = resumer
 }
 
 // ---------- 统一的 Python 教务服务错误映射 ----------
@@ -864,59 +884,15 @@ type CourseInput struct {
 
 // GetCourses 获取课表（通过Python服务访问教务系统）
 func (h *EduHandler) GetCourses(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-
-	if err := h.db.First(&models.User{}, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-
 	var input CourseInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	// 通过Python服务获取课表（Go在香港无法直接访问教务系统）
-	client := resty.New()
-	client.SetTimeout(30 * time.Second)
-
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
-		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
-		SetBody(map[string]interface{}{
-			"user_id":  fmt.Sprintf("%d", userID),
-			"year":     input.Year,
-			"semester": input.Semester,
-		}).
-		Post(EduServiceConfig.BaseURL + "/api/edu/courses/fetch")
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
-		return
-	}
-
-	if resp.StatusCode() != 200 {
-		mapEduServiceError(c, resp.StatusCode(), resp.Body())
-		return
-	}
-
-	// 防止Python返回200+非JSON导致Flutter解析异常
-	if !json.Valid(resp.Body()) {
-		log.Printf(
-			"[EDU] courses returned non-JSON: status=%d content_type=%q",
-			resp.StatusCode(),
-			resp.Header().Get("Content-Type"),
-		)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": "教务服务返回异常，请稍后再试",
-		})
-		return
-	}
-
-	// 直接透传给前端
-	c.Data(http.StatusOK, "application/json", resp.Body())
+	h.fetchAcademicDataset(c, services.EduFetchRequest{
+		Dataset: academic.DatasetSchedule, Year: input.Year, Semester: input.Semester,
+		CurrentTerm: true, ForceRefresh: true,
+	})
 }
 
 // RetiredCourseCache 为旧客户端提供明确的迁移响应。
@@ -950,104 +926,21 @@ type GradeDetailInput struct {
 
 // GetGrades 获取成绩（通过Python服务访问教务系统）
 func (h *EduHandler) GetGrades(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-
-	if err := h.db.First(&models.User{}, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-
 	var input GradesInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	// 通过Python服务获取成绩
-	client := resty.New()
-	client.SetTimeout(30 * time.Second)
-
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
-		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
-		SetBody(map[string]interface{}{
-			"user_id":  fmt.Sprintf("%d", userID),
-			"year":     input.Year,
-			"semester": input.Semester,
-		}).
-		Post(strings.TrimRight(EduServiceConfig.BaseURL, "/") + "/api/edu/grades/")
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
-		return
-	}
-
-	// 防止Python返回非JSON导致Flutter FormatException
-	if !json.Valid(resp.Body()) {
-		log.Printf(
-			"[EDU] grades returned non-JSON: status=%d content_type=%q",
-			resp.StatusCode(),
-			resp.Header().Get("Content-Type"),
-		)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": "教务服务返回异常，请稍后再试",
-		})
-		return
-	}
-
-	if resp.StatusCode() != 200 {
-		mapEduServiceError(c, resp.StatusCode(), resp.Body())
-		return
-	}
-
-	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
+	h.fetchAcademicDataset(c, services.EduFetchRequest{
+		Dataset: academic.DatasetGrades, Year: input.Year, Semester: input.Semester, ForceRefresh: true,
+	})
 }
 
 // GetAcademicSituation 获取官方学生学业情况（通过Python服务访问教务系统）
 func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-
-	if err := h.db.First(&models.User{}, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-
-	client := resty.New()
-	client.SetTimeout(45 * time.Second)
-
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
-		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
-		SetBody(map[string]interface{}{
-			"user_id": fmt.Sprintf("%d", userID),
-		}).
-		Post(strings.TrimRight(EduServiceConfig.BaseURL, "/") + "/api/edu/academic-situation/")
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
-		return
-	}
-
-	if !json.Valid(resp.Body()) {
-		log.Printf(
-			"[EDU] academic situation returned non-JSON: status=%d content_type=%q",
-			resp.StatusCode(),
-			resp.Header().Get("Content-Type"),
-		)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": "教务服务返回异常，请稍后再试",
-		})
-		return
-	}
-
-	if resp.StatusCode() != 200 {
-		mapEduServiceError(c, resp.StatusCode(), resp.Body())
-		return
-	}
-
-	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
+	h.fetchAcademicDataset(c, services.EduFetchRequest{
+		Dataset: academic.DatasetAcademicSituation, ForceRefresh: true,
+	})
 }
 
 // GetGradeDetail 获取单门课程成绩构成（通过Python服务访问教务系统）
@@ -1110,48 +1003,39 @@ func (h *EduHandler) GetGradeDetail(c *gin.Context) {
 
 // GetCreditRequirements 获取官方学分要求/学籍预警数据（通过Python服务访问教务系统）
 func (h *EduHandler) GetCreditRequirements(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	h.fetchAcademicDataset(c, services.EduFetchRequest{
+		Dataset: academic.DatasetCreditRequirements, ForceRefresh: true,
+	})
+}
 
-	if err := h.db.First(&models.User{}, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+// fetchAcademicDataset 维持既有客户端业务 JSON 兼容性，来源和过期元数据由编排层供 MCP 使用。
+func (h *EduHandler) fetchAcademicDataset(c *gin.Context, request services.EduFetchRequest) {
+	if h.academicFetcher == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "学业快照服务暂未配置"})
 		return
 	}
-
-	client := resty.New()
-	client.SetTimeout(45 * time.Second)
-
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("X-Internal-Service-Token", EduServiceConfig.Token).
-		SetHeader("X-Internal-User-ID", fmt.Sprintf("%d", userID)).
-		SetBody(map[string]interface{}{
-			"user_id": fmt.Sprintf("%d", userID),
-		}).
-		Post(strings.TrimRight(EduServiceConfig.BaseURL, "/") + "/api/edu/credit-requirements/")
-
+	result, err := h.academicFetcher.Fetch(c.Request.Context(), c.GetUint("user_id"), request)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "教务数据请求失败，请稍后再试"})
 		return
 	}
-
-	if !json.Valid(resp.Body()) {
-		log.Printf(
-			"[EDU] credit requirements returned non-JSON: status=%d content_type=%q",
-			resp.StatusCode(),
-			resp.Header().Get("Content-Type"),
-		)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": "教务服务返回异常，请稍后再试",
-		})
-		return
+	switch result.Status {
+	case academic.DataStatusAvailable, academic.DataStatusStale, academic.DataStatusPartial:
+		// 只有实际远程拉取并成功写入快照后，才可以继续等待授权的 Agent 推理。
+		// 缓存命中或旧快照回退不能错误地解除授权等待。
+		if result.Source == academic.DataSourceRemoteEduFetch && h.runResumer != nil {
+			_ = h.runResumer.ResumeUserConsent(c.Request.Context(), c.GetUint("user_id"))
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", result.Data)
+	case academic.DataStatusPermissionRequired:
+		c.JSON(http.StatusConflict, gin.H{"code": "EDU_AUTHORIZATION_REQUIRED", "error": "教务授权已失效，请重新授权"})
+	default:
+		message := "教务数据暂时无法更新，请稍后再试"
+		if len(result.Warnings) > 0 {
+			message = result.Warnings[0]
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": message})
 	}
-
-	if resp.StatusCode() != 200 {
-		mapEduServiceError(c, resp.StatusCode(), resp.Body())
-		return
-	}
-
-	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
 }
 
 func classifyEduLoginFailure(statusCode int, body string) error {

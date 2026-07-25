@@ -1,0 +1,187 @@
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+
+	"shenliyuan/internal/services"
+)
+
+// DeviceJobHandler 为已认证的 Flutter 安装实例提供设备任务协议。
+// 所有作业接口都以 JWT user_id 和 X-Device-Installation-ID 双重鉴权。
+type DeviceJobHandler struct {
+	service *services.DeviceJobService
+	resumer DeviceJobRunResumer
+}
+
+// DeviceJobRunResumer 隔离 Handler 与 AI Runtime，设备协议不依赖具体模型实现。
+type DeviceJobRunResumer interface {
+	ResumeDeviceJob(context.Context, string) error
+}
+
+func NewDeviceJobHandler(service *services.DeviceJobService) *DeviceJobHandler {
+	return &DeviceJobHandler{service: service}
+}
+
+// SetRunResumer 在 AI Runtime 初始化完成后接入回调；未启用 AI 时设备任务接口仍可独立使用。
+func (h *DeviceJobHandler) SetRunResumer(resumer DeviceJobRunResumer) {
+	h.resumer = resumer
+}
+
+type deviceRegistrationRequest struct {
+	InstallationID string   `json:"installation_id"`
+	PushToken      string   `json:"push_token"`
+	ToolNames      []string `json:"tool_names"`
+}
+
+// Register 的请求与响应均不携带个人快照；push_token 只用于后续发送 job_id 通知。
+func (h *DeviceJobHandler) Register(c *gin.Context) {
+	var request deviceRegistrationRequest
+	if err := decodeStrictJSON(c, &request, 8<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_device_registration", "message": "设备登记请求无效"})
+		return
+	}
+	device, err := h.service.RegisterDevice(c.Request.Context(), c.GetUint("user_id"), services.DeviceRegistration{
+		InstallationID: request.InstallationID, PushToken: request.PushToken, ToolNames: request.ToolNames,
+	})
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"device": device})
+}
+
+func (h *DeviceJobHandler) Pending(c *gin.Context) {
+	jobs, err := h.service.PendingJobs(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c))
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"jobs": jobs})
+}
+
+func (h *DeviceJobHandler) Get(c *gin.Context) {
+	job, err := h.service.GetJob(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c), c.Param("id"))
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"job": job})
+}
+
+type deviceJobStateRequest struct {
+	StateVersion int64 `json:"state_version"`
+}
+
+func (h *DeviceJobHandler) Claim(c *gin.Context) {
+	var request deviceJobStateRequest
+	if err := decodeStrictJSON(c, &request, 4<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "领取请求无效"})
+		return
+	}
+	job, err := h.service.ClaimJob(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c), c.Param("id"), request.StateVersion)
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"job": job})
+}
+
+type deviceJobCompleteRequest struct {
+	StateVersion int64           `json:"state_version"`
+	Result       json.RawMessage `json:"result"`
+}
+
+func (h *DeviceJobHandler) Complete(c *gin.Context) {
+	var request deviceJobCompleteRequest
+	if err := decodeStrictJSON(c, &request, 260<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "完成请求无效"})
+		return
+	}
+	job, err := h.service.CompleteJob(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c), c.Param("id"), request.StateVersion, request.Result)
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	if h.resumer != nil {
+		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+	}
+	c.JSON(http.StatusOK, gin.H{"job": job})
+}
+
+type deviceJobFailRequest struct {
+	StateVersion int64  `json:"state_version"`
+	ErrorCode    string `json:"error_code"`
+}
+
+func (h *DeviceJobHandler) Fail(c *gin.Context) {
+	var request deviceJobFailRequest
+	if err := decodeStrictJSON(c, &request, 4<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "失败请求无效"})
+		return
+	}
+	job, err := h.service.FailJob(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c), c.Param("id"), request.StateVersion, request.ErrorCode)
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	if h.resumer != nil {
+		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+	}
+	c.JSON(http.StatusOK, gin.H{"job": job})
+}
+
+func (h *DeviceJobHandler) Cancel(c *gin.Context) {
+	var request deviceJobStateRequest
+	if err := decodeStrictJSON(c, &request, 4<<10); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "message": "取消请求无效"})
+		return
+	}
+	job, err := h.service.CancelJob(c.Request.Context(), c.GetUint("user_id"), deviceInstallationID(c), c.Param("id"), request.StateVersion)
+	if err != nil {
+		writeDeviceJobError(c, err)
+		return
+	}
+	if h.resumer != nil {
+		go func(jobID string) { _ = h.resumer.ResumeDeviceJob(context.Background(), jobID) }(job.ID)
+	}
+	c.JSON(http.StatusOK, gin.H{"job": job})
+}
+
+func deviceInstallationID(c *gin.Context) string {
+	return strings.TrimSpace(c.GetHeader("X-Device-Installation-ID"))
+}
+
+func writeDeviceJobError(c *gin.Context, err error) {
+	var deviceErr *services.DeviceJobError
+	if !errors.As(err, &deviceErr) {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "device_job_unavailable", "message": "设备任务服务暂时不可用"})
+		return
+	}
+	status := http.StatusConflict
+	message := "设备任务状态已变化"
+	switch deviceErr.Code {
+	case "unauthorized":
+		status, message = http.StatusUnauthorized, "登录状态无效"
+	case "device_not_registered":
+		status, message = http.StatusForbidden, "当前设备未登记或不属于此账号"
+	case "device_job_not_found":
+		status, message = http.StatusNotFound, "设备任务不存在"
+	case "job_expired":
+		status, message = http.StatusGone, "设备任务已过期"
+	case "invalid_device_registration", "invalid_device_job", "invalid_tool_arguments", "invalid_tool_result", "invalid_state_version", "invalid_error_code", "invalid_job_expiry":
+		status, message = http.StatusBadRequest, "设备任务请求无效"
+	case "tool_not_allowed":
+		status, message = http.StatusForbidden, "设备工具不在允许列表中"
+	case "device_offline":
+		status, message = http.StatusConflict, "没有可用的已登记设备"
+	case "state_version_conflict", "invalid_job_state":
+		status, message = http.StatusConflict, "设备任务状态已变化"
+	}
+	c.JSON(status, gin.H{"code": deviceErr.Code, "message": message})
+}

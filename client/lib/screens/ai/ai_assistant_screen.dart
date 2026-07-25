@@ -62,7 +62,7 @@ class AiAssistantScreen extends StatefulWidget {
   final Dio dio;
   final bool initialPersonalMode;
   final PersonalConversationStore Function(String accountKey)?
-  personalConversationStoreFactory;
+      personalConversationStoreFactory;
 
   const AiAssistantScreen({
     super.key,
@@ -153,7 +153,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void _handleAccountContextChanged() {
     if (!mounted) return;
     _synchronizePersonalAccount();
-    
+
     final auth = _authProvider;
     final authKey = auth == null
         ? null
@@ -225,8 +225,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       return;
     }
     final requestEpoch = _personalSessionEpoch.capture();
-    final store =
-        widget.personalConversationStoreFactory?.call(accountKey) ??
+    final store = widget.personalConversationStoreFactory?.call(accountKey) ??
         PersonalConversationStore(accountKey: accountKey);
     _personalConversationStore = store;
     _loadedConversationAccountKey = accountKey;
@@ -470,30 +469,28 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         accountGeneration: () => _personalSessionEpoch.generation,
         skillTimeout: const Duration(seconds: 90),
       );
-      final tools = buildStageSixToolDefinitions()
-          .where((tool) {
-            if (!hasEduAccount &&
-                !competitionAdvisorAccountIndependentSkillIds.contains(
-                  tool.id,
-                ) &&
-                (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)) {
-              return false;
-            }
-            if (tool.id.startsWith('personal.academic.') &&
-                flags[AIFeatureFlag.academicEngine] != true) {
-              return false;
-            }
-            if (tool.id == GraduationReadinessSkill.skillId &&
-                flags[AIFeatureFlag.graduationAssistant] != true) {
-              return false;
-            }
-            if (tool.id == ExplainCompetitionMatchesSkill.skillId &&
-                flags[AIFeatureFlag.competitionFit] != true) {
-              return false;
-            }
-            return true;
-          })
-          .toList(growable: false);
+      final tools = buildStageSixToolDefinitions().where((tool) {
+        if (!hasEduAccount &&
+            !competitionAdvisorAccountIndependentSkillIds.contains(
+              tool.id,
+            ) &&
+            (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)) {
+          return false;
+        }
+        if (tool.id.startsWith('personal.academic.') &&
+            flags[AIFeatureFlag.academicEngine] != true) {
+          return false;
+        }
+        if (tool.id == GraduationReadinessSkill.skillId &&
+            flags[AIFeatureFlag.graduationAssistant] != true) {
+          return false;
+        }
+        if (tool.id == ExplainCompetitionMatchesSkill.skillId &&
+            flags[AIFeatureFlag.competitionFit] != true) {
+          return false;
+        }
+        return true;
+      }).toList(growable: false);
       final unavailableToolReasons = <String, String>{
         if (!hasEduAccount)
           for (final tool in buildStageSixToolDefinitions())
@@ -568,12 +565,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   String _toolStatusMessage(ToolLoopStatus status) => switch (status) {
-    ToolLoopStatus.permissionDenied => '已取消个人数据授权',
-    ToolLoopStatus.cancelled => '请求已取消',
-    ToolLoopStatus.rejected => '请求未通过本地安全校验',
-    ToolLoopStatus.failed => '个人助手执行失败',
-    ToolLoopStatus.completed => '',
-  };
+        ToolLoopStatus.permissionDenied => '已取消个人数据授权',
+        ToolLoopStatus.cancelled => '请求已取消',
+        ToolLoopStatus.rejected => '请求未通过本地安全校验',
+        ToolLoopStatus.failed => '个人助手执行失败',
+        ToolLoopStatus.completed => '',
+      };
 
   Future<void> _cancelPersonal() async {
     _toolCancellation?.cancel();
@@ -625,15 +622,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       barrierColor: Colors.black.withValues(alpha: 0.28),
       builder: (sheetContext) =>
           ChangeNotifierProvider<AiAssistantProvider>.value(
-            value: _provider,
-            child: AiHistorySheet(
-              onFocusRequest: () {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _inputFocusNode.requestFocus();
-                });
-              },
-            ),
-          ),
+        value: _provider,
+        child: AiHistorySheet(
+          onFocusRequest: () {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _inputFocusNode.requestFocus();
+            });
+          },
+        ),
+      ),
     );
   }
 
@@ -706,11 +703,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               .toList(growable: false),
         );
       }
-      for (
-        var index = 0;
-        index < _personalConversationEntries.length;
-        index++
-      ) {
+      for (var index = 0;
+          index < _personalConversationEntries.length;
+          index++) {
         final entry = _personalConversationEntries[index];
         if (!entry.message.actionDrafts.any((item) => item.id == updated.id)) {
           continue;
@@ -788,23 +783,24 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       'model' => AIModelSettingsScreen(appUserId: appUserId),
       'flags' => const AIFeatureSettingsScreen(),
       'data' => PersonalDataCenterScreen(
-        appUserId: appUserId,
-        sourceAccountId: edu.studentId,
-      ),
-      'graduation' => GraduationChecklistScreen(
-        readiness: GraduationReadiness(
-          policyId: 'unknown',
-          items: const <GraduationRequirementItem>[
-            GraduationRequirementItem(
-              id: 'policy',
-              label: '培养方案',
-              state: RequirementState.blocked,
-              summary: '请先通过个人助手加载已审核的适用培养方案',
-            ),
-          ],
-          warnings: const <String>['当前没有可执行的已审核政策规则'],
+          appUserId: appUserId,
+          sourceAccountId: edu.studentId,
+          dio: widget.dio,
         ),
-      ),
+      'graduation' => GraduationChecklistScreen(
+          readiness: GraduationReadiness(
+            policyId: 'unknown',
+            items: const <GraduationRequirementItem>[
+              GraduationRequirementItem(
+                id: 'policy',
+                label: '培养方案',
+                state: RequirementState.blocked,
+                summary: '请先通过个人助手加载已审核的适用培养方案',
+              ),
+            ],
+            warnings: const <String>['当前没有可执行的已审核政策规则'],
+          ),
+        ),
       _ => const AIFeatureSettingsScreen(),
     };
     final saved = await Navigator.of(
@@ -849,6 +845,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     tooltip: '新建个人会话',
                     onPressed: _clearPersonalConversation,
                     icon: const Icon(Icons.note_add_outlined),
+                  ),
+                if (_personalMode)
+                  IconButton(
+                    tooltip: '更新个人数据',
+                    onPressed: () => _openAiSetting('data'),
+                    icon: const Icon(Icons.refresh_rounded),
                   ),
                 AppActionPopupMenu(
                   icon: const Icon(Icons.settings_outlined),
@@ -908,69 +910,70 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   child: _personalMode
                       ? _buildPersonalBody()
                       : provider.messages.isEmpty
-                      ? ListView(
-                          children: [
-                            AiPublicEmptyState(
-                              chatEnabled: capabilities.chatEnabled,
-                              quickPrompts: provider.quickPrompts,
-                              onPromptSelected: (prompt) {
-                                _inputController.text = prompt;
-                                _inputController.selection =
-                                    TextSelection.collapsed(
+                          ? ListView(
+                              children: [
+                                AiPublicEmptyState(
+                                  chatEnabled: capabilities.chatEnabled,
+                                  quickPrompts: provider.quickPrompts,
+                                  onPromptSelected: (prompt) {
+                                    _inputController.text = prompt;
+                                    _inputController.selection =
+                                        TextSelection.collapsed(
                                       offset: prompt.length,
                                     );
-                              },
+                                  },
+                                ),
+                                if (provider.error != null)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                    ),
+                                    child: AiErrorCard(
+                                      message: provider.error!,
+                                      actionLabel: provider.canRetry
+                                          ? '重试'
+                                          : provider.canReconnectRun
+                                              ? '重新连接'
+                                              : '重试加载',
+                                      onAction: provider.canRetry
+                                          ? provider.retryLast
+                                          : provider.canReconnectRun
+                                              ? provider.reconnect
+                                              : provider.retryBootstrap,
+                                    ),
+                                  ),
+                              ],
+                            )
+                          : ListView(
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 10, 16, 18),
+                              children: [
+                                for (final message in provider.messages)
+                                  AiMessageCard(
+                                    message: message,
+                                    loadSourceContent:
+                                        widget.service.getSourceContent,
+                                  ),
+                                if (provider.isRunning)
+                                  AiTypingStatus(
+                                    status: provider.friendlyRunStatus,
+                                  ),
+                                if (provider.error != null)
+                                  AiErrorCard(
+                                    message: provider.error!,
+                                    actionLabel: provider.canRetry
+                                        ? '重试'
+                                        : provider.canReconnectRun
+                                            ? '重新连接'
+                                            : '重试加载',
+                                    onAction: provider.canRetry
+                                        ? provider.retryLast
+                                        : provider.canReconnectRun
+                                            ? provider.reconnect
+                                            : provider.retryBootstrap,
+                                  ),
+                              ],
                             ),
-                            if (provider.error != null)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                child: AiErrorCard(
-                                  message: provider.error!,
-                                  actionLabel: provider.canRetry
-                                      ? '重试'
-                                      : provider.canReconnectRun
-                                          ? '重新连接'
-                                          : '重试加载',
-                                  onAction: provider.canRetry
-                                      ? provider.retryLast
-                                      : provider.canReconnectRun
-                                          ? provider.reconnect
-                                          : provider.retryBootstrap,
-                                ),
-                              ),
-                          ],
-                        )
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-                          children: [
-                            for (final message in provider.messages)
-                              AiMessageCard(
-                                message: message,
-                                loadSourceContent:
-                                    widget.service.getSourceContent,
-                              ),
-                            if (provider.isRunning)
-                              AiTypingStatus(
-                                status: provider.friendlyRunStatus,
-                              ),
-                            if (provider.error != null)
-                              AiErrorCard(
-                                message: provider.error!,
-                                actionLabel: provider.canRetry
-                                    ? '重试'
-                                    : provider.canReconnectRun
-                                        ? '重新连接'
-                                        : '重试加载',
-                                onAction: provider.canRetry
-                                    ? provider.retryLast
-                                    : provider.canReconnectRun
-                                        ? provider.reconnect
-                                        : provider.retryBootstrap,
-                              ),
-                          ],
-                        ),
                 ),
                 AiInputComposer(
                   controller: _inputController,
@@ -979,9 +982,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   enabled: _personalMode
                       ? !_personalSending && !_personalHistoryLoading
                       : capabilities.chatEnabled && quota.remaining > 0,
-                  running: _personalMode
-                      ? _personalSending
-                      : provider.isRunning,
+                  running:
+                      _personalMode ? _personalSending : provider.isRunning,
                   onSend: _submit,
                   onCancel: _personalMode ? _cancelPersonal : provider.cancel,
                   hintText: _personalMode ? '问问你的课程、成绩或计划' : '输入校园问题',

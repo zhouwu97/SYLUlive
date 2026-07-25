@@ -1,5 +1,8 @@
 import '../models/data_freshness.dart';
+import '../../../personal_data_sync/personal_data_source.dart';
 import 'gateway_error.dart';
+
+export '../../../personal_data_sync/personal_data_source.dart';
 
 enum GatewayStatus {
   available,
@@ -11,8 +14,6 @@ enum GatewayStatus {
   unsupported,
   closed,
 }
-
-enum PersonalDataSource { localEncryptedVault, none }
 
 /// Gateway 的结构化只读结果，不暴露保险箱原始 Payload。
 class GatewayResult<T> {

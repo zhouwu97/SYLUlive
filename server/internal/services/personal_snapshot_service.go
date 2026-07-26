@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -31,11 +32,34 @@ var (
 // ErkeSnapshotUpload 是客户端允许上传的最小二课结构。所有字段都是解析后的 JSON，
 // 不接收密码、Cookie、会话或原始 HTML。
 type ErkeSnapshotUpload struct {
-	SchemaVersion    int             `json:"schema_version"`
-	FetchedAt        time.Time       `json:"fetched_at"`
-	Graduation       json.RawMessage `json:"graduation"`
-	Yearly           json.RawMessage `json:"yearly"`
-	RecentActivities json.RawMessage `json:"recent_activities"`
+	SchemaVersion    int                   `json:"schema_version"`
+	FetchedAt        time.Time             `json:"fetched_at"`
+	Graduation       ErkeGraduationSummary `json:"graduation"`
+	Yearly           ErkeYearlySummary     `json:"yearly"`
+	RecentActivities []ErkeActivitySummary `json:"recent_activities"`
+}
+type ErkeCategorySummary struct {
+	Name string  `json:"name"`
+	Gap  float64 `json:"gap"`
+}
+type ErkeGraduationSummary struct {
+	EarnedTotal        *float64              `json:"earned_total,omitempty"`
+	RequiredTotal      *float64              `json:"required_total,omitempty"`
+	GraduationGap      *float64              `json:"graduation_gap,omitempty"`
+	UnmetCategories    []ErkeCategorySummary `json:"unmet_categories"`
+	OfficialConclusion string                `json:"official_conclusion,omitempty"`
+}
+type ErkeYearlySummary struct {
+	Year               string   `json:"year,omitempty"`
+	EarnedTotal        *float64 `json:"earned_total,omitempty"`
+	RequiredTotal      *float64 `json:"required_total,omitempty"`
+	YearlyGap          *float64 `json:"yearly_gap,omitempty"`
+	OfficialConclusion string   `json:"official_conclusion,omitempty"`
+}
+type ErkeActivitySummary struct {
+	Category string   `json:"category"`
+	Score    *float64 `json:"score,omitempty"`
+	Date     string   `json:"date,omitempty"`
 }
 
 // PersonalSnapshotService 管理用户明确授权上传的二课快照。
@@ -144,26 +168,51 @@ func (service *PersonalSnapshotService) DeleteErke(ctx context.Context, userID u
 }
 
 func normalizeErkeSnapshotUpload(upload ErkeSnapshotUpload) (json.RawMessage, bool, error) {
-	if upload.SchemaVersion != 2 || upload.FetchedAt.IsZero() || !validJSONObject(upload.Graduation) || !validJSONObject(upload.Yearly) || !validJSONArray(upload.RecentActivities) {
+	if upload.SchemaVersion != 2 || upload.FetchedAt.IsZero() || !validErkeUpload(upload) {
 		return nil, false, ErrInvalidPersonalSnapshot
 	}
 	payload, err := json.Marshal(struct {
-		Graduation       json.RawMessage `json:"graduation"`
-		Yearly           json.RawMessage `json:"yearly"`
-		RecentActivities json.RawMessage `json:"recent_activities"`
+		Graduation       ErkeGraduationSummary `json:"graduation"`
+		Yearly           ErkeYearlySummary     `json:"yearly"`
+		RecentActivities []ErkeActivitySummary `json:"recent_activities"`
 	}{
 		Graduation: upload.Graduation, Yearly: upload.Yearly, RecentActivities: upload.RecentActivities,
 	})
 	if err != nil || len(payload) > maxErkeSnapshotBytes || containsSnapshotSecret(payload) {
 		return nil, false, ErrInvalidPersonalSnapshot
 	}
-	var decoded map[string]interface{}
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return nil, false, ErrInvalidPersonalSnapshot
-	}
-	activities, _ := decoded["recent_activities"].([]interface{})
-	partial := len(activities) == 0 || len(decoded["graduation"].(map[string]interface{})) == 0 || len(decoded["yearly"].(map[string]interface{})) == 0
+	partial := len(upload.RecentActivities) == 0
 	return payload, partial, nil
+}
+
+func validErkeUpload(upload ErkeSnapshotUpload) bool {
+	if len(upload.Graduation.UnmetCategories) > 16 || len(upload.RecentActivities) > 20 || len(upload.Graduation.OfficialConclusion) > 200 || len(upload.Yearly.OfficialConclusion) > 200 {
+		return false
+	}
+	validNumber := func(value *float64) bool {
+		return value == nil || (!math.IsNaN(*value) && !math.IsInf(*value, 0) && *value >= 0 && *value <= 100000)
+	}
+	for _, value := range []*float64{upload.Graduation.EarnedTotal, upload.Graduation.RequiredTotal, upload.Graduation.GraduationGap, upload.Yearly.EarnedTotal, upload.Yearly.RequiredTotal, upload.Yearly.YearlyGap} {
+		if !validNumber(value) {
+			return false
+		}
+	}
+	for _, category := range upload.Graduation.UnmetCategories {
+		if strings.TrimSpace(category.Name) == "" || len(category.Name) > 80 || category.Gap < 0 || math.IsNaN(category.Gap) || math.IsInf(category.Gap, 0) {
+			return false
+		}
+	}
+	for _, activity := range upload.RecentActivities {
+		if strings.TrimSpace(activity.Category) == "" || len(activity.Category) > 80 || !validNumber(activity.Score) {
+			return false
+		}
+		if activity.Date != "" {
+			if _, err := time.Parse("2006-01-02", activity.Date); err != nil {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func validJSONObject(raw json.RawMessage) bool {

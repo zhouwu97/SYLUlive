@@ -65,12 +65,19 @@ func currentToolCallContext(ctx context.Context) (toolCallContext, bool) {
 }
 
 type ToolRegistry struct {
-	db    *gorm.DB
-	tools map[string]PureReadTool
+	db               *gorm.DB
+	tools            map[string]PureReadTool
+	modelToolNames   map[string]string
+	canonicalAliases map[string]string
 }
 
 func NewToolRegistry(db *gorm.DB, tools ...PureReadTool) (*ToolRegistry, error) {
-	registry := &ToolRegistry{db: db, tools: make(map[string]PureReadTool)}
+	registry := &ToolRegistry{
+		db:               db,
+		tools:            make(map[string]PureReadTool),
+		modelToolNames:   make(map[string]string),
+		canonicalAliases: make(map[string]string),
+	}
 	for _, tool := range tools {
 		if tool == nil || tool.Name() == "" {
 			return nil, errors.New("invalid AI tool")
@@ -78,7 +85,16 @@ func NewToolRegistry(db *gorm.DB, tools ...PureReadTool) (*ToolRegistry, error) 
 		if _, exists := registry.tools[tool.Name()]; exists {
 			return nil, fmt.Errorf("duplicate AI tool: %s", tool.Name())
 		}
+		modelName, err := modelSafeToolName(tool.Name())
+		if err != nil {
+			return nil, err
+		}
+		if canonical, exists := registry.modelToolNames[modelName]; exists {
+			return nil, fmt.Errorf("duplicate AI model tool: %s maps both %s and %s", modelName, canonical, tool.Name())
+		}
 		registry.tools[tool.Name()] = tool
+		registry.modelToolNames[modelName] = tool.Name()
+		registry.canonicalAliases[tool.Name()] = modelName
 	}
 	return registry, nil
 }
@@ -86,15 +102,43 @@ func NewToolRegistry(db *gorm.DB, tools ...PureReadTool) (*ToolRegistry, error) 
 func (r *ToolRegistry) Definitions() []ToolDefinition {
 	result := make([]ToolDefinition, 0, len(r.tools))
 	for _, tool := range r.tools {
-		result = append(result, tool.Definition())
+		definition := tool.Definition()
+		definition.Name = r.canonicalAliases[tool.Name()]
+		result = append(result, definition)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
 }
 
+// modelSafeToolName 将内部命名空间转换为模型供应商共同接受的函数名。
+// 内部名称和审计记录保持不变，避免供应商约束污染 MCP 稳定契约。
+func modelSafeToolName(canonical string) (string, error) {
+	if canonical == "" || len(canonical) > 64 {
+		return "", fmt.Errorf("invalid AI tool name: %s", canonical)
+	}
+	var builder strings.Builder
+	builder.Grow(len(canonical))
+	for index := 0; index < len(canonical); index++ {
+		char := canonical[index]
+		switch {
+		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char >= '0' && char <= '9', char == '_', char == '-':
+			builder.WriteByte(char)
+		case char == '.':
+			builder.WriteByte('_')
+		default:
+			return "", fmt.Errorf("invalid AI tool name: %s", canonical)
+		}
+	}
+	return builder.String(), nil
+}
+
 // Execute 以 call_id 幂等执行纯读工具。userID 只能由 JWT Context 调用方注入。
 func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID uint, toolName string, arguments json.RawMessage) (ToolExecutionResult, bool, error) {
-	tool, ok := r.tools[toolName]
+	canonicalName := toolName
+	if mapped, exists := r.modelToolNames[toolName]; exists {
+		canonicalName = mapped
+	}
+	tool, ok := r.tools[canonicalName]
 	if !ok {
 		return ToolExecutionResult{}, false, errors.New("tool_not_allowed")
 	}
@@ -122,7 +166,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID
 		if findErr := r.db.WithContext(ctx).First(&existing, "call_id = ?", callID).Error; findErr != nil {
 			return ToolExecutionResult{}, false, err
 		}
-		if existing.RunID != runID || existing.UserID != userID || existing.ToolName != toolName || existing.ArgumentsHash != hashText {
+		if existing.RunID != runID || existing.UserID != userID || existing.ToolName != canonicalName || existing.ArgumentsHash != hashText {
 			return ToolExecutionResult{}, false, errors.New("tool_call_idempotency_conflict")
 		}
 		if existing.Status == "completed" {
@@ -137,7 +181,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, callID, runID string, userID
 		return ToolExecutionResult{}, false, errors.New("tool_state_conflict")
 	}
 
-	value, executeErr := tool.Execute(withToolCallContext(ctx, runID, callID, userID, toolName), userID, arguments)
+	value, executeErr := tool.Execute(withToolCallContext(ctx, runID, callID, userID, canonicalName), userID, arguments)
 	if executeErr != nil {
 		now := time.Now()
 		_ = r.db.WithContext(ctx).Model(&models.AIToolCall{}).

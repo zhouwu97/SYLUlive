@@ -6,6 +6,8 @@ abstract interface class DeviceJobApi {
   Future<void> register({
     required String installationId,
     required List<String> toolNames,
+    required int bridgeProtocolVersion,
+    required String clientVersion,
     String pushToken,
   });
 
@@ -44,6 +46,8 @@ class DioDeviceJobClient implements DeviceJobApi {
   Future<void> register({
     required String installationId,
     required List<String> toolNames,
+    required int bridgeProtocolVersion,
+    required String clientVersion,
     String pushToken = '',
   }) async {
     try {
@@ -53,6 +57,8 @@ class DioDeviceJobClient implements DeviceJobApi {
           'installation_id': _requiredInstallationId(installationId),
           'push_token': pushToken.trim(),
           'tool_names': toolNames,
+          'bridge_protocol_version': bridgeProtocolVersion,
+          'client_version': clientVersion.trim(),
         },
       );
     } on DioException catch (error) {

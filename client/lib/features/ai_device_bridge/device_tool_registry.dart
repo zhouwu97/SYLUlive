@@ -77,8 +77,7 @@ class DeviceToolRegistry {
       const <String>['schedule'],
       const <String>{'week_containing'},
     );
-    final anchor = _optionalDate(job.arguments['week_containing']) ??
-        DateTime.now().toUtc();
+    final anchor = _requiredDate(job.arguments['week_containing']);
     final start = DateTime.utc(anchor.year, anchor.month, anchor.day)
         .subtract(Duration(days: anchor.weekday - 1));
     final end = start.add(const Duration(days: 6));
@@ -220,8 +219,7 @@ class DeviceToolRegistry {
         left.toSet().containsAll(right);
   }
 
-  static DateTime? _optionalDate(Object? value) {
-    if (value == null) return null;
+  static DateTime _requiredDate(Object? value) {
     if (value is! String || value.length > 32) {
       throw const DeviceToolExecutionException('invalid_tool_arguments');
     }

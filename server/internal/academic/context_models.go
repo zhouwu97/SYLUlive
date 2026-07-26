@@ -1,6 +1,10 @@
 package academic
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // DatasetType 是 AcademicContextResolver 可解析的数据集，不暴露数据库或爬虫实现。
 type DatasetType string
@@ -40,9 +44,10 @@ const (
 
 // ResolveContextRequest 是 academic.resolve_context 的稳定请求模型。
 type ResolveContextRequest struct {
-	Datasets  []DatasetType       `json:"datasets"`
-	Freshness FreshnessPreference `json:"freshness"`
-	Reason    string              `json:"reason"`
+	Datasets               []DatasetType       `json:"datasets"`
+	Freshness              FreshnessPreference `json:"freshness"`
+	Reason                 string              `json:"reason"`
+	ScheduleWeekContaining string              `json:"schedule_week_containing,omitempty"`
 }
 
 // Validate 在进入来源选择前拒绝空数据集、未知数据集与重复数据集。
@@ -59,6 +64,11 @@ func (request ResolveContextRequest) Validate() error {
 			return fmt.Errorf("duplicated dataset: %s", dataset)
 		}
 		seen[dataset] = struct{}{}
+	}
+	if _, requestsSchedule := seen[DatasetSchedule]; requestsSchedule {
+		if _, err := time.Parse("2006-01-02", strings.TrimSpace(request.ScheduleWeekContaining)); err != nil {
+			return fmt.Errorf("schedule_week_containing must be YYYY-MM-DD when requesting schedule")
+		}
 	}
 	switch request.Freshness {
 	case FreshnessPreferRecent, FreshnessRequireFresh, FreshnessAllowStale:

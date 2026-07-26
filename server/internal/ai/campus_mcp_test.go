@@ -157,6 +157,43 @@ func TestCampusMCPNeverPolicyBlocksSnapshotsAndDeviceJobs(t *testing.T) {
 	require.Equal(t, academic.DataStatusPermissionRequired, results[academic.DatasetSchedule].Status)
 }
 
+func TestCampusMCPScheduleDeviceJobUsesRequestedWeek(t *testing.T) {
+	var scheduled DeviceJobRequest
+	mcp := &campusMCP{
+		permissions: fixedPersonalDataPermissionReader{models.AIUserPermissionDeviceCacheAccess: models.AIUserPermissionAlways},
+		deviceJobs: DeviceJobSchedulerFunc(func(_ context.Context, request DeviceJobRequest) (DeviceJobReference, error) {
+			scheduled = request
+			return DeviceJobReference{ID: "device-job"}, nil
+		}),
+	}
+	results := map[academic.DatasetType]academic.ContextResult{
+		academic.DatasetSchedule: personalContextUnavailable(academic.DataStatusMissing, "服务端没有可用快照"),
+	}
+	wait := mcp.waitForPersonalContext(
+		withToolCallContext(context.Background(), "run-1", "call-1", 7, "schedule.get_availability"),
+		7,
+		academic.ResolveContextRequest{
+			Datasets: []academic.DatasetType{academic.DatasetSchedule}, Reason: "schedule_availability",
+			ScheduleWeekContaining: "2026-09-14",
+		},
+		results,
+	)
+	require.NotNil(t, wait)
+	require.Equal(t, "device.schedule.get_cached_week", scheduled.ToolName)
+	require.JSONEq(t, `{"week_containing":"2026-09-14"}`, string(scheduled.Arguments))
+}
+
+func TestCampusMCPPermissionFailureIsNotReportedAsUserDenial(t *testing.T) {
+	mcp := &campusMCP{}
+	results, wait, err := mcp.resolveSnapshots(context.Background(), 7, academic.ResolveContextRequest{
+		Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "grade_summary",
+	})
+	require.NoError(t, err)
+	require.Nil(t, wait)
+	require.Equal(t, academic.DataStatusFailed, results[academic.DatasetGrades].Status)
+	require.Contains(t, results[academic.DatasetGrades].Warnings, "权限服务暂时不可用，请稍后重试")
+}
+
 type countingAcademicSnapshotReader struct {
 	generationCalls int
 	lookupCalls     int

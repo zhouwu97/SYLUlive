@@ -33,6 +33,20 @@ enum AiSubmitResult {
   failed
 }
 
+/// 一次提交的完整身份。手动或自动重试都必须沿用同一个 [requestId]，
+/// 否则在“服务器已经创建 Run、响应丢失”的情况下会创建出第二个 Run。
+class AiPendingSubmission {
+  final String requestId;
+  final String conversationId;
+  final String message;
+
+  const AiPendingSubmission({
+    required this.requestId,
+    required this.conversationId,
+    required this.message,
+  });
+}
+
 String normalizeAiMessage(String value) {
   return value.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
 }
@@ -66,7 +80,7 @@ class AiAssistantProvider extends ChangeNotifier {
   final Map<String, List<AiPersonalDataEvidence>> _personalDataEvidence = {};
   String? _error;
   String? _conversationId;
-  String? _lastFailedMessage;
+  AiPendingSubmission? _lastFailedSubmission;
   int _lastEventSeq = 0;
   bool _loading = false;
   bool _loadingConversations = false;
@@ -87,7 +101,7 @@ class AiAssistantProvider extends ChangeNotifier {
   String? get conversationId => _conversationId;
   bool get loading => _loading;
   bool get loadingConversations => _loadingConversations;
-  bool get canRetry => _lastFailedMessage != null && !isRunning;
+  bool get canRetry => _lastFailedSubmission != null && !isRunning;
   bool get canReconnectRun => _run != null && !isRunning;
   bool get isRunning =>
       _connectionState == AiConnectionState.connecting ||
@@ -278,6 +292,18 @@ class AiAssistantProvider extends ChangeNotifier {
     if (message.isEmpty) return AiSubmitResult.blank;
     final maxChars = _capabilities?.maxMessageChars ?? 20;
     if (message.characters.length > maxChars) return AiSubmitResult.tooLong;
+    final blocked = _submissionBlocker();
+    if (blocked != null) return blocked;
+
+    return _startSubmission(AiPendingSubmission(
+      requestId: _uuidV4(),
+      conversationId: _conversationId ?? '',
+      message: message,
+    ));
+  }
+
+  /// 返回阻止本次提交的原因，没有阻塞时返回 null。
+  AiSubmitResult? _submissionBlocker() {
     if (isRunning) return AiSubmitResult.busy;
     if (_quota?.unlimited != true && (_quota?.remaining ?? 0) <= 0) {
       return AiSubmitResult.quotaExceeded;
@@ -287,61 +313,67 @@ class AiAssistantProvider extends ChangeNotifier {
       _notify();
       return AiSubmitResult.unavailable;
     }
+    return null;
+  }
 
-    final requestId = _uuidV4();
+  AiSubmitResult _startSubmission(AiPendingSubmission submission) {
     _error = null;
-    _lastFailedMessage = null;
+    _lastFailedSubmission = null;
     _streamedText = '';
     _sources = [];
     _personalDataEvidence.clear();
     _lastEventSeq = 0;
     _connectionState = AiConnectionState.connecting;
     _messages.add(AiChatMessage(
-      id: requestId,
-      requestId: requestId,
+      id: submission.requestId,
+      requestId: submission.requestId,
       role: AiMessageRole.user,
-      content: message,
+      content: submission.message,
       status: AiMessageStatus.pending,
       createdAt: DateTime.now(),
     ));
     _notify();
 
-    unawaited(_submitAsync(requestId, message));
+    unawaited(_submitAsync(submission));
     return AiSubmitResult.accepted;
   }
 
-  Future<void> _submitAsync(String requestId, String message) async {
+  Future<void> _submitAsync(AiPendingSubmission submission) async {
     try {
       final creation = await _service.createRun(
-        conversationId: _conversationId ?? '',
-        clientRequestId: requestId,
-        message: message,
+        conversationId: submission.conversationId,
+        clientRequestId: submission.requestId,
+        message: submission.message,
       );
       _run = creation.run;
       _conversationId = creation.run.conversationId;
-      _replaceUserStatus(requestId, AiMessageStatus.completed);
+      _replaceUserStatus(submission.requestId, AiMessageStatus.completed);
       unawaited(
           _consumeEvents(creation.run.id, generation: ++_streamGeneration));
     } on AiAssistantServiceException catch (exception) {
-      _handleSubmitFailure(requestId, message, exception);
+      _handleSubmitFailure(submission, exception);
     } catch (_) {
       _handleSubmitFailure(
-        requestId,
-        message,
+        submission,
         const AiAssistantServiceException('请求发送失败，请检查网络后重试', retryable: true),
       );
     }
   }
 
+  /// 手动“重新发送”复用原来的 client_request_id。
+  /// 服务端已经按 user_id + client_request_id 幂等：若上一次其实已经建好 Run，
+  /// 重试会命中 duplicate 并接回同一个 Run，而不会产生第二次计费。
   AiSubmitResult retryLast() {
-    final message = _lastFailedMessage;
-    if (message == null) return AiSubmitResult.blank;
+    final submission = _lastFailedSubmission;
+    if (submission == null) return AiSubmitResult.blank;
+    final blocked = _submissionBlocker();
+    if (blocked != null) return blocked;
     _messages.removeWhere(
       (item) =>
           item.role == AiMessageRole.user &&
           item.status == AiMessageStatus.failed,
     );
-    return submit(message);
+    return _startSubmission(submission);
   }
 
   Future<void> cancel() async {
@@ -657,14 +689,13 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   void _handleSubmitFailure(
-    String requestId,
-    String message,
+    AiPendingSubmission submission,
     AiAssistantServiceException exception,
   ) {
     _connectionState = AiConnectionState.failed;
     _error = exception.message;
-    _lastFailedMessage = exception.retryable ? message : null;
-    _replaceUserStatus(requestId, AiMessageStatus.failed);
+    _lastFailedSubmission = exception.retryable ? submission : null;
+    _replaceUserStatus(submission.requestId, AiMessageStatus.failed);
     unawaited(refreshCapabilities(silent: true));
   }
 
@@ -683,7 +714,7 @@ class AiAssistantProvider extends ChangeNotifier {
     _sources = [];
     _personalDataEvidence.clear();
     _lastEventSeq = 0;
-    _lastFailedMessage = null;
+    _lastFailedSubmission = null;
     _error = null;
   }
 

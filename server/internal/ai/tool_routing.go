@@ -14,7 +14,10 @@ const (
 func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinition {
 	targets, requiredHy3 := hy3RouteTargets(message)
 	if len(targets) == 0 {
-		return definitions
+		if isPersonalToolIntent(message) {
+			return definitions
+		}
+		return publicToolDefinitions(definitions)
 	}
 	available := make(map[string]struct{}, len(definitions))
 	for _, definition := range definitions {
@@ -30,6 +33,44 @@ func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinit
 		}
 	}
 	return selected
+}
+
+// publicToolDefinitions 禁止普通校园问答误读个人成绩、课表或画像。
+// 个人数据工具只有在问题明确指向当前用户或要求执行个人查询时才对模型可见。
+func publicToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
+	selected := make([]ToolDefinition, 0, len(definitions))
+	for _, definition := range definitions {
+		if isPersonalModelTool(definition.Name) {
+			continue
+		}
+		selected = append(selected, definition)
+	}
+	return selected
+}
+
+func isPersonalModelTool(name string) bool {
+	return strings.HasPrefix(name, "academic_") ||
+		strings.HasPrefix(name, "schedule_") ||
+		strings.HasPrefix(name, "erke_") ||
+		strings.HasPrefix(name, "profile_") ||
+		strings.HasPrefix(name, "hy3_decision_")
+}
+
+func isPersonalToolIntent(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	if normalized == "" {
+		return false
+	}
+	if containsAny(normalized, "我的", "帮我", "给我", "为我", "本人", "个人") {
+		return true
+	}
+	academicTopic := containsAny(normalized, "学业", "成绩", "gpa", "绩点", "学分", "挂科")
+	personalAction := containsAny(normalized, "查看", "查询", "分析", "计算", "统计", "刷新")
+	if academicTopic && personalAction {
+		return true
+	}
+	// 课表和空闲时间天然依赖当前用户，即使省略“我的”也属于个人查询。
+	return containsAny(normalized, "有课吗", "空闲", "课表", "课程安排")
 }
 
 func routeModelToolsForMessages(messages []Message, definitions []ToolDefinition) []ToolDefinition {

@@ -56,13 +56,18 @@ func TestRouteModelToolsPrefersHy3ForDecisionIntents(t *testing.T) {
 	}
 }
 
-func TestRouteModelToolsKeepsGeneralToolsAndFallsBackWhenHy3Unavailable(t *testing.T) {
+func TestRouteModelToolsKeepsPublicQuestionsAwayFromPersonalDataTools(t *testing.T) {
 	definitions := []ToolDefinition{
 		{Name: "academic_get_grade_summary"},
 		{Name: "campus_search_policy"},
 	}
 
-	require.Equal(t, definitions, routeModelTools("补考成绩怎么算", definitions))
+	publicOnly := []ToolDefinition{{Name: "campus_search_policy"}}
+	require.Equal(t, publicOnly, routeModelTools("补考成绩怎么算", definitions))
+	require.Equal(t, publicOnly, routeModelTools("GPA", definitions))
+	require.Equal(t, definitions, routeModelTools("查看我的成绩", definitions))
+	require.Equal(t, definitions, routeModelTools("分析成绩", definitions))
+	// Hy3 不可用时，个人分析仍可降级到内置学业工具。
 	require.Equal(t, definitions, routeModelTools("计算我的 GPA 和学分情况", definitions))
 }
 

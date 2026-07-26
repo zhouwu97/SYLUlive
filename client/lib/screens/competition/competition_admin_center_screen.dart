@@ -51,12 +51,9 @@ class _CompetitionAdminCenterScreenState
   static const int _pageSize = 50;
 
   int _filteredTotal = 0;
-  int _adminTotalCount = 0;
   int _adminDraftCount = 0;
   int _adminPublishedCount = 0;
-  int _adminArchivedCount = 0;
   int _timePendingCount = 0;
-  int _staleCount = 0;
   int _unverifiedCount = 0;
 
   @override
@@ -96,12 +93,9 @@ class _CompetitionAdminCenterScreenState
       if (!mounted) return;
       final data = res.data as Map<String, dynamic>;
       setState(() {
-        _adminTotalCount = data['total'] ?? 0;
         _adminDraftCount = data['draft'] ?? 0;
         _adminPublishedCount = data['published'] ?? 0;
-        _adminArchivedCount = data['archived'] ?? 0;
         _timePendingCount = data['time_pending'] ?? 0;
-        _staleCount = data['stale'] ?? 0;
         _unverifiedCount = data['unverified'] ?? 0;
       });
     } catch (_) {}
@@ -966,78 +960,6 @@ class _CompetitionAdminCenterScreenState
     if (result == true) _load();
   }
 
-  void _openMaintenanceFilters() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        final isDark = Theme.of(context).brightness == Brightness.dark;
-        return Container(
-          decoration: BoxDecoration(
-            color: CompetitionUiTokens.pageBg(isDark),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.all(24),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '维护筛选',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: CompetitionUiTokens.titleColor(isDark),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _maintenanceOption('全部', null, isDark),
-                _maintenanceOption('AI导入草稿', 'ai_draft', isDark),
-                _maintenanceOption('缺时间', 'time_pending', isDark),
-                _maintenanceOption('可能过期', 'stale', isDark),
-                _maintenanceOption('临近截止', 'ending_soon', isDark),
-                _maintenanceOption('已结束', 'expired', isDark),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _maintenanceOption(String label, String? value, bool isDark) {
-    final selected = _maintenanceFilter == value;
-    return ListTile(
-      title: Text(
-        label,
-        style: TextStyle(
-          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-          color: selected
-              ? CompetitionUiTokens.accent(isDark)
-              : CompetitionUiTokens.titleColor(isDark),
-        ),
-      ),
-      trailing: selected
-          ? Icon(Icons.check, color: CompetitionUiTokens.accent(isDark))
-          : null,
-      onTap: () {
-        Navigator.pop(context);
-        _selectMaintenance(value);
-      },
-    );
-  }
-
   Future<void> _openAdminFilters() async {
     final result = await showModalBottomSheet<_AdminFilterResult>(
       context: context,
@@ -1276,22 +1198,5 @@ class _AdminFilterSheetState extends State<_AdminFilterSheet> {
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
     );
-  }
-}
-
-String _maintenanceLabel(String? value) {
-  switch (value) {
-    case 'ai_draft':
-      return 'AI导入草稿';
-    case 'time_pending':
-      return '缺时间';
-    case 'stale':
-      return '可能过期';
-    case 'ending_soon':
-      return '临近截止';
-    case 'expired':
-      return '已结束';
-    default:
-      return '全部';
   }
 }

@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	deviceJobMaxArgumentsBytes = 16 << 10
-	deviceJobMaxResultBytes    = 256 << 10
+	deviceJobMaxArgumentsBytes  = 16 << 10
+	deviceJobMaxResultBytes     = 256 << 10
+	deviceOnlineTTL             = 2 * time.Minute
+	requiredDeviceBridgeVersion = 2
 )
 
 var deviceToolRequirements = map[string][]string{
@@ -40,9 +42,11 @@ func newDeviceJobError(code string) error { return &DeviceJobError{Code: code} }
 
 // DeviceRegistration 表示设备主动作业能力。工具集合只能缩小服务端白名单。
 type DeviceRegistration struct {
-	InstallationID string
-	PushToken      string
-	ToolNames      []string
+	InstallationID        string
+	PushToken             string
+	ToolNames             []string
+	BridgeProtocolVersion int
+	ClientVersion         string
 }
 
 type CreateDeviceJobRequest struct {
@@ -71,8 +75,14 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 	}
 	registration.InstallationID = strings.TrimSpace(registration.InstallationID)
 	registration.PushToken = strings.TrimSpace(registration.PushToken)
+	registration.ClientVersion = strings.TrimSpace(registration.ClientVersion)
+	if registration.BridgeProtocolVersion == 0 {
+		// 旧客户端没有登记协议版本；保留登记记录，并在调度新协议任务时给出明确升级提示。
+		registration.BridgeProtocolVersion = 1
+	}
 	tools, err := normalizeDeviceTools(registration.ToolNames)
-	if err != nil || registration.InstallationID == "" || len(registration.InstallationID) > 128 {
+	if err != nil || registration.InstallationID == "" || len(registration.InstallationID) > 128 ||
+		registration.BridgeProtocolVersion < 1 || registration.BridgeProtocolVersion > 1000 || len(registration.ClientVersion) > 32 {
 		return nil, newDeviceJobError("invalid_device_registration")
 	}
 	encodedTools, _ := json.Marshal(tools)
@@ -85,7 +95,8 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			result = models.UserDevice{
 				ID: uuid.NewString(), UserID: userID, InstallationID: registration.InstallationID,
-				PushToken: registration.PushToken, ToolNames: datatypes.JSON(encodedTools), LastSeenAt: now,
+				PushToken: registration.PushToken, ToolNames: datatypes.JSON(encodedTools),
+				BridgeProtocolVersion: registration.BridgeProtocolVersion, ClientVersion: registration.ClientVersion, LastSeenAt: now,
 			}
 			return tx.Create(&result).Error
 		}
@@ -102,6 +113,7 @@ func (s *DeviceJobService) RegisterDevice(ctx context.Context, userID uint, regi
 		}
 		if err := tx.Model(&models.UserDevice{}).Where("id = ?", existing.ID).Updates(map[string]interface{}{
 			"user_id": userID, "push_token": registration.PushToken, "tool_names": datatypes.JSON(encodedTools),
+			"bridge_protocol_version": registration.BridgeProtocolVersion, "client_version": registration.ClientVersion,
 			"last_seen_at": now, "revoked_at": nil,
 		}).Error; err != nil {
 			return err
@@ -124,7 +136,7 @@ func (s *DeviceJobService) CreateJob(ctx context.Context, request CreateDeviceJo
 		return nil, newDeviceJobError("tool_not_allowed")
 	}
 	arguments, err := normalizeDeviceJSON(request.Arguments, deviceJobMaxArgumentsBytes)
-	if err != nil || containsForbiddenIdentity(arguments) {
+	if err != nil || containsForbiddenIdentity(arguments) || !validDeviceToolArguments(request.ToolName, arguments) {
 		return nil, newDeviceJobError("invalid_tool_arguments")
 	}
 	now := s.clock().UTC()
@@ -155,11 +167,13 @@ func (s *DeviceJobService) CreateJob(ctx context.Context, request CreateDeviceJo
 // findDeviceForTool 只选择显式声明支持目标工具的当前账号设备，避免把任务推给无法安全执行它的旧客户端。
 func (s *DeviceJobService) findDeviceForTool(ctx context.Context, userID uint, toolName string) (models.UserDevice, error) {
 	var devices []models.UserDevice
+	now := s.clock().UTC()
 	if err := s.db.WithContext(ctx).
-		Where("user_id = ? AND revoked_at IS NULL", userID).
+		Where("user_id = ? AND revoked_at IS NULL AND last_seen_at >= ?", userID, now.Add(-deviceOnlineTTL)).
 		Order("last_seen_at DESC").Find(&devices).Error; err != nil {
 		return models.UserDevice{}, err
 	}
+	clientOutdated := false
 	for _, device := range devices {
 		var tools []string
 		if json.Unmarshal(device.ToolNames, &tools) != nil {
@@ -167,9 +181,16 @@ func (s *DeviceJobService) findDeviceForTool(ctx context.Context, userID uint, t
 		}
 		for _, tool := range tools {
 			if tool == toolName {
+				if device.BridgeProtocolVersion < requiredDeviceBridgeVersion {
+					clientOutdated = true
+					continue
+				}
 				return device, nil
 			}
 		}
+	}
+	if clientOutdated {
+		return models.UserDevice{}, newDeviceJobError("device_client_outdated")
 	}
 	return models.UserDevice{}, newDeviceJobError("device_offline")
 }
@@ -259,7 +280,7 @@ func (s *DeviceJobService) CompleteJob(ctx context.Context, userID uint, install
 	if job.StateVersion != stateVersion {
 		return nil, newDeviceJobError("state_version_conflict")
 	}
-	if !validDeviceToolResult(job.ToolName, normalized) {
+	if !validDeviceToolResult(*job, normalized) {
 		return nil, newDeviceJobError("invalid_tool_result")
 	}
 	hash := sha256.Sum256(normalized)
@@ -270,7 +291,7 @@ func (s *DeviceJobService) CompleteJob(ctx context.Context, userID uint, install
 }
 
 // validDeviceToolResult 将设备回传固定为每个工具的最小化结果信封，阻止客户端把完整缓存或任意字段写入服务端。
-func validDeviceToolResult(toolName string, value json.RawMessage) bool {
+func validDeviceToolResult(job models.DeviceToolJob, value json.RawMessage) bool {
 	var envelope map[string]json.RawMessage
 	if json.Unmarshal(value, &envelope) != nil || !hasExactJSONKeys(envelope, []string{
 		"data", "source", "fetched_at", "expires_at", "is_stale", "is_partial", "warnings", "evidence",
@@ -287,11 +308,11 @@ func validDeviceToolResult(toolName string, value json.RawMessage) bool {
 	if json.Unmarshal(envelope["data"], &data) != nil {
 		return false
 	}
-	return validDeviceToolData(toolName, data)
+	return validDeviceToolData(job, data)
 }
 
-func validDeviceToolData(toolName string, data map[string]json.RawMessage) bool {
-	switch toolName {
+func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessage) bool {
+	switch job.ToolName {
 	case "device.academic.get_cached_overview":
 		if !hasExactJSONKeys(data, []string{"total_recorded_courses", "covered_term_count", "covered_terms", "academic_situation_available"}) ||
 			!validJSONNumber(data["total_recorded_courses"]) || !validJSONNumber(data["covered_term_count"]) || !validJSONBool(data["academic_situation_available"]) {
@@ -303,7 +324,18 @@ func validDeviceToolData(toolName string, data map[string]json.RawMessage) bool 
 			!validDateString(data["week_start"]) || !validDateString(data["week_end"]) {
 			return false
 		}
-		return validScheduleCourses(data["courses"])
+		requested, ok := parseWeekContaining(json.RawMessage(job.ArgumentsJSON))
+		if !ok {
+			return false
+		}
+		expectedStart := mondayOf(requested)
+		expectedEnd := expectedStart.AddDate(0, 0, 6)
+		weekStart, startOK := decodeDate(data["week_start"])
+		weekEnd, endOK := decodeDate(data["week_end"])
+		if !startOK || !endOK || !weekStart.Equal(expectedStart) || !weekEnd.Equal(expectedEnd) {
+			return false
+		}
+		return validScheduleCourses(data["courses"], weekStart, weekEnd)
 	case "device.academic.get_credit_summary":
 		return hasExactJSONKeys(data, []string{"attempted_credits", "passed_credits", "failed_credits", "required_failed_credits", "unknown_credits"}) &&
 			validJSONNumber(data["attempted_credits"]) && validJSONNumber(data["passed_credits"]) &&
@@ -334,7 +366,7 @@ func validAcademicTerms(value json.RawMessage) bool {
 	return true
 }
 
-func validScheduleCourses(value json.RawMessage) bool {
+func validScheduleCourses(value json.RawMessage, weekStart, weekEnd time.Time) bool {
 	var courses []map[string]json.RawMessage
 	if string(value) == "null" || json.Unmarshal(value, &courses) != nil || len(courses) > 32 {
 		return false
@@ -343,6 +375,10 @@ func validScheduleCourses(value json.RawMessage) bool {
 		if !hasExactJSONKeys(course, []string{"date", "course_name", "start_section", "end_section"}) ||
 			!validDateString(course["date"]) || !validJSONString(course["course_name"], 160) ||
 			!validJSONNumber(course["start_section"]) || !validJSONNumber(course["end_section"]) {
+			return false
+		}
+		date, ok := decodeDate(course["date"])
+		if !ok || date.Before(weekStart) || date.After(weekEnd) {
 			return false
 		}
 	}
@@ -436,12 +472,47 @@ func validOptionalRFC3339(value json.RawMessage) bool {
 }
 
 func validDateString(value json.RawMessage) bool {
-	var decoded string
-	if json.Unmarshal(value, &decoded) != nil || len(decoded) != len("2006-01-02") {
+	_, ok := decodeDate(value)
+	return ok
+}
+
+func validDeviceToolArguments(toolName string, value json.RawMessage) bool {
+	var arguments map[string]json.RawMessage
+	if json.Unmarshal(value, &arguments) != nil {
 		return false
 	}
-	_, err := time.Parse("2006-01-02", decoded)
-	return err == nil
+	switch toolName {
+	case "device.schedule.get_cached_week":
+		return hasExactJSONKeys(arguments, []string{"week_containing"}) && validDateString(arguments["week_containing"])
+	case "device.academic.get_cached_overview", "device.academic.get_credit_summary", "device.erke.get_cached_overview":
+		return len(arguments) == 0
+	default:
+		return false
+	}
+}
+
+func parseWeekContaining(value json.RawMessage) (time.Time, bool) {
+	var arguments map[string]json.RawMessage
+	if json.Unmarshal(value, &arguments) != nil || !hasExactJSONKeys(arguments, []string{"week_containing"}) {
+		return time.Time{}, false
+	}
+	return decodeDate(arguments["week_containing"])
+}
+
+func decodeDate(value json.RawMessage) (time.Time, bool) {
+	var decoded string
+	if json.Unmarshal(value, &decoded) != nil || len(decoded) != len("2006-01-02") {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse("2006-01-02", decoded)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
+}
+
+func mondayOf(value time.Time) time.Time {
+	return value.AddDate(0, 0, -((int(value.Weekday()) + 6) % 7))
 }
 
 func validLimitedStringArray(value json.RawMessage, maxItems, maxLength int) bool {

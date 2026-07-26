@@ -664,10 +664,15 @@ func (decision *hy3DecisionMCP) planStudentWeek(ctx context.Context, userID uint
 	if deniedScope != "" {
 		return hy3PermissionUnavailable(deniedScope), nil
 	}
+	weekStart, _, err := decision.resolveWeekStart(ctx, json.RawMessage(`{}`), input.Week)
+	if err != nil {
+		return hy3Unavailable(mcpclient.ErrorConstraint, "缺少已发布校历，不能安全定位请求的教学周。"), nil
+	}
 	results, wait, err := decision.campus.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
-		Datasets:  []academic.DatasetType{academic.DatasetSchedule},
-		Freshness: academic.FreshnessPreferRecent,
-		Reason:    "hy3_week_plan",
+		Datasets:               []academic.DatasetType{academic.DatasetSchedule},
+		Freshness:              academic.FreshnessPreferRecent,
+		Reason:                 "hy3_week_plan",
+		ScheduleWeekContaining: weekStart.Format("2006-01-02"),
 	})
 	if err != nil {
 		return nil, err

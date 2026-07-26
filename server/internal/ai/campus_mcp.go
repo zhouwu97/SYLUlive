@@ -205,9 +205,10 @@ func compareSchema() map[string]interface{} {
 func resolveContextSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object", "properties": map[string]interface{}{
-			"datasets":  map[string]interface{}{"type": "array", "minItems": 1, "maxItems": 6, "items": map[string]interface{}{"type": "string", "enum": []string{"grades", "schedule", "academic_situation", "credit_requirements", "credit_summary", "erke"}}},
-			"freshness": map[string]interface{}{"type": "string", "enum": []string{"prefer_recent", "require_fresh", "allow_stale"}},
-			"reason":    map[string]interface{}{"type": "string", "maxLength": 120},
+			"datasets":                 map[string]interface{}{"type": "array", "minItems": 1, "maxItems": 6, "items": map[string]interface{}{"type": "string", "enum": []string{"grades", "schedule", "academic_situation", "credit_requirements", "credit_summary", "erke"}}},
+			"freshness":                map[string]interface{}{"type": "string", "enum": []string{"prefer_recent", "require_fresh", "allow_stale"}},
+			"reason":                   map[string]interface{}{"type": "string", "maxLength": 120},
+			"schedule_week_containing": map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
 		}, "required": []string{"datasets", "freshness", "reason"}, "additionalProperties": false,
 	}
 }
@@ -215,9 +216,10 @@ func resolveContextSchema() map[string]interface{} {
 func availabilitySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object", "properties": map[string]interface{}{
-			"week":     map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 30},
-			"weekdays": map[string]interface{}{"type": "array", "minItems": 1, "maxItems": 7, "items": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 7}},
-		}, "required": []string{"week"}, "additionalProperties": false,
+			"week":                     map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 30},
+			"weekdays":                 map[string]interface{}{"type": "array", "minItems": 1, "maxItems": 7, "items": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 7}},
+			"schedule_week_containing": map[string]interface{}{"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+		}, "required": []string{"week", "schedule_week_containing"}, "additionalProperties": false,
 	}
 }
 
@@ -610,7 +612,16 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		return nil
 	}
 	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionDeviceCacheAccess, request.Reason)
-	if err != nil || denied {
+	if err != nil {
+		for _, dataset := range request.Datasets {
+			result := results[dataset]
+			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
+				results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "权限服务暂时不可用，请稍后重试")
+			}
+		}
+		return nil
+	}
+	if denied {
 		for _, dataset := range request.Datasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
@@ -627,7 +638,7 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 		if result.Status != academic.DataStatusMissing && result.Status != academic.DataStatusNeedsRefresh {
 			continue
 		}
-		toolName, required, arguments, ok := deviceRequestForDataset(dataset)
+		toolName, required, arguments, ok := deviceRequestForDataset(dataset, request)
 		if !ok {
 			continue
 		}
@@ -647,12 +658,16 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 	return nil
 }
 
-func deviceRequestForDataset(dataset academic.DatasetType) (string, []string, json.RawMessage, bool) {
+func deviceRequestForDataset(dataset academic.DatasetType, request academic.ResolveContextRequest) (string, []string, json.RawMessage, bool) {
 	switch dataset {
 	case academic.DatasetGrades:
 		return "device.academic.get_cached_overview", []string{"academic"}, json.RawMessage(`{}`), true
 	case academic.DatasetSchedule:
-		return "device.schedule.get_cached_week", []string{"schedule"}, json.RawMessage(`{}`), true
+		arguments, err := json.Marshal(map[string]string{"week_containing": request.ScheduleWeekContaining})
+		if err != nil {
+			return "", nil, nil, false
+		}
+		return "device.schedule.get_cached_week", []string{"schedule"}, arguments, true
 	case academic.DatasetAcademicSituation, academic.DatasetCreditRequirements, academic.DatasetCreditSummary:
 		return "device.academic.get_credit_summary", []string{"academic"}, json.RawMessage(`{}`), true
 	case academic.DatasetErke:
@@ -669,7 +684,10 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 	results := make(map[academic.DatasetType]academic.ContextResult, len(request.Datasets))
 	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionPersonalDataAccess, request.Reason)
 	if err != nil {
-		return nil, nil, err
+		for _, dataset := range request.Datasets {
+			results[dataset] = personalContextUnavailable(academic.DataStatusFailed, "权限服务暂时不可用，请稍后重试")
+		}
+		return results, nil, nil
 	}
 	if wait != nil {
 		return nil, wait, nil
@@ -825,10 +843,14 @@ func (mcp *campusMCP) getFailureRisk(ctx context.Context, userID uint, arguments
 
 func (mcp *campusMCP) getScheduleAvailability(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
 	var input struct {
-		Week     int   `json:"week"`
-		Weekdays []int `json:"weekdays"`
+		Week           int    `json:"week"`
+		Weekdays       []int  `json:"weekdays"`
+		WeekContaining string `json:"schedule_week_containing"`
 	}
 	if err := decodeToolArguments(arguments, &input); err != nil || input.Week < 1 || input.Week > 30 {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if _, err := time.Parse("2006-01-02", input.WeekContaining); err != nil {
 		return nil, errors.New("invalid_tool_arguments")
 	}
 	if len(input.Weekdays) == 0 {
@@ -837,7 +859,7 @@ func (mcp *campusMCP) getScheduleAvailability(ctx context.Context, userID uint, 
 	if !validWeekdays(input.Weekdays) {
 		return nil, errors.New("invalid_tool_arguments")
 	}
-	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Freshness: academic.FreshnessPreferRecent, Reason: "schedule_availability"})
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Freshness: academic.FreshnessPreferRecent, Reason: "schedule_availability", ScheduleWeekContaining: input.WeekContaining})
 	if err != nil {
 		return nil, err
 	}

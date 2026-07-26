@@ -33,8 +33,9 @@ func newDeviceJobFixture(t *testing.T, now time.Time) (*gorm.DB, *DeviceJobServi
 func registerTestDevice(t *testing.T, service *DeviceJobService, userID uint, installationID string) *models.UserDevice {
 	t.Helper()
 	device, err := service.RegisterDevice(context.Background(), userID, DeviceRegistration{
-		InstallationID: installationID,
-		ToolNames:      []string{"device.academic.get_cached_overview", "device.schedule.get_cached_week", "device.academic.get_credit_summary", "device.erke.get_cached_overview"},
+		InstallationID:        installationID,
+		ToolNames:             []string{"device.academic.get_cached_overview", "device.schedule.get_cached_week", "device.academic.get_credit_summary", "device.erke.get_cached_overview"},
+		BridgeProtocolVersion: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -98,8 +99,9 @@ func TestDeviceJobCreateSelectsOnlyDeviceThatSupportsTool(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
 	_, service := newDeviceJobFixture(t, now)
 	_, err := service.RegisterDevice(context.Background(), 1, DeviceRegistration{
-		InstallationID: "overview-only",
-		ToolNames:      []string{"device.academic.get_cached_overview"},
+		InstallationID:        "overview-only",
+		ToolNames:             []string{"device.academic.get_cached_overview"},
+		BridgeProtocolVersion: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -110,8 +112,9 @@ func TestDeviceJobCreateSelectsOnlyDeviceThatSupportsTool(t *testing.T) {
 	})
 	assertDeviceJobCode(t, err, "device_offline")
 	_, err = service.RegisterDevice(context.Background(), 1, DeviceRegistration{
-		InstallationID: "erke-enabled",
-		ToolNames:      []string{"device.erke.get_cached_overview"},
+		InstallationID:        "erke-enabled",
+		ToolNames:             []string{"device.erke.get_cached_overview"},
+		BridgeProtocolVersion: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -180,6 +183,68 @@ func TestDeviceJobExpiresBeforeClaim(t *testing.T) {
 	service.clock = func() time.Time { return now.Add(2 * time.Minute) }
 	_, err := service.ClaimJob(context.Background(), 1, "installation-1", job.ID, 0)
 	assertDeviceJobCode(t, err, "job_expired")
+}
+
+func TestDeviceJobScheduleBindsResultToRequestedWeek(t *testing.T) {
+	now := time.Date(2026, 9, 14, 9, 0, 0, 0, time.UTC)
+	_, service := newDeviceJobFixture(t, now)
+	_, err := service.RegisterDevice(context.Background(), 1, DeviceRegistration{
+		InstallationID: "schedule-v2", ToolNames: []string{"device.schedule.get_cached_week"}, BridgeProtocolVersion: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "run-1", ToolCallID: "call-missing", ToolName: "device.schedule.get_cached_week",
+		Arguments: json.RawMessage(`{}`), RequiredDataTypes: []string{"schedule"}, ExpiresAt: now.Add(time.Minute),
+	})
+	assertDeviceJobCode(t, err, "invalid_tool_arguments")
+	job, err := service.CreateJob(context.Background(), CreateDeviceJobRequest{
+		UserID: 1, RunID: "run-1", ToolCallID: "call-1", ToolName: "device.schedule.get_cached_week",
+		Arguments: json.RawMessage(`{"week_containing":"2026-09-14"}`), RequiredDataTypes: []string{"schedule"}, ExpiresAt: now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := service.ClaimJob(context.Background(), 1, "schedule-v2", job.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.CompleteJob(context.Background(), 1, "schedule-v2", job.ID, claimed.StateVersion, scheduleToolTestResult("2026-09-21", "2026-09-27", "2026-09-21"))
+	assertDeviceJobCode(t, err, "invalid_tool_result")
+	completed, err := service.CompleteJob(context.Background(), 1, "schedule-v2", job.ID, claimed.StateVersion, scheduleToolTestResult("2026-09-14", "2026-09-20", "2026-09-14"))
+	if err != nil || completed.Status != models.DeviceToolJobCompleted {
+		t.Fatalf("expected requested week completion, job=%#v err=%v", completed, err)
+	}
+}
+
+func TestDeviceJobIgnoresStaleAndOutdatedDevices(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	db, service := newDeviceJobFixture(t, now)
+	stale, err := service.RegisterDevice(context.Background(), 1, DeviceRegistration{
+		InstallationID: "stale-v2", ToolNames: []string{"device.schedule.get_cached_week"}, BridgeProtocolVersion: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(stale).Update("last_seen_at", now.Add(-deviceOnlineTTL-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	request := CreateDeviceJobRequest{UserID: 1, RunID: "run-1", ToolCallID: "call-1", ToolName: "device.schedule.get_cached_week", Arguments: json.RawMessage(`{"week_containing":"2026-07-20"}`), RequiredDataTypes: []string{"schedule"}, ExpiresAt: now.Add(time.Minute)}
+	_, err = service.CreateJob(context.Background(), request)
+	assertDeviceJobCode(t, err, "device_offline")
+	_, err = service.RegisterDevice(context.Background(), 1, DeviceRegistration{
+		InstallationID: "legacy-v1", ToolNames: []string{"device.schedule.get_cached_week"}, BridgeProtocolVersion: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.CreateJob(context.Background(), request)
+	assertDeviceJobCode(t, err, "device_client_outdated")
+}
+
+func scheduleToolTestResult(weekStart, weekEnd, courseDate string) json.RawMessage {
+	return json.RawMessage(`{"data":{"week_start":"` + weekStart + `","week_end":"` + weekEnd + `","courses":[{"date":"` + courseDate + `","course_name":"高等数学","start_section":1,"end_section":2}]},"source":"device_encrypted_cache","fetched_at":"2026-09-14T09:00:00Z","expires_at":"2026-09-15T09:00:00Z","is_stale":false,"is_partial":false,"warnings":[],"evidence":[{"source":"device_encrypted_cache","fetched_at":"2026-09-14T09:00:00Z","expires_at":"2026-09-15T09:00:00Z","is_stale":false}]}`)
 }
 
 func assertDeviceJobCode(t *testing.T, err error, expected string) {

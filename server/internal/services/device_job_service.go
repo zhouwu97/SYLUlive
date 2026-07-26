@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -315,10 +316,10 @@ func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessa
 	switch job.ToolName {
 	case "device.academic.get_cached_overview":
 		if !hasExactJSONKeys(data, []string{"total_recorded_courses", "covered_term_count", "covered_terms", "academic_situation_available"}) ||
-			!validJSONNumber(data["total_recorded_courses"]) || !validJSONNumber(data["covered_term_count"]) || !validJSONBool(data["academic_situation_available"]) {
+			!validIntegerRange(data["total_recorded_courses"], 0, 500) || !validIntegerRange(data["covered_term_count"], 0, 32) || !validJSONBool(data["academic_situation_available"]) {
 			return false
 		}
-		return validAcademicTerms(data["covered_terms"])
+		return validAcademicTerms(data["covered_terms"], data["covered_term_count"])
 	case "device.schedule.get_cached_week":
 		if !hasExactJSONKeys(data, []string{"week_start", "week_end", "courses"}) ||
 			!validDateString(data["week_start"]) || !validDateString(data["week_end"]) {
@@ -337,13 +338,19 @@ func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessa
 		}
 		return validScheduleCourses(data["courses"], weekStart, weekEnd)
 	case "device.academic.get_credit_summary":
-		return hasExactJSONKeys(data, []string{"attempted_credits", "passed_credits", "failed_credits", "required_failed_credits", "unknown_credits"}) &&
-			validJSONNumber(data["attempted_credits"]) && validJSONNumber(data["passed_credits"]) &&
-			validJSONNumber(data["failed_credits"]) && validJSONNumber(data["required_failed_credits"]) && validJSONNumber(data["unknown_credits"])
+		if !hasExactJSONKeys(data, []string{"attempted_credits", "passed_credits", "failed_credits", "required_failed_credits", "unknown_credits"}) ||
+			!validNumberRange(data["attempted_credits"], 0, 10000) || !validNumberRange(data["passed_credits"], 0, 10000) || !validNumberRange(data["failed_credits"], 0, 10000) || !validNumberRange(data["required_failed_credits"], 0, 10000) || !validNumberRange(data["unknown_credits"], 0, 10000) {
+			return false
+		}
+		attempted, _ := decodeNumber(data["attempted_credits"])
+		passed, _ := decodeNumber(data["passed_credits"])
+		failed, _ := decodeNumber(data["failed_credits"])
+		requiredFailed, _ := decodeNumber(data["required_failed_credits"])
+		return passed+failed <= attempted && requiredFailed <= failed
 	case "device.erke.get_cached_overview":
 		if !hasExactJSONKeys(data, []string{"earned_total", "required_total", "unmet_categories", "activity_count", "latest_activity_date"}) ||
 			!validOptionalJSONNumber(data["earned_total"]) || !validOptionalJSONNumber(data["required_total"]) ||
-			!validJSONNumber(data["activity_count"]) || !validOptionalString(data["latest_activity_date"], 10) {
+			!validIntegerRange(data["activity_count"], 0, 100000) || !validOptionalString(data["latest_activity_date"], 10) {
 			return false
 		}
 		return validErkeCategories(data["unmet_categories"])
@@ -352,14 +359,17 @@ func validDeviceToolData(job models.DeviceToolJob, data map[string]json.RawMessa
 	}
 }
 
-func validAcademicTerms(value json.RawMessage) bool {
+func validAcademicTerms(value, count json.RawMessage) bool {
 	var terms []map[string]json.RawMessage
 	if string(value) == "null" || json.Unmarshal(value, &terms) != nil || len(terms) > 32 {
 		return false
 	}
+	if decoded, ok := decodeInteger(count); !ok || decoded != len(terms) {
+		return false
+	}
 	for _, term := range terms {
 		if !hasExactJSONKeys(term, []string{"year", "semester", "course_count"}) ||
-			!validJSONString(term["year"], 16) || !validJSONNumber(term["semester"]) || !validJSONNumber(term["course_count"]) {
+			!validJSONString(term["year"], 16) || !validIntegerRange(term["semester"], 1, 3) || !validIntegerRange(term["course_count"], 0, 500) {
 			return false
 		}
 	}
@@ -374,11 +384,16 @@ func validScheduleCourses(value json.RawMessage, weekStart, weekEnd time.Time) b
 	for _, course := range courses {
 		if !hasExactJSONKeys(course, []string{"date", "course_name", "start_section", "end_section"}) ||
 			!validDateString(course["date"]) || !validJSONString(course["course_name"], 160) ||
-			!validJSONNumber(course["start_section"]) || !validJSONNumber(course["end_section"]) {
+			!validIntegerRange(course["start_section"], 1, 30) || !validIntegerRange(course["end_section"], 1, 30) {
 			return false
 		}
 		date, ok := decodeDate(course["date"])
 		if !ok || date.Before(weekStart) || date.After(weekEnd) {
+			return false
+		}
+		start, _ := decodeInteger(course["start_section"])
+		end, _ := decodeInteger(course["end_section"])
+		if end < start {
 			return false
 		}
 	}
@@ -391,7 +406,7 @@ func validErkeCategories(value json.RawMessage) bool {
 		return false
 	}
 	for _, category := range categories {
-		if !hasExactJSONKeys(category, []string{"name", "gap"}) || !validJSONString(category["name"], 80) || !validJSONNumber(category["gap"]) {
+		if !hasExactJSONKeys(category, []string{"name", "gap"}) || !validJSONString(category["name"], 80) || !validNumberRange(category["gap"], 0, 10000) {
 			return false
 		}
 	}
@@ -431,8 +446,31 @@ func validJSONBool(value json.RawMessage) bool {
 }
 
 func validJSONNumber(value json.RawMessage) bool {
+	_, ok := decodeNumber(value)
+	return ok
+}
+
+func validIntegerRange(value json.RawMessage, min, max int) bool {
+	decoded, ok := decodeInteger(value)
+	return ok && decoded >= min && decoded <= max
+}
+func validNumberRange(value json.RawMessage, min, max float64) bool {
+	decoded, ok := decodeNumber(value)
+	return ok && decoded >= min && decoded <= max
+}
+func decodeNumber(value json.RawMessage) (float64, bool) {
 	var decoded float64
-	return string(value) != "null" && json.Unmarshal(value, &decoded) == nil
+	if string(value) == "null" || json.Unmarshal(value, &decoded) != nil || math.IsNaN(decoded) || math.IsInf(decoded, 0) {
+		return 0, false
+	}
+	return decoded, true
+}
+func decodeInteger(value json.RawMessage) (int, bool) {
+	decoded, ok := decodeNumber(value)
+	if !ok || math.Trunc(decoded) != decoded || decoded < math.MinInt || decoded > math.MaxInt {
+		return 0, false
+	}
+	return int(decoded), true
 }
 
 func validOptionalJSONNumber(value json.RawMessage) bool {

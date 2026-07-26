@@ -64,6 +64,10 @@ func (tool overviewTool) Execute(ctx context.Context, userID uint, arguments jso
 }
 
 func newToolRuntime(t *testing.T, db *gorm.DB, provider AIProvider, tool PureReadTool) *Runtime {
+	return newToolRuntimeWithMaxToolSteps(t, db, provider, tool, 4)
+}
+
+func newToolRuntimeWithMaxToolSteps(t *testing.T, db *gorm.DB, provider AIProvider, tool PureReadTool, maxToolSteps int) *Runtime {
 	t.Helper()
 	registry, err := NewToolRegistry(db, tool)
 	require.NoError(t, err)
@@ -71,6 +75,7 @@ func newToolRuntime(t *testing.T, db *gorm.DB, provider AIProvider, tool PureRea
 		ChunkID: 1, DocumentID: 1, Content: "已核验证据", Title: "测试资料",
 	}}}}, NewEventBroker(), RuntimeConfig{
 		ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
+		MaxToolSteps:    maxToolSteps,
 		MaxMessageChars: 100, HourlyMessageLimit: 10,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
@@ -78,6 +83,34 @@ func newToolRuntime(t *testing.T, db *gorm.DB, provider AIProvider, tool PureRea
 	}, registry)
 	require.NoError(t, err)
 	return runtime
+}
+
+func TestRuntimeToolLoopHonorsConfiguredMaxToolSteps(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "call_1", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "call_1", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "call_2", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "call_2", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	executions := 0
+	runtime := newToolRuntimeWithMaxToolSteps(t, db, provider, overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		executions++
+		return map[string]bool{"ok": true}, nil
+	}}, 1)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "请分析成绩"})
+	require.NoError(t, err)
+	failed := waitRunState(t, db, run.ID, models.AIRunStateFailed)
+	require.Equal(t, "tool_loop_limit", failed.ErrorCode)
+	require.Equal(t, 1, executions)
+	require.Len(t, provider.Requests(), 2)
 }
 
 func TestRuntimeToolLoopExecutesFragmentedArgumentsAndReturnsToProvider(t *testing.T) {

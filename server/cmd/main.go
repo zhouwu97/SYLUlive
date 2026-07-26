@@ -757,6 +757,7 @@ func main() {
 			ai.RuntimeConfig{
 				ProviderName: cfg.AIProvider, Model: cfg.DeepSeekChatModel,
 				RequestTimeout:  time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second,
+				MaxToolSteps:    cfg.AIMaxToolSteps,
 				MaxMessageChars: cfg.AIMaxMessageChars, HourlyMessageLimit: cfg.AIHourlyMessageLimit,
 				DefaultBudgetLimitMicroYuan:    cfg.AIUserBudgetLimitMicroYuan,
 				ReservationMicroYuan:           cfg.AIReserveMicroYuan,

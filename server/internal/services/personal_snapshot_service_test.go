@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -25,13 +24,11 @@ func newPersonalSnapshotTestService(t *testing.T, now time.Time) (*gorm.DB, *Per
 
 func validErkeSnapshotUpload(fetchedAt time.Time) ErkeSnapshotUpload {
 	return ErkeSnapshotUpload{
-		SchemaVersion: 2,
-		FetchedAt:     fetchedAt,
-		Graduation:    json.RawMessage(`{"earned_total":42.5,"required_total":60}`),
-		Yearly:        json.RawMessage(`{"year":"2025-2026","earned_total":12}`),
-		RecentActivities: json.RawMessage(`[
-			{"name":"志愿服务","credits":1.5}
-		]`),
+		SchemaVersion:    2,
+		FetchedAt:        fetchedAt,
+		Graduation:       ErkeGraduationSummary{},
+		Yearly:           ErkeYearlySummary{Year: "2025-2026"},
+		RecentActivities: []ErkeActivitySummary{{Category: "志愿服务"}},
 	}
 }
 
@@ -65,7 +62,7 @@ func TestPersonalSnapshotServiceRejectsSensitiveFieldsAndKeepsExistingSnapshot(t
 	require.NoError(t, db.First(&before, "user_id = ?", 1).Error)
 
 	invalid := validErkeSnapshotUpload(now)
-	invalid.RecentActivities = json.RawMessage(`[{"name":"bad","cookie":"secret"}]`)
+	invalid.RecentActivities = []ErkeActivitySummary{{Category: "", Date: "2026-07-25"}}
 	_, err = service.StoreErke(context.Background(), 1, invalid)
 	require.ErrorIs(t, err, ErrInvalidPersonalSnapshot)
 

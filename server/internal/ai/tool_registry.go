@@ -247,6 +247,82 @@ func (r *ToolRegistry) CompleteWaitingCall(ctx context.Context, callID string, r
 	return nil
 }
 
+// RetryWaitingCall 使用首次调用时持久化的名称和参数重试等待中的工具。
+// 授权恢复由服务端确定性驱动，不能依赖模型再次生成同一个工具调用。
+func (r *ToolRegistry) RetryWaitingCall(ctx context.Context, callID, runID string, userID uint, toolName string) (ToolExecutionResult, error) {
+	canonicalName := toolName
+	if mapped, exists := r.modelToolNames[toolName]; exists {
+		canonicalName = mapped
+	}
+	tool, exists := r.tools[canonicalName]
+	if !exists || callID == "" || runID == "" || userID == 0 {
+		return ToolExecutionResult{}, errors.New("invalid_tool_call")
+	}
+
+	var call models.AIToolCall
+	if err := r.db.WithContext(ctx).First(&call, "call_id = ?", callID).Error; err != nil {
+		return ToolExecutionResult{}, err
+	}
+	if call.RunID != runID || call.UserID != userID || call.ToolName != canonicalName || call.Status != "waiting" {
+		return ToolExecutionResult{}, errors.New("tool_state_conflict")
+	}
+	arguments := json.RawMessage(call.ArgumentsJSON)
+	if len(arguments) == 0 || len(arguments) > 16<<10 || !json.Valid(arguments) || containsForbiddenToolIdentity(arguments) {
+		return ToolExecutionResult{}, errors.New("invalid_tool_call")
+	}
+	if validator, ok := tool.(toolArgumentValidator); ok {
+		if err := validator.ValidateToolArguments(arguments); err != nil {
+			return ToolExecutionResult{}, errors.New("invalid_tool_call")
+		}
+	}
+
+	runningVersion := call.StateVersion + 1
+	result := r.db.WithContext(ctx).Model(&models.AIToolCall{}).
+		Where("call_id = ? AND status = ? AND state_version = ?", callID, "waiting", call.StateVersion).
+		Updates(map[string]interface{}{"status": "running", "state_version": runningVersion})
+	if result.Error != nil || result.RowsAffected != 1 {
+		return ToolExecutionResult{}, errors.New("tool_state_conflict")
+	}
+
+	value, executeErr := tool.Execute(withToolCallContext(ctx, runID, callID, userID, canonicalName), userID, arguments)
+	if executeErr != nil {
+		_ = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
+			Where("call_id = ? AND status = ? AND state_version = ?", callID, "running", runningVersion).
+			Updates(map[string]interface{}{
+				"status": "failed", "state_version": runningVersion + 1, "completed_at": time.Now(),
+			}).Error
+		return ToolExecutionResult{}, executeErr
+	}
+	if wait, ok := value.(ToolWait); ok {
+		if err := validateToolWait(wait); err != nil {
+			return ToolExecutionResult{}, err
+		}
+		result = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
+			Where("call_id = ? AND status = ? AND state_version = ?", callID, "running", runningVersion).
+			Updates(map[string]interface{}{"status": "waiting", "state_version": runningVersion + 1})
+		if result.Error != nil || result.RowsAffected != 1 {
+			return ToolExecutionResult{}, errors.New("tool_state_conflict")
+		}
+		return ToolExecutionResult{Wait: &wait}, nil
+	}
+
+	encoded, err := json.Marshal(value)
+	if err != nil || len(encoded) > 256<<10 {
+		return ToolExecutionResult{}, errors.New("tool_result_invalid")
+	}
+	resultHash := sha256.Sum256(encoded)
+	result = r.db.WithContext(ctx).Model(&models.AIToolCall{}).
+		Where("call_id = ? AND status = ? AND state_version = ?", callID, "running", runningVersion).
+		Updates(map[string]interface{}{
+			"status": "completed", "state_version": runningVersion + 1,
+			"result_json": datatypes.JSON(encoded), "result_hash": hex.EncodeToString(resultHash[:]), "completed_at": time.Now(),
+		})
+	if result.Error != nil || result.RowsAffected != 1 {
+		return ToolExecutionResult{}, errors.New("tool_state_conflict")
+	}
+	return ToolExecutionResult{Result: encoded}, nil
+}
+
 func validateToolWait(wait ToolWait) error {
 	switch wait.State {
 	case models.AIRunStateWaitingDevice, models.AIRunStateWaitingUserConsent, models.AIRunStateWaitingEdu:

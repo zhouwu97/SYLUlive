@@ -240,7 +240,7 @@ func (r *Runtime) Execute(runID, message string) {
 	if err := r.transition(ctx, &run, models.AIRunStateBudgetReserved, models.AIRunStateRetrieving); err != nil {
 		return
 	}
-	toolDefinitions := r.toolDefinitions()
+	toolDefinitions := routeModelTools(message, r.toolDefinitions())
 	hasTools := len(toolDefinitions) > 0
 	_, _ = r.appendEvent(ctx, runID, "retrieval.started", map[string]interface{}{}, true)
 	retrieval, err := r.retriever.Retrieve(ctx, message)

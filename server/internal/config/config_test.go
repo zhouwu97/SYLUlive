@@ -239,6 +239,7 @@ func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	require.True(t, cfg.AIInternalTestOnly)
 	require.Empty(t, cfg.DeepSeekAPIKey)
 	require.Equal(t, "deepseek-v4-flash", cfg.DeepSeekChatModel)
+	require.Equal(t, 3, cfg.AIMaxToolSteps)
 }
 
 func TestLoadAIConfigRequiresServerKeyAndWhitelist(t *testing.T) {
@@ -273,6 +274,10 @@ func TestLoadPolicyRAGRequiresInternalServiceToken(t *testing.T) {
 func TestLoadAIRejectsUnsafeLimits(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "0")
+	require.Panics(t, func() { Load() })
+
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_MAX_TOOL_STEPS", "0")
 	require.Panics(t, func() { Load() })
 }
 

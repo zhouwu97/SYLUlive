@@ -44,6 +44,7 @@ func newTestRuntime(t *testing.T, db *gorm.DB, provider AIProvider, retriever Po
 	t.Helper()
 	runtime, err := NewRuntime(db, provider, retriever, NewEventBroker(), RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
+		MaxToolSteps:    3,
 		MaxMessageChars: 20, HourlyMessageLimit: 3,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,

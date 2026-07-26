@@ -23,9 +23,11 @@ import (
 )
 
 type RuntimeConfig struct {
-	ProviderName                   string
-	Model                          string
-	RequestTimeout                 time.Duration
+	ProviderName   string
+	Model          string
+	RequestTimeout time.Duration
+	// MaxToolSteps 限制一次 Run 可执行的模型工具调用轮数，防止工具循环失控。
+	MaxToolSteps                   int
 	MaxMessageChars                int
 	HourlyMessageLimit             int
 	DefaultBudgetLimitMicroYuan    int64
@@ -68,7 +70,7 @@ func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, bro
 	if broker == nil {
 		broker = NewEventBroker()
 	}
-	if config.RequestTimeout < 5*time.Second || config.MaxMessageChars <= 0 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
+	if config.RequestTimeout < 5*time.Second || config.MaxToolSteps < 1 || config.MaxToolSteps > 5 || config.MaxMessageChars <= 0 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
 		return nil, errors.New("invalid AI runtime configuration")
 	}
 	var tools *ToolRegistry

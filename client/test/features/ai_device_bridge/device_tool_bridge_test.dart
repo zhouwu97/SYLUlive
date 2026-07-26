@@ -209,6 +209,8 @@ class _FakeDeviceJobApi implements DeviceJobApi {
   Future<void> register({
     required String installationId,
     required List<String> toolNames,
+    required int bridgeProtocolVersion,
+    required String clientVersion,
     String pushToken = '',
   }) async {}
 }

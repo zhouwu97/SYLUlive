@@ -9,8 +9,6 @@ android/.gradle/
 android/app/build/
 ios/Pods/
 ios/.symlinks/
-*.lock
-pubspec.lock
 android/key.properties
 android/app/google-services.json
 web/icons/Icon-maskable.svg
@@ -51,6 +49,11 @@ replace.py
 /client/.env.*
 # 鸿蒙签名材料由 DevEco 在本机维护，严禁提交路径、证书或口令。
 /client/ohos/build-profile.local.json5
+# 本地构建产物和签名验签结果不属于源码或发布材料。
+/client/ohos/entry/libs/
+/tmp/
+/output/
+/fix_imports.py
 # 平台依赖覆盖由构建脚本临时生成，不能作为跨平台源码提交。
 /client/pubspec_overrides.yaml
 android/.kotlin/

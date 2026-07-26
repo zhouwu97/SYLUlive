@@ -42,11 +42,12 @@ type Client struct {
 	logger *slog.Logger
 	dial   sessionDialer
 
-	callMu    sync.Mutex
-	sessionMu sync.Mutex
-	session   remoteSession
-	healthy   bool
-	tools     map[string]RemoteToolDefinition
+	callMu            sync.Mutex
+	sessionMu         sync.Mutex
+	session           remoteSession
+	healthy           bool
+	tools             map[string]RemoteToolDefinition
+	lastProtocolError error
 }
 
 // New 创建一个延迟连接的客户端。连接失败不会在此处阻止主服务启动。
@@ -82,6 +83,12 @@ func (client *Client) ListTools(ctx context.Context) ([]RemoteToolDefinition, er
 	}
 	client.callMu.Lock()
 	defer client.callMu.Unlock()
+	client.sessionMu.Lock()
+	lastProtocolError := client.lastProtocolError
+	client.sessionMu.Unlock()
+	if lastProtocolError != nil {
+		return nil, lastProtocolError
+	}
 	if err := client.ensureSession(ctx); err != nil {
 		return nil, err
 	}
@@ -198,12 +205,17 @@ func (client *Client) ensureSession(ctx context.Context) error {
 	}
 	if len(validated) == 0 {
 		_ = session.Close()
-		return client.classifyCallError(protocolError("远端没有兼容的核心工具"), ctx)
+		err := client.classifyCallError(protocolError("远端没有兼容的核心工具"), ctx)
+		client.sessionMu.Lock()
+		client.lastProtocolError = err
+		client.sessionMu.Unlock()
+		return err
 	}
 	client.sessionMu.Lock()
 	client.session = session
 	client.tools = validated
 	client.healthy = true
+	client.lastProtocolError = nil
 	client.sessionMu.Unlock()
 	return nil
 }

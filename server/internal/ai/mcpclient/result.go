@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 )
 
-// RemoteToolDefinition 是 tools/list 的最小安全视图。输入 Schema 仅用于本地兼容性校验。
+// RemoteToolDefinition 是 tools/list 的最小安全视图。输入和输出 Schema 均参与契约校验。
 type RemoteToolDefinition struct {
-	Name        string
-	Description string
-	InputSchema json.RawMessage
+	Name         string
+	Description  string
+	InputSchema  json.RawMessage
+	OutputSchema json.RawMessage
 }
 
 // ExternalMCPClient 是业务包装工具所依赖的稳定接口。

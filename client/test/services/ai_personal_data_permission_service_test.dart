@@ -30,6 +30,7 @@ void main() {
         'ai_remote_edu_refresh',
         'erke_snapshot_upload',
         'academic_cloud_storage',
+        'ai_external_model_analysis',
       },
     );
   });

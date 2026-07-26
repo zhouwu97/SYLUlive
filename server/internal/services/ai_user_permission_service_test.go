@@ -20,10 +20,11 @@ func TestAIUserPermissionServiceDefaultsAndPersistsOnlyKnownPolicies(t *testing.
 
 	permissions, err := service.List(ctx, 7)
 	require.NoError(t, err)
-	require.Len(t, permissions, 5)
+	require.Len(t, permissions, 6)
 	for _, permission := range permissions {
 		require.Equal(t, models.AIUserPermissionAsk, permission.Policy)
 	}
+	require.Equal(t, models.AIUserPermissionExternalModelAnalysis, permissions[5].Scope)
 
 	stored, err := service.Set(ctx, 7, models.AIUserPermissionDeviceCacheAccess, models.AIUserPermissionNever)
 	require.NoError(t, err)

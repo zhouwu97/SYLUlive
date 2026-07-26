@@ -85,15 +85,11 @@ var allAIUserPermissionScopes = []models.AIUserPermissionScope{
 	models.AIUserPermissionRemoteEduRefresh,
 	models.AIUserPermissionErkeSnapshotUpload,
 	models.AIUserPermissionAcademicCloudStorage,
+	models.AIUserPermissionExternalModelAnalysis,
 }
 
 func isAIUserPermissionScope(scope models.AIUserPermissionScope) bool {
-	for _, item := range allAIUserPermissionScopes {
-		if item == scope {
-			return true
-		}
-	}
-	return false
+	return scope.Valid()
 }
 
 func isAIUserPermissionPolicy(policy models.AIUserPermissionPolicy) bool {

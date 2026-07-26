@@ -170,9 +170,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('允许本次读取个人数据？'),
-          content: const Text(
-            '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
+          title: Text(
+            consent.consentScope == 'ai_external_model_analysis'
+                ? '允许外部模型辅助分析？'
+                : '允许本次读取个人数据？',
+          ),
+          content: Text(
+            consent.consentScope == 'ai_external_model_analysis'
+                ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给外部 Hy3 模型。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
+                : '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
           ),
           actions: [
             TextButton(

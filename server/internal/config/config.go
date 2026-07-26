@@ -45,6 +45,7 @@ type Config struct {
 	AIMaxToolSteps                         int      // 单次运行最大工具步数
 	AIMaxMessageChars                      int      // 用户消息最大 grapheme 数
 	AIHourlyMessageLimit                   int      // 每账号滚动一小时正式请求数
+	AIQuotaExemptUserIDs                   []uint   // 不受小时次数限制的测试用户 ID
 	AIUserBudgetLimitMicroYuan             int64    // 新用户默认累计预算
 	AIReserveMicroYuan                     int64    // 每次模型调用的最坏成本预留
 	AIInputPriceMicroYuanPerMillionTokens  int64
@@ -288,6 +289,7 @@ func Load() *Config {
 	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 3, 1, 5)
 	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 20, 1, 100)
 	aiHourlyMessageLimit := envIntInRange("AI_HOURLY_MESSAGE_LIMIT", 3, 1, 100)
+	aiQuotaExemptUserIDs := envPositiveUintList("AI_QUOTA_EXEMPT_USER_IDS")
 	aiUserBudgetLimitMicroYuan := envInt64InRange("AI_USER_BUDGET_LIMIT_MICRO_YUAN", 10_000_000, 1, 1_000_000_000)
 	aiReserveMicroYuan := envInt64InRange("AI_RESERVE_MICRO_YUAN", 20_000, 1, aiUserBudgetLimitMicroYuan)
 	aiInputPrice := envInt64InRange("AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS", 4_000_000, 0, 1_000_000_000)
@@ -360,6 +362,7 @@ func Load() *Config {
 		AIMaxToolSteps:                         aiMaxToolSteps,
 		AIMaxMessageChars:                      aiMaxMessageChars,
 		AIHourlyMessageLimit:                   aiHourlyMessageLimit,
+		AIQuotaExemptUserIDs:                   aiQuotaExemptUserIDs,
 		AIUserBudgetLimitMicroYuan:             aiUserBudgetLimitMicroYuan,
 		AIReserveMicroYuan:                     aiReserveMicroYuan,
 		AIInputPriceMicroYuanPerMillionTokens:  aiInputPrice,
@@ -443,6 +446,19 @@ func splitNonEmpty(value string) []string {
 		}
 		seen[part] = struct{}{}
 		result = append(result, part)
+	}
+	return result
+}
+
+func envPositiveUintList(name string) []uint {
+	parts := splitNonEmpty(os.Getenv(name))
+	result := make([]uint, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.ParseUint(part, 10, strconv.IntSize)
+		if err != nil || value == 0 {
+			panic(fmt.Errorf("%s 只能包含逗号分隔的正整数用户 ID", name))
+		}
+		result = append(result, uint(value))
 	}
 	return result
 }

@@ -52,6 +52,29 @@ void main() {
     );
   });
 
+  test('无限配额账号不会被 remaining=0 错误拦截', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: true,
+        chatEnabled: false,
+        phase: 'p0',
+        features: AiFeatures(policyRag: false, scheduleWindows: false),
+        quota: AiQuota(
+          limit: 3,
+          remaining: 0,
+          windowSeconds: 3600,
+          unlimited: true,
+        ),
+        maxMessageChars: 20,
+      ),
+    );
+
+    expect(provider.submit('测试问题'), AiSubmitResult.unavailable);
+  });
+
   test('SSE 回放重复 seq 不会重复拼接答案', () {
     final provider = AiAssistantProvider(
       AiAssistantService(Dio()),

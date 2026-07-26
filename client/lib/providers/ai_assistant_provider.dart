@@ -276,7 +276,9 @@ class AiAssistantProvider extends ChangeNotifier {
     final maxChars = _capabilities?.maxMessageChars ?? 20;
     if (message.characters.length > maxChars) return AiSubmitResult.tooLong;
     if (isRunning) return AiSubmitResult.busy;
-    if ((_quota?.remaining ?? 0) <= 0) return AiSubmitResult.quotaExceeded;
+    if (_quota?.unlimited != true && (_quota?.remaining ?? 0) <= 0) {
+      return AiSubmitResult.quotaExceeded;
+    }
     if (_capabilities?.chatEnabled != true) {
       _error = '基础设施测试中，暂未开放真实问答';
       _notify();

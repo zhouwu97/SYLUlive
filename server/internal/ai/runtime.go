@@ -30,6 +30,7 @@ type RuntimeConfig struct {
 	MaxToolSteps                   int
 	MaxMessageChars                int
 	HourlyMessageLimit             int
+	QuotaExemptUserIDs             []uint
 	DefaultBudgetLimitMicroYuan    int64
 	ReservationMicroYuan           int64
 	InputPriceMicroYuanPerMillion  int64
@@ -48,12 +49,13 @@ func (e *RuntimeError) Error() string { return e.Code }
 var newlinePattern = regexp.MustCompile(`(?:\r?\n)+`)
 
 type Runtime struct {
-	db        *gorm.DB
-	provider  AIProvider
-	retriever PolicyRetriever
-	broker    *EventBroker
-	tools     *ToolRegistry
-	config    RuntimeConfig
+	db                 *gorm.DB
+	provider           AIProvider
+	retriever          PolicyRetriever
+	broker             *EventBroker
+	tools              *ToolRegistry
+	config             RuntimeConfig
+	quotaExemptUserIDs map[uint]struct{}
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -80,7 +82,17 @@ func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, bro
 	if tools != nil && len(tools.Definitions()) > 0 && !provider.Capabilities().ToolCalls {
 		return nil, errors.New("AI provider does not support tool calls")
 	}
-	return &Runtime{db: db, provider: provider, retriever: retriever, broker: broker, tools: tools, config: config, cancels: make(map[string]context.CancelFunc)}, nil
+	quotaExemptUserIDs := make(map[uint]struct{}, len(config.QuotaExemptUserIDs))
+	for _, userID := range config.QuotaExemptUserIDs {
+		if userID == 0 {
+			return nil, errors.New("invalid AI quota exempt user ID")
+		}
+		quotaExemptUserIDs[userID] = struct{}{}
+	}
+	return &Runtime{
+		db: db, provider: provider, retriever: retriever, broker: broker, tools: tools,
+		config: config, quotaExemptUserIDs: quotaExemptUserIDs, cancels: make(map[string]context.CancelFunc),
+	}, nil
 }
 
 type CreateRunRequest struct {
@@ -151,14 +163,16 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 			}
 		}
 
-		var quotaCount int64
-		if err := tx.Model(&models.AIQuotaEntry{}).
-			Where("user_id = ? AND status IN ? AND created_at > ?", userID, []string{"reserved", "consumed"}, now.Add(-time.Hour)).
-			Count(&quotaCount).Error; err != nil {
-			return err
-		}
-		if quotaCount >= int64(r.config.HourlyMessageLimit) {
-			return &RuntimeError{Code: "ai_quota_exceeded", Message: "最近 60 分钟的可用次数已用完", Retryable: true}
+		if !r.IsQuotaExempt(userID) {
+			var quotaCount int64
+			if err := tx.Model(&models.AIQuotaEntry{}).
+				Where("user_id = ? AND status IN ? AND created_at > ?", userID, []string{"reserved", "consumed"}, now.Add(-time.Hour)).
+				Count(&quotaCount).Error; err != nil {
+				return err
+			}
+			if quotaCount >= int64(r.config.HourlyMessageLimit) {
+				return &RuntimeError{Code: "ai_quota_exceeded", Message: "最近 60 分钟的可用次数已用完", Retryable: true}
+			}
 		}
 
 		budget := models.AIUserBudget{UserID: userID, LimitMicroYuan: r.config.DefaultBudgetLimitMicroYuan}
@@ -629,6 +643,9 @@ func (r *Runtime) EventsAfter(ctx context.Context, userID uint, runID string, af
 }
 
 func (r *Runtime) Quota(ctx context.Context, userID uint) (remaining int, resetAt *time.Time, err error) {
+	if r.IsQuotaExempt(userID) {
+		return r.config.HourlyMessageLimit, nil, nil
+	}
 	var entries []models.AIQuotaEntry
 	err = r.db.WithContext(ctx).Where("user_id = ? AND status IN ? AND created_at > ?", userID, []string{"reserved", "consumed"}, time.Now().Add(-time.Hour)).Order("created_at ASC").Find(&entries).Error
 	if err != nil {
@@ -643,6 +660,12 @@ func (r *Runtime) Quota(ctx context.Context, userID uint) (remaining int, resetA
 		resetAt = &value
 	}
 	return remaining, resetAt, nil
+}
+
+// IsQuotaExempt 只豁免滚动小时次数，预算与运行安全上限仍然生效。
+func (r *Runtime) IsQuotaExempt(userID uint) bool {
+	_, exempt := r.quotaExemptUserIDs[userID]
+	return exempt
 }
 
 func (r *Runtime) Broker() *EventBroker { return r.broker }

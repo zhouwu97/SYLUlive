@@ -320,7 +320,8 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 	_ = r.db.WithContext(ctx).Where("id = ? AND status = ?", resume.ID, "resuming").Delete(&models.AIRunResumeJob{}).Error
 
 	startedAt := time.Now()
-	outcome := r.executeToolLoop(ctx, &run, messages, r.toolDefinitions())
+	toolDefinitions := routeModelToolsForMessages(messages, r.toolDefinitions())
+	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions)
 	usage = mergeProviderUsage(usage, outcome.usage)
 	if outcome.cancelled {
 		r.finalizeCancelled(run.ID, true, usage, time.Since(startedAt))

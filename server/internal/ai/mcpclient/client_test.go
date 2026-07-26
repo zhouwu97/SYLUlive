@@ -15,6 +15,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var productionExpectedRemoteToolContracts = cloneContractDigests(expectedRemoteToolContracts)
+
+func TestMain(m *testing.M) {
+	// 单元测试使用最小 Schema；生产固定摘要仍由跨进程测试覆盖。
+	definitions := compatibleDefinitions()
+	contracts := make(map[string]string)
+	for _, definition := range definitions {
+		if definition.Name == statusToolName {
+			continue
+		}
+		digest, err := schemaDigest(definition.InputSchema, definition.OutputSchema)
+		if err != nil {
+			panic(err)
+		}
+		contracts[definition.Name] = digest
+	}
+	expectedRemoteToolContracts = contracts
+	os.Exit(m.Run())
+}
+
+func cloneContractDigests(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source))
+	for name, digest := range source {
+		result[name] = digest
+	}
+	return result
+}
+
 type fakeRemoteSession struct {
 	definitions []RemoteToolDefinition
 	listErr     error
@@ -54,8 +82,10 @@ func newHealthyFakeSession() *fakeRemoteSession {
 		available = append(available, definition.Name)
 	}
 	status, err := json.Marshal(map[string]interface{}{
-		"mode":            "fixture",
-		"available_tools": available,
+		"mode":             "fixture",
+		"contract_version": expectedRemoteContractVersion,
+		"available_tools":  available,
+		"tool_contracts":   testStatusContracts(),
 	})
 	if err != nil {
 		panic(err)
@@ -67,16 +97,23 @@ func newHealthyFakeSession() *fakeRemoteSession {
 }
 
 func TestClientRejectsSessionWithoutCompatibleCoreTools(t *testing.T) {
-	statusPayload := json.RawMessage(`{"mode":"fixture","available_tools":["hy3_campus_status"]}`)
+	statusPayload, err := json.Marshal(map[string]interface{}{
+		"mode":             "fixture",
+		"contract_version": expectedRemoteContractVersion,
+		"available_tools":  []string{statusToolName},
+		"tool_contracts":   testStatusContracts(),
+	})
+	require.NoError(t, err)
 	session := &fakeRemoteSession{
 		definitions: []RemoteToolDefinition{{
-			Name:        statusToolName,
-			InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+			Name:         statusToolName,
+			InputSchema:  json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+			OutputSchema: json.RawMessage(`{"type":"object"}`),
 		}},
 		status: remoteCallResult{Payload: statusPayload},
 	}
 	client, _ := newTestClient(t, time.Second, session)
-	err := client.Connect(context.Background())
+	err = client.Connect(context.Background())
 	require.Equal(t, ErrorProtocol, ErrorCode(err))
 	require.False(t, client.Healthy())
 	require.Equal(t, 1, session.closed)
@@ -87,11 +124,19 @@ func TestClientRejectsSessionWithoutCompatibleCoreTools(t *testing.T) {
 
 func compatibleDefinitions() []RemoteToolDefinition {
 	return []RemoteToolDefinition{
-		{Name: statusToolName, InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)},
-		{Name: "compare_competitions", InputSchema: json.RawMessage(`{"type":"object","properties":{"student_profile":{},"competition_names":{},"competitions":{}},"required":["student_profile"],"additionalProperties":false}`)},
-		{Name: "analyze_academic_snapshot", InputSchema: json.RawMessage(`{"type":"object","properties":{"snapshot":{},"snapshot_path":{}},"additionalProperties":false}`)},
-		{Name: "plan_student_week", InputSchema: json.RawMessage(`{"type":"object","properties":{"schedule":{},"schedule_path":{},"goals":{},"constraints":{}},"additionalProperties":false}`)},
+		{Name: statusToolName, InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`), OutputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Name: "compare_competitions", InputSchema: json.RawMessage(`{"type":"object","properties":{"student_profile":{},"competition_names":{},"competitions":{}},"required":["student_profile"],"additionalProperties":false}`), OutputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Name: "analyze_academic_snapshot", InputSchema: json.RawMessage(`{"type":"object","properties":{"snapshot":{},"snapshot_path":{}},"additionalProperties":false}`), OutputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Name: "plan_student_week", InputSchema: json.RawMessage(`{"type":"object","properties":{"schedule":{},"schedule_path":{},"goals":{},"constraints":{}},"additionalProperties":false}`), OutputSchema: json.RawMessage(`{"type":"object"}`)},
 	}
+}
+
+func testStatusContracts() map[string]remoteContractStatus {
+	result := make(map[string]remoteContractStatus, len(expectedRemoteToolContracts))
+	for name, digest := range expectedRemoteToolContracts {
+		result[name] = remoteContractStatus{SchemaSHA256: digest}
+	}
+	return result
 }
 
 func newTestClient(t *testing.T, timeout time.Duration, sessions ...remoteSession) (*Client, *int) {
@@ -162,12 +207,14 @@ func TestClientOnlyExposesSchemaAndStatusValidatedTools(t *testing.T) {
 	// 远端 Schema 变化时，不允许将同名但不兼容的工具注册给模型。
 	session.definitions[2].InputSchema = json.RawMessage(`{"type":"object","properties":{"snapshot":{},"snapshot_path":{}},"additionalProperties":true}`)
 	status, err := json.Marshal(map[string]interface{}{
-		"mode": "fixture",
+		"mode":             "fixture",
+		"contract_version": expectedRemoteContractVersion,
 		"available_tools": []string{
 			statusToolName,
 			"compare_competitions",
 			"analyze_academic_snapshot",
 		},
+		"tool_contracts": testStatusContracts(),
 	})
 	require.NoError(t, err)
 	session.status = remoteCallResult{Payload: status}
@@ -281,6 +328,44 @@ func TestSSHCommandBracketsIPv6AndDoesNotPassRemoteCommand(t *testing.T) {
 		"-o", "UserKnownHostsFile=" + config.SSHKnownHostsPath, "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
 		"-o", "PermitLocalCommand=no", "-o", "RequestTTY=no", "-i", config.SSHKeyPath, "-p", "2222", "mcp-runner@[2001:db8::8]",
 	}, command.Args)
+}
+
+func TestRealStdioContractIntegration(t *testing.T) {
+	command := os.Getenv("HY3_MCP_COMMAND")
+	if command == "" {
+		t.Skip("设置 HY3_MCP_COMMAND 后运行真实 Python MCP stdio 契约测试")
+	}
+	previousContracts := expectedRemoteToolContracts
+	expectedRemoteToolContracts = cloneContractDigests(productionExpectedRemoteToolContracts)
+	t.Cleanup(func() { expectedRemoteToolContracts = previousContracts })
+	repositoryRoot := filepath.Clean(filepath.Join("..", "..", "..", "..", "..", "xynewui_mcp"))
+	t.Setenv("HY3_MODE", "fixture")
+	t.Setenv("HY3_CAMPUS_ROOT", filepath.Join(repositoryRoot, "examples"))
+	t.Setenv("HY3_FIXTURE_ROOT", filepath.Join(repositoryRoot, "tests", "fixtures", "hy3"))
+
+	client, err := New(Config{
+		Enabled:        true,
+		Transport:      TransportLocalStdio,
+		Command:        command,
+		ToolTimeout:    10 * time.Second,
+		MaxCallsPerRun: 1,
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+
+	require.NoError(t, client.Connect(context.Background()))
+	definitions, err := client.ListTools(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"analyze_academic_snapshot", "compare_competitions", "plan_student_week",
+	}, remoteToolNames(definitions))
+	result, err := client.CallTool(context.Background(), "analyze_academic_snapshot", map[string]interface{}{
+		"snapshot_path": "academic/safe_snapshot.json",
+	})
+	require.NoError(t, err)
+	var envelope map[string]interface{}
+	require.NoError(t, json.Unmarshal(result, &envelope))
+	require.Equal(t, "ok", envelope["status"])
 }
 
 func remoteToolNames(definitions []RemoteToolDefinition) []string {

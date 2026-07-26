@@ -26,6 +26,7 @@ server/uploads/*
 /artifacts/shenliyuan-*
 server/*.exe
 server/*.exe~
+/server/shenliyuan-linux
 *.apk
 .sisyphus/plans/*.jpg
 .sisyphus/plans/*.jpeg

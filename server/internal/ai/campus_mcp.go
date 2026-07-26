@@ -870,7 +870,11 @@ func (mcp *campusMCP) getScheduleAvailability(ctx context.Context, userID uint, 
 	if !usablePersonalResult(result) {
 		return result, nil
 	}
-	return personalToolResult(scheduleAvailability(result.Data, input.Week, input.Weekdays), result), nil
+	maxPeriod, err := mcp.scheduleMaxPeriod(ctx, input.WeekContaining)
+	if err != nil {
+		return personalContextUnavailable(academic.DataStatusFailed, "缺少当前生效的节次配置，不能安全计算空闲时间"), nil
+	}
+	return personalToolResult(scheduleAvailability(result.Data, input.Week, input.Weekdays, maxPeriod), result), nil
 }
 
 func (mcp *campusMCP) getErkeOverview(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
@@ -1047,7 +1051,37 @@ func extractErkeOverview(raw json.RawMessage) map[string]interface{} {
 	return result
 }
 
-func scheduleAvailability(raw json.RawMessage, week int, weekdays []int) map[string]interface{} {
+func (mcp *campusMCP) scheduleMaxPeriod(ctx context.Context, date string) (int, error) {
+	if mcp.db == nil {
+		return 0, errors.New("database_unavailable")
+	}
+	day, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return 0, err
+	}
+	var profile models.ClassPeriodProfile
+	if err := mcp.db.WithContext(ctx).Where("status = ? AND effective_from <= ? AND effective_to >= ?", "published", day, day).Order("published_at DESC, id DESC").First(&profile).Error; err != nil {
+		return 0, err
+	}
+	var periods []struct {
+		Section int `json:"section"`
+	}
+	if err := json.Unmarshal(profile.Periods, &periods); err != nil || len(periods) == 0 {
+		return 0, errors.New("period_profile_invalid")
+	}
+	maxPeriod := 0
+	for _, period := range periods {
+		if period.Section > maxPeriod {
+			maxPeriod = period.Section
+		}
+	}
+	if maxPeriod < 1 || maxPeriod > 30 {
+		return 0, errors.New("period_profile_invalid")
+	}
+	return maxPeriod, nil
+}
+
+func scheduleAvailability(raw json.RawMessage, week int, weekdays []int, maxPeriod int) map[string]interface{} {
 	data := decodeJSONObject(raw)
 	courses, _ := data["courses"].([]interface{})
 	occupied := make(map[int]map[int]struct{})
@@ -1082,7 +1116,7 @@ func scheduleAvailability(raw json.RawMessage, week int, weekdays []int) map[str
 		if !endOK || end < start {
 			end = start
 		}
-		for period := start; period <= end && period <= 14; period++ {
+		for period := start; period <= end && period <= maxPeriod; period++ {
 			if period >= 1 {
 				occupied[day][period] = struct{}{}
 			}
@@ -1090,8 +1124,8 @@ func scheduleAvailability(raw json.RawMessage, week int, weekdays []int) map[str
 	}
 	days := make([]map[string]interface{}, 0, len(weekdays))
 	for _, day := range weekdays {
-		free := make([]int, 0, 14)
-		for period := 1; period <= 14; period++ {
+		free := make([]int, 0, maxPeriod)
+		for period := 1; period <= maxPeriod; period++ {
 			if _, busy := occupied[day][period]; !busy {
 				free = append(free, period)
 			}

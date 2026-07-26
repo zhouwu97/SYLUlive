@@ -36,6 +36,7 @@ func newRuntimeTestDB(t *testing.T) *gorm.DB {
 		&models.AIConversation{}, &models.AIConversationMessage{}, &models.AIRun{},
 		&models.AIEvent{}, &models.AIToolCall{}, &models.AIRunResumeJob{}, &models.AIQuotaEntry{},
 		&models.AIUserBudget{}, &models.AIBudgetReservation{}, &models.AIUsageRecord{}, &models.DeviceToolJob{},
+		&models.AIRunConsent{},
 	))
 	return db
 }

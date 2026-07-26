@@ -84,6 +84,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final TextEditingController _inputController = TextEditingController();
 
   String? _lastBootstrapAuthKey;
+  bool _consentDialogVisible = false;
+  String _lastConsentDialogKey = '';
 
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final List<PersonalConversationEntry> _personalConversationEntries =
@@ -113,6 +115,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       widget.service,
       initialCapabilities: widget.capabilities,
     );
+    _provider.addListener(_handleRunConsentRequired);
     unawaited(_provider.initialize());
   }
 
@@ -140,8 +143,60 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     unawaited(_activeToolModel?.cancel());
     _inputFocusNode.dispose();
     _inputController.dispose();
+    _provider.removeListener(_handleRunConsentRequired);
     _provider.dispose();
     super.dispose();
+  }
+
+  void _handleRunConsentRequired() {
+    final consent = _provider.pendingConsent;
+    if (!mounted ||
+        _personalMode ||
+        consent == null ||
+        consent.consentScope.isEmpty ||
+        _consentDialogVisible) {
+      return;
+    }
+    final key = '${consent.runId}:${consent.seq}:${consent.consentScope}';
+    if (key == _lastConsentDialogKey) return;
+    _lastConsentDialogKey = key;
+    _consentDialogVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        _consentDialogVisible = false;
+        return;
+      }
+      final granted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('允许本次读取个人数据？'),
+          content: const Text(
+            '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('不允许'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('仅本次允许'),
+            ),
+          ],
+        ),
+      );
+      if (mounted && granted != null) {
+        final submitted = await _provider.submitConsent(granted);
+        if (!submitted && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_provider.error ?? '提交本次授权失败，请稍后重试')),
+          );
+        }
+      }
+      _consentDialogVisible = false;
+      if (mounted) _handleRunConsentRequired();
+    });
   }
 
   String _currentPersonalAccountKey() {

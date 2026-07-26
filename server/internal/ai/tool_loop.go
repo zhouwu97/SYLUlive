@@ -146,9 +146,14 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 		messages = append(messages, toolResultMessages...)
 		if len(pendingWaits) > 0 {
 			state := pendingWaits[0].Wait.State
+			consentScope := pendingWaits[0].Wait.ConsentScope
 			for _, pending := range pendingWaits[1:] {
 				if pending.Wait.State != state {
 					outcome.failureCode = "tool_loop_mixed_wait_state"
+					return outcome
+				}
+				if state == models.AIRunStateWaitingUserConsent && pending.Wait.ConsentScope != consentScope {
+					outcome.failureCode = "tool_loop_mixed_consent_scope"
 					return outcome
 				}
 			}

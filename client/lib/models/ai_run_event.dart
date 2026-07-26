@@ -33,6 +33,8 @@ class AiRunEvent {
   final List<AiSource> sources;
   final List<AiPersonalDataEvidence> personalDataEvidence;
   final List<String> datasets;
+  final String consentScope;
+  final String consentReason;
   final AiQuota? quota;
   final String errorCode;
   final bool retryable;
@@ -46,6 +48,8 @@ class AiRunEvent {
     this.sources = const [],
     this.personalDataEvidence = const [],
     this.datasets = const [],
+    this.consentScope = '',
+    this.consentReason = '',
     this.quota,
     this.errorCode = '',
     this.retryable = false,
@@ -73,6 +77,8 @@ class AiRunEvent {
           : const [],
       personalDataEvidence: _evidence(payload['evidence']),
       datasets: _strings(payload['datasets']),
+      consentScope: payload['scope']?.toString() ?? '',
+      consentReason: payload['reason']?.toString() ?? '',
       errorCode: payload['code']?.toString() ?? '',
       retryable: payload['retryable'] == true,
       quota: payload['quota'] is Map

@@ -66,6 +66,25 @@ func newHealthyFakeSession() *fakeRemoteSession {
 	}
 }
 
+func TestClientRejectsSessionWithoutCompatibleCoreTools(t *testing.T) {
+	statusPayload := json.RawMessage(`{"mode":"fixture","available_tools":["hy3_campus_status"]}`)
+	session := &fakeRemoteSession{
+		definitions: []RemoteToolDefinition{{
+			Name:        statusToolName,
+			InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+		}},
+		status: remoteCallResult{Payload: statusPayload},
+	}
+	client, _ := newTestClient(t, time.Second, session)
+	err := client.Connect(context.Background())
+	require.Equal(t, ErrorProtocol, ErrorCode(err))
+	require.False(t, client.Healthy())
+	require.Equal(t, 1, session.closed)
+	definitions, listErr := client.ListTools(context.Background())
+	require.Equal(t, ErrorProtocol, ErrorCode(listErr))
+	require.Empty(t, definitions)
+}
+
 func compatibleDefinitions() []RemoteToolDefinition {
 	return []RemoteToolDefinition{
 		{Name: statusToolName, InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)},

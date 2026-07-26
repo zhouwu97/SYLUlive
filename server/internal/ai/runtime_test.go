@@ -120,6 +120,43 @@ func TestRuntimeIdempotencyQuotaAndCitationCompletion(t *testing.T) {
 	require.Contains(t, messages[1].Content, "[chunk:1]")
 }
 
+func TestRuntimeQuotaExemptionAppliesOnlyToConfiguredUser(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	runtime, err := NewRuntime(
+		db,
+		&MockProvider{Response: ChatResponse{Content: "测试回答。[chunk:1]"}},
+		fixedRetriever{result: RetrievalResult{Chunks: []RetrievedChunk{{
+			ChunkID: 1, DocumentID: 1, Content: "测试资料", Title: "测试资料",
+		}}}},
+		NewEventBroker(),
+		RuntimeConfig{
+			ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
+			MaxToolSteps: 3, MaxMessageChars: 20, HourlyMessageLimit: 3,
+			QuotaExemptUserIDs:             []uint{2},
+			DefaultBudgetLimitMicroYuan:    1_000_000,
+			ReservationMicroYuan:           10_000,
+			InputPriceMicroYuanPerMillion:  1_000_000,
+			OutputPriceMicroYuanPerMillion: 1_000_000,
+			AuditHashSecret:                "test-secret",
+		},
+	)
+	require.NoError(t, err)
+
+	for index := 0; index < 4; index++ {
+		run, _, createErr := runtime.CreateRun(context.Background(), 2, CreateRunRequest{
+			ClientRequestID: uuid.NewString(), Message: "测试账号提问",
+		})
+		require.NoError(t, createErr)
+		waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	}
+	require.True(t, runtime.IsQuotaExempt(2))
+	require.False(t, runtime.IsQuotaExempt(3))
+	remaining, resetAt, err := runtime.Quota(context.Background(), 2)
+	require.NoError(t, err)
+	require.Equal(t, 3, remaining)
+	require.Nil(t, resetAt)
+}
+
 func TestRuntimeReleasesQuotaAndBudgetBeforeGeneration(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	runtime := newTestRuntime(t, db, &MockProvider{}, fixedRetriever{err: ErrRetrievalUnavailable})

@@ -242,6 +242,16 @@ func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	require.Equal(t, 3, cfg.AIMaxToolSteps)
 }
 
+func TestLoadAIQuotaExemptUserIDs(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_QUOTA_EXEMPT_USER_IDS", "2, 7,2")
+	cfg := Load()
+	require.Equal(t, []uint{2, 7}, cfg.AIQuotaExemptUserIDs)
+
+	t.Setenv("AI_QUOTA_EXEMPT_USER_IDS", "2,invalid")
+	require.Panics(t, func() { Load() })
+}
+
 func TestLoadAIConfigRequiresServerKeyAndWhitelist(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_ENABLED", "true")

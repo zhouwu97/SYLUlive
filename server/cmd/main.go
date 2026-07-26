@@ -759,6 +759,7 @@ func main() {
 				RequestTimeout:  time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second,
 				MaxToolSteps:    cfg.AIMaxToolSteps,
 				MaxMessageChars: cfg.AIMaxMessageChars, HourlyMessageLimit: cfg.AIHourlyMessageLimit,
+				QuotaExemptUserIDs:             cfg.AIQuotaExemptUserIDs,
 				DefaultBudgetLimitMicroYuan:    cfg.AIUserBudgetLimitMicroYuan,
 				ReservationMicroYuan:           cfg.AIReserveMicroYuan,
 				InputPriceMicroYuanPerMillion:  cfg.AIInputPriceMicroYuanPerMillionTokens,
@@ -799,8 +800,9 @@ func main() {
 		cfg.AITestUserIDs,
 		handlers.AICapabilitiesOptions{
 			Runtime: aiRuntime, PolicyRAGEnabled: cfg.AIPolicyRAGEnabled && aiRuntime != nil,
-			HourlyLimit:     cfg.AIHourlyMessageLimit,
-			MaxMessageChars: cfg.AIMaxMessageChars,
+			HourlyLimit:        cfg.AIHourlyMessageLimit,
+			MaxMessageChars:    cfg.AIMaxMessageChars,
+			QuotaExemptUserIDs: cfg.AIQuotaExemptUserIDs,
 		},
 	)
 	var aiRuntimeHandler *handlers.AIRuntimeHandler

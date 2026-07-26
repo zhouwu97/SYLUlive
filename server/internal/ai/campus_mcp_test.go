@@ -79,7 +79,8 @@ func TestCampusMCPErkeUsesUploadedSnapshotWithoutAcademicCredential(t *testing.T
 			}},
 		},
 	}}
-	tools := NewCampusMCPTools(nil, nil, reader)
+	tools := NewCampusMCPTools(nil, nil, reader,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}))
 	result, err := campusToolByName(t, tools, "erke.get_overview").Execute(context.Background(), 7, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	envelope, ok := result.(CampusToolResult)
@@ -109,7 +110,8 @@ func TestCampusMCPErkeOverviewReadsStructuredUploadedSnapshot(t *testing.T) {
 			Evidence: make([]academic.Evidence, 0),
 		},
 	}}
-	tools := NewCampusMCPTools(nil, nil, reader)
+	tools := NewCampusMCPTools(nil, nil, reader,
+		WithCampusPersonalDataPermissionReader(AllowAllPermissionReader{}))
 	result, err := campusToolByName(t, tools, "erke.get_overview").Execute(context.Background(), 7, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	overview := result.(CampusToolResult).Data.(map[string]interface{})

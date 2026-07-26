@@ -6,7 +6,8 @@ enum AiPersonalDataPermissionScope {
   deviceCacheAccess,
   remoteEduRefresh,
   erkeSnapshotUpload,
-  academicCloudStorage;
+  academicCloudStorage,
+  externalModelAnalysis;
 
   String get wireValue => switch (this) {
         AiPersonalDataPermissionScope.personalDataAccess =>
@@ -19,6 +20,8 @@ enum AiPersonalDataPermissionScope {
           'erke_snapshot_upload',
         AiPersonalDataPermissionScope.academicCloudStorage =>
           'academic_cloud_storage',
+        AiPersonalDataPermissionScope.externalModelAnalysis =>
+          'ai_external_model_analysis',
       };
 
   static AiPersonalDataPermissionScope? fromWireValue(String value) {

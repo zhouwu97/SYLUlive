@@ -93,11 +93,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('暂未开放'), findsOneWidget);
+    expect(find.text('外部模型辅助分析'), findsOneWidget);
     expect(
       find.byWidgetPredicate(
         (widget) => widget is PopupMenuButton<AiPersonalDataPermissionPolicy>,
       ),
-      findsNWidgets(4),
+      findsNWidgets(5),
     );
   });
 

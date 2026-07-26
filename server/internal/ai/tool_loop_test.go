@@ -128,6 +128,41 @@ func TestRuntimeToolLoopSynthesizesFinalAnswerAfterConfiguredMaxToolSteps(t *tes
 	require.Empty(t, requests[1].Tools, "达到工具轮数上限后必须禁用工具，只允许模型组织最终回答")
 }
 
+func TestRuntimeUsesVerifiedRAGWithoutPublicToolsForKnownPolicyIntent(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{{
+		{Type: ProviderEventTextDelta, Text: "补考总成绩按课程比例合成。[chunk:1]"},
+		{Type: ProviderEventCompleted},
+	}}}
+	tool := namedOverviewTool{
+		overviewTool: overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+			t.Fatal("已命中政策 RAG 时不应执行公开搜索工具")
+			return nil, nil
+		}},
+		name: "campus.search_policy",
+	}
+	registry, err := NewToolRegistry(db, tool)
+	require.NoError(t, err)
+	runtime, err := NewRuntime(db, provider, fixedRetriever{result: RetrievalResult{Chunks: []RetrievedChunk{{
+		ChunkID: 1, DocumentID: 1, Title: "补考成绩现行口径",
+		Content: "补考总成绩由原平时成绩与补考卷面成绩按课程规定比例合成。",
+	}}}}, NewEventBroker(), RuntimeConfig{
+		ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
+		MaxToolSteps: 4, MaxMessageChars: 100, HourlyMessageLimit: 10,
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+		AuditHashSecret: "tool-loop-test",
+	}, registry)
+	require.NoError(t, err)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "补考成绩怎么算"})
+	require.NoError(t, err)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Contains(t, completed.AnswerCheckpoint, "[chunk:1]")
+	require.Len(t, provider.Requests(), 1)
+	require.Empty(t, provider.Requests()[0].Tools)
+}
+
 func TestRuntimeToolLoopExecutesFragmentedArgumentsAndReturnsToProvider(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{

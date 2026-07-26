@@ -138,6 +138,42 @@ func hy3RemoteToolAvailable(available map[string]struct{}, name string) bool {
 	return found
 }
 
+// requireHy3Permissions 在读取个人画像或快照前完成全部权限检查。
+// needsAcademicSnapshot 表示工具会读取服务端成绩或课表快照。
+func (decision *hy3DecisionMCP) requireHy3Permissions(ctx context.Context, userID uint, reason string, needsAcademicSnapshot bool) (*ToolWait, models.AIUserPermissionScope, error) {
+	if decision == nil || decision.campus == nil {
+		return nil, "", errors.New("mcp_not_configured")
+	}
+	scopes := []models.AIUserPermissionScope{models.AIUserPermissionPersonalDataAccess}
+	if needsAcademicSnapshot {
+		scopes = append(scopes, models.AIUserPermissionAcademicCloudStorage)
+	}
+	scopes = append(scopes, models.AIUserPermissionExternalModelAnalysis)
+	for _, scope := range scopes {
+		wait, denied, err := decision.campus.requirePermission(ctx, userID, scope, reason)
+		if err != nil {
+			return nil, "", err
+		}
+		if wait != nil {
+			return wait, "", nil
+		}
+		if denied {
+			return nil, scope, nil
+		}
+	}
+	return nil, "", nil
+}
+
+func hy3PermissionUnavailable(scope models.AIUserPermissionScope) map[string]interface{} {
+	if scope == models.AIUserPermissionExternalModelAnalysis {
+		return hy3PersonalUnavailable("你未允许外部模型辅助分析。")
+	}
+	if scope == models.AIUserPermissionAcademicCloudStorage {
+		return hy3PersonalUnavailable("你已在隐私设置中关闭校园 Agent 读取服务端学业快照。")
+	}
+	return hy3PersonalUnavailable("你已在隐私设置中关闭校园 Agent 的个人数据访问。")
+}
+
 func hy3CompetitionSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object", "properties": map[string]interface{}{
@@ -201,15 +237,15 @@ func (decision *hy3DecisionMCP) compareCompetitions(ctx context.Context, userID 
 	if decision.db == nil || decision.campus == nil {
 		return hy3Unavailable(mcpclient.ErrorUnavailable, "Hy3 决策服务暂时不可用，请依据已取得的确定性数据回答。"), nil
 	}
-	wait, denied, permissionErr := decision.campus.requirePermission(ctx, userID, models.AIUserPermissionPersonalDataAccess, "hy3_competition_comparison")
+	wait, deniedScope, permissionErr := decision.requireHy3Permissions(ctx, userID, "hy3_competition_comparison", false)
 	if permissionErr != nil {
 		return nil, permissionErr
 	}
 	if wait != nil {
 		return *wait, nil
 	}
-	if denied {
-		return hy3PersonalUnavailable("你已在隐私设置中关闭校园 Agent 的个人数据访问。"), nil
+	if deniedScope != "" {
+		return hy3PermissionUnavailable(deniedScope), nil
 	}
 
 	var events []models.CompetitionEvent
@@ -424,6 +460,16 @@ func (decision *hy3DecisionMCP) analyzeAcademic(ctx context.Context, userID uint
 	if decision.campus == nil {
 		return hy3Unavailable(mcpclient.ErrorUnavailable, "Hy3 决策服务暂时不可用，请依据已取得的确定性数据回答。"), nil
 	}
+	wait, deniedScope, permissionErr := decision.requireHy3Permissions(ctx, userID, "hy3_academic_analysis", true)
+	if permissionErr != nil {
+		return nil, permissionErr
+	}
+	if wait != nil {
+		return *wait, nil
+	}
+	if deniedScope != "" {
+		return hy3PermissionUnavailable(deniedScope), nil
+	}
 	results, wait, err := decision.campus.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
 		Datasets:  []academic.DatasetType{academic.DatasetGrades, academic.DatasetCreditRequirements, academic.DatasetAcademicSituation, academic.DatasetErke},
 		Freshness: input.Freshness,
@@ -607,6 +653,16 @@ func (decision *hy3DecisionMCP) planStudentWeek(ctx context.Context, userID uint
 	}
 	if decision.campus == nil {
 		return hy3Unavailable(mcpclient.ErrorUnavailable, "Hy3 决策服务暂时不可用，请依据已取得的确定性数据回答。"), nil
+	}
+	wait, deniedScope, permissionErr := decision.requireHy3Permissions(ctx, userID, "hy3_week_plan", true)
+	if permissionErr != nil {
+		return nil, permissionErr
+	}
+	if wait != nil {
+		return *wait, nil
+	}
+	if deniedScope != "" {
+		return hy3PermissionUnavailable(deniedScope), nil
 	}
 	results, wait, err := decision.campus.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
 		Datasets:  []academic.DatasetType{academic.DatasetSchedule},

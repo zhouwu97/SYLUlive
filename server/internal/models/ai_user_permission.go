@@ -7,11 +7,12 @@ import "time"
 type AIUserPermissionScope string
 
 const (
-	AIUserPermissionPersonalDataAccess   AIUserPermissionScope = "ai_personal_data_access"
-	AIUserPermissionDeviceCacheAccess    AIUserPermissionScope = "ai_device_cache_access"
-	AIUserPermissionRemoteEduRefresh     AIUserPermissionScope = "ai_remote_edu_refresh"
-	AIUserPermissionErkeSnapshotUpload   AIUserPermissionScope = "erke_snapshot_upload"
-	AIUserPermissionAcademicCloudStorage AIUserPermissionScope = "academic_cloud_storage"
+	AIUserPermissionPersonalDataAccess    AIUserPermissionScope = "ai_personal_data_access"
+	AIUserPermissionDeviceCacheAccess     AIUserPermissionScope = "ai_device_cache_access"
+	AIUserPermissionRemoteEduRefresh      AIUserPermissionScope = "ai_remote_edu_refresh"
+	AIUserPermissionErkeSnapshotUpload    AIUserPermissionScope = "erke_snapshot_upload"
+	AIUserPermissionAcademicCloudStorage  AIUserPermissionScope = "academic_cloud_storage"
+	AIUserPermissionExternalModelAnalysis AIUserPermissionScope = "ai_external_model_analysis"
 )
 
 // Valid 只接受服务端已声明的权限范围，避免授权接口写入任意 scope。
@@ -21,7 +22,8 @@ func (scope AIUserPermissionScope) Valid() bool {
 		AIUserPermissionDeviceCacheAccess,
 		AIUserPermissionRemoteEduRefresh,
 		AIUserPermissionErkeSnapshotUpload,
-		AIUserPermissionAcademicCloudStorage:
+		AIUserPermissionAcademicCloudStorage,
+		AIUserPermissionExternalModelAnalysis:
 		return true
 	default:
 		return false

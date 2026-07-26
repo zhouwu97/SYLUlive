@@ -200,6 +200,7 @@ class _CampusPersonalDataPermissionScreenState
         AiPersonalDataPermissionScope.remoteEduRefresh => 'AI 主动刷新教务',
         AiPersonalDataPermissionScope.erkeSnapshotUpload => '上传二课结构化摘要',
         AiPersonalDataPermissionScope.academicCloudStorage => '使用服务端学业快照',
+        AiPersonalDataPermissionScope.externalModelAnalysis => '外部模型辅助分析',
       };
 
   String _scopeDescription(AiPersonalDataPermissionScope scope) =>
@@ -214,6 +215,8 @@ class _CampusPersonalDataPermissionScreenState
           '仅保存汇总、分类缺口和活动摘要，不包含密码或 Cookie。',
         AiPersonalDataPermissionScope.academicCloudStorage =>
           '允许校园 Agent 使用已保存的服务端成绩和课表快照。',
+        AiPersonalDataPermissionScope.externalModelAnalysis =>
+          '允许将经过最小化和去身份处理的专业年级、课程成绩、学分、课表时间及二课摘要发送给外部 Hy3 模型分析。不会发送姓名、学号、密码、Cookie 或 Token。',
       };
 
   IconData _scopeIcon(AiPersonalDataPermissionScope scope) => switch (scope) {
@@ -225,6 +228,8 @@ class _CampusPersonalDataPermissionScreenState
           Icons.cloud_upload_outlined,
         AiPersonalDataPermissionScope.academicCloudStorage =>
           Icons.cloud_done_outlined,
+        AiPersonalDataPermissionScope.externalModelAnalysis =>
+          Icons.hub_outlined,
       };
 
   String _policyLabel(AiPersonalDataPermissionPolicy policy) =>

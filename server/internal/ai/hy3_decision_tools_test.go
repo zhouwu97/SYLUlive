@@ -79,10 +79,77 @@ func newHy3DecisionTestDB(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
 		&models.AIToolCall{},
+		&models.AIRunConsent{},
 		&models.CampusCalendar{},
 		&models.ClassPeriodProfile{},
 	))
 	return db
+}
+
+func TestHy3ExternalPermissionAskWaitsBeforeSnapshotRead(t *testing.T) {
+	db := newHy3DecisionTestDB(t)
+	reader := &countingAcademicSnapshotReader{}
+	remote := &recordingExternalMCPClient{response: hy3RemoteResponse(hy3AcademicNarrative(), hy3AcademicFindings())}
+	decision := &hy3DecisionMCP{
+		db: db, remote: remote,
+		campus: &campusMCP{
+			db: db, snapshots: reader, now: time.Now,
+			permissions: fixedPersonalDataPermissionReader{
+				models.AIUserPermissionPersonalDataAccess:    models.AIUserPermissionAlways,
+				models.AIUserPermissionAcademicCloudStorage:  models.AIUserPermissionAlways,
+				models.AIUserPermissionExternalModelAnalysis: models.AIUserPermissionAsk,
+			},
+		},
+	}
+	value, err := decision.analyzeAcademic(
+		withToolCallContext(context.Background(), "run-external-ask", "call-external-ask", 7, "hy3_decision.analyze_academic"),
+		7, json.RawMessage(`{}`),
+	)
+	require.NoError(t, err)
+	wait, ok := value.(ToolWait)
+	require.True(t, ok)
+	require.Equal(t, models.AIUserPermissionExternalModelAnalysis, wait.ConsentScope)
+	require.Zero(t, reader.generationCalls)
+	require.Zero(t, reader.lookupCalls)
+	require.Empty(t, remote.calls)
+}
+
+func TestHy3ExternalPermissionNeverBlocksAllRemoteCalls(t *testing.T) {
+	tests := []struct {
+		name      string
+		arguments json.RawMessage
+		execute   func(*hy3DecisionMCP, context.Context, uint, json.RawMessage) (interface{}, error)
+	}{
+		{name: "competition", arguments: json.RawMessage(`{"event_ids":[1,2]}`), execute: (*hy3DecisionMCP).compareCompetitions},
+		{name: "academic", arguments: json.RawMessage(`{}`), execute: (*hy3DecisionMCP).analyzeAcademic},
+		{name: "week_plan", arguments: json.RawMessage(`{"week":8,"goals":[]}`), execute: (*hy3DecisionMCP).planStudentWeek},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := newHy3DecisionTestDB(t)
+			reader := &countingAcademicSnapshotReader{}
+			remote := &recordingExternalMCPClient{response: json.RawMessage(`{"status":"ok"}`)}
+			decision := &hy3DecisionMCP{
+				db: db, remote: remote,
+				campus: &campusMCP{
+					db: db, snapshots: reader, now: time.Now,
+					permissions: fixedPersonalDataPermissionReader{
+						models.AIUserPermissionPersonalDataAccess:    models.AIUserPermissionAlways,
+						models.AIUserPermissionAcademicCloudStorage:  models.AIUserPermissionAlways,
+						models.AIUserPermissionExternalModelAnalysis: models.AIUserPermissionNever,
+					},
+				},
+			}
+			value, err := test.execute(decision, context.Background(), 7, test.arguments)
+			require.NoError(t, err)
+			result, ok := value.(map[string]interface{})
+			require.True(t, ok)
+			require.Equal(t, "unavailable", result["status"])
+			require.Empty(t, remote.calls)
+			require.Zero(t, reader.generationCalls)
+			require.Zero(t, reader.lookupCalls)
+		})
+	}
 }
 
 func availableHy3Result(raw string) academic.ContextResult {

@@ -60,8 +60,13 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 	toolRounds := 0
 
 	for {
+		requestTools := definitions
+		if toolRounds >= r.config.MaxToolSteps {
+			// 工具轮数耗尽后仍允许模型基于已有结果作答，但不再暴露任何工具。
+			requestTools = nil
+		}
 		stream, err := r.provider.Start(ctx, ProviderRequest{
-			Messages: messages, Temperature: 0.1, MaxTokens: 800, Tools: definitions,
+			Messages: messages, Temperature: 0.1, MaxTokens: 800, Tools: requestTools,
 		})
 		if err != nil {
 			if r.runIsCancelled(run.ID) {

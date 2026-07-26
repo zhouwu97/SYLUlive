@@ -98,7 +98,7 @@ func newToolRuntimeWithMaxToolSteps(t *testing.T, db *gorm.DB, provider AIProvid
 	return runtime
 }
 
-func TestRuntimeToolLoopHonorsConfiguredMaxToolSteps(t *testing.T) {
+func TestRuntimeToolLoopSynthesizesFinalAnswerAfterConfiguredMaxToolSteps(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
 		{
@@ -107,8 +107,7 @@ func TestRuntimeToolLoopHonorsConfiguredMaxToolSteps(t *testing.T) {
 			{Type: ProviderEventCompleted},
 		},
 		{
-			{Type: ProviderEventToolCallStarted, CallID: "call_2", ToolName: "academic.get_overview"},
-			{Type: ProviderEventToolArgumentsDelta, CallID: "call_2", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventTextDelta, Text: "已根据工具结果完成回答。"},
 			{Type: ProviderEventCompleted},
 		},
 	}}
@@ -120,10 +119,13 @@ func TestRuntimeToolLoopHonorsConfiguredMaxToolSteps(t *testing.T) {
 
 	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "请分析成绩"})
 	require.NoError(t, err)
-	failed := waitRunState(t, db, run.ID, models.AIRunStateFailed)
-	require.Equal(t, "tool_loop_limit", failed.ErrorCode)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, "已根据工具结果完成回答。", completed.AnswerCheckpoint)
 	require.Equal(t, 1, executions)
-	require.Len(t, provider.Requests(), 2)
+	requests := provider.Requests()
+	require.Len(t, requests, 2)
+	require.Len(t, requests[0].Tools, 1)
+	require.Empty(t, requests[1].Tools, "达到工具轮数上限后必须禁用工具，只允许模型组织最终回答")
 }
 
 func TestRuntimeToolLoopExecutesFragmentedArgumentsAndReturnsToProvider(t *testing.T) {

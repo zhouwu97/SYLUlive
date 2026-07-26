@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 
 import '../../config/beta_release_policy.dart';
 import '../../features/ai_runtime/ai_feature_flags.dart';
+import '../../features/ai_device_bridge/device_tool_worker.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
 import '../../features/ai_runtime/personal_ai_runtime_limits.dart';
 import '../../features/ai_runtime/deterministic/graduation_requirement_engine.dart';
@@ -114,6 +115,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     _provider = AiAssistantProvider(
       widget.service,
       initialCapabilities: widget.capabilities,
+      deviceToolSync: DeviceToolBridge.syncPending,
     );
     _provider.addListener(_handleRunConsentRequired);
     unawaited(_provider.initialize());

@@ -42,12 +42,15 @@ int aiVisibleCharacterCount(String value) =>
 
 class AiAssistantProvider extends ChangeNotifier {
   final AiAssistantService _service;
+  final Future<void> Function()? _deviceToolSync;
 
   AiAssistantProvider(
     this._service, {
     AiCapabilities? initialCapabilities,
+    Future<void> Function()? deviceToolSync,
   })  : _capabilities = initialCapabilities,
-        _quota = initialCapabilities?.quota;
+        _quota = initialCapabilities?.quota,
+        _deviceToolSync = deviceToolSync;
 
   AiCapabilities? _capabilities;
   AiQuota? _quota;
@@ -453,6 +456,7 @@ class AiAssistantProvider extends ChangeNotifier {
           type: AiRunEventType.status,
           status: run.state,
         );
+        if (run.state == 'waiting_device') _syncDeviceTools();
         _notify();
       } else if (allowReconnect) {
         await Future<void>.delayed(const Duration(milliseconds: 350));
@@ -522,11 +526,15 @@ class AiAssistantProvider extends ChangeNotifier {
         break;
       case AiRunEventType.toolRequested:
       case AiRunEventType.toolExecuting:
-      case AiRunEventType.deviceWaiting:
       case AiRunEventType.deviceClaimed:
       case AiRunEventType.consentRequired:
         _pendingConsent = event;
         _connectionState = AiConnectionState.streaming;
+        break;
+      case AiRunEventType.deviceWaiting:
+        _pendingConsent = event;
+        _connectionState = AiConnectionState.streaming;
+        _syncDeviceTools();
         break;
       case AiRunEventType.eduFetching:
       case AiRunEventType.toolCompleted:
@@ -694,6 +702,19 @@ class AiAssistantProvider extends ChangeNotifier {
       state == 'waiting_device' ||
       state == 'waiting_user_consent' ||
       state == 'waiting_edu';
+
+  void _syncDeviceTools() {
+    final sync = _deviceToolSync;
+    if (sync == null) return;
+    // 推送可能延迟或被系统拦截，SSE 已知任务等待时立即主动补拉。
+    unawaited(() async {
+      try {
+        await sync();
+      } catch (_) {
+        // 任务保留在服务端，后续推送、恢复前台或重连仍会再次补拉。
+      }
+    }());
+  }
 
   List<AiPersonalDataEvidence> _evidenceForRun(String runId) =>
       List.unmodifiable(_personalDataEvidence[runId] ?? const []);

@@ -152,4 +152,24 @@ void main() {
     expect(provider.messages.single.personalDataEvidence, hasLength(1));
     expect(provider.friendlyRunStatus, '正在请求你的手机读取本地课表');
   });
+
+  test('收到设备等待事件后立即触发设备任务补拉', () async {
+    var syncCount = 0;
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _p0Capabilities(),
+      deviceToolSync: () async => syncCount += 1,
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-device-waiting',
+      seq: 1,
+      type: AiRunEventType.deviceWaiting,
+      datasets: ['grades'],
+    ));
+    await pumpEventQueue();
+
+    expect(syncCount, 1);
+  });
 }

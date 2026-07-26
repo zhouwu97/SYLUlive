@@ -289,29 +289,92 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 		return
 	}
 	usage := decodeResumeUsage(json.RawMessage(resume.UsageJSON))
-	for _, item := range pending {
-		result, err := r.resumeToolResult(ctx, resume, item)
-		if err != nil {
-			r.failAfterProvider(resume.RunID, true, "resume_result_unavailable", usage, 0)
-			return
-		}
-		if err := r.tools.CompleteWaitingCall(ctx, item.CallID, result); err != nil {
-			r.failAfterProvider(resume.RunID, true, "resume_tool_state_conflict", usage, 0)
-			return
-		}
-		messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(result)})
-		_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", map[string]interface{}{
-			"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false,
-		}, true)
-		r.appendPersonalDataEvidence(ctx, resume.RunID, item.CallID, result)
-	}
-
 	var run models.AIRun
 	if err := r.db.WithContext(ctx).First(&run, "id = ?", resume.RunID).Error; err != nil {
 		return
 	}
-	if err := r.transition(ctx, &run, resume.WaitingState, models.AIRunStateToolCompleted); err != nil {
-		return
+	retryConsentTools := resume.WaitingState == models.AIRunStateWaitingUserConsent
+	if retryConsentTools {
+		for _, item := range pending {
+			if !item.ConsentScope.Valid() {
+				continue
+			}
+			var consent models.AIRunConsent
+			if err := r.db.WithContext(ctx).Where(
+				"run_id = ? AND user_id = ? AND scope = ? AND expires_at > ?",
+				resume.RunID, resume.UserID, item.ConsentScope, time.Now(),
+			).First(&consent).Error; err != nil {
+				r.failAfterProvider(resume.RunID, true, "resume_result_unavailable", usage, 0)
+				return
+			}
+			if !consent.Granted {
+				retryConsentTools = false
+				break
+			}
+		}
+	}
+
+	if retryConsentTools {
+		if err := r.transition(ctx, &run, resume.WaitingState, models.AIRunStateToolExecuting); err != nil {
+			return
+		}
+		waiting := make([]pendingToolWait, 0, len(pending))
+		for _, item := range pending {
+			_, _ = r.appendEvent(ctx, resume.RunID, "tool.executing", map[string]interface{}{
+				"call_id": item.CallID, "tool_name": item.ToolName, "resumed": true,
+			}, true)
+			execution, err := r.tools.RetryWaitingCall(ctx, item.CallID, resume.RunID, resume.UserID, item.ToolName)
+			if err != nil {
+				r.failAfterProvider(resume.RunID, true, "resume_tool_execution_failed", usage, 0)
+				return
+			}
+			if execution.Wait != nil {
+				waiting = append(waiting, pendingToolWait{CallID: item.CallID, Name: item.ToolName, Wait: *execution.Wait})
+				continue
+			}
+			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(execution.Result)})
+			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", map[string]interface{}{
+				"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false, "resumed": true,
+			}, true)
+			r.appendPersonalDataEvidence(ctx, resume.RunID, item.CallID, execution.Result)
+		}
+		if len(waiting) > 0 {
+			state := waiting[0].Wait.State
+			consentScope := waiting[0].Wait.ConsentScope
+			for _, item := range waiting[1:] {
+				if item.Wait.State != state || (state == models.AIRunStateWaitingUserConsent && item.Wait.ConsentScope != consentScope) {
+					r.failAfterProvider(resume.RunID, true, "resume_tool_mixed_wait_state", usage, 0)
+					return
+				}
+			}
+			if err := r.pauseRun(ctx, &run, &toolLoopPause{State: state, Messages: messages, Pending: waiting}, usage); err != nil {
+				r.failAfterProvider(resume.RunID, true, "run_pause_failed", usage, 0)
+			}
+			return
+		}
+		if err := r.transition(ctx, &run, models.AIRunStateToolExecuting, models.AIRunStateToolCompleted); err != nil {
+			return
+		}
+	} else {
+		for _, item := range pending {
+			result, err := r.resumeToolResult(ctx, resume, item)
+			if err != nil {
+				r.failAfterProvider(resume.RunID, true, "resume_result_unavailable", usage, 0)
+				return
+			}
+			if err := r.tools.CompleteWaitingCall(ctx, item.CallID, result); err != nil {
+				r.failAfterProvider(resume.RunID, true, "resume_tool_state_conflict", usage, 0)
+				return
+			}
+			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(result)})
+			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", map[string]interface{}{
+				"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false,
+			}, true)
+			r.appendPersonalDataEvidence(ctx, resume.RunID, item.CallID, result)
+		}
+		if err := r.transition(ctx, &run, resume.WaitingState, models.AIRunStateToolCompleted); err != nil {
+			return
+		}
 	}
 	if err := r.transition(ctx, &run, models.AIRunStateToolCompleted, models.AIRunStatePlanning); err != nil {
 		return

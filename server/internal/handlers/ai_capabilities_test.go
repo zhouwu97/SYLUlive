@@ -81,3 +81,23 @@ func TestAICapabilitiesDoesNotExposeRetiredServerScheduleFeature(t *testing.T) {
 		t.Fatalf("retired schedule skill must stay unavailable: %#v", features)
 	}
 }
+
+func TestAICapabilitiesMarksConfiguredAccountQuotaUnlimited(t *testing.T) {
+	handler := NewAICapabilitiesHandler(
+		true,
+		false,
+		nil,
+		AICapabilitiesOptions{QuotaExemptUserIDs: []uint{2}},
+	)
+	body := requestAICapabilities(t, handler, 2)
+	quota, ok := body["quota"].(map[string]interface{})
+	if !ok || quota["unlimited"] != true {
+		t.Fatalf("quota should be unlimited for configured account: %#v", body)
+	}
+
+	regular := requestAICapabilities(t, handler, 3)
+	regularQuota := regular["quota"].(map[string]interface{})
+	if regularQuota["unlimited"] != false {
+		t.Fatalf("regular account must keep quota enforcement: %#v", regular)
+	}
+}

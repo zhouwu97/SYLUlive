@@ -64,11 +64,24 @@ AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH=/etc/shenliyuan/mcp_known_hosts
 
 IPv6 地址使用裸地址，例如 `2001:db8::8`。Go 客户端会在传给 SSH 时添加方括号，不应在环境变量中附带端口或用户名。
 
-先以受控方式写入目标主机指纹，再启用服务：
+目标主机指纹必须**带外**取得，不能只靠 `ssh-keyscan`——它只负责抓取，不证明抓到的就是正确服务器；首次部署时若网络被劫持，会把攻击者指纹写进信任文件。
+
+先在 MCP 主机本地或云控制台读取真实指纹：
 
 ```bash
-ssh-keyscan -H MCP_HOST > /etc/shenliyuan/mcp_known_hosts
-chmod 600 /etc/shenliyuan/keys/mcp_ed25519 /etc/shenliyuan/mcp_known_hosts
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+把该指纹放进受控部署变量（例如 `MCP_EXPECTED_HOST_FINGERPRINT`），再在 Go 主机写入并**比对后**才落盘：
+
+```bash
+ssh-keyscan -t ed25519 -H MCP_HOST > /tmp/mcp_known_hosts.candidate
+ssh-keygen -lf /tmp/mcp_known_hosts.candidate
+
+# 人工或脚本比对通过后才安装
+test "$(ssh-keygen -lf /tmp/mcp_known_hosts.candidate | awk '{print $2}')" = "$MCP_EXPECTED_HOST_FINGERPRINT"
+install -m 600 /tmp/mcp_known_hosts.candidate /etc/shenliyuan/mcp_known_hosts
+chmod 600 /etc/shenliyuan/keys/mcp_ed25519
 ```
 
 不要使用 `StrictHostKeyChecking=no`、密码认证、`ssh ... "任意命令"` 或 `sh -c`。
@@ -83,18 +96,30 @@ chmod 600 /etc/shenliyuan/keys/mcp_ed25519 /etc/shenliyuan/mcp_known_hosts
 restrict,command="/opt/SYLUlive_MCP/bin/run-stdio" ssh-ed25519 PUBLIC_KEY_COMMENT
 ```
 
-`/opt/SYLUlive_MCP/bin/run-stdio` 示例：
+`/opt/SYLUlive_MCP/bin/run-stdio` 示例。必须用 `env -i` 清空继承环境后再显式列出所需变量，
+不能只做 `set -a; . runtime.env`——那样只是叠加，父进程环境仍会整体传下去：
 
 ```sh
 #!/bin/sh
 set -eu
 
 cd /opt/SYLUlive_MCP
-set -a
 . /etc/sylulive-mcp/runtime.env
-set +a
-exec /opt/SYLUlive_MCP/.venv/bin/hy3-campus-decision-mcp
+
+exec env -i \
+  PATH=/opt/SYLUlive_MCP/.venv/bin:/usr/local/bin:/usr/bin:/bin \
+  HOME=/nonexistent \
+  LANG=C.UTF-8 \
+  LC_ALL=C.UTF-8 \
+  HY3_MODE="$HY3_MODE" \
+  HY3_API_BASE="$HY3_API_BASE" \
+  HY3_API_KEY="$HY3_API_KEY" \
+  HY3_MODEL="$HY3_MODEL" \
+  /opt/SYLUlive_MCP/.venv/bin/hy3-campus-decision-mcp
 ```
+
+`local_stdio` 传输同样不再继承主服务环境：Go 侧 `localCommand` 会显式设置 `cmd.Env`，只透传
+`HY3_` 前缀变量和最小 `PATH`/`HOME`/`LANG`。生产环境仍建议直接使用 `ssh_stdio`。
 
 脚本及环境文件应由管理员管理，并限制为运行账户可执行或读取。SSH 只承载 stdio，不要为 MCP 配置 Nginx、反向代理、TCP 转发或云安全组端口。
 
@@ -114,11 +139,25 @@ MCP 连接失败、远端工具缺失或 Schema 不兼容时，Go Runtime 继续
 
 ## 运行检查
 
+启用前先确认授权链路的表已经存在。Go 服务启动时会校验，缺表直接拒绝启动 AI Runtime，
+不会等到用户点击“允许”时才暴露数据库错误：
+
+```bash
+psql "$DSN" -f server/sql/20260719_ai_runtime_rag.sql
+psql "$DSN" -f server/sql/20260725_ai_user_permissions.sql
+psql "$DSN" -f server/sql/20260726_ai_external_model_permission.sql
+psql "$DSN" -f server/sql/20260726_ai_run_consents.sql
+```
+
 在启用前分别完成：
 
 1. 在 MCP 主机以 `mcp-runner` 身份运行 stdio SDK 验证，确认状态工具及三个核心工具的 Schema。
 2. 在 Go 主机使用专用私钥和 `known_hosts` 进行一次 SSH 强制命令验证。
 3. 启动 Go 服务，确认日志出现健康检查成功，或在预期降级时出现稳定错误码而不是进程退出。
 4. 使用脱敏测试快照完成一次学业分析和一次冲突课表测试，确认日志与审计记录不含学号、姓名、Cookie、Token、密码或 Hy3 Key。
+5. 完成 SYLUlive_MCP 仓库 `assets/live-verification.md` 中的真实 Hy3 验证清单，并把记录填回该文件。
+   清单包含四个核心工具的真实调用、非法 JSON 重试、429/401/500/超时/连接中断、
+   超长与额外字段、错误来源 ID，以及 `chat_template_kwargs.reasoning_effort` 是否被真实端点接受。
+   在该清单全部通过之前，`AI_EXTERNAL_MCP_ENABLED` 必须保持 `false`。
 
 密钥、SSH 私钥或服务器密码一旦出现在聊天记录、终端历史或提交记录中，应立即在相应系统轮换。

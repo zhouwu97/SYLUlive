@@ -158,6 +158,7 @@ func main() {
 		&models.AcademicSnapshot{},
 		&models.PersonalUploadedSnapshot{},
 		&models.AIUserPermission{},
+		&models.AIRunConsent{},
 		&models.UserDevice{},
 		&models.DeviceToolJob{},
 
@@ -667,7 +668,9 @@ func main() {
 	var aiRuntime *ai.Runtime
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
-			log.Fatalf("AI Runtime Schema 未就绪，请先执行 server/sql/20260719_ai_runtime_rag.sql: %v", schemaErr)
+			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 server/sql/20260719_ai_runtime_rag.sql、"+
+				"20260725_ai_user_permissions.sql、20260726_ai_external_model_permission.sql、"+
+				"20260726_ai_run_consents.sql：%v", schemaErr)
 		}
 		ragHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
 		var ragErr error

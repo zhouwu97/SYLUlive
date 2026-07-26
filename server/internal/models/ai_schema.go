@@ -17,6 +17,8 @@ func ValidateAIRuntimeSchema(db *gorm.DB) error {
 		"ai_embedding_model_registry", "ai_conversations", "ai_conversation_messages",
 		"ai_runs", "ai_events", "ai_tool_calls", "ai_run_resume_jobs", "ai_quota_entries",
 		"ai_user_budgets", "ai_budget_reservations", "ai_usage_records", "class_period_profiles",
+		// 授权链路的表缺失不能等到用户点“允许”时才暴露成数据库错误。
+		"ai_user_permissions", "ai_run_consents",
 	}
 	missing := make([]string, 0)
 	for _, table := range tables {

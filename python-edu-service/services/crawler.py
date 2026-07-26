@@ -1564,14 +1564,8 @@ def _extract_credit_requirement_query(
             return None
         option = select_node.select_one("option[selected]")
         if option is None:
-            option = next(
-                (
-                    candidate
-                    for candidate in select_node.select("option")
-                    if str(candidate.get("value") or "").strip()
-                ),
-                None,
-            )
+            # 个人培养方案不能猜测下拉框的首项；缺少当前选项即视为协议变更。
+            return None
         value = str(option.get("value") or "").strip() if option else ""
         if not value:
             return None
@@ -2646,4 +2640,3 @@ def parse_time_sections(time_str: str) -> Tuple[int, int]:
     elif nums:
         return (int(nums[0]), int(nums[0]))
     return (1, 2)
-

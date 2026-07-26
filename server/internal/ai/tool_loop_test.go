@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -63,6 +64,18 @@ func (tool overviewTool) Execute(ctx context.Context, userID uint, arguments jso
 	return tool.execute(ctx, userID, arguments)
 }
 
+type namedOverviewTool struct {
+	overviewTool
+	name string
+}
+
+func (tool namedOverviewTool) Name() string { return tool.name }
+func (tool namedOverviewTool) Definition() ToolDefinition {
+	definition := tool.overviewTool.Definition()
+	definition.Name = tool.name
+	return definition
+}
+
 func newToolRuntime(t *testing.T, db *gorm.DB, provider AIProvider, tool PureReadTool) *Runtime {
 	return newToolRuntimeWithMaxToolSteps(t, db, provider, tool, 4)
 }
@@ -117,9 +130,9 @@ func TestRuntimeToolLoopExecutesFragmentedArgumentsAndReturnsToProvider(t *testi
 	db := newRuntimeTestDB(t)
 	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
 		{
-			{Type: ProviderEventToolCallStarted, CallID: "call_1", ToolName: "academic.get_overview"},
-			{Type: ProviderEventToolArgumentsDelta, CallID: "call_1", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":`},
-			{Type: ProviderEventToolArgumentsDelta, CallID: "call_1", ToolName: "academic.get_overview", ArgumentsDelta: `"grades"}`},
+			{Type: ProviderEventToolCallStarted, CallID: "call_1", ToolName: "academic_get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "call_1", ToolName: "academic_get_overview", ArgumentsDelta: `{"topic":`},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "call_1", ToolName: "academic_get_overview", ArgumentsDelta: `"grades"}`},
 			{Type: ProviderEventUsage, InputTokens: 11, OutputTokens: 4},
 			{Type: ProviderEventCompleted},
 		},
@@ -144,10 +157,11 @@ func TestRuntimeToolLoopExecutesFragmentedArgumentsAndReturnsToProvider(t *testi
 	requests := provider.Requests()
 	require.Len(t, requests, 2)
 	require.Len(t, requests[0].Tools, 1)
-	require.Equal(t, "academic.get_overview", requests[0].Tools[0].Name)
+	require.Equal(t, "academic_get_overview", requests[0].Tools[0].Name)
 	require.Len(t, requests[1].Messages, 4)
 	require.Equal(t, "assistant", requests[1].Messages[2].Role)
 	require.Equal(t, "call_1", requests[1].Messages[2].ToolCalls[0].ID)
+	require.Equal(t, "academic_get_overview", requests[1].Messages[2].ToolCalls[0].Function.Name)
 	require.Equal(t, `{"topic":"grades"}`, requests[1].Messages[2].ToolCalls[0].Function.Arguments)
 	require.Equal(t, "tool", requests[1].Messages[3].Role)
 	require.Equal(t, "call_1", requests[1].Messages[3].ToolCallID)
@@ -165,6 +179,45 @@ func TestRuntimeToolLoopExecutesFragmentedArgumentsAndReturnsToProvider(t *testi
 	require.True(t, eventTypes["tool.requested"])
 	require.True(t, eventTypes["tool.executing"])
 	require.True(t, eventTypes["tool.completed"])
+}
+
+func TestToolRegistryMapsModelAliasesBackToCanonicalNames(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	executed := false
+	tool := namedOverviewTool{
+		overviewTool: overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+			executed = true
+			return map[string]bool{"ok": true}, nil
+		}},
+		name: "hy3_decision.analyze_academic",
+	}
+	registry, err := NewToolRegistry(db, tool)
+	require.NoError(t, err)
+	require.Equal(t, "hy3_decision_analyze_academic", registry.Definitions()[0].Name)
+
+	runID := uuid.NewString()
+	require.NoError(t, db.Create(&models.AIRun{
+		ID: runID, UserID: 7, ConversationID: uuid.NewString(), ClientRequestID: uuid.NewString(),
+		State: models.AIRunStateToolExecuting, Provider: "scripted", Model: "scripted",
+		MessageHash: strings.Repeat("a", 64), MessageLength: 1, ExpiresAt: time.Now().Add(time.Minute),
+	}).Error)
+	_, _, err = registry.Execute(
+		context.Background(), "hy3_alias_call", runID, 7,
+		"hy3_decision_analyze_academic", json.RawMessage(`{"topic":"grades"}`),
+	)
+	require.NoError(t, err)
+	require.True(t, executed)
+
+	var call models.AIToolCall
+	require.NoError(t, db.First(&call, "call_id = ?", "hy3_alias_call").Error)
+	require.Equal(t, "hy3_decision.analyze_academic", call.ToolName)
+}
+
+func TestToolRegistryRejectsModelAliasCollisions(t *testing.T) {
+	first := namedOverviewTool{overviewTool: overviewTool{}, name: "campus.search_policy"}
+	second := namedOverviewTool{overviewTool: overviewTool{}, name: "campus_search_policy"}
+	_, err := NewToolRegistry(newRuntimeTestDB(t), first, second)
+	require.ErrorContains(t, err, "duplicate AI model tool")
 }
 
 func TestToolRegistryRejectsNestedModelUserID(t *testing.T) {

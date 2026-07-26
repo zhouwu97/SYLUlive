@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	maxToolRounds       = 4
 	maxToolsPerRound    = 3
 	maxToolArgumentSize = 16 << 10
 )
@@ -102,7 +101,7 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 		}
 
 		toolRounds++
-		if toolRounds > maxToolRounds {
+		if toolRounds > r.config.MaxToolSteps {
 			outcome.failureCode = "tool_loop_limit"
 			return outcome
 		}

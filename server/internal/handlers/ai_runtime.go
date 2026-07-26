@@ -32,6 +32,11 @@ type createAIRunRequest struct {
 	Message         string `json:"message"`
 }
 
+type submitAIRunConsentRequest struct {
+	Scope   models.AIUserPermissionScope `json:"scope"`
+	Granted *bool                        `json:"granted"`
+}
+
 func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
 	var request createAIRunRequest
 	if err := decodeStrictJSON(c, &request, 16<<10); err != nil {
@@ -59,6 +64,24 @@ func (h *AIRuntimeHandler) GetRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"run": run})
+}
+
+// SubmitRunConsent 只接受当前 JWT 用户对指定等待中 Run 的一次性决定。
+func (h *AIRuntimeHandler) SubmitRunConsent(c *gin.Context) {
+	var request submitAIRunConsentRequest
+	if err := decodeStrictJSON(c, &request, 4<<10); err != nil || request.Granted == nil || !request.Scope.Valid() {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_run_consent", "message": "授权参数无效"})
+		return
+	}
+	if err := h.runtime.ResumeRunConsent(
+		c.Request.Context(), c.GetUint("user_id"), c.Param("id"), request.Scope, *request.Granted,
+	); err != nil {
+		writeAIRuntimeError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{
+		"run_id": c.Param("id"), "scope": request.Scope, "granted": *request.Granted,
+	})
 }
 
 // GetSourceChunk 返回已发布知识文档的单个证据分块正文。
@@ -357,7 +380,9 @@ func writeAIRuntimeError(c *gin.Context, err error) {
 			status = http.StatusPaymentRequired
 		case "idempotency_key_conflict":
 			status = http.StatusConflict
-		case "invalid_client_request_id", "invalid_conversation_id", "invalid_run_id":
+		case "ai_run_not_waiting_consent", "ai_run_expired", "ai_run_consent_scope_mismatch", "ai_run_consent_conflict":
+			status = http.StatusConflict
+		case "invalid_client_request_id", "invalid_conversation_id", "invalid_run_id", "invalid_run_consent":
 			status = http.StatusBadRequest
 		}
 		c.JSON(status, gin.H{"code": runtimeErr.Code, "message": runtimeErr.Message, "retryable": runtimeErr.Retryable})

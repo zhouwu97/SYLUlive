@@ -101,12 +101,13 @@ func TestCampusMCPNeverPolicyBlocksSnapshotsAndDeviceJobs(t *testing.T) {
 		models.AIUserPermissionPersonalDataAccess: models.AIUserPermissionNever,
 	}
 	mcp := &campusMCP{permissions: permissions}
-	results, err := mcp.resolveSnapshots(context.Background(), 7, academic.ResolveContextRequest{
+	results, wait, err := mcp.resolveSnapshots(context.Background(), 7, academic.ResolveContextRequest{
 		Datasets:  []academic.DatasetType{academic.DatasetGrades},
 		Freshness: academic.FreshnessPreferRecent,
 		Reason:    "failure_risk",
 	})
 	require.NoError(t, err)
+	require.Nil(t, wait)
 	require.Equal(t, academic.DataStatusPermissionRequired, results[academic.DatasetGrades].Status)
 
 	deviceJobs := 0
@@ -120,7 +121,7 @@ func TestCampusMCPNeverPolicyBlocksSnapshotsAndDeviceJobs(t *testing.T) {
 	results = map[academic.DatasetType]academic.ContextResult{
 		academic.DatasetSchedule: personalContextUnavailable(academic.DataStatusMissing, "服务端没有可用快照"),
 	}
-	wait := mcp.waitForPersonalContext(
+	wait = mcp.waitForPersonalContext(
 		withToolCallContext(context.Background(), "run-1", "call-1", 7, "academic.resolve_context"),
 		7,
 		academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Reason: "schedule_availability"},
@@ -129,4 +130,97 @@ func TestCampusMCPNeverPolicyBlocksSnapshotsAndDeviceJobs(t *testing.T) {
 	require.Nil(t, wait)
 	require.Zero(t, deviceJobs)
 	require.Equal(t, academic.DataStatusPermissionRequired, results[academic.DatasetSchedule].Status)
+}
+
+type countingAcademicSnapshotReader struct {
+	generationCalls int
+	lookupCalls     int
+}
+
+func (reader *countingAcademicSnapshotReader) CurrentCredentialGeneration(context.Context, uint) (uint, error) {
+	reader.generationCalls++
+	return 1, nil
+}
+
+func (reader *countingAcademicSnapshotReader) LookupLatest(context.Context, uint, academic.DatasetType, uint) (academic.SnapshotLookup, error) {
+	reader.lookupCalls++
+	return academic.SnapshotLookup{Found: true, Result: academic.ContextResult{
+		Data: json.RawMessage(`{"grades":[]}`), Status: academic.DataStatusAvailable, Source: academic.DataSourceServerSnapshot,
+	}}, nil
+}
+
+func TestCampusMCPAskWaitsBeforeReadingSnapshots(t *testing.T) {
+	reader := &countingAcademicSnapshotReader{}
+	mcp := &campusMCP{
+		db: newRuntimeTestDB(t), snapshots: reader, permissions: fixedPersonalDataPermissionReader{}, now: time.Now,
+	}
+	ctx := withToolCallContext(context.Background(), "run-ask", "call-ask", 7, "academic.get_grade_summary")
+	results, wait, err := mcp.resolveSnapshots(ctx, 7, academic.ResolveContextRequest{
+		Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "grade_summary",
+	})
+	require.NoError(t, err)
+	require.Nil(t, results)
+	require.NotNil(t, wait)
+	require.Equal(t, models.AIUserPermissionPersonalDataAccess, wait.ConsentScope)
+	require.Zero(t, reader.generationCalls)
+	require.Zero(t, reader.lookupCalls)
+}
+
+func TestCampusMCPAlwaysReadsAndNeverDoesNotReadSnapshots(t *testing.T) {
+	reader := &countingAcademicSnapshotReader{}
+	permissions := fixedPersonalDataPermissionReader{
+		models.AIUserPermissionPersonalDataAccess:   models.AIUserPermissionAlways,
+		models.AIUserPermissionAcademicCloudStorage: models.AIUserPermissionAlways,
+	}
+	mcp := &campusMCP{snapshots: reader, permissions: permissions, now: time.Now}
+	results, wait, err := mcp.resolveSnapshots(context.Background(), 7, academic.ResolveContextRequest{
+		Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "grade_summary",
+	})
+	require.NoError(t, err)
+	require.Nil(t, wait)
+	require.Equal(t, academic.DataStatusAvailable, results[academic.DatasetGrades].Status)
+	require.Equal(t, 1, reader.generationCalls)
+	require.Equal(t, 1, reader.lookupCalls)
+
+	reader.generationCalls = 0
+	reader.lookupCalls = 0
+	mcp.permissions = fixedPersonalDataPermissionReader{
+		models.AIUserPermissionPersonalDataAccess: models.AIUserPermissionNever,
+	}
+	results, wait, err = mcp.resolveSnapshots(context.Background(), 7, academic.ResolveContextRequest{
+		Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "grade_summary",
+	})
+	require.NoError(t, err)
+	require.Nil(t, wait)
+	require.Equal(t, academic.DataStatusPermissionRequired, results[academic.DatasetGrades].Status)
+	require.Zero(t, reader.generationCalls)
+	require.Zero(t, reader.lookupCalls)
+}
+
+func TestPermissionDecisionIsScopedToRunAndExpiry(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	now := time.Date(2026, 7, 26, 9, 0, 0, 0, time.UTC)
+	mcp := &campusMCP{db: db, permissions: fixedPersonalDataPermissionReader{}, now: func() time.Time { return now }}
+	require.NoError(t, db.Create(&models.AIRunConsent{
+		RunID: "run-allowed", UserID: 7, Scope: models.AIUserPermissionPersonalDataAccess, Granted: true, ExpiresAt: now.Add(time.Minute),
+	}).Error)
+	require.NoError(t, db.Create(&models.AIRunConsent{
+		RunID: "run-denied", UserID: 7, Scope: models.AIUserPermissionPersonalDataAccess, Granted: false, ExpiresAt: now.Add(time.Minute),
+	}).Error)
+	require.NoError(t, db.Create(&models.AIRunConsent{
+		RunID: "run-expired", UserID: 7, Scope: models.AIUserPermissionPersonalDataAccess, Granted: true, ExpiresAt: now.Add(-time.Second),
+	}).Error)
+
+	decision, err := mcp.permissionDecision(withToolCallContext(context.Background(), "run-allowed", "call-1", 7, "tool"), 7, models.AIUserPermissionPersonalDataAccess)
+	require.NoError(t, err)
+	require.Equal(t, PermissionDecisionAllow, decision)
+	decision, err = mcp.permissionDecision(withToolCallContext(context.Background(), "run-other", "call-2", 7, "tool"), 7, models.AIUserPermissionPersonalDataAccess)
+	require.NoError(t, err)
+	require.Equal(t, PermissionDecisionAsk, decision)
+	decision, err = mcp.permissionDecision(withToolCallContext(context.Background(), "run-denied", "call-3", 7, "tool"), 7, models.AIUserPermissionPersonalDataAccess)
+	require.NoError(t, err)
+	require.Equal(t, PermissionDecisionDeny, decision)
+	decision, err = mcp.permissionDecision(withToolCallContext(context.Background(), "run-expired", "call-4", 7, "tool"), 7, models.AIUserPermissionPersonalDataAccess)
+	require.NoError(t, err)
+	require.Equal(t, PermissionDecisionAsk, decision)
 }

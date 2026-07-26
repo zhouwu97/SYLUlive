@@ -33,10 +33,11 @@ type toolArgumentValidator interface {
 // ToolWait 表示工具需要在外部操作完成后才能给出结果。
 // ResumeKey 仅保存作业标识，不能包含成绩、凭据或设备缓存内容。
 type ToolWait struct {
-	State     string                 `json:"state"`
-	EventType string                 `json:"event_type"`
-	ResumeKey string                 `json:"resume_key,omitempty"`
-	Payload   map[string]interface{} `json:"payload"`
+	State        string                       `json:"state"`
+	EventType    string                       `json:"event_type"`
+	ResumeKey    string                       `json:"resume_key,omitempty"`
+	ConsentScope models.AIUserPermissionScope `json:"consent_scope,omitempty"`
+	Payload      map[string]interface{}       `json:"payload"`
 }
 
 // ToolExecutionResult 区分立即可用的工具结果和需要异步恢复的工具等待。
@@ -209,6 +210,9 @@ func validateToolWait(wait ToolWait) error {
 		return errors.New("tool_result_invalid")
 	}
 	if strings.TrimSpace(wait.EventType) == "" || len(wait.EventType) > 48 || len(wait.ResumeKey) > 100 {
+		return errors.New("tool_result_invalid")
+	}
+	if wait.State == models.AIRunStateWaitingUserConsent && !wait.ConsentScope.Valid() {
 		return errors.New("tool_result_invalid")
 	}
 	if wait.Payload == nil {

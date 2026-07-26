@@ -109,4 +109,33 @@ void main() {
     expect(identical(firstPair.first, firstPair.last), isTrue);
     expect(identical(firstPair.first, cached), isTrue);
   });
+
+  test('一次性授权只提交 Run、scope 和决定', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.method, 'POST');
+          expect(options.path, '/ai/runs/run-1/consent');
+          expect(options.data, <String, dynamic>{
+            'scope': 'ai_personal_data_access',
+            'granted': true,
+          });
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 202,
+              data: const <String, dynamic>{'run_id': 'run-1'},
+            ),
+          );
+        },
+      ),
+    );
+
+    await AiAssistantService(dio).submitRunConsent(
+      runId: 'run-1',
+      scope: 'ai_personal_data_access',
+      granted: true,
+    );
+  });
 }

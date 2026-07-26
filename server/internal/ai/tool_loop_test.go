@@ -246,7 +246,8 @@ func TestRuntimeResumesWaitingUserConsent(t *testing.T) {
 	tool := overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
 		return ToolWait{
 			State: models.AIRunStateWaitingUserConsent, EventType: "consent.required",
-			Payload: map[string]interface{}{"datasets": []string{"grades"}},
+			ConsentScope: models.AIUserPermissionPersonalDataAccess,
+			Payload:      map[string]interface{}{"scope": models.AIUserPermissionPersonalDataAccess, "datasets": []string{"grades"}},
 		}, nil
 	}}
 	runtime := newToolRuntime(t, db, provider, tool)
@@ -254,14 +255,62 @@ func TestRuntimeResumesWaitingUserConsent(t *testing.T) {
 	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "刷新后分析成绩"})
 	require.NoError(t, err)
 	waitRunState(t, db, run.ID, models.AIRunStateWaitingUserConsent)
-	require.NoError(t, runtime.ResumeUserConsent(context.Background(), 7))
+	require.NoError(t, runtime.ResumeRunConsent(context.Background(), 7, run.ID, models.AIUserPermissionPersonalDataAccess, true))
 	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
 	require.Len(t, provider.Requests(), 2)
 
 	secondRequest := provider.Requests()[1]
 	require.Len(t, secondRequest.Messages, 4)
 	require.Equal(t, "tool", secondRequest.Messages[3].Role)
-	require.JSONEq(t, `{"status":"completed","consent_granted":true,"instruction":"请重新读取已授权数据"}`, secondRequest.Messages[3].Content)
+	require.JSONEq(t, `{"status":"completed","consent_granted":true,"scope":"ai_personal_data_access","instruction":"用户已允许本次访问，请重新调用工具读取已授权数据"}`, secondRequest.Messages[3].Content)
+}
+
+func TestResumeRunConsentRejectsOtherUserAndMismatchedScope(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "consent_guard_call", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "consent_guard_call", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "用户拒绝后未读取个人数据。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	tool := overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		return ToolWait{
+			State: models.AIRunStateWaitingUserConsent, EventType: "consent.required",
+			ConsentScope: models.AIUserPermissionPersonalDataAccess,
+			Payload:      map[string]interface{}{"scope": models.AIUserPermissionPersonalDataAccess},
+		}, nil
+	}}
+	runtime := newToolRuntime(t, db, provider, tool)
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "分析成绩"})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateWaitingUserConsent)
+
+	err = runtime.ResumeRunConsent(context.Background(), 8, run.ID, models.AIUserPermissionPersonalDataAccess, true)
+	var runtimeErr *RuntimeError
+	require.ErrorAs(t, err, &runtimeErr)
+	require.Equal(t, "ai_run_not_found", runtimeErr.Code)
+
+	err = runtime.ResumeRunConsent(context.Background(), 7, run.ID, models.AIUserPermissionAcademicCloudStorage, true)
+	require.ErrorAs(t, err, &runtimeErr)
+	require.Equal(t, "ai_run_consent_scope_mismatch", runtimeErr.Code)
+
+	var consentCount int64
+	require.NoError(t, db.Model(&models.AIRunConsent{}).Count(&consentCount).Error)
+	require.Zero(t, consentCount)
+	require.Len(t, provider.Requests(), 1)
+
+	require.NoError(t, runtime.ResumeRunConsent(context.Background(), 7, run.ID, models.AIUserPermissionPersonalDataAccess, false))
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Len(t, provider.Requests(), 2)
+	require.JSONEq(t,
+		`{"status":"completed","consent_granted":false,"scope":"ai_personal_data_access","instruction":"用户拒绝了本次访问，不要再次请求或假设可读取该数据"}`,
+		provider.Requests()[1].Messages[3].Content,
+	)
 }
 
 func TestExtractPersonalDataEvidenceOnlyEmitsAllowedMetadata(t *testing.T) {

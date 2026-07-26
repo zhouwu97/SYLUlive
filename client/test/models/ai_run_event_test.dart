@@ -23,6 +23,17 @@ void main() {
     expect(event.retryable, isTrue);
   });
 
+  test('一次性授权事件解析权限范围和原因', () {
+    final event = AiRunEvent.parseSse(
+      '{"run_id":"run-1","seq":10,"type":"consent.required",'
+      '"payload":{"scope":"ai_personal_data_access","reason":"grade_summary"}}',
+    );
+
+    expect(event.type, AiRunEventType.consentRequired);
+    expect(event.consentScope, 'ai_personal_data_access');
+    expect(event.consentReason, 'grade_summary');
+  });
+
   test('个人数据证据事件只解析来源元数据', () {
     final event = AiRunEvent.parseSse(
       '{"run_id":"run-1","seq":9,"type":"personal_data.evidence",'

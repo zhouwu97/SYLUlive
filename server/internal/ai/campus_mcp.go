@@ -527,11 +527,11 @@ func (mcp *campusMCP) resolveAcademicContext(ctx context.Context, userID uint, a
 	if err := request.Validate(); err != nil {
 		return nil, errors.New("invalid_tool_arguments")
 	}
-	results, err := mcp.resolveSnapshots(ctx, userID, request)
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, request)
 	if err != nil {
 		return nil, err
 	}
-	if wait := mcp.waitForPersonalContext(ctx, userID, request, results); wait != nil {
+	if wait != nil {
 		return *wait, nil
 	}
 	data := make(map[string]academic.ContextResult, len(results))
@@ -558,25 +558,28 @@ func (mcp *campusMCP) resolveAcademicContext(ctx context.Context, userID uint, a
 	return CampusToolResult{Data: data, Status: status, Source: source, IsPartial: partial, Warnings: make([]string, 0), Evidence: evidence}, nil
 }
 
-// waitForPersonalContext 仅在模型明确请求个人数据时创建等待；没有可恢复上下文时保持原有的缺失结果。
+// waitForPersonalContext 仅处理服务端快照未命中后的设备缓存权限与任务调度。
 func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, request academic.ResolveContextRequest, results map[academic.DatasetType]academic.ContextResult) *ToolWait {
 	call, hasCall := currentToolCallContext(ctx)
 	if !hasCall {
 		return nil
 	}
-	for _, dataset := range request.Datasets {
-		result := results[dataset]
-		if result.Status == academic.DataStatusPermissionRequired {
-			return &ToolWait{
-				State: models.AIRunStateWaitingUserConsent, EventType: "consent.required",
-				Payload: map[string]interface{}{"datasets": []string{string(dataset)}, "reason": request.Reason},
-			}
-		}
-	}
 	if mcp.deviceJobs == nil {
 		return nil
 	}
-	if !mcp.personalAccessAllowed(ctx, userID, models.AIUserPermissionDeviceCacheAccess) {
+	needsDevice := false
+	for _, dataset := range request.Datasets {
+		result := results[dataset]
+		if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
+			needsDevice = true
+			break
+		}
+	}
+	if !needsDevice {
+		return nil
+	}
+	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionDeviceCacheAccess, request.Reason)
+	if err != nil || denied {
 		for _, dataset := range request.Datasets {
 			result := results[dataset]
 			if result.Status == academic.DataStatusMissing || result.Status == academic.DataStatusNeedsRefresh {
@@ -584,6 +587,9 @@ func (mcp *campusMCP) waitForPersonalContext(ctx context.Context, userID uint, r
 			}
 		}
 		return nil
+	}
+	if wait != nil {
+		return wait
 	}
 	for _, dataset := range request.Datasets {
 		result := results[dataset]
@@ -625,16 +631,23 @@ func deviceRequestForDataset(dataset academic.DatasetType) (string, []string, js
 	}
 }
 
-func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request academic.ResolveContextRequest) (map[academic.DatasetType]academic.ContextResult, error) {
+func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request academic.ResolveContextRequest) (map[academic.DatasetType]academic.ContextResult, *ToolWait, error) {
 	if userID == 0 {
-		return nil, errors.New("mcp_not_configured")
+		return nil, nil, errors.New("mcp_not_configured")
 	}
 	results := make(map[academic.DatasetType]academic.ContextResult, len(request.Datasets))
-	if !mcp.personalAccessAllowed(ctx, userID, models.AIUserPermissionPersonalDataAccess) {
+	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionPersonalDataAccess, request.Reason)
+	if err != nil {
+		return nil, nil, err
+	}
+	if wait != nil {
+		return nil, wait, nil
+	}
+	if denied {
 		for _, dataset := range request.Datasets {
 			results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 的个人数据访问")
 		}
-		return results, nil
+		return results, nil, nil
 	}
 	needsAcademicSnapshot := false
 	for _, dataset := range request.Datasets {
@@ -646,19 +659,31 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 	var generation uint
 	var generationErr error
 	if needsAcademicSnapshot {
-		if mcp.snapshots == nil {
+		wait, cloudDenied, permissionErr := mcp.requirePermission(ctx, userID, models.AIUserPermissionAcademicCloudStorage, request.Reason)
+		if permissionErr != nil {
+			return nil, nil, permissionErr
+		}
+		if wait != nil {
+			return nil, wait, nil
+		}
+		if cloudDenied {
+			for _, dataset := range request.Datasets {
+				if dataset != academic.DatasetErke {
+					results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 读取服务端学业快照")
+				}
+			}
+		} else if mcp.snapshots == nil {
 			generationErr = errors.New("mcp_not_configured")
 		} else {
 			generation, generationErr = mcp.snapshots.CurrentCredentialGeneration(ctx, userID)
 		}
 	}
 	for _, dataset := range request.Datasets {
-		if dataset == academic.DatasetErke {
-			results[dataset] = mcp.resolveErkeSnapshot(ctx, userID, request.Freshness)
+		if _, blocked := results[dataset]; blocked {
 			continue
 		}
-		if !mcp.personalAccessAllowed(ctx, userID, models.AIUserPermissionAcademicCloudStorage) {
-			results[dataset] = personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 读取服务端学业快照")
+		if dataset == academic.DatasetErke {
+			results[dataset] = mcp.resolveErkeSnapshot(ctx, userID, request.Freshness)
 			continue
 		}
 		if generationErr != nil {
@@ -681,15 +706,7 @@ func (mcp *campusMCP) resolveSnapshots(ctx context.Context, userID uint, request
 		}
 		results[dataset] = result
 	}
-	return results, nil
-}
-
-func (mcp *campusMCP) personalAccessAllowed(ctx context.Context, userID uint, scope models.AIUserPermissionScope) bool {
-	if mcp.permissions == nil {
-		return true
-	}
-	policy, err := mcp.permissions.Policy(ctx, userID, scope)
-	return err == nil && policy != models.AIUserPermissionNever
+	return results, mcp.waitForPersonalContext(ctx, userID, request, results), nil
 }
 
 func (mcp *campusMCP) resolveErkeSnapshot(ctx context.Context, userID uint, freshness academic.FreshnessPreference) academic.ContextResult {
@@ -719,9 +736,12 @@ func (mcp *campusMCP) getGradeSummary(ctx context.Context, userID uint, argument
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "grade_summary"})
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "grade_summary"})
 	if err != nil {
 		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
 	}
 	result := results[academic.DatasetGrades]
 	if !usablePersonalResult(result) {
@@ -735,9 +755,12 @@ func (mcp *campusMCP) getCreditSummary(ctx context.Context, userID uint, argumen
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetCreditRequirements, academic.DatasetAcademicSituation}, Freshness: academic.FreshnessPreferRecent, Reason: "credit_summary"})
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetCreditRequirements, academic.DatasetAcademicSituation}, Freshness: academic.FreshnessPreferRecent, Reason: "credit_summary"})
 	if err != nil {
 		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
 	}
 	primary := results[academic.DatasetCreditRequirements]
 	secondary := results[academic.DatasetAcademicSituation]
@@ -754,9 +777,12 @@ func (mcp *campusMCP) getFailureRisk(ctx context.Context, userID uint, arguments
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "failure_risk"})
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetGrades}, Freshness: academic.FreshnessPreferRecent, Reason: "failure_risk"})
 	if err != nil {
 		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
 	}
 	result := results[academic.DatasetGrades]
 	if !usablePersonalResult(result) {
@@ -780,9 +806,12 @@ func (mcp *campusMCP) getScheduleAvailability(ctx context.Context, userID uint, 
 	if !validWeekdays(input.Weekdays) {
 		return nil, errors.New("invalid_tool_arguments")
 	}
-	results, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Freshness: academic.FreshnessPreferRecent, Reason: "schedule_availability"})
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetSchedule}, Freshness: academic.FreshnessPreferRecent, Reason: "schedule_availability"})
 	if err != nil {
 		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
 	}
 	result := results[academic.DatasetSchedule]
 	if !usablePersonalResult(result) {
@@ -795,9 +824,12 @@ func (mcp *campusMCP) getErkeOverview(ctx context.Context, userID uint, argument
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
 	}
-	results, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetErke}, Freshness: academic.FreshnessPreferRecent, Reason: "erke_overview"})
+	results, wait, err := mcp.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{Datasets: []academic.DatasetType{academic.DatasetErke}, Freshness: academic.FreshnessPreferRecent, Reason: "erke_overview"})
 	if err != nil {
 		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
 	}
 	result := results[academic.DatasetErke]
 	if !usablePersonalResult(result) {
@@ -810,6 +842,16 @@ func (mcp *campusMCP) getErkeOverview(ctx context.Context, userID uint, argument
 func (mcp *campusMCP) getAcademicIdentity(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
 	if err := requireEmptyArguments(arguments); err != nil {
 		return nil, err
+	}
+	wait, denied, err := mcp.requirePermission(ctx, userID, models.AIUserPermissionPersonalDataAccess, "academic_identity")
+	if err != nil {
+		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
+	}
+	if denied {
+		return personalContextUnavailable(academic.DataStatusPermissionRequired, "你已在隐私设置中关闭校园 Agent 的个人数据访问"), nil
 	}
 	if mcp.db == nil {
 		return nil, errors.New("mcp_not_configured")

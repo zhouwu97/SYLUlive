@@ -14,6 +14,20 @@ const (
 	AIUserPermissionAcademicCloudStorage AIUserPermissionScope = "academic_cloud_storage"
 )
 
+// Valid 只接受服务端已声明的权限范围，避免授权接口写入任意 scope。
+func (scope AIUserPermissionScope) Valid() bool {
+	switch scope {
+	case AIUserPermissionPersonalDataAccess,
+		AIUserPermissionDeviceCacheAccess,
+		AIUserPermissionRemoteEduRefresh,
+		AIUserPermissionErkeSnapshotUpload,
+		AIUserPermissionAcademicCloudStorage:
+		return true
+	default:
+		return false
+	}
+}
+
 // AIUserPermissionPolicy 只持久化跨会话策略。
 // 单次与本会话许可属于交互态，不能被误写成长期授权。
 type AIUserPermissionPolicy string
@@ -36,3 +50,18 @@ type AIUserPermission struct {
 }
 
 func (AIUserPermission) TableName() string { return "ai_user_permissions" }
+
+// AIRunConsent 保存 ask 策略在单个 Run 内的一次性决定。
+// 记录只包含权限元数据，不保存成绩、课表、模型输入或设备信息。
+type AIRunConsent struct {
+	ID        uint64                `gorm:"primaryKey" json:"id"`
+	RunID     string                `gorm:"type:varchar(64);not null;uniqueIndex:idx_ai_run_consents_run_scope,priority:1;index:idx_ai_run_consents_user_run,priority:2" json:"run_id"`
+	UserID    uint                  `gorm:"not null;index:idx_ai_run_consents_user_run,priority:1" json:"-"`
+	Scope     AIUserPermissionScope `gorm:"size:48;not null;uniqueIndex:idx_ai_run_consents_run_scope,priority:2" json:"scope"`
+	Granted   bool                  `gorm:"not null" json:"granted"`
+	ExpiresAt time.Time             `gorm:"not null;index" json:"expires_at"`
+	CreatedAt time.Time             `json:"created_at"`
+	UpdatedAt time.Time             `json:"updated_at"`
+}
+
+func (AIRunConsent) TableName() string { return "ai_run_consents" }

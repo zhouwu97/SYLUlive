@@ -41,6 +41,29 @@ func campusToolByName(t *testing.T, tools []PureReadTool, name string) PureReadT
 	return nil
 }
 
+func TestCampusMCPSearchPolicySplitsModelKeywordQuery(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.AIKnowledgeDocument{}))
+	publishedAt := time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Create(&models.AIKnowledgeDocument{
+		Title: "本科生成绩管理办法", SourceType: "manual", DocumentType: "policy",
+		Content: "平均学分绩点按课程学分加权计算。", ContentHash: "published", Status: models.KnowledgeStatusPublished,
+		PublishedAt: &publishedAt,
+	}).Error)
+	require.NoError(t, db.Create(&models.AIKnowledgeDocument{
+		Title: "未发布草稿", SourceType: "manual", DocumentType: "policy",
+		Content: "GPA 草稿内容", ContentHash: "draft", Status: models.KnowledgeStatusDraft,
+	}).Error)
+
+	mcp := &campusMCP{db: db, now: func() time.Time { return publishedAt }}
+	result, err := mcp.searchPolicy(context.Background(), 7, json.RawMessage(`{"query":"GPA 平均学分绩点 绩点","limit":10}`))
+	require.NoError(t, err)
+	envelope := result.(CampusToolResult)
+	items := envelope.Data.([]knowledgeItem)
+	require.Len(t, items, 1)
+	require.Equal(t, "本科生成绩管理办法", items[0].Title)
+}
+
 func TestCampusMCPErkeUsesUploadedSnapshotWithoutAcademicCredential(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
 	reader := fixedPersonalSnapshotReader{lookup: academic.SnapshotLookup{

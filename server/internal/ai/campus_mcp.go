@@ -293,10 +293,17 @@ func (mcp *campusMCP) searchKnowledge(ctx context.Context, query string, limit i
 	if mcp.db == nil {
 		return nil, errors.New("mcp_not_configured")
 	}
-	pattern := "%" + strings.ToLower(query) + "%"
 	db := mcp.db.WithContext(ctx).Model(&models.AIKnowledgeDocument{}).
-		Where("status = ?", models.KnowledgeStatusPublished).
-		Where("(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)", pattern, pattern)
+		Where("status = ?", models.KnowledgeStatusPublished)
+	terms := knowledgeSearchTerms(query)
+	predicates := make([]string, 0, len(terms))
+	values := make([]interface{}, 0, len(terms)*2)
+	for _, term := range terms {
+		predicates = append(predicates, "(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)")
+		pattern := "%" + term + "%"
+		values = append(values, pattern, pattern)
+	}
+	db = db.Where(strings.Join(predicates, " OR "), values...)
 	if len(documentTypes) > 0 {
 		db = db.Where("document_type IN ?", documentTypes)
 	}
@@ -309,6 +316,30 @@ func (mcp *campusMCP) searchKnowledge(ctx context.Context, query string, limit i
 		items = append(items, knowledgeItem{Title: document.Title, Department: document.Department, DocumentType: document.DocumentType, Excerpt: truncateToolText(document.Content, 800), SourceURL: document.SourceURI, PublishedAt: document.PublishedAt})
 	}
 	return items, nil
+}
+
+func knowledgeSearchTerms(query string) []string {
+	fields := strings.Fields(strings.ToLower(strings.TrimSpace(query)))
+	terms := make([]string, 0, len(fields))
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		term := strings.Trim(field, "，。！？；：、,.!?;:()（）[]【】")
+		if term == "" {
+			continue
+		}
+		if _, exists := seen[term]; exists {
+			continue
+		}
+		seen[term] = struct{}{}
+		terms = append(terms, term)
+		if len(terms) == 8 {
+			break
+		}
+	}
+	if len(terms) == 0 {
+		return []string{strings.ToLower(strings.TrimSpace(query))}
+	}
+	return terms
 }
 
 func knowledgeEvidence(items []knowledgeItem) []CampusToolEvidence {

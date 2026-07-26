@@ -1,6 +1,6 @@
 ---
 title: "沈阳理工大学家庭经济困难学生认定、校助学金、临时困难补助、孤儿资助与勤工助学政策"
-source_type: "user_provided_official_transcript"
+source_type: "official_transcript"
 source_uri: "user-provided-campus-article-published-2024-11-05"
 source_file_name: "2023 年校助学金、困难认定办法；孤儿减免细则；2021 年勤工助学办法；2024 年国家助学贷款通知"
 document_type: "school_student_financial_aid_policy"

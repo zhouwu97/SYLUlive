@@ -296,12 +296,18 @@ func TestRuntimeResumesWaitingUserConsent(t *testing.T) {
 			{Type: ProviderEventCompleted},
 		},
 	}}
-	tool := overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
-		return ToolWait{
-			State: models.AIRunStateWaitingUserConsent, EventType: "consent.required",
-			ConsentScope: models.AIUserPermissionPersonalDataAccess,
-			Payload:      map[string]interface{}{"scope": models.AIUserPermissionPersonalDataAccess, "datasets": []string{"grades"}},
-		}, nil
+	executions := 0
+	tool := overviewTool{execute: func(_ context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
+		executions++
+		require.JSONEq(t, `{"topic":"grades"}`, string(arguments))
+		if executions == 1 {
+			return ToolWait{
+				State: models.AIRunStateWaitingUserConsent, EventType: "consent.required",
+				ConsentScope: models.AIUserPermissionPersonalDataAccess,
+				Payload:      map[string]interface{}{"scope": models.AIUserPermissionPersonalDataAccess, "datasets": []string{"grades"}},
+			}, nil
+		}
+		return map[string]interface{}{"source": "server_snapshot", "failed_course_count": 0}, nil
 	}}
 	runtime := newToolRuntime(t, db, provider, tool)
 
@@ -311,11 +317,94 @@ func TestRuntimeResumesWaitingUserConsent(t *testing.T) {
 	require.NoError(t, runtime.ResumeRunConsent(context.Background(), 7, run.ID, models.AIUserPermissionPersonalDataAccess, true))
 	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
 	require.Len(t, provider.Requests(), 2)
+	require.Equal(t, 2, executions)
 
 	secondRequest := provider.Requests()[1]
 	require.Len(t, secondRequest.Messages, 4)
 	require.Equal(t, "tool", secondRequest.Messages[3].Role)
-	require.JSONEq(t, `{"status":"completed","consent_granted":true,"scope":"ai_personal_data_access","instruction":"用户已允许本次访问，请重新调用工具读取已授权数据"}`, secondRequest.Messages[3].Content)
+	require.JSONEq(t, `{"source":"server_snapshot","failed_course_count":0}`, secondRequest.Messages[3].Content)
+}
+
+func TestRuntimeRetriesSameToolAcrossSequentialConsentsBeforeCallingProvider(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "hy3_consent_call", ToolName: "hy3_decision_analyze_academic"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "hy3_consent_call", ToolName: "hy3_decision_analyze_academic", ArgumentsDelta: `{"question":"计算我的 GPA 和学分情况"}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "已根据 Hy3 的真实结果完成分析。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	scopes := []models.AIUserPermissionScope{
+		models.AIUserPermissionPersonalDataAccess,
+		models.AIUserPermissionAcademicCloudStorage,
+		models.AIUserPermissionExternalModelAnalysis,
+	}
+	executions := 0
+	remoteCalls := 0
+	tool := namedOverviewTool{
+		name: "hy3_decision.analyze_academic",
+		overviewTool: overviewTool{execute: func(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
+			require.Equal(t, uint(7), userID)
+			require.JSONEq(t, `{"question":"计算我的 GPA 和学分情况"}`, string(arguments))
+			require.LessOrEqual(t, executions, len(scopes))
+			if executions < len(scopes) {
+				scope := scopes[executions]
+				executions++
+				return ToolWait{
+					State: models.AIRunStateWaitingUserConsent, EventType: "consent.required", ConsentScope: scope,
+					Payload: map[string]interface{}{"scope": scope},
+				}, nil
+			}
+			executions++
+			remoteCalls++
+			return map[string]interface{}{"source": "hy3_mcp", "gpa": 3.72, "credits": 96}, nil
+		}},
+	}
+	runtime := newToolRuntime(t, db, provider, tool)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "计算我的 GPA 和学分情况",
+	})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateWaitingUserConsent)
+	require.Len(t, provider.Requests(), 1)
+
+	for index, scope := range scopes {
+		require.NoError(t, runtime.ResumeRunConsent(context.Background(), 7, run.ID, scope, true))
+		if scope != models.AIUserPermissionExternalModelAnalysis {
+			nextScope := scopes[index+1]
+			require.Eventually(t, func() bool {
+				var resume models.AIRunResumeJob
+				if err := db.Where("run_id = ? AND status = ?", run.ID, "waiting").First(&resume).Error; err != nil {
+					return false
+				}
+				pending, err := decodePendingToolCalls(json.RawMessage(resume.PendingToolCallsJSON))
+				return err == nil && len(pending) == 1 && pending[0].ConsentScope == nextScope
+			}, 3*time.Second, 10*time.Millisecond)
+			require.Len(t, provider.Requests(), 1)
+		}
+	}
+
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, "已根据 Hy3 的真实结果完成分析。", completed.AnswerCheckpoint)
+	require.Equal(t, 4, executions)
+	require.Equal(t, 1, remoteCalls)
+	require.Len(t, provider.Requests(), 2)
+
+	secondRequest := provider.Requests()[1]
+	require.Len(t, secondRequest.Messages, 4)
+	require.Equal(t, "hy3_consent_call", secondRequest.Messages[3].ToolCallID)
+	require.JSONEq(t, `{"source":"hy3_mcp","gpa":3.72,"credits":96}`, secondRequest.Messages[3].Content)
+
+	var call models.AIToolCall
+	require.NoError(t, db.First(&call, "call_id = ?", "hy3_consent_call").Error)
+	require.Equal(t, "completed", call.Status)
+	require.Equal(t, "hy3_decision.analyze_academic", call.ToolName)
+	require.JSONEq(t, `{"source":"hy3_mcp","gpa":3.72,"credits":96}`, string(call.ResultJSON))
 }
 
 func TestResumeRunConsentRejectsOtherUserAndMismatchedScope(t *testing.T) {
@@ -331,7 +420,9 @@ func TestResumeRunConsentRejectsOtherUserAndMismatchedScope(t *testing.T) {
 			{Type: ProviderEventCompleted},
 		},
 	}}
+	executions := 0
 	tool := overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		executions++
 		return ToolWait{
 			State: models.AIRunStateWaitingUserConsent, EventType: "consent.required",
 			ConsentScope: models.AIUserPermissionPersonalDataAccess,
@@ -360,6 +451,7 @@ func TestResumeRunConsentRejectsOtherUserAndMismatchedScope(t *testing.T) {
 	require.NoError(t, runtime.ResumeRunConsent(context.Background(), 7, run.ID, models.AIUserPermissionPersonalDataAccess, false))
 	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
 	require.Len(t, provider.Requests(), 2)
+	require.Equal(t, 1, executions)
 	require.JSONEq(t,
 		`{"status":"completed","consent_granted":false,"scope":"ai_personal_data_access","instruction":"用户拒绝了本次访问，不要再次请求或假设可读取该数据"}`,
 		provider.Requests()[1].Messages[3].Content,

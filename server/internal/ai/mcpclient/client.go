@@ -2,6 +2,7 @@ package mcpclient
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -107,7 +108,7 @@ func (client *Client) CallTool(ctx context.Context, name string, arguments map[s
 	if client == nil || !client.config.Enabled {
 		return nil, newError(ErrorDisabled, nil)
 	}
-	if _, expected := expectedRemoteToolRequirements[name]; !expected {
+	if _, expected := expectedRemoteToolContracts[name]; !expected {
 		return nil, newError(ErrorToolMissing, nil)
 	}
 	if arguments == nil {
@@ -187,21 +188,17 @@ func (client *Client) ensureSession(ctx context.Context) error {
 		_ = session.Close()
 		return client.classifyCallError(protocolError("远端缺少状态工具"), ctx)
 	}
-	validated, missing, extras := validateRemoteTools(definitions)
-	for _, name := range extras {
-		client.logger.Warn("独立 MCP 返回了未暴露的额外工具", "tool", name)
-	}
-	if len(missing) > 0 {
-		client.logger.Warn("独立 MCP 缺少或不兼容的固定工具", "tools", strings.Join(missing, ","))
-	}
 	status, err := verifyStatus(ctx, session)
 	if err != nil {
 		_ = session.Close()
 		return client.classifyCallError(err, ctx)
 	}
-	validated, unavailableByStatus := intersectStatusTools(validated, status.AvailableTools)
-	if len(unavailableByStatus) > 0 {
-		client.logger.Warn("独立 MCP 状态工具未声明已校验能力", "tools", strings.Join(unavailableByStatus, ","))
+	validated, missing, extras := validateRemoteTools(definitions, status)
+	for _, name := range extras {
+		client.logger.Warn("独立 MCP 返回了未暴露的额外工具", "tool", name)
+	}
+	if len(missing) > 0 {
+		client.logger.Warn("独立 MCP 缺少或不兼容的固定工具", "tools", strings.Join(missing, ","))
 	}
 	if len(validated) == 0 {
 		_ = session.Close()
@@ -251,8 +248,14 @@ func (client *Client) classifyCallError(err error, ctx context.Context) error {
 }
 
 type statusResult struct {
-	Mode           string   `json:"mode"`
-	AvailableTools []string `json:"available_tools"`
+	Mode            string                          `json:"mode"`
+	ContractVersion string                          `json:"contract_version"`
+	AvailableTools  []string                        `json:"available_tools"`
+	ToolContracts   map[string]remoteContractStatus `json:"tool_contracts"`
+}
+
+type remoteContractStatus struct {
+	SchemaSHA256 string `json:"schema_sha256"`
 }
 
 func verifyStatus(ctx context.Context, session remoteSession) (statusResult, error) {
@@ -266,29 +269,11 @@ func verifyStatus(ctx context.Context, session remoteSession) (statusResult, err
 	var status statusResult
 	if err := json.Unmarshal(result.Payload, &status); err != nil ||
 		(status.Mode != "disabled" && status.Mode != "fixture" && status.Mode != "live") ||
+		status.ContractVersion != expectedRemoteContractVersion ||
 		!containsString(status.AvailableTools, statusToolName) {
 		return statusResult{}, protocolError("状态工具响应不符合约定")
 	}
 	return status, nil
-}
-
-// intersectStatusTools 以状态工具的能力声明作为第二道校验，防止 tools/list 与运行时模式不一致。
-func intersectStatusTools(validated map[string]RemoteToolDefinition, available []string) (map[string]RemoteToolDefinition, []string) {
-	declared := make(map[string]struct{}, len(available))
-	for _, name := range available {
-		declared[name] = struct{}{}
-	}
-	result := make(map[string]RemoteToolDefinition, len(validated))
-	missing := make([]string, 0)
-	for name, definition := range validated {
-		if _, found := declared[name]; found {
-			result[name] = definition
-			continue
-		}
-		missing = append(missing, name)
-	}
-	sort.Strings(missing)
-	return result, missing
 }
 
 func hasStatusTool(definitions []RemoteToolDefinition) bool {
@@ -359,11 +344,17 @@ func (session *sdkSession) ListTools(ctx context.Context) ([]RemoteToolDefinitio
 			if tool == nil {
 				continue
 			}
-			schema, err := json.Marshal(tool.InputSchema)
+			inputSchema, err := json.Marshal(tool.InputSchema)
 			if err != nil {
-				return nil, fmt.Errorf("编码远端工具 Schema: %w", err)
+				return nil, fmt.Errorf("编码远端工具输入 Schema: %w", err)
 			}
-			result = append(result, RemoteToolDefinition{Name: tool.Name, Description: tool.Description, InputSchema: schema})
+			outputSchema, err := json.Marshal(tool.OutputSchema)
+			if err != nil {
+				return nil, fmt.Errorf("编码远端工具输出 Schema: %w", err)
+			}
+			result = append(result, RemoteToolDefinition{
+				Name: tool.Name, Description: tool.Description, InputSchema: inputSchema, OutputSchema: outputSchema,
+			})
 		}
 		if response.NextCursor == "" {
 			return result, nil
@@ -415,36 +406,30 @@ func extractPayload(result *mcp.CallToolResult) (json.RawMessage, error) {
 	return nil, errors.New("MCP 工具结果缺少结构化 JSON")
 }
 
-type schemaRequirement struct {
-	Properties []string
-	Required   []string
+const expectedRemoteContractVersion = "sylulive-hy3/1"
+
+var expectedRemoteToolContracts = map[string]string{
+	"compare_competitions":      "d81ee88aa6c5fe6a879982f722980878fb66c311f448aa45aea7a0f241b42f1f",
+	"analyze_academic_snapshot": "11e52df593997543c584d3efc1e3b04e13d629a2cf33872adc1dad0223dc7759",
+	"plan_student_week":         "4916c924e00f5e72d4bda9dfba0dc648ad15cff6b45f16fe5b715ada3684cb94",
 }
 
-var expectedRemoteToolRequirements = map[string]schemaRequirement{
-	"compare_competitions": {
-		Properties: []string{"student_profile", "competition_names", "competitions"},
-		Required:   []string{"student_profile"},
-	},
-	"analyze_academic_snapshot": {
-		Properties: []string{"snapshot", "snapshot_path"},
-	},
-	"plan_student_week": {
-		Properties: []string{"schedule", "schedule_path", "goals", "constraints"},
-	},
-}
-
-func validateRemoteTools(definitions []RemoteToolDefinition) (map[string]RemoteToolDefinition, []string, []string) {
+func validateRemoteTools(definitions []RemoteToolDefinition, status statusResult) (map[string]RemoteToolDefinition, []string, []string) {
 	byName := make(map[string]RemoteToolDefinition, len(definitions))
 	for _, definition := range definitions {
 		if strings.TrimSpace(definition.Name) != "" {
 			byName[definition.Name] = definition
 		}
 	}
-	validated := make(map[string]RemoteToolDefinition, len(expectedRemoteToolRequirements))
+	validated := make(map[string]RemoteToolDefinition, len(expectedRemoteToolContracts))
 	missing := make([]string, 0)
-	for name, requirement := range expectedRemoteToolRequirements {
+	for name, expectedDigest := range expectedRemoteToolContracts {
 		definition, found := byName[name]
-		if !found || !schemaMatches(definition.InputSchema, requirement) {
+		declared, available := status.ToolContracts[name]
+		actualDigest, digestErr := schemaDigest(definition.InputSchema, definition.OutputSchema)
+		if !found || !containsString(status.AvailableTools, name) || !available ||
+			digestErr != nil || declared.SchemaSHA256 == "" ||
+			declared.SchemaSHA256 != actualDigest || actualDigest != expectedDigest {
 			missing = append(missing, name)
 			continue
 		}
@@ -455,7 +440,7 @@ func validateRemoteTools(definitions []RemoteToolDefinition) (map[string]RemoteT
 		if name == statusToolName {
 			continue
 		}
-		if _, expected := expectedRemoteToolRequirements[name]; !expected {
+		if _, expected := expectedRemoteToolContracts[name]; !expected {
 			extras = append(extras, name)
 		}
 	}
@@ -464,27 +449,45 @@ func validateRemoteTools(definitions []RemoteToolDefinition) (map[string]RemoteT
 	return validated, missing, extras
 }
 
-func schemaMatches(raw json.RawMessage, requirement schemaRequirement) bool {
-	var schema struct {
-		Type                 string                     `json:"type"`
-		Properties           map[string]json.RawMessage `json:"properties"`
-		Required             []string                   `json:"required"`
-		AdditionalProperties *bool                      `json:"additionalProperties"`
+func schemaDigest(inputSchema, outputSchema json.RawMessage) (string, error) {
+	var input, output interface{}
+	if len(inputSchema) == 0 || len(outputSchema) == 0 ||
+		json.Unmarshal(inputSchema, &input) != nil || json.Unmarshal(outputSchema, &output) != nil {
+		return "", errors.New("远端工具缺少有效的输入或输出 Schema")
 	}
-	if len(raw) == 0 || json.Unmarshal(raw, &schema) != nil || schema.Type != "object" || len(schema.Properties) != len(requirement.Properties) || schema.AdditionalProperties == nil || *schema.AdditionalProperties {
-		return false
+	normalized, err := json.Marshal(map[string]interface{}{
+		"input_schema":  normalizeSchema(input),
+		"output_schema": normalizeSchema(output),
+	})
+	if err != nil {
+		return "", fmt.Errorf("规范化远端 Schema: %w", err)
 	}
-	for _, property := range requirement.Properties {
-		if _, found := schema.Properties[property]; !found {
-			return false
+	digest := sha256.Sum256(normalized)
+	return fmt.Sprintf("%x", digest), nil
+}
+
+func normalizeSchema(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{}, len(typed))
+		for key, child := range typed {
+			switch key {
+			case "title", "description", "examples":
+				continue
+			default:
+				result[key] = normalizeSchema(child)
+			}
 		}
-	}
-	for _, required := range requirement.Required {
-		if !containsString(schema.Required, required) {
-			return false
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(typed))
+		for index, child := range typed {
+			result[index] = normalizeSchema(child)
 		}
+		return result
+	default:
+		return value
 	}
-	return true
 }
 
 func containsString(values []string, expected string) bool {

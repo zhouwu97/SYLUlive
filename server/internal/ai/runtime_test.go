@@ -89,7 +89,10 @@ func TestBuildPolicyPromptAddsDirectGPAAnswerGuidance(t *testing.T) {
 	require.Contains(t, prompt, "先用一句话解释 GPA")
 	require.Contains(t, prompt, "GPA = Σ(课程绩点×课程学分) / Σ课程学分")
 	require.Contains(t, prompt, "不得编造校内换算表")
-	require.NotContains(t, buildPolicyPrompt("怎么请假", nil), "GPA =")
+	generalPrompt := buildPolicyPrompt("怎么请假", nil)
+	require.Contains(t, generalPrompt, "第一句直接给出定义、结论或办理方向")
+	require.Contains(t, generalPrompt, "除非用户明确要求比较，否则不要使用表格")
+	require.NotContains(t, generalPrompt, "GPA =")
 	require.Contains(t, campusAgentSystemPrompt, "不得用弱相关材料拼表格")
 }
 

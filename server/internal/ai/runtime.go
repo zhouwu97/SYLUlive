@@ -352,10 +352,11 @@ func buildPolicyPrompt(question string, chunks []RetrievedChunk) string {
 
 func answerGuidance(question string) string {
 	normalized := strings.ToLower(strings.TrimSpace(question))
+	base := "第一句直接给出定义、结论或办理方向，再用 2 至 4 个要点说明；除非用户明确要求比较，否则不要使用表格。不得以道歉或“没有找到”开头。证据不足时，先说明能够确定的通用信息，再用一句话标明沈理校内口径尚缺直接依据，最后最多提出一个具体追问。"
 	if normalized == "gpa" || normalized == "绩点" || normalized == "平均学分绩点" {
-		return "先用一句话解释 GPA；给出通用加权公式“GPA = Σ(课程绩点×课程学分) / Σ课程学分”，并明确课程绩点换算、补考重修和课程纳入范围须以沈理现行规则为准。如果没有直接证据，不得编造校内换算表；最后只询问用户是想了解校内规则，还是计算个人 GPA。"
+		return base + " 本题先用一句话解释 GPA，再给出通用加权公式“GPA = Σ(课程绩点×课程学分) / Σ课程学分”，并明确课程绩点换算、补考重修和课程纳入范围须以沈理现行规则为准。如果没有直接证据，不得编造校内换算表；最后只询问用户是想了解校内规则，还是计算个人 GPA。"
 	}
-	return ""
+	return base
 }
 
 func (r *Runtime) completeRun(runID, rawAnswer string, chunks []RetrievedChunk, usage ProviderEvent, latency time.Duration, validateCitations bool) {

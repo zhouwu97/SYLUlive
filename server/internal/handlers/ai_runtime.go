@@ -132,7 +132,8 @@ func (h *AIRuntimeHandler) CancelRun(c *gin.Context) {
 func (h *AIRuntimeHandler) Events(c *gin.Context) {
 	runID := c.Param("id")
 	userID := c.GetUint("user_id")
-	if _, err := h.runtime.GetRun(c.Request.Context(), userID, runID); err != nil {
+	run, err := h.runtime.GetRun(c.Request.Context(), userID, runID)
+	if err != nil {
 		writeAIRuntimeError(c, err)
 		return
 	}
@@ -168,7 +169,7 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 		terminalReplayed = isTerminalAIEvent(event.Type)
 	}
 	flusher.Flush()
-	if terminalReplayed {
+	if terminalReplayed || isTerminalAIRunState(run.State) {
 		return
 	}
 
@@ -226,6 +227,15 @@ func parseLastEventID(value string) int64 {
 
 func isTerminalAIEvent(eventType string) bool {
 	return eventType == "run.completed" || eventType == "run.failed" || eventType == "run.cancelled"
+}
+
+func isTerminalAIRunState(state string) bool {
+	switch state {
+	case models.AIRunStateCompleted, models.AIRunStateFailed, models.AIRunStateCancelled, models.AIRunStateExpired:
+		return true
+	default:
+		return false
+	}
 }
 
 type createAIConversationRequest struct {

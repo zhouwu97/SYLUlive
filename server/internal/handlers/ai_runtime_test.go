@@ -41,6 +41,62 @@ func TestParseLastEventIDSupportsRunPrefix(t *testing.T) {
 	}
 }
 
+func TestEventsReturnsWhenTerminalRunWasAlreadyFullyReplayed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.AIRun{}, &models.AIEvent{}))
+
+	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, emptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
+		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
+		MaxToolSteps: 3, MaxMessageChars: 100, HourlyMessageLimit: 3,
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+		AuditHashSecret: "test-secret",
+	})
+	require.NoError(t, err)
+
+	const (
+		userID  = uint(19)
+		lastSeq = int64(36)
+	)
+	now := time.Now()
+	run := models.AIRun{
+		ID: uuid.NewString(), UserID: userID, ConversationID: uuid.NewString(), ClientRequestID: uuid.NewString(),
+		State: models.AIRunStateFailed, Provider: "mock", Model: "mock", MessageHash: "hash",
+		MessageLength: 1, LastEventSeq: lastSeq, ErrorCode: "tool_loop_limit",
+		ExpiresAt: now.Add(time.Hour), CompletedAt: &now,
+	}
+	require.NoError(t, db.Create(&run).Error)
+	require.NoError(t, db.Create(&models.AIEvent{
+		RunID: run.ID, Seq: lastSeq, Type: "run.failed", Payload: []byte(`{"state":"failed"}`), CreatedAt: now,
+	}).Error)
+
+	router := gin.New()
+	router.GET("/runs/:id/events", func(c *gin.Context) {
+		c.Set("user_id", userID)
+		NewAIRuntimeHandler(db, runtime).Events(c)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/events", nil)
+	request.Header.Set("Last-Event-ID", fmt.Sprint(lastSeq))
+	ctx, cancel := context.WithCancel(request.Context())
+	defer cancel()
+	request = request.WithContext(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		router.ServeHTTP(httptest.NewRecorder(), request)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(250 * time.Millisecond):
+		cancel()
+		<-done
+		t.Fatal("终态 Run 的末事件已被确认后，SSE 仍未关闭")
+	}
+}
+
 func TestGetSourceChunkOnlyReturnsPublishedKnowledge(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})

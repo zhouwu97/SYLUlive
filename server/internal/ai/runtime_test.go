@@ -84,6 +84,15 @@ func TestNormalizeUserMessageCountsGraphemeClusters(t *testing.T) {
 	require.Equal(t, "ai_message_too_long", runtimeErr.Code)
 }
 
+func TestBuildPolicyPromptAddsDirectGPAAnswerGuidance(t *testing.T) {
+	prompt := buildPolicyPrompt("GPA", nil)
+	require.Contains(t, prompt, "先用一句话解释 GPA")
+	require.Contains(t, prompt, "GPA = Σ(课程绩点×课程学分) / Σ课程学分")
+	require.Contains(t, prompt, "不得编造校内换算表")
+	require.NotContains(t, buildPolicyPrompt("怎么请假", nil), "GPA =")
+	require.Contains(t, campusAgentSystemPrompt, "不得用弱相关材料拼表格")
+}
+
 func TestRuntimeIdempotencyQuotaAndCitationCompletion(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	provider := &MockProvider{Response: ChatResponse{Content: "请按规定办理。[chunk:1]", InputTokens: 20, OutputTokens: 8}}

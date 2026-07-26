@@ -196,6 +196,10 @@ func (client *Client) ensureSession(ctx context.Context) error {
 	if len(unavailableByStatus) > 0 {
 		client.logger.Warn("独立 MCP 状态工具未声明已校验能力", "tools", strings.Join(unavailableByStatus, ","))
 	}
+	if len(validated) == 0 {
+		_ = session.Close()
+		return client.classifyCallError(protocolError("远端没有兼容的核心工具"), ctx)
+	}
 	client.sessionMu.Lock()
 	client.session = session
 	client.tools = validated

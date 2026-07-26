@@ -18,6 +18,17 @@ const (
 	PermissionDecisionDeny  PermissionDecision = "deny"
 )
 
+// ErrPermissionServiceUnavailable 表示权限读取器缺失，属于装配错误而不是用户拒绝。
+var ErrPermissionServiceUnavailable = errors.New("permission_service_unavailable")
+
+// AllowAllPermissionReader 只供测试显式放行使用。
+// 生产装配必须注入真实权限服务；不能再依赖 nil 隐式放行。
+type AllowAllPermissionReader struct{}
+
+func (AllowAllPermissionReader) Policy(context.Context, uint, models.AIUserPermissionScope) (models.AIUserPermissionPolicy, error) {
+	return models.AIUserPermissionAlways, nil
+}
+
 // permissionDecision 合并长期策略与当前 Run 的一次性授权。
 // ask 没有有效的 Run 授权记录时始终返回 Ask，不会降级成允许。
 func (mcp *campusMCP) permissionDecision(ctx context.Context, userID uint, scope models.AIUserPermissionScope) (PermissionDecision, error) {
@@ -25,7 +36,10 @@ func (mcp *campusMCP) permissionDecision(ctx context.Context, userID uint, scope
 		return PermissionDecisionDeny, errors.New("invalid_permission_scope")
 	}
 	if mcp.permissions == nil {
-		return PermissionDecisionAllow, nil
+		// fail-closed：漏传权限读取器时必须拒绝并报错。
+		// 从前这里返回 Allow，只要新增一个测试入口、CLI 或后台任务忘记注入，
+		// 成绩、课表和二课访问就会静默变成允许。
+		return PermissionDecisionDeny, ErrPermissionServiceUnavailable
 	}
 	policy, err := mcp.permissions.Policy(ctx, userID, scope)
 	if err != nil {

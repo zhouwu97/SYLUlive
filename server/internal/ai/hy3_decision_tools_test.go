@@ -225,7 +225,8 @@ func TestHy3AcademicAdapterRedactsPersonalDataAndAuditArguments(t *testing.T) {
 			academic.DatasetErke:              {Found: true, Result: availableHy3Result(`{"earned_total":18,"required_total":30,"student_id":"20260001"}`)},
 		},
 	}
-	tools := NewHy3DecisionTools(db, snapshots, nil, remote)
+	tools := NewHy3DecisionTools(db, snapshots, nil, remote,
+		WithHy3DecisionPersonalDataPermissionReader(AllowAllPermissionReader{}))
 	registry, err := NewToolRegistry(db, tools...)
 	require.NoError(t, err)
 
@@ -441,6 +442,7 @@ func newHy3PlanDecision(db *gorm.DB, remote mcpclient.ExternalMCPClient, schedul
 		remote: remote,
 		campus: &campusMCP{
 			db: db,
+			permissions: AllowAllPermissionReader{},
 			snapshots: fixedHy3AcademicSnapshotReader{
 				generation: 1,
 				lookups: map[academic.DatasetType]academic.SnapshotLookup{

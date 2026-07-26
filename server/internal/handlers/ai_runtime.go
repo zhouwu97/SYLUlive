@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,6 +48,7 @@ func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
 		ConversationID: request.ConversationID, ClientRequestID: request.ClientRequestID, Message: request.Message,
 	})
 	if err != nil {
+		logCreateRunOutcome(c, request.ClientRequestID, "", false, err)
 		writeAIRuntimeError(c, err)
 		return
 	}
@@ -54,7 +56,46 @@ func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
 	if duplicate {
 		status = http.StatusOK
 	}
+	logCreateRunOutcome(c, request.ClientRequestID, run.ID, duplicate, nil)
 	c.JSON(status, gin.H{"run": run, "duplicate": duplicate})
+}
+
+// logCreateRunOutcome 只记录链路定位所需的标识，不记录问题正文、令牌或个人数据。
+// 客户端在请求头带同一个 ID，据此可以区分：请求根本没到达服务端、
+// 服务端处理超时、还是服务端已返回但响应在回程丢失。
+func logCreateRunOutcome(c *gin.Context, clientRequestID, runID string, duplicate bool, err error) {
+	headerID := strings.TrimSpace(c.GetHeader("X-Client-Request-ID"))
+	if headerID == "" {
+		headerID = "-"
+	}
+	if clientRequestID = strings.TrimSpace(clientRequestID); clientRequestID == "" {
+		clientRequestID = "-"
+	}
+	outcome := "created"
+	switch {
+	case err != nil:
+		outcome = "failed"
+	case duplicate:
+		outcome = "duplicate"
+	}
+	detail := ""
+	if err != nil {
+		var runtimeErr *ai.RuntimeError
+		if errors.As(err, &runtimeErr) {
+			detail = " code=" + runtimeErr.Code
+		} else {
+			detail = " code=internal"
+		}
+	}
+	log.Printf("ai_create_run user_id=%d client_request_id=%s header_request_id=%s run_id=%s outcome=%s%s",
+		c.GetUint("user_id"), clientRequestID, headerID, defaultDash(runID), outcome, detail)
+}
+
+func defaultDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
 }
 
 func (h *AIRuntimeHandler) GetRun(c *gin.Context) {

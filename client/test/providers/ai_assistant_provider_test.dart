@@ -172,4 +172,64 @@ void main() {
 
     expect(syncCount, 1);
   });
+
+  test('手动重新发送复用原 client_request_id', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    final requestIds = <String>[];
+    var attempts = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.path == '/ai/capabilities') {
+            handler.reject(DioException(
+              requestOptions: options,
+              type: DioExceptionType.connectionError,
+            ));
+            return;
+          }
+          attempts++;
+          requestIds
+              .add((options.data as Map)['client_request_id'] as String);
+          // 两次创建都失败：第一次触发内部自动重试，随后由用户手动重试。
+          handler.reject(DioException(
+            requestOptions: options,
+            type: DioExceptionType.connectionTimeout,
+          ));
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: false,
+        chatEnabled: true,
+        phase: 'p2',
+        features: AiFeatures(policyRag: true, scheduleWindows: false),
+        quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
+        maxMessageChars: 20,
+      ),
+    );
+    addTearDown(provider.dispose);
+
+    expect(provider.submit('挂科了怎么办'), AiSubmitResult.accepted);
+    // 服务层的自动重试有 400ms 退避，必须等待真实时间而不是只排空微任务队列。
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    await pumpEventQueue();
+
+    expect(provider.canRetry, isTrue, reason: '网络失败必须可重试');
+    expect(provider.error, contains('连接服务器超时'));
+    final beforeRetry = requestIds.length;
+    expect(beforeRetry, 2, reason: '服务层已按同一 ID 自动重试一次');
+
+    expect(provider.retryLast(), AiSubmitResult.accepted);
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    await pumpEventQueue();
+
+    expect(requestIds.length, greaterThan(beforeRetry));
+    // 手动重试沿用原 ID，服务端幂等因此只会存在一个 Run。
+    expect(requestIds.toSet(), hasLength(1));
+    expect(attempts, requestIds.length);
+  });
 }

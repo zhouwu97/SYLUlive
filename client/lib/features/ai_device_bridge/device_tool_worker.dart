@@ -27,6 +27,8 @@ typedef DeviceToolPermissionResolver = Future<DeviceToolPermissionDecision>
 
 /// 设备侧轮询和推送入口。只在当前账号上下文仍有效时读取 AES-GCM 本地缓存。
 class DeviceToolWorker {
+  static const bridgeProtocolVersion = 2;
+  static const clientVersion = '1.0.0';
   DeviceToolWorker({
     required DeviceJobApi client,
     required Future<String> Function() installationIdProvider,
@@ -94,6 +96,8 @@ class DeviceToolWorker {
     return _client.register(
       installationId: installationId,
       toolNames: DeviceToolRegistry.supportedToolNames.toList(growable: false),
+      bridgeProtocolVersion: bridgeProtocolVersion,
+      clientVersion: clientVersion,
     );
   }
 

@@ -41,10 +41,22 @@ func TestResolveContextRequestRejectsInvalidInput(t *testing.T) {
 		{Datasets: []DatasetType{"unknown"}, Freshness: FreshnessPreferRecent},
 		{Datasets: []DatasetType{DatasetGrades, DatasetGrades}, Freshness: FreshnessPreferRecent},
 		{Datasets: []DatasetType{DatasetGrades}, Freshness: "latest"},
+		{Datasets: []DatasetType{DatasetSchedule}, Freshness: FreshnessPreferRecent},
+		{Datasets: []DatasetType{DatasetSchedule}, Freshness: FreshnessPreferRecent, ScheduleWeekContaining: "2026/09/14"},
 	}
 	for _, request := range tests {
 		if err := request.Validate(); err == nil {
 			t.Errorf("Validate() accepted %#v", request)
 		}
+	}
+}
+
+func TestResolveContextRequestAcceptsScheduleWeekContaining(t *testing.T) {
+	request := ResolveContextRequest{
+		Datasets: []DatasetType{DatasetSchedule}, Freshness: FreshnessPreferRecent,
+		ScheduleWeekContaining: "2026-09-14",
+	}
+	if err := request.Validate(); err != nil {
+		t.Fatalf("Validate() rejected valid schedule target: %v", err)
 	}
 }

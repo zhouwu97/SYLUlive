@@ -34,9 +34,11 @@ func (h *DeviceJobHandler) SetRunResumer(resumer DeviceJobRunResumer) {
 }
 
 type deviceRegistrationRequest struct {
-	InstallationID string   `json:"installation_id"`
-	PushToken      string   `json:"push_token"`
-	ToolNames      []string `json:"tool_names"`
+	InstallationID        string   `json:"installation_id"`
+	PushToken             string   `json:"push_token"`
+	ToolNames             []string `json:"tool_names"`
+	BridgeProtocolVersion int      `json:"bridge_protocol_version"`
+	ClientVersion         string   `json:"client_version"`
 }
 
 // Register 的请求与响应均不携带个人快照；push_token 只用于后续发送 job_id 通知。
@@ -48,6 +50,7 @@ func (h *DeviceJobHandler) Register(c *gin.Context) {
 	}
 	device, err := h.service.RegisterDevice(c.Request.Context(), c.GetUint("user_id"), services.DeviceRegistration{
 		InstallationID: request.InstallationID, PushToken: request.PushToken, ToolNames: request.ToolNames,
+		BridgeProtocolVersion: request.BridgeProtocolVersion, ClientVersion: request.ClientVersion,
 	})
 	if err != nil {
 		writeDeviceJobError(c, err)
@@ -180,6 +183,8 @@ func writeDeviceJobError(c *gin.Context, err error) {
 		status, message = http.StatusForbidden, "设备工具不在允许列表中"
 	case "device_offline":
 		status, message = http.StatusConflict, "没有可用的已登记设备"
+	case "device_client_outdated":
+		status, message = http.StatusConflict, "设备客户端版本过低，请升级后重试"
 	case "state_version_conflict", "invalid_job_state":
 		status, message = http.StatusConflict, "设备任务状态已变化"
 	}

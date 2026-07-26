@@ -1,6 +1,6 @@
 ---
 title: "沈阳理工大学本科生国家（省政府）奖学金、国家励志奖学金与国家助学金评审办法"
-source_type: "user_provided_official_transcript"
+source_type: "official_transcript"
 source_uri: "user-provided-campus-article-published-2024-11-05"
 source_file_name: "2022 年国家（省政府）奖学金、国家励志奖学金、国家助学金评审办法通知"
 document_type: "school_national_scholarship_and_grant_policy"

@@ -121,6 +121,24 @@ class AiAssistantService {
     return AiRun.fromJson(_map(_map(response.data)['run']));
   }
 
+  /// 提交当前 Run 的一次性权限决定，不修改长期授权策略。
+  Future<void> submitRunConsent({
+    required String runId,
+    required String scope,
+    required bool granted,
+  }) async {
+    late Response<dynamic> response;
+    try {
+      response = await _dio.post(
+        '/ai/runs/$runId/consent',
+        data: <String, dynamic>{'scope': scope, 'granted': granted},
+      );
+    } on DioException catch (error) {
+      throw _exceptionFromResponse(error.response, fallback: '提交本次授权失败');
+    }
+    _expectStatus(response, 202);
+  }
+
   /// 读取 SSE，并将 Last-Event-ID 交给服务端完成历史事件回放。
   Stream<AiRunEvent> streamRunEvents(String runId,
       {int lastEventId = 0}) async* {

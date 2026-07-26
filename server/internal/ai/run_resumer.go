@@ -16,9 +16,10 @@ import (
 )
 
 type persistedPendingToolCall struct {
-	CallID    string `json:"call_id"`
-	ToolName  string `json:"tool_name"`
-	ResumeKey string `json:"resume_key,omitempty"`
+	CallID       string                       `json:"call_id"`
+	ToolName     string                       `json:"tool_name"`
+	ResumeKey    string                       `json:"resume_key,omitempty"`
+	ConsentScope models.AIUserPermissionScope `json:"consent_scope,omitempty"`
 }
 
 // pauseRun 持久化下一次 Provider 调用的完整消息序列，并以一次 CAS 状态迁移释放当前请求协程。
@@ -38,7 +39,12 @@ func (r *Runtime) pauseRun(ctx context.Context, run *models.AIRun, pause *toolLo
 		if item.CallID == "" || item.Name == "" || item.Wait.State != pause.State {
 			return errors.New("invalid pending tool call")
 		}
-		pending = append(pending, persistedPendingToolCall{CallID: item.CallID, ToolName: item.Name, ResumeKey: item.Wait.ResumeKey})
+		if pause.State == models.AIRunStateWaitingUserConsent && !item.Wait.ConsentScope.Valid() {
+			return errors.New("invalid consent scope")
+		}
+		pending = append(pending, persistedPendingToolCall{
+			CallID: item.CallID, ToolName: item.Name, ResumeKey: item.Wait.ResumeKey, ConsentScope: item.Wait.ConsentScope,
+		})
 	}
 	pendingJSON, err := json.Marshal(pending)
 	if err != nil {
@@ -166,6 +172,20 @@ func (r *Runtime) ResumeUserConsent(ctx context.Context, userID uint) error {
 		return err
 	}
 	for _, resume := range resumes {
+		pending, err := decodePendingToolCalls(json.RawMessage(resume.PendingToolCallsJSON))
+		if err != nil {
+			return err
+		}
+		legacyEduConsent := true
+		for _, item := range pending {
+			if item.ConsentScope.Valid() {
+				legacyEduConsent = false
+				break
+			}
+		}
+		if !legacyEduConsent {
+			continue
+		}
 		result := r.db.WithContext(ctx).Model(&models.AIRunResumeJob{}).
 			Where("id = ? AND status = ?", resume.ID, "waiting").
 			Updates(map[string]interface{}{"status": "resuming", "updated_at": time.Now()})
@@ -176,6 +196,77 @@ func (r *Runtime) ResumeUserConsent(ctx context.Context, userID uint) error {
 			go r.executeResumedRun(resume.ID)
 		}
 	}
+	return nil
+}
+
+// ResumeRunConsent 记录指定 Run 的一次性决定，并只恢复该 Run。
+// 长期 ask 策略不会被修改，其他 Run 也不会继承本次决定。
+func (r *Runtime) ResumeRunConsent(ctx context.Context, userID uint, runID string, scope models.AIUserPermissionScope, granted bool) error {
+	if r == nil || r.tools == nil || userID == 0 || strings.TrimSpace(runID) == "" || !scope.Valid() {
+		return &RuntimeError{Code: "invalid_run_consent", Message: "授权参数无效"}
+	}
+	var resume models.AIRunResumeJob
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var run models.AIRun
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", runID, userID).First(&run).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return &RuntimeError{Code: "ai_run_not_found", Message: "AI 请求不存在"}
+			}
+			return err
+		}
+		now := time.Now()
+		if run.State != models.AIRunStateWaitingUserConsent {
+			return &RuntimeError{Code: "ai_run_not_waiting_consent", Message: "该请求当前不等待授权"}
+		}
+		if !run.ExpiresAt.After(now) {
+			return &RuntimeError{Code: "ai_run_expired", Message: "该请求已过期"}
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("run_id = ? AND user_id = ? AND waiting_state = ? AND status = ?", runID, userID, models.AIRunStateWaitingUserConsent, "waiting").
+			First(&resume).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return &RuntimeError{Code: "ai_run_not_waiting_consent", Message: "该请求当前不等待授权"}
+			}
+			return err
+		}
+		if !resume.ExpiresAt.After(now) {
+			return &RuntimeError{Code: "ai_run_expired", Message: "该请求已过期"}
+		}
+		pending, err := decodePendingToolCalls(json.RawMessage(resume.PendingToolCallsJSON))
+		if err != nil {
+			return err
+		}
+		for _, item := range pending {
+			if item.ConsentScope != scope {
+				return &RuntimeError{Code: "ai_run_consent_scope_mismatch", Message: "授权范围与当前请求不一致"}
+			}
+		}
+		consent := models.AIRunConsent{
+			RunID: runID, UserID: userID, Scope: scope, Granted: granted, ExpiresAt: run.ExpiresAt,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "run_id"}, {Name: "scope"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"user_id": userID, "granted": granted, "expires_at": run.ExpiresAt, "updated_at": now,
+			}),
+		}).Create(&consent).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&models.AIRunResumeJob{}).Where("id = ? AND status = ?", resume.ID, "waiting").
+			Updates(map[string]interface{}{"status": "resuming", "updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return &RuntimeError{Code: "ai_run_consent_conflict", Message: "授权状态已变化，请刷新后重试", Retryable: true}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	go r.executeResumedRun(resume.ID)
 	return nil
 }
 
@@ -256,7 +347,23 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 
 func (r *Runtime) resumeToolResult(ctx context.Context, resume models.AIRunResumeJob, pending persistedPendingToolCall) (json.RawMessage, error) {
 	if resume.WaitingState == models.AIRunStateWaitingUserConsent {
-		return json.RawMessage(`{"status":"completed","consent_granted":true,"instruction":"请重新读取已授权数据"}`), nil
+		if !pending.ConsentScope.Valid() {
+			return json.RawMessage(`{"status":"completed","consent_granted":true,"instruction":"教务授权已完成，请重新读取最新数据"}`), nil
+		}
+		var consent models.AIRunConsent
+		if err := r.db.WithContext(ctx).Where(
+			"run_id = ? AND user_id = ? AND scope = ? AND expires_at > ?",
+			resume.RunID, resume.UserID, pending.ConsentScope, time.Now(),
+		).First(&consent).Error; err != nil {
+			return nil, err
+		}
+		instruction := "用户已允许本次访问，请重新调用工具读取已授权数据"
+		if !consent.Granted {
+			instruction = "用户拒绝了本次访问，不要再次请求或假设可读取该数据"
+		}
+		return json.Marshal(map[string]interface{}{
+			"status": "completed", "consent_granted": consent.Granted, "scope": consent.Scope, "instruction": instruction,
+		})
 	}
 	if resume.WaitingState != models.AIRunStateWaitingDevice || pending.ResumeKey == "" {
 		return nil, errors.New("unsupported resume state")

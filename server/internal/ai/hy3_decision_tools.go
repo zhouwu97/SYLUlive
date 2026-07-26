@@ -201,7 +201,14 @@ func (decision *hy3DecisionMCP) compareCompetitions(ctx context.Context, userID 
 	if decision.db == nil || decision.campus == nil {
 		return hy3Unavailable(mcpclient.ErrorUnavailable, "Hy3 决策服务暂时不可用，请依据已取得的确定性数据回答。"), nil
 	}
-	if !decision.campus.personalAccessAllowed(ctx, userID, models.AIUserPermissionPersonalDataAccess) {
+	wait, denied, permissionErr := decision.campus.requirePermission(ctx, userID, models.AIUserPermissionPersonalDataAccess, "hy3_competition_comparison")
+	if permissionErr != nil {
+		return nil, permissionErr
+	}
+	if wait != nil {
+		return *wait, nil
+	}
+	if denied {
 		return hy3PersonalUnavailable("你已在隐私设置中关闭校园 Agent 的个人数据访问。"), nil
 	}
 
@@ -417,13 +424,16 @@ func (decision *hy3DecisionMCP) analyzeAcademic(ctx context.Context, userID uint
 	if decision.campus == nil {
 		return hy3Unavailable(mcpclient.ErrorUnavailable, "Hy3 决策服务暂时不可用，请依据已取得的确定性数据回答。"), nil
 	}
-	results, err := decision.campus.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
+	results, wait, err := decision.campus.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
 		Datasets:  []academic.DatasetType{academic.DatasetGrades, academic.DatasetCreditRequirements, academic.DatasetAcademicSituation, academic.DatasetErke},
 		Freshness: input.Freshness,
 		Reason:    "hy3_academic_analysis",
 	})
 	if err != nil {
 		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
 	}
 	grades := results[academic.DatasetGrades]
 	if !usablePersonalResult(grades) {
@@ -598,13 +608,16 @@ func (decision *hy3DecisionMCP) planStudentWeek(ctx context.Context, userID uint
 	if decision.campus == nil {
 		return hy3Unavailable(mcpclient.ErrorUnavailable, "Hy3 决策服务暂时不可用，请依据已取得的确定性数据回答。"), nil
 	}
-	results, err := decision.campus.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
+	results, wait, err := decision.campus.resolveSnapshots(ctx, userID, academic.ResolveContextRequest{
 		Datasets:  []academic.DatasetType{academic.DatasetSchedule},
 		Freshness: academic.FreshnessPreferRecent,
 		Reason:    "hy3_week_plan",
 	})
 	if err != nil {
 		return nil, err
+	}
+	if wait != nil {
+		return *wait, nil
 	}
 	scheduleSnapshot := results[academic.DatasetSchedule]
 	if !usablePersonalResult(scheduleSnapshot) {

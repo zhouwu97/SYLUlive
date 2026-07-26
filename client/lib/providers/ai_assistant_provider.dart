@@ -55,6 +55,8 @@ class AiAssistantProvider extends ChangeNotifier {
   final List<AiConversation> _conversations = [];
   AiRunEvent? _currentRun;
   AiRun? _run;
+  AiRunEvent? _pendingConsent;
+  bool _submittingConsent = false;
   AiConnectionState _connectionState = AiConnectionState.idle;
   String _streamedText = '';
   List<AiSource> _sources = [];
@@ -73,6 +75,8 @@ class AiAssistantProvider extends ChangeNotifier {
   List<AiChatMessage> get messages => List.unmodifiable(_messages);
   List<AiConversation> get conversations => List.unmodifiable(_conversations);
   AiRunEvent? get currentRun => _currentRun;
+  AiRunEvent? get pendingConsent => _pendingConsent;
+  bool get submittingConsent => _submittingConsent;
   AiConnectionState get connectionState => _connectionState;
   String get streamedText => _streamedText;
   List<AiSource> get sources => List.unmodifiable(_sources);
@@ -354,6 +358,37 @@ class AiAssistantProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> submitConsent(bool granted) async {
+    final consent = _pendingConsent;
+    final runId = consent?.runId.isNotEmpty == true ? consent!.runId : _run?.id;
+    if (consent == null ||
+        runId == null ||
+        consent.consentScope.isEmpty ||
+        _submittingConsent) {
+      return false;
+    }
+    _submittingConsent = true;
+    _notify();
+    try {
+      await _service.submitRunConsent(
+        runId: runId,
+        scope: consent.consentScope,
+        granted: granted,
+      );
+      if (identical(_pendingConsent, consent)) _pendingConsent = null;
+      return true;
+    } on AiAssistantServiceException catch (exception) {
+      _error = exception.message;
+      return false;
+    } catch (_) {
+      _error = '提交本次授权失败，请稍后重试';
+      return false;
+    } finally {
+      _submittingConsent = false;
+      _notify();
+    }
+  }
+
   Future<void> reconnect() async {
     final runId = _run?.id;
     if (runId == null || isRunning) return;
@@ -488,6 +523,9 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.deviceWaiting:
       case AiRunEventType.deviceClaimed:
       case AiRunEventType.consentRequired:
+        _pendingConsent = event;
+        _connectionState = AiConnectionState.streaming;
+        break;
       case AiRunEventType.eduFetching:
       case AiRunEventType.toolCompleted:
         _connectionState = AiConnectionState.streaming;
@@ -628,6 +666,8 @@ class AiAssistantProvider extends ChangeNotifier {
   void _resetRunState() {
     _run = null;
     _currentRun = null;
+    _pendingConsent = null;
+    _submittingConsent = false;
     _connectionState = AiConnectionState.idle;
     _streamedText = '';
     _sources = [];

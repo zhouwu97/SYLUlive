@@ -85,3 +85,13 @@ func TestRouteModelToolsForMessagesKeepsHy3RouteAfterConsentResume(t *testing.T)
 
 	require.Equal(t, []ToolDefinition{{Name: "hy3_decision_analyze_academic"}}, routeModelToolsForMessages(messages, definitions))
 }
+
+func TestVerifiedPolicyRAGDoesNotDisablePersonalHy3Intent(t *testing.T) {
+	makeupChunks := []RetrievedChunk{{ChunkID: 1, Content: "补考总成绩由原平时成绩与补考卷面成绩按课程比例合成"}}
+	retakeChunks := []RetrievedChunk{{ChunkID: 2, Content: "课程重修应按规定报名"}}
+	weakChunks := []RetrievedChunk{{ChunkID: 3, Content: "竞赛成绩奖励规则"}}
+	require.True(t, shouldAnswerFromVerifiedRAG(BuildPolicyQueryPlan("补考成绩怎么算"), makeupChunks))
+	require.True(t, shouldAnswerFromVerifiedRAG(BuildPolicyQueryPlan("重修有什么规定"), retakeChunks))
+	require.False(t, shouldAnswerFromVerifiedRAG(BuildPolicyQueryPlan("补考成绩怎么算"), weakChunks))
+	require.False(t, shouldAnswerFromVerifiedRAG(BuildPolicyQueryPlan("计算我的 GPA 和学分情况"), makeupChunks))
+}

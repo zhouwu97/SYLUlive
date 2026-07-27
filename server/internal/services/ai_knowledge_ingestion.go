@@ -139,7 +139,19 @@ type preparedKnowledgeChunk struct {
 	searchTokens  string
 	sectionTitle  string
 	sourceLocator string
+	metadata      []byte
 	embedding     []float32
+}
+
+type knowledgeChunkMetadata struct {
+	ChunkingVersion string   `json:"chunking_version"`
+	DocumentTitle   string   `json:"document_title"`
+	DocumentType    string   `json:"document_type,omitempty"`
+	Department      string   `json:"department,omitempty"`
+	SectionTitle    string   `json:"section_title,omitempty"`
+	SectionPath     []string `json:"section_path,omitempty"`
+	SourceLocator   string   `json:"source_locator"`
+	Aliases         []string `json:"aliases,omitempty"`
 }
 
 func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKnowledgeIngestionJob) error {
@@ -154,17 +166,27 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 	prepared := make([]preparedKnowledgeChunk, len(chunks))
 	texts := make([]string, len(chunks))
 	for index, chunk := range chunks {
-		analysis, err := w.rag.Analyze(ctx, chunk.Content)
+		embeddingText := buildKnowledgeEmbeddingText(document, chunk)
+		analysis, err := w.rag.Analyze(ctx, embeddingText)
 		if err != nil {
 			return fmt.Errorf("analyze_chunk: %w", err)
+		}
+		metadata, err := json.Marshal(knowledgeChunkMetadata{
+			ChunkingVersion: structuredChunkingVersion,
+			DocumentTitle:   document.Title, DocumentType: document.DocumentType, Department: document.Department,
+			SectionTitle: chunk.SectionTitle, SectionPath: chunk.SectionPath,
+			SourceLocator: chunk.SourceLocator, Aliases: chunk.Aliases,
+		})
+		if err != nil {
+			return fmt.Errorf("marshal_chunk_metadata: %w", err)
 		}
 		hash := sha256.Sum256([]byte(chunk.Content))
 		prepared[index] = preparedKnowledgeChunk{
 			index: index, content: chunk.Content, contentHash: hex.EncodeToString(hash[:]),
 			searchTokens: analysis.SearchString, sectionTitle: chunk.SectionTitle,
-			sourceLocator: fmt.Sprintf("chunk:%d", index+1),
+			sourceLocator: chunk.SourceLocator, metadata: metadata,
 		}
-		texts[index] = chunk.Content
+		texts[index] = embeddingText
 	}
 	for start := 0; start < len(texts); start += 32 {
 		end := start + 32
@@ -187,6 +209,25 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 		if err := ensureActiveEmbeddingModel(tx, w.modelVersion); err != nil {
 			return err
 		}
+		var current models.AIKnowledgeDocument
+		query := tx.Select("id", "title", "document_type", "department", "content_hash", "status").Where("id = ?", document.ID)
+		if tx.Dialector.Name() == "postgres" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.First(&current).Error; err != nil {
+			return err
+		}
+		if current.ContentHash != document.ContentHash || current.Title != document.Title ||
+			current.DocumentType != document.DocumentType || current.Department != document.Department {
+			return errors.New("knowledge_document_changed_during_ingestion")
+		}
+		if job.RestoreStatus == models.KnowledgeStatusPublished && current.Status != models.KnowledgeStatusPublished {
+			return errors.New("published_knowledge_document_status_changed")
+		}
+		if job.RestoreStatus != models.KnowledgeStatusPublished && current.Status != models.KnowledgeStatusIndexing {
+			return errors.New("knowledge_document_status_changed_during_ingestion")
+		}
+		// 删除和写入必须处于同一事务；任何新块写入失败都会回滚并恢复旧索引。
 		if err := tx.Where("document_id = ?", document.ID).Delete(&models.AIKnowledgeChunk{}).Error; err != nil {
 			return err
 		}
@@ -195,10 +236,10 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 				err := tx.Exec(`INSERT INTO ai_knowledge_chunks
 					(document_id, chunk_index, content, content_hash, search_tokens, embedding,
 					 section_title, source_locator, embedding_model_version, metadata, created_at)
-					VALUES (?, ?, ?, ?, ?, ?::vector, ?, ?, ?, '{}'::jsonb, ?)`,
+					VALUES (?, ?, ?, ?, ?, ?::vector, ?, ?, ?, ?::jsonb, ?)`,
 					document.ID, chunk.index, chunk.content, chunk.contentHash, chunk.searchTokens,
 					formatEmbedding(chunk.embedding), chunk.sectionTitle, chunk.sourceLocator,
-					w.modelVersion, time.Now()).Error
+					w.modelVersion, string(chunk.metadata), time.Now()).Error
 				if err != nil {
 					return err
 				}
@@ -208,6 +249,7 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 					ContentHash: chunk.contentHash, SearchTokens: chunk.searchTokens,
 					Embedding: formatEmbedding(chunk.embedding), SectionTitle: chunk.sectionTitle,
 					SourceLocator: chunk.sourceLocator, EmbeddingModelVersion: w.modelVersion,
+					Metadata: chunk.metadata,
 				}
 				if err := tx.Create(&row).Error; err != nil {
 					return err
@@ -217,7 +259,8 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 		inspection, _ := json.Marshal(map[string]interface{}{
 			"bytes": len(document.Content), "runes": utf8.RuneCountInString(document.Content),
 			"content_hash": document.ContentHash, "unresolved_items": []string{},
-			"chunk_count": len(prepared), "embedding_model_version": w.modelVersion,
+			"chunk_count": len(prepared), "chunking_version": structuredChunkingVersion,
+			"embedding_model_version": w.modelVersion,
 		})
 		now := time.Now()
 		restoreStatus := job.RestoreStatus
@@ -283,61 +326,26 @@ func ensureActiveEmbeddingModel(tx *gorm.DB, version string) error {
 	return nil
 }
 
-type knowledgeTextChunk struct {
-	Content      string
-	SectionTitle string
-}
-
-func splitKnowledgeDocument(content string, maxRunes, overlapRunes int) []knowledgeTextChunk {
-	content = strings.ReplaceAll(strings.ReplaceAll(content, "\r\n", "\n"), "\r", "\n")
-	paragraphs := strings.Split(content, "\n")
-	chunks := make([]knowledgeTextChunk, 0)
-	buffer := make([]rune, 0, maxRunes)
-	section := ""
-	flush := func() {
-		text := strings.TrimSpace(string(buffer))
-		if text != "" {
-			chunks = append(chunks, knowledgeTextChunk{Content: text, SectionTitle: section})
-		}
-		if len(buffer) > overlapRunes {
-			buffer = append([]rune(nil), buffer[len(buffer)-overlapRunes:]...)
-		} else {
-			buffer = buffer[:0]
+func buildKnowledgeEmbeddingText(document models.AIKnowledgeDocument, chunk knowledgeTextChunk) string {
+	sectionPath := strings.Join(chunk.SectionPath, " > ")
+	if sectionPath == "" {
+		sectionPath = chunk.SectionTitle
+	}
+	parts := []string{
+		document.Title,
+		document.DocumentType,
+		document.Department,
+		sectionPath,
+		strings.Join(chunk.Aliases, " "),
+		chunk.Content,
+	}
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			result = append(result, part)
 		}
 	}
-	for _, paragraph := range paragraphs {
-		paragraph = strings.TrimSpace(paragraph)
-		if paragraph == "" {
-			continue
-		}
-		paragraphRunes := []rune(paragraph)
-		if len(paragraphRunes) <= 60 && (strings.HasSuffix(paragraph, "：") || strings.HasPrefix(paragraph, "第") || strings.HasPrefix(paragraph, "#")) {
-			section = strings.TrimLeft(paragraph, "# ")
-		}
-		for len(paragraphRunes) > 0 {
-			remaining := maxRunes - len(buffer)
-			if remaining <= 1 {
-				flush()
-				remaining = maxRunes - len(buffer)
-			}
-			count := len(paragraphRunes)
-			if count > remaining-1 {
-				count = remaining - 1
-			}
-			if len(buffer) > 0 {
-				buffer = append(buffer, '\n')
-			}
-			buffer = append(buffer, paragraphRunes[:count]...)
-			paragraphRunes = paragraphRunes[count:]
-			if len(buffer) >= maxRunes-1 {
-				flush()
-			}
-		}
-	}
-	if strings.TrimSpace(string(buffer)) != "" {
-		chunks = append(chunks, knowledgeTextChunk{Content: strings.TrimSpace(string(buffer)), SectionTitle: section})
-	}
-	return chunks
+	return strings.Join(result, "\n")
 }
 
 func formatEmbedding(values []float32) string {

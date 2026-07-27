@@ -643,7 +643,7 @@ func main() {
 	var aiRuntime *ai.Runtime
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
-			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql）: %v", schemaErr)
+			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
 		}
 		ragHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
 		var ragErr error

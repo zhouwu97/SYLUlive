@@ -1,10 +1,29 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestValidateExternalMCPConfigAcceptsBareIPv6AndRejectsUnsafeValues(t *testing.T) {
+	keyPath := filepath.Join(os.TempDir(), "mcp_ed25519")
+	knownHostsPath := filepath.Join(os.TempDir(), "mcp_known_hosts")
+	require.NoError(t, validateExternalMCPConfig(
+		true, "ssh_stdio", "", 90, 1,
+		"2001:db8::8", 22, "mcp-runner", keyPath, knownHostsPath,
+	))
+	require.Error(t, validateExternalMCPConfig(
+		true, "ssh_stdio", "", 90, 1,
+		"mcp-runner@example.com", 22, "mcp-runner", keyPath, knownHostsPath,
+	))
+	require.Error(t, validateExternalMCPConfig(
+		true, "local_stdio", "/opt/mcp\n--unsafe", 90, 1,
+		"", 0, "", "", "",
+	))
+}
 
 func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret")
@@ -220,6 +239,17 @@ func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	require.True(t, cfg.AIInternalTestOnly)
 	require.Empty(t, cfg.DeepSeekAPIKey)
 	require.Equal(t, "deepseek-v4-flash", cfg.DeepSeekChatModel)
+	require.Equal(t, 3, cfg.AIMaxToolSteps)
+}
+
+func TestLoadAIQuotaExemptUserIDs(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_QUOTA_EXEMPT_USER_IDS", "2, 7,2")
+	cfg := Load()
+	require.Equal(t, []uint{2, 7}, cfg.AIQuotaExemptUserIDs)
+
+	t.Setenv("AI_QUOTA_EXEMPT_USER_IDS", "2,invalid")
+	require.Panics(t, func() { Load() })
 }
 
 func TestLoadAIConfigRequiresServerKeyAndWhitelist(t *testing.T) {
@@ -254,6 +284,10 @@ func TestLoadPolicyRAGRequiresInternalServiceToken(t *testing.T) {
 func TestLoadAIRejectsUnsafeLimits(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "0")
+	require.Panics(t, func() { Load() })
+
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_MAX_TOOL_STEPS", "0")
 	require.Panics(t, func() { Load() })
 }
 

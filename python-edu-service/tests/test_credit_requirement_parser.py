@@ -427,6 +427,39 @@ async def test_fetch_credit_requirements_uses_ajax_query_protocol():
     assert requests[1].content == b"jg_id=college&njdm_id=2024&zyh_id=major"
 
 
+@pytest.mark.asyncio
+async def test_fetch_credit_requirements_rejects_unselected_query_fields():
+    """查询表单没有当前选项时，不能错误地回退到第一项专业。"""
+    entry_html = """
+    <html><body>
+      <form id="searchForm">
+        <select name="jg_id"><option value="college-a">甲学院</option><option value="college-b">乙学院</option></select>
+        <select name="njdm_id"><option value="2023">2023</option><option value="2024">2024</option></select>
+        <select name="zyh_id"><option value="major-a">甲专业</option><option value="major-b">乙专业</option></select>
+      </form>
+    </body></html>
+    """
+    requests = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if str(request.url).startswith(ACADEMIC_REQUIREMENT_URL):
+            return httpx.Response(200, text=entry_html, request=request)
+        return httpx.Response(500, request=request)
+
+    crawler = EduCrawler()
+    crawler.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        result = await crawler.fetch_credit_requirements("session-cookie")
+    finally:
+        await crawler.client.aclose()
+
+    assert result["success"] is False
+    assert result["status"] == "query_protocol_changed"
+    assert result["error_code"] == "CREDIT_REQUIREMENT_QUERY_PROTOCOL_CHANGED"
+    assert len(requests) == 1
+
+
 def test_source_url():
     """测试源 URL。"""
     result = parse_credit_requirement_html(_minimal_page())

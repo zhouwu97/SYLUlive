@@ -86,7 +86,14 @@ async def fetch_courses(
             message=str(error),
         )
     except NetworkError as error:
-        raise HTTPException(status_code=503, detail=str(error))
+        # 保留错误码：课表接口无法解析属于故障，不能让上游当成“暂未排课”处理。
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": getattr(error, "code", "REMOTE_SYSTEM_UNAVAILABLE"),
+                "message": str(error),
+            },
+        )
     except LoginFailedError as error:
         raise HTTPException(status_code=401, detail=str(error))
 

@@ -14,6 +14,10 @@ import '../services/grade_reminder_service.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
+import '../widgets/edu_grade/grade_gpa_hero_card.dart';
+import '../widgets/edu_grade/academic_course_item.dart';
+import '../widgets/edu_grade/academic_course_status_state.dart';
+import '../widgets/edu_grade/academic_credit_overview.dart';
 import '../widgets/edu_grade/academic_privacy_notice.dart';
 import '../widgets/edu_grade/grade_center_section_tabs.dart';
 import '../widgets/edu_grade/academic_requirement_overview.dart';
@@ -751,7 +755,55 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   List<Widget> _buildAcademicContent() {
+    // 学业情况和官方学分要求独立加载，任一来源失败均不遮蔽另一份数据。
+    final situation = _academicError == null ? _academicSituation : null;
     return [
+      SliverToBoxAdapter(
+        child: GradeGpaHeroCard(
+          situation: situation,
+          isLoading: _isAcademicLoading,
+          errorMessage: _academicError,
+          onRetry: _refreshAcademicSituation,
+        ),
+      ),
+      if (situation != null)
+        SliverToBoxAdapter(
+          child: AcademicCreditOverview(situation: situation),
+        ),
+      if (situation != null && situation.courses.isNotEmpty) ...[
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Text(
+              '课程明细',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : const Color(0xFF1F2328),
+              ),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => AcademicCourseItem(
+                course: situation.courses[index],
+              ),
+              childCount: situation.courses.length,
+            ),
+          ),
+        ),
+      ] else if (situation != null && !_isAcademicLoading)
+        SliverToBoxAdapter(
+          child: AcademicCourseStatusState(
+            status: situation.coursesStatus,
+          ),
+        ),
+
       // 学分要求模块
       SliverToBoxAdapter(
         child: AcademicRequirementOverview(

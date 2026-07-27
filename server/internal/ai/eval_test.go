@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -36,6 +39,41 @@ func TestEvaluationFixturesCoverRequiredCategories(t *testing.T) {
 	for _, category := range []string{"typo", "colloquial", "historical_conflict", "prompt_injection", "negative"} {
 		require.NotZero(t, categories[category], category)
 	}
+}
+
+func TestEvaluationJSONSchemaMatchesGoContract(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(evaluationFixtureDirectory(), "schema.json"))
+	require.NoError(t, err)
+	require.True(t, json.Valid(raw))
+
+	var schema struct {
+		ID                   string                     `json:"$id"`
+		AdditionalProperties bool                       `json:"additionalProperties"`
+		Properties           map[string]json.RawMessage `json:"properties"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &schema))
+	require.Equal(t, "https://shenliyuan.local/schemas/ai-evaluation-case-v1.json", schema.ID)
+	require.False(t, schema.AdditionalProperties)
+
+	typeOfCase := reflect.TypeOf(EvaluationCase{})
+	goFields := make([]string, 0, typeOfCase.NumField())
+	for index := 0; index < typeOfCase.NumField(); index++ {
+		name := strings.Split(typeOfCase.Field(index).Tag.Get("json"), ",")[0]
+		if name != "" && name != "-" {
+			goFields = append(goFields, name)
+		}
+	}
+	require.ElementsMatch(t, goFields, reflectMapKeys(schema.Properties))
+}
+
+func TestLoadEvaluationCasesRejectsFieldsOutsideSharedSchema(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "unknown-field.jsonl")
+	err := os.WriteFile(path, []byte(`{"id":"case","kind":"policy","question":"问题","should_refuse":true,"fixture":{"refused":true},"python_only":true}`), 0o600)
+	require.NoError(t, err)
+
+	_, err = LoadEvaluationCases(directory)
+	require.ErrorContains(t, err, "unknown field")
 }
 
 func TestFixedEvaluationFixturesPass(t *testing.T) {
@@ -93,4 +131,12 @@ func (failingEvaluationBackend) Retrieve(context.Context, EvaluationCase) ([]Eva
 
 func (failingEvaluationBackend) Generate(context.Context, EvaluationCase, []EvaluationDocument) (EvaluationOutput, error) {
 	return EvaluationOutput{}, nil
+}
+
+func reflectMapKeys(values map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
 }

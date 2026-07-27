@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-POLICY_RAG_SCHEMA_VERSION = "1.0"
+POLICY_RAG_SCHEMA_VERSION = "1.1"
 
 
 class StrictSchema(BaseModel):
@@ -25,10 +25,49 @@ class PolicyRAGInput(StrictSchema):
     max_sources: int = Field(default=6, ge=1, le=10)
 
 
+class PolicyRule(StrictSchema):
+    statement: str = Field(min_length=1, max_length=4_000)
+    citation_ids: list[str] = Field(min_length=1, max_length=10)
+
+
+class PolicyCitation(StrictSchema):
+    reference_id: str = Field(pattern=r"^R[1-9][0-9]?$", max_length=3)
+    quote: str = Field(min_length=4, max_length=1_000)
+
+
+class PolicyAnswer(StrictSchema):
+    """模型的结构化输出；引用仍是单次请求内的临时编号。"""
+
+    answer: str = Field(min_length=1, max_length=8_000)
+    current_rules: list[PolicyRule] = Field(default_factory=list, max_length=20)
+    historical_rules: list[PolicyRule] = Field(default_factory=list, max_length=20)
+    warnings: list[str] = Field(default_factory=list, max_length=20)
+    citations: list[PolicyCitation] = Field(min_length=1, max_length=10)
+    confidence: Literal["low", "medium", "high"]
+
+    @model_validator(mode="after")
+    def validate_reference_graph(self) -> "PolicyAnswer":
+        citation_ids = [item.reference_id for item in self.citations]
+        if len(citation_ids) != len(set(citation_ids)):
+            raise ValueError("duplicate temporary citation")
+        declared = set(citation_ids)
+        used = {
+            citation_id
+            for rule in (*self.current_rules, *self.historical_rules)
+            for citation_id in rule.citation_ids
+        }
+        if not used.issubset(declared):
+            raise ValueError("rule contains undeclared temporary citation")
+        if not used:
+            raise ValueError("structured answer has no cited rule")
+        return self
+
+
 class PolicySource(StrictSchema):
     source_id: str = Field(min_length=1, max_length=100)
     document_id: int = Field(gt=0)
     chunk_id: int = Field(gt=0)
+    citation_number: int = Field(gt=0, le=99)
     title: str = Field(min_length=1, max_length=300)
     content: str = Field(default="", max_length=8_000)
     document_type: str = Field(default="", max_length=100)
@@ -53,7 +92,7 @@ class PolicyRAGResult(StrictSchema):
     schema_version: Literal[POLICY_RAG_SCHEMA_VERSION] = POLICY_RAG_SCHEMA_VERSION
     chain_name: str = Field(min_length=1, max_length=100)
     chain_version: str = Field(min_length=1, max_length=100)
-    status: Literal["completed", "insufficient_sources"]
+    status: Literal["completed", "insufficient_sources", "citation_rejected"]
     answer: str = Field(min_length=1, max_length=32_000)
     warnings: list[str] = Field(default_factory=list, max_length=20)
     sources: list[PolicySource] = Field(default_factory=list, max_length=10)
@@ -62,11 +101,13 @@ class PolicyRAGResult(StrictSchema):
 
     @model_validator(mode="after")
     def validate_metering(self) -> "PolicyRAGResult":
-        if self.status == "completed":
+        if self.status in {"completed", "citation_rejected"}:
             if not self.usage.metered:
-                raise ValueError("completed result must contain metered usage")
+                raise ValueError("generated result must contain metered usage")
             if self.usage.input_tokens + self.usage.output_tokens <= 0:
-                raise ValueError("completed result must contain non-zero usage")
+                raise ValueError("generated result must contain non-zero usage")
+            if self.status == "citation_rejected" and self.sources:
+                raise ValueError("citation rejected result must not contain sources")
         elif self.sources:
             raise ValueError("insufficient result must not contain sources")
         return self

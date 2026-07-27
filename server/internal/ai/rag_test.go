@@ -15,11 +15,43 @@ func TestValidateCitationsBlocksUnknownChunksAndBuildsServerSources(t *testing.T
 	}}
 	answer, sources, invalid := ValidateCitations("有效规定[chunk:18]，伪造内容[chunk:999]。", chunks)
 	require.True(t, invalid)
-	require.Contains(t, answer, "[chunk:18]")
+	require.Contains(t, answer, "[1]")
+	require.NotContains(t, answer, "chunk:")
 	require.NotContains(t, answer, "[chunk:999]")
 	require.Len(t, sources, 1)
 	require.Equal(t, "学生手册", sources[0].Title)
 	require.Equal(t, "confirmed", sources[0].Confidence)
+}
+
+func TestValidateNumberedCitationsRejectsForgeryAndAggregatesByDocument(t *testing.T) {
+	chunks := []RetrievedChunk{
+		{ChunkID: 18, DocumentID: 3, CitationNumber: 1, Title: "学生手册", SourceLocator: "第十条"},
+		{ChunkID: 19, DocumentID: 3, CitationNumber: 2, Title: "学生手册", SourceLocator: "第十一条"},
+	}
+	answer, sources, invalid := ValidateCitations("第一项[1]，第二项[2]。", chunks)
+	require.False(t, invalid)
+	require.Equal(t, "第一项[1]，第二项[2]。", answer)
+	require.Len(t, sources, 1)
+	require.Equal(t, []int{1, 2}, sources[0].CitationNumbers)
+	require.Equal(t, []string{"第十条", "第十一条"}, sources[0].Locators)
+
+	_, _, invalid = ValidateCitations("伪造结论[9]。", chunks)
+	require.True(t, invalid)
+}
+
+func TestValidateNumberedCitationsIgnoresMarkdownNumericLinkLabels(t *testing.T) {
+	chunks := []RetrievedChunk{{
+		ChunkID: 18, DocumentID: 3, CitationNumber: 1, Title: "学生手册",
+	}}
+
+	answer, sources, invalid := ValidateCitations(
+		"政策结论[1]，发布年度见[2026](https://example.edu/policy)。",
+		chunks,
+	)
+
+	require.False(t, invalid)
+	require.Equal(t, "政策结论[1]，发布年度见[2026](https://example.edu/policy)。", answer)
+	require.Len(t, sources, 1)
 }
 
 func TestFormatVectorUsesPgvectorLiteral(t *testing.T) {

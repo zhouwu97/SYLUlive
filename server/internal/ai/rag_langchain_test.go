@@ -18,10 +18,10 @@ func policyBool(value bool) *bool { return &value }
 func validPolicyRAGResult(requestID string) PolicyRAGResult {
 	return PolicyRAGResult{
 		RequestID: requestID, SchemaVersion: PolicyRAGSchemaVersion,
-		ChainName: "shenliyuan_policy_rag", ChainVersion: "reranker-gate-v2",
-		Status: "completed", Answer: "请履行审批手续。[chunk:18]",
+		ChainName: "shenliyuan_policy_rag", ChainVersion: "answer-citations-v3",
+		Status: "completed", Answer: "请履行审批手续。[1]",
 		Sources: []PolicyRAGSource{{
-			SourceID: "source-1", DocumentID: 9, ChunkID: 18, Title: "学生手册",
+			SourceID: "R1", DocumentID: 9, ChunkID: 18, CitationNumber: 1, Title: "学生手册",
 			Content: "学生请假应履行审批手续。",
 		}},
 		Usage: &PolicyRAGUsage{
@@ -50,7 +50,7 @@ func TestRAGClientQueryPolicyUsesInternalTokenAndValidatesUsage(t *testing.T) {
 		RequestID: "query-1", Question: "怎么请假",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "reranker-gate-v2", result.ChainVersion)
+	require.Equal(t, "answer-citations-v3", result.ChainVersion)
 	require.Equal(t, 20, *result.Usage.InputTokens)
 }
 
@@ -81,15 +81,25 @@ func TestRAGClientQueryPolicyRejectsMissingOrZeroUsage(t *testing.T) {
 	}
 }
 
+func TestPolicyRAGResultRejectsForgedNumberedCitation(t *testing.T) {
+	result := validPolicyRAGResult("forged")
+	result.Answer = "伪造结论[9]"
+	require.Error(t, result.validate("forged"))
+
+	result = validPolicyRAGResult("source-mismatch")
+	result.Sources[0].SourceID = "R9"
+	require.Error(t, result.validate("source-mismatch"))
+}
+
 func TestRAGClientStreamPolicyConsumesVersionedEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")
 		result := validPolicyRAGResult("stream-1")
 		events := []PolicyRAGEvent{
-			{RequestID: "stream-1", SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 1, Type: "planning", Timestamp: time.Now().Format(time.RFC3339Nano)},
-			{RequestID: "stream-1", SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 2, Type: "reranking", Timestamp: time.Now().Format(time.RFC3339Nano)},
-			{RequestID: "stream-1", SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 3, Type: "token", Timestamp: time.Now().Format(time.RFC3339Nano), Delta: result.Answer},
-			{RequestID: "stream-1", SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 4, Type: "completed", Timestamp: time.Now().Format(time.RFC3339Nano), Result: &result},
+			{RequestID: "stream-1", SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 1, Type: "planning", Timestamp: time.Now().Format(time.RFC3339Nano)},
+			{RequestID: "stream-1", SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 2, Type: "reranking", Timestamp: time.Now().Format(time.RFC3339Nano)},
+			{RequestID: "stream-1", SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 3, Type: "token", Timestamp: time.Now().Format(time.RFC3339Nano), Delta: result.Answer},
+			{RequestID: "stream-1", SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 4, Type: "completed", Timestamp: time.Now().Format(time.RFC3339Nano), Result: &result},
 		}
 		for _, event := range events {
 			data, _ := json.Marshal(event)

@@ -8,6 +8,8 @@ class AiSource {
   final String publisher;
   final String status;
   final String? url;
+  final List<int> citationNumbers;
+  final List<String> locators;
 
   const AiSource({
     required this.type,
@@ -17,6 +19,8 @@ class AiSource {
     this.publisher = '',
     this.status = '',
     this.url,
+    this.citationNumbers = const [],
+    this.locators = const [],
   });
 
   factory AiSource.fromJson(Map<String, dynamic> json) {
@@ -24,12 +28,18 @@ class AiSource {
       type: json['type'] == 'schedule'
           ? AiSourceType.schedule
           : AiSourceType.policy,
-      chunkId: int.tryParse('${json['chunk_id'] ?? ''}') ?? 0,
+      chunkId: int.tryParse(
+              '${json['primary_chunk_id'] ?? json['chunk_id'] ?? ''}') ??
+          0,
       documentId: int.tryParse('${json['document_id'] ?? ''}') ?? 0,
       title: json['title']?.toString() ?? '',
-      publisher: json['publisher']?.toString() ?? '',
-      status: json['status']?.toString() ?? '',
+      publisher:
+          json['publisher']?.toString() ?? json['department']?.toString() ?? '',
+      status:
+          json['status']?.toString() ?? json['confidence']?.toString() ?? '',
       url: json['url']?.toString(),
+      citationNumbers: _intList(json['citation_numbers']),
+      locators: _stringList(json['locators']),
     );
   }
 
@@ -38,6 +48,9 @@ class AiSource {
   String get reliabilityNote => type == AiSourceType.schedule
       ? '来自本机已同步课表缓存，并非实时教务数据。'
       : '请以来源文件当前有效版本为准。';
+
+  String get citationLabel =>
+      citationNumbers.map((number) => '[$number]').join();
 }
 
 class AiSourceContent {
@@ -67,4 +80,20 @@ class AiSourceContent {
       locator: json['locator']?.toString() ?? '',
     );
   }
+}
+
+List<int> _intList(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .map((item) => int.tryParse(item.toString()) ?? 0)
+      .where((item) => item > 0)
+      .toList(growable: false);
+}
+
+List<String> _stringList(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .map((item) => item.toString().trim())
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
 }

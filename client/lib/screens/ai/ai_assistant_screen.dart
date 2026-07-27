@@ -954,7 +954,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   maxCharacters: maxInputCharacters,
                   enabled: _personalMode
                       ? !_personalSending && !_personalHistoryLoading
-                      : capabilities.chatEnabled && quota.remaining > 0,
+                      : capabilities.chatEnabled &&
+                          (quota.unlimited || quota.remaining > 0),
                   running: _personalMode
                       ? _personalSending
                       : provider.isRunning,

@@ -15,6 +15,7 @@ void main() {
         'remaining': 2,
         'window_seconds': 3600,
         'reset_at': '2026-07-19T12:30:00+08:00',
+        'unlimited': true,
       },
       'max_message_chars': 120,
     });
@@ -23,6 +24,7 @@ void main() {
     expect(capabilities.chatEnabled, isFalse);
     expect(capabilities.phase, 'p0');
     expect(capabilities.quota.remaining, 2);
+    expect(capabilities.quota.unlimited, isTrue);
     expect(capabilities.quota.resetAt, isNotNull);
     expect(capabilities.maxMessageChars, 120);
   });

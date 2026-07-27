@@ -202,9 +202,9 @@ func TestDeleteConversationRetainsConsumedQuotaLedger(t *testing.T) {
 	require.NoError(t, db.Where("user_id = ?", userID).First(&quota).Error)
 	require.Equal(t, "consumed", quota.Status)
 	require.NotEqual(t, runID, quota.RunID)
-	remaining, _, err := runtime.Quota(context.Background(), userID)
+	quotaStatus, err := runtime.Quota(context.Background(), userID)
 	require.NoError(t, err)
-	require.Equal(t, 2, remaining)
+	require.Equal(t, 2, quotaStatus.Remaining)
 	var runCount, conversationCount int64
 	require.NoError(t, db.Model(&models.AIRun{}).Where("id = ?", runID).Count(&runCount).Error)
 	require.NoError(t, db.Model(&models.AIConversation{}).Where("id = ?", conversationID).Count(&conversationCount).Error)

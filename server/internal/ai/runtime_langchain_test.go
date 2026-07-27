@@ -324,8 +324,8 @@ func TestLangChainRuntimeCancelPropagatesAndReleasesReservation(t *testing.T) {
 		}
 	}, time.Second, 10*time.Millisecond)
 	require.Eventually(t, func() bool {
-		remaining, _, quotaErr := runtime.Quota(context.Background(), 32)
-		return quotaErr == nil && remaining == 3
+		quota, quotaErr := runtime.Quota(context.Background(), 32)
+		return quotaErr == nil && quota.Remaining == 3
 	}, time.Second, 10*time.Millisecond)
 }
 

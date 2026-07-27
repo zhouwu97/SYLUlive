@@ -37,4 +37,37 @@ void main() {
     await tester.tap(find.byType(InkWell));
     expect(tapped, isTrue);
   });
+
+  testWidgets('校园 AI 卡片展示不限次数', (tester) async {
+    const capabilities = AiCapabilities(
+      enabled: true,
+      accessAllowed: true,
+      internalTestOnly: false,
+      chatEnabled: true,
+      phase: 'p2',
+      features: AiFeatures(policyRag: true, scheduleWindows: false),
+      quota: AiQuota(
+        limit: 3,
+        remaining: 3,
+        windowSeconds: 3600,
+        unlimited: true,
+      ),
+      maxMessageChars: 120,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CampusAiEntryCard(
+            capabilities: capabilities,
+            isDark: false,
+            onTap: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('使用次数不限 · 每次最多 120 字'), findsOneWidget);
+    expect(find.text('不限次数'), findsOneWidget);
+  });
 }

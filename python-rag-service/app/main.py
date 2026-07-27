@@ -8,7 +8,7 @@ from typing import Annotated
 
 import jieba
 from bs4 import BeautifulSoup
-from docx import Document
+from docx import Document as DocxDocument
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastembed import TextEmbedding
@@ -22,9 +22,10 @@ from app.chains import (
     astream_policy_events,
     build_policy_rag_chain,
 )
+from app.ingestion import FastEmbedLangChainEmbeddings, chunk_policy_document
 from app.providers import build_policy_chat_provider
 from app.retrievers import FoundationPolicyRetriever
-from app.schemas import PolicyRAGEvent, PolicyRAGInput, PolicyRAGResult
+from app.schemas import KnowledgeChunkRequest, KnowledgeChunkResult, PolicyRAGEvent, PolicyRAGInput, PolicyRAGResult
 
 
 SERVICE_TOKEN = os.environ.get("RAG_SERVICE_TOKEN", "").strip()
@@ -32,16 +33,16 @@ MODEL_NAME = os.environ.get(
     "RAG_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 ).strip()
 MODEL_VERSION = os.environ.get(
-    "RAG_EMBEDDING_MODEL_VERSION", "paraphrase-multilingual-minilm-l12-v2-padded-1536-v1"
+    "RAG_EMBEDDING_MODEL_VERSION", "paraphrase-multilingual-minilm-l12-v2-384-v1"
 ).strip()
+EXPECTED_DIMENSIONS = max(1, min(int(os.environ.get("RAG_EMBEDDING_DIMENSIONS", "384")), 2_000))
 MAX_BATCH = max(1, min(int(os.environ.get("RAG_MAX_BATCH", "32")), 64))
 MAX_CONCURRENCY = max(1, min(int(os.environ.get("RAG_MAX_CONCURRENCY", "2")), 4))
 QUERY_TIMEOUT_SECONDS = max(5, min(int(os.environ.get("RAG_QUERY_TIMEOUT_SECONDS", "60")), 120))
 MAX_TEXT_CHARS = 100_000
-TARGET_DIMENSIONS = 1536
 MAX_POLICY_RESPONSE_BYTES = 1 << 20
 
-model: TextEmbedding | None = None
+model: FastEmbedLangChainEmbeddings | None = None
 model_error = ""
 semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 query_semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
@@ -54,11 +55,22 @@ policy_model_name = "unconfigured"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global model, model_error, policy_chain, policy_provider_ready, policy_provider_name, policy_model_name
+    model = None
+    model_error = ""
     if not SERVICE_TOKEN:
         model_error = "RAG_SERVICE_TOKEN is not configured"
     else:
         try:
-            model = await asyncio.to_thread(TextEmbedding, model_name=MODEL_NAME)
+            client = await asyncio.to_thread(TextEmbedding, model_name=MODEL_NAME)
+            candidate = FastEmbedLangChainEmbeddings(
+                client,
+                model_name=MODEL_NAME,
+                model_version=MODEL_VERSION,
+                expected_dimensions=EXPECTED_DIMENSIONS,
+            )
+            # 启动时用固定非敏感文本核验真实维度，健康检查不能把配置值冒充模型输出。
+            await candidate.aembed_query("向量维度校验")
+            model = candidate
         except Exception as exc:  # 健康接口仅返回分类，不泄露下载路径或请求细节。
             model_error = type(exc).__name__
     provider = build_policy_chat_provider()
@@ -102,18 +114,10 @@ class ParseRequest(BaseModel):
     file_name: str = Field(default="", max_length=255)
 
 
-def _ready_model() -> TextEmbedding:
+def _ready_model() -> FastEmbedLangChainEmbeddings:
     if model is None:
         raise HTTPException(status_code=503, detail="embedding model unavailable")
     return model
-
-
-def _padded_embedding(values) -> list[float]:
-    vector = [float(value) for value in values]
-    if len(vector) > TARGET_DIMENSIONS:
-        raise ValueError("embedding dimensions exceed database contract")
-    vector.extend([0.0] * (TARGET_DIMENSIONS - len(vector)))
-    return vector
 
 
 async def _embed(texts: list[str]) -> list[list[float]]:
@@ -122,8 +126,7 @@ async def _embed(texts: list[str]) -> list[list[float]]:
     current = _ready_model()
     async with semaphore:
         try:
-            vectors = await asyncio.to_thread(lambda: list(current.embed(texts)))
-            return [_padded_embedding(vector) for vector in vectors]
+            return await current.aembed_documents(texts)
         except HTTPException:
             raise
         except Exception as exc:
@@ -136,8 +139,9 @@ async def health():
         raise HTTPException(status_code=503, detail={"status": "error", "class": model_error})
     return {
         "status": "ok",
+        "model_name": MODEL_NAME,
         "model_version": MODEL_VERSION,
-        "dimensions": TARGET_DIMENSIONS,
+        "dimensions": model.dimensions,
         "max_batch": MAX_BATCH,
         "chain_name": POLICY_RAG_CHAIN_NAME,
         "chain_version": POLICY_RAG_CHAIN_VERSION,
@@ -226,13 +230,35 @@ async def policy_query_stream(payload: PolicyRAGInput, request: Request):
 @app.post("/internal/rag/embed", dependencies=[Depends(require_internal_service)])
 async def embed(request: EmbedRequest):
     vectors = await _embed([request.text])
-    return {"embeddings": vectors, "model_version": MODEL_VERSION, "dimensions": TARGET_DIMENSIONS}
+    return {
+        "embeddings": vectors,
+        "model_name": MODEL_NAME,
+        "model_version": MODEL_VERSION,
+        "dimensions": len(vectors[0]),
+    }
 
 
 @app.post("/internal/rag/embed-batch", dependencies=[Depends(require_internal_service)])
 async def embed_batch(request: EmbedBatchRequest):
     vectors = await _embed(request.texts)
-    return {"embeddings": vectors, "model_version": MODEL_VERSION, "dimensions": TARGET_DIMENSIONS}
+    return {
+        "embeddings": vectors,
+        "model_name": MODEL_NAME,
+        "model_version": MODEL_VERSION,
+        "dimensions": len(vectors[0]),
+    }
+
+
+@app.post(
+    "/internal/rag/knowledge/chunk",
+    response_model=KnowledgeChunkResult,
+    dependencies=[Depends(require_internal_service)],
+)
+async def chunk_knowledge_document(request: KnowledgeChunkRequest):
+    try:
+        return await asyncio.to_thread(chunk_policy_document, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="knowledge document chunking failed") from exc
 
 
 @app.post("/internal/rag/analyze", dependencies=[Depends(require_internal_service)])
@@ -257,7 +283,7 @@ def _parse_document(source_type: str, raw: bytes) -> str:
         reader = PdfReader(io.BytesIO(raw))
         return "\n\n".join((page.extract_text() or "") for page in reader.pages)
     if normalized_type == "docx":
-        document = Document(io.BytesIO(raw))
+        document = DocxDocument(io.BytesIO(raw))
         return "\n".join(paragraph.text for paragraph in document.paragraphs)
     raise ValueError("unsupported source type")
 

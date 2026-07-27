@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const defaultEmbeddingModel = "paraphrase-multilingual-minilm-l12-v2-padded-1536-v1"
+const defaultEmbeddingModel = "paraphrase-multilingual-minilm-l12-v2-384-v1"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr))

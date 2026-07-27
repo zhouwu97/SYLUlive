@@ -40,7 +40,8 @@ services:
     environment:
       - RAG_SERVICE_TOKEN=${RAG_SERVICE_TOKEN:-}
       - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
-      - RAG_EMBEDDING_MODEL_VERSION=${RAG_EMBEDDING_MODEL_VERSION:-paraphrase-multilingual-minilm-l12-v2-padded-1536-v1}
+      - RAG_EMBEDDING_MODEL_VERSION=${RAG_EMBEDDING_MODEL_VERSION:-paraphrase-multilingual-minilm-l12-v2-384-v1}
+      - RAG_EMBEDDING_DIMENSIONS=${RAG_EMBEDDING_DIMENSIONS:-384}
       - RAG_MAX_CONCURRENCY=${RAG_MAX_CONCURRENCY:-2}
       - RAG_MAX_BATCH=${RAG_MAX_BATCH:-32}
       - RAG_QUERY_TIMEOUT_SECONDS=${RAG_QUERY_TIMEOUT_SECONDS:-60}
@@ -94,7 +95,7 @@ services:
       - AI_LANGCHAIN_RAG_ENABLED=${AI_LANGCHAIN_RAG_ENABLED:-false}
       - RAG_SERVICE_URL=${RAG_SERVICE_URL:-http://python-rag-service:8001}
       - RAG_SERVICE_TOKEN=${RAG_SERVICE_TOKEN:-}
-      - RAG_EMBEDDING_MODEL_VERSION=${RAG_EMBEDDING_MODEL_VERSION:-paraphrase-multilingual-minilm-l12-v2-padded-1536-v1}
+      - RAG_EMBEDDING_MODEL_VERSION=${RAG_EMBEDDING_MODEL_VERSION:-paraphrase-multilingual-minilm-l12-v2-384-v1}
       - GIN_MODE=release
     depends_on:
       postgres:

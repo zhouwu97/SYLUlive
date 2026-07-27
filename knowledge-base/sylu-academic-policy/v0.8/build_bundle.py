@@ -38,7 +38,10 @@ def parse_document(path: Path) -> dict[str, str]:
 
 
 def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+    """按 LF 规范化换行后计算发布摘要，保证 Windows 与 Linux 一致。"""
+
+    normalized = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(normalized).hexdigest()
 
 
 def main() -> None:
@@ -56,6 +59,7 @@ def main() -> None:
         "version": "v0.8",
         "source_commit": source_commit,
         "document_count": len(bundle_records),
+        "sha256_canonicalization": "newline-lf-v1",
         "documents_sha256": sha256(bundle_bytes),
         "intent_contract_sha256": sha256(CONTRACT.read_bytes()),
         "unresolved_source_conflicts": ["school_work_study_policy:failed_course_count_exactly_two"],

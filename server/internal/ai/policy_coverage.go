@@ -200,7 +200,11 @@ func evaluatePolicyEvidenceCoverage(plan PolicyQueryPlan, chunks []RetrievedChun
 			coverage.MissingGroups = append(coverage.MissingGroups, group)
 		}
 	}
-	coverage.Satisfied = len(coverage.MissingGroups) == 0 && coverage.DistinctDocuments >= minPolicyDocuments
+	minimumDocuments := minPolicyDocuments
+	if len(plan.RequiredDocGroups) <= 1 {
+		minimumDocuments = 1
+	}
+	coverage.Satisfied = len(coverage.MissingGroups) == 0 && coverage.DistinctDocuments >= minimumDocuments
 	return coverage
 }
 

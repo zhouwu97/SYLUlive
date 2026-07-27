@@ -62,6 +62,7 @@ func (tool campusMCPTool) Execute(ctx context.Context, userID uint, arguments js
 
 type campusMCP struct {
 	db                *gorm.DB
+	policyRetriever   PolicyRetriever
 	snapshots         AcademicSnapshotReader
 	personalSnapshots PersonalSnapshotReader
 	deviceJobs        DeviceJobScheduler
@@ -97,6 +98,11 @@ func (fn DeviceJobSchedulerFunc) ScheduleDeviceJob(ctx context.Context, request 
 }
 
 type CampusMCPOption func(*campusMCP)
+
+// WithCampusPolicyRetriever 让政策工具与 Runtime 复用同一套混合检索实现。
+func WithCampusPolicyRetriever(retriever PolicyRetriever) CampusMCPOption {
+	return func(mcp *campusMCP) { mcp.policyRetriever = retriever }
+}
 
 // WithCampusDeviceJobScheduler 启用“服务端快照未命中时请求手机缓存”的受控降级。
 func WithCampusDeviceJobScheduler(scheduler DeviceJobScheduler) CampusMCPOption {
@@ -263,11 +269,33 @@ func (mcp *campusMCP) searchPolicy(ctx context.Context, _ uint, arguments json.R
 	if err != nil {
 		return nil, err
 	}
-	items, err := mcp.searchKnowledge(ctx, input.Query, input.Limit, nil)
+	var items []knowledgeItem
+	if mcp.policyRetriever == nil {
+		items, err = mcp.searchKnowledge(ctx, input.Query, input.Limit, nil)
+	} else {
+		var retrieval RetrievalResult
+		retrieval, err = mcp.policyRetriever.Retrieve(ctx, input.Query)
+		if err == nil {
+			items = knowledgeItemsFromChunks(retrieval.Chunks, input.Limit)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	return publicResult(items, academic.DataSourceKnowledgeBase, knowledgeEvidence(items), mcp.now()), nil
+}
+
+func knowledgeItemsFromChunks(chunks []RetrievedChunk, limit int) []knowledgeItem {
+	if limit <= 0 || limit > len(chunks) {
+		limit = len(chunks)
+	}
+	items := make([]knowledgeItem, 0, limit)
+	for _, chunk := range chunks[:limit] {
+		items = append(items, knowledgeItem{Title: chunk.Title, Department: chunk.Department,
+			DocumentType: chunk.DocumentType, SectionTitle: chunk.SectionTitle,
+			Excerpt: truncateToolText(chunk.Content, 800), SourceURL: chunk.SourceURI, PublishedAt: chunk.PublishedAt})
+	}
+	return items
 }
 
 func (mcp *campusMCP) searchService(ctx context.Context, _ uint, arguments json.RawMessage) (interface{}, error) {
@@ -286,6 +314,7 @@ type knowledgeItem struct {
 	Title        string     `json:"title"`
 	Department   string     `json:"department,omitempty"`
 	DocumentType string     `json:"document_type,omitempty"`
+	SectionTitle string     `json:"section_title,omitempty"`
 	Excerpt      string     `json:"excerpt"`
 	SourceURL    string     `json:"source_url,omitempty"`
 	PublishedAt  *time.Time `json:"published_at,omitempty"`

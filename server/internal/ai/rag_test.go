@@ -37,16 +37,16 @@ func TestBuildORFTSQueryUsesGroupedORSemantics(t *testing.T) {
 }
 
 func TestPolicyQueryPlanSummaryDoesNotExposeQuestionOrExpandedText(t *testing.T) {
-	plan := BuildPolicyQueryPlan("补考成绩怎么算-仅用于隐私断言")
+	plan := testPolicyQueryPlan("补考成绩怎么算-仅用于隐私断言")
 	encoded, err := json.Marshal(summarizePolicyQueryPlan(plan))
 	require.NoError(t, err)
-	require.NotContains(t, string(encoded), plan.OriginalQuery)
-	require.NotContains(t, string(encoded), plan.ExpandedQuery)
+	require.NotContains(t, string(encoded), plan.NormalizedQuery)
+	require.NotContains(t, string(encoded), plan.retrievalQuery())
 	require.Contains(t, string(encoded), `"intent":"second_exam_grade"`)
 }
 
 func TestWeightedFusionMakesExactMatchesStrongerThanTrigramFallback(t *testing.T) {
-	plan := BuildPolicyQueryPlan("如何申请休学")
+	plan := testPolicyQueryPlan("如何申请休学")
 	exact := policyTestChunk(1, 1, "school_undergraduate_status_policy", "休学规定")
 	fuzzy := policyTestChunk(2, 2, "school_competition_course_grade_reward_policy", "竞赛奖励")
 
@@ -66,7 +66,7 @@ func TestWeightedFusionPrefersCurrentSchoolFilesAndEnforcesHistoryBoundary(t *te
 	historical := policyTestChunk(20, 20, "historical_school_second_exam_policy", "历史二考规定")
 	historical.SourceType = "official_historical_compilation"
 
-	allowedPlan := BuildPolicyQueryPlan("补考成绩怎么算")
+	allowedPlan := testPolicyQueryPlan("补考成绩怎么算")
 	allowed := fuseRankedChunks(allowedPlan, []rankedChunkList{{
 		Channel: retrievalChannelFTS,
 		Items: []rankedChunk{
@@ -79,7 +79,7 @@ func TestWeightedFusionPrefersCurrentSchoolFilesAndEnforcesHistoryBoundary(t *te
 	require.True(t, allowed[1].Historical)
 	require.Greater(t, allowed[0].ScoreDetails.VersionPriority, allowed[1].ScoreDetails.VersionPriority)
 
-	generalPlan := BuildPolicyQueryPlan("如何申请休学")
+	generalPlan := testPolicyQueryPlan("如何申请休学")
 	currentOnly := fuseRankedChunks(generalPlan, []rankedChunkList{{
 		Channel: retrievalChannelVector,
 		Items: []rankedChunk{
@@ -92,7 +92,7 @@ func TestWeightedFusionPrefersCurrentSchoolFilesAndEnforcesHistoryBoundary(t *te
 }
 
 func TestWeightedFusionSupportsSingleAvailableChannel(t *testing.T) {
-	plan := BuildPolicyQueryPlan("如何申请休学")
+	plan := testPolicyQueryPlan("如何申请休学")
 	chunk := policyTestChunk(1, 1, "school_undergraduate_status_policy", "休学规定")
 
 	result := fuseRankedChunks(plan, []rankedChunkList{{
@@ -140,7 +140,7 @@ func TestPolicyRankingForRequiredColloquialQuestions(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.question, func(t *testing.T) {
-			plan := BuildPolicyQueryPlan(test.question)
+			plan := testPolicyQueryPlan(test.question)
 			lists := []rankedChunkList{
 				policyRankedList(retrievalChannelExact, test.exactTypes...),
 				policyRankedList(retrievalChannelFTS,
@@ -218,4 +218,28 @@ func policyTestChunk(chunkID uint64, documentID uint, documentType, section stri
 		ChunkID: chunkID, DocumentID: documentID, DocumentType: documentType,
 		SourceType: "official", Title: documentType, SectionTitle: section,
 	}
+}
+
+// 测试计划是融合纯函数的固定输入，不复制生产领域解析规则。
+func testPolicyQueryPlan(question string) PolicyQueryPlan {
+	plan := PolicyQueryPlan{
+		SchemaVersion: "1.0", PlannerName: "policy_query_planner", PlannerVersion: "fixture-v1",
+		Intent: "general_policy", NormalizedQuery: question, HistoryPolicy: "exclude", VersionBoundary: "current_only",
+	}
+	if strings.Contains(question, "补考") || strings.Contains(question, "挂科") ||
+		strings.Contains(question, "刷分") || strings.Contains(question, "实验课") {
+		plan.Intent = "second_exam_and_retake"
+		plan.ExactTerms = []string{"二次考试", "二考", "重修"}
+		plan.PreferredDocTypes = []string{
+			"school_policy_reasoning_card", "school_undergraduate_retake_policy",
+			"school_undergraduate_status_policy", "historical_school_second_exam_policy",
+		}
+		plan.HistoryPolicy = "include_when_required"
+		plan.VersionBoundary = "current_preferred_with_history"
+		plan.AllowHistorical = true
+		if strings.Contains(question, "补考") && strings.Contains(question, "成绩") {
+			plan.Intent = "second_exam_grade"
+		}
+	}
+	return plan
 }

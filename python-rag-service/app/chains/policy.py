@@ -29,7 +29,7 @@ from app.schemas import (
 
 
 POLICY_RAG_CHAIN_NAME = "shenliyuan_policy_rag"
-POLICY_RAG_CHAIN_VERSION = "foundation-v1"
+POLICY_RAG_CHAIN_VERSION = "hybrid-retrieval-v1"
 INSUFFICIENT_ANSWER = "当前已发布资料不足，暂时无法给出可核验回答。"
 
 
@@ -78,7 +78,8 @@ def _generation_context(state: dict[str, Any]) -> dict[str, Any]:
     request: PolicyRAGInput = state["request"]
     documents: list[Document] = state["documents"]
     context = "\n\n".join(
-        f'<evidence chunk_id="{document.metadata.get("chunk_id", 0)}">\n'
+        f'<evidence chunk_id="{document.metadata.get("chunk_id", 0)}" '
+        f'version="{"historical" if document.metadata.get("historical", False) else "current"}">\n'
         f"{document.page_content}\n</evidence>"
         for document in documents[: request.max_sources]
     )
@@ -134,7 +135,17 @@ def _parse_generated(state: dict[str, Any], provider_name: str, model_name: str)
         answer=answer,
         sources=[_source_from_document(document) for document in documents],
         usage=_usage_from_message(message, provider_name, model_name),
+        degraded_modes=_degraded_modes(documents),
     )
+
+
+def _degraded_modes(documents: list[Document]) -> list[str]:
+    modes: set[str] = set()
+    for document in documents:
+        value = document.metadata.get("degraded_modes", [])
+        if isinstance(value, list):
+            modes.update(str(item) for item in value if str(item))
+    return sorted(modes)
 
 
 def _insufficient(state: dict[str, Any], provider_name: str, model_name: str) -> PolicyRAGResult:

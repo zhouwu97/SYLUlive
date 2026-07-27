@@ -176,6 +176,28 @@ func (c *RAGClient) Analyze(ctx context.Context, text string) (AnalyzeResult, er
 	return response, nil
 }
 
+// PlanPolicyQuery 调用唯一的 Python 领域规划器，旧 Go 检索链路不再维护意图规则副本。
+func (c *RAGClient) PlanPolicyQuery(ctx context.Context, question string) (PolicyQueryPlan, error) {
+	var response PolicyQueryPlan
+	if err := c.post(ctx, "/internal/rag/policy/plan", map[string]interface{}{"text": question}, &response); err != nil {
+		return PolicyQueryPlan{}, err
+	}
+	if response.SchemaVersion != "1.0" || response.PlannerName != "policy_query_planner" ||
+		strings.TrimSpace(response.PlannerVersion) == "" || strings.TrimSpace(response.Intent) == "" ||
+		strings.TrimSpace(response.NormalizedQuery) == "" || utf8.RuneCountInString(response.NormalizedQuery) > 300 ||
+		len(response.ExactTerms) > 32 || len(response.ExpandedTerms) > 32 || len(response.PreferredDocTypes) > 16 {
+		return PolicyQueryPlan{}, fmt.Errorf("invalid policy query plan")
+	}
+	validHistoryBoundary := response.AllowHistorical && response.HistoryPolicy == "include_when_required" &&
+		response.VersionBoundary == "current_preferred_with_history"
+	validCurrentBoundary := !response.AllowHistorical && response.HistoryPolicy == "exclude" &&
+		response.VersionBoundary == "current_only"
+	if !validHistoryBoundary && !validCurrentBoundary {
+		return PolicyQueryPlan{}, fmt.Errorf("invalid policy query plan history boundary")
+	}
+	return response, nil
+}
+
 func (c *RAGClient) ParseDocument(ctx context.Context, sourceType, fileName string, content []byte) (string, error) {
 	var response struct {
 		Text string `json:"text"`
@@ -337,7 +359,10 @@ func (r *HybridRetriever) Retrieve(ctx context.Context, query string) (Retrieval
 	if r.db == nil || r.rag == nil || strings.TrimSpace(query) == "" {
 		return RetrievalResult{}, ErrRetrievalUnavailable
 	}
-	plan := BuildPolicyQueryPlan(query)
+	plan, err := r.rag.PlanPolicyQuery(ctx, query)
+	if err != nil {
+		return RetrievalResult{}, ErrRetrievalUnavailable
+	}
 	queryText, err := validatedPolicyQueryText(plan)
 	if err != nil {
 		return RetrievalResult{}, ErrRetrievalUnavailable
@@ -389,7 +414,7 @@ func (r *HybridRetriever) Retrieve(ctx context.Context, query string) (Retrieval
 
 	// Trigram 只在精确检索与 FTS 候选不足时兜底，不能与高置信通道同权常驻。
 	if lexicalCandidateCount(lists) < maxRetrievedChunks {
-		if rows, searchErr := r.trigramSearch(ctx, plan.OriginalQuery, plan, 20); searchErr == nil {
+		if rows, searchErr := r.trigramSearch(ctx, plan.NormalizedQuery, plan, 20); searchErr == nil {
 			lists = append(lists, rankedChunkList{Channel: retrievalChannelTrigram, Items: rows})
 			successfulChannels++
 		} else {
@@ -550,7 +575,7 @@ const policyFTSVectorSQL = `(setweight(to_tsvector('simple', concat_ws(' ', d.ti
 	setweight(to_tsvector('simple', coalesce(c.content, '')), 'C'))`
 
 func validatedPolicyQueryText(plan PolicyQueryPlan) (string, error) {
-	query := strings.Join(strings.Fields(plan.ExpandedQuery), " ")
+	query := strings.Join(strings.Fields(plan.retrievalQuery()), " ")
 	if query == "" || !utf8.ValidString(query) || utf8.RuneCountInString(query) > 2048 {
 		return "", errors.New("invalid policy retrieval query")
 	}

@@ -18,7 +18,7 @@ func policyBool(value bool) *bool { return &value }
 func validPolicyRAGResult(requestID string) PolicyRAGResult {
 	return PolicyRAGResult{
 		RequestID: requestID, SchemaVersion: PolicyRAGSchemaVersion,
-		ChainName: "shenliyuan_policy_rag", ChainVersion: "foundation-v1",
+		ChainName: "shenliyuan_policy_rag", ChainVersion: "hybrid-retrieval-v1",
 		Status: "completed", Answer: "请履行审批手续。[chunk:18]",
 		Sources: []PolicyRAGSource{{
 			SourceID: "source-1", DocumentID: 9, ChunkID: 18, Title: "学生手册",
@@ -50,7 +50,7 @@ func TestRAGClientQueryPolicyUsesInternalTokenAndValidatesUsage(t *testing.T) {
 		RequestID: "query-1", Question: "怎么请假",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "foundation-v1", result.ChainVersion)
+	require.Equal(t, "hybrid-retrieval-v1", result.ChainVersion)
 	require.Equal(t, 20, *result.Usage.InputTokens)
 }
 

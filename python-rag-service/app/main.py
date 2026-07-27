@@ -19,13 +19,21 @@ from pypdf import PdfReader
 from app.chains import (
     POLICY_RAG_CHAIN_NAME,
     POLICY_RAG_CHAIN_VERSION,
+    PolicyQueryPlanner,
     astream_policy_events,
     build_policy_rag_chain,
 )
 from app.ingestion import FastEmbedLangChainEmbeddings, chunk_policy_document
 from app.providers import build_policy_chat_provider
-from app.retrievers import FoundationPolicyRetriever
-from app.schemas import KnowledgeChunkRequest, KnowledgeChunkResult, PolicyRAGEvent, PolicyRAGInput, PolicyRAGResult
+from app.retrievers import HybridPolicyRetriever, PostgresPolicySearchStore, UnavailablePolicySearchStore
+from app.schemas import (
+    KnowledgeChunkRequest,
+    KnowledgeChunkResult,
+    PolicyQueryPlan,
+    PolicyRAGEvent,
+    PolicyRAGInput,
+    PolicyRAGResult,
+)
 
 
 SERVICE_TOKEN = os.environ.get("RAG_SERVICE_TOKEN", "").strip()
@@ -50,11 +58,15 @@ policy_chain: Runnable[PolicyRAGInput, PolicyRAGResult] | None = None
 policy_provider_ready = False
 policy_provider_name = "unconfigured"
 policy_model_name = "unconfigured"
+policy_query_planner = PolicyQueryPlanner()
+retrieval_ready = False
+retrieval_error = "missing_database_dsn"
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global model, model_error, policy_chain, policy_provider_ready, policy_provider_name, policy_model_name
+    global retrieval_ready, retrieval_error
     model = None
     model_error = ""
     if not SERVICE_TOKEN:
@@ -77,8 +89,37 @@ async def lifespan(_: FastAPI):
     policy_provider_ready = provider.ready
     policy_provider_name = provider.provider_name
     policy_model_name = provider.model_name
+    channel_timeout = max(
+        0.1,
+        min(float(os.environ.get("RAG_RETRIEVAL_CHANNEL_TIMEOUT_SECONDS", "2.5")), 30),
+    )
+    database_dsn = os.environ.get("RAG_DATABASE_DSN", "").strip()
+    search_store: PostgresPolicySearchStore | UnavailablePolicySearchStore
+    retrieval_ready = False
+    if database_dsn:
+        try:
+            search_store = PostgresPolicySearchStore(
+                database_dsn,
+                statement_timeout_seconds=channel_timeout,
+            )
+            await asyncio.to_thread(search_store.check_read_only_permissions)
+            retrieval_ready = True
+            retrieval_error = ""
+        except Exception as exc:
+            search_store = UnavailablePolicySearchStore()
+            retrieval_error = type(exc).__name__
+    else:
+        search_store = UnavailablePolicySearchStore()
+        retrieval_error = "missing_database_dsn"
+    retriever = HybridPolicyRetriever(
+        planner=policy_query_planner,
+        search_store=search_store,
+        embeddings=model,
+        embedding_model_version=MODEL_VERSION,
+        channel_timeout_seconds=channel_timeout,
+    )
     policy_chain = build_policy_rag_chain(
-        FoundationPolicyRetriever(),
+        retriever,
         provider.model,
         provider_name=provider.provider_name,
         model_name=provider.model_name,
@@ -106,6 +147,10 @@ class EmbedBatchRequest(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
+
+
+class PolicyPlanRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=300)
 
 
 class ParseRequest(BaseModel):
@@ -149,6 +194,8 @@ async def health():
             "embedding": model is not None,
             "lcel": policy_chain is not None,
             "chat_provider": policy_provider_ready,
+            "policy_database": retrieval_ready,
+            "hybrid_retriever": retrieval_ready and model is not None,
         },
     }
 
@@ -159,6 +206,17 @@ def _ready_policy_chain(request: Request) -> Runnable[PolicyRAGInput, PolicyRAGR
     if current is None:
         raise HTTPException(status_code=503, detail="policy RAG chain unavailable")
     return current
+
+
+@app.post(
+    "/internal/rag/policy/plan",
+    response_model=PolicyQueryPlan,
+    dependencies=[Depends(require_internal_service)],
+)
+async def policy_query_plan(payload: PolicyPlanRequest) -> PolicyQueryPlan:
+    """兼容旧 Go 检索链路；查询规划规则只在 Python 维护。"""
+
+    return await policy_query_planner.ainvoke(payload.text)
 
 
 @app.post(

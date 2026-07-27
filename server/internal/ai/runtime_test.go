@@ -53,6 +53,19 @@ func newTestRuntime(t *testing.T, db *gorm.DB, provider AIProvider, retriever Po
 	return runtime
 }
 
+func seedPublishedKnowledgeSource(t *testing.T, db *gorm.DB, documentID uint, chunkID uint64) {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(&models.AIKnowledgeDocument{}, &models.AIKnowledgeChunk{}))
+	require.NoError(t, db.Create(&models.AIKnowledgeDocument{
+		ID: documentID, Title: "学生手册", SourceType: "official", Content: "正文",
+		ContentHash: fmt.Sprintf("doc-%d", documentID), Status: models.KnowledgeStatusPublished, CreatedBy: 1,
+	}).Error)
+	require.NoError(t, db.Create(&models.AIKnowledgeChunk{
+		ID: chunkID, DocumentID: documentID, ChunkIndex: 0, Content: "请假需审批",
+		ContentHash: fmt.Sprintf("chunk-%d", chunkID), EmbeddingModelVersion: "fixture-v1",
+	}).Error)
+}
+
 func waitRunState(t *testing.T, db *gorm.DB, runID string, states ...string) models.AIRun {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -84,6 +97,7 @@ func TestNormalizeUserMessageCountsGraphemeClusters(t *testing.T) {
 
 func TestRuntimeIdempotencyQuotaAndCitationCompletion(t *testing.T) {
 	db := newRuntimeTestDB(t)
+	seedPublishedKnowledgeSource(t, db, 9, 1)
 	provider := &MockProvider{Response: ChatResponse{Content: "请按规定办理。[chunk:1]", InputTokens: 20, OutputTokens: 8}}
 	retriever := fixedRetriever{result: RetrievalResult{Chunks: []RetrievedChunk{{
 		ChunkID: 1, DocumentID: 9, Content: "请假需审批", Title: "学生手册", RRFScore: 0.05,
@@ -115,7 +129,47 @@ func TestRuntimeIdempotencyQuotaAndCitationCompletion(t *testing.T) {
 	var messages []models.AIConversationMessage
 	require.NoError(t, db.Where("run_id = ?", run.ID).Order("created_at ASC").Find(&messages).Error)
 	require.Len(t, messages, 2)
-	require.Contains(t, messages[1].Content, "[chunk:1]")
+	require.Contains(t, messages[1].Content, "[1]")
+	require.NotContains(t, messages[1].Content, "chunk:")
+}
+
+func TestCurrentPublishedChunksFailsClosedWhenKnowledgeTablesAreUnavailable(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	runtime := &Runtime{db: db}
+
+	chunks := runtime.currentPublishedChunks([]RetrievedChunk{{ChunkID: 1, DocumentID: 9}})
+
+	require.Empty(t, chunks)
+}
+
+func TestCurrentPublishedChunksEnforcesDocumentAndVersionBoundary(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.AIKnowledgeDocument{}, &models.AIKnowledgeChunk{}))
+	past := time.Now().Add(-time.Hour)
+	documents := []models.AIKnowledgeDocument{
+		{ID: 1, Title: "过期现行规定", SourceType: "official", DocumentType: "school_policy", Content: "正文一", ContentHash: "doc-1", Status: models.KnowledgeStatusPublished, EffectiveTo: &past, CreatedBy: 1},
+		{ID: 2, Title: "正式历史规定", SourceType: "official_historical_compilation", DocumentType: "historical_school_policy", Content: "正文二", ContentHash: "doc-2", Status: models.KnowledgeStatusPublished, EffectiveTo: &past, CreatedBy: 1},
+		{ID: 3, Title: "现行规定", SourceType: "official", DocumentType: "school_policy", Content: "正文三", ContentHash: "doc-3", Status: models.KnowledgeStatusPublished, CreatedBy: 1},
+	}
+	require.NoError(t, db.Create(&documents).Error)
+	chunks := []models.AIKnowledgeChunk{
+		{ID: 11, DocumentID: 1, ChunkIndex: 0, Content: "过期规则", ContentHash: "chunk-11", EmbeddingModelVersion: "fixture-v1"},
+		{ID: 22, DocumentID: 2, ChunkIndex: 0, Content: "历史规则", ContentHash: "chunk-22", EmbeddingModelVersion: "fixture-v1"},
+		{ID: 33, DocumentID: 3, ChunkIndex: 0, Content: "现行规则", ContentHash: "chunk-33", EmbeddingModelVersion: "fixture-v1"},
+	}
+	require.NoError(t, db.Create(&chunks).Error)
+	runtime := &Runtime{db: db}
+
+	validated := runtime.currentPublishedChunks([]RetrievedChunk{
+		{ChunkID: 11, DocumentID: 1, CitationNumber: 1},
+		{ChunkID: 22, DocumentID: 2, CitationNumber: 2},
+		{ChunkID: 33, DocumentID: 99, CitationNumber: 3},
+	})
+
+	require.Len(t, validated, 1)
+	require.Equal(t, uint64(22), validated[0].ChunkID)
+	require.True(t, validated[0].Historical)
+	require.Equal(t, 2, validated[0].CitationNumber)
 }
 
 func TestRuntimeReleasesQuotaAndBudgetBeforeGeneration(t *testing.T) {

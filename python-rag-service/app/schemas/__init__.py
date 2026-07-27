@@ -1,9 +1,12 @@
 from app.schemas.ingestion import KnowledgeChunk, KnowledgeChunkRequest, KnowledgeChunkResult
 from app.schemas.policy import (
+    PolicyAnswer,
+    PolicyCitation,
     PolicyHistoryMessage,
     PolicyRAGEvent,
     PolicyRAGInput,
     PolicyRAGResult,
+    PolicyRule,
     PolicySource,
     PolicyUsage,
 )
@@ -14,6 +17,9 @@ __all__ = [
     "KnowledgeChunkRequest",
     "KnowledgeChunkResult",
     "PolicyHistoryMessage",
+    "PolicyAnswer",
+    "PolicyCitation",
+    "PolicyRule",
     "PolicyRAGEvent",
     "PolicyRAGInput",
     "PolicyRAGResult",

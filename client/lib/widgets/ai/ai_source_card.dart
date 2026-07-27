@@ -75,7 +75,12 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
       ),
-      subtitle: Text(source.typeLabel, style: const TextStyle(fontSize: 11)),
+      subtitle: Text(
+        [source.typeLabel, source.citationLabel]
+            .where((value) => value.isNotEmpty)
+            .join(' · '),
+        style: const TextStyle(fontSize: 11),
+      ),
       children: [
         Align(
           alignment: Alignment.centerLeft,
@@ -90,6 +95,21 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
             ),
           ),
         ),
+        if (source.locators.isNotEmpty)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                source.locators.join(' · '),
+                style: const TextStyle(
+                  color: CampusTheme.subText,
+                  fontSize: 11.5,
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ),
         if (_contentRequest != null)
           FutureBuilder<AiSourceContent>(
             future: _contentRequest,

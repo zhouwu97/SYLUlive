@@ -21,6 +21,24 @@
 
 Provider 地址只从部署环境读取，并且必须命中 `RAG_PROVIDER_ALLOWED_BASE_URLS` 白名单。请求体不能覆盖 Provider、Base URL、模型或密钥。默认不启用 LangSmith。
 
+## 结构化政策生成与引用
+
+生产生成链版本为 `answer-citations-v3`，事件契约版本为 `1.1`。LCEL 链使用
+`ChatPromptTemplate`、LangChain `BaseChatModel`、`PydanticOutputParser(PolicyAnswer)` 和
+`astream_events(version="v2")`。模型只看到查询计划、最多 8 条历史消息和 rerank 后的
+有限证据；证据使用请求内临时编号 `R1`、`R2`，不向模型暴露数据库分块 ID。
+
+Python 会确定性校验临时引用是否存在、引用原文是否为证据子串、计算断言是否出现在引文中，
+以及现行/历史规则是否交叉引用。历史规则必须附带“并非当前口径”和教务系统/当期通知核验提示。
+校验后才把临时编号转换成公开 `[1]`、`[2]`；原始模型 JSON 不进入对外 token 流。
+Go 在完成前再按请求 ID、document/chunk 对、数据库发布状态和有效期重建白名单，来源撤销、
+伪造编号或文档不匹配都会整条降级为可靠拒答。来源卡按 `document_id` 聚合 citation 和 locator，
+客户端不显示裸分块 ID。
+
+ChatModel 仍使用现有 OpenAI-compatible Provider，超时上限 120 秒、重试 1 次，输出上限由
+`RAG_PROVIDER_MAX_OUTPUT_TOKENS` 控制（默认 1600，硬上限 4096）。本链不使用 Agent、
+Tool Calling、LangGraph 或第二个模型裁判。
+
 ## 混合召回
 
 `PolicyQueryPlanner` 是政策意图、同义词扩展、历史策略和版本边界的唯一生产实现。Python 生产链通过 `HybridPolicyRetriever(BaseRetriever)` 同时启动精确、PostgreSQL FTS、向量和 trigram 四路召回；trigram 结果只在精确与 FTS 候选不足时进入加权 RRF。融合后先执行现行正式文件优先级，再按文档和章节去重，返回的 `Document.metadata` 包含不带问题正文的计划摘要、各通道分数、内容哈希、版本和 locator。

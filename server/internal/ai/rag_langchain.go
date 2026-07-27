@@ -9,12 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	PolicyRAGSchemaVersion  = "1.0"
+	PolicyRAGSchemaVersion  = "1.1"
 	maxPolicyRAGEventBytes  = 256 << 10
 	defaultPolicyMaxSources = 6
 )
@@ -32,17 +33,18 @@ type PolicyRAGInput struct {
 }
 
 type PolicyRAGSource struct {
-	SourceID      string `json:"source_id"`
-	DocumentID    uint   `json:"document_id"`
-	ChunkID       uint64 `json:"chunk_id"`
-	Title         string `json:"title"`
-	Content       string `json:"content"`
-	DocumentType  string `json:"document_type,omitempty"`
-	Department    string `json:"department,omitempty"`
-	SourceURL     string `json:"source_url,omitempty"`
-	SectionTitle  string `json:"section_title,omitempty"`
-	SourceLocator string `json:"source_locator,omitempty"`
-	Historical    bool   `json:"historical,omitempty"`
+	SourceID       string `json:"source_id"`
+	DocumentID     uint   `json:"document_id"`
+	ChunkID        uint64 `json:"chunk_id"`
+	CitationNumber int    `json:"citation_number"`
+	Title          string `json:"title"`
+	Content        string `json:"content"`
+	DocumentType   string `json:"document_type,omitempty"`
+	Department     string `json:"department,omitempty"`
+	SourceURL      string `json:"source_url,omitempty"`
+	SectionTitle   string `json:"section_title,omitempty"`
+	SourceLocator  string `json:"source_locator,omitempty"`
+	Historical     bool   `json:"historical,omitempty"`
 }
 
 // PolicyRAGUsage 使用指针区分“值为零”和“协议漏字段”，避免缺失 usage 被当作零成本成功。
@@ -243,27 +245,40 @@ func (r PolicyRAGResult) validate(requestID string) error {
 		strings.TrimSpace(r.Answer) == "" || r.Usage == nil {
 		return fmt.Errorf("invalid policy RAG result")
 	}
-	if err := r.Usage.validate(r.Status == "completed"); err != nil {
+	if err := r.Usage.validate(r.Status == "completed" || r.Status == "citation_rejected"); err != nil {
 		return err
 	}
 	seenSources := make(map[uint64]struct{}, len(r.Sources))
+	seenCitations := make(map[int]struct{}, len(r.Sources))
 	for _, source := range r.Sources {
-		if source.ChunkID == 0 || source.DocumentID == 0 || strings.TrimSpace(source.SourceID) == "" || strings.TrimSpace(source.Title) == "" {
+		if source.ChunkID == 0 || source.DocumentID == 0 || source.CitationNumber <= 0 ||
+			strings.TrimSpace(source.SourceID) != "R"+strconv.Itoa(source.CitationNumber) || strings.TrimSpace(source.Title) == "" {
 			return fmt.Errorf("invalid policy RAG source")
 		}
 		if _, exists := seenSources[source.ChunkID]; exists {
 			return fmt.Errorf("duplicate policy RAG source")
 		}
 		seenSources[source.ChunkID] = struct{}{}
+		if _, exists := seenCitations[source.CitationNumber]; exists {
+			return fmt.Errorf("duplicate policy RAG citation number")
+		}
+		seenCitations[source.CitationNumber] = struct{}{}
 	}
 	switch r.Status {
 	case "completed":
 		if len(r.Sources) == 0 {
 			return fmt.Errorf("completed policy RAG result has no sources")
 		}
+		if _, _, invalid := ValidateCitations(r.Answer, policyRAGSourcesToChunks(r.Sources)); invalid {
+			return fmt.Errorf("invalid policy RAG citations")
+		}
 	case "insufficient_sources":
 		if len(r.Sources) != 0 {
 			return fmt.Errorf("insufficient policy RAG result has sources")
+		}
+	case "citation_rejected":
+		if len(r.Sources) != 0 {
+			return fmt.Errorf("citation rejected policy RAG result has sources")
 		}
 	default:
 		return fmt.Errorf("invalid policy RAG status")
@@ -354,7 +369,8 @@ func policyRAGSourcesToChunks(sources []PolicyRAGSource) []RetrievedChunk {
 	for _, source := range sources {
 		chunks = append(chunks, RetrievedChunk{
 			ChunkID: source.ChunkID, DocumentID: source.DocumentID, Content: source.Content,
-			Title: source.Title, DocumentType: source.DocumentType, Department: source.Department,
+			CitationNumber: source.CitationNumber,
+			Title:          source.Title, DocumentType: source.DocumentType, Department: source.Department,
 			SourceURI: source.SourceURL, SectionTitle: source.SectionTitle,
 			SourceLocator: source.SourceLocator, Historical: source.Historical,
 		})

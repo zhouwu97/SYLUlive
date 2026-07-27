@@ -119,12 +119,16 @@ def build_policy_chat_provider() -> PolicyChatProvider:
             UnavailablePolicyChatModel(), provider_name or "unavailable", model_name or "unconfigured", False
         )
     timeout = max(5, min(int(os.environ.get("RAG_PROVIDER_TIMEOUT_SECONDS", "45")), 120))
+    max_output_tokens = max(
+        128, min(int(os.environ.get("RAG_PROVIDER_MAX_OUTPUT_TOKENS", "1600")), 4096)
+    )
     model = ChatOpenAI(
         model=model_name,
         api_key=api_key,
         base_url=base_url,
         timeout=timeout,
         max_retries=1,
+        max_tokens=max_output_tokens,
         streaming=True,
         stream_usage=True,
     )

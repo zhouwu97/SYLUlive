@@ -28,8 +28,6 @@ func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, messa
 	generated := false
 	generatingState := false
 	usage := ProviderEvent{}
-	lastCheckpointAt := time.Now()
-	checkpointLength := 0
 	chainName, chainVersion := "", ""
 	var lastPolicySeq int64
 
@@ -99,11 +97,7 @@ func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, messa
 			}
 			markGenerated()
 			answer.WriteString(event.Delta)
-			_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": event.Delta}, false)
-			if answer.Len()-checkpointLength >= 512 || time.Since(lastCheckpointAt) >= time.Second {
-				r.persistCheckpoint(ctx, runID, answer.String())
-				checkpointLength, lastCheckpointAt = answer.Len(), time.Now()
-			}
+			// 结构化答案必须通过 Go 发布状态复核后才能进入客户端事件或持久化。
 		case "failed":
 			code := normalizeLangChainErrorCode(event.ErrorCode)
 			if generated {
@@ -126,6 +120,10 @@ func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, messa
 				}
 				return
 			}
+			if result.Status != "completed" && result.Status != "citation_rejected" {
+				r.failLangChainProtocol(runID, generated, "invalid_response", time.Since(startedAt))
+				return
+			}
 			if !startGenerating() {
 				return
 			}
@@ -135,7 +133,6 @@ func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, messa
 			}
 			if answer.Len() == 0 {
 				answer.WriteString(result.Answer)
-				_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": result.Answer}, false)
 			}
 			markGenerated()
 			usage = policyRAGUsageEvent(result.Usage)

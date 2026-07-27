@@ -20,22 +20,37 @@ const (
 
 // 政策意图与知识库 SYLUlive_政策问答意图与同义词_v0.6.json 保持同名。
 const (
-	PolicyIntentGeneral          = "general_policy"
-	PolicyIntentFailedCourse     = "failed_course_flow"
-	PolicyIntentSecondExam       = "second_exam"
-	PolicyIntentSecondExamGrade  = "second_exam_grade"
-	PolicyIntentRetake           = "retake"
-	PolicyIntentRetakeTransition = "retake_transition"
-	PolicyIntentPracticeFailure  = "practice_course_failure"
+	PolicyIntentGeneral             = "general_policy"
+	PolicyIntentFailedCourse        = "failed_course_flow"
+	PolicyIntentSecondExam          = "second_exam"
+	PolicyIntentSecondExamGrade     = "second_exam_grade"
+	PolicyIntentRetake              = "retake"
+	PolicyIntentRetakeTransition    = "retake_transition"
+	PolicyIntentPracticeFailure     = "practice_course_failure"
+	PolicyIntentFinancialDifficulty = "financial_difficulty_flow"
+	PolicyIntentStudentLoan         = "student_loan"
+	PolicyIntentWorkStudy           = "work_study"
+	PolicyIntentHardshipAid         = "hardship_aid"
+	PolicyIntentScholarship         = "scholarship_selection"
+	PolicyIntentOrphanAid           = "orphan_aid"
 )
 
 // 文档类型与知识库导入包的 document_type 字段保持同名。
 const (
-	DocTypeStatusPolicy         = "school_undergraduate_status_policy"
-	DocTypeRetakePolicy         = "school_undergraduate_retake_policy"
-	DocTypeReasoningCard        = "school_policy_reasoning_card"
-	DocTypeMakeupExamPractice   = "school_makeup_exam_current_practice"
-	DocTypeHistoricalSecondExam = "historical_school_second_exam_policy"
+	DocTypeStatusPolicy             = "school_undergraduate_status_policy"
+	DocTypeRetakePolicy             = "school_undergraduate_retake_policy"
+	DocTypeReasoningCard            = "school_policy_reasoning_card"
+	DocTypeMakeupExamPractice       = "school_makeup_exam_current_practice"
+	DocTypeHistoricalSecondExam     = "historical_school_second_exam_policy"
+	DocTypeUndergraduateScholarship = "school_undergraduate_scholarship_policy"
+	DocTypeNationalScholarship      = "school_national_scholarship_policy"
+	DocTypeNationalInspirational    = "school_national_inspirational_scholarship_policy"
+	DocTypeNationalGrant            = "school_national_grant_policy"
+	DocTypeHardshipRecognition      = "school_financial_hardship_recognition_policy"
+	DocTypeGrantTemporaryAid        = "school_grant_and_temporary_aid_policy"
+	DocTypeWorkStudy                = "school_work_study_policy"
+	DocTypeStudentLoan              = "school_student_loan_policy"
+	DocTypeOrphanAid                = "school_orphan_aid_policy"
 )
 
 // 回答分支标识，供生成层校验必答环节是否齐备。
@@ -48,9 +63,27 @@ const (
 	AnswerSectionHistoricalBoundary    = "historical_boundary"
 )
 
+const (
+	PolicyFocusOverview            = "overview"
+	PolicyFocusEligibility         = "eligibility"
+	PolicyFocusRegistrationPayment = "registration_payment"
+	PolicyFocusCourseLimit         = "course_limit"
+	PolicyFocusGradeRecording      = "grade_recording"
+	PolicyFocusStudyMode           = "study_mode"
+	PolicyFocusScheduleConflict    = "schedule_conflict"
+	PolicyFocusTuition             = "tuition"
+	PolicyFocusLiving              = "living"
+	PolicyFocusCompatibility       = "compatibility"
+	PolicyFocusAmount              = "amount"
+	PolicyBreadthOverview          = "overview"
+	PolicyBreadthFocused           = "focused"
+)
+
 // PolicyQueryPlan 将学生口语确定性映射为可审计的制度检索计划。
 type PolicyQueryPlan struct {
 	Intent        string
+	Focus         string
+	Breadth       string
 	OriginalQuery string
 	ExpandedQuery string
 
@@ -203,6 +236,8 @@ func BuildPolicyQueryPlan(question string) PolicyQueryPlan {
 	question = strings.TrimSpace(question)
 	plan := PolicyQueryPlan{
 		Intent:         PolicyIntentGeneral,
+		Focus:          PolicyFocusOverview,
+		Breadth:        PolicyBreadthOverview,
 		OriginalQuery:  question,
 		ExpandedQuery:  question,
 		HistoricalMode: HistoricalPolicyNone,
@@ -211,6 +246,10 @@ func BuildPolicyQueryPlan(question string) PolicyQueryPlan {
 		return plan
 	}
 	plan.Intent = detectPolicyIntent(question)
+	plan.Focus = detectPolicyFocus(question, plan.Intent)
+	if plan.Focus != PolicyFocusOverview {
+		plan.Breadth = PolicyBreadthFocused
+	}
 
 	terms := make([]string, 0, 16)
 	seen := make(map[string]struct{}, 16)
@@ -235,6 +274,15 @@ func BuildPolicyQueryPlan(question string) PolicyQueryPlan {
 			add(term)
 		}
 	}
+	for _, alias := range activePolicyContract.Aliases {
+		if !strings.Contains(question, alias.Trigger) {
+			continue
+		}
+		add(alias.Trigger)
+		for _, term := range alias.Terms {
+			add(term)
+		}
+	}
 
 	if profile, ok := policyIntentProfiles[plan.Intent]; ok {
 		plan.PreferredDocTypes = append([]string(nil), profile.preferredDocTypes...)
@@ -243,6 +291,15 @@ func BuildPolicyQueryPlan(question string) PolicyQueryPlan {
 		plan.AnswerMode = profile.answerMode
 		plan.RequiredAnswerSections = append([]string(nil), profile.answerSections...)
 		for _, term := range profile.canonicalTerms {
+			add(term)
+		}
+	}
+	if isRetakeFinancialQuestion(question) {
+		retakeProfile := policyIntentProfiles[PolicyIntentRetake]
+		plan.PreferredDocTypes = appendUniqueStrings(plan.PreferredDocTypes, retakeProfile.preferredDocTypes...)
+		plan.RequiredDocGroups = append(plan.RequiredDocGroups, copyDocGroups(retakeProfile.requiredDocGroups)...)
+		plan.RequiredAnswerSections = appendUniqueStrings(plan.RequiredAnswerSections, retakeProfile.answerSections...)
+		for _, term := range retakeProfile.canonicalTerms {
 			add(term)
 		}
 	}
@@ -260,10 +317,44 @@ func BuildPolicyQueryPlan(question string) PolicyQueryPlan {
 }
 
 func detectPolicyIntent(question string) string {
+	matchedAliases := make(map[string]struct{})
+	for _, alias := range activePolicyContract.Aliases {
+		if strings.Contains(question, alias.Trigger) {
+			matchedAliases[alias.Intent] = struct{}{}
+		}
+	}
+	for _, intent := range activePolicyContract.IntentPriority {
+		if _, matched := matchedAliases[intent]; matched {
+			return intent
+		}
+	}
+
+	// 先识别制度对象；挂科、成绩和费用在资助问题中只是资格修饰条件。
+	if containsAny(question, "奖学金", "奖学金评选", "奖学金评审") {
+		return PolicyIntentScholarship
+	}
+	if containsAny(question, "勤工助学", "勤工俭学") {
+		return PolicyIntentWorkStudy
+	}
+	if containsAny(question, "助学贷款", "生源地贷款", "校园地贷款") {
+		return PolicyIntentStudentLoan
+	}
+	if containsAny(question, "孤儿资助", "孤儿减免") {
+		return PolicyIntentOrphanAid
+	}
+	if containsAny(question, "困难认定", "校助学金", "临时困难补助", "国家助学金") {
+		return PolicyIntentHardshipAid
+	}
+	if containsAny(question, "没钱", "交不起学费", "生活费不够", "没钱吃饭") {
+		return PolicyIntentFinancialDifficulty
+	}
 	failure := containsAny(question, "挂科", "没及格", "不及格", "不合格", "没过", "未通过", "没通过", "没拿到学分", "未取得学分", "考砸")
 	makeupExam := containsAny(question, "补考", "二考", "二次考试")
 	retake := containsAny(question, "重修", "重新学习", "重新修读", "刷分")
 	practiceCourse := containsAny(question, "实验", "实践", "课程设计", "实习", "上机", "毕业设计", "实训")
+	if retake && isRetakeFinancialQuestion(question) {
+		return PolicyIntentFinancialDifficulty
+	}
 
 	// 1. 补考成绩与绩点是记载口径问题，优先于宽泛流程。
 	if makeupExam && containsAny(question, "成绩", "绩点", "怎么算", "如何算", "多少分", "分数", "记载", "算几分") {
@@ -290,6 +381,38 @@ func detectPolicyIntent(question string) string {
 		return PolicyIntentFailedCourse
 	}
 	return PolicyIntentGeneral
+}
+
+func detectPolicyFocus(question, intent string) string {
+	if intent == PolicyIntentFinancialDifficulty && isRetakeFinancialQuestion(question) {
+		return PolicyFocusTuition
+	}
+	for _, rule := range activePolicyContract.FocusRules {
+		if rule.Intent == intent && containsAny(question, rule.Triggers...) {
+			return rule.Focus
+		}
+	}
+	return PolicyFocusOverview
+}
+
+func isRetakeFinancialQuestion(question string) bool {
+	return containsAny(question, "重修", "重新学习", "重新修读") &&
+		containsAny(question, "交不起", "付不起", "没钱", "费用困难")
+}
+
+func appendUniqueStrings(values []string, additions ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(additions))
+	for _, value := range values {
+		seen[value] = struct{}{}
+	}
+	for _, value := range additions {
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	return values
 }
 
 func copyDocGroups(groups [][]string) [][]string {

@@ -411,6 +411,10 @@ func buildPolicyPrompt(
 	if plan.IsPolicyIntent() {
 		builder.WriteString("\n\n识别意图：")
 		builder.WriteString(plan.Intent)
+		builder.WriteString("\n检索焦点：")
+		builder.WriteString(plan.Focus)
+		builder.WriteString("\n回答范围：")
+		builder.WriteString(plan.Breadth)
 	}
 	if guidance := answerGuidance(question, plan); guidance != "" {
 		builder.WriteString("\n\n回答要求：")
@@ -462,6 +466,16 @@ var answerSectionTitles = map[string]string{
 	AnswerSectionSpecialCourseBoundary: "实验、实践、课程设计等特殊课程的边界",
 	AnswerSectionGradeRecording:        "成绩与绩点的记载口径",
 	AnswerSectionHistoricalBoundary:    "历史版本与当前执行口径的差异",
+	"immediate_aid_paths":              "可立即申请的资助路径",
+	"application_boundary":             "学院审核与当年通知边界",
+	"loan_amount_use":                  "助学贷款额度与用途",
+	"work_study_rule":                  "勤工助学的岗位、工时与酬金规则",
+	"source_conflict_boundary":         "原始材料存在冲突时的处理边界",
+	"hardship_recognition":             "家庭经济困难认定程序",
+	"aid_application":                  "资助申请与公示程序",
+	"scholarship_eligibility":          "奖学金资格条件",
+	"selection_and_publication":        "评审、公示与申诉程序",
+	"orphan_aid_scope":                 "孤儿学生资助范围",
 }
 
 func requiredAnswerBranches(plan PolicyQueryPlan) string {
@@ -543,16 +557,46 @@ func answerGuidance(question string, plan PolicyQueryPlan) string {
 	case PolicyIntentSecondExamGrade:
 		return policyAnswerBase + " 只回答补考成绩与绩点如何记载，不要展开重修报名细节。没有直接证据时，不得自行给出平时成绩与卷面成绩的合成比例、分数上限或绩点换算表。历史文件中的等级和绩点记载必须标明来自历史版本，并说明当前执行以教务系统和当学期通知为准。"
 	case PolicyIntentRetake:
-		return policyAnswerBase + " 只回答现行课程重修管理办法：适用情形、报名与缴费、门数限制、成绩记载方式。不得用历史二次考试细则替代现行重修办法，也不要展开补考流程。"
+		return retakeFocusGuidance(plan.Focus)
 	case PolicyIntentRetakeTransition:
 		return policyAnswerBase + " 用户已经参加过补考且未通过。先确认二考未取得学分后的当前处理方向，再说明进入课程重修的报名、选课和缴费要求。历史文件提到的缴费重修口径必须标注历史版本。"
 	case PolicyIntentPracticeFailure:
 		return policyAnswerBase + " 这是特殊课程边界问题。没有直接证据时，不得承诺实验、实践、课程设计类课程可以参加普通补考。可以说明现行重修办法允许实践教学环节不合格者申请重修；历史文件记载实践环节不适用免费二次考试，引用时必须写明是历史版本，并提示以当期课程考核方案和教务通知为准。"
+	case PolicyIntentFinancialDifficulty:
+		return policyAnswerBase + " 这是经济困难的即时支持问题。学费或住宿费优先说明国家助学贷款、困难认定和校内补助；生活费不足优先说明国家助学金、临时困难补助和勤工助学。奖学金是学年评审项目，不能作为唯一的即时解决方案。不得根据聊天内容认定困难等级或资格。"
+	case PolicyIntentStudentLoan:
+		return policyAnswerBase + " 只回答国家助学贷款的额度、优先用途和申请边界，不展开奖学金评选。具体办理时间、材料和经办渠道必须以当年资助通知为准。"
+	case PolicyIntentWorkStudy:
+		return policyAnswerBase + " 只回答勤工助学的申请条件、岗位、工时和酬金。现有材料对“两门不及格”存在相互冲突的表述时，必须明确该冲突，不得直接断言可以或不可以，并提示以学生处正式原文为准。"
+	case PolicyIntentHardshipAid:
+		return policyAnswerBase + " 只回答困难认定、校助学金、临时困难补助和国家助学金的适用范围与申请程序。不得自行认定用户的困难等级、孤儿身份或获助资格。"
+	case PolicyIntentScholarship:
+		return policyAnswerBase + " 以奖学金资格、申报、评审和公示为主。用户问挂科影响时，只说明奖学金文件中的一考及格条件，不展开补考或重修流程；用户问能否同获时，只回答对应国家奖助项目的组合关系。"
+	case PolicyIntentOrphanAid:
+		return policyAnswerBase + " 只回答孤儿学生资助范围、减免和申请审核程序，不依据聊天内容判断身份或资格。"
 	}
 	if normalized == "gpa" || normalized == "绩点" || normalized == "平均学分绩点" {
 		return policyAnswerBase + " 本题先用一句话解释 GPA，再给出通用加权公式“GPA = Σ(课程绩点×课程学分) / Σ课程学分”，并明确课程绩点换算、补考重修和课程纳入范围须以沈理现行规则为准。如果没有直接证据，不得编造校内换算表；最后只询问用户是想了解校内规则，还是计算个人 GPA。"
 	}
 	return policyAnswerBase
+}
+
+func retakeFocusGuidance(focus string) string {
+	base := policyAnswerBase + " 只依据现行课程重修管理办法回答，不得用历史二次考试细则替代现行重修办法，也不要展开补考流程。"
+	switch focus {
+	case PolicyFocusCourseLimit:
+		return base + " 用户只问门数限制，只回答可重修课程门数的直接规则；证据没有门数时明确说明未找到，不能补充报名、缴费或成绩制度。"
+	case PolicyFocusGradeRecording:
+		return base + " 用户只问成绩记载，只回答成绩或绩点的直接规则；证据不足时不得编造最高分、及格线或换算方式。"
+	case PolicyFocusRegistrationPayment:
+		return base + " 用户只问报名或缴费，只回答报名、选课、缴费和当期通知边界。"
+	case PolicyFocusScheduleConflict:
+		return base + " 用户只问课程冲突，只回答现有规则直接支持的冲突处理；没有直接依据时提示联系开课学院或教务部门。"
+	case PolicyFocusStudyMode:
+		return base + " 用户只问学习方式，只回答是否跟班、单独开班或课程安排的直接依据。"
+	default:
+		return base + " 可概览适用情形、报名缴费、门数限制和成绩记载，但保持简洁。"
+	}
 }
 
 func (r *Runtime) completeRun(runID, rawAnswer string, chunks []RetrievedChunk, usage ProviderEvent, latency time.Duration, validateCitations bool) {

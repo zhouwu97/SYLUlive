@@ -699,8 +699,10 @@ func main() {
 			}
 			return ai.DeviceJobReference{ID: job.ID}, nil
 		})
+		policyRetriever := ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
 		tools := ai.NewCampusMCPTools(
 			db, academicSnapshotService, personalSnapshotService,
+			ai.WithCampusPolicyRetriever(policyRetriever),
 			ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
 			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
 		)
@@ -756,7 +758,7 @@ func main() {
 			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
 		}
 		aiRuntime, ragErr = ai.NewRuntime(
-			db, provider, ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion), ai.NewEventBroker(),
+			db, provider, policyRetriever, ai.NewEventBroker(),
 			ai.RuntimeConfig{
 				ProviderName: cfg.AIProvider, Model: cfg.DeepSeekChatModel,
 				RequestTimeout:  time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second,

@@ -409,9 +409,13 @@ func extractPayload(result *mcp.CallToolResult) (json.RawMessage, error) {
 const expectedRemoteContractVersion = "sylulive-hy3/1"
 
 var expectedRemoteToolContracts = map[string]string{
-	"compare_competitions":      "d81ee88aa6c5fe6a879982f722980878fb66c311f448aa45aea7a0f241b42f1f",
-	"analyze_academic_snapshot": "11e52df593997543c584d3efc1e3b04e13d629a2cf33872adc1dad0223dc7759",
-	"plan_student_week":         "4916c924e00f5e72d4bda9dfba0dc648ad15cff6b45f16fe5b715ada3684cb94",
+	"compare_competitions":      "b72f014a42546f6ab348c42a28203f859ee2b131ed00fefea6bf9db71dfbdff4",
+	"analyze_academic_snapshot": "0784c8d703113093229e97a005f51e7e80d87a952e803286bcca7359ae2c5988",
+	"plan_student_week":         "d3e2930561ed3f7c23923ffd18ca74373d86dcffd1db78a953566684ab8535fb",
+}
+
+var allowedAuxiliaryRemoteTools = map[string]struct{}{
+	"answer_campus_question": {},
 }
 
 func validateRemoteTools(definitions []RemoteToolDefinition, status statusResult) (map[string]RemoteToolDefinition, []string, []string) {
@@ -438,6 +442,9 @@ func validateRemoteTools(definitions []RemoteToolDefinition, status statusResult
 	extras := make([]string, 0)
 	for name := range byName {
 		if name == statusToolName {
+			continue
+		}
+		if _, allowed := allowedAuxiliaryRemoteTools[name]; allowed {
 			continue
 		}
 		if _, expected := expectedRemoteToolContracts[name]; !expected {

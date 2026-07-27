@@ -23,7 +23,7 @@ void main() {
                   'remaining': 3,
                   'window_seconds': 3600,
                 },
-                'max_message_chars': 20,
+                'max_message_chars': 120,
               },
             ),
           );

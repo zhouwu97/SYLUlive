@@ -202,7 +202,7 @@ class AiAssistantProvider extends ChangeNotifier {
   AiSubmitResult submit(String rawMessage) {
     final message = normalizeAiMessage(rawMessage);
     if (message.isEmpty) return AiSubmitResult.blank;
-    final maxChars = _capabilities?.maxMessageChars ?? 20;
+    final maxChars = _capabilities?.maxMessageChars ?? 120;
     if (message.characters.length > maxChars) return AiSubmitResult.tooLong;
     if (isRunning) return AiSubmitResult.busy;
     if ((_quota?.remaining ?? 0) <= 0) return AiSubmitResult.quotaExceeded;

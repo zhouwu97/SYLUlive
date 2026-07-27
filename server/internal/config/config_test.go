@@ -278,8 +278,21 @@ func TestLoadPolicyRAGRequiresInternalServiceToken(t *testing.T) {
 
 func TestLoadAIRejectsUnsafeLimits(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
-	t.Setenv("AI_MAX_MESSAGE_CHARS", "0")
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "49")
 	require.Panics(t, func() { Load() })
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "301")
+	require.Panics(t, func() { Load() })
+}
+
+func TestLoadAIMessageLimitDefaultsTo120AndAllowsConfiguredRange(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "")
+	require.Equal(t, 120, Load().AIMaxMessageChars)
+
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "50")
+	require.Equal(t, 50, Load().AIMaxMessageChars)
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "300")
+	require.Equal(t, 300, Load().AIMaxMessageChars)
 }
 
 func assertLoadPanics(t *testing.T) {

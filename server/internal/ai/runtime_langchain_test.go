@@ -3,7 +3,9 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,11 +15,13 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/utils"
 )
 
 type fakeLangChainRAG struct {
 	events []PolicyRAGEvent
 	stream PolicyRAGEventStream
+	inputs chan PolicyRAGInput
 }
 
 func (f *fakeLangChainRAG) QueryPolicy(context.Context, PolicyRAGInput) (PolicyRAGResult, error) {
@@ -25,6 +29,9 @@ func (f *fakeLangChainRAG) QueryPolicy(context.Context, PolicyRAGInput) (PolicyR
 }
 
 func (f *fakeLangChainRAG) StreamPolicy(_ context.Context, input PolicyRAGInput) (PolicyRAGEventStream, error) {
+	if f.inputs != nil {
+		f.inputs <- input
+	}
 	if f.stream != nil {
 		return f.stream, nil
 	}
@@ -39,6 +46,40 @@ func (f *fakeLangChainRAG) StreamPolicy(_ context.Context, input PolicyRAGInput)
 		}
 	}
 	return &slicePolicyRAGStream{events: events}, nil
+}
+
+func seedPolicyHistoryRound(
+	t *testing.T,
+	db *gorm.DB,
+	userID uint,
+	conversationID string,
+	state string,
+	userContent string,
+	assistantContent string,
+	completedAt time.Time,
+) models.AIRun {
+	t.Helper()
+	run := models.AIRun{
+		ID: uuid.NewString(), UserID: userID, ConversationID: conversationID,
+		ClientRequestID: uuid.NewString(), State: state, Provider: "fake", Model: "fake-v1",
+		MessageHash: "history-hash", MessageLength: len(userContent),
+		ExpiresAt: completedAt.Add(time.Hour), CreatedAt: completedAt.Add(-time.Second),
+	}
+	if state == models.AIRunStateCompleted {
+		run.CompletedAt = &completedAt
+	}
+	require.NoError(t, db.Create(&run).Error)
+	require.NoError(t, db.Create(&[]models.AIConversationMessage{
+		{
+			ID: uuid.NewString(), ConversationID: conversationID, RunID: &run.ID,
+			Role: "user", Content: userContent, CreatedAt: completedAt.Add(-time.Second),
+		},
+		{
+			ID: uuid.NewString(), ConversationID: conversationID, RunID: &run.ID,
+			Role: "assistant", Content: assistantContent, CreatedAt: completedAt,
+		},
+	}).Error)
+	return run
 }
 
 type slicePolicyRAGStream struct {
@@ -115,6 +156,122 @@ func TestLangChainRuntimeUsesPythonResultAndSettlesOnce(t *testing.T) {
 	var events []models.AIEvent
 	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "rag.completed").Find(&events).Error)
 	require.Len(t, events, 1)
+}
+
+func TestLangChainRuntimePassesOnlyRecentOwnedConversationHistory(t *testing.T) {
+	result := validPolicyRAGResult("pending")
+	inputs := make(chan PolicyRAGInput, 1)
+	client := &fakeLangChainRAG{inputs: inputs, events: []PolicyRAGEvent{
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 1, Type: "generating", Timestamp: time.Now().Format(time.RFC3339Nano)},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 2, Type: "token", Timestamp: time.Now().Format(time.RFC3339Nano), Delta: result.Answer},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 3, Type: "completed", Timestamp: time.Now().Format(time.RFC3339Nano), Result: &result},
+	}}
+	runtime, db := newLangChainTestRuntime(t, client)
+	seedPublishedKnowledgeSource(t, db, 9, 18)
+	userID := uint(41)
+	conversationID := uuid.NewString()
+	require.NoError(t, db.Create(&models.AIConversation{ID: conversationID, UserID: userID}).Error)
+	now := time.Now().Add(-time.Minute)
+	for index := 0; index < 5; index++ {
+		seedPolicyHistoryRound(
+			t, db, userID, conversationID, models.AIRunStateCompleted,
+			fmt.Sprintf("同会话问题-%d", index), fmt.Sprintf("同会话回答-%d", index),
+			now.Add(time.Duration(index)*time.Second),
+		)
+	}
+	// 最近的残缺 Run 不能挤占更早但有效的完整轮次。
+	seedPolicyHistoryRound(
+		t, db, userID, conversationID, models.AIRunStateCompleted,
+		"残缺问题-1", "", now.Add(5*time.Second),
+	)
+	seedPolicyHistoryRound(
+		t, db, userID, conversationID, models.AIRunStateCompleted,
+		"残缺问题-2", "", now.Add(6*time.Second),
+	)
+	seedPolicyHistoryRound(
+		t, db, userID, conversationID, models.AIRunStateFailed,
+		"失败问题", "失败回答", now.Add(10*time.Second),
+	)
+	otherConversationID := uuid.NewString()
+	require.NoError(t, db.Create(&models.AIConversation{ID: otherConversationID, UserID: userID}).Error)
+	seedPolicyHistoryRound(
+		t, db, userID, otherConversationID, models.AIRunStateCompleted,
+		"其他会话问题", "其他会话回答", now.Add(11*time.Second),
+	)
+	// 即使异常数据把其他账号 Run 指向当前会话，Run 所有者约束也必须将其排除。
+	seedPolicyHistoryRound(
+		t, db, 99, conversationID, models.AIRunStateCompleted,
+		"其他账号问题", "其他账号回答", now.Add(12*time.Second),
+	)
+
+	run, _, err := runtime.CreateRun(context.Background(), userID, CreateRunRequest{
+		ConversationID: conversationID, ClientRequestID: uuid.NewString(), Message: "那实验课呢",
+	})
+	require.NoError(t, err)
+	received := <-inputs
+	require.Equal(t, run.ID, received.RequestID)
+	require.Len(t, received.History, policyHistoryMaxMessages)
+	require.Equal(t, "同会话问题-1", received.History[0].Content)
+	require.Equal(t, "同会话回答-4", received.History[len(received.History)-1].Content)
+	serialized, err := json.Marshal(received.History)
+	require.NoError(t, err)
+	require.NotContains(t, string(serialized), "同会话问题-0")
+	require.NotContains(t, string(serialized), "残缺问题")
+	require.NotContains(t, string(serialized), "失败问题")
+	require.NotContains(t, string(serialized), "其他会话问题")
+	require.NotContains(t, string(serialized), "其他账号问题")
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+}
+
+func TestPolicyHistoryIsDeterministicallyBoundedByCompleteRounds(t *testing.T) {
+	runtime, db := newLangChainTestRuntime(t, &fakeLangChainRAG{})
+	userID := uint(42)
+	conversationID := uuid.NewString()
+	require.NoError(t, db.Create(&models.AIConversation{ID: conversationID, UserID: userID}).Error)
+	now := time.Now().Add(-time.Minute)
+	for index := 0; index < policyHistoryMaxRounds; index++ {
+		seedPolicyHistoryRound(
+			t, db, userID, conversationID, models.AIRunStateCompleted,
+			strings.Repeat(fmt.Sprintf("问%d", index), 200),
+			strings.Repeat(fmt.Sprintf("答%d", index), 500),
+			now.Add(time.Duration(index)*time.Second),
+		)
+	}
+	current := models.AIRun{ID: uuid.NewString(), UserID: userID, ConversationID: conversationID}
+
+	history, err := runtime.loadPolicyHistory(context.Background(), current)
+	require.NoError(t, err)
+	require.NotEmpty(t, history)
+	require.LessOrEqual(t, len(history), policyHistoryMaxMessages)
+	require.Zero(t, len(history)%2)
+	total := 0
+	for index, item := range history {
+		require.Equal(t, []string{"user", "assistant"}[index%2], item.Role)
+		total += utils.CountGraphemes(item.Content)
+	}
+	require.LessOrEqual(t, total, policyHistoryMaxGraphemes)
+	require.LessOrEqual(t, utils.CountGraphemes(history[0].Content), policyHistoryMaxUserGraphemes)
+	require.LessOrEqual(t, utils.CountGraphemes(history[1].Content), policyHistoryMaxAnswerGraphemes)
+}
+
+func TestPolicyHistoryRejectsDeletedConversation(t *testing.T) {
+	runtime, db := newLangChainTestRuntime(t, &fakeLangChainRAG{})
+	userID := uint(43)
+	conversationID := uuid.NewString()
+	conversation := models.AIConversation{ID: conversationID, UserID: userID}
+	require.NoError(t, db.Create(&conversation).Error)
+	seedPolicyHistoryRound(
+		t, db, userID, conversationID, models.AIRunStateCompleted,
+		"补考成绩怎么算", "应以当前已发布规定为准。", time.Now().Add(-time.Minute),
+	)
+	require.NoError(t, db.Delete(&conversation).Error)
+
+	history, err := runtime.loadPolicyHistory(context.Background(), models.AIRun{
+		ID: uuid.NewString(), UserID: userID, ConversationID: conversationID,
+	})
+
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	require.Empty(t, history)
 }
 
 func TestLangChainRuntimeCancelPropagatesAndReleasesReservation(t *testing.T) {

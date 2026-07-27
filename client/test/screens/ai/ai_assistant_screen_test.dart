@@ -150,9 +150,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    
+
     // Counter is hidden when empty in public mode
-    expect(find.text('0/20'), findsNothing);
+    expect(find.text('0/120'), findsNothing);
 
     await tester.tap(find.text('个人助手'));
     await tester.pumpAndSettle();
@@ -187,7 +187,7 @@ void main() {
 
     await tester.tap(find.text('校园问答'));
     await tester.pump();
-    expect(find.text('8001/20'), findsOneWidget);
+    expect(find.text('8001/120'), findsOneWidget);
   });
 }
 

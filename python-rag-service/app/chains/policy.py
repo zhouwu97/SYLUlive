@@ -12,7 +12,7 @@ from langchain.retrievers.contextual_compression import ContextualCompressionRet
 from langchain_core.documents import Document
 from langchain_core.documents.compressor import BaseDocumentCompressor
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessageChunk, BaseMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.runnables import (
     Runnable,
@@ -24,10 +24,14 @@ from langchain_core.runnables import (
 )
 
 from app.chains.query_planner import PolicyQueryPlanner
+from app.chains.query_rewriter import (
+    bound_policy_history,
+    build_policy_query_rewriter,
+    history_messages,
+)
 from app.prompts import build_policy_answer_prompt
 from app.schemas import (
     PolicyAnswer,
-    PolicyHistoryMessage,
     PolicyQueryPlan,
     PolicyRAGEvent,
     PolicyRAGInput,
@@ -39,7 +43,7 @@ from app.schemas import (
 
 
 POLICY_RAG_CHAIN_NAME = "shenliyuan_policy_rag"
-POLICY_RAG_CHAIN_VERSION = "answer-citations-v3"
+POLICY_RAG_CHAIN_VERSION = "conversation-context-v4"
 INSUFFICIENT_ANSWER = "当前已发布资料不足，暂时无法给出可核验回答。"
 HISTORY_BOUNDARY_WARNING = "历史规则不代表当前执行口径，请以教务系统或当期通知核验。"
 _CALCULATION_TERMS = (
@@ -65,21 +69,9 @@ def _normalize_input(value: PolicyRAGInput | dict[str, Any]) -> PolicyRAGInput:
     normalized = request.question.strip()
     if not normalized:
         raise ValueError("empty policy question")
-    return request.model_copy(update={"question": normalized})
-
-
-def _query_text(request: PolicyRAGInput) -> str:
-    return request.question
-
-
-def _history_messages(history: list[PolicyHistoryMessage]) -> list[BaseMessage]:
-    messages: list[BaseMessage] = []
-    for item in history:
-        if item.role == "user":
-            messages.append(HumanMessage(content=item.content))
-        else:
-            messages.append(AIMessage(content=item.content))
-    return messages
+    return request.model_copy(
+        update={"question": normalized, "history": bound_policy_history(request.history)}
+    )
 
 
 def _bounded_documents(state: dict[str, Any]) -> list[Document]:
@@ -130,7 +122,7 @@ def _generation_context(state: dict[str, Any], parser: PydanticOutputParser) -> 
             f"{document.page_content}\n</evidence>"
         )
     return {
-        "history": _history_messages(request.history),
+        "history": history_messages(request.history),
         "query_plan": plan.model_dump_json(),
         "context": "\n\n".join(context_parts),
         "format_instructions": parser.get_format_instructions(),
@@ -421,14 +413,22 @@ def build_policy_rag_chain(
     reranker: BaseDocumentCompressor | None = None,
     relevance_threshold: float = 0.5,
     planner: Runnable[str, PolicyQueryPlan] | None = None,
+    query_rewriter: Runnable[PolicyRAGInput, str] | None = None,
 ) -> Runnable[PolicyRAGInput, PolicyRAGResult]:
     if not 0 <= relevance_threshold <= 1:
         raise ValueError("relevance threshold must be between 0 and 1")
     query_planner = planner or PolicyQueryPlanner()
+    rewrite_query = query_rewriter or build_policy_query_rewriter()
     validation = RunnableLambda(_normalize_input).with_config(run_name="input_validation")
-    planning = RunnableParallel(
+    rewriting = RunnableParallel(
         request=RunnablePassthrough(),
-        query_plan=RunnableLambda(_query_text) | query_planner,
+        rewritten_query=rewrite_query,
+    ).with_config(run_name="policy_context_rewrite")
+    planning = RunnableParallel(
+        request=RunnableLambda(lambda state: state["request"]),
+        rewritten_query=RunnableLambda(lambda state: state["rewritten_query"]),
+        query_plan=RunnableLambda(lambda state: state["rewritten_query"])
+        | query_planner,
     ).with_config(run_name="policy_query_planning")
 
     document_retriever: Runnable[str, list[Document]] = retriever
@@ -439,8 +439,9 @@ def build_policy_rag_chain(
         ).with_config(run_name="policy_reranking")
     retrieval = RunnableParallel(
         request=RunnableLambda(lambda state: state["request"]),
+        rewritten_query=RunnableLambda(lambda state: state["rewritten_query"]),
         query_plan=RunnableLambda(lambda state: state["query_plan"]),
-        documents=RunnableLambda(lambda state: state["request"].question)
+        documents=RunnableLambda(lambda state: state["rewritten_query"])
         | document_retriever,
     ).with_config(run_name="policy_retrieval")
 
@@ -490,6 +491,7 @@ def build_policy_rag_chain(
     )
     return (
         validation
+        | rewriting
         | planning
         | retrieval
         | branch

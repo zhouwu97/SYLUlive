@@ -277,6 +277,7 @@ type RetrievedChunk struct {
 	Title          string                `json:"title"`
 	DocumentType   string                `json:"document_type,omitempty"`
 	SourceType     string                `json:"-"`
+	Status         string                `json:"status,omitempty"`
 	Department     string                `json:"department,omitempty"`
 	SourceURI      string                `json:"source_url,omitempty"`
 	SectionTitle   string                `json:"section_title,omitempty"`
@@ -863,9 +864,12 @@ type SourceCard struct {
 	DocumentID      uint       `json:"document_id"`
 	Title           string     `json:"title"`
 	Department      string     `json:"department,omitempty"`
+	Status          string     `json:"status"`
 	URL             string     `json:"url,omitempty"`
 	Locators        []string   `json:"locators,omitempty"`
 	CitationNumbers []int      `json:"citation_numbers"`
+	EffectiveFrom   *time.Time `json:"effective_from,omitempty"`
+	EffectiveTo     *time.Time `json:"effective_to,omitempty"`
 	PublishedAt     *time.Time `json:"published_at,omitempty"`
 	Confidence      string     `json:"confidence"`
 }
@@ -989,8 +993,10 @@ func aggregateSourceCards(chunks []RetrievedChunk) []SourceCard {
 			indexByDocument[chunk.DocumentID] = index
 			cards = append(cards, SourceCard{
 				PrimaryChunkID: chunk.ChunkID, DocumentID: chunk.DocumentID, Title: chunk.Title,
-				Department: chunk.Department, URL: chunk.SourceURI, PublishedAt: chunk.PublishedAt,
-				Confidence: confidenceForScore(chunk.RRFScore),
+				Department: chunk.Department, Status: chunk.Status, URL: chunk.SourceURI,
+				EffectiveFrom: chunk.EffectiveFrom, EffectiveTo: chunk.EffectiveTo,
+				PublishedAt: chunk.PublishedAt,
+				Confidence:  confidenceForScore(chunk.RRFScore),
 			})
 		}
 		card := &cards[index]

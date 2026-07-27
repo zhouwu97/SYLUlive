@@ -656,10 +656,11 @@ func main() {
 		runtimeOptions := make([]ai.RuntimeOption, 0, 1)
 		providerName, modelName := cfg.AIProvider, cfg.DeepSeekChatModel
 		if cfg.AILangChainRAGEnabled {
-			// 新链开启时 Go 不再初始化模型或执行检索，避免 Go/Python 双重生成与双重计费。
-			providerName, modelName = "langchain", "python-policy-rag"
+			providerName, modelName = "rag-rollout", "policy-rag"
 			runtimeOptions = append(runtimeOptions, ai.WithLangChainRAG(ragClient))
-		} else {
+		}
+		if cfg.AILegacyRAGEnabled {
+			// 灰度期只为分配到旧路径的请求调用这些依赖，同一请求不会双重检索或生成。
 			retriever = ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
 			if cfg.AIProvider == "mock" {
 				provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
@@ -683,6 +684,8 @@ func main() {
 				OutputPriceMicroYuanPerMillion: cfg.AIOutputPriceMicroYuanPerMillionTokens,
 				AuditHashSecret:                cfg.JWTSecret,
 				LangChainRAGEnabled:            cfg.AILangChainRAGEnabled,
+				LangChainRAGRolloutPercent:     cfg.AILangChainRAGRolloutPercent,
+				LegacyRAGEnabled:               cfg.AILegacyRAGEnabled,
 			},
 			runtimeOptions...,
 		)
@@ -784,7 +787,9 @@ func main() {
 				"runtime_enabled": aiRuntime != nil,
 				"policy_rag": gin.H{
 					"enabled": cfg.AIPolicyRAGEnabled, "langchain_enabled": cfg.AILangChainRAGEnabled,
-					"status": ragHealth,
+					"langchain_rollout_percent": cfg.AILangChainRAGRolloutPercent,
+					"legacy_go_enabled":         cfg.AILegacyRAGEnabled,
+					"status":                    ragHealth,
 				},
 			},
 		})

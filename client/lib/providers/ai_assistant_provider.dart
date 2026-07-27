@@ -205,7 +205,9 @@ class AiAssistantProvider extends ChangeNotifier {
     final maxChars = _capabilities?.maxMessageChars ?? 120;
     if (message.characters.length > maxChars) return AiSubmitResult.tooLong;
     if (isRunning) return AiSubmitResult.busy;
-    if ((_quota?.remaining ?? 0) <= 0) return AiSubmitResult.quotaExceeded;
+    if (_quota?.unlimited != true && (_quota?.remaining ?? 0) <= 0) {
+      return AiSubmitResult.quotaExceeded;
+    }
     if (_capabilities?.chatEnabled != true) {
       _error = '基础设施测试中，暂未开放真实问答';
       _notify();
@@ -537,6 +539,8 @@ class AiAssistantProvider extends ChangeNotifier {
         return '政策资料服务暂时不可用，请稍后重试';
       case 'provider_missing_citations':
         return '回答未生成可核验来源，请重试';
+      case 'output_limit_reached':
+        return '回答达到长度上限，未完整生成，请重试';
       case 'knowledge_validation_failed':
         return '政策资料校验失败，请稍后重试';
       case 'server_restarted':

@@ -677,7 +677,9 @@ func main() {
 			ai.RuntimeConfig{
 				ProviderName: providerName, Model: modelName,
 				RequestTimeout:  time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second,
+				MaxOutputTokens: cfg.AILegacyMaxOutputTokens,
 				MaxMessageChars: cfg.AIMaxMessageChars, HourlyMessageLimit: cfg.AIHourlyMessageLimit,
+				UnlimitedStudentIDs:            cfg.AIUnlimitedStudentIDs,
 				DefaultBudgetLimitMicroYuan:    cfg.AIUserBudgetLimitMicroYuan,
 				ReservationMicroYuan:           cfg.AIReserveMicroYuan,
 				InputPriceMicroYuanPerMillion:  cfg.AIInputPriceMicroYuanPerMillionTokens,

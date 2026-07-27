@@ -228,6 +228,15 @@ func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	require.False(t, cfg.AILangChainRAGEnabled)
 }
 
+func TestLoadAIUnlimitedStudentIDsDefaultsAndNormalizes(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_UNLIMITED_STUDENT_IDS", "")
+	require.Equal(t, []string{"2403130233"}, Load().AIUnlimitedStudentIDs)
+
+	t.Setenv("AI_UNLIMITED_STUDENT_IDS", " 2403130233,2500000001,2403130233 ")
+	require.Equal(t, []string{"2403130233", "2500000001"}, Load().AIUnlimitedStudentIDs)
+}
+
 func TestLoadLangChainRAGDoesNotRequireGoProviderKey(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_ENABLED", "true")
@@ -344,6 +353,15 @@ func TestLoadAIMessageLimitDefaultsTo120AndAllowsConfiguredRange(t *testing.T) {
 	require.Equal(t, 50, Load().AIMaxMessageChars)
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "300")
 	require.Equal(t, 300, Load().AIMaxMessageChars)
+}
+
+func TestLoadAILegacyOutputLimitDefaultsTo4096AndAllowsConfiguredRange(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_LEGACY_MAX_OUTPUT_TOKENS", "")
+	require.Equal(t, 4096, Load().AILegacyMaxOutputTokens)
+
+	t.Setenv("AI_LEGACY_MAX_OUTPUT_TOKENS", "2048")
+	require.Equal(t, 2048, Load().AILegacyMaxOutputTokens)
 }
 
 func assertLoadPanics(t *testing.T) {

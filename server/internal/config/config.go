@@ -40,9 +40,11 @@ type Config struct {
 	DeepSeekBaseURL                        string   // DeepSeek API 地址
 	DeepSeekChatModel                      string   // DeepSeek 对话模型
 	AIRequestTimeoutSeconds                int      // 单次运行硬超时
+	AILegacyMaxOutputTokens                int      // 旧 Go RAG 单次生成的最大输出 token
 	AIMaxToolSteps                         int      // 单次运行最大工具步数
 	AIMaxMessageChars                      int      // 用户消息最大 grapheme 数
 	AIHourlyMessageLimit                   int      // 每账号滚动一小时正式请求数
+	AIUnlimitedStudentIDs                  []string // 不受滚动小时次数限制的已验证学号
 	AIUserBudgetLimitMicroYuan             int64    // 新用户默认累计预算
 	AIReserveMicroYuan                     int64    // 每次模型调用的最坏成本预留
 	AIInputPriceMicroYuanPerMillionTokens  int64
@@ -276,9 +278,14 @@ func Load() *Config {
 		deepSeekChatModel = "deepseek-v4-flash"
 	}
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
+	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
 	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 3, 1, 5)
 	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 120, 50, 300)
 	aiHourlyMessageLimit := envIntInRange("AI_HOURLY_MESSAGE_LIMIT", 3, 1, 100)
+	aiUnlimitedStudentIDs := splitNonEmpty(os.Getenv("AI_UNLIMITED_STUDENT_IDS"))
+	if len(aiUnlimitedStudentIDs) == 0 {
+		aiUnlimitedStudentIDs = []string{"2403130233"}
+	}
 	aiUserBudgetLimitMicroYuan := envInt64InRange("AI_USER_BUDGET_LIMIT_MICRO_YUAN", 10_000_000, 1, 1_000_000_000)
 	aiReserveMicroYuan := envInt64InRange("AI_RESERVE_MICRO_YUAN", 20_000, 1, aiUserBudgetLimitMicroYuan)
 	aiInputPrice := envInt64InRange("AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS", 4_000_000, 0, 1_000_000_000)
@@ -343,9 +350,11 @@ func Load() *Config {
 		DeepSeekBaseURL:                        deepSeekBaseURL,
 		DeepSeekChatModel:                      deepSeekChatModel,
 		AIRequestTimeoutSeconds:                aiRequestTimeoutSeconds,
+		AILegacyMaxOutputTokens:                aiLegacyMaxOutputTokens,
 		AIMaxToolSteps:                         aiMaxToolSteps,
 		AIMaxMessageChars:                      aiMaxMessageChars,
 		AIHourlyMessageLimit:                   aiHourlyMessageLimit,
+		AIUnlimitedStudentIDs:                  aiUnlimitedStudentIDs,
 		AIUserBudgetLimitMicroYuan:             aiUserBudgetLimitMicroYuan,
 		AIReserveMicroYuan:                     aiReserveMicroYuan,
 		AIInputPriceMicroYuanPerMillionTokens:  aiInputPrice,

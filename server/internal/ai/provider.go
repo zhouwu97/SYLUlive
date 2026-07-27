@@ -59,6 +59,7 @@ type ProviderEvent struct {
 	InputTokens    int
 	OutputTokens   int
 	CacheHitTokens int
+	FinishReason   string
 }
 
 const (
@@ -98,6 +99,7 @@ const (
 	ProviderErrorInvalid        = "invalid_response"
 	ProviderErrorCancelled      = "context_cancelled"
 	ProviderErrorRejected       = "content_rejected"
+	ProviderErrorOutputLimit    = "output_limit_reached"
 	ProviderErrorUnknown        = "unknown_provider_error"
 )
 

@@ -74,11 +74,13 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 		accessAllowed = whitelisted || role == "admin" || role == "super_admin"
 	}
 	remaining := h.hourlyLimit
+	unlimited := false
 	var resetAt interface{}
 	if h.runtime != nil && accessAllowed {
-		if value, reset, err := h.runtime.Quota(c.Request.Context(), numericUserID); err == nil {
-			remaining = value
-			resetAt = reset
+		if quota, err := h.runtime.Quota(c.Request.Context(), numericUserID); err == nil {
+			remaining = quota.Remaining
+			resetAt = quota.ResetAt
+			unlimited = quota.Unlimited
 		}
 	}
 	chatEnabled := accessAllowed && h.runtime != nil && h.policyRAGEnabled
@@ -105,6 +107,7 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 			"remaining":      remaining,
 			"window_seconds": aiWindowSeconds,
 			"reset_at":       resetAt,
+			"unlimited":      unlimited,
 		},
 		"max_message_chars": h.maxMessageChars,
 	})

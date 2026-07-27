@@ -1,13 +1,28 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+
+	"shenliyuan/internal/ai"
+	"shenliyuan/internal/models"
 )
+
+type capabilitiesEmptyPolicyRetriever struct{}
+
+func (capabilitiesEmptyPolicyRetriever) Retrieve(context.Context, string) (ai.RetrievalResult, error) {
+	return ai.RetrievalResult{}, nil
+}
 
 func requestAICapabilities(t *testing.T, handler *AICapabilitiesHandler, userID uint, role ...string) map[string]interface{} {
 	t.Helper()
@@ -82,5 +97,42 @@ func TestAICapabilitiesDoesNotExposeRetiredServerScheduleFeature(t *testing.T) {
 	}
 	if features["schedule_windows"] != false {
 		t.Fatalf("retired schedule skill must stay unavailable: %#v", features)
+	}
+}
+
+func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(&models.User{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	verifiedAt := time.Now()
+	user := models.User{
+		ID: 77, StudentID: "2403130233", StudentVerifiedAt: &verifiedAt,
+		PasswordHash: "test", AccountStatus: "active",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, capabilitiesEmptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
+		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
+		MaxMessageChars: 120, HourlyMessageLimit: 3,
+		UnlimitedStudentIDs:         []string{"2403130233"},
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+		AuditHashSecret: "test-secret",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	handler := NewAICapabilitiesHandler(true, false, nil, AICapabilitiesOptions{
+		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 120,
+	})
+	body := requestAICapabilities(t, handler, user.ID)
+	quota, ok := body["quota"].(map[string]interface{})
+	if !ok || quota["unlimited"] != true || quota["remaining"] != float64(3) {
+		t.Fatalf("unexpected unlimited quota: %#v", body["quota"])
 	}
 }

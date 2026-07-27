@@ -52,6 +52,29 @@ void main() {
     );
   });
 
+  test('不限次数账号不会被为零的兼容配额拦截', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: true,
+        chatEnabled: false,
+        phase: 'p0',
+        features: AiFeatures(policyRag: false, scheduleWindows: false),
+        quota: AiQuota(
+          limit: 3,
+          remaining: 0,
+          windowSeconds: 3600,
+          unlimited: true,
+        ),
+        maxMessageChars: 20,
+      ),
+    );
+
+    expect(provider.submit('奖学金'), AiSubmitResult.unavailable);
+  });
+
   test('SSE 回放重复 seq 不会重复拼接答案', () {
     final provider = AiAssistantProvider(
       AiAssistantService(Dio()),
@@ -89,5 +112,39 @@ void main() {
 
     expect(provider.streamedText, '奖学金评定规则见学生手册。');
     expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
+  });
+
+  test('输出达到长度上限时明确提示回答不完整', () {
+    final provider = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: false,
+        chatEnabled: true,
+        phase: 'p2',
+        features: AiFeatures(policyRag: true, scheduleWindows: false),
+        quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
+        maxMessageChars: 20,
+      ),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-length',
+      seq: 1,
+      type: AiRunEventType.delta,
+      text: '补考比例差异',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-length',
+      seq: 2,
+      type: AiRunEventType.failed,
+      errorCode: 'output_limit_reached',
+      retryable: true,
+    ));
+
+    expect(provider.error, '回答达到长度上限，未完整生成，请重试');
+    expect(provider.messages.single.status.name, 'failed');
   });
 }

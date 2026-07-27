@@ -26,8 +26,10 @@ type RuntimeConfig struct {
 	ProviderName                   string
 	Model                          string
 	RequestTimeout                 time.Duration
+	MaxOutputTokens                int
 	MaxMessageChars                int
 	HourlyMessageLimit             int
+	UnlimitedStudentIDs            []string
 	DefaultBudgetLimitMicroYuan    int64
 	ReservationMicroYuan           int64
 	InputPriceMicroYuanPerMillion  int64
@@ -49,12 +51,13 @@ func (e *RuntimeError) Error() string { return e.Code }
 var newlinePattern = regexp.MustCompile(`(?:\r?\n)+`)
 
 type Runtime struct {
-	db           *gorm.DB
-	provider     AIProvider
-	retriever    PolicyRetriever
-	langChainRAG LangChainRAG
-	broker       *EventBroker
-	config       RuntimeConfig
+	db                  *gorm.DB
+	provider            AIProvider
+	retriever           PolicyRetriever
+	langChainRAG        LangChainRAG
+	broker              *EventBroker
+	config              RuntimeConfig
+	unlimitedStudentIDs map[string]struct{}
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -79,10 +82,22 @@ func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, bro
 	if broker == nil {
 		broker = NewEventBroker()
 	}
-	if config.RequestTimeout < 5*time.Second || config.MaxMessageChars <= 0 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
+	if config.MaxOutputTokens == 0 {
+		config.MaxOutputTokens = 4096
+	}
+	if config.RequestTimeout < 5*time.Second || config.MaxOutputTokens < 256 || config.MaxOutputTokens > 8192 || config.MaxMessageChars <= 0 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
 		return nil, errors.New("invalid AI runtime configuration")
 	}
-	runtime := &Runtime{db: db, provider: provider, retriever: retriever, broker: broker, config: config, cancels: make(map[string]context.CancelFunc)}
+	unlimitedStudentIDs := make(map[string]struct{}, len(config.UnlimitedStudentIDs))
+	for _, studentID := range config.UnlimitedStudentIDs {
+		if normalized := strings.TrimSpace(studentID); normalized != "" {
+			unlimitedStudentIDs[normalized] = struct{}{}
+		}
+	}
+	runtime := &Runtime{
+		db: db, provider: provider, retriever: retriever, broker: broker, config: config,
+		unlimitedStudentIDs: unlimitedStudentIDs, cancels: make(map[string]context.CancelFunc),
+	}
 	for _, option := range options {
 		option(runtime)
 	}
@@ -159,6 +174,10 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		quotaUnlimited, err := r.isQuotaUnlimited(tx, userID)
+		if err != nil {
+			return err
+		}
 
 		conversationID := strings.TrimSpace(request.ConversationID)
 		if conversationID == "" {
@@ -180,14 +199,16 @@ func (r *Runtime) CreateRun(ctx context.Context, userID uint, request CreateRunR
 			}
 		}
 
-		var quotaCount int64
-		if err := tx.Model(&models.AIQuotaEntry{}).
-			Where("user_id = ? AND status IN ? AND created_at > ?", userID, []string{"reserved", "consumed"}, now.Add(-time.Hour)).
-			Count(&quotaCount).Error; err != nil {
-			return err
-		}
-		if quotaCount >= int64(r.config.HourlyMessageLimit) {
-			return &RuntimeError{Code: "ai_quota_exceeded", Message: "最近 60 分钟的可用次数已用完", Retryable: true}
+		if !quotaUnlimited {
+			var quotaCount int64
+			if err := tx.Model(&models.AIQuotaEntry{}).
+				Where("user_id = ? AND status IN ? AND created_at > ?", userID, []string{"reserved", "consumed"}, now.Add(-time.Hour)).
+				Count(&quotaCount).Error; err != nil {
+				return err
+			}
+			if quotaCount >= int64(r.config.HourlyMessageLimit) {
+				return &RuntimeError{Code: "ai_quota_exceeded", Message: "最近 60 分钟的可用次数已用完", Retryable: true}
+			}
 		}
 
 		budget := models.AIUserBudget{UserID: userID, LimitMicroYuan: r.config.DefaultBudgetLimitMicroYuan}
@@ -301,7 +322,7 @@ func (r *Runtime) Execute(runID, message string) {
 			{Role: "system", Content: policySystemPrompt},
 			{Role: "user", Content: buildPolicyPrompt(message, promptChunks)},
 		},
-		Temperature: 0.1, MaxTokens: 800,
+		Temperature: 0.1, MaxTokens: r.config.MaxOutputTokens,
 	}
 	startedAt := time.Now()
 	stream, err := r.provider.Start(ctx, providerRequest)
@@ -346,6 +367,10 @@ func (r *Runtime) Execute(runID, message string) {
 			r.failAfterProvider(runID, generated, ProviderErrorRejected, usage, time.Since(startedAt))
 			return
 		case ProviderEventCompleted:
+			if code := providerFinishError(event.FinishReason); code != "" {
+				r.failAfterProvider(runID, generated, code, usage, time.Since(startedAt))
+				return
+			}
 			if !generated || strings.TrimSpace(answer.String()) == "" {
 				r.failAfterProvider(runID, false, ProviderErrorInvalid, usage, time.Since(startedAt))
 				return
@@ -692,21 +717,65 @@ func (r *Runtime) EventsAfter(ctx context.Context, userID uint, runID string, af
 	return events, nil
 }
 
-func (r *Runtime) Quota(ctx context.Context, userID uint) (remaining int, resetAt *time.Time, err error) {
+type QuotaStatus struct {
+	Limit     int
+	Remaining int
+	ResetAt   *time.Time
+	Unlimited bool
+}
+
+func (r *Runtime) Quota(ctx context.Context, userID uint) (QuotaStatus, error) {
+	status := QuotaStatus{Limit: r.config.HourlyMessageLimit, Remaining: r.config.HourlyMessageLimit}
+	unlimited, err := r.isQuotaUnlimited(r.db.WithContext(ctx), userID)
+	if err != nil {
+		return QuotaStatus{}, err
+	}
+	if unlimited {
+		status.Unlimited = true
+		return status, nil
+	}
 	var entries []models.AIQuotaEntry
 	err = r.db.WithContext(ctx).Where("user_id = ? AND status IN ? AND created_at > ?", userID, []string{"reserved", "consumed"}, time.Now().Add(-time.Hour)).Order("created_at ASC").Find(&entries).Error
 	if err != nil {
-		return 0, nil, err
+		return QuotaStatus{}, err
 	}
-	remaining = r.config.HourlyMessageLimit - len(entries)
-	if remaining < 0 {
-		remaining = 0
+	status.Remaining = status.Limit - len(entries)
+	if status.Remaining < 0 {
+		status.Remaining = 0
 	}
-	if len(entries) >= r.config.HourlyMessageLimit {
+	if len(entries) >= status.Limit {
 		value := entries[0].CreatedAt.Add(time.Hour)
-		resetAt = &value
+		status.ResetAt = &value
 	}
-	return remaining, resetAt, nil
+	return status, nil
+}
+
+func (r *Runtime) isQuotaUnlimited(db *gorm.DB, userID uint) (bool, error) {
+	if len(r.unlimitedStudentIDs) == 0 {
+		return false, nil
+	}
+	var user struct {
+		StudentID         string
+		StudentVerifiedAt *time.Time
+		EduStudentID      string
+		EduAuthorized     bool
+	}
+	if err := db.Model(&models.User{}).
+		Select("student_id", "student_verified_at", "edu_student_id", "edu_authorized").
+		Where("id = ?", userID).First(&user).Error; err != nil {
+		return false, err
+	}
+	if user.StudentVerifiedAt != nil {
+		if _, allowed := r.unlimitedStudentIDs[strings.TrimSpace(user.StudentID)]; allowed {
+			return true, nil
+		}
+	}
+	if user.EduAuthorized {
+		if _, allowed := r.unlimitedStudentIDs[strings.TrimSpace(user.EduStudentID)]; allowed {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (r *Runtime) Broker() *EventBroker { return r.broker }
@@ -729,6 +798,21 @@ func providerErrorClass(err error) string {
 		return ProviderErrorTimeout
 	}
 	return ProviderErrorUnknown
+}
+
+// providerFinishError 将上游的正常协议终态与截断、拦截等非完整终态分开。
+// 空值仅用于兼容未提供 finish_reason 的旧 Provider 和测试实现。
+func providerFinishError(reason string) string {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "", "stop":
+		return ""
+	case "length":
+		return ProviderErrorOutputLimit
+	case "content_filter", "tool_calls":
+		return ProviderErrorRejected
+	default:
+		return ProviderErrorInvalid
+	}
 }
 
 // RecoverAbandonedRuns 在进程启动时终止不可能安全续跑的旧 Run，并回收预留。

@@ -3,6 +3,7 @@ package models
 import (
 	"time"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -48,18 +49,19 @@ func (AIKnowledgeDocument) TableName() string { return "ai_knowledge_documents" 
 
 // AIKnowledgeChunk 是检索与引用验证的最小证据单元。
 type AIKnowledgeChunk struct {
-	ID                    uint64    `gorm:"primaryKey" json:"id"`
-	DocumentID            uint      `gorm:"not null;uniqueIndex:idx_ai_chunks_document_index,priority:1;index" json:"document_id"`
-	ChunkIndex            int       `gorm:"not null;uniqueIndex:idx_ai_chunks_document_index,priority:2" json:"chunk_index"`
-	Content               string    `gorm:"type:text;not null" json:"content"`
-	ContentHash           string    `gorm:"size:64;not null" json:"content_hash"`
-	SearchTokens          string    `gorm:"type:text;not null;default:''" json:"-"`
-	Embedding             string    `gorm:"type:vector(1536);not null" json:"-"`
-	PageNumber            *int      `json:"page_number,omitempty"`
-	SectionTitle          string    `gorm:"size:500;not null;default:''" json:"section_title,omitempty"`
-	SourceLocator         string    `gorm:"size:500;not null;default:''" json:"source_locator,omitempty"`
-	EmbeddingModelVersion string    `gorm:"size:100;not null;index" json:"embedding_model_version"`
-	CreatedAt             time.Time `json:"created_at"`
+	ID                    uint64         `gorm:"primaryKey" json:"id"`
+	DocumentID            uint           `gorm:"not null;uniqueIndex:idx_ai_chunks_document_index,priority:1;index" json:"document_id"`
+	ChunkIndex            int            `gorm:"not null;uniqueIndex:idx_ai_chunks_document_index,priority:2" json:"chunk_index"`
+	Content               string         `gorm:"type:text;not null" json:"content"`
+	ContentHash           string         `gorm:"size:64;not null" json:"content_hash"`
+	SearchTokens          string         `gorm:"type:text;not null;default:''" json:"-"`
+	Embedding             string         `gorm:"type:vector(1536);not null" json:"-"`
+	PageNumber            *int           `json:"page_number,omitempty"`
+	SectionTitle          string         `gorm:"size:500;not null;default:''" json:"section_title,omitempty"`
+	SourceLocator         string         `gorm:"size:500;not null;default:''" json:"source_locator,omitempty"`
+	Metadata              datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
+	EmbeddingModelVersion string         `gorm:"size:100;not null;index" json:"embedding_model_version"`
+	CreatedAt             time.Time      `json:"created_at"`
 }
 
 func (AIKnowledgeChunk) TableName() string { return "ai_knowledge_chunks" }

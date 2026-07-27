@@ -45,7 +45,9 @@ if ($trackedProbeOutput) { throw 'Private probe output must not be tracked.' }
 & git -C $repoRoot check-ignore -q 'python-edu-service/private-probe-output/'
 if ($LASTEXITCODE -ne 0) { throw 'Private probe output is not ignored.' }
 
-Assert-Matches (Join-Path $clientRoot 'lib\widgets\edu_grade\graduation_warning_empty_state.dart') 'GraduationWarningEmptyState' 'Graduation warning placeholder is missing.'
+# Graduation warning removed — credit requirements now replace it
+Assert-Matches (Join-Path $clientRoot 'lib\widgets\edu_grade\academic_requirement_overview.dart') 'AcademicRequirementOverview' 'Credit requirement overview widget is missing.'
+Assert-Matches (Join-Path $clientRoot 'lib\models\edu_credit_requirement.dart') 'EduCreditRequirementOverview' 'Credit requirement model is missing.'
 Assert-Matches (Join-Path $clientRoot 'lib\widgets\edu_grade\academic_privacy_notice.dart') 'AcademicPrivacyNotice' 'Academic privacy notice is missing.'
 
 Write-Host 'Beta-0 static release gate passed.'

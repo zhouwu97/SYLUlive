@@ -40,6 +40,11 @@ class ErkeRepository {
 
   Future<bool> hasCache() => _cache.hasCache();
 
+  /// 返回当前账号保险箱中的二课快照，供用户明确授权后的摘要上传使用。
+  /// 调用方只能使用返回快照构造允许上传的结构化字段，不能访问加密存储实现。
+  Future<ErkeSnapshot?> readSnapshotForAuthorizedUpload() =>
+      _cache.loadOrMigrateSnapshot();
+
   Future<void> loadCache() async {
     final snapshot = await _cache.loadOrMigrateSnapshot();
     if (snapshot == null) return;
@@ -75,7 +80,7 @@ class ErkeRepository {
       debugPrint('[Erke] phase=$phase start');
       final vpnOk = await _vpn.login(studentId, casPassword);
       if (!vpnOk) {
-        fetchError = '统一认证登录失败，请检查密码';
+        fetchError = _vpn.lastError ?? '统一认证登录失败，请检查密码';
         debugPrint(
             '[Erke] phase=$phase failed type=VpnLoginFailed message=$fetchError');
         hasLiveSession = false;

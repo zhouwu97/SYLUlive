@@ -5,6 +5,7 @@ import '../features/campus_data/storage/academic_cache_store.dart';
 import '../features/campus_data/storage/account_scoped_snapshot_store.dart';
 import '../utils/app_feedback.dart';
 import '../models/edu_academic_situation.dart';
+import '../models/edu_credit_requirement.dart';
 import '../models/edu_grade.dart';
 import '../utils/edu_semester_utils.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
@@ -43,6 +44,17 @@ class AcademicSituationCacheEntry {
   });
 }
 
+/// 学分要求缓存条目
+class CreditRequirementCacheEntry {
+  final EduCreditRequirementOverview data;
+  final DateTime updatedAt;
+
+  const CreditRequirementCacheEntry({
+    required this.data,
+    required this.updatedAt,
+  });
+}
+
 class EduProvider extends ChangeNotifier {
   late final Dio _authDio; // Go 服务器（获取当前用户信息）
   final AccountScopedSnapshotStore Function(String appUserId)?
@@ -63,6 +75,7 @@ class EduProvider extends ChangeNotifier {
   final Map<String, GradeCacheEntry> _gradeCache = {};
   final Map<String, EduGradeDetail> _gradeDetailCache = {};
   final Map<String, AcademicSituationCacheEntry> _academicSituationCache = {};
+  final Map<String, CreditRequirementCacheEntry> _creditRequirementCache = {};
   int _statusGeneration = 0;
   bool _eduRequestBusy = false;
   Future<void> Function(String token, Map<String, dynamic> user)?
@@ -100,6 +113,10 @@ class EduProvider extends ChangeNotifier {
     return 'edu_academic_situation_$userId';
   }
 
+  String _creditRequirementCacheKey(String userId) {
+    return 'edu_credit_requirements_$userId';
+  }
+
   AcademicCacheStore? _academicCacheStoreFor({
     required String appUserId,
     required String sourceAccountId,
@@ -127,12 +144,19 @@ class EduProvider extends ChangeNotifier {
     return _academicSituationCache[_academicSituationCacheKey(_userId!)];
   }
 
+  /// 读取学分要求缓存。
+  CreditRequirementCacheEntry? getCachedCreditRequirements() {
+    if (_userId == null) return null;
+    return _creditRequirementCache[_creditRequirementCacheKey(_userId!)];
+  }
+
   /// 清除指定用户的所有成绩缓存
   void clearGradeCacheForUser(String userId) {
     final prefix = 'edu_grades_${userId}_';
     _gradeCache.removeWhere((key, _) => key.startsWith(prefix));
     _gradeDetailCache.removeWhere((key, _) => key.startsWith('$userId|'));
     _academicSituationCache.remove(_academicSituationCacheKey(userId));
+    _creditRequirementCache.remove(_creditRequirementCacheKey(userId));
   }
 
   /// 撤销教务授权后销毁该账号的本地个人数据保险箱。
@@ -230,7 +254,9 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null &&
         _studentId.isEmpty &&
         _gradeCache.isEmpty &&
-        _academicSituationCache.isEmpty) {
+        _gradeDetailCache.isEmpty &&
+        _academicSituationCache.isEmpty &&
+        _creditRequirementCache.isEmpty) {
       return;
     }
     _statusGeneration++;
@@ -249,6 +275,7 @@ class EduProvider extends ChangeNotifier {
     _gradeCache.clear();
     _gradeDetailCache.clear();
     _academicSituationCache.clear();
+    _creditRequirementCache.clear();
     notifyListeners();
   }
 
@@ -885,6 +912,65 @@ class EduProvider extends ChangeNotifier {
           }
         }
         return OperationResult.fail('获取成绩失败');
+      } on DioException catch (e) {
+        final errorMsg = _parseDioError(e);
+        if (_isEduSessionExpired(e)) {
+          return OperationResult.fail('教务会话已失效，请在账号与安全中手动恢复或重新授权');
+        }
+        return OperationResult.fail(errorMsg);
+      }
+    });
+  }
+
+  Future<OperationResult<EduCreditRequirementOverview>>
+      fetchCreditRequirements() async {
+    final requestUserId = _userId;
+    if (requestUserId == null) {
+      return OperationResult.fail('用户未登录');
+    }
+    final requestSourceAccountId = _studentId.trim();
+
+    return _runEduRequest(() async {
+      try {
+        final response = await _authDio.post(
+          '/edu/credit-requirements',
+          data: const <String, dynamic>{},
+        );
+        if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+          return OperationResult.fail('用户已切换');
+        }
+        if (response.statusCode == 200) {
+          if (response.data is! Map) {
+            return OperationResult.fail('获取学分要求失败');
+          }
+          final raw = Map<String, dynamic>.from(response.data as Map);
+          final overview = EduCreditRequirementOverview.fromJson(raw);
+          if (!overview.success) {
+            return OperationResult.fail(overview.message ?? '获取学分要求失败');
+          }
+          // 持久化到 AES-GCM 保险箱
+          final store = _academicCacheStoreFor(
+            appUserId: requestUserId,
+            sourceAccountId: requestSourceAccountId,
+          );
+          if (store != null) {
+            try {
+              await store.writeCreditRequirements(data: raw);
+            } catch (error) {
+              debugPrint('保存加密学分要求失败: ${error.runtimeType}');
+            }
+          }
+          if (!_isSameAcademicContext(requestUserId, requestSourceAccountId)) {
+            return OperationResult.fail('用户已切换');
+          }
+          _creditRequirementCache[_creditRequirementCacheKey(requestUserId)] =
+              CreditRequirementCacheEntry(
+            data: overview,
+            updatedAt: DateTime.now(),
+          );
+          return OperationResult.ok(overview);
+        }
+        return OperationResult.fail('获取学分要求失败');
       } on DioException catch (e) {
         final errorMsg = _parseDioError(e);
         if (_isEduSessionExpired(e)) {

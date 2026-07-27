@@ -157,7 +157,7 @@ func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, messa
 				"chain_name": result.ChainName, "chain_version": result.ChainVersion,
 				"degraded_modes": result.DegradedModes,
 			}, true)
-			r.completeRun(runID, result.Answer, policyRAGSourcesToChunks(result.Sources), usage, time.Since(startedAt))
+			r.completeRun(runID, result.Answer, policyRAGSourcesToChunks(result.Sources), usage, time.Since(startedAt), true)
 			return
 		}
 	}

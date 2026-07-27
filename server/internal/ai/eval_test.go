@@ -20,7 +20,7 @@ func evaluationFixtureDirectory() string {
 func TestEvaluationFixturesCoverRequiredCategories(t *testing.T) {
 	cases, err := LoadEvaluationCases(evaluationFixtureDirectory())
 	require.NoError(t, err)
-	require.Len(t, cases, 43)
+	require.Len(t, cases, 45)
 
 	categories := map[string]int{}
 	policyCases := 0
@@ -35,7 +35,7 @@ func TestEvaluationFixturesCoverRequiredCategories(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, 40, policyCases)
+	require.Equal(t, 42, policyCases)
 	for _, category := range []string{"typo", "colloquial", "historical_conflict", "prompt_injection", "negative"} {
 		require.NotZero(t, categories[category], category)
 	}
@@ -81,7 +81,7 @@ func TestFixedEvaluationFixturesPass(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, report.Failed)
 	require.Equal(t, report.Total, report.Passed)
-	require.Equal(t, 43, report.Total)
+	require.Equal(t, 45, report.Total)
 	require.Equal(t, 1.0, report.Retrieval.RecallAtK)
 	require.Equal(t, 1.0, report.Retrieval.MRR)
 	require.Equal(t, 1.0, report.Citation.LegalityRate)

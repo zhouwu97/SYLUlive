@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../models/ai_capabilities.dart';
 import '../models/ai_chat_message.dart';
 import '../models/ai_conversation.dart';
+import '../models/ai_personal_data_evidence.dart';
 import '../models/ai_quota.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
@@ -32,6 +33,20 @@ enum AiSubmitResult {
   failed
 }
 
+/// 一次提交的完整身份。手动或自动重试都必须沿用同一个 [requestId]，
+/// 否则在“服务器已经创建 Run、响应丢失”的情况下会创建出第二个 Run。
+class AiPendingSubmission {
+  final String requestId;
+  final String conversationId;
+  final String message;
+
+  const AiPendingSubmission({
+    required this.requestId,
+    required this.conversationId,
+    required this.message,
+  });
+}
+
 String normalizeAiMessage(String value) {
   return value.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
 }
@@ -41,12 +56,15 @@ int aiVisibleCharacterCount(String value) =>
 
 class AiAssistantProvider extends ChangeNotifier {
   final AiAssistantService _service;
+  final Future<void> Function()? _deviceToolSync;
 
   AiAssistantProvider(
     this._service, {
     AiCapabilities? initialCapabilities,
+    Future<void> Function()? deviceToolSync,
   })  : _capabilities = initialCapabilities,
-        _quota = initialCapabilities?.quota;
+        _quota = initialCapabilities?.quota,
+        _deviceToolSync = deviceToolSync;
 
   AiCapabilities? _capabilities;
   AiQuota? _quota;
@@ -54,12 +72,15 @@ class AiAssistantProvider extends ChangeNotifier {
   final List<AiConversation> _conversations = [];
   AiRunEvent? _currentRun;
   AiRun? _run;
+  AiRunEvent? _pendingConsent;
+  bool _submittingConsent = false;
   AiConnectionState _connectionState = AiConnectionState.idle;
   String _streamedText = '';
   List<AiSource> _sources = [];
+  final Map<String, List<AiPersonalDataEvidence>> _personalDataEvidence = {};
   String? _error;
   String? _conversationId;
-  String? _lastFailedMessage;
+  AiPendingSubmission? _lastFailedSubmission;
   int _lastEventSeq = 0;
   bool _loading = false;
   bool _loadingConversations = false;
@@ -71,6 +92,8 @@ class AiAssistantProvider extends ChangeNotifier {
   List<AiChatMessage> get messages => List.unmodifiable(_messages);
   List<AiConversation> get conversations => List.unmodifiable(_conversations);
   AiRunEvent? get currentRun => _currentRun;
+  AiRunEvent? get pendingConsent => _pendingConsent;
+  bool get submittingConsent => _submittingConsent;
   AiConnectionState get connectionState => _connectionState;
   String get streamedText => _streamedText;
   List<AiSource> get sources => List.unmodifiable(_sources);
@@ -78,13 +101,47 @@ class AiAssistantProvider extends ChangeNotifier {
   String? get conversationId => _conversationId;
   bool get loading => _loading;
   bool get loadingConversations => _loadingConversations;
-  bool get canRetry => _lastFailedMessage != null && !isRunning;
+  bool get canRetry => _lastFailedSubmission != null && !isRunning;
+  bool get canReconnectRun => _run != null && !isRunning;
   bool get isRunning =>
       _connectionState == AiConnectionState.connecting ||
       _connectionState == AiConnectionState.streaming;
 
   String get friendlyRunStatus {
+    final event = _currentRun;
+    switch (event?.type) {
+      case AiRunEventType.deviceWaiting:
+        return _deviceWaitingStatus(event!.datasets);
+      case AiRunEventType.consentRequired:
+        return '需要你的许可才能刷新最新成绩';
+      case AiRunEventType.eduFetching:
+        return '正在通过教务服务更新个人数据';
+      case AiRunEventType.toolRequested:
+      case AiRunEventType.toolExecuting:
+        return '正在读取已授权的校园数据';
+      case AiRunEventType.deviceClaimed:
+        return '你的手机正在读取本地缓存';
+      case AiRunEventType.toolCompleted:
+        return '正在整理已授权数据';
+      case AiRunEventType.personalDataEvidence:
+        return '正在核对个人数据来源';
+      case null:
+      case AiRunEventType.started:
+      case AiRunEventType.status:
+      case AiRunEventType.delta:
+      case AiRunEventType.checkpoint:
+      case AiRunEventType.sources:
+      case AiRunEventType.completed:
+      case AiRunEventType.failed:
+      case AiRunEventType.cancelled:
+      case AiRunEventType.heartbeat:
+      case AiRunEventType.unknown:
+        break;
+    }
     final raw = (_currentRun?.status ?? _run?.state ?? '').toLowerCase();
+    if (raw.contains('waiting_device')) return '正在请求你的手机读取本地缓存';
+    if (raw.contains('waiting_user_consent')) return '需要你的许可才能刷新最新成绩';
+    if (raw.contains('waiting_edu')) return '正在通过教务服务更新个人数据';
     if (raw.contains('schedule') || raw.contains('course')) {
       return '正在查看已保存的课表…';
     }
@@ -95,6 +152,13 @@ class AiAssistantProvider extends ChangeNotifier {
     }
     if (_connectionState == AiConnectionState.connecting) return '正在连接沈理 AI…';
     return '正在整理回答…';
+  }
+
+  String _deviceWaitingStatus(List<String> datasets) {
+    if (datasets.contains('schedule')) return '正在请求你的手机读取本地课表';
+    if (datasets.contains('erke')) return '正在请求你的手机读取本地二课缓存';
+    if (datasets.contains('grades')) return '正在请求你的手机读取本地成绩缓存';
+    return '正在请求你的手机读取本地缓存';
   }
 
   List<String> get quickPrompts {
@@ -108,8 +172,32 @@ class AiAssistantProvider extends ChangeNotifier {
     return prompts;
   }
 
+  Future<void>? _bootstrapFuture;
+
+  Future<void> retryBootstrap() {
+    return _bootstrapFuture ??= _retryBootstrapInternal().whenComplete(() {
+      _bootstrapFuture = null;
+    });
+  }
+
+  Future<void> _retryBootstrapInternal() async {
+    _error = null;
+    _loading = true;
+    _notify();
+
+    try {
+      await Future.wait([
+        refreshCapabilities(silent: true),
+        loadConversations(),
+      ]);
+    } finally {
+      _loading = false;
+      _notify();
+    }
+  }
+
   Future<void> initialize() async {
-    await Future.wait([refreshCapabilities(silent: true), loadConversations()]);
+    await retryBootstrap();
   }
 
   Future<void> refreshCapabilities({bool silent = false}) async {
@@ -204,6 +292,18 @@ class AiAssistantProvider extends ChangeNotifier {
     if (message.isEmpty) return AiSubmitResult.blank;
     final maxChars = _capabilities?.maxMessageChars ?? 120;
     if (message.characters.length > maxChars) return AiSubmitResult.tooLong;
+    final blocked = _submissionBlocker();
+    if (blocked != null) return blocked;
+
+    return _startSubmission(AiPendingSubmission(
+      requestId: _uuidV4(),
+      conversationId: _conversationId ?? '',
+      message: message,
+    ));
+  }
+
+  /// 返回阻止本次提交的原因，没有阻塞时返回 null。
+  AiSubmitResult? _submissionBlocker() {
     if (isRunning) return AiSubmitResult.busy;
     if (_quota?.unlimited != true && (_quota?.remaining ?? 0) <= 0) {
       return AiSubmitResult.quotaExceeded;
@@ -213,60 +313,67 @@ class AiAssistantProvider extends ChangeNotifier {
       _notify();
       return AiSubmitResult.unavailable;
     }
+    return null;
+  }
 
-    final requestId = _uuidV4();
+  AiSubmitResult _startSubmission(AiPendingSubmission submission) {
     _error = null;
-    _lastFailedMessage = null;
+    _lastFailedSubmission = null;
     _streamedText = '';
     _sources = [];
+    _personalDataEvidence.clear();
     _lastEventSeq = 0;
     _connectionState = AiConnectionState.connecting;
     _messages.add(AiChatMessage(
-      id: requestId,
-      requestId: requestId,
+      id: submission.requestId,
+      requestId: submission.requestId,
       role: AiMessageRole.user,
-      content: message,
+      content: submission.message,
       status: AiMessageStatus.pending,
       createdAt: DateTime.now(),
     ));
     _notify();
 
-    unawaited(_submitAsync(requestId, message));
+    unawaited(_submitAsync(submission));
     return AiSubmitResult.accepted;
   }
 
-  Future<void> _submitAsync(String requestId, String message) async {
+  Future<void> _submitAsync(AiPendingSubmission submission) async {
     try {
       final creation = await _service.createRun(
-        conversationId: _conversationId ?? '',
-        clientRequestId: requestId,
-        message: message,
+        conversationId: submission.conversationId,
+        clientRequestId: submission.requestId,
+        message: submission.message,
       );
       _run = creation.run;
       _conversationId = creation.run.conversationId;
-      _replaceUserStatus(requestId, AiMessageStatus.completed);
+      _replaceUserStatus(submission.requestId, AiMessageStatus.completed);
       unawaited(
           _consumeEvents(creation.run.id, generation: ++_streamGeneration));
     } on AiAssistantServiceException catch (exception) {
-      _handleSubmitFailure(requestId, message, exception);
+      _handleSubmitFailure(submission, exception);
     } catch (_) {
       _handleSubmitFailure(
-        requestId,
-        message,
+        submission,
         const AiAssistantServiceException('请求发送失败，请检查网络后重试', retryable: true),
       );
     }
   }
 
+  /// 手动“重新发送”复用原来的 client_request_id。
+  /// 服务端已经按 user_id + client_request_id 幂等：若上一次其实已经建好 Run，
+  /// 重试会命中 duplicate 并接回同一个 Run，而不会产生第二次计费。
   AiSubmitResult retryLast() {
-    final message = _lastFailedMessage;
-    if (message == null) return AiSubmitResult.blank;
+    final submission = _lastFailedSubmission;
+    if (submission == null) return AiSubmitResult.blank;
+    final blocked = _submissionBlocker();
+    if (blocked != null) return blocked;
     _messages.removeWhere(
       (item) =>
           item.role == AiMessageRole.user &&
           item.status == AiMessageStatus.failed,
     );
-    return submit(message);
+    return _startSubmission(submission);
   }
 
   Future<void> cancel() async {
@@ -284,6 +391,37 @@ class AiAssistantProvider extends ChangeNotifier {
       _notify();
     } catch (_) {
       _error = '取消回答失败，请稍后重试';
+      _notify();
+    }
+  }
+
+  Future<bool> submitConsent(bool granted) async {
+    final consent = _pendingConsent;
+    final runId = consent?.runId.isNotEmpty == true ? consent!.runId : _run?.id;
+    if (consent == null ||
+        runId == null ||
+        consent.consentScope.isEmpty ||
+        _submittingConsent) {
+      return false;
+    }
+    _submittingConsent = true;
+    _notify();
+    try {
+      await _service.submitRunConsent(
+        runId: runId,
+        scope: consent.consentScope,
+        granted: granted,
+      );
+      if (identical(_pendingConsent, consent)) _pendingConsent = null;
+      return true;
+    } on AiAssistantServiceException catch (exception) {
+      _error = exception.message;
+      return false;
+    } catch (_) {
+      _error = '提交本次授权失败，请稍后重试';
+      return false;
+    } finally {
+      _submittingConsent = false;
       _notify();
     }
   }
@@ -343,6 +481,15 @@ class AiAssistantProvider extends ChangeNotifier {
         _connectionState = AiConnectionState.cancelled;
         _error = '已取消本次回答';
         _notify();
+      } else if (_isWaitingState(run.state)) {
+        _connectionState = AiConnectionState.streaming;
+        _currentRun = AiRunEvent(
+          runId: run.id,
+          type: AiRunEventType.status,
+          status: run.state,
+        );
+        if (run.state == 'waiting_device') _syncDeviceTools();
+        _notify();
       } else if (allowReconnect) {
         await Future<void>.delayed(const Duration(milliseconds: 350));
         if (!_disposed && generation == _streamGeneration) {
@@ -378,25 +525,59 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.delta:
         _connectionState = AiConnectionState.streaming;
         _streamedText += event.text;
-        _upsertAssistant(_streamedText, AiMessageStatus.streaming);
+        _upsertAssistant(
+          _streamedText,
+          AiMessageStatus.streaming,
+          personalDataEvidence: _evidenceForRun(event.runId),
+        );
         break;
       case AiRunEventType.checkpoint:
         _connectionState = AiConnectionState.streaming;
         if (event.text.isNotEmpty) {
           _streamedText = event.text;
-          _upsertAssistant(_streamedText, AiMessageStatus.streaming);
+          _upsertAssistant(
+            _streamedText,
+            AiMessageStatus.streaming,
+            personalDataEvidence: _evidenceForRun(event.runId),
+          );
         }
         break;
       case AiRunEventType.sources:
         _sources = List<AiSource>.unmodifiable(event.sources);
         _upsertAssistant(_streamedText, AiMessageStatus.streaming,
-            sources: _sources);
+            sources: _sources,
+            personalDataEvidence: _evidenceForRun(event.runId));
+        break;
+      case AiRunEventType.personalDataEvidence:
+        _mergePersonalDataEvidence(event.runId, event.personalDataEvidence);
+        _upsertAssistant(
+          _streamedText,
+          AiMessageStatus.streaming,
+          personalDataEvidence: _evidenceForRun(event.runId),
+        );
+        break;
+      case AiRunEventType.toolRequested:
+      case AiRunEventType.toolExecuting:
+      case AiRunEventType.deviceClaimed:
+      case AiRunEventType.consentRequired:
+        _pendingConsent = event;
+        _connectionState = AiConnectionState.streaming;
+        break;
+      case AiRunEventType.deviceWaiting:
+        _pendingConsent = event;
+        _connectionState = AiConnectionState.streaming;
+        _syncDeviceTools();
+        break;
+      case AiRunEventType.eduFetching:
+      case AiRunEventType.toolCompleted:
+        _connectionState = AiConnectionState.streaming;
         break;
       case AiRunEventType.completed:
         _connectionState = AiConnectionState.completed;
         if (event.quota != null) _quota = event.quota;
         _upsertAssistant(_streamedText, AiMessageStatus.completed,
-            sources: _sources);
+            sources: _sources,
+            personalDataEvidence: _evidenceForRun(event.runId));
         unawaited(_finishRun());
         break;
       case AiRunEventType.failed:
@@ -404,7 +585,8 @@ class AiAssistantProvider extends ChangeNotifier {
         _error = _friendlyError(event.errorCode);
         if (_streamedText.isNotEmpty) {
           _upsertAssistant(_streamedText, AiMessageStatus.failed,
-              sources: _sources);
+              sources: _sources,
+              personalDataEvidence: _evidenceForRun(event.runId));
         }
         break;
       case AiRunEventType.cancelled:
@@ -427,14 +609,21 @@ class AiAssistantProvider extends ChangeNotifier {
         .where((item) => item.role == 'assistant' && item.runId != null)) {
       try {
         List<AiSource> restored = const [];
+        final evidence = <AiPersonalDataEvidence>[];
         await for (final event in _service.streamRunEvents(message.runId!)) {
           if (event.type == AiRunEventType.sources) restored = event.sources;
+          if (event.type == AiRunEventType.personalDataEvidence) {
+            _mergeEvidenceList(evidence, event.personalDataEvidence);
+          }
           if (_isTerminal(event.type)) break;
         }
-        if (restored.isNotEmpty) {
+        if (restored.isNotEmpty || evidence.isNotEmpty) {
           final index = _messages.indexWhere((item) => item.id == message.id);
           if (index >= 0) {
-            _messages[index] = _messages[index].copyWith(sources: restored);
+            _messages[index] = _messages[index].copyWith(
+              sources: restored,
+              personalDataEvidence: evidence,
+            );
           }
         }
       } catch (_) {
@@ -459,8 +648,13 @@ class AiAssistantProvider extends ChangeNotifier {
     String text,
     AiMessageStatus status, {
     List<AiSource>? sources,
+    List<AiPersonalDataEvidence>? personalDataEvidence,
   }) {
-    if (text.isEmpty && (sources == null || sources.isEmpty)) return;
+    if (text.isEmpty &&
+        (sources == null || sources.isEmpty) &&
+        (personalDataEvidence == null || personalDataEvidence.isEmpty)) {
+      return;
+    }
     final runId = _run?.id ?? _currentRun?.runId ?? '';
     final index = _messages.lastIndexWhere(
       (item) => item.role == AiMessageRole.assistant && item.requestId == runId,
@@ -470,6 +664,7 @@ class AiAssistantProvider extends ChangeNotifier {
         content: text.isEmpty ? _messages[index].content : text,
         status: status,
         sources: sources,
+        personalDataEvidence: personalDataEvidence,
       );
       return;
     }
@@ -481,6 +676,7 @@ class AiAssistantProvider extends ChangeNotifier {
       status: status,
       createdAt: DateTime.now(),
       sources: sources ?? const [],
+      personalDataEvidence: personalDataEvidence ?? const [],
     ));
   }
 
@@ -493,14 +689,13 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   void _handleSubmitFailure(
-    String requestId,
-    String message,
+    AiPendingSubmission submission,
     AiAssistantServiceException exception,
   ) {
     _connectionState = AiConnectionState.failed;
     _error = exception.message;
-    _lastFailedMessage = exception.retryable ? message : null;
-    _replaceUserStatus(requestId, AiMessageStatus.failed);
+    _lastFailedSubmission = exception.retryable ? submission : null;
+    _replaceUserStatus(submission.requestId, AiMessageStatus.failed);
     unawaited(refreshCapabilities(silent: true));
   }
 
@@ -512,11 +707,14 @@ class AiAssistantProvider extends ChangeNotifier {
   void _resetRunState() {
     _run = null;
     _currentRun = null;
+    _pendingConsent = null;
+    _submittingConsent = false;
     _connectionState = AiConnectionState.idle;
     _streamedText = '';
     _sources = [];
+    _personalDataEvidence.clear();
     _lastEventSeq = 0;
-    _lastFailedMessage = null;
+    _lastFailedSubmission = null;
     _error = null;
   }
 
@@ -530,6 +728,49 @@ class AiAssistantProvider extends ChangeNotifier {
       type == AiRunEventType.completed ||
       type == AiRunEventType.failed ||
       type == AiRunEventType.cancelled;
+
+  bool _isWaitingState(String state) =>
+      state == 'waiting_device' ||
+      state == 'waiting_user_consent' ||
+      state == 'waiting_edu';
+
+  void _syncDeviceTools() {
+    final sync = _deviceToolSync;
+    if (sync == null) return;
+    // 推送可能延迟或被系统拦截，SSE 已知任务等待时立即主动补拉。
+    unawaited(() async {
+      try {
+        await sync();
+      } catch (_) {
+        // 任务保留在服务端，后续推送、恢复前台或重连仍会再次补拉。
+      }
+    }());
+  }
+
+  List<AiPersonalDataEvidence> _evidenceForRun(String runId) =>
+      List.unmodifiable(_personalDataEvidence[runId] ?? const []);
+
+  void _mergePersonalDataEvidence(
+    String runId,
+    List<AiPersonalDataEvidence> incoming,
+  ) {
+    if (runId.isEmpty || incoming.isEmpty) return;
+    final current = _personalDataEvidence.putIfAbsent(
+      runId,
+      () => <AiPersonalDataEvidence>[],
+    );
+    _mergeEvidenceList(current, incoming);
+  }
+
+  void _mergeEvidenceList(
+    List<AiPersonalDataEvidence> target,
+    List<AiPersonalDataEvidence> incoming,
+  ) {
+    final known = target.map((item) => item.stableKey).toSet();
+    for (final item in incoming) {
+      if (known.add(item.stableKey)) target.add(item);
+    }
+  }
 
   String _friendlyError(String code) {
     switch (code) {

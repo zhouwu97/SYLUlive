@@ -1,20 +1,33 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../../features/ai_runtime/tool_calling/tool_permission.dart';
+import '../../features/campus_data/erke/erke_repository.dart';
 import '../../features/campus_data/storage/account_cache_namespace.dart';
 import '../../features/campus_data/storage/account_scoped_snapshot_store.dart';
+import '../../features/campus_data/storage/erke_cache_store.dart';
 import '../../features/campus_data/storage/personal_snapshot_models.dart';
+import '../../features/personal_data_sync/personal_data_sync_coordinator.dart';
+import '../../features/personal_data_sync/personal_data_sync_models.dart';
+import '../../features/personal_data_sync/personal_data_sync_result.dart';
+import '../../features/personal_data_sync/erke_snapshot_upload.dart';
+import '../../providers/edu_provider.dart';
+import '../../services/webvpn_service.dart';
+import 'campus_personal_data_permission_screen.dart';
 
 class PersonalDataCenterScreen extends StatefulWidget {
   const PersonalDataCenterScreen({
     super.key,
     required this.appUserId,
     required this.sourceAccountId,
+    required this.dio,
   });
 
   final String appUserId;
   final String sourceAccountId;
+  final Dio dio;
 
   @override
   State<PersonalDataCenterScreen> createState() =>
@@ -23,6 +36,7 @@ class PersonalDataCenterScreen extends StatefulWidget {
 
 class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   late Future<List<_VaultStatus>> _statuses;
+  bool _isSyncing = false;
 
   @override
   void initState() {
@@ -81,6 +95,169 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
     if (mounted) setState(() => _statuses = _load());
   }
 
+  Future<void> _syncPersonalData() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+    final vpn = WebVpnService();
+    try {
+      final coordinator = PersonalDataSyncCoordinator(
+        academicGateway: EduProviderPersonalAcademicSyncGateway(
+          context.read<EduProvider>(),
+        ),
+        erkeGateway: ErkeRepositoryPersonalSyncGateway(
+          repository: ErkeRepository(
+            vpnService: vpn,
+            cacheStore: ErkeCacheStore(
+              appUserId: widget.appUserId,
+              sourceAccountId: widget.sourceAccountId,
+            ),
+          ),
+          requestCredentials: _requestErkeCredentials,
+          snapshotUploader: ErkeSnapshotUploadGateway(widget.dio),
+          uploadPolicyStore: PreferenceErkeSnapshotUploadPolicyStore(
+            appUserId: widget.appUserId,
+          ),
+          requestUploadPolicy: _requestErkeSnapshotUploadPolicy,
+        ),
+      );
+      final result = await coordinator.sync(
+        datasets: const <PersonalSyncDataset>{
+          PersonalSyncDataset.schedule,
+          PersonalSyncDataset.grades,
+          PersonalSyncDataset.academicSituation,
+          PersonalSyncDataset.creditRequirements,
+          PersonalSyncDataset.erke,
+        },
+        trigger: PersonalSyncTrigger.vault,
+      );
+      if (!mounted) return;
+      final successful = result.items.values
+          .where((item) => item.status == PersonalSyncItemStatus.success)
+          .length;
+      final erkeMessage = result.items[PersonalSyncDataset.erke]?.message;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          '已更新 $successful/${result.items.length} 项个人数据'
+          '${erkeMessage == null ? '' : '。$erkeMessage'}',
+        ),
+      ));
+      setState(() => _statuses = _load());
+    } finally {
+      vpn.dispose();
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
+  Future<PersonalErkeCredentials?> _requestErkeCredentials() async {
+    final casController = TextEditingController();
+    final erkeController = TextEditingController();
+    try {
+      return await showDialog<PersonalErkeCredentials>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('更新二课数据'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: casController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '统一认证密码'),
+              ),
+              TextField(
+                controller: erkeController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: '二课查询密码'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final casPassword = casController.text;
+                final erkePassword = erkeController.text;
+                if (casPassword.isEmpty || erkePassword.isEmpty) return;
+                Navigator.pop(
+                  dialogContext,
+                  PersonalErkeCredentials(
+                    studentId: widget.sourceAccountId,
+                    casPassword: casPassword,
+                    erkePassword: erkePassword,
+                  ),
+                );
+              },
+              child: const Text('更新'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      casController.dispose();
+      erkeController.dispose();
+    }
+  }
+
+  Future<ErkeSnapshotUploadPolicy?> _requestErkeSnapshotUploadPolicy() {
+    return showDialog<ErkeSnapshotUploadPolicy>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('上传二课摘要？'),
+        content: const Text(
+          '仅上传已解析的分数汇总、分类缺口和最近活动摘要，不包含密码、Cookie、会话或页面原文。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              ErkeSnapshotUploadPolicy.askEveryUpdate,
+            ),
+            child: const Text('下次再问'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              ErkeSnapshotUploadPolicy.neverUpload,
+            ),
+            child: const Text('永不上传'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              ErkeSnapshotUploadPolicy.autoUploadSummary,
+            ),
+            child: const Text('之后自动上传'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              ErkeSnapshotUploadPolicy.uploadThisTime,
+            ),
+            child: const Text('仅本次上传'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteUploadedErkeSnapshot() async {
+    try {
+      await ErkeSnapshotUploadGateway(widget.dio).delete();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('已删除服务端二课快照')));
+      }
+    } on ErkeSnapshotUploadException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appFingerprint = AccountCacheNamespace.fingerprint(widget.appUserId);
@@ -104,8 +281,47 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
                 subtitle: Text('App $appFingerprint · 来源 $sourceFingerprint'),
               ),
               const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.admin_panel_settings_outlined),
+                title: const Text('校园 Agent 数据权限'),
+                subtitle: const Text('管理服务器使用个人数据的长期授权'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => CampusPersonalDataPermissionScreen(
+                      dio: widget.dio,
+                    ),
+                  ),
+                ),
+              ),
+              const Divider(),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _isSyncing ? null : _syncPersonalData,
+                  icon: _isSyncing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  label: Text(_isSyncing ? '更新中' : '更新个人数据'),
+                ),
+              ),
+              const SizedBox(height: 8),
               ...snapshot.data!.map(_statusTile),
               const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () => _confirm(
+                  '删除已上传二课快照？',
+                  _deleteUploadedErkeSnapshot,
+                ),
+                icon: const Icon(Icons.cloud_off_outlined),
+                label: const Text('删除已上传二课快照'),
+              ),
+              const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: () => _confirm('清除当前账号数据？', _clearCurrent),
                 icon: const Icon(Icons.delete_outline),

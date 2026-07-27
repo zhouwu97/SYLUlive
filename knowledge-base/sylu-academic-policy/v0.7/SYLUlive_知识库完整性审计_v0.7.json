@@ -1,0 +1,19 @@
+{
+  "version": "v0.7",
+  "kind": "incremental_student_financial_aid_supplement",
+  "document_count": 3,
+  "document_types": [
+    "school_undergraduate_scholarship_policy",
+    "school_national_scholarship_and_grant_policy",
+    "school_student_financial_aid_policy"
+  ],
+  "source_status": "user_provided_official_transcript",
+  "checks": {
+    "all_import_docs_have_content": true,
+    "all_docs_have_source_metadata": true,
+    "scholarship_amounts_and_thresholds_structured": true,
+    "financial_aid_privacy_boundary_present": true
+  },
+  "depends_on": ["v0.6"],
+  "production_note": "先保留 v0.6 已发布文档；本包仅增量导入，不替代补考、重修、学籍等现有材料。"
+}

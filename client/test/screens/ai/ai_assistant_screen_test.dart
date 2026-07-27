@@ -21,11 +21,21 @@ class FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   FakeAuthProvider([this.currentUser]);
 
   User? currentUser;
+  int _accountSessionEpoch = 0;
 
   @override
   User? get user => currentUser;
 
+  @override
+  bool get isLoggedIn => currentUser != null;
+
+  @override
+  int get accountSessionEpoch => _accountSessionEpoch;
+
   void setUser(User? value) {
+    if (currentUser?.id != value?.id) {
+      _accountSessionEpoch++;
+    }
     currentUser = value;
     notifyListeners();
   }

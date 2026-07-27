@@ -512,7 +512,13 @@ class EduCrawler:
     # ============== 课表相关 ==============
 
     async def fetch_courses(self, cookie: str, year: str, semester: int) -> List[CourseRawData]:
-        """获取课表  优先桌面端JSON(全量),回退移动端JSON"""
+        """获取课表，优先桌面端 JSON（全量），回退移动端 JSON。
+
+        失败必须按原因分类。原来两个分支都用 ``except Exception`` 吞掉，然后统一抛
+        CourseNotOpenError，于是 Cookie 失效、返回登录页、响应体不是 JSON、教务系统
+        改版这些完全不同的故障，对用户都显示成“当前学期课表暂未排课”：既不会触发
+        重新登录，也无法从日志判断到底断在哪一步。
+        """
         if not self.client:
             raise NetworkError("Client not initialized")
 
@@ -523,6 +529,9 @@ class EduCrawler:
 
         all_courses: List[CourseRawData] = []
         seen = set()
+        # 记录每一步的失败原因，全部失败时据此决定抛哪种异常。
+        failures: List[str] = []
+        saw_valid_empty_response = False
 
         def _add_from_kblist(kb_list, source=""):
             for item in kb_list:
@@ -538,10 +547,45 @@ class EduCrawler:
                 if key not in seen:
                     seen.add(key)
                     all_courses.append(course)
-            print(f"  [{source}] 新增 {len(all_courses)} 门课(去重后!")
+            print(f"  [{source}] 累计 {len(all_courses)} 门课(去重后)")
+
+        def _consume(resp, source: str) -> None:
+            """解析一次课表响应；无法解析时按原因分类，不再静默吞掉。"""
+            nonlocal saw_valid_empty_response
+            # 901 = session expired; 302 = redirected to login page
+            if resp.status_code in (901, 302):
+                raise CookieLapseError(f"教务会话已失效({source})")
+            if resp.status_code != 200:
+                failures.append(f"{source}:http_{resp.status_code}")
+                return
+            body = resp.text.strip()
+            if _looks_like_login_page(body):
+                # 教务系统有时不发 302，而是直接用 200 返回登录页。
+                raise CookieLapseError(f"教务返回登录页({source})")
+            if body in ("", "null"):
+                failures.append(f"{source}:empty_body")
+                return
+            try:
+                data = resp.json()
+            except ValueError:
+                failures.append(f"{source}:not_json")
+                return
+            if not isinstance(data, dict):
+                failures.append(f"{source}:unexpected_shape")
+                return
+            kb_list = data.get("kbList")
+            if kb_list is None:
+                failures.append(f"{source}:missing_kbList")
+                return
+            if not isinstance(kb_list, list):
+                failures.append(f"{source}:kbList_not_list")
+                return
+            # 结构合法且确实没有课，才是真正的“未排课”。
+            saw_valid_empty_response = True
+            _add_from_kblist(kb_list, source)
 
         # ==========================================
-        # Step 1: 桌面竁JSON(首选:全量课表!
+        # Step 1: 桌面端 JSON（首选：全量课表）
         # ==========================================
         desktop_headers = dict(base_headers)
         desktop_headers.update({
@@ -561,23 +605,18 @@ class EduCrawler:
                 timeout=10.0
             )
             print(f"  [DESK] status={resp.status_code}, len={len(resp.text)}")
-            # 901 = session expired; 302 = redirected to login page
-            if resp.status_code in (901, 302):
-                raise CookieLapseError("Cookie已过朁(DESK)")
-            if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
-                data = resp.json()
-                kb_list = data.get("kbList", [])
-                _add_from_kblist(kb_list, "DESK")
+            _consume(resp, "DESK")
         except EduError:
-            raise  # CookieLapseError 等需要向上传撁
+            raise  # CookieLapseError 等需要向上传递
         except Exception as e:
-            print(f"  [DESK] 失败: {e}")
+            failures.append(f"DESK:{type(e).__name__}")
+            print(f"  [DESK] 失败: {type(e).__name__}")
 
         # ==========================================
-        # Step 2: 移动竁JSON(备用回退!
+        # Step 2: 移动端 JSON（备用回退）
         # ==========================================
         if not all_courses:
-            print("  [MOBILE] 桌面端无数据,回退移动竁..")
+            print("  [MOBILE] 桌面端无数据，回退移动端")
             try:
                 resp = await self.client.post(
                     f"{COURSE_URL}/xskbcxMobile_cxXsKb.html",
@@ -586,17 +625,25 @@ class EduCrawler:
                     headers=base_headers,
                     timeout=10.0
                 )
-                if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
-                    data = resp.json()
-                    kb_list = data.get("kbList", [])
-                    _add_from_kblist(kb_list, "MOBILE")
+                print(f"  [MOBILE] status={resp.status_code}, len={len(resp.text)}")
+                _consume(resp, "MOBILE")
+            except EduError:
+                raise
             except Exception as e:
-                print(f"  [MOBILE] 失败: {e}")
+                failures.append(f"MOBILE:{type(e).__name__}")
+                print(f"  [MOBILE] 失败: {type(e).__name__}")
 
-        if not all_courses:
+        if all_courses:
+            return all_courses
+
+        if saw_valid_empty_response:
+            # 两个端点都给出结构合法但为空的课表，这才是真正的未排课。
             raise CourseNotOpenError("当前学期课表暂未排课")
 
-        return all_courses
+        # 没有任何一次成功解析：这是故障，不是未排课。
+        detail = ",".join(failures) if failures else "no_response"
+        print(f"  [COURSES] 全部失败: {detail}")
+        raise NetworkError(f"教务课表接口无法解析({detail})", "COURSE_FETCH_UNPARSABLE")
 
     # ============== 成绩相关 ==============
 
@@ -1517,14 +1564,8 @@ def _extract_credit_requirement_query(
             return None
         option = select_node.select_one("option[selected]")
         if option is None:
-            option = next(
-                (
-                    candidate
-                    for candidate in select_node.select("option")
-                    if str(candidate.get("value") or "").strip()
-                ),
-                None,
-            )
+            # 个人培养方案不能猜测下拉框的首项；缺少当前选项即视为协议变更。
+            return None
         value = str(option.get("value") or "").strip() if option else ""
         if not value:
             return None
@@ -2599,4 +2640,3 @@ def parse_time_sections(time_str: str) -> Tuple[int, int]:
     elif nums:
         return (int(nums[0]), int(nums[0]))
     return (1, 2)
-

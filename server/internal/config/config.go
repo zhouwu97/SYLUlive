@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -43,6 +45,7 @@ type Config struct {
 	AIMaxToolSteps                         int      // 单次运行最大工具步数
 	AIMaxMessageChars                      int      // 用户消息最大 grapheme 数
 	AIHourlyMessageLimit                   int      // 每账号滚动一小时正式请求数
+	AIQuotaExemptUserIDs                   []uint   // 不受小时次数限制的测试用户 ID
 	AIUserBudgetLimitMicroYuan             int64    // 新用户默认累计预算
 	AIReserveMicroYuan                     int64    // 每次模型调用的最坏成本预留
 	AIInputPriceMicroYuanPerMillionTokens  int64
@@ -51,6 +54,16 @@ type Config struct {
 	RAGServiceURL                          string // 独立 Embedding/分词服务地址
 	RAGServiceToken                        string // 内部服务鉴权令牌
 	RAGEmbeddingModelVersion               string // 当前写入和查询使用的模型版本
+	AIExternalMCPEnabled                   bool   // 是否启用独立 Hy3 MCP 包装工具
+	AIExternalMCPTransport                 string // local_stdio 或 ssh_stdio
+	AIExternalMCPCommand                   string // 本机 MCP 固定启动包装器的绝对路径
+	AIExternalMCPToolTimeoutSeconds        int    // 单次 MCP 调用硬超时
+	AIExternalMCPMaxCallsPerRun            int    // 每个 AI Run 允许的外部 MCP 调用数
+	AIExternalMCPSshHost                   string // 受限 MCP SSH 主机
+	AIExternalMCPSshPort                   int    // 受限 MCP SSH 端口
+	AIExternalMCPSshUser                   string // 受限 MCP SSH 用户
+	AIExternalMCPSshKeyPath                string // Go 服务读取的专用 SSH 私钥绝对路径
+	AIExternalMCPKnownHostsPath            string // 专用 known_hosts 绝对路径
 
 	EduServiceToken        string // Python 教务服务共享密钥
 	JWCSyncEnabled         bool   // 校园资讯同步开关
@@ -276,6 +289,7 @@ func Load() *Config {
 	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 3, 1, 5)
 	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 20, 1, 100)
 	aiHourlyMessageLimit := envIntInRange("AI_HOURLY_MESSAGE_LIMIT", 3, 1, 100)
+	aiQuotaExemptUserIDs := envPositiveUintList("AI_QUOTA_EXEMPT_USER_IDS")
 	aiUserBudgetLimitMicroYuan := envInt64InRange("AI_USER_BUDGET_LIMIT_MICRO_YUAN", 10_000_000, 1, 1_000_000_000)
 	aiReserveMicroYuan := envInt64InRange("AI_RESERVE_MICRO_YUAN", 20_000, 1, aiUserBudgetLimitMicroYuan)
 	aiInputPrice := envInt64InRange("AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS", 4_000_000, 0, 1_000_000_000)
@@ -290,7 +304,28 @@ func Load() *Config {
 	if ragEmbeddingModelVersion == "" {
 		ragEmbeddingModelVersion = "paraphrase-multilingual-minilm-l12-v2-padded-1536-v1"
 	}
+	aiExternalMCPEnabled := envBool("AI_EXTERNAL_MCP_ENABLED", false)
+	aiExternalMCPTransport := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_TRANSPORT"))
+	if aiExternalMCPTransport == "" {
+		aiExternalMCPTransport = "local_stdio"
+	}
+	aiExternalMCPCommand := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_COMMAND"))
+	aiExternalMCPToolTimeoutSeconds := envIntInRange("AI_EXTERNAL_MCP_TOOL_TIMEOUT_SECONDS", 90, 5, 120)
+	aiExternalMCPMaxCallsPerRun := envIntInRange("AI_EXTERNAL_MCP_MAX_CALLS_PER_RUN", 1, 1, 1)
+	aiExternalMCPSshHost := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_HOST"))
+	aiExternalMCPSshPort := envIntInRange("AI_EXTERNAL_MCP_SSH_PORT", 22, 1, 65535)
+	aiExternalMCPSshUser := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_USER"))
+	aiExternalMCPSshKeyPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_KEY_PATH"))
+	aiExternalMCPKnownHostsPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH"))
 	if err := validateAIConfig(aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey, deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled, ragServiceURL, ragServiceToken); err != nil {
+		panic(err)
+	}
+	if err := validateExternalMCPConfig(
+		aiExternalMCPEnabled, aiExternalMCPTransport, aiExternalMCPCommand,
+		aiExternalMCPToolTimeoutSeconds, aiExternalMCPMaxCallsPerRun,
+		aiExternalMCPSshHost, aiExternalMCPSshPort, aiExternalMCPSshUser,
+		aiExternalMCPSshKeyPath, aiExternalMCPKnownHostsPath,
+	); err != nil {
 		panic(err)
 	}
 
@@ -327,6 +362,7 @@ func Load() *Config {
 		AIMaxToolSteps:                         aiMaxToolSteps,
 		AIMaxMessageChars:                      aiMaxMessageChars,
 		AIHourlyMessageLimit:                   aiHourlyMessageLimit,
+		AIQuotaExemptUserIDs:                   aiQuotaExemptUserIDs,
 		AIUserBudgetLimitMicroYuan:             aiUserBudgetLimitMicroYuan,
 		AIReserveMicroYuan:                     aiReserveMicroYuan,
 		AIInputPriceMicroYuanPerMillionTokens:  aiInputPrice,
@@ -335,6 +371,16 @@ func Load() *Config {
 		RAGServiceURL:                          ragServiceURL,
 		RAGServiceToken:                        ragServiceToken,
 		RAGEmbeddingModelVersion:               ragEmbeddingModelVersion,
+		AIExternalMCPEnabled:                   aiExternalMCPEnabled,
+		AIExternalMCPTransport:                 aiExternalMCPTransport,
+		AIExternalMCPCommand:                   aiExternalMCPCommand,
+		AIExternalMCPToolTimeoutSeconds:        aiExternalMCPToolTimeoutSeconds,
+		AIExternalMCPMaxCallsPerRun:            aiExternalMCPMaxCallsPerRun,
+		AIExternalMCPSshHost:                   aiExternalMCPSshHost,
+		AIExternalMCPSshPort:                   aiExternalMCPSshPort,
+		AIExternalMCPSshUser:                   aiExternalMCPSshUser,
+		AIExternalMCPSshKeyPath:                aiExternalMCPSshKeyPath,
+		AIExternalMCPKnownHostsPath:            aiExternalMCPKnownHostsPath,
 
 		EduServiceToken:        eduServiceToken,
 		JWCSyncEnabled:         jwcSyncEnabled,
@@ -404,6 +450,19 @@ func splitNonEmpty(value string) []string {
 	return result
 }
 
+func envPositiveUintList(name string) []uint {
+	parts := splitNonEmpty(os.Getenv(name))
+	result := make([]uint, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.ParseUint(part, 10, strconv.IntSize)
+		if err != nil || value == 0 {
+			panic(fmt.Errorf("%s 只能包含逗号分隔的正整数用户 ID", name))
+		}
+		result = append(result, uint(value))
+	}
+	return result
+}
+
 func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, apiKey, baseURL, model string, policyRAGEnabled bool, ragServiceURL, ragServiceToken string) error {
 	if provider != "deepseek" && provider != "mock" {
 		return fmt.Errorf("AI_PROVIDER 只能是 deepseek 或 mock")
@@ -434,6 +493,66 @@ func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, 
 		}
 	}
 	return nil
+}
+
+var externalMCPSSHUserPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,31}$`)
+var externalMCPSSHHostPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$`)
+
+// validateExternalMCPConfig 保证 Go 只会启动固定 stdio 子进程或受限 SSH 通道，
+// 不接受可由 Shell 解释的地址、命令片段或相对密钥路径。
+func validateExternalMCPConfig(enabled bool, transport, command string, timeoutSeconds, maxCalls int, sshHost string, sshPort int, sshUser, sshKeyPath, knownHostsPath string) error {
+	if !enabled {
+		return nil
+	}
+	if timeoutSeconds < 5 || timeoutSeconds > 120 {
+		return fmt.Errorf("AI_EXTERNAL_MCP_TOOL_TIMEOUT_SECONDS 必须在 5 到 120 之间")
+	}
+	if maxCalls != 1 {
+		return fmt.Errorf("AI_EXTERNAL_MCP_MAX_CALLS_PER_RUN 当前必须为 1")
+	}
+	switch transport {
+	case "local_stdio":
+		return validateExternalMCPAbsolutePath("AI_EXTERNAL_MCP_COMMAND", command)
+	case "ssh_stdio":
+		if !validExternalMCPSSHHost(sshHost) {
+			return fmt.Errorf("AI_EXTERNAL_MCP_SSH_HOST 无效")
+		}
+		if sshPort < 1 || sshPort > 65535 {
+			return fmt.Errorf("AI_EXTERNAL_MCP_SSH_PORT 必须在 1 到 65535 之间")
+		}
+		if !externalMCPSSHUserPattern.MatchString(strings.TrimSpace(sshUser)) {
+			return fmt.Errorf("AI_EXTERNAL_MCP_SSH_USER 无效")
+		}
+		if err := validateExternalMCPAbsolutePath("AI_EXTERNAL_MCP_SSH_KEY_PATH", sshKeyPath); err != nil {
+			return err
+		}
+		return validateExternalMCPAbsolutePath("AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH", knownHostsPath)
+	default:
+		return fmt.Errorf("AI_EXTERNAL_MCP_TRANSPORT 只能是 local_stdio 或 ssh_stdio")
+	}
+}
+
+func validateExternalMCPAbsolutePath(name, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\x00\r\n") || !filepath.IsAbs(value) {
+		return fmt.Errorf("%s 必须是绝对路径", name)
+	}
+	return nil
+}
+
+func validExternalMCPSSHHost(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "@/\\\x00\r\n") {
+		return false
+	}
+	if net.ParseIP(value) != nil {
+		return true
+	}
+	// IPv6 使用裸地址传入，SSH 命令构造时才添加方括号，防止主机名混入端口。
+	if strings.Contains(value, ":") {
+		return false
+	}
+	return externalMCPSSHHostPattern.MatchString(value) && !strings.Contains(value, "..")
 }
 
 func validateExamPaperStorageConfig(mode, baseURL, signingSecret, receiptSecret string, releaseMode bool) error {

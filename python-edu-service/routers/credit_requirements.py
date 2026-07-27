@@ -1,4 +1,6 @@
 """学分要求路由"""
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +17,7 @@ from services.session import execute_with_session_refresh
 from services.security import require_internal_service, require_internal_user
 
 router = APIRouter(prefix="/api/edu/credit-requirements", tags=["学分要求"], dependencies=[Depends(require_internal_service)])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/", response_model=CreditRequirementResponse)
@@ -54,12 +57,15 @@ async def get_credit_requirements(
         raise HTTPException(status_code=503, detail=str(e))
     except LoginFailedError as e:
         raise HTTPException(status_code=401, detail=str(e))
-    except Exception as e:
-        return CreditRequirementResponse(
-            success=False,
-            status="parse_failed",
-            error_code="CREDIT_REQUIREMENT_PARSE_FAILED",
-            message=f"学分要求解析失败: {e}",
+    except Exception:
+        # 详细异常仅保留在服务端日志，避免泄露上游响应、路径或内部实现。
+        logger.exception("[EDU-CREDIT-REQ] unexpected failure")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "CREDIT_REQUIREMENT_INTERNAL_ERROR",
+                "message": "学分要求服务处理失败，请稍后重试",
+            },
         )
 
     return CreditRequirementResponse(**payload)

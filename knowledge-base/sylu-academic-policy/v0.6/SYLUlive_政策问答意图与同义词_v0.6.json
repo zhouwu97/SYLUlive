@@ -1,29 +1,167 @@
 {
-  "version": "2026-07-23-v0.6",
-  "purpose": "在RAG检索前进行确定性的学生口语到学校制度术语映射，不能仅依赖模糊搜索。",
+  "version": "2026-07-26-v0.6",
+  "purpose": "在RAG检索前进行确定性的学生口语到学校制度术语映射，不能仅依赖模糊搜索。意图名称、文档类型与服务端 policy_intent.go 保持一致。",
+  "intent_priority": [
+    "second_exam_grade",
+    "practice_course_failure",
+    "retake_transition",
+    "retake",
+    "second_exam",
+    "failed_course_flow"
+  ],
+  "historical_policy_modes": {
+    "none": "历史文件不得进入证据集合。",
+    "fallback": "历史文件只能补充现行文件未覆盖的环节，且必须标注版本。",
+    "required": "细节只存在于历史文件，必须召回并明确标注历史边界。"
+  },
   "intents": [
     {
-      "intent": "failed_course_flow",
+      "intent": "second_exam_grade",
       "user_terms": [
-        "挂科",
-        "没及格",
-        "不及格",
-        "考试没过",
-        "课程没过",
-        "没拿到学分"
+        "补考成绩怎么算",
+        "补考绩点",
+        "补考考100分多少绩点",
+        "二考绩点",
+        "补考成绩怎么记载"
       ],
       "canonical_terms": [
-        "课程首次考核不合格",
-        "未取得相应学分",
-        "二次考试",
-        "重新学习",
-        "重修"
+        "二次考试成绩",
+        "成绩记载",
+        "考核比例"
       ],
       "preferred_document_types": [
+        "school_makeup_exam_current_practice",
+        "school_policy_reasoning_card",
+        "historical_school_second_exam_policy",
+        "school_undergraduate_status_policy"
+      ],
+      "required_document_groups": [
+        [
+          "school_policy_reasoning_card",
+          "school_makeup_exam_current_practice"
+        ],
+        [
+          "historical_school_second_exam_policy"
+        ],
+        [
+          "school_undergraduate_status_policy"
+        ]
+      ],
+      "historical_mode": "required",
+      "required_answer_sections": [
+        "grade_recording",
+        "historical_boundary"
+      ],
+      "required_answer_boundary": "二考D/F及绩点1/0来自2004年校内正式文件，当前执行以教务系统和当学期通知为最终口径；没有直接依据时不得给出统一的平时成绩与卷面成绩合成比例。"
+    },
+    {
+      "intent": "practice_course_failure",
+      "user_terms": [
+        "实验课挂科能补考吗",
+        "实践环节不合格",
+        "课程设计没过",
+        "实习不合格怎么办",
+        "上机没过"
+      ],
+      "canonical_terms": [
+        "实践教学环节",
+        "实验",
+        "课程设计",
+        "课程重修",
+        "首次考核不合格"
+      ],
+      "preferred_document_types": [
+        "school_undergraduate_retake_policy",
         "school_undergraduate_status_policy",
+        "school_policy_reasoning_card",
+        "historical_school_second_exam_policy"
+      ],
+      "required_document_groups": [
+        [
+          "school_undergraduate_status_policy",
+          "school_policy_reasoning_card"
+        ],
+        [
+          "school_undergraduate_retake_policy"
+        ],
+        [
+          "historical_school_second_exam_policy"
+        ]
+      ],
+      "historical_mode": "fallback",
+      "required_answer_sections": [
+        "current_rule",
+        "special_course_boundary",
+        "retake_branch"
+      ],
+      "required_answer_boundary": "没有直接证据时不得承诺实践类课程可以参加普通补考；“实践环节不适用免费二次考试”只见于2004年历史文件，引用时必须标注历史版本。"
+    },
+    {
+      "intent": "retake_transition",
+      "user_terms": [
+        "补考没过怎么办",
+        "二考没过",
+        "补考又挂了",
+        "补考未通过"
+      ],
+      "canonical_terms": [
+        "二考未取得学分",
+        "课程重修",
+        "缴费重修",
+        "重新学习"
+      ],
+      "preferred_document_types": [
+        "school_undergraduate_retake_policy",
+        "school_undergraduate_status_policy",
+        "school_policy_reasoning_card",
+        "historical_school_second_exam_policy"
+      ],
+      "required_document_groups": [
+        [
+          "school_undergraduate_status_policy",
+          "historical_school_second_exam_policy",
+          "school_policy_reasoning_card"
+        ],
+        [
+          "school_undergraduate_retake_policy"
+        ]
+      ],
+      "historical_mode": "fallback",
+      "required_answer_sections": [
+        "current_rule",
+        "retake_branch"
+      ]
+    },
+    {
+      "intent": "retake",
+      "user_terms": [
+        "重修",
+        "重修有什么规定",
+        "刷分",
+        "重新学习",
+        "重修几门",
+        "重修成绩"
+      ],
+      "canonical_terms": [
+        "课程重修",
+        "重新修读",
+        "重修考核",
+        "最高分记载"
+      ],
+      "preferred_document_types": [
         "school_undergraduate_retake_policy",
         "school_policy_reasoning_card"
-      ]
+      ],
+      "required_document_groups": [
+        [
+          "school_undergraduate_retake_policy"
+        ]
+      ],
+      "historical_mode": "none",
+      "required_answer_sections": [
+        "retake_branch"
+      ],
+      "required_answer_boundary": "重修问题以2025年课程重修管理办法为准，不得用2004年二次考试细则替代。"
     },
     {
       "intent": "second_exam",
@@ -37,63 +175,67 @@
       "canonical_terms": [
         "二次考试",
         "二考",
-        "开学初",
-        "免费二次考试机会",
-        "首次考试未取得学分"
+        "首次考核不合格",
+        "开学初"
       ],
       "preferred_document_types": [
+        "school_makeup_exam_current_practice",
         "school_policy_reasoning_card",
-        "school_undergraduate_status_policy",
-        "historical_school_second_exam_policy"
-      ]
-    },
-    {
-      "intent": "second_exam_gpa",
-      "user_terms": [
-        "补考绩点",
-        "补考成绩怎么算",
-        "补考60",
-        "补考100",
-        "二考绩点",
-        "补考过了多少绩点"
-      ],
-      "canonical_terms": [
-        "二考成绩及格不及格",
-        "等级D或F",
-        "绩点1或0",
-        "补考成绩记载",
-        "二次考试成绩"
-      ],
-      "preferred_document_types": [
-        "school_policy_reasoning_card",
-        "historical_school_second_exam_policy",
         "school_undergraduate_status_policy"
       ],
-      "required_answer_boundary": "二考D/F及绩点1/0来自2004年校内正式文件，当前执行以教务系统和当学期通知为最终口径。"
+      "required_document_groups": [
+        [
+          "school_undergraduate_status_policy",
+          "school_policy_reasoning_card",
+          "school_makeup_exam_current_practice"
+        ]
+      ],
+      "historical_mode": "fallback",
+      "required_answer_sections": [
+        "current_rule",
+        "second_exam_branch"
+      ]
     },
     {
-      "intent": "retake",
+      "intent": "failed_course_flow",
       "user_terms": [
-        "重修",
-        "补考没过",
-        "二考没过",
-        "刷分",
-        "重新学习",
-        "重修几门",
-        "重修成绩"
+        "挂科",
+        "没及格",
+        "不及格",
+        "考试没过",
+        "课程没过",
+        "没拿到学分"
       ],
       "canonical_terms": [
-        "课程重修",
+        "首次考核不合格",
         "未取得相应学分",
-        "重修考核",
-        "实际成绩记载",
-        "最高分记载",
-        "弹性学制"
+        "二次考试",
+        "重新学习",
+        "课程重修"
       ],
       "preferred_document_types": [
+        "school_undergraduate_status_policy",
         "school_undergraduate_retake_policy",
-        "school_policy_reasoning_card"
-      ]
+        "school_policy_reasoning_card",
+        "school_makeup_exam_current_practice"
+      ],
+      "required_document_groups": [
+        [
+          "school_undergraduate_status_policy",
+          "school_policy_reasoning_card"
+        ],
+        [
+          "school_undergraduate_retake_policy"
+        ]
+      ],
+      "historical_mode": "fallback",
+      "required_answer_sections": [
+        "current_rule",
+        "second_exam_branch",
+        "retake_branch",
+        "special_course_boundary"
+      ],
+      "required_answer_boundary": "宽泛的挂科问题必须覆盖后续重修分支和特殊课程边界，不得只回答补考。"
     }
   ],
   "retrieval_rule": {
@@ -101,7 +243,9 @@
     "full_text_search_second": true,
     "vector_search_third": true,
     "trigram_search_fallback_only": true,
+    "current_and_historical_searched_separately": true,
     "minimum_unique_documents": 2,
+    "max_chunks_per_document": 2,
     "deduplicate_by": [
       "document_id",
       "section_title"

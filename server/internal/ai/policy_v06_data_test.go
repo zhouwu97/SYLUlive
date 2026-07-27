@@ -62,9 +62,9 @@ func TestV06CurrentMakeupExamPracticeSeparatesBoundariesWithoutFormula(t *testin
 	require.NotContains(t, document.Content, "绩点为1或0")
 }
 
-// TestV06IntentConfigMatchesRuntimePlans 防止 Go 意图与知识库配置再次漂移。
-func TestV06IntentConfigMatchesRuntimePlans(t *testing.T) {
-	raw, err := os.ReadFile(knowledgeBasePath(t, "SYLUlive_政策问答意图与同义词_v0.6.json"))
+// TestV08IntentConfigMatchesRuntimePlans 防止 Go 运行时与共享契约再次漂移。
+func TestV08IntentConfigMatchesRuntimePlans(t *testing.T) {
+	raw, err := os.ReadFile("policy_query_contract_v0.8.json")
 	require.NoError(t, err)
 	var config struct {
 		IntentPriority []string `json:"intent_priority"`
@@ -116,6 +116,12 @@ func TestV06UserTermsResolveToConfiguredIntent(t *testing.T) {
 		"实验课挂科能补考吗":  PolicyIntentPracticeFailure,
 		"课程设计没过怎么办":  PolicyIntentPracticeFailure,
 		"实践环节不合格怎么办": PolicyIntentPracticeFailure,
+		"交不起学费":      PolicyIntentFinancialDifficulty,
+		"没钱吃饭":       PolicyIntentFinancialDifficulty,
+		"勤工俭学":       PolicyIntentWorkStudy,
+		"助学贷款":       PolicyIntentStudentLoan,
+		"奖学金怎么评":     PolicyIntentScholarship,
+		"挂科影响奖学金吗":   PolicyIntentScholarship,
 	}
 	for question, expected := range cases {
 		t.Run(question, func(t *testing.T) {

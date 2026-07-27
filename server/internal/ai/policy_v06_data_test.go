@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -39,4 +40,29 @@ func TestV06PolicyRuleCasesAreComplete(t *testing.T) {
 		require.False(t, duplicate, testCase.CaseID)
 		seen[testCase.CaseID] = struct{}{}
 	}
+
+	evaluationCases, err := LoadEvaluationCases(filepath.Join("..", "..", "testdata", "ai_eval"))
+	require.NoError(t, err)
+	evaluationByID := make(map[string]EvaluationCase, len(evaluationCases))
+	for _, testCase := range evaluationCases {
+		evaluationByID[evaluationCaseID(testCase)] = testCase
+	}
+	v06EvaluationCases := make([]EvaluationCase, 0, len(seen))
+	for _, sourceCase := range suite.Cases {
+		caseID := sourceCase.CaseID
+		testCase, exists := evaluationByID[caseID]
+		require.True(t, exists, "%s 未进入统一评测集", caseID)
+		require.Equal(t, EvaluationKindPolicy, testCase.Kind, caseID)
+		require.Equal(t, sourceCase.Question, testCase.Question, caseID)
+		require.NotEmpty(t, testCase.TargetDocumentTypes, caseID)
+		require.NotEmpty(t, testCase.TargetSources, caseID)
+		require.NotEmpty(t, testCase.MustContain, caseID)
+		require.NotEmpty(t, testCase.MustNotContain, caseID)
+		require.NotEmpty(t, testCase.Fixture.Retrieved, caseID)
+		v06EvaluationCases = append(v06EvaluationCases, testCase)
+	}
+	report, err := NewEvaluationRunner("fixture", 5, FixtureEvaluationBackend{}).Run(context.Background(), v06EvaluationCases)
+	require.NoError(t, err)
+	require.Equal(t, 19, report.Total)
+	require.Zero(t, report.Failed)
 }

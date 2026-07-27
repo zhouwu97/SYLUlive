@@ -46,12 +46,17 @@ def test_health_exposes_chain_identity_and_dependency_readiness(monkeypatch):
         assert response.status_code == 200
         payload = response.json()
         assert payload["chain_name"] == "shenliyuan_policy_rag"
-        assert payload["chain_version"] == "hybrid-retrieval-v1"
+        assert payload["chain_version"] == "reranker-gate-v2"
         assert payload["dimensions"] == 384
         assert payload["dependencies_ready"]["embedding"] is True
         assert payload["dependencies_ready"]["lcel"] is True
         assert "chat_provider" in payload["dependencies_ready"]
         assert "policy_database" in payload["dependencies_ready"]
+        assert payload["reranker"]["query_strategy"] == "policy-planned-query-v1"
+        assert (
+            payload["reranker"]["document_type_label_version"]
+            == "policy-document-type-zh-v1"
+        )
 
 
 def test_policy_plan_endpoint_uses_the_single_python_domain_planner(monkeypatch):

@@ -78,7 +78,15 @@ class PolicyRAGEvent(StrictSchema):
     chain_name: str = Field(min_length=1, max_length=100)
     chain_version: str = Field(min_length=1, max_length=100)
     sequence: int = Field(gt=0)
-    type: Literal["planning", "retrieving", "generating", "token", "completed", "failed"]
+    type: Literal[
+        "planning",
+        "retrieving",
+        "reranking",
+        "generating",
+        "token",
+        "completed",
+        "failed",
+    ]
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     delta: str = Field(default="", max_length=8_000)
     result: PolicyRAGResult | None = None

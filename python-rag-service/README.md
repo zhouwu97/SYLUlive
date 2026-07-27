@@ -34,3 +34,37 @@ ALTER ROLE shenliyuan_rag_runtime SET default_transaction_read_only = on;
 ```
 
 服务启动时会核验三张检索表具备 `SELECT` 且不具备 `INSERT/UPDATE/DELETE/TRUNCATE`；不满足时 `policy_database=false`，生产查询稳定失败关闭。每个通道还会在只读连接上设置 `statement_timeout`，默认由 `RAG_RETRIEVAL_CHANNEL_TIMEOUT_SECONDS=2.5` 控制。
+
+## Reranker 与相关性门禁
+
+`PolicyReranker(BaseDocumentCompressor)` 与 `HybridPolicyRetriever` 通过
+`ContextualCompressionRetriever` 组合在 LCEL 链内。压缩器最多接收 20 个候选，稳定
+去重后写入 `rerank_score`、模型名、模型版本和原始排名。`RunnableBranch` 仅在至少一条
+成功重排的证据满足 `score >= RAG_RERANKER_RELEVANCE_THRESHOLD` 时调用 ChatModel；空候选、
+超时、网络错误、响应长度错误或非有限分数均保留融合顺序并标记
+`degraded_modes=rerank`，但会在生成前失败关闭。
+CrossEncoder 使用 `PolicyQueryPlanner.retrieval_query` 中的纠错与领域同义词，候选中的
+英文 `document_type` 先转换为版本化中文标签；原问题仍用于召回和生成，不会被扩展词替换。
+同步模型推理复用受 `RAG_MAX_CONCURRENCY` 限制的实例级线程池，超时后不会按请求无界
+增加后台线程。
+
+Reranker 独立开关默认为关闭。`RAG_RERANKER_ENABLED=true` 只启用链路，不授予下载权限；
+只有同时设置 `RAG_RERANKER_ALLOW_MODEL_DOWNLOAD=true` 才允许 FastEmbed 下载缺失模型，
+否则强制 `local_files_only`。优化后的 BGE 在当前 40 条 T01 集合上通过门禁与 Recall@5
+目标，但校准和评测使用了同一数据集，生产环境仍不得仅因该结果开启开关。阈值同时绑定
+模型、查询策略和文档类型标签版本，任一项变化都必须重新校准。
+
+默认离线校准不读取模型缓存或网络：
+
+```powershell
+python -m app.evaluation --data ..\server\testdata\ai_eval --k 5 --calibrate-reranker
+```
+
+真实模型比较必须显式开启；下载还需要第二个独立开关：
+
+```powershell
+python -m scripts.compare_rerankers --live --model BAAI/bge-reranker-base
+python -m scripts.compare_rerankers --live --allow-model-download --model BAAI/bge-reranker-base
+```
+
+完整指标与生产启用结论见 `docs/ai/t05-langchain-reranker-gate-report.md`。

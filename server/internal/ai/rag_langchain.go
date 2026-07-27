@@ -299,7 +299,7 @@ func (e PolicyRAGEvent) validate(requestID string, lastSeq int64) error {
 		return fmt.Errorf("invalid policy RAG event timestamp")
 	}
 	switch e.Type {
-	case "planning", "retrieving", "generating":
+	case "planning", "retrieving", "reranking", "generating":
 		if e.Delta != "" || e.Result != nil || e.ErrorCode != "" {
 			return fmt.Errorf("invalid policy RAG stage event")
 		}

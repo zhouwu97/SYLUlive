@@ -91,9 +91,10 @@ func TestLangChainRuntimeUsesPythonResultAndSettlesOnce(t *testing.T) {
 	client := &fakeLangChainRAG{events: []PolicyRAGEvent{
 		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 1, Type: "planning", Timestamp: time.Now().Format(time.RFC3339Nano)},
 		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 2, Type: "retrieving", Timestamp: time.Now().Format(time.RFC3339Nano)},
-		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 3, Type: "generating", Timestamp: time.Now().Format(time.RFC3339Nano)},
-		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 4, Type: "token", Timestamp: time.Now().Format(time.RFC3339Nano), Delta: result.Answer},
-		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 5, Type: "completed", Timestamp: time.Now().Format(time.RFC3339Nano), Result: &result},
+		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 3, Type: "reranking", Timestamp: time.Now().Format(time.RFC3339Nano)},
+		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 4, Type: "generating", Timestamp: time.Now().Format(time.RFC3339Nano)},
+		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 5, Type: "token", Timestamp: time.Now().Format(time.RFC3339Nano), Delta: result.Answer},
+		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 6, Type: "completed", Timestamp: time.Now().Format(time.RFC3339Nano), Result: &result},
 	}}
 	runtime, db := newLangChainTestRuntime(t, client)
 	run, _, err := runtime.CreateRun(context.Background(), 31, CreateRunRequest{

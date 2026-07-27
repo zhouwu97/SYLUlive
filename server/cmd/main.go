@@ -1747,6 +1747,8 @@ func main() {
 	knowledgeAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 	{
 		knowledgeAdmin.POST("/import", knowledgeHandler.Import)
+		knowledgeAdmin.POST("/release", knowledgeHandler.ReleaseBatch)
+		knowledgeAdmin.POST("/rollback", knowledgeHandler.RollbackBatch)
 		knowledgeAdmin.GET("", knowledgeHandler.List)
 		knowledgeAdmin.GET("/:id", knowledgeHandler.Read)
 		knowledgeAdmin.POST("/:id/inspect", knowledgeHandler.Inspect)

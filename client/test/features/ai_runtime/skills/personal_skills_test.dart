@@ -134,7 +134,7 @@ void main() {
     expect(result.value?.freeTimeSlots.first.timeText, '08:00-09:40');
     expect(result.value?.freeTimeSlots.last.timeText, '13:00-20:10');
     expect(result.value?.dataUpdatedAt, fetchedAt);
-    expect(result.evidence.single.source, 'local_encrypted_vault');
+    expect(result.evidence.single.source, 'device_encrypted_cache');
     expect(result.evidence.single.dataType, PersonalDataType.schedule);
     expect(result.containsPersonalData, isTrue);
     expect(gateway.scheduleReads, 1);

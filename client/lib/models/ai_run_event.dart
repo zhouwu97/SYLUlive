@@ -1,5 +1,6 @@
 import 'ai_quota.dart';
 import 'ai_source.dart';
+import 'ai_personal_data_evidence.dart';
 import 'dart:convert';
 
 enum AiRunEventType {
@@ -8,6 +9,14 @@ enum AiRunEventType {
   delta,
   checkpoint,
   sources,
+  toolRequested,
+  toolExecuting,
+  deviceWaiting,
+  deviceClaimed,
+  consentRequired,
+  eduFetching,
+  toolCompleted,
+  personalDataEvidence,
   completed,
   failed,
   cancelled,
@@ -22,6 +31,10 @@ class AiRunEvent {
   final String text;
   final String status;
   final List<AiSource> sources;
+  final List<AiPersonalDataEvidence> personalDataEvidence;
+  final List<String> datasets;
+  final String consentScope;
+  final String consentReason;
   final AiQuota? quota;
   final String errorCode;
   final bool retryable;
@@ -33,6 +46,10 @@ class AiRunEvent {
     this.text = '',
     this.status = '',
     this.sources = const [],
+    this.personalDataEvidence = const [],
+    this.datasets = const [],
+    this.consentScope = '',
+    this.consentReason = '',
     this.quota,
     this.errorCode = '',
     this.retryable = false,
@@ -58,6 +75,10 @@ class AiRunEvent {
               .map((item) => AiSource.fromJson(Map<String, dynamic>.from(item)))
               .toList()
           : const [],
+      personalDataEvidence: _evidence(payload['evidence']),
+      datasets: _strings(payload['datasets']),
+      consentScope: payload['scope']?.toString() ?? '',
+      consentReason: payload['reason']?.toString() ?? '',
       errorCode: payload['code']?.toString() ?? '',
       retryable: payload['retryable'] == true,
       quota: payload['quota'] is Map
@@ -89,6 +110,22 @@ AiRunEventType _eventType(String type) {
       return AiRunEventType.checkpoint;
     case 'sources.ready':
       return AiRunEventType.sources;
+    case 'tool.requested':
+      return AiRunEventType.toolRequested;
+    case 'tool.executing':
+      return AiRunEventType.toolExecuting;
+    case 'device.waiting':
+      return AiRunEventType.deviceWaiting;
+    case 'device.claimed':
+      return AiRunEventType.deviceClaimed;
+    case 'consent.required':
+      return AiRunEventType.consentRequired;
+    case 'edu.fetching':
+      return AiRunEventType.eduFetching;
+    case 'tool.completed':
+      return AiRunEventType.toolCompleted;
+    case 'personal_data.evidence':
+      return AiRunEventType.personalDataEvidence;
     case 'run.completed':
       return AiRunEventType.completed;
     case 'run.failed':
@@ -104,3 +141,24 @@ AiRunEventType _eventType(String type) {
 
 int _asInt(dynamic value) =>
     value is int ? value : int.tryParse(value?.toString() ?? '') ?? 0;
+
+List<AiPersonalDataEvidence> _evidence(Object? value) {
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map(
+        (item) => AiPersonalDataEvidence.fromJson(
+          Map<String, dynamic>.from(item),
+        ),
+      )
+      .where((item) => item.source.isNotEmpty)
+      .toList(growable: false);
+}
+
+List<String> _strings(Object? value) {
+  if (value is! List) return const [];
+  return value
+      .map((item) => item.toString().trim())
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
+}

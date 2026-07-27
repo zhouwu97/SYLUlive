@@ -12,6 +12,12 @@ const (
 	AIRunStateBudgetReserved      = "budget_reserved"
 	AIRunStateRetrieving          = "retrieving"
 	AIRunStatePlanning            = "planning"
+	AIRunStateToolRequested       = "tool_requested"
+	AIRunStateToolExecuting       = "tool_executing"
+	AIRunStateToolCompleted       = "tool_completed"
+	AIRunStateWaitingDevice       = "waiting_device"
+	AIRunStateWaitingUserConsent  = "waiting_user_consent"
+	AIRunStateWaitingEdu          = "waiting_edu"
 	AIRunStateAwaitingClientTool  = "awaiting_client_tool"
 	AIRunStateExecutingServerTool = "executing_server_tool"
 	AIRunStateGenerating          = "generating"
@@ -103,6 +109,24 @@ type AIToolCall struct {
 }
 
 func (AIToolCall) TableName() string { return "ai_tool_calls" }
+
+// AIRunResumeJob 保存等待外部操作时恢复 Provider 所需的最小上下文。
+// 消息只在等待期内保留，外部操作完成或 Run 终止后会立即删除，避免把个人数据长期留存。
+type AIRunResumeJob struct {
+	ID                   string         `gorm:"type:varchar(36);primaryKey" json:"id"`
+	RunID                string         `gorm:"type:varchar(36);not null;uniqueIndex" json:"run_id"`
+	UserID               uint           `gorm:"not null;index" json:"-"`
+	WaitingState         string         `gorm:"size:32;not null;index" json:"waiting_state"`
+	MessagesJSON         datatypes.JSON `gorm:"type:jsonb;not null" json:"-"`
+	PendingToolCallsJSON datatypes.JSON `gorm:"type:jsonb;not null" json:"-"`
+	UsageJSON            datatypes.JSON `gorm:"type:jsonb;not null" json:"-"`
+	Status               string         `gorm:"size:24;not null;index" json:"status"`
+	ExpiresAt            time.Time      `gorm:"not null;index" json:"expires_at"`
+	CreatedAt            time.Time      `json:"created_at"`
+	UpdatedAt            time.Time      `json:"updated_at"`
+}
+
+func (AIRunResumeJob) TableName() string { return "ai_run_resume_jobs" }
 
 // AIActionDraft 是 AI 可创建、但只能由所属用户确认的操作草稿。
 // 第一版仅支持将单个官方赛事加入竞赛计划。

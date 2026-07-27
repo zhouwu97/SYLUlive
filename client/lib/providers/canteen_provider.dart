@@ -16,8 +16,19 @@ class CanteenProvider with ChangeNotifier {
 
   CanteenProvider(this._dio);
 
-  Future<void> loadCanteens() async {
+  Future<void>? _loadFuture;
+
+  Future<void> loadCanteens() {
+    if (_loadFuture != null) return _loadFuture!;
+    _loadFuture = _loadCanteensInternal().whenComplete(() {
+      _loadFuture = null;
+    });
+    return _loadFuture!;
+  }
+
+  Future<void> _loadCanteensInternal() async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     try {

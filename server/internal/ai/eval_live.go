@@ -80,13 +80,15 @@ func (b *LiveEvaluationBackend) Generate(ctx context.Context, testCase Evaluatio
 	for index, document := range documents {
 		chunks[index] = RetrievedChunk{
 			ChunkID: document.ChunkID, DocumentID: document.DocumentID, Title: document.Title,
-			Content: document.Content, SourceLocator: document.SourceLocator,
+			Content: document.Content, SourceLocator: document.SourceLocator, DocumentType: document.DocumentType,
 		}
 	}
+	plan := BuildPolicyQueryPlan(testCase.Question)
+	coverage := evaluatePolicyEvidenceCoverage(plan, chunks)
 	response, err := b.provider.Chat(ctx, ChatRequest{
 		Messages: []Message{
 			{Role: "system", Content: policySystemPrompt},
-			{Role: "user", Content: buildPolicyPrompt(testCase.Question, chunks)},
+			{Role: "user", Content: buildPolicyPrompt(testCase.Question, plan, coverage, chunks)},
 		},
 		Temperature: 0,
 		MaxTokens:   1200,

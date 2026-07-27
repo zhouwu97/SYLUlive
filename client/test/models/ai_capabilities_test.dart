@@ -13,9 +13,9 @@ void main() {
       'quota': {
         'limit': 3,
         'remaining': 2,
+        'unlimited': true,
         'window_seconds': 3600,
         'reset_at': '2026-07-19T12:30:00+08:00',
-        'unlimited': true,
       },
       'max_message_chars': 120,
     });

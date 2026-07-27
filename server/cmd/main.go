@@ -23,6 +23,7 @@ import (
 
 	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/ai"
+	"shenliyuan/internal/ai/mcpclient"
 	"shenliyuan/internal/clients"
 
 	"shenliyuan/internal/config"
@@ -154,6 +155,12 @@ func main() {
 
 		&models.PersonalDataRequest{},
 		&models.EduCredentialCleanupJob{},
+		&models.AcademicSnapshot{},
+		&models.PersonalUploadedSnapshot{},
+		&models.AIUserPermission{},
+		&models.AIRunConsent{},
+		&models.UserDevice{},
+		&models.DeviceToolJob{},
 
 		&models.Post{},
 		&models.Poll{},
@@ -477,6 +484,18 @@ func main() {
 
 	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
 	eduBindingRecovery := services.NewEduBindingRecoveryService(db, handlers.PythonEduBindingRecoveryRemote{}, eduCredentialCleanupJobs, time.Now)
+	academicSnapshotService := services.NewAcademicSnapshotService(db, time.Now)
+	personalSnapshotService := services.NewPersonalSnapshotService(db, time.Now)
+	eduClient := clients.NewEduClient(clients.EduClientOptions{
+		BaseURL: func() string { return cfg.EduServiceURL },
+		Token:   func() string { return cfg.EduServiceToken },
+	})
+	eduFetchOrchestrator := services.NewEduFetchOrchestrator(
+		db,
+		eduClient,
+		academicSnapshotService,
+		services.EduFetchOrchestratorOptions{},
+	)
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
 
 	userHandler := handlers.NewUserHandler(db)
@@ -569,7 +588,13 @@ func main() {
 		cfg.AppReleaseAccelPrefix,
 	)
 
-	eduHandler := handlers.NewEduHandlerWithLifecycle(db, cfg.JWTSecret, eduCredentialCleanupJobs)
+	eduHandler := handlers.NewEduHandlerWithAcademicFetch(db, cfg.JWTSecret, eduCredentialCleanupJobs, eduFetchOrchestrator)
+	deviceJobService := services.NewDeviceJobService(db)
+	deviceJobHandler := handlers.NewDeviceJobHandler(deviceJobService)
+	aiUserPermissionService := services.NewAIUserPermissionService(db)
+	aiUserPermissionHandler := handlers.NewAIUserPermissionHandler(aiUserPermissionService)
+	personalSnapshotHandler := handlers.NewPersonalSnapshotHandler(personalSnapshotService)
+	personalSnapshotHandler.SetAIUserPermissionService(aiUserPermissionService)
 
 	teacherHandler := handlers.NewTeacherHandler(db)
 
@@ -672,14 +697,86 @@ func main() {
 				}
 			}
 		}
+		deviceJobScheduler := ai.DeviceJobSchedulerFunc(func(ctx context.Context, request ai.DeviceJobRequest) (ai.DeviceJobReference, error) {
+			job, err := deviceJobService.CreateJob(ctx, services.CreateDeviceJobRequest{
+				UserID: request.UserID, RunID: request.RunID, ToolCallID: request.ToolCallID,
+				ToolName: request.ToolName, Arguments: request.Arguments, RequiredDataTypes: request.RequiredDataTypes,
+				ExpiresAt: request.ExpiresAt,
+			})
+			if err != nil {
+				return ai.DeviceJobReference{}, err
+			}
+			return ai.DeviceJobReference{ID: job.ID}, nil
+		})
+		policyRetriever := ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
+		tools := ai.NewCampusMCPTools(
+			db, academicSnapshotService, personalSnapshotService,
+			ai.WithCampusPolicyRetriever(policyRetriever),
+			ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
+			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
+		)
+		if cfg.AIExternalMCPEnabled {
+			externalMCPClient, externalMCPErr := mcpclient.New(mcpclient.Config{
+				Enabled:           true,
+				Transport:         cfg.AIExternalMCPTransport,
+				Command:           cfg.AIExternalMCPCommand,
+				ToolTimeout:       time.Duration(cfg.AIExternalMCPToolTimeoutSeconds) * time.Second,
+				MaxCallsPerRun:    cfg.AIExternalMCPMaxCallsPerRun,
+				SSHHost:           cfg.AIExternalMCPSshHost,
+				SSHPort:           cfg.AIExternalMCPSshPort,
+				SSHUser:           cfg.AIExternalMCPSshUser,
+				SSHKeyPath:        cfg.AIExternalMCPSshKeyPath,
+				SSHKnownHostsPath: cfg.AIExternalMCPKnownHostsPath,
+			}, nil)
+			if externalMCPErr != nil {
+				log.Printf("[AI_EXTERNAL_MCP_CONFIGURATION_INVALID] %v", externalMCPErr)
+			} else {
+				defer func() {
+					if err := externalMCPClient.Close(); err != nil {
+						log.Printf("[AI_EXTERNAL_MCP_CLOSE_FAILED] %v", err)
+					}
+				}()
+				connectCtx, cancelConnect := context.WithTimeout(appCtx, time.Duration(cfg.AIExternalMCPToolTimeoutSeconds)*time.Second)
+				externalMCPErr = externalMCPClient.Connect(connectCtx)
+				cancelConnect()
+				if externalMCPErr != nil {
+					log.Printf("[AI_EXTERNAL_MCP_CONNECT_FAILED] code=%s", mcpclient.ErrorCode(externalMCPErr))
+				} else {
+					log.Printf("独立 Hy3 MCP 已完成 stdio 健康检查 transport=%s", cfg.AIExternalMCPTransport)
+					listCtx, cancelList := context.WithTimeout(appCtx, time.Duration(cfg.AIExternalMCPToolTimeoutSeconds)*time.Second)
+					definitions, listErr := externalMCPClient.ListTools(listCtx)
+					cancelList()
+					if listErr != nil {
+						log.Printf("[AI_EXTERNAL_MCP_TOOL_LIST_FAILED] code=%s", mcpclient.ErrorCode(listErr))
+					} else {
+						hy3Tools := ai.NewValidatedHy3DecisionTools(
+							db, academicSnapshotService, personalSnapshotService, externalMCPClient, definitions,
+							ai.WithHy3DecisionPersonalDataPermissionReader(aiUserPermissionService),
+						)
+						if len(hy3Tools) == 0 {
+							log.Printf("[AI_EXTERNAL_MCP_NO_COMPATIBLE_TOOLS]")
+						} else {
+							tools = append(tools, hy3Tools...)
+						}
+					}
+				}
+			}
+		}
+		toolRegistry, registryErr := ai.NewToolRegistry(db, tools...)
+		if registryErr != nil {
+			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
+		}
+		runtimeOptions = append(runtimeOptions, ai.WithToolRegistry(toolRegistry))
 		aiRuntime, ragErr = ai.NewRuntime(
 			db, provider, retriever, ai.NewEventBroker(),
 			ai.RuntimeConfig{
 				ProviderName: providerName, Model: modelName,
 				RequestTimeout:  time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second,
 				MaxOutputTokens: cfg.AILegacyMaxOutputTokens,
+				MaxToolSteps:    cfg.AIMaxToolSteps,
 				MaxMessageChars: cfg.AIMaxMessageChars, HourlyMessageLimit: cfg.AIHourlyMessageLimit,
 				UnlimitedStudentIDs:            cfg.AIUnlimitedStudentIDs,
+				QuotaExemptUserIDs:             cfg.AIQuotaExemptUserIDs,
 				DefaultBudgetLimitMicroYuan:    cfg.AIUserBudgetLimitMicroYuan,
 				ReservationMicroYuan:           cfg.AIReserveMicroYuan,
 				InputPriceMicroYuanPerMillion:  cfg.AIInputPriceMicroYuanPerMillionTokens,
@@ -694,6 +791,8 @@ func main() {
 		if ragErr != nil {
 			log.Fatalf("AI Runtime 初始化失败: %v", ragErr)
 		}
+		deviceJobHandler.SetRunResumer(aiRuntime)
+		eduHandler.SetUserConsentRunResumer(aiRuntime)
 		if ragErr := aiRuntime.RecoverAbandonedRuns(appCtx); ragErr != nil {
 			log.Printf("[AI_RECOVERY_FAILED] %v", ragErr)
 		}
@@ -721,8 +820,9 @@ func main() {
 		cfg.AITestUserIDs,
 		handlers.AICapabilitiesOptions{
 			Runtime: aiRuntime, PolicyRAGEnabled: cfg.AIPolicyRAGEnabled && aiRuntime != nil,
-			HourlyLimit:     cfg.AIHourlyMessageLimit,
-			MaxMessageChars: cfg.AIMaxMessageChars,
+			HourlyLimit:        cfg.AIHourlyMessageLimit,
+			MaxMessageChars:    cfg.AIMaxMessageChars,
+			QuotaExemptUserIDs: cfg.AIQuotaExemptUserIDs,
 		},
 	)
 	var aiRuntimeHandler *handlers.AIRuntimeHandler
@@ -796,6 +896,35 @@ func main() {
 			},
 		})
 	})
+
+	// 设备工具桥接使用普通 JWT 鉴权，不能依赖校园 Agent 内测开关；
+	// 已登记安装实例仍须在每个 Handler 中按 user_id + installation_id 双重校验。
+	deviceAPI := r.Group("/api/device")
+	deviceAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		deviceAPI.PUT("/registration", deviceJobHandler.Register)
+		deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
+		deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
+		deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
+		deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
+		deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
+		deviceAPI.POST("/jobs/:id/cancel", deviceJobHandler.Cancel)
+	}
+
+	personalSnapshotsAPI := r.Group("/api/personal-snapshots")
+	personalSnapshotsAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		personalSnapshotsAPI.PUT("/erke", personalSnapshotHandler.PutErke)
+		personalSnapshotsAPI.GET("/erke", personalSnapshotHandler.GetErke)
+		personalSnapshotsAPI.DELETE("/erke", personalSnapshotHandler.DeleteErke)
+	}
+
+	personalDataAccessAPI := r.Group("/api/ai/personal-data-access")
+	personalDataAccessAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		personalDataAccessAPI.GET("", aiUserPermissionHandler.List)
+		personalDataAccessAPI.PUT("", aiUserPermissionHandler.Update)
+	}
 
 	// 静态文件服务
 
@@ -1461,6 +1590,8 @@ func main() {
 
 		edu.POST("/academic-situation", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetAcademicSituation)
 
+		edu.POST("/credit-requirements", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCreditRequirements)
+
 		edu.POST("/pre_verify", eduHandler.PreVerify) // 注册前验证教务账号
 
 	}
@@ -1785,6 +1916,7 @@ func main() {
 			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
 			aiProtected.GET("/runs/:id/events", aiRuntimeHandler.Events)
 			aiProtected.GET("/sources/chunks/:chunk_id", aiRuntimeHandler.GetSourceChunk)
+			aiProtected.POST("/runs/:id/consent", aiRuntimeHandler.SubmitRunConsent)
 			aiProtected.POST("/runs/:id/cancel", aiRuntimeHandler.CancelRun)
 			aiProtected.GET("/conversations", aiRuntimeHandler.ListConversations)
 			aiProtected.POST("/conversations", aiRuntimeHandler.CreateConversation)

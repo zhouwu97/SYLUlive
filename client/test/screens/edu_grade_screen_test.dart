@@ -169,7 +169,7 @@ void main() {
         .setMockMethodCallHandler(gradeReminderChannel, null);
   });
 
-  testWidgets('默认展示学期成绩，并可切换学业总览和毕业预警空状态', (tester) async {
+  testWidgets('默认展示学期成绩，并可切换学业总览', (tester) async {
     final providers = await _pumpGradeScreen(tester);
 
     expect(find.text('离散数学'), findsOneWidget);
@@ -183,14 +183,7 @@ void main() {
     expect(find.text('课程列表学分'), findsOneWidget);
     expect(find.text('未知状态学分'), findsOneWidget);
     expect(find.textContaining('不代表已获得学分'), findsOneWidget);
-
-    await tester.tap(find.text('毕业预警'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('功能验证中'), findsOneWidget);
-    expect(find.textContaining('暂不能作为毕业资格判断依据'), findsOneWidget);
-    expect(find.textContaining('暂不支持：毕业风险'), findsOneWidget);
-    expect(find.textContaining('高风险'), findsNothing);
+    expect(find.text('毕业预警'), findsNothing);
 
     providers.edu.finishPendingGrades();
   });
@@ -215,13 +208,12 @@ void main() {
     expect(_scrollPosition(tester, termScroll).pixels, greaterThan(0));
     expect(tester.getTopLeft(tabs).dy, tabsTop);
 
-    await tester.tap(find.text('毕业预警'));
+    await tester.tap(find.text('学业总览'));
     await tester.pumpAndSettle();
 
-    final warningScroll =
-        find.byKey(const ValueKey('grade_warning_scroll_view'));
-    expect(_scrollPosition(tester, warningScroll).pixels, 0);
-    expect(find.text('功能验证中'), findsOneWidget);
+    final overviewScroll =
+        find.byKey(const ValueKey('grade_overview_scroll_view'));
+    expect(_scrollPosition(tester, overviewScroll).pixels, 0);
   });
 
   testWidgets('成绩深链返回学期成绩视图并滚动到顶部', (tester) async {
@@ -245,16 +237,16 @@ void main() {
     final auth = _FakeAuthProvider(_user(1));
     final providers = await _pumpGradeScreen(tester, auth: auth);
 
-    await tester.tap(find.text('毕业预警'));
+    await tester.tap(find.text('学业总览'));
     await tester.pumpAndSettle();
-    expect(find.text('功能验证中'), findsOneWidget);
+    expect(find.text('高等数学'), findsOneWidget);
 
     auth.switchUser(_user(2));
     await tester.pumpAndSettle();
 
     expect(providers.edu.activeUserId, '2');
     expect(find.text('离散数学'), findsOneWidget);
-    expect(find.text('功能验证中'), findsNothing);
+    expect(find.text('高等数学'), findsNothing);
   });
 
   testWidgets('成绩加载状态只显示一个状态组件', (tester) async {

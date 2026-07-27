@@ -706,7 +706,27 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         if (provider.isLoading && provider.canteens.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (canteens.isEmpty) {
+
+        if (!provider.isLoading && provider.canteens.isEmpty && provider.errorMessage != null) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  provider.errorMessage!,
+                  style: TextStyle(color: RankingTokens.subColor(isDark)),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => context.read<CanteenProvider>().loadCanteens(),
+                  child: const Text('重新加载'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (canteens.isEmpty && !provider.isLoading) {
           return Center(
             child: Text(
               '暂无食堂',
@@ -779,7 +799,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           );
         }
 
-        return RefreshIndicator(
+        Widget listContent = RefreshIndicator(
           onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
           child: ResponsiveUtil.isDesktop(context)
               ? MasonryGridView.count(
@@ -797,6 +817,22 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                   itemBuilder: (_, index) => buildCard(index),
                 ),
         );
+
+        if (provider.isLoading && provider.canteens.isNotEmpty) {
+          return Stack(
+            children: [
+              listContent,
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: LinearProgressIndicator(),
+              ),
+            ],
+          );
+        }
+
+        return listContent;
       },
     );
   }

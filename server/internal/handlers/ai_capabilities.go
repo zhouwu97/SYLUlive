@@ -19,20 +19,22 @@ const (
 // AICapabilitiesHandler 返回当前账号可见的 AI 能力。
 // P0 仅开放入口与状态验证，不暴露 Provider 配置，也不提供真实对话能力。
 type AICapabilitiesHandler struct {
-	enabled          bool
-	internalTestOnly bool
-	allowedUserIDs   map[string]struct{}
-	runtime          *ai.Runtime
-	policyRAGEnabled bool
-	hourlyLimit      int
-	maxMessageChars  int
+	enabled            bool
+	internalTestOnly   bool
+	allowedUserIDs     map[string]struct{}
+	runtime            *ai.Runtime
+	policyRAGEnabled   bool
+	hourlyLimit        int
+	maxMessageChars    int
+	quotaExemptUserIDs map[uint]struct{}
 }
 
 type AICapabilitiesOptions struct {
-	Runtime          *ai.Runtime
-	PolicyRAGEnabled bool
-	HourlyLimit      int
-	MaxMessageChars  int
+	Runtime            *ai.Runtime
+	PolicyRAGEnabled   bool
+	HourlyLimit        int
+	MaxMessageChars    int
+	QuotaExemptUserIDs []uint
 }
 
 func NewAICapabilitiesHandler(enabled, internalTestOnly bool, allowedUserIDs []string, options ...AICapabilitiesOptions) *AICapabilitiesHandler {
@@ -57,6 +59,12 @@ func NewAICapabilitiesHandler(enabled, internalTestOnly bool, allowedUserIDs []s
 		}
 		if options[0].MaxMessageChars > 0 {
 			handler.maxMessageChars = options[0].MaxMessageChars
+		}
+		handler.quotaExemptUserIDs = make(map[uint]struct{}, len(options[0].QuotaExemptUserIDs))
+		for _, userID := range options[0].QuotaExemptUserIDs {
+			if userID != 0 {
+				handler.quotaExemptUserIDs[userID] = struct{}{}
+			}
 		}
 	}
 	return handler

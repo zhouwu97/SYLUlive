@@ -372,12 +372,12 @@ def test_t01_fixture_calibration_meets_gate_and_ranking_targets():
 
     report = evaluate_reranker_fixture(data_directory, k=5)
 
-    assert report["cases"] == 40
+    assert report["cases"] == 42
     assert report["relevance_threshold"] == 0.44
     assert report["gate_accuracy"] == 1.0
     assert report["answerable_recall"] == 1.0
     assert report["negative_rejection_rate"] == 1.0
-    assert report["ranking_before"]["recall_at_k"] == pytest.approx(12 / 13)
+    assert report["ranking_before"]["recall_at_k"] == pytest.approx(38 / 42)
     assert report["ranking_after"]["recall_at_k"] == 1.0
     assert report["ranking_after"]["mrr"] == 1.0
     assert report["v06_core_after"]["recall_at_k"] == 1.0

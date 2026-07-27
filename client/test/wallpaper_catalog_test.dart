@@ -8,4 +8,20 @@ void main() {
       const ['morenbeijing.jpeg', 'wallpaper_custom_01.png'],
     );
   });
+
+  test('横屏内置壁纸不重复默认背景', () {
+    expect(
+      landscapePresetWallpaperAssets,
+      const [
+        'tablet_default_landscape.png',
+        'tablet_landscape_01.png',
+        'tablet_landscape_02.png',
+        'tablet_landscape_03.png',
+        'tablet_landscape_04.png',
+        'tablet_landscape_05.png',
+        'tablet_landscape_06.png',
+        'tablet_landscape_08.png',
+      ],
+    );
+  });
 }

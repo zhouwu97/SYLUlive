@@ -24,7 +24,7 @@ func TestRunDefaultsToOfflineFixtureMode(t *testing.T) {
 	var report ai.EvaluationReport
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &report))
 	require.Equal(t, "fixture", report.Mode)
-	require.Equal(t, 43, report.Total)
+	require.Equal(t, 45, report.Total)
 	require.Zero(t, report.Failed)
 }
 

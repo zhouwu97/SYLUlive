@@ -195,6 +195,15 @@ func (c *RAGClient) PlanPolicyQuery(ctx context.Context, question string) (Polic
 	if !validHistoryBoundary && !validCurrentBoundary {
 		return PolicyQueryPlan{}, fmt.Errorf("invalid policy query plan history boundary")
 	}
+	response.OriginalQuery = strings.TrimSpace(question)
+	response.ExpandedQuery = response.retrievalQuery()
+	response.Focus = PolicyFocusOverview
+	response.Breadth = PolicyBreadthOverview
+	if response.AllowHistorical {
+		response.HistoricalMode = HistoricalPolicyFallback
+	} else {
+		response.HistoricalMode = HistoricalPolicyNone
+	}
 	return response, nil
 }
 
@@ -311,6 +320,8 @@ type RetrievalScoreDetails struct {
 }
 
 type RetrievalResult struct {
+	// Plan 保留完整检索计划供运行时决策，不进入对外审计载荷。
+	Plan          PolicyQueryPlan        `json:"-"`
 	Chunks        []RetrievedChunk       `json:"chunks"`
 	DegradedModes []string               `json:"degraded_modes,omitempty"`
 	QueryPlan     PolicyQueryPlanSummary `json:"query_plan"`
@@ -428,6 +439,7 @@ func (r *HybridRetriever) Retrieve(ctx context.Context, query string) (Retrieval
 	}
 
 	return RetrievalResult{
+		Plan:          plan,
 		Chunks:        fuseRankedChunks(plan, lists, maxRetrievedChunks),
 		DegradedModes: degraded,
 		QueryPlan:     summarizePolicyQueryPlan(plan),

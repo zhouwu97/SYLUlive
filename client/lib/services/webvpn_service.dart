@@ -6,6 +6,9 @@ import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:html/parser.dart' show parse;
 
+import 'webvpn_tls_config.dart'
+    if (dart.library.io) 'webvpn_tls_config_io.dart';
+
 /// 网瑞达 WebVPN + CAS 统一认证登录
 ///
 /// 流程: VPN首页 → 302 → CAS登录页 → AES加密密码 → POST → 302 → VPN cookie
@@ -15,6 +18,7 @@ class WebVpnService {
   late final Dio _dio;
   late final CookieJar _jar;
   String? _vpnCookie;
+  String? _lastError;
 
   WebVpnService() {
     _jar = CookieJar();
@@ -35,11 +39,13 @@ class WebVpnService {
       ),
     );
 
+    configureWebVpnCertificatePolicy(_dio);
     _dio.interceptors.add(CookieManager(_jar));
   }
 
   Future<bool> login(String username, String password) async {
     try {
+      _lastError = null;
       // 清除旧会话 Cookie，防止残留 cookie 使服务器跳过 CAS 重定向
       await _jar.deleteAll();
       _vpnCookie = null;
@@ -60,6 +66,7 @@ class WebVpnService {
           nextUrl = _resolveUrl(casLink);
         } else {
           debugPrint('[VPN] VPN首页未重定向且无CAS链接');
+          _lastError = 'WebVPN 未返回统一认证入口，请稍后重试';
           return false;
         }
       }
@@ -96,6 +103,7 @@ class WebVpnService {
           final ok = await _submitCasLogin(resp, url, username, password);
           if (ok) return true;
           debugPrint('[VPN] CAS 登录失败');
+          _lastError ??= '统一认证登录失败，请检查密码';
           return false;
         }
 
@@ -119,7 +127,14 @@ class WebVpnService {
       }
 
       debugPrint('[VPN] 未到达 CAS 登录页');
+      _lastError = '未能连接到统一认证页面，请检查网络后重试';
+    } on DioException catch (e) {
+      _lastError = _describeDioException(e);
+      debugPrint(
+        '[VPN] 登录异常: type=${e.type} status=${e.response?.statusCode} cause=${e.error.runtimeType}',
+      );
     } catch (e) {
+      _lastError = '统一认证流程异常，请稍后重试';
       debugPrint('[VPN] 登录异常: ${e.runtimeType}');
     }
     return false;
@@ -252,6 +267,7 @@ class WebVpnService {
     if (loginResp.statusCode == 401) {
       final body = loginResp.data.toString();
       debugPrint('[CAS] 401! bodyLength=${body.length}');
+      _lastError = '统一认证登录失败，请检查密码';
       return false;
     }
 
@@ -259,6 +275,7 @@ class WebVpnService {
       final body = loginResp.data.toString();
       if (body.contains('认证失败') || body.contains('密码错误')) {
         debugPrint('[CAS] 密码错误');
+        _lastError = '统一认证登录失败，请检查密码';
         return false;
       }
       // 某些情况下 200 页面里包含 JavaScript 跳转
@@ -277,6 +294,7 @@ class WebVpnService {
       if (loc != null) return await _followRedirects(_resolveUrl(loc, pageUrl));
     }
 
+    _lastError = '统一认证服务未完成登录，请稍后重试';
     return false;
   }
 
@@ -378,6 +396,7 @@ class WebVpnService {
   }
 
   String? get vpnCookie => _vpnCookie;
+  String? get lastError => _lastError;
   CookieJar get cookieJar => _jar;
   Dio get dio => _dio;
 
@@ -386,6 +405,31 @@ class WebVpnService {
   static void debugPrint(String msg) {
     if (kDebugMode) {
       print('[WebVPN] $msg');
+    }
+  }
+
+  static String _describeDioException(DioException error) {
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+        return 'WebVPN 连接超时，请检查网络后重试';
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.transformTimeout:
+        return 'WebVPN 响应超时，请稍后重试';
+      case DioExceptionType.badCertificate:
+        return 'WebVPN 安全连接校验失败，请稍后重试';
+      case DioExceptionType.connectionError:
+        final cause = error.error.runtimeType.toString();
+        if (cause.contains('Handshake')) {
+          return 'WebVPN 安全连接校验失败，请稍后重试';
+        }
+        return 'WebVPN 网络连接失败，请检查网络后重试';
+      case DioExceptionType.badResponse:
+        return 'WebVPN 服务响应异常（HTTP ${error.response?.statusCode ?? '未知'}）';
+      case DioExceptionType.cancel:
+        return 'WebVPN 请求已取消，请重试';
+      case DioExceptionType.unknown:
+        return 'WebVPN 请求异常，请稍后重试';
     }
   }
 }

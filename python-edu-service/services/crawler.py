@@ -23,6 +23,10 @@ from config import INDEX_URL, COURSE_URL, GRADE_URL
 ACADEMIC_SITUATION_URL = "https://jxw.sylu.edu.cn/xsxy/xsxyqk_cxXsxyqkIndex.html"
 ACADEMIC_SITUATION_SOURCE_PATH = "/xsxy/xsxyqk_cxXsxyqkIndex.html"
 ACADEMIC_SITUATION_PARSER_VERSION = "academic-situation-v2"
+ACADEMIC_REQUIREMENT_URL = "https://jxw.sylu.edu.cn/xjyj/xjyj_cxXjyjIndex.html"
+ACADEMIC_REQUIREMENT_QUERY_URL = "https://jxw.sylu.edu.cn/xjyj/xjyj_cxXjyjjdlb.html"
+ACADEMIC_REQUIREMENT_SOURCE_PATH = "/xjyj/xjyj_cxXjyjIndex.html"
+ACADEMIC_REQUIREMENT_PARSER_VERSION = "credit-requirement-v1"
 STUDENT_INFO_URL = "https://jxw.sylu.edu.cn/xsxxxggl/xsgrxxwh_cxXsgrxx.html"
 INDEX_INIT_MENU_URL = f"{INDEX_URL}/index_initMenu.html"
 
@@ -508,7 +512,13 @@ class EduCrawler:
     # ============== 课表相关 ==============
 
     async def fetch_courses(self, cookie: str, year: str, semester: int) -> List[CourseRawData]:
-        """获取课表  优先桌面端JSON(全量),回退移动端JSON"""
+        """获取课表，优先桌面端 JSON（全量），回退移动端 JSON。
+
+        失败必须按原因分类。原来两个分支都用 ``except Exception`` 吞掉，然后统一抛
+        CourseNotOpenError，于是 Cookie 失效、返回登录页、响应体不是 JSON、教务系统
+        改版这些完全不同的故障，对用户都显示成“当前学期课表暂未排课”：既不会触发
+        重新登录，也无法从日志判断到底断在哪一步。
+        """
         if not self.client:
             raise NetworkError("Client not initialized")
 
@@ -519,6 +529,9 @@ class EduCrawler:
 
         all_courses: List[CourseRawData] = []
         seen = set()
+        # 记录每一步的失败原因，全部失败时据此决定抛哪种异常。
+        failures: List[str] = []
+        saw_valid_empty_response = False
 
         def _add_from_kblist(kb_list, source=""):
             for item in kb_list:
@@ -534,10 +547,45 @@ class EduCrawler:
                 if key not in seen:
                     seen.add(key)
                     all_courses.append(course)
-            print(f"  [{source}] 新增 {len(all_courses)} 门课(去重后!")
+            print(f"  [{source}] 累计 {len(all_courses)} 门课(去重后)")
+
+        def _consume(resp, source: str) -> None:
+            """解析一次课表响应；无法解析时按原因分类，不再静默吞掉。"""
+            nonlocal saw_valid_empty_response
+            # 901 = session expired; 302 = redirected to login page
+            if resp.status_code in (901, 302):
+                raise CookieLapseError(f"教务会话已失效({source})")
+            if resp.status_code != 200:
+                failures.append(f"{source}:http_{resp.status_code}")
+                return
+            body = resp.text.strip()
+            if _looks_like_login_page(body):
+                # 教务系统有时不发 302，而是直接用 200 返回登录页。
+                raise CookieLapseError(f"教务返回登录页({source})")
+            if body in ("", "null"):
+                failures.append(f"{source}:empty_body")
+                return
+            try:
+                data = resp.json()
+            except ValueError:
+                failures.append(f"{source}:not_json")
+                return
+            if not isinstance(data, dict):
+                failures.append(f"{source}:unexpected_shape")
+                return
+            kb_list = data.get("kbList")
+            if kb_list is None:
+                failures.append(f"{source}:missing_kbList")
+                return
+            if not isinstance(kb_list, list):
+                failures.append(f"{source}:kbList_not_list")
+                return
+            # 结构合法且确实没有课，才是真正的“未排课”。
+            saw_valid_empty_response = True
+            _add_from_kblist(kb_list, source)
 
         # ==========================================
-        # Step 1: 桌面竁JSON(首选:全量课表!
+        # Step 1: 桌面端 JSON（首选：全量课表）
         # ==========================================
         desktop_headers = dict(base_headers)
         desktop_headers.update({
@@ -557,23 +605,18 @@ class EduCrawler:
                 timeout=10.0
             )
             print(f"  [DESK] status={resp.status_code}, len={len(resp.text)}")
-            # 901 = session expired; 302 = redirected to login page
-            if resp.status_code in (901, 302):
-                raise CookieLapseError("Cookie已过朁(DESK)")
-            if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
-                data = resp.json()
-                kb_list = data.get("kbList", [])
-                _add_from_kblist(kb_list, "DESK")
+            _consume(resp, "DESK")
         except EduError:
-            raise  # CookieLapseError 等需要向上传撁
+            raise  # CookieLapseError 等需要向上传递
         except Exception as e:
-            print(f"  [DESK] 失败: {e}")
+            failures.append(f"DESK:{type(e).__name__}")
+            print(f"  [DESK] 失败: {type(e).__name__}")
 
         # ==========================================
-        # Step 2: 移动竁JSON(备用回退!
+        # Step 2: 移动端 JSON（备用回退）
         # ==========================================
         if not all_courses:
-            print("  [MOBILE] 桌面端无数据,回退移动竁..")
+            print("  [MOBILE] 桌面端无数据，回退移动端")
             try:
                 resp = await self.client.post(
                     f"{COURSE_URL}/xskbcxMobile_cxXsKb.html",
@@ -582,17 +625,25 @@ class EduCrawler:
                     headers=base_headers,
                     timeout=10.0
                 )
-                if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
-                    data = resp.json()
-                    kb_list = data.get("kbList", [])
-                    _add_from_kblist(kb_list, "MOBILE")
+                print(f"  [MOBILE] status={resp.status_code}, len={len(resp.text)}")
+                _consume(resp, "MOBILE")
+            except EduError:
+                raise
             except Exception as e:
-                print(f"  [MOBILE] 失败: {e}")
+                failures.append(f"MOBILE:{type(e).__name__}")
+                print(f"  [MOBILE] 失败: {type(e).__name__}")
 
-        if not all_courses:
+        if all_courses:
+            return all_courses
+
+        if saw_valid_empty_response:
+            # 两个端点都给出结构合法但为空的课表，这才是真正的未排课。
             raise CourseNotOpenError("当前学期课表暂未排课")
 
-        return all_courses
+        # 没有任何一次成功解析：这是故障，不是未排课。
+        detail = ",".join(failures) if failures else "no_response"
+        print(f"  [COURSES] 全部失败: {detail}")
+        raise NetworkError(f"教务课表接口无法解析({detail})", "COURSE_FETCH_UNPARSABLE")
 
     # ============== 成绩相关 ==============
 
@@ -832,6 +883,109 @@ class EduCrawler:
             raise CookieLapseError("Cookie已失效")
 
         return parse_academic_situation_html(body)
+
+    async def fetch_credit_requirements(self, cookie: str) -> dict:
+        """抓取官方学籍预警入口，并执行页面脚本使用的 JSON 查询。"""
+        if not self.client:
+            raise NetworkError("Client not initialized")
+
+        headers = {
+            "Cookie": cookie,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": "https://jxw.sylu.edu.cn/xtgl/index_initMenu.html",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+        try:
+            resp = await self.client.get(
+                ACADEMIC_REQUIREMENT_URL,
+                params={"gnmkdm": "N105505", "layout": "default"},
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise NetworkError("连接教务学分要求页面失败") from exc
+
+        if resp.status_code in (302, 901):
+            raise CookieLapseError("Cookie已失效")
+        if resp.status_code != 200:
+            raise NetworkError(f"学分要求接口返回状态码 {resp.status_code}")
+
+        body = resp.text
+        if _looks_like_login_page(body):
+            raise CookieLapseError("Cookie已失效")
+
+        soup = BeautifulSoup(body or "", "html.parser")
+        query = _extract_credit_requirement_query(soup)
+        if query is None:
+            return _credit_req_failure(
+                "query_protocol_changed",
+                datetime.now(timezone.utc).isoformat(),
+                _credit_req_structure_signature(
+                    soup, _normalize_text(soup.get_text(" ", strip=True)),
+                ),
+                error_code="CREDIT_REQUIREMENT_QUERY_PROTOCOL_CHANGED",
+                message="学分要求查询协议发生变化，请稍后重试",
+            )
+
+        query_payload, query_context = query
+        try:
+            query_resp = await self.client.post(
+                ACADEMIC_REQUIREMENT_QUERY_URL,
+                data=query_payload,
+                headers={
+                    **headers,
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "Referer": str(resp.url),
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+        except httpx.HTTPError as exc:
+            raise NetworkError("查询教务学分要求失败") from exc
+
+        if query_resp.status_code in (302, 901):
+            raise CookieLapseError("Cookie已失效")
+        if query_resp.status_code != 200:
+            raise NetworkError(
+                f"学分要求查询接口返回状态码 {query_resp.status_code}",
+            )
+        if _looks_like_login_page(query_resp.text):
+            raise CookieLapseError("Cookie已失效")
+
+        try:
+            payload = query_resp.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning(
+                "[EDU-CREDIT-REQ] query_protocol_failed status=%s content_type=%r body_length=%s",
+                query_resp.status_code,
+                query_resp.headers.get("content-type", ""),
+                len(query_resp.text or ""),
+            )
+            return _credit_req_failure(
+                "query_protocol_changed",
+                datetime.now(timezone.utc).isoformat(),
+                hashlib.sha256(b"invalid-credit-requirement-json").hexdigest(),
+                error_code="CREDIT_REQUIREMENT_QUERY_PROTOCOL_CHANGED",
+                message="教务学分要求返回格式异常，请稍后重试",
+            )
+
+        parsed = parse_credit_requirement_json(
+            payload,
+            query_context=query_context,
+        )
+        logger.warning(
+            "[EDU-CREDIT-REQ] "
+            "entry_status=%s query_status=%s query_content_type=%r "
+            "query_body_length=%s module_count=%s course_count=%s success=%s",
+            resp.status_code,
+            query_resp.status_code,
+            query_resp.headers.get("content-type", ""),
+            len(query_resp.text or ""),
+            len(parsed.get("modules") or []),
+            sum(len(module.get("courses") or []) for module in parsed.get("modules") or [])
+            + len(parsed.get("improvement_courses") or []),
+            parsed.get("success"),
+        )
+
+        return parsed
 
 
 def parse_grade_detail_response(body: str, course_name: str) -> dict:
@@ -1387,6 +1541,1049 @@ def _effective_passed(row: Dict[str, Any]) -> Optional[bool]:
     return None
 
 
+# ============== 学分要求解析 ==============
+
+def _extract_credit_requirement_query(
+    soup: BeautifulSoup,
+) -> Optional[Tuple[Dict[str, str], dict]]:
+    """读取页面已选学院、年级和专业，复现前端 AJAX 查询参数。"""
+    form = soup.select_one("form#searchForm")
+    if form is None:
+        return None
+
+    field_context = {
+        "jg_id": "college_name",
+        "njdm_id": "enrollment_grade",
+        "zyh_id": "major_name",
+    }
+    payload: Dict[str, str] = {}
+    context: dict = {}
+    for field, context_key in field_context.items():
+        select_node = form.select_one(f"select[name='{field}']")
+        if select_node is None:
+            return None
+        option = select_node.select_one("option[selected]")
+        if option is None:
+            # 个人培养方案不能猜测下拉框的首项；缺少当前选项即视为协议变更。
+            return None
+        value = str(option.get("value") or "").strip() if option else ""
+        if not value:
+            return None
+        payload[field] = value
+        label = _normalize_text(option.get_text(" ", strip=True)) if option else ""
+        if label:
+            context[context_key] = label
+
+    return payload, context
+
+
+def parse_credit_requirement_json(
+    payload: Any,
+    *,
+    query_context: Optional[dict] = None,
+) -> dict:
+    """解析学分要求 AJAX 接口返回的节点与课程 JSON 树。"""
+    captured_at = datetime.now(timezone.utc).isoformat()
+    structure_signature = _credit_req_json_structure_signature(payload)
+    if payload is None or payload == []:
+        return {
+            "success": True,
+            "source_kind": "official_credit_requirement",
+            "source_url": ACADEMIC_REQUIREMENT_SOURCE_PATH,
+            "parser_version": ACADEMIC_REQUIREMENT_PARSER_VERSION,
+            "captured_at": captured_at,
+            "structure_signature": structure_signature,
+            "query_context": query_context or {},
+            "status": "empty",
+            "modules": [],
+            "improvement_courses": [],
+            "error_code": None,
+            "message": None,
+        }
+    if not isinstance(payload, list):
+        return _credit_req_failure(
+            "parse_failed",
+            captured_at,
+            structure_signature,
+            error_code="CREDIT_REQUIREMENT_PARSE_FAILED",
+            message="学分要求数据结构发生变化，请稍后重试",
+        )
+
+    modules: list[dict] = []
+    improvement_courses: list[dict] = []
+
+    def visit(raw_node: Any) -> None:
+        if not isinstance(raw_node, dict):
+            return
+        module = _parse_credit_requirement_json_module(raw_node)
+        if module is not None:
+            if module["module_type"] == "improvement":
+                improvement_courses.extend(module["courses"])
+            else:
+                modules.append(module)
+        children = raw_node.get("xfyqjdList")
+        if isinstance(children, list):
+            for child in children:
+                visit(child)
+
+    for node in payload:
+        visit(node)
+
+    if not modules and not improvement_courses:
+        return _credit_req_failure(
+            "parse_failed",
+            captured_at,
+            structure_signature,
+            error_code="CREDIT_REQUIREMENT_PARSE_FAILED",
+            message="学分要求数据无法解析，请稍后重试",
+        )
+
+    return {
+        "success": True,
+        "source_kind": "official_credit_requirement",
+        "source_url": ACADEMIC_REQUIREMENT_SOURCE_PATH,
+        "parser_version": ACADEMIC_REQUIREMENT_PARSER_VERSION,
+        "captured_at": captured_at,
+        "structure_signature": structure_signature,
+        "query_context": query_context or {},
+        "status": "available",
+        "modules": modules,
+        "improvement_courses": improvement_courses,
+        "error_code": None,
+        "message": None,
+    }
+
+
+def _parse_credit_requirement_json_module(raw: dict) -> Optional[dict]:
+    name = _empty_to_none_text(raw.get("xfyqjdmc"))
+    if not name:
+        return None
+
+    raw_courses = raw.get("kcList")
+    courses = (
+        [
+            course
+            for item in raw_courses
+            if (course := _parse_credit_requirement_json_course(item)) is not None
+        ]
+        if isinstance(raw_courses, list)
+        else []
+    )
+    required_credits = _to_nullable_float(raw.get("yqzdxf"))
+    required_course_count = _to_nullable_int(raw.get("kczdms"))
+    earned_credits = sum(_to_float(item.get("yxxf")) for item in raw_courses or [] if isinstance(item, dict))
+    completed_course_count = sum(course.get("completed") is True for course in courses)
+    is_improvement = "提高课程" in name
+
+    credit_satisfied = (
+        required_credits is None or earned_credits >= required_credits
+    )
+    count_satisfied = (
+        required_course_count is None
+        or completed_course_count >= required_course_count
+    )
+    if required_credits is None and required_course_count is None:
+        status = "unknown"
+    elif credit_satisfied and count_satisfied:
+        status = "completed"
+    elif earned_credits > 0 or completed_course_count > 0:
+        status = "in_progress"
+    else:
+        status = "shortfall"
+
+    return {
+        "id": str(raw.get("xfyqjd_id") or _module_id_from_name(name)),
+        "name": name,
+        "module_type": "improvement" if is_improvement else _infer_module_type(name),
+        "required_credits": required_credits,
+        "required_course_count": required_course_count,
+        "earned_credits": earned_credits,
+        "completed_course_count": completed_course_count,
+        "status": status,
+        "is_optional": _is_optional_module(name),
+        "courses": courses,
+    }
+
+
+def _parse_credit_requirement_json_course(raw: Any) -> Optional[dict]:
+    if not isinstance(raw, dict):
+        return None
+    course_name = _empty_to_none_text(raw.get("kcmc"))
+    if not course_name:
+        return None
+
+    earned_credits = _to_float(raw.get("yxxf"))
+    numeric_grade = _to_nullable_float(raw.get("bfzcj"))
+    grade = _empty_to_none_text(raw.get("cj"))
+    has_actual_term = bool(
+        _empty_to_none_text(raw.get("xnmc"))
+        or _empty_to_none_text(raw.get("xqmc"))
+    )
+    if grade == "未开放":
+        raw_status, completed = "未开放", False
+    elif str(raw.get("tdbj") or "") == "1":
+        raw_status, completed = "课程替代", True
+    elif earned_credits > 0:
+        raw_status, completed = "通过", True
+    elif numeric_grade is not None:
+        raw_status = "通过" if numeric_grade >= 60 else "不及格"
+        completed = numeric_grade >= 60
+    elif has_actual_term:
+        raw_status, completed = "已选", None
+    else:
+        raw_status, completed = "未选", False
+
+    return {
+        "course_code": str(raw.get("kch") or ""),
+        "course_name": course_name,
+        "credits": _to_float(raw.get("xf")),
+        "suggested_year": _empty_to_none_text(raw.get("jyxdxnmc")),
+        "suggested_semester": _empty_to_none_text(raw.get("jyxdxqmc")),
+        "actual_year": _empty_to_none_text(raw.get("xnmc")),
+        "actual_semester": _empty_to_none_text(raw.get("xqmc")),
+        "course_nature": _empty_to_none_text(raw.get("xbx")),
+        "grade": grade,
+        "raw_status": raw_status,
+        "remark": _empty_to_none_text(raw.get("bz")),
+        "completed": completed,
+    }
+
+
+def _to_nullable_int(value: Any) -> Optional[int]:
+    number = _to_nullable_float(value)
+    return int(number) if number is not None else None
+
+
+def _credit_req_json_structure_signature(payload: Any) -> str:
+    """仅基于类型和字段名生成签名，避免业务值进入日志或缓存元数据。"""
+    def shape(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {str(key): shape(child) for key, child in sorted(value.items())}
+        if isinstance(value, list):
+            return [shape(value[0])] if value else []
+        return type(value).__name__
+
+    encoded = json.dumps(shape(payload), sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+def parse_credit_requirement_html(html: str) -> dict:
+    """解析官方"学籍预警/学分要求"页面。
+
+    返回标准 JSON 结构，包含模块列表、提高课程和查询上下文。
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+    plain_text = _normalize_text(soup.get_text(" ", strip=True))
+    captured_at = datetime.now(timezone.utc).isoformat()
+    structure_signature = _credit_req_structure_signature(soup, plain_text)
+
+    if _looks_like_login_page(html) or not plain_text:
+        return _credit_req_failure("empty", captured_at, structure_signature)
+
+    # 提取查询上下文 — 学院、年级、专业
+    query_context = _extract_credit_req_query_context(plain_text)
+
+    # 解析模块
+    modules, improvement_courses = _parse_credit_req_modules(soup, plain_text)
+
+    # Extract table courses for the gate check
+    table_courses = _extract_all_courses_from_tables(soup)
+
+    if not modules and not improvement_courses:
+        # When improvement courses are the only content, construct a minimal valid result
+        if table_courses:
+            imp_pos = plain_text.find("提高课程")
+            if imp_pos >= 0:
+                improvement_courses = [
+                    c for c in table_courses
+                    if plain_text.find(c.get("course_name", "")) > imp_pos
+                ]
+                if improvement_courses:
+                    return {
+                        "success": True,
+                        "source_kind": "official_credit_requirement",
+                        "source_url": ACADEMIC_REQUIREMENT_SOURCE_PATH,
+                        "parser_version": ACADEMIC_REQUIREMENT_PARSER_VERSION,
+                        "captured_at": captured_at,
+                        "structure_signature": structure_signature,
+                        "query_context": query_context,
+                        "status": "available",
+                        "modules": [],
+                        "improvement_courses": improvement_courses,
+                    }
+
+        # 尝试检测是否为动态加载页面
+        if _has_dynamic_course_source(soup):
+            return _credit_req_failure(
+                "dynamic_source_unresolved", captured_at, structure_signature,
+            )
+        # 检查是否有模块标题但解析失败
+        if _has_credit_req_headers(plain_text):
+            return _credit_req_failure(
+                "parse_failed",
+                captured_at,
+                structure_signature,
+                error_code="CREDIT_REQUIREMENT_PARSE_FAILED",
+                message="学分要求页面结构发生变化",
+                extra={
+                    "page_title": _page_title_from_soup(soup),
+                    "modules_detected": len(modules),
+                    "courses_detected": sum(len(m.get("courses", [])) for m in modules),
+                },
+            )
+        return _credit_req_failure(
+            "empty", captured_at, structure_signature,
+        )
+
+    return {
+        "success": True,
+        "source_kind": "official_credit_requirement",
+        "source_url": ACADEMIC_REQUIREMENT_SOURCE_PATH,
+        "parser_version": ACADEMIC_REQUIREMENT_PARSER_VERSION,
+        "captured_at": captured_at,
+        "structure_signature": structure_signature,
+        "query_context": query_context,
+        "status": "available",
+        "modules": modules,
+        "improvement_courses": improvement_courses,
+    }
+
+
+def _page_title_from_soup(soup: BeautifulSoup) -> str:
+    return soup.title.get_text(strip=True) if soup.title else ""
+
+
+def _credit_req_failure(
+    status: str,
+    captured_at: str,
+    structure_signature: str,
+    error_code: str = "CREDIT_REQUIREMENT_PARSE_FAILED",
+    message: str = "学分要求解析失败",
+    extra: dict | None = None,
+) -> dict:
+    result = {
+        "success": False,
+        "source_kind": "official_credit_requirement",
+        "source_url": ACADEMIC_REQUIREMENT_SOURCE_PATH,
+        "parser_version": ACADEMIC_REQUIREMENT_PARSER_VERSION,
+        "captured_at": captured_at,
+        "structure_signature": structure_signature,
+        "query_context": {},
+        "status": status,
+        "modules": [],
+        "improvement_courses": [],
+        "error_code": error_code,
+        "message": message,
+    }
+    if extra:
+        result.update(extra)
+    return result
+
+
+def _credit_req_structure_signature(soup: BeautifulSoup, plain_text: str) -> str:
+    tag_sequence = [tag.name for tag in soup.find_all(True, limit=200)]
+    table_count = len(soup.select("table"))
+    form_count = len(soup.select("form"))
+    # Count module-like headers in text
+    module_header_count = len(re.findall(r"要求最低\s*\d+", plain_text))
+    parts = [
+        f"tables:{table_count}",
+        f"forms:{form_count}",
+        f"module_headers:{module_header_count}",
+        "tags:" + ",".join(tag_sequence),
+    ]
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def _has_credit_req_headers(text: str) -> bool:
+    """检测页面是否包含学分要求相关的标题文本。"""
+    return bool(
+        re.search(r"学籍预警|学分要求|模块|要求最低|提高课程|最低学分", text)
+    )
+
+
+def _extract_credit_req_query_context(text: str) -> dict:
+    """从页面文本提取学院、年级、专业等查询上下文。"""
+    context = {}
+    # 学院
+    m = re.search(r"学院[：:]\s*(\S+)", text)
+    if m:
+        context["college_name"] = m.group(1).rstrip("；;")
+    # 年级
+    m = re.search(r"年级[：:]\s*(\d{4})", text)
+    if m:
+        context["enrollment_grade"] = m.group(1)
+    # 专业
+    m = re.search(r"专业[：:]\s*([^\s；;]+)", text)
+    if m:
+        context["major_name"] = m.group(1)
+    return context
+
+
+def _parse_credit_req_modules(
+    soup: BeautifulSoup, plain_text: str
+) -> tuple[list[dict], list[dict]]:
+    """From the page, parse credit requirement modules and improvement courses.
+
+    Uses a combined strategy: first try text-based segmentation (most reliable),
+    then try to attach course data from HTML tables to the matching modules.
+    """
+    # Strategy 1: text-based segmentation for module discovery
+    modules_from_text, improvement_from_text = _parse_credit_req_from_text(
+        soup, plain_text
+    )
+
+    if not modules_from_text and not improvement_from_text:
+        # Strategy 2: table-based parsing as fallback
+        return _parse_credit_req_tables(soup)
+
+    # Try to enrich text-based modules with course data from HTML tables
+    all_table_courses = _extract_all_courses_from_tables(soup)
+    if all_table_courses:
+        # Table-parsed courses are more reliable than text-parsed ones.
+        # Clear text-parsed courses and use only table courses.
+        for module in modules_from_text:
+            module["courses"] = []
+        # Also clear improvement list
+        improvement_from_text.clear()
+        _assign_courses_to_modules(modules_from_text, all_table_courses, plain_text)
+        _assign_improvement_courses(improvement_from_text, all_table_courses, plain_text)
+
+    return modules_from_text, improvement_from_text
+
+
+def _extract_all_courses_from_tables(soup: BeautifulSoup) -> list[dict]:
+    """Extract all course rows from all tables in the page."""
+    all_courses = []
+    field_map = {
+        "课程号": "course_code",
+        "课程名称": "course_name",
+        "课程学分": "credits",
+        "学分": "credits",
+        "建议修读学年": "suggested_year",
+        "建议修读学期": "suggested_semester",
+        "实际修读学年": "actual_year",
+        "实际修读学期": "actual_semester",
+        "选必修": "course_nature",
+        "课程性质": "course_nature",
+        "成绩": "grade",
+        "修读状态": "raw_status",
+        "状态": "raw_status",
+        "备注": "remark",
+    }
+
+    for table in soup.select("table"):
+        headers = _detect_course_table_headers(table)
+        if not headers or "course_name" not in headers.values():
+            continue
+
+        courses = _parse_requirement_course_rows(table, headers)
+        all_courses.extend(courses)
+
+    return all_courses
+
+
+def _assign_courses_to_modules(
+    modules: list[dict], all_courses: list[dict], plain_text: str
+) -> None:
+    """Assign course rows to the appropriate module based on text position.
+
+    Courses are assigned to the module whose name appears closest before
+    the course's position in the text.
+    """
+    # Find module text positions
+    module_positions = []
+    for module in modules:
+        pos = plain_text.find(module["name"])
+        if pos >= 0:
+            module_positions.append((pos, module))
+
+    module_positions.sort(key=lambda x: x[0])
+
+    if not module_positions:
+        return
+
+    # Assign each course to the closest preceding module
+    for course in all_courses:
+        course_name = course.get("course_name", "")
+        course_pos = plain_text.find(course_name)
+
+        # Find the last module whose name appears before this course
+        assigned = None
+        for pos, module in module_positions:
+            if pos <= course_pos:
+                assigned = module
+            else:
+                break
+
+        if assigned is not None:
+            assigned.setdefault("courses", []).append(course)
+            assigned["completed_course_count"] = len(assigned["courses"])
+
+
+def _assign_improvement_courses(
+    improvement_courses: list[dict], all_courses: list[dict], plain_text: str
+) -> None:
+    """Assign course rows as improvement courses."""
+    # Look for "提高课程" marker and assign courses after it
+    imp_pos = plain_text.find("提高课程")
+    if imp_pos < 0:
+        return
+
+    for course in all_courses:
+        course_name = course.get("course_name", "")
+        course_pos = plain_text.find(course_name)
+        if course_pos > imp_pos:
+            improvement_courses.append(course)
+
+
+def _parse_credit_req_tables(
+    soup: BeautifulSoup,
+) -> tuple[list[dict], list[dict]]:
+    """通过 HTML 表格结构解析学分要求。
+
+    学籍预警页面通常包含：
+    - 一个或多个包含模块信息的表格（模块名、要求学分、已得学分等）
+    - 每个模块后面可能紧跟课程明细表格
+    """
+    modules = []
+    improvement_courses = []
+    all_improvement_courses = []
+
+    tables = soup.select("table")
+    current_module = None
+
+    for table in tables:
+        # 检查该表格是否是模块标题行
+        module_from_table = _try_extract_module_header_from_table(table)
+        if module_from_table:
+            if current_module and current_module.get("courses"):
+                if current_module.get("module_type") == "improvement":
+                    all_improvement_courses.extend(current_module["courses"])
+                else:
+                    modules.append(current_module)
+            current_module = module_from_table
+            continue
+
+        # 检查是否是课程表格
+        if current_module:
+            courses = _parse_credit_req_course_table(table)
+            if courses:
+                current_module.setdefault("courses", []).extend(courses)
+                continue
+
+            # 可能同一个模块的头部信息分布在不同行
+            extra_header = _try_extract_module_extra_header(table)
+            if extra_header:
+                current_module.update(extra_header)
+                continue
+
+    # 保存最后一个模块
+    if current_module:
+        if current_module.get("module_type") == "improvement":
+            all_improvement_courses.extend(current_module.get("courses", []))
+        else:
+            modules.append(current_module)
+
+    return modules, all_improvement_courses
+
+
+def _try_extract_module_header_from_table(table) -> dict | None:
+    """尝试从表格行中提取模块标题信息。
+
+    模块头部通常包含：模块名称、要求最低X学分、已获得X学分等。
+    """
+    all_text = _normalize_text(table.get_text(" ", strip=True))
+    if not all_text:
+        return None
+
+    # 匹配模块名称（常见格式）
+    module_name = _extract_module_name(all_text)
+    if not module_name:
+        return None
+
+    # 判断是否为提高课程
+    is_improvement = "提高课程" in module_name
+
+    module = {
+        "id": _module_id_from_name(module_name),
+        "name": module_name,
+        "module_type": "improvement" if is_improvement else _infer_module_type(module_name),
+        "required_credits": _extract_required_credits(all_text),
+        "required_course_count": _extract_required_course_count(all_text),
+        "earned_credits": _extract_earned_credits(all_text),
+        "completed_course_count": 0,
+        "status": "unknown",
+        "is_optional": _is_optional_module(module_name),
+        "courses": [],
+    }
+
+    # 初步计算状态（后续会根据课程数量调整）
+    req = module["required_credits"]
+    earned = module["earned_credits"]
+    if req is None:
+        module["status"] = "unknown"
+    elif earned >= req:
+        module["status"] = "completed"
+    elif earned > 0:
+        module["status"] = "in_progress"
+    else:
+        module["status"] = "shortfall"
+
+    return module
+
+
+def _try_extract_module_extra_header(table) -> dict | None:
+    """提取分散在表格中的额外模块头部信息。"""
+    all_text = _normalize_text(table.get_text(" ", strip=True))
+    result = {}
+    req_credits = _extract_required_credits(all_text)
+    if req_credits is not None:
+        result["required_credits"] = req_credits
+    earned = _extract_earned_credits(all_text)
+    if earned is not None:
+        result["earned_credits"] = earned
+    req_count = _extract_required_course_count(all_text)
+    if req_count is not None:
+        result["required_course_count"] = req_count
+    return result if result else None
+
+
+def _parse_credit_req_course_table(table) -> list[dict]:
+    """尝试将表格解析为课程列表。"""
+    headers = _detect_course_table_headers(table)
+    if not headers or "course_name" not in headers.values():
+        return []
+
+    return _parse_requirement_course_rows(table, headers)
+
+
+def _detect_course_table_headers(table) -> dict[str, str]:
+    """检测课程表格的列映射。
+
+    返回 {列索引: 字段名} 的字典。
+    """
+    field_map = {
+        "课程号": "course_code",
+        "课程名称": "course_name",
+        "课程学分": "credits",
+        "学分": "credits",
+        "建议修读学年": "suggested_year",
+        "建议修读学期": "suggested_semester",
+        "实际修读学年": "actual_year",
+        "实际修读学期": "actual_semester",
+        "选必修": "course_nature",
+        "课程性质": "course_nature",
+        "成绩": "grade",
+        "修读状态": "raw_status",
+        "状态": "raw_status",
+        "备注": "remark",
+    }
+
+    for tr in table.select("tr"):
+        cells = [
+            _normalize_text(cell.get_text(" ", strip=True))
+            for cell in tr.select("th,td")
+        ]
+        if not cells:
+            continue
+
+        header_map = {}
+        for idx, cell in enumerate(cells):
+            if cell in field_map:
+                header_map[idx] = field_map[cell]
+
+        if "course_name" in header_map.values():
+            return header_map
+
+    return {}
+
+
+def _parse_requirement_course_rows(table, header_map: dict[str, str]) -> list[dict]:
+    """解析课程行数据。"""
+    courses = []
+    # 找到表头行索引
+    rows = table.select("tr")
+    header_row_idx = -1
+    for idx, tr in enumerate(rows):
+        cells = [
+            _normalize_text(cell.get_text(" ", strip=True))
+            for cell in tr.select("th,td")
+        ]
+        field_values = {header_map.get(i): c for i, c in enumerate(cells) if i in header_map}
+        if "course_name" in field_values.values() and any(
+            k in field_values for k in ("credits", "grade", "course_code")
+        ):
+            header_row_idx = idx
+            break
+
+    if header_row_idx < 0:
+        # 尝试：可能不是标准表头，但数据行包含课程信息
+        header_row_idx = 0
+
+    for tr in rows[header_row_idx + 1:]:
+        cells = [
+            _normalize_text(td.get_text(" ", strip=True))
+            for td in tr.select("td")
+        ]
+        if not any(cells):
+            continue
+
+        row = {}
+        for idx, cell in enumerate(cells):
+            field = header_map.get(idx)
+            if field:
+                row[field] = _empty_to_none_text(cell)
+
+        course_name = row.get("course_name") or ""
+        if not course_name:
+            continue
+
+        # 如果表头中没有 course_name 但有其他字段，尝试从第一个有意义的列提取
+        course = {
+            "course_code": row.get("course_code") or "",
+            "course_name": course_name,
+            "credits": _to_float(row.get("credits")),
+            "suggested_year": _text_or_none(row.get("suggested_year")),
+            "suggested_semester": _text_or_none(row.get("suggested_semester")),
+            "actual_year": _text_or_none(row.get("actual_year")),
+            "actual_semester": _text_or_none(row.get("actual_semester")),
+            "course_nature": _text_or_none(row.get("course_nature")),
+            "grade": _text_or_none(row.get("grade")),
+            "raw_status": _text_or_none(row.get("raw_status")),
+            "remark": _text_or_none(row.get("remark")),
+            "completed": _parse_completed_status(row),
+        }
+        courses.append(course)
+
+    return courses
+
+
+def _parse_completed_status(row: dict) -> bool | None:
+    """根据课程行数据判断是否已完成。"""
+    status = (row.get("raw_status") or "").strip()
+    grade = (row.get("grade") or "").strip()
+
+    if status in ("已修读", "已完成", "通过", "已通过"):
+        return True
+    if status in ("未修读", "未通过", "未修"):
+        return False
+
+    if grade:
+        if re.fullmatch(r"\d+(?:\.\d+)?", grade):
+            return float(grade) >= 60
+        if re.fullmatch(r"优秀|良好|中等|及格|合格", grade):
+            return True
+        if re.fullmatch(r"不及格|不合格", grade):
+            return False
+
+    return None
+
+
+def _text_or_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    return text if text else None
+
+
+def _extract_module_name(text: str) -> str | None:
+    """提取模块名称。匹配已知的模块命名模式。"""
+    # 精确匹配已知模块名称模式
+    patterns = [
+        r"(通识教育理论必修)",
+        r"(美育模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(自然模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(体育模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(人文模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(思政模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(外语模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(计算机模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(其他模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(学科基础[^，,。.\s]*?(?:模块)?(?:[（(][^)）]+[)）])?)",
+        r"(专业模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(实践模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(创新模块[^，,。.\s]*?(?:[（(][^)）]+[)）])?)",
+        r"(提高课程)",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text)
+        if m:
+            name = m.group(1).strip()
+            if 2 <= len(name) <= 40:
+                return name
+    return None
+
+
+def _module_id_from_name(name: str) -> str:
+    """从模块名称生成稳定的 ID。"""
+    # 移除括号内容、标点、空格
+    clean = re.sub(r"[（()）\s]", "", name)
+    # 简单拼音映射
+    keyword_map = {
+        "通识教育理论必修": "general_theory_required",
+        "美育": "aesthetic",
+        "自然": "nature",
+        "体育": "sports",
+        "人文": "humanities",
+        "思政": "ideology",
+        "外语": "foreign_lang",
+        "计算机": "computer",
+        "其他": "other",
+        "学科基础": "discipline_basis",
+        "专业": "major",
+        "实践": "practice",
+        "创新": "innovation",
+        "公共": "public",
+        "提高课程": "improvement",
+    }
+    for cn, en in keyword_map.items():
+        if cn in clean:
+            return en
+    # 降级：使用清理后名称的 hash
+    return hashlib.md5(clean.encode()).hexdigest()[:12]
+
+
+def _infer_module_type(name: str) -> str:
+    """根据模块名称推断模块类型。"""
+    if "必修" in name and ("限选" in name or "选修" in name):
+        return "limited_elective"
+    if "选修" in name or "限选" in name:
+        return "elective"
+    return "required"
+
+
+def _is_optional_module(name: str) -> bool:
+    """判断模块是否为可选模块。"""
+    return any(token in name for token in ("选修", "限选", "选一")) and "必修" not in name
+
+
+def _extract_required_credits(text: str) -> float | None:
+    """从文本中提取最低要求学分。"""
+    m = re.search(r"要求最低\s*(\d+(?:\.\d+)?)\s*学分", text)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"最低\s*(\d+(?:\.\d+)?)\s*学分", text)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"要求\s*(\d+(?:\.\d+)?)\s*学分", text)
+    if m:
+        return float(m.group(1))
+    return None
+
+
+def _extract_required_course_count(text: str) -> int | None:
+    """从文本中提取最低要求门数。"""
+    m = re.search(r"要求最低\s*(\d+)\s*门", text)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"最低\s*(\d+)\s*门", text)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _extract_earned_credits(text: str) -> float:
+    """从文本中提取已获得学分。"""
+    m = re.search(r"已获得\s*(\d+(?:\.\d+)?)\s*学分", text)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"获得\s*(\d+(?:\.\d+)?)\s*学分", text)
+    if m:
+        return float(m.group(1))
+    return 0.0
+
+
+def _parse_credit_req_from_text(
+    soup: BeautifulSoup, plain_text: str
+) -> tuple[list[dict], list[dict]]:
+    """Parse credit requirements from plain text and HTML regions.
+
+    This is the primary parsing strategy. Module names are detected via
+    known patterns, and segment boundaries are computed with a robust
+    delimiter heuristic.
+    """
+    modules = []
+    improvement_courses = []
+
+    # Find all module header positions using known patterns
+    module_patterns = [
+        r"(通识教育理论必修)",
+        r"(美育模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(自然模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(体育模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(人文模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(思政模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(外语模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(计算机模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(其他模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(学科基础[^\s，,。.]*(?:模块)?(?:[（(][^)）]+[)）])?)",
+        r"(专业模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(实践模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(创新模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"(三选一模块[^\s，,。.]*(?:[（(][^)）]+[)）])?)",
+        r"([A-Za-z一-鿿][^\s，,。.]{0,12}模块[^\s，,。.]*?(?:[（(][^)）]+[)）])?)",
+        r"(提高课程)",
+    ]
+
+    segments = []
+    for pattern in module_patterns:
+        for m in re.finditer(pattern, plain_text):
+            name = m.group(0).strip()
+            # Only accept reasonable-length names
+            if 2 <= len(name) <= 40:
+                segments.append((m.start(), name))
+
+    # Remove duplicates at same position (keep longest name)
+    segments.sort(key=lambda x: (x[0], -len(x[1])))
+    deduped = []
+    seen_positions = set()
+    for pos, name in segments:
+        if pos not in seen_positions:
+            # Also deduplicate nearby positions (within 5 chars)
+            if not any(abs(pos - p) < 5 for p in seen_positions):
+                deduped.append((pos, name))
+                seen_positions.add(pos)
+
+    segments = deduped
+
+    for i, (start, name) in enumerate(segments):
+        end = segments[i + 1][0] if i + 1 < len(segments) else len(plain_text)
+        segment_text = plain_text[start:end]
+
+        is_improvement = "提高课程" in name
+
+        module = {
+            "id": _module_id_from_name(name),
+            "name": name,
+            "module_type": "improvement" if is_improvement else _infer_module_type(name),
+            "required_credits": _extract_required_credits(segment_text),
+            "required_course_count": _extract_required_course_count(segment_text),
+            "earned_credits": _extract_earned_credits(segment_text),
+            "completed_course_count": 0,
+            "status": "unknown",
+            "is_optional": _is_optional_module(name),
+            "courses": _parse_courses_from_text_segment(segment_text),
+        }
+
+        # 计算状态
+        req = module["required_credits"]
+        earned = module["earned_credits"]
+        module["completed_course_count"] = len(module["courses"])
+        if req is None:
+            module["status"] = "unknown"
+        elif earned >= req:
+            module["status"] = "completed"
+        elif earned > 0:
+            module["status"] = "in_progress"
+        else:
+            module["status"] = "shortfall"
+
+        if is_improvement:
+            improvement_courses.extend(module["courses"])
+            # Don't add improvement module to modules list
+        else:
+            modules.append(module)
+
+    return modules, improvement_courses
+
+
+def _parse_courses_from_text_segment(text: str) -> list[dict]:
+    """Parse course list from a text segment.
+
+    Matches lines like: '215400043 课程名 2.0 学分 ...'
+    Only matches when '学分' keyword is present after the numeric credit value.
+    """
+    courses = []
+    # Match pattern: course_code + course_name + credits + '学分'
+    # The '学分' keyword must be present to avoid false matches on random numbers
+    course_pattern = re.compile(
+        r"([A-Za-z0-9]{5,})\s+"
+        r"(\S.{2,40}?)\s+"
+        r"(\d+(?:\.\d+)?)\s*学分"
+    )
+    for m in course_pattern.finditer(text):
+        course_code = m.group(1).strip()
+        course_name = m.group(2).strip()
+        credits = float(m.group(3))
+
+        # Skip obviously wrong course names (containing keywords)
+        if any(kw in course_name for kw in ("要求", "已获得", "最低", "模块", "课程")):
+            continue
+        if len(course_name) < 2 or len(course_name) > 40:
+            continue
+
+        # 在匹配后查找学年学期和成绩
+        rest = text[m.end():m.end() + 120]
+        term_info = _extract_term_from_text(rest)
+        grade = _extract_grade_from_text(rest)
+        status = _extract_status_from_text(rest)
+
+        courses.append({
+            "course_code": course_code,
+            "course_name": course_name,
+            "credits": credits,
+            "suggested_year": None,
+            "suggested_semester": None,
+            "actual_year": term_info.get("year"),
+            "actual_semester": term_info.get("semester"),
+            "course_nature": None,
+            "grade": grade,
+            "raw_status": status,
+            "remark": None,
+            "completed": _parse_completed_status_from_text(status, grade),
+        })
+
+    return courses
+
+
+def _extract_term_from_text(text: str) -> dict:
+    """从文本中提取学年学期信息。"""
+    m = re.search(r"(\d{4}-\d{4})\s*(第一学期|第二学期)", text)
+    if m:
+        sem_num = "3" if "第一" in m.group(2) else "12"
+        return {"year": m.group(1), "semester": sem_num}
+    return {}
+
+
+def _extract_grade_from_text(text: str) -> str | None:
+    """从文本中提取成绩。"""
+    # 数字成绩
+    m = re.search(r"(?:成绩|分数)[：:]\s*(\d+(?:\.\d+)?)", text)
+    if m:
+        return m.group(1)
+    # 等级成绩
+    m = re.search(r"(优秀|良好|中等|及格|合格|不及格|不合格)", text)
+    if m:
+        return m.group(1)
+    # 数字成绩（无前缀）
+    m = re.search(r"\b(\d{2,3}(?:\.\d+)?)\s*(?:分|已|$)", text)
+    if m:
+        return m.group(1)
+    return None
+
+
+def _extract_status_from_text(text: str) -> str | None:
+    """从文本中提取修读状态。"""
+    m = re.search(r"(已修读|已完成|已通过|未修读|未通过|未修|在读|修读中)", text)
+    return m.group(1) if m else None
+
+
+def _parse_completed_status_from_text(status: str | None, grade: str | None) -> bool | None:
+    """综合状态和成绩判断完成情况。"""
+    if status in ("已修读", "已完成", "通过", "已通过"):
+        return True
+    if status in ("未修读", "未通过", "未修"):
+        return False
+    if grade:
+        if re.fullmatch(r"\d+(?:\.\d+)?", grade):
+            return float(grade) >= 60
+        if re.fullmatch(r"优秀|良好|中等|及格|合格", grade):
+            return True
+        if re.fullmatch(r"不及格|不合格", grade):
+            return False
+    return None
+
+
 # ============== 辅助函数 ==============
 
 def parse_weeks(week_str: str) -> List[int]:
@@ -1443,4 +2640,3 @@ def parse_time_sections(time_str: str) -> Tuple[int, int]:
     elif nums:
         return (int(nums[0]), int(nums[0]))
     return (1, 2)
-

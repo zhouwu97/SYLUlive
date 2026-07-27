@@ -85,7 +85,7 @@ func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, messa
 		}
 		chainName, chainVersion = event.ChainName, event.ChainVersion
 		switch event.Type {
-		case "planning", "retrieving":
+		case "planning", "retrieving", "reranking":
 			_, _ = r.appendEvent(ctx, runID, "rag.stage", map[string]interface{}{
 				"stage": event.Type, "chain_name": chainName, "chain_version": chainVersion,
 			}, true)

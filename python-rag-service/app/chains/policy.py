@@ -6,6 +6,7 @@ from contextlib import suppress
 from typing import Any
 
 from langchain_core.documents import Document
+from langchain_core.documents.compressor import BaseDocumentCompressor
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
 from langchain_core.runnables import (
@@ -16,6 +17,7 @@ from langchain_core.runnables import (
     RunnablePassthrough,
     RunnableConfig,
 )
+from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
 
 from app.prompts import build_foundation_policy_prompt
 from app.schemas import (
@@ -29,7 +31,7 @@ from app.schemas import (
 
 
 POLICY_RAG_CHAIN_NAME = "shenliyuan_policy_rag"
-POLICY_RAG_CHAIN_VERSION = "hybrid-retrieval-v1"
+POLICY_RAG_CHAIN_VERSION = "reranker-gate-v2"
 INSUFFICIENT_ANSWER = "当前已发布资料不足，暂时无法给出可核验回答。"
 
 
@@ -150,6 +152,7 @@ def _degraded_modes(documents: list[Document]) -> list[str]:
 
 def _insufficient(state: dict[str, Any], provider_name: str, model_name: str) -> PolicyRAGResult:
     request: PolicyRAGInput = state["request"]
+    documents: list[Document] = state.get("documents", [])
     return PolicyRAGResult(
         request_id=request.request_id,
         chain_name=POLICY_RAG_CHAIN_NAME,
@@ -157,6 +160,7 @@ def _insufficient(state: dict[str, Any], provider_name: str, model_name: str) ->
         status="insufficient_sources",
         answer=INSUFFICIENT_ANSWER,
         warnings=["rag_insufficient_sources"],
+        degraded_modes=_degraded_modes(documents),
         usage=PolicyUsage(
             provider=provider_name,
             model=model_name,
@@ -171,6 +175,25 @@ def _has_documents(state: dict[str, Any]) -> bool:
     return bool(state["documents"])
 
 
+def _has_sufficient_reranked_evidence(
+    state: dict[str, Any], relevance_threshold: float
+) -> bool:
+    documents: list[Document] = state["documents"]
+    if not documents:
+        return False
+    scores: list[float] = []
+    for document in documents:
+        if document.metadata.get("rerank_applied") is not True:
+            continue
+        try:
+            score = float(document.metadata["rerank_score"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if 0 <= score <= 1:
+            scores.append(score)
+    return bool(scores) and max(scores) >= relevance_threshold
+
+
 def _validate_result(result: PolicyRAGResult | dict[str, Any]) -> PolicyRAGResult:
     return result if isinstance(result, PolicyRAGResult) else PolicyRAGResult.model_validate(result)
 
@@ -181,11 +204,21 @@ def build_policy_rag_chain(
     *,
     provider_name: str,
     model_name: str,
+    reranker: BaseDocumentCompressor | None = None,
+    relevance_threshold: float = 0.5,
 ) -> Runnable[PolicyRAGInput, PolicyRAGResult]:
+    if not 0 <= relevance_threshold <= 1:
+        raise ValueError("relevance threshold must be between 0 and 1")
     validation = RunnableLambda(_normalize_input).with_config(run_name="input_validation")
+    document_retriever: Runnable[str, list[Document]] = retriever
+    if reranker is not None:
+        document_retriever = ContextualCompressionRetriever(
+            base_retriever=retriever,
+            base_compressor=reranker,
+        ).with_config(run_name="policy_reranking")
     retrieval = RunnableParallel(
         request=RunnablePassthrough(),
-        documents=RunnableLambda(_query_text) | retriever,
+        documents=RunnableLambda(_query_text) | document_retriever,
     ).with_config(run_name="policy_retrieval")
     prompt = build_foundation_policy_prompt()
 
@@ -214,7 +247,12 @@ def build_policy_rag_chain(
     insufficient = RunnableLambda(
         lambda state: _insufficient(state, provider_name, model_name)
     ).with_config(run_name="insufficient_sources")
-    branch = RunnableBranch((_has_documents, generation), insufficient).with_config(
+    gate = (
+        (lambda state: _has_sufficient_reranked_evidence(state, relevance_threshold))
+        if reranker is not None
+        else _has_documents
+    )
+    branch = RunnableBranch((gate, generation), insufficient).with_config(
         run_name="evidence_gate"
     )
     return (
@@ -288,6 +326,8 @@ async def astream_policy_events(
                 stage = "planning"
             elif (name == "policy_retrieval" and event_name == "on_chain_start") or event_name == "on_retriever_start":
                 stage = "retrieving"
+            elif name == "policy_reranking" and event_name == "on_retriever_end":
+                stage = "reranking"
             elif (name == "policy_generation" and event_name == "on_chain_start") or event_name == "on_chat_model_start":
                 stage = "generating"
             if stage and stage not in emitted_stages:

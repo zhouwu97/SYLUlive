@@ -54,7 +54,7 @@ def test_policy_chain_invoke_uses_lcel_runnable():
     assert isinstance(result, PolicyRAGResult)
     assert result.status == "completed"
     assert result.chain_name == "shenliyuan_policy_rag"
-    assert result.chain_version == "hybrid-retrieval-v1"
+    assert result.chain_version == "reranker-gate-v2"
     assert result.sources[0].chunk_id == 18
     assert result.usage.input_tokens == 20
 
@@ -110,7 +110,7 @@ def test_policy_query_endpoints_use_injected_lcel_chain(monkeypatch):
             json={"request_id": "http-1", "question": "怎么请假"},
         )
         assert response.status_code == 200, response.text
-        assert response.json()["chain_version"] == "hybrid-retrieval-v1"
+        assert response.json()["chain_version"] == "reranker-gate-v2"
 
         with client.stream(
             "POST",
@@ -148,7 +148,7 @@ def test_completed_result_rejects_missing_usage():
             {
                 "request_id": "bad-usage",
                 "chain_name": "shenliyuan_policy_rag",
-                "chain_version": "hybrid-retrieval-v1",
+                "chain_version": "reranker-gate-v2",
                 "status": "completed",
                 "answer": "回答",
                 "sources": [],

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -24,8 +25,13 @@ func TestValidateCitationsBlocksUnknownChunksAndBuildsServerSources(t *testing.T
 }
 
 func TestValidateNumberedCitationsRejectsForgeryAndAggregatesByDocument(t *testing.T) {
+	effectiveFrom := time.Date(2025, time.September, 1, 0, 0, 0, 0, time.UTC)
 	chunks := []RetrievedChunk{
-		{ChunkID: 18, DocumentID: 3, CitationNumber: 1, Title: "学生手册", SourceLocator: "第十条"},
+		{
+			ChunkID: 18, DocumentID: 3, CitationNumber: 1, Title: "学生手册",
+			Department: "学生处", Status: "published", EffectiveFrom: &effectiveFrom,
+			SourceLocator: "第十条",
+		},
 		{ChunkID: 19, DocumentID: 3, CitationNumber: 2, Title: "学生手册", SourceLocator: "第十一条"},
 	}
 	answer, sources, invalid := ValidateCitations("第一项[1]，第二项[2]。", chunks)
@@ -34,6 +40,9 @@ func TestValidateNumberedCitationsRejectsForgeryAndAggregatesByDocument(t *testi
 	require.Len(t, sources, 1)
 	require.Equal(t, []int{1, 2}, sources[0].CitationNumbers)
 	require.Equal(t, []string{"第十条", "第十一条"}, sources[0].Locators)
+	require.Equal(t, "学生处", sources[0].Department)
+	require.Equal(t, "published", sources[0].Status)
+	require.Equal(t, effectiveFrom, *sources[0].EffectiveFrom)
 
 	_, _, invalid = ValidateCitations("伪造结论[9]。", chunks)
 	require.True(t, invalid)

@@ -169,6 +169,9 @@ func TestCurrentPublishedChunksEnforcesDocumentAndVersionBoundary(t *testing.T) 
 	require.Len(t, validated, 1)
 	require.Equal(t, uint64(22), validated[0].ChunkID)
 	require.True(t, validated[0].Historical)
+	require.Equal(t, models.KnowledgeStatusPublished, validated[0].Status)
+	require.NotNil(t, validated[0].EffectiveTo)
+	require.True(t, validated[0].EffectiveTo.Equal(past))
 	require.Equal(t, 2, validated[0].CitationNumber)
 }
 

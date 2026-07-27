@@ -10,13 +10,27 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/utils"
+)
+
+const (
+	policyHistoryMaxRounds          = 4
+	policyHistoryMaxMessages        = policyHistoryMaxRounds * 2
+	policyHistoryMaxGraphemes       = 2400
+	policyHistoryMaxUserGraphemes   = 300
+	policyHistoryMaxAnswerGraphemes = 600
 )
 
 func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, message string) {
 	runID := run.ID
 	startedAt := time.Now()
+	history, err := r.loadPolicyHistory(ctx, *run)
+	if err != nil {
+		r.failBeforeGeneration(runID, "rag_unavailable", true)
+		return
+	}
 	stream, err := r.langChainRAG.StreamPolicy(ctx, PolicyRAGInput{
-		RequestID: runID, Question: message, MaxSources: defaultPolicyMaxSources,
+		RequestID: runID, Question: message, History: history, MaxSources: defaultPolicyMaxSources,
 	})
 	if err != nil {
 		r.failBeforeGeneration(runID, "rag_unavailable", true)
@@ -147,6 +161,118 @@ func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, messa
 			return
 		}
 	}
+}
+
+type policyHistoryRound struct {
+	user      PolicyRAGHistoryMessage
+	assistant PolicyRAGHistoryMessage
+}
+
+// loadPolicyHistory 只读取当前 Run 所属账号和会话中已完成的完整轮次。
+// Python 仅接收该有限副本，不参与会话归属判断或历史持久化。
+func (r *Runtime) loadPolicyHistory(ctx context.Context, current models.AIRun) ([]PolicyRAGHistoryMessage, error) {
+	var conversationCount int64
+	if err := r.db.WithContext(ctx).Model(&models.AIConversation{}).
+		Where("id = ? AND user_id = ?", current.ConversationID, current.UserID).
+		Count(&conversationCount).Error; err != nil {
+		return nil, err
+	}
+	if conversationCount != 1 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	var completedRuns []models.AIRun
+	if err := r.db.WithContext(ctx).
+		Select("id", "user_id", "conversation_id", "created_at", "completed_at").
+		Where(
+			"user_id = ? AND conversation_id = ? AND id <> ? AND state = ? AND completed_at IS NOT NULL",
+			current.UserID, current.ConversationID, current.ID, models.AIRunStateCompleted,
+		).
+		Where(
+			"EXISTS (SELECT 1 FROM ai_conversation_messages AS m WHERE m.run_id = ai_runs.id AND m.conversation_id = ai_runs.conversation_id AND m.role = ? AND TRIM(m.content) <> '')",
+			"user",
+		).
+		Where(
+			"EXISTS (SELECT 1 FROM ai_conversation_messages AS m WHERE m.run_id = ai_runs.id AND m.conversation_id = ai_runs.conversation_id AND m.role = ? AND TRIM(m.content) <> '')",
+			"assistant",
+		).
+		Order("completed_at DESC, created_at DESC, id DESC").
+		Limit(policyHistoryMaxRounds).
+		Find(&completedRuns).Error; err != nil {
+		return nil, err
+	}
+
+	rounds := make([]policyHistoryRound, 0, len(completedRuns))
+	totalGraphemes := 0
+	for _, completedRun := range completedRuns {
+		var messages []models.AIConversationMessage
+		err := r.db.WithContext(ctx).
+			Table("ai_conversation_messages AS m").
+			Select("m.id", "m.conversation_id", "m.run_id", "m.role", "m.content", "m.created_at").
+			Joins("JOIN ai_runs AS r ON r.id = m.run_id").
+			Joins("JOIN ai_conversations AS c ON c.id = m.conversation_id AND c.deleted_at IS NULL").
+			Where(
+				"c.id = ? AND c.user_id = ? AND r.id = ? AND r.user_id = ? AND r.conversation_id = ? AND r.state = ? AND m.role IN ?",
+				current.ConversationID, current.UserID, completedRun.ID, current.UserID,
+				current.ConversationID, models.AIRunStateCompleted, []string{"user", "assistant"},
+			).
+			Order("m.created_at ASC, m.id ASC").
+			Limit(4).
+			Find(&messages).Error
+		if err != nil {
+			return nil, err
+		}
+
+		var userContent, assistantContent string
+		for _, item := range messages {
+			content := strings.TrimSpace(item.Content)
+			if content == "" {
+				continue
+			}
+			switch item.Role {
+			case "user":
+				if userContent == "" {
+					userContent = truncatePolicyHistoryContent(content, policyHistoryMaxUserGraphemes)
+				}
+			case "assistant":
+				if assistantContent == "" {
+					assistantContent = truncatePolicyHistoryContent(content, policyHistoryMaxAnswerGraphemes)
+				}
+			}
+		}
+		if userContent == "" || assistantContent == "" {
+			continue
+		}
+		roundGraphemes := utils.CountGraphemes(userContent) + utils.CountGraphemes(assistantContent)
+		if totalGraphemes+roundGraphemes > policyHistoryMaxGraphemes {
+			break
+		}
+		rounds = append(rounds, policyHistoryRound{
+			user:      PolicyRAGHistoryMessage{Role: "user", Content: userContent},
+			assistant: PolicyRAGHistoryMessage{Role: "assistant", Content: assistantContent},
+		})
+		totalGraphemes += roundGraphemes
+	}
+
+	history := make([]PolicyRAGHistoryMessage, 0, min(len(rounds)*2, policyHistoryMaxMessages))
+	for index := len(rounds) - 1; index >= 0; index-- {
+		history = append(history, rounds[index].user, rounds[index].assistant)
+	}
+	return history, nil
+}
+
+// truncatePolicyHistoryContent 将省略号计入历史消息的字符预算。
+func truncatePolicyHistoryContent(content string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	if utils.CountGraphemes(content) <= limit {
+		return content
+	}
+	if limit <= 3 {
+		return strings.Repeat(".", limit)
+	}
+	return utils.TruncateGraphemes(content, limit-3)
 }
 
 func normalizeLangChainErrorCode(code string) string {

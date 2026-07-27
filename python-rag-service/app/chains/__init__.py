@@ -5,6 +5,11 @@ from app.chains.policy import (
     build_policy_rag_chain,
 )
 from app.chains.query_planner import POLICY_QUERY_PLANNER_VERSION, PolicyQueryPlanner
+from app.chains.query_rewriter import (
+    POLICY_QUERY_REWRITE_VERSION,
+    bound_policy_history,
+    build_policy_query_rewriter,
+)
 
 __all__ = [
     "POLICY_RAG_CHAIN_NAME",
@@ -13,4 +18,7 @@ __all__ = [
     "build_policy_rag_chain",
     "POLICY_QUERY_PLANNER_VERSION",
     "PolicyQueryPlanner",
+    "POLICY_QUERY_REWRITE_VERSION",
+    "bound_policy_history",
+    "build_policy_query_rewriter",
 ]

@@ -18,7 +18,7 @@ class AiSourceCard extends StatelessWidget {
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
         border: Border.all(color: CampusTheme.softBorder),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: _SourceExpansionTile(
         source: source,
@@ -39,8 +39,10 @@ class _SourceExpansionTile extends StatefulWidget {
 
 class _SourceExpansionTileState extends State<_SourceExpansionTile> {
   Future<AiSourceContent>? _contentRequest;
+  bool _expanded = false;
 
-  void _loadContent(bool expanded) {
+  void _handleExpansionChanged(bool expanded) {
+    setState(() => _expanded = expanded);
     if (!expanded ||
         _contentRequest != null ||
         widget.loadContent == null ||
@@ -57,7 +59,7 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
   Widget build(BuildContext context) {
     final source = widget.source;
     return ExpansionTile(
-      onExpansionChanged: _loadContent,
+      onExpansionChanged: _handleExpansionChanged,
       tilePadding: const EdgeInsets.symmetric(horizontal: 12),
       childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       shape: const Border(),
@@ -71,8 +73,8 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
       ),
       title: Text(
         source.title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+        maxLines: _expanded ? null : 2,
+        overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
       ),
       subtitle: Text(
@@ -82,34 +84,40 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
         style: const TextStyle(fontSize: 11),
       ),
       children: [
+        _SourceMetadataRow(
+          icon: Icons.apartment_rounded,
+          label: '发布部门',
+          value: source.departmentLabel,
+        ),
+        _SourceMetadataRow(
+          icon: Icons.verified_outlined,
+          label: '文档状态',
+          value: source.statusLabel,
+        ),
+        _SourceMetadataRow(
+          icon: Icons.event_available_outlined,
+          label: '生效时间',
+          value: source.effectiveLabel,
+        ),
+        _SourceMetadataRow(
+          icon: Icons.location_on_outlined,
+          label: '条款位置',
+          value: source.locatorLabel,
+        ),
         Align(
           alignment: Alignment.centerLeft,
-          child: Text(
-            [source.publisher, source.status, source.reliabilityNote]
-                .where((value) => value.isNotEmpty)
-                .join(' · '),
-            style: const TextStyle(
-              color: CampusTheme.subText,
-              fontSize: 11.5,
-              height: 1.45,
-            ),
-          ),
-        ),
-        if (source.locators.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                source.locators.join(' · '),
-                style: const TextStyle(
-                  color: CampusTheme.subText,
-                  fontSize: 11.5,
-                  height: 1.45,
-                ),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              source.reliabilityNote,
+              style: const TextStyle(
+                color: CampusTheme.subText,
+                fontSize: 11.5,
+                height: 1.45,
               ),
             ),
           ),
+        ),
         if (_contentRequest != null)
           FutureBuilder<AiSourceContent>(
             future: _contentRequest,
@@ -151,6 +159,50 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
             },
           ),
       ],
+    );
+  }
+}
+
+class _SourceMetadataRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _SourceMetadataRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: CampusTheme.subText),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 58,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: CampusTheme.subText,
+                fontSize: 11.5,
+                height: 1.4,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 11.5, height: 1.4),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

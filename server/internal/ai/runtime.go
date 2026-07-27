@@ -405,7 +405,7 @@ func (r *Runtime) currentPublishedChunks(chunks []RetrievedChunk) []RetrievedChu
 	now := time.Now()
 	err := r.db.Table("ai_knowledge_chunks AS c").
 		Select(`c.id AS chunk_id, c.document_id, c.content, d.title, d.document_type,
-			d.source_type, d.department, d.source_uri, c.section_title, c.source_locator,
+			d.source_type, d.status, d.department, d.source_uri, c.section_title, c.source_locator,
 			d.effective_from, d.effective_to, d.published_at`).
 		Joins("JOIN ai_knowledge_documents d ON d.id = c.document_id").
 		Where("c.id IN ? AND d.status = ? AND d.deleted_at IS NULL", ids, models.KnowledgeStatusPublished).

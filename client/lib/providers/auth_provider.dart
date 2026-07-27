@@ -283,6 +283,7 @@ class AuthProvider extends ChangeNotifier {
   bool _initialized = false;
   Future<void>? _initializationFuture;
   int _sessionGeneration = 0;
+  int _accountSessionEpoch = 0;
   bool _applyingConsentRestriction = false;
   AuthState _authState = AuthState.unknown;
 
@@ -301,6 +302,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   int get sessionGeneration => _sessionGeneration;
+  int get accountSessionEpoch => _accountSessionEpoch;
   Dio get dio => _dio;
   PersistCookieJar? _cookieJar;
 
@@ -564,6 +566,7 @@ class AuthProvider extends ChangeNotifier {
     _token = candidate.token;
     _user = candidate.user;
     _sessionGeneration++;
+    _accountSessionEpoch++;
     _applyAuthHeader();
   }
 
@@ -856,7 +859,10 @@ class AuthProvider extends ChangeNotifier {
     if (_authState != AuthState.expired) {
       _setAuthState(AuthState.guest);
     }
-    if (hadSession) _sessionGeneration++;
+    if (hadSession) {
+      _sessionGeneration++;
+      _accountSessionEpoch++;
+    }
     _applyAuthHeader();
     notifyListeners();
 
@@ -996,11 +1002,20 @@ class AuthProvider extends ChangeNotifier {
     }
 
     final nextUser = User.fromJson(userJson);
-    final candidate = _AuthSessionCandidate(token, nextUser);
 
-    // 先完成持久化，成功后再更新内存
-    await _saveAndCommitAuthSession(candidate, prefetchWallpaper: false);
+    await _credentialStore.write(
+      token: token,
+      userJson: jsonEncode(nextUser.toJson()),
+    );
+
+    _commitUserSnapshot(nextUser);
     notifyListeners();
+  }
+
+  void _commitUserSnapshot(User nextUser) {
+    _user = nextUser;
+    _sessionGeneration++;
+    // 不修改 _accountSessionEpoch
   }
 
   Future<AuthResult> updateAvatar(Uint8List avatarBytes) async {

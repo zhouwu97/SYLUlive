@@ -149,15 +149,22 @@ func (p *DeepSeekProvider) Start(ctx context.Context, request ProviderRequest) (
 		_ = response.Body.Close()
 		return nil, providerHTTPError(response.StatusCode)
 	}
-	return &deepSeekStream{body: response.Body, scanner: newProviderScanner(response.Body)}, nil
+	return &deepSeekStream{body: response.Body, scanner: newProviderScanner(response.Body), toolCalls: make(map[int]streamToolCall)}, nil
 }
 
 type deepSeekStream struct {
 	body         io.ReadCloser
 	scanner      *bufio.Scanner
 	pending      []ProviderEvent
+	toolCalls    map[int]streamToolCall
 	finishReason string
 	closed       bool
+}
+
+type streamToolCall struct {
+	id      string
+	name    string
+	started bool
 }
 
 func newProviderScanner(reader io.Reader) *bufio.Scanner {
@@ -220,11 +227,20 @@ func (s *deepSeekStream) Next(ctx context.Context) (ProviderEvent, error) {
 				s.pending = append(s.pending, ProviderEvent{Type: ProviderEventTextDelta, Text: choice.Delta.Content})
 			}
 			for _, call := range choice.Delta.ToolCalls {
-				if call.ID != "" || call.Function.Name != "" {
-					s.pending = append(s.pending, ProviderEvent{Type: ProviderEventToolCallStarted, CallID: call.ID, ToolName: call.Function.Name})
+				metadata := s.toolCalls[call.Index]
+				if call.ID != "" {
+					metadata.id = call.ID
 				}
+				if call.Function.Name != "" {
+					metadata.name = call.Function.Name
+				}
+				if !metadata.started && metadata.id != "" && metadata.name != "" {
+					metadata.started = true
+					s.pending = append(s.pending, ProviderEvent{Type: ProviderEventToolCallStarted, CallID: metadata.id, ToolName: metadata.name})
+				}
+				s.toolCalls[call.Index] = metadata
 				if call.Function.Arguments != "" {
-					s.pending = append(s.pending, ProviderEvent{Type: ProviderEventToolArgumentsDelta, CallID: call.ID, ToolName: call.Function.Name, ArgumentsDelta: call.Function.Arguments})
+					s.pending = append(s.pending, ProviderEvent{Type: ProviderEventToolArgumentsDelta, CallID: metadata.id, ToolName: metadata.name, ArgumentsDelta: call.Function.Arguments})
 				}
 			}
 		}

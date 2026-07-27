@@ -58,6 +58,9 @@ class _CampusScreenState extends State<CampusScreen>
   bool _recentLoaded = false;
   bool _assetsPreloaded = false;
 
+  Future<void>? _loadFuture;
+  int _loadGeneration = 0;
+
   @override
   void initState() {
     super.initState();
@@ -78,33 +81,43 @@ class _CampusScreenState extends State<CampusScreen>
     });
   }
 
-  /// 三路请求互不依赖；AI 探测失败时安静隐藏入口，不影响校园资讯。
-  Future<void> _loadAll() async {
-    await Future.wait([
-      _loadLatest(),
-      _loadRecent(),
-      _loadAiCapabilities(),
-    ]);
+  Future<void> _loadAll({bool force = false}) async {
+    if (force) _loadFuture = null;
+    if (_loadFuture != null) return _loadFuture!;
+    final generation = ++_loadGeneration;
+    _loadFuture = Future.wait([
+      _loadLatest(generation),
+      _loadRecent(generation),
+      _loadAiCapabilities(generation),
+    ]).whenComplete(() {
+      if (_loadGeneration == generation) {
+        _loadFuture = null;
+      }
+    });
+    return _loadFuture!;
   }
 
-  Future<void> _loadAiCapabilities() async {
+  Future<void> _loadAiCapabilities(int generation) async {
     try {
       final capabilities = await _aiService.getCapabilities();
-      if (mounted) {
+      if (mounted && _loadGeneration == generation) {
         setState(() {
           _aiCapabilities = capabilities.isVisible ? capabilities : null;
         });
       }
     } catch (_) {
-      // 能力接口失败不能污染“校园”页；刷新成功前保持入口隐藏。
-      if (mounted) setState(() => _aiCapabilities = null);
+      if (mounted && _loadGeneration == generation) {
+        if (_aiCapabilities == null) {
+          setState(() => _aiCapabilities = null);
+        }
+      }
     }
   }
 
-  Future<void> _loadLatest() async {
+  Future<void> _loadLatest(int generation) async {
     try {
       final article = await _articleService.getLatestArticle();
-      if (mounted) {
+      if (mounted && _loadGeneration == generation) {
         setState(() {
           _latestArticle = article;
           _latestError = null;
@@ -112,23 +125,13 @@ class _CampusScreenState extends State<CampusScreen>
         });
       }
     } on CampusArticleServiceException catch (e) {
-      if (mounted) {
-        setState(() {
-          _latestError = e.message;
-          _latestLoaded = true;
-        });
-      }
+      _handleLoadError(e.message, generation, isLatest: true);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _latestError = '加载失败';
-          _latestLoaded = true;
-        });
-      }
+      _handleLoadError('加载失败', generation, isLatest: true);
     }
   }
 
-  Future<void> _loadRecent() async {
+  Future<void> _loadRecent(int generation) async {
     try {
       // 并行请求：通用最新列表 + 比赛通知最新，保证比赛通知有曝光位
       final results = await Future.wait([
@@ -157,7 +160,7 @@ class _CampusScreenState extends State<CampusScreen>
       // 按发布日期排序
       merged.sort((a, b) => b.publishDate.compareTo(a.publishDate));
 
-      if (mounted) {
+      if (mounted && _loadGeneration == generation) {
         setState(() {
           _recentArticles = merged;
           _recentError = null;
@@ -165,19 +168,30 @@ class _CampusScreenState extends State<CampusScreen>
         });
       }
     } on CampusArticleServiceException catch (e) {
-      if (mounted) {
-        setState(() {
-          _recentError = e.message;
-          _recentLoaded = true;
-        });
-      }
+      _handleLoadError(e.message, generation, isLatest: false);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _recentError = '加载失败';
+      _handleLoadError('加载失败', generation, isLatest: false);
+    }
+  }
+
+  void _handleLoadError(String message, int generation, {required bool isLatest}) {
+    if (!mounted || _loadGeneration != generation) return;
+
+    final hasOldData = isLatest ? _latestArticle != null : _recentArticles.isNotEmpty;
+    if (hasOldData) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${isLatest ? '头条' : '资讯'}刷新失败: $message')),
+      );
+    } else {
+      setState(() {
+        if (isLatest) {
+          _latestError = message;
+          _latestLoaded = true;
+        } else {
+          _recentError = message;
           _recentLoaded = true;
-        });
-      }
+        }
+      });
     }
   }
 
@@ -233,7 +247,7 @@ class _CampusScreenState extends State<CampusScreen>
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
-          onRefresh: _loadAll,
+          onRefresh: () => _loadAll(force: true),
           child: CustomScrollView(
             physics: const BouncingScrollPhysics(
               parent: AlwaysScrollableScrollPhysics(),

@@ -5,9 +5,13 @@ import '../services/webvpn_service.dart';
 import '../features/campus_data/erke/erke_repository.dart';
 import '../features/campus_data/erke/erke_models.dart';
 import '../features/campus_data/storage/erke_cache_store.dart';
+import '../features/personal_data_sync/personal_data_sync_coordinator.dart';
+import '../features/personal_data_sync/erke_snapshot_upload.dart';
+import '../features/personal_data_sync/personal_data_sync_models.dart';
+import '../features/personal_data_sync/personal_data_sync_result.dart';
+import '../providers/edu_provider.dart';
 import '../utils/app_feedback.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
 
 class ErkeScoreScreen extends StatefulWidget {
   const ErkeScoreScreen({super.key});
@@ -135,10 +139,32 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
     try {
       _updateMessage('正在通过统一认证…');
-      final ok = await _repo.loginAndFetch(studentId, casPwd, erkePwd);
+      final syncResult = await PersonalDataSyncCoordinator(
+        academicGateway: EduProviderPersonalAcademicSyncGateway(
+          context.read<EduProvider>(),
+        ),
+        erkeGateway: ErkeRepositoryPersonalSyncGateway(
+          repository: _repo,
+          requestCredentials: () async => PersonalErkeCredentials(
+            studentId: studentId,
+            casPassword: casPwd,
+            erkePassword: erkePwd,
+          ),
+          snapshotUploader: ErkeSnapshotUploadGateway(auth.dio),
+          uploadPolicyStore: PreferenceErkeSnapshotUploadPolicyStore(
+            appUserId: auth.user!.id.toString(),
+          ),
+          requestUploadPolicy: _requestErkeSnapshotUploadPolicy,
+        ),
+      ).sync(
+        datasets: const <PersonalSyncDataset>{PersonalSyncDataset.erke},
+        trigger: PersonalSyncTrigger.erkePage,
+      );
+      if (!mounted) return;
+      final item = syncResult.items[PersonalSyncDataset.erke];
 
-      if (!ok) {
-        final message = _repo.fetchError ?? '查询失败';
+      if (item?.status != PersonalSyncItemStatus.success) {
+        final message = item?.message ?? _repo.fetchError ?? '更新失败';
         AppFeedback.showSnackBar(context, '查询失败：$message', isError: true);
         _forceShowLogin = false; // 保留旧缓存展示
         if (mounted) setState(() {});
@@ -147,12 +173,16 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
       _forceShowLogin = false;
       if (mounted) setState(() {});
-      AppFeedback.showSnackBar(context, '查询并缓存成功');
+      AppFeedback.showSnackBar(
+        context,
+        '二课数据已更新${item?.message == null ? '' : '；${item!.message}'}',
+      );
     } catch (e) {
       final rawError = (_repo.fetchError?.trim().isNotEmpty == true)
           ? _repo.fetchError!
           : '网络请求异常';
       debugPrint('[Erke] 查询阶段失败: ${e.runtimeType}');
+      if (!mounted) return;
 
       AppFeedback.showSnackBar(
         context,
@@ -205,6 +235,82 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   void _stopMessageRotation() {
     _isLoading = false;
+  }
+
+  Future<ErkeSnapshotUploadPolicy?> _requestErkeSnapshotUploadPolicy() {
+    return showDialog<ErkeSnapshotUploadPolicy>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('上传二课摘要？'),
+        content: const Text(
+          '校园 Agent 只会读取分数汇总、分类缺口和最近活动摘要；密码、Cookie、会话和页面原文不会上传。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              ErkeSnapshotUploadPolicy.askEveryUpdate,
+            ),
+            child: const Text('下次再问'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              ErkeSnapshotUploadPolicy.neverUpload,
+            ),
+            child: const Text('永不上传'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              ErkeSnapshotUploadPolicy.autoUploadSummary,
+            ),
+            child: const Text('之后自动上传'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              ErkeSnapshotUploadPolicy.uploadThisTime,
+            ),
+            child: const Text('仅本次上传'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteUploadedErkeSnapshot() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      AppFeedback.showSnackBar(context, '请先登录后再管理已上传快照', isError: true);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除已上传二课快照？'),
+        content: const Text('删除后校园 Agent 将无法继续读取该快照。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ErkeSnapshotUploadGateway(auth.dio).delete();
+      if (mounted) AppFeedback.showSnackBar(context, '已删除服务端二课快照');
+    } on ErkeSnapshotUploadException catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, error.message, isError: true);
+      }
+    }
   }
 
   Color _accent(bool isDark) =>
@@ -287,12 +393,21 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     AppFeedback.showSnackBar(context, '本地缓存已清除');
                     setState(() {});
                   }
+                } else if (value == 'delete_uploaded_snapshot') {
+                  await _deleteUploadedErkeSnapshot();
                 }
               },
               itemBuilder: (context) => [
-                const PopupMenuItem(value: 'relogin', child: Text('重新登录')),
+                const PopupMenuItem(
+                  value: 'relogin',
+                  child: Text('更新二课数据'),
+                ),
                 const PopupMenuItem(
                     value: 'clear_cache', child: Text('清除本地缓存')),
+                const PopupMenuItem(
+                  value: 'delete_uploaded_snapshot',
+                  child: Text('删除已上传二课快照'),
+                ),
               ],
             ),
         ],
@@ -450,7 +565,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 elevation: 0,
               ),
               child: Text(
-                _isLoading ? '查询中...' : '查询二课成绩',
+                _isLoading ? '更新中...' : '更新二课数据',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,

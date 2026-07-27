@@ -1,10 +1,29 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestValidateExternalMCPConfigAcceptsBareIPv6AndRejectsUnsafeValues(t *testing.T) {
+	keyPath := filepath.Join(os.TempDir(), "mcp_ed25519")
+	knownHostsPath := filepath.Join(os.TempDir(), "mcp_known_hosts")
+	require.NoError(t, validateExternalMCPConfig(
+		true, "ssh_stdio", "", 90, 1,
+		"2001:db8::8", 22, "mcp-runner", keyPath, knownHostsPath,
+	))
+	require.Error(t, validateExternalMCPConfig(
+		true, "ssh_stdio", "", 90, 1,
+		"mcp-runner@example.com", 22, "mcp-runner", keyPath, knownHostsPath,
+	))
+	require.Error(t, validateExternalMCPConfig(
+		true, "local_stdio", "/opt/mcp\n--unsafe", 90, 1,
+		"", 0, "", "", "",
+	))
+}
 
 func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret")

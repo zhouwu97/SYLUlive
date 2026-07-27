@@ -2,32 +2,57 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
+class _AvatarCacheManager extends CacheManager with ImageCacheManager {
+  _AvatarCacheManager()
+      : super(
+          Config(
+            'avatar_cache',
+            stalePeriod: const Duration(days: 30),
+            maxNrOfCacheObjects: 1000,
+          ),
+        );
+}
+
 class AvatarCache {
   AvatarCache._();
 
-  static final CacheManager manager = CacheManager(
-    Config(
-      'avatar_cache',
-      stalePeriod: const Duration(days: 30),
-      maxNrOfCacheObjects: 1000,
-    ),
-  );
+  static final BaseCacheManager manager = _AvatarCacheManager();
 
-  static final Map<String, CachedNetworkImageProvider> _providers = {};
+  static final Map<String, Map<int, CachedNetworkImageProvider>> _providers =
+      {};
 
   static CachedNetworkImageProvider provider(
     String url, {
     required double radius,
+    double devicePixelRatio = 1,
   }) {
-    return _providers.putIfAbsent(
-      url,
-      () => CachedNetworkImageProvider(url, cacheManager: manager),
+    var targetSize = (radius * 2 * devicePixelRatio).round();
+    if (targetSize < 1) targetSize = 1;
+    if (targetSize > 512) targetSize = 512;
+
+    final providersBySize = _providers.putIfAbsent(url, () => {});
+    return providersBySize.putIfAbsent(
+      targetSize,
+      () => CachedNetworkImageProvider(
+        url,
+        cacheKey: url,
+        cacheManager: manager,
+        maxWidth: targetSize,
+        maxHeight: targetSize,
+      ),
     );
   }
 
   static Future<void> evict(String url) async {
-    final provider = _providers.remove(url);
-    await provider?.evict();
+    final providersBySize = _providers.remove(url);
+    if (providersBySize != null) {
+      await Future.wait(
+        providersBySize.entries.map((entry) async {
+          await entry.value.evict();
+          await manager.removeFile('resized_w${entry.key}_h${entry.key}_$url');
+        }),
+      );
+    }
     await manager.removeFile(url).catchError((_) {});
   }
 }
@@ -97,7 +122,11 @@ class _CachedAvatarState extends State<CachedAvatar> {
     final effectiveUrl = _effectiveUrl(url);
     if (effectiveUrl == _providerUrl && _imageProvider != null) return;
     _providerUrl = effectiveUrl;
-    _imageProvider = AvatarCache.provider(effectiveUrl, radius: widget.radius);
+    _imageProvider = AvatarCache.provider(
+      effectiveUrl,
+      radius: widget.radius,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+    );
     precacheImage(_imageProvider!, context).catchError((_) {
       _scheduleRetryAfterError();
     });

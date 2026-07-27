@@ -248,9 +248,62 @@ class AcademicSituationResponse(BaseModel):
     message: Optional[str] = None
 
 
-# ============== ������Ӧ ==============
+# ============== 错误响应 ==============
 
 class ErrorResponse(BaseModel):
-    """������Ӧ"""
+    """错误响应"""
     error: str
     detail: Optional[str] = None
+
+
+# ============== 学分要求相关 ==============
+
+class CreditRequirementInput(BaseModel):
+    """学分要求查询输入"""
+    user_id: str
+
+
+class RequirementCourseInfo(BaseModel):
+    """学分要求模块中的课程信息"""
+    course_code: str = ""
+    course_name: str = ""
+    credits: float = 0
+    suggested_year: Optional[str] = None
+    suggested_semester: Optional[str] = None
+    actual_year: Optional[str] = None
+    actual_semester: Optional[str] = None
+    course_nature: Optional[str] = None
+    grade: Optional[str] = None
+    raw_status: Optional[str] = None
+    remark: Optional[str] = None
+    completed: Optional[bool] = None
+
+
+class CreditRequirementModuleInfo(BaseModel):
+    """学分要求模块信息"""
+    id: str = ""
+    name: str = ""
+    module_type: str = "required"
+    required_credits: Optional[float] = None
+    required_course_count: Optional[int] = None
+    earned_credits: float = 0
+    completed_course_count: int = 0
+    status: str = "unknown"
+    is_optional: bool = False
+    courses: List[RequirementCourseInfo] = Field(default_factory=list)
+
+
+class CreditRequirementResponse(BaseModel):
+    """学分要求查询响应"""
+    success: bool
+    source_kind: str = "official_credit_requirement"
+    source_url: str = "/xjyj/xjyj_cxXjyjIndex.html"
+    parser_version: str = "credit-requirement-v1"
+    captured_at: Optional[str] = None
+    structure_signature: Optional[str] = None
+    query_context: dict = Field(default_factory=dict)
+    status: str = "available"
+    modules: List[CreditRequirementModuleInfo] = Field(default_factory=list)
+    improvement_courses: List[RequirementCourseInfo] = Field(default_factory=list)
+    error_code: Optional[str] = None
+    message: Optional[str] = None

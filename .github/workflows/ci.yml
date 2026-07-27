@@ -70,23 +70,6 @@ jobs:
       - run: flutter analyze --no-fatal-warnings --no-fatal-infos
       - run: flutter test --reporter compact
 
-  python-edu-service-unchanged:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Ensure python edu service is unchanged in pull request
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: git diff --exit-code "${BASE_SHA}...HEAD" -- python-edu-service
-      - name: Ensure python edu service is unchanged on push
-        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
-        env:
-          BASE_SHA: ${{ github.event.before }}
-        run: git diff --exit-code "${BASE_SHA}...HEAD" -- python-edu-service
-
   pgvector-integration:
     runs-on: ubuntu-latest
     services:

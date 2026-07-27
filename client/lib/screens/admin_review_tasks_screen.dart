@@ -10,13 +10,24 @@ class AdminReviewTasksScreen extends StatefulWidget {
   State<AdminReviewTasksScreen> createState() => _AdminReviewTasksScreenState();
 }
 
+class OptionalListResult {
+  final List<dynamic> items;
+  final bool failed;
+
+  const OptionalListResult({
+    required this.items,
+    required this.failed,
+  });
+}
+
 class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   List<dynamic> _pendingTeachers = [];
   List<dynamic> _pendingMajors = [];
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _pendingRemovals = [];
   bool _isLoading = true;
-  String? _errorMessage;
+  String? _fatalError;
+  String? _warningMessage;
 
   @override
   void initState() {
@@ -28,40 +39,60 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
+      _fatalError = null;
+      _warningMessage = null;
     });
     try {
       final dio = context.read<AuthProvider>().dio;
-      final teachersRes = await _loadOptionalList(dio, '/teachers/pending');
-      final majorsRes = await _loadOptionalList(dio, '/majors/pending');
-      final invitationsRes =
-          await _loadOptionalList(dio, '/admin/invitations/pending');
-      final removalsRes =
-          await _loadOptionalList(dio, '/admin/removals/pending');
+      final results = await Future.wait([
+        _loadOptionalList(dio, '/teachers/pending'),
+        _loadOptionalList(dio, '/majors/pending'),
+        _loadOptionalList(dio, '/admin/invitations/pending'),
+        _loadOptionalList(dio, '/admin/removals/pending'),
+      ]);
+
+      if (!mounted) return;
+      final failedCount = results.where((r) => r.failed).length;
 
       if (!mounted) return;
       setState(() {
-        _pendingTeachers = teachersRes;
-        _pendingMajors = majorsRes;
-        _pendingInvitations = invitationsRes;
-        _pendingRemovals = removalsRes;
+        _pendingTeachers = results[0].items;
+        _pendingMajors = results[1].items;
+        _pendingInvitations = results[2].items;
+        _pendingRemovals = results[3].items;
         _isLoading = false;
+
+        if (failedCount == 4) {
+          _fatalError = '加载审核任务失败';
+        } else if (failedCount > 0) {
+          _warningMessage = '部分数据加载失败，下拉或点击可重试';
+        }
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = '加载审核任务失败';
+        _fatalError = '加载审核任务失败';
       });
     }
   }
 
-  Future<List<dynamic>> _loadOptionalList(Dio dio, String path) async {
+  Future<OptionalListResult> _loadOptionalList(Dio dio, String path) async {
     try {
-      final response = await dio.get(path);
-      return (response.data as List?) ?? [];
+      final response = await dio.get(
+        path,
+        options: Options(
+          connectTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+      return OptionalListResult(
+        items: (response.data as List?) ?? [],
+        failed: false,
+      );
     } catch (_) {
-      return [];
+      return const OptionalListResult(items: [], failed: true);
     }
   }
 
@@ -233,13 +264,48 @@ class _AdminReviewTasksScreenState extends State<AdminReviewTasksScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    Widget body;
+    if (_isLoading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_fatalError != null) {
+      body = Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_fatalError!),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _loadData,
+              child: const Text('重新加载'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      body = Column(
+        children: [
+          if (_warningMessage != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              color: Colors.amber.withOpacity(0.2),
+              child: Text(
+                _warningMessage!,
+                style: TextStyle(
+                  color: isDark ? Colors.amber[200] : Colors.amber[900],
+                  fontSize: 13,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          Expanded(child: _buildReviewTasksContent(isDark)),
+        ],
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('审核代办')),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(child: Text(_errorMessage!))
-              : _buildReviewTasksContent(isDark),
+      body: body,
     );
   }
 

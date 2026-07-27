@@ -10,6 +10,9 @@ Group=shenliyuan-rag
 WorkingDirectory=/opt/shenliyuan/python-rag-service
 EnvironmentFile=/opt/shenliyuan/rag.env
 Environment=FASTEMBED_CACHE_PATH=/opt/shenliyuan/rag-models
+# 受限系统账户没有 home 目录，模型下载与缓存统一落入显式授权的目录。
+Environment=HOME=/opt/shenliyuan/rag-models
+Environment=XDG_CACHE_HOME=/opt/shenliyuan/rag-models
 ExecStart=/opt/shenliyuan/python-rag-service/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18001 --workers 1
 Restart=on-failure
 RestartSec=5

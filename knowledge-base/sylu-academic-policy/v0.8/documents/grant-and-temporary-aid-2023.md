@@ -1,0 +1,18 @@
+---
+title: "沈阳理工大学校助学金与临时困难补助政策（2023）"
+source_type: "official_transcript"
+source_uri: "user-provided-campus-article-published-2024-11-05"
+source_file_name: "2023 年校助学金与临时困难补助办法"
+document_type: "school_grant_and_temporary_aid_policy"
+department: "沈阳理工大学学生处"
+effective_from: ""
+effective_to: ""
+---
+
+# 校助学金与临时困难补助（2023）
+
+适用于在籍在校普通全日制本科生。校助学金为 1000 元/生·学年，一般性临时困难补助为 500 元/生·学年；特殊性临时困难补助参照国家助学金标准或由学校按实际情况决定金额和方式。
+
+校助学金和一般性临时困难补助按学年申请，特殊性临时困难补助可随时提出。学生向学院提交申请表，学院组织班级评议、评审和不少于 3 个工作日的适当范围公示，再报学生处和学校审批。公示不得涉及个人敏感信息。
+
+系统只说明制度范围和程序，不自行判断用户是否符合条件；具体材料、名额和时限以当年通知为准。

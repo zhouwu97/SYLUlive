@@ -123,6 +123,16 @@ def test_policy_query_planner_migrates_domain_rules_and_hides_question_from_audi
     assert plan.normalized_question not in encoded_audit
 
 
+def test_policy_query_planner_treats_missing_credit_as_failed_course_flow():
+    plan = PolicyQueryPlanner().invoke("没拿到学分怎么办")
+
+    assert plan.intent == "second_exam_and_retake"
+    assert plan.allow_historical is True
+    assert "首次考核不合格" in plan.expanded_terms
+    assert "school_undergraduate_status_policy" in plan.preferred_document_types
+    assert "school_undergraduate_retake_policy" in plan.preferred_document_types
+
+
 def test_shadow_index_switch_disables_vector_and_records_channel_metrics():
     candidate = _candidate(1, 1, "school_undergraduate_status_policy")
     store = _FakeSearchStore(
@@ -324,7 +334,7 @@ def test_shared_v06_fixture_recall_at_five_matches_t01_baseline():
         if line
     ]
     key_cases = [case for case in cases if case["category"] == "v06_core"]
-    assert len(key_cases) == 19
+    assert len(key_cases) == 21
 
     relevant_total = 0
     relevant_hit = 0
@@ -374,8 +384,8 @@ def test_shared_fixture_report_matches_t01_retrieval_metrics():
     directory = Path(__file__).parents[2] / "server" / "testdata" / "ai_eval"
     report = evaluate_shared_fixture(directory, k=5)
 
-    assert report["cases"] == 40
-    assert report["relevant_targets"] == 39
+    assert report["cases"] == 42
+    assert report["relevant_targets"] == 42
     assert report["recall_at_k"] == 1.0
     assert report["mrr"] == 1.0
     assert report["failures"] == []

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# 沈理校园后端一键部署/更新脚本 (fwqtest - PostgreSQL)
+# 沈理校园后端一键部署/更新脚本 (main - PostgreSQL)
 # 用法: sudo bash deploy.sh
 #
 
@@ -42,7 +42,7 @@ TEMP_FILES=()
 
 echo ""
 echo "================================================"
-echo "  沈理校园后端一键部署 (fwqtest)"
+echo "  沈理校园后端一键部署 (main)"
 echo "================================================"
 echo ""
 
@@ -381,7 +381,7 @@ backup_legacy_sqlite() {
 sync_code() {
   if [ ! -e "${APP_DIR}" ]; then
     log_step "首次克隆项目..."
-    git clone -b fwqtest \
+    git clone -b main \
       https://github.com/zhouwu97/SYLUlive.git \
       "${APP_DIR}"
     return
@@ -409,8 +409,8 @@ sync_code() {
   done
 
   log_step "拉取最新代码..."
-  git -C "${APP_DIR}" fetch origin fwqtest
-  git -C "${APP_DIR}" reset --hard origin/fwqtest
+  git -C "${APP_DIR}" fetch origin main
+  git -C "${APP_DIR}" reset --hard origin/main
 
   git -C "${APP_DIR}" clean -fd \
     -e uploads/ \

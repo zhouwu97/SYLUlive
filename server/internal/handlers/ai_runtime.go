@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,6 +34,11 @@ type createAIRunRequest struct {
 	Message         string `json:"message"`
 }
 
+type submitAIRunConsentRequest struct {
+	Scope   models.AIUserPermissionScope `json:"scope"`
+	Granted *bool                        `json:"granted"`
+}
+
 func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
 	var request createAIRunRequest
 	if err := decodeStrictJSON(c, &request, 16<<10); err != nil {
@@ -43,6 +49,7 @@ func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
 		ConversationID: request.ConversationID, ClientRequestID: request.ClientRequestID, Message: request.Message,
 	})
 	if err != nil {
+		logCreateRunOutcome(c, request.ClientRequestID, "", false, err)
 		writeAIRuntimeError(c, err)
 		return
 	}
@@ -50,7 +57,46 @@ func (h *AIRuntimeHandler) CreateRun(c *gin.Context) {
 	if duplicate {
 		status = http.StatusOK
 	}
+	logCreateRunOutcome(c, request.ClientRequestID, run.ID, duplicate, nil)
 	c.JSON(status, gin.H{"run": run, "duplicate": duplicate})
+}
+
+// logCreateRunOutcome 只记录链路定位所需的标识，不记录问题正文、令牌或个人数据。
+// 客户端在请求头带同一个 ID，据此可以区分：请求根本没到达服务端、
+// 服务端处理超时、还是服务端已返回但响应在回程丢失。
+func logCreateRunOutcome(c *gin.Context, clientRequestID, runID string, duplicate bool, err error) {
+	headerID := strings.TrimSpace(c.GetHeader("X-Client-Request-ID"))
+	if headerID == "" {
+		headerID = "-"
+	}
+	if clientRequestID = strings.TrimSpace(clientRequestID); clientRequestID == "" {
+		clientRequestID = "-"
+	}
+	outcome := "created"
+	switch {
+	case err != nil:
+		outcome = "failed"
+	case duplicate:
+		outcome = "duplicate"
+	}
+	detail := ""
+	if err != nil {
+		var runtimeErr *ai.RuntimeError
+		if errors.As(err, &runtimeErr) {
+			detail = " code=" + runtimeErr.Code
+		} else {
+			detail = " code=internal"
+		}
+	}
+	log.Printf("ai_create_run user_id=%d client_request_id=%s header_request_id=%s run_id=%s outcome=%s%s",
+		c.GetUint("user_id"), clientRequestID, headerID, defaultDash(runID), outcome, detail)
+}
+
+func defaultDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
 }
 
 func (h *AIRuntimeHandler) GetRun(c *gin.Context) {
@@ -60,6 +106,24 @@ func (h *AIRuntimeHandler) GetRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"run": run})
+}
+
+// SubmitRunConsent 只接受当前 JWT 用户对指定等待中 Run 的一次性决定。
+func (h *AIRuntimeHandler) SubmitRunConsent(c *gin.Context) {
+	var request submitAIRunConsentRequest
+	if err := decodeStrictJSON(c, &request, 4<<10); err != nil || request.Granted == nil || !request.Scope.Valid() {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_run_consent", "message": "授权参数无效"})
+		return
+	}
+	if err := h.runtime.ResumeRunConsent(
+		c.Request.Context(), c.GetUint("user_id"), c.Param("id"), request.Scope, *request.Granted,
+	); err != nil {
+		writeAIRuntimeError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{
+		"run_id": c.Param("id"), "scope": request.Scope, "granted": *request.Granted,
+	})
 }
 
 // GetSourceChunk 返回已发布知识文档的单个证据分块正文。
@@ -110,7 +174,8 @@ func (h *AIRuntimeHandler) CancelRun(c *gin.Context) {
 func (h *AIRuntimeHandler) Events(c *gin.Context) {
 	runID := c.Param("id")
 	userID := c.GetUint("user_id")
-	if _, err := h.runtime.GetRun(c.Request.Context(), userID, runID); err != nil {
+	run, err := h.runtime.GetRun(c.Request.Context(), userID, runID)
+	if err != nil {
 		writeAIRuntimeError(c, err)
 		return
 	}
@@ -147,7 +212,7 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 		terminalReplayed = isTerminalAIEvent(event.Type)
 	}
 	flusher.Flush()
-	if terminalReplayed {
+	if terminalReplayed || isTerminalAIRunState(run.State) {
 		return
 	}
 
@@ -216,6 +281,15 @@ func parseLastEventID(value string) int64 {
 
 func isTerminalAIEvent(eventType string) bool {
 	return eventType == "run.completed" || eventType == "run.failed" || eventType == "run.cancelled"
+}
+
+func isTerminalAIRunState(state string) bool {
+	switch state {
+	case models.AIRunStateCompleted, models.AIRunStateFailed, models.AIRunStateCancelled, models.AIRunStateExpired:
+		return true
+	default:
+		return false
+	}
 }
 
 type createAIConversationRequest struct {
@@ -370,7 +444,9 @@ func writeAIRuntimeError(c *gin.Context, err error) {
 			status = http.StatusPaymentRequired
 		case "idempotency_key_conflict":
 			status = http.StatusConflict
-		case "invalid_client_request_id", "invalid_conversation_id", "invalid_run_id":
+		case "ai_run_not_waiting_consent", "ai_run_expired", "ai_run_consent_scope_mismatch", "ai_run_consent_conflict":
+			status = http.StatusConflict
+		case "invalid_client_request_id", "invalid_conversation_id", "invalid_run_id", "invalid_run_consent":
 			status = http.StatusBadRequest
 		}
 		c.JSON(status, gin.H{"code": runtimeErr.Code, "message": runtimeErr.Message, "retryable": runtimeErr.Retryable})

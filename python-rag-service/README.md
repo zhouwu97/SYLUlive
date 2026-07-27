@@ -23,7 +23,7 @@ Provider 地址只从部署环境读取，并且必须命中 `RAG_PROVIDER_ALLOW
 
 ## 结构化政策生成与引用
 
-生产生成链版本为 `conversation-context-v4`，事件契约版本为 `1.1`。LCEL 链使用
+生产生成链版本为 `observability-release-v5`，事件契约版本为 `1.1`。LCEL 链使用
 `ChatPromptTemplate`、LangChain `BaseChatModel`、`PydanticOutputParser(PolicyAnswer)` 和
 `astream_events(version="v2")`。模型只看到查询计划、最多 8 条历史消息和 rerank 后的
 有限证据；证据使用请求内临时编号 `R1`、`R2`，不向模型暴露数据库分块 ID。
@@ -34,6 +34,23 @@ Python 会确定性校验临时引用是否存在、引用原文是否为证据�
 Go 在完成前再按请求 ID、document/chunk 对、数据库发布状态和有效期重建白名单，来源撤销、
 伪造编号或文档不匹配都会整条降级为可靠拒答。来源卡按 `document_id` 聚合 citation 和 locator，
 客户端不显示裸分块 ID。
+
+## T09 本地观测与发布门禁
+
+生产链通过本地 Callback 记录链名/版本、HMAC 查询摘要、计划类型、候选数、四路召回耗时、
+retrieval/rerank/generation/引用校验/端到端耗时、门禁、usage 和降级模式。指标只经内部鉴权的
+`GET /internal/rag/metrics` 暴露，并且不保存完整问题、历史、正文、Prompt、答案、JWT 或密钥。
+生产应设置独立的 `RAG_OBSERVABILITY_HASH_SECRET`，让多副本摘要可聚合；不得复用 Provider Key。
+
+`RAG_ALLOW_LANGSMITH=false`、`LANGCHAIN_TRACING_V2=false` 与 `LANGSMITH_TRACING=false` 是默认值。
+仅设置 LangSmith 自身变量不能绕过前置门禁。当前发布只验收 `local_only` 指标，任何外发 Trace
+都必须另行完成数据分级、脱敏、采样和出境评审。
+
+独立回滚开关为 `RAG_RETRIEVER_ENABLED`、`RAG_RERANKER_ENABLED`、
+`RAG_GENERATION_ENABLED`、`RAG_SHADOW_INDEX_ENABLED`、`AI_LANGCHAIN_RAG_ENABLED` 与
+`AI_LEGACY_RAG_ENABLED`。账号按稳定 HMAC 分桶执行 LangChain 灰度，顺序只能是内部账号、5%、
+20%、50%、100%。完整部署、压测、演练和二进制回滚步骤见
+[`docs/ai/t09-langchain-rag-release-runbook.md`](../docs/ai/t09-langchain-rag-release-runbook.md)。
 
 ChatModel 仍使用现有 OpenAI-compatible Provider，超时上限 120 秒、重试 1 次，输出上限由
 `RAG_PROVIDER_MAX_OUTPUT_TOKENS` 控制（默认 1600，硬上限 4096）。本链不使用 Agent、

@@ -43,7 +43,7 @@ from app.schemas import (
 
 
 POLICY_RAG_CHAIN_NAME = "shenliyuan_policy_rag"
-POLICY_RAG_CHAIN_VERSION = "conversation-context-v4"
+POLICY_RAG_CHAIN_VERSION = "observability-release-v5"
 INSUFFICIENT_ANSWER = "当前已发布资料不足，暂时无法给出可核验回答。"
 HISTORY_BOUNDARY_WARNING = "历史规则不代表当前执行口径，请以教务系统或当期通知核验。"
 _CALCULATION_TERMS = (
@@ -58,6 +58,14 @@ _CALCULATION_TERMS = (
     "%",
 )
 _RAW_REFERENCE_PATTERN = re.compile(r"\[(?:chunk:|R\d+)", re.IGNORECASE)
+_UNTRUSTED_KNOWLEDGE_INSTRUCTION_PATTERN = re.compile(
+    r"(?:ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions?"
+    r"|system\s*prompt|developer\s*message|assistant\s*:"
+    r"|忽略(?:以上|此前|之前|所有)?(?:系统|开发者|提示词|指令)"
+    r"|覆盖(?:系统|开发者)(?:提示词|指令)"
+    r"|输出(?:系统提示词|内部令牌|密钥|api\s*key|jwt))",
+    re.IGNORECASE,
+)
 
 
 class PolicyCitationValidationError(ValueError):
@@ -80,6 +88,9 @@ def _bounded_documents(state: dict[str, Any]) -> list[Document]:
     selected: list[Document] = []
     seen_chunks: set[int] = set()
     for document in state["documents"]:
+        # 知识正文是非可信输入；明显伪装成系统或开发者指令的块不能进入 Prompt。
+        if _UNTRUSTED_KNOWLEDGE_INSTRUCTION_PATTERN.search(document.page_content):
+            continue
         metadata = document.metadata
         try:
             chunk_id = int(metadata.get("chunk_id", 0))
@@ -505,9 +516,11 @@ def build_policy_rag_chain(
 async def astream_policy_events(
     chain: Runnable[PolicyRAGInput, PolicyRAGResult],
     request: PolicyRAGInput,
+    config: RunnableConfig | None = None,
 ) -> AsyncIterator[PolicyRAGEvent]:
     sequence = 0
     emitted_stages: set[str] = set()
+    reranker_wrapper_started = False
 
     async def event(event_type: str, **kwargs: Any) -> PolicyRAGEvent:
         nonlocal sequence
@@ -525,7 +538,9 @@ async def astream_policy_events(
 
     async def produce_raw_events() -> None:
         try:
-            async for raw in chain.astream_events(request, version="v2"):
+            async for raw in chain.astream_events(
+                request, config=config, version="v2"
+            ):
                 await queue.put(raw)
         except asyncio.CancelledError:
             raise
@@ -546,11 +561,19 @@ async def astream_policy_events(
             event_name = str(raw.get("event", ""))
             name = str(raw.get("name", ""))
             stage = ""
+            if name == "policy_reranking" and event_name == "on_retriever_start":
+                reranker_wrapper_started = True
             if name in {"input_validation", "policy_query_planning"} and event_name == "on_chain_start":
                 stage = "planning"
             elif (name == "policy_retrieval" and event_name == "on_chain_start") or event_name == "on_retriever_start":
                 stage = "retrieving"
-            elif name == "policy_reranking" and event_name == "on_retriever_end":
+            elif (
+                reranker_wrapper_started
+                and name != "policy_reranking"
+                and event_name == "on_retriever_end"
+            ):
+                # ContextualCompressionRetriever 在基础召回结束后立即执行压缩器；
+                # 此处是 retrieval 与 rerank 可观测且不重叠的边界。
                 stage = "reranking"
             elif (name == "policy_generation" and event_name == "on_chain_start") or event_name == "on_chat_model_start":
                 stage = "generating"

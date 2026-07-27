@@ -49,6 +49,8 @@ type Config struct {
 	AIOutputPriceMicroYuanPerMillionTokens int64
 	AIPolicyRAGEnabled                     bool   // 政策知识库能力独立开关
 	AILangChainRAGEnabled                  bool   // 政策请求改由 Python LCEL 完整编排
+	AILangChainRAGRolloutPercent           int    // 非内测模式下稳定分配给 LangChain 的账号比例
+	AILegacyRAGEnabled                     bool   // 旧 Go 检索与生成路径独立回滚开关
 	RAGServiceURL                          string // 独立 Embedding/分词服务地址
 	RAGServiceToken                        string // 内部服务鉴权令牌
 	RAGEmbeddingModelVersion               string // 当前写入和查询使用的模型版本
@@ -283,6 +285,16 @@ func Load() *Config {
 	aiOutputPrice := envInt64InRange("AI_OUTPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS", 16_000_000, 0, 1_000_000_000)
 	aiPolicyRAGEnabled := envBool("AI_POLICY_RAG_ENABLED", false)
 	aiLangChainRAGEnabled := envBool("AI_LANGCHAIN_RAG_ENABLED", false)
+	// 灰度和 100% 观察窗口默认保留旧路径，关闭必须是单独的显式评审结果。
+	aiLegacyRAGEnabled := envBool("AI_LEGACY_RAG_ENABLED", true)
+	rolloutDefault := 0
+	if aiLangChainRAGEnabled && aiInternalTestOnly {
+		// 内测模式只有白名单账号可访问，因此该阶段本身就是受控灰度。
+		rolloutDefault = 100
+	}
+	aiLangChainRAGRolloutPercent := envIntInRange(
+		"AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", rolloutDefault, 0, 100,
+	)
 	ragServiceURL := strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/")
 	if ragServiceURL == "" {
 		ragServiceURL = "http://127.0.0.1:18001"
@@ -292,7 +304,12 @@ func Load() *Config {
 	if ragEmbeddingModelVersion == "" {
 		ragEmbeddingModelVersion = "paraphrase-multilingual-minilm-l12-v2-384-v1"
 	}
-	if err := validateAIConfig(aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey, deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled, aiLangChainRAGEnabled, ragServiceURL, ragServiceToken); err != nil {
+	if err := validateAIConfig(
+		aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey,
+		deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled,
+		aiLangChainRAGEnabled, aiLegacyRAGEnabled, aiLangChainRAGRolloutPercent,
+		ragServiceURL, ragServiceToken,
+	); err != nil {
 		panic(err)
 	}
 
@@ -335,6 +352,8 @@ func Load() *Config {
 		AIOutputPriceMicroYuanPerMillionTokens: aiOutputPrice,
 		AIPolicyRAGEnabled:                     aiPolicyRAGEnabled,
 		AILangChainRAGEnabled:                  aiLangChainRAGEnabled,
+		AILangChainRAGRolloutPercent:           aiLangChainRAGRolloutPercent,
+		AILegacyRAGEnabled:                     aiLegacyRAGEnabled,
 		RAGServiceURL:                          ragServiceURL,
 		RAGServiceToken:                        ragServiceToken,
 		RAGEmbeddingModelVersion:               ragEmbeddingModelVersion,
@@ -407,7 +426,14 @@ func splitNonEmpty(value string) []string {
 	return result
 }
 
-func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, apiKey, baseURL, model string, policyRAGEnabled, langChainRAGEnabled bool, ragServiceURL, ragServiceToken string) error {
+func validateAIConfig(
+	enabled, internalOnly bool,
+	whitelist []string,
+	provider, apiKey, baseURL, model string,
+	policyRAGEnabled, langChainRAGEnabled, legacyRAGEnabled bool,
+	langChainRolloutPercent int,
+	ragServiceURL, ragServiceToken string,
+) error {
 	if provider != "deepseek" && provider != "mock" {
 		return fmt.Errorf("AI_PROVIDER 只能是 deepseek 或 mock")
 	}
@@ -417,7 +443,7 @@ func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, 
 	if internalOnly && len(whitelist) == 0 {
 		return fmt.Errorf("AI_INTERNAL_TEST_ONLY=true 时必须设置 AI_TEST_USER_IDS")
 	}
-	if provider == "deepseek" && apiKey == "" && !langChainRAGEnabled {
+	if provider == "deepseek" && apiKey == "" && legacyRAGEnabled {
 		return fmt.Errorf("AI_ENABLED=true 且 AI_PROVIDER=deepseek 时必须设置 DEEPSEEK_API_KEY")
 	}
 	if strings.TrimSpace(model) == "" {
@@ -438,6 +464,18 @@ func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, 
 	}
 	if langChainRAGEnabled && !policyRAGEnabled {
 		return fmt.Errorf("AI_LANGCHAIN_RAG_ENABLED=true 时必须同时启用 AI_POLICY_RAG_ENABLED")
+	}
+	if !langChainRAGEnabled && langChainRolloutPercent != 0 {
+		return fmt.Errorf("AI_LANGCHAIN_RAG_ENABLED=false 时灰度比例必须为 0")
+	}
+	if policyRAGEnabled && !langChainRAGEnabled && !legacyRAGEnabled {
+		return fmt.Errorf("政策 RAG 必须至少启用 LangChain 或旧 Go 路径之一")
+	}
+	if langChainRAGEnabled && internalOnly && langChainRolloutPercent != 100 {
+		return fmt.Errorf("内测阶段的 LangChain 灰度比例必须为 100，仅白名单账号可访问")
+	}
+	if langChainRAGEnabled && !internalOnly && langChainRolloutPercent < 100 && !legacyRAGEnabled {
+		return fmt.Errorf("LangChain 未全量时必须启用 AI_LEGACY_RAG_ENABLED 作为未命中账号路径")
 	}
 	return nil
 }

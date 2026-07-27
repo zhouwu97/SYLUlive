@@ -3,6 +3,17 @@ import io
 import json
 import os
 import re
+
+# LangSmith 必须经过单独的数据治理评审才能启用；默认强制关闭继承的追踪环境变量。
+if os.environ.get("RAG_ALLOW_LANGSMITH", "").strip().lower() not in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}:
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
+    os.environ["LANGSMITH_TRACING"] = "false"
+
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -24,6 +35,7 @@ from app.chains import (
     build_policy_rag_chain,
 )
 from app.ingestion import FastEmbedLangChainEmbeddings, chunk_policy_document
+from app.observability import LocalRAGMetrics
 from app.providers import build_policy_chat_provider
 from app.rerankers import (
     FastEmbedCrossEncoderRerankModel,
@@ -63,6 +75,12 @@ QUERY_TIMEOUT_SECONDS = max(5, min(int(os.environ.get("RAG_QUERY_TIMEOUT_SECONDS
 MAX_TEXT_CHARS = 100_000
 MAX_POLICY_RESPONSE_BYTES = 1 << 20
 RERANKER_ENABLED = _env_enabled("RAG_RERANKER_ENABLED")
+RETRIEVER_ENABLED = _env_enabled("RAG_RETRIEVER_ENABLED", True)
+GENERATION_ENABLED = _env_enabled("RAG_GENERATION_ENABLED", True)
+SHADOW_INDEX_ENABLED = _env_enabled("RAG_SHADOW_INDEX_ENABLED", True)
+LANGSMITH_ENABLED = _env_enabled("RAG_ALLOW_LANGSMITH") and (
+    _env_enabled("LANGCHAIN_TRACING_V2") or _env_enabled("LANGSMITH_TRACING")
+)
 RERANKER_ALLOW_MODEL_DOWNLOAD = _env_enabled("RAG_RERANKER_ALLOW_MODEL_DOWNLOAD")
 RERANKER_MODEL_NAME = os.environ.get(
     "RAG_RERANKER_MODEL", "BAAI/bge-reranker-base"
@@ -98,6 +116,11 @@ retrieval_ready = False
 retrieval_error = "missing_database_dsn"
 reranker_ready = False
 reranker_error = "disabled"
+local_metrics = LocalRAGMetrics(
+    chain_name=POLICY_RAG_CHAIN_NAME,
+    chain_version=POLICY_RAG_CHAIN_VERSION,
+    hash_secret=os.environ.get("RAG_OBSERVABILITY_HASH_SECRET", "").strip() or None,
+)
 
 
 def _planned_reranker_query(question: str) -> str:
@@ -137,7 +160,10 @@ async def lifespan(_: FastAPI):
     database_dsn = os.environ.get("RAG_DATABASE_DSN", "").strip()
     search_store: PostgresPolicySearchStore | UnavailablePolicySearchStore
     retrieval_ready = False
-    if database_dsn:
+    if not RETRIEVER_ENABLED:
+        search_store = UnavailablePolicySearchStore()
+        retrieval_error = "disabled"
+    elif database_dsn:
         try:
             search_store = PostgresPolicySearchStore(
                 database_dsn,
@@ -155,8 +181,10 @@ async def lifespan(_: FastAPI):
     retriever = HybridPolicyRetriever(
         planner=policy_query_planner,
         search_store=search_store,
-        embeddings=model,
+        embeddings=model if SHADOW_INDEX_ENABLED else None,
         embedding_model_version=MODEL_VERSION,
+        shadow_index_enabled=SHADOW_INDEX_ENABLED,
+        metrics_recorder=local_metrics,
         channel_timeout_seconds=channel_timeout,
     )
     reranker: PolicyReranker | None = None
@@ -265,10 +293,10 @@ async def health():
         "chain_version": POLICY_RAG_CHAIN_VERSION,
         "dependencies_ready": {
             "embedding": model is not None,
-            "lcel": policy_chain is not None,
+            "lcel": policy_chain is not None and RETRIEVER_ENABLED and GENERATION_ENABLED,
             "chat_provider": policy_provider_ready,
             "policy_database": retrieval_ready,
-            "hybrid_retriever": retrieval_ready and model is not None,
+            "hybrid_retriever": RETRIEVER_ENABLED and retrieval_ready and model is not None,
             "reranker_enabled": RERANKER_ENABLED,
             "reranker": reranker_ready if RERANKER_ENABLED else False,
         },
@@ -283,10 +311,25 @@ async def health():
             "document_type_label_version": POLICY_DOCUMENT_TYPE_LABEL_VERSION,
             "error_class": reranker_error,
         },
+        "rollback_switches": {
+            "retriever_enabled": RETRIEVER_ENABLED,
+            "reranker_enabled": RERANKER_ENABLED,
+            "generation_enabled": GENERATION_ENABLED,
+            "shadow_index_enabled": SHADOW_INDEX_ENABLED,
+        },
+        "observability": {
+            "mode": "local_only",
+            "langsmith_enabled": LANGSMITH_ENABLED,
+            "stores_sensitive_content": False,
+        },
     }
 
 
 def _ready_policy_chain(request: Request) -> Runnable[PolicyRAGInput, PolicyRAGResult]:
+    if not RETRIEVER_ENABLED:
+        raise HTTPException(status_code=503, detail="policy retriever disabled")
+    if not GENERATION_ENABLED:
+        raise HTTPException(status_code=503, detail="policy generation disabled")
     injected = getattr(request.app.state, "policy_chain", None)
     current = injected or policy_chain
     if current is None:
@@ -312,10 +355,11 @@ async def policy_query_plan(payload: PolicyPlanRequest) -> PolicyQueryPlan:
 )
 async def policy_query(payload: PolicyRAGInput, request: Request):
     chain = _ready_policy_chain(request)
+    callback_config = local_metrics.callback_config(payload.question)
     try:
         async with query_semaphore:
             async with asyncio.timeout(QUERY_TIMEOUT_SECONDS):
-                result = await chain.ainvoke(payload)
+                result = await chain.ainvoke(payload, config=callback_config)
         validated = result if isinstance(result, PolicyRAGResult) else PolicyRAGResult.model_validate(result)
         if len(validated.model_dump_json().encode("utf-8")) > MAX_POLICY_RESPONSE_BYTES:
             raise ValueError("policy response exceeds limit")
@@ -334,6 +378,7 @@ async def policy_query(payload: PolicyRAGInput, request: Request):
 )
 async def policy_query_stream(payload: PolicyRAGInput, request: Request):
     chain = _ready_policy_chain(request)
+    callback_config = local_metrics.callback_config(payload.question)
 
     async def event_source():
         total_bytes = 0
@@ -341,7 +386,9 @@ async def policy_query_stream(payload: PolicyRAGInput, request: Request):
         try:
             async with query_semaphore:
                 async with asyncio.timeout(QUERY_TIMEOUT_SECONDS):
-                    async for event in astream_policy_events(chain, payload):
+                    async for event in astream_policy_events(
+                        chain, payload, config=callback_config
+                    ):
                         if await request.is_disconnected():
                             raise asyncio.CancelledError
                         encoded = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
@@ -369,6 +416,13 @@ async def policy_query_stream(payload: PolicyRAGInput, request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/internal/rag/metrics", dependencies=[Depends(require_internal_service)])
+async def rag_metrics():
+    """返回有界本地指标，不包含原始请求、证据、Prompt 或模型输出。"""
+
+    return local_metrics.snapshot()
 
 
 @app.post("/internal/rag/embed", dependencies=[Depends(require_internal_service)])

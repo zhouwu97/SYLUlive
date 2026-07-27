@@ -10,6 +10,7 @@ from langchain_core.retrievers import BaseRetriever
 
 from app.chains import PolicyQueryPlanner
 from app.evaluation import evaluate_shared_fixture
+from app.observability import LocalRAGMetrics
 from app.retrievers import (
     HybridPolicyRetriever,
     PolicyRetrievalUnavailable,
@@ -120,6 +121,33 @@ def test_policy_query_planner_migrates_domain_rules_and_hides_question_from_audi
     ]
     encoded_audit = json.dumps(plan.audit_summary(), ensure_ascii=False)
     assert plan.normalized_question not in encoded_audit
+
+
+def test_shadow_index_switch_disables_vector_and_records_channel_metrics():
+    candidate = _candidate(1, 1, "school_undergraduate_status_policy")
+    store = _FakeSearchStore(
+        channels={"exact": [candidate], "fts": [candidate], "trigram": [candidate]}
+    )
+    metrics = LocalRAGMetrics(
+        chain_name="shenliyuan_policy_rag",
+        chain_version="observability-release-v5",
+        hash_secret="retrieval-metrics-secret",
+    )
+    retriever = HybridPolicyRetriever(
+        search_store=store,
+        embeddings=_FixedEmbeddings(),
+        embedding_model_version="fixture-3-v1",
+        shadow_index_enabled=False,
+        metrics_recorder=metrics,
+    )
+
+    documents = retriever.invoke("如何申请休学")
+    snapshot = metrics.snapshot()
+
+    assert "vector" not in store.calls
+    assert documents[0].metadata["degraded_modes"] == ["shadow_index_disabled"]
+    assert snapshot["retrieval_channels"]["vector"]["outcomes"] == {"disabled": 1}
+    assert snapshot["retrieval_channels"]["fts"]["candidate_total"] == 1
 
 
 def test_general_plan_excludes_history_and_fts_uses_grouped_or_semantics():
@@ -255,6 +283,13 @@ def test_single_channel_failure_degrades_and_all_failures_raise_stable_error():
 
 def test_slow_channel_times_out_without_blocking_successful_channels():
     evidence = _candidate(1, 1, "school_undergraduate_status_policy")
+    # 排除 jieba 首次加载词典的冷启动，使本用例只测量四路通道的并发计时。
+    build_or_fts_query(PolicyQueryPlanner().invoke("如何申请休学"))
+    metrics = LocalRAGMetrics(
+        chain_name="shenliyuan_policy_rag",
+        chain_version="observability-release-v5",
+        hash_secret="channel-timing-secret",
+    )
     retriever = HybridPolicyRetriever(
         search_store=_FakeSearchStore(
             {"exact": [evidence]}, channel_delays={"trigram": 0.2}
@@ -262,6 +297,7 @@ def test_slow_channel_times_out_without_blocking_successful_channels():
         embeddings=_FixedEmbeddings(),
         embedding_model_version="fixture-3-v1",
         channel_timeout_seconds=0.05,
+        metrics_recorder=metrics,
     )
 
     started = time.perf_counter()
@@ -269,6 +305,9 @@ def test_slow_channel_times_out_without_blocking_successful_channels():
 
     assert time.perf_counter() - started < 0.15
     assert documents[0].metadata["degraded_modes"] == ["trigram_timeout"]
+    channels = metrics.snapshot()["retrieval_channels"]
+    assert channels["exact"]["duration_ms"]["max"] < 50
+    assert channels["trigram"]["duration_ms"]["max"] >= 40
 
 
 def test_shared_v06_fixture_recall_at_five_matches_t01_baseline():

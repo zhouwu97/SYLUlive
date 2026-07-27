@@ -1,6 +1,8 @@
 # Python RAG Service
 
-该服务只暴露给 Go 后端的内部网络。Go 保留 JWT、配额、预算、客户端 SSE、来源二次校验与结算；Python 使用 LCEL Runnable 编排政策 RAG。T02 的基础检索器会安全返回证据不足，后续 T04 再替换为只读混合检索器。
+该服务只暴露给 Go 后端的内部网络。Go 保留 JWT、配额、预算、客户端 SSE、来源二次校验、结算和知识写入事务；Python 使用 LCEL Runnable 编排政策 RAG，并使用 LangChain `Document`、`TextSplitter`、`Embeddings` 完成政策分块和向量化。
+
+`/internal/rag/knowledge/chunk` 返回展示正文、检索专用 embedding 文本和可审计 metadata。两者严格分离：数据库 chunk 正文不混入标题、部门或别名。embedding 响应报告模型名、模型版本和真实维度；服务不补零、不截断向量。改变模型或维度前必须先执行 `server/sql/20260727_ai_langchain_ingestion.sql`，并通过模型注册表与影子向量索引完成切换。
 
 ## 锁定兼容矩阵
 

@@ -143,62 +143,56 @@ type preparedKnowledgeChunk struct {
 	embedding     []float32
 }
 
-type knowledgeChunkMetadata struct {
-	ChunkingVersion string   `json:"chunking_version"`
-	DocumentTitle   string   `json:"document_title"`
-	DocumentType    string   `json:"document_type,omitempty"`
-	Department      string   `json:"department,omitempty"`
-	SectionTitle    string   `json:"section_title,omitempty"`
-	SectionPath     []string `json:"section_path,omitempty"`
-	SourceLocator   string   `json:"source_locator"`
-	Aliases         []string `json:"aliases,omitempty"`
-}
-
 func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKnowledgeIngestionJob) error {
 	var document models.AIKnowledgeDocument
 	if err := w.db.WithContext(ctx).First(&document, job.DocumentID).Error; err != nil {
 		return err
 	}
-	chunks := splitKnowledgeDocument(document.Content, 700, 80)
-	if len(chunks) == 0 {
-		return errors.New("knowledge_document_empty")
+	chunkResult, err := w.rag.ChunkKnowledgeDocument(ctx, ai.KnowledgeChunkRequest{
+		DocumentID: document.ID, Title: document.Title, Content: document.Content,
+		SourceLocator: document.SourceURI, DocumentType: document.DocumentType, Department: document.Department,
+		VersionStatus: job.RestoreStatus, EffectiveFrom: document.EffectiveFrom, EffectiveTo: document.EffectiveTo,
+		ChunkSize: 700, ChunkOverlap: 80,
+	})
+	if err != nil {
+		return fmt.Errorf("chunk_document: %w", err)
 	}
-	prepared := make([]preparedKnowledgeChunk, len(chunks))
-	texts := make([]string, len(chunks))
-	for index, chunk := range chunks {
-		embeddingText := buildKnowledgeEmbeddingText(document, chunk)
-		analysis, err := w.rag.Analyze(ctx, embeddingText)
+	prepared := make([]preparedKnowledgeChunk, len(chunkResult.Chunks))
+	texts := make([]string, len(chunkResult.Chunks))
+	for index, chunk := range chunkResult.Chunks {
+		hash := sha256.Sum256([]byte(chunk.Content))
+		if hex.EncodeToString(hash[:]) != chunk.ContentHash {
+			return errors.New("knowledge_chunk_hash_mismatch")
+		}
+		analysis, err := w.rag.Analyze(ctx, chunk.EmbeddingText)
 		if err != nil {
 			return fmt.Errorf("analyze_chunk: %w", err)
 		}
-		metadata, err := json.Marshal(knowledgeChunkMetadata{
-			ChunkingVersion: structuredChunkingVersion,
-			DocumentTitle:   document.Title, DocumentType: document.DocumentType, Department: document.Department,
-			SectionTitle: chunk.SectionTitle, SectionPath: chunk.SectionPath,
-			SourceLocator: chunk.SourceLocator, Aliases: chunk.Aliases,
-		})
-		if err != nil {
-			return fmt.Errorf("marshal_chunk_metadata: %w", err)
-		}
-		hash := sha256.Sum256([]byte(chunk.Content))
 		prepared[index] = preparedKnowledgeChunk{
-			index: index, content: chunk.Content, contentHash: hex.EncodeToString(hash[:]),
+			index: index, content: chunk.Content, contentHash: chunk.ContentHash,
 			searchTokens: analysis.SearchString, sectionTitle: chunk.SectionTitle,
-			sourceLocator: chunk.SourceLocator, metadata: metadata,
+			sourceLocator: chunk.SourceLocator, metadata: append([]byte(nil), chunk.Metadata...),
 		}
-		texts[index] = embeddingText
+		texts[index] = chunk.EmbeddingText
 	}
+	embeddingModelName := ""
+	embeddingDimensions := 0
 	for start := 0; start < len(texts); start += 32 {
 		end := start + 32
 		if end > len(texts) {
 			end = len(texts)
 		}
-		embeddings, version, err := w.rag.EmbedBatch(ctx, texts[start:end])
+		embeddings, modelName, version, dimensions, err := w.rag.EmbedBatch(ctx, texts[start:end])
 		if err != nil {
 			return fmt.Errorf("embed_chunks: %w", err)
 		}
 		if version != w.modelVersion {
 			return fmt.Errorf("embedding_model_version_mismatch")
+		}
+		if embeddingDimensions == 0 {
+			embeddingModelName, embeddingDimensions = modelName, dimensions
+		} else if embeddingModelName != modelName || embeddingDimensions != dimensions {
+			return errors.New("embedding_model_contract_changed")
 		}
 		for offset, embedding := range embeddings {
 			prepared[start+offset].embedding = embedding
@@ -206,11 +200,11 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 	}
 
 	return w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := ensureActiveEmbeddingModel(tx, w.modelVersion); err != nil {
+		if err := ensureActiveEmbeddingModel(tx, embeddingModelName, w.modelVersion, embeddingDimensions); err != nil {
 			return err
 		}
 		var current models.AIKnowledgeDocument
-		query := tx.Select("id", "title", "document_type", "department", "content_hash", "status").Where("id = ?", document.ID)
+		query := tx.Select("id", "title", "source_uri", "document_type", "department", "content_hash", "status", "effective_from", "effective_to").Where("id = ?", document.ID)
 		if tx.Dialector.Name() == "postgres" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
@@ -218,7 +212,9 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 			return err
 		}
 		if current.ContentHash != document.ContentHash || current.Title != document.Title ||
-			current.DocumentType != document.DocumentType || current.Department != document.Department {
+			current.SourceURI != document.SourceURI || current.DocumentType != document.DocumentType ||
+			current.Department != document.Department || !sameOptionalTime(current.EffectiveFrom, document.EffectiveFrom) ||
+			!sameOptionalTime(current.EffectiveTo, document.EffectiveTo) {
 			return errors.New("knowledge_document_changed_during_ingestion")
 		}
 		if job.RestoreStatus == models.KnowledgeStatusPublished && current.Status != models.KnowledgeStatusPublished {
@@ -228,28 +224,68 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 			return errors.New("knowledge_document_status_changed_during_ingestion")
 		}
 		// 删除和写入必须处于同一事务；任何新块写入失败都会回滚并恢复旧索引。
+		if err := tx.Exec(`DELETE FROM ai_knowledge_chunk_embeddings
+			WHERE chunk_id IN (SELECT id FROM ai_knowledge_chunks WHERE document_id = ?)`, document.ID).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("document_id = ?", document.ID).Delete(&models.AIKnowledgeChunk{}).Error; err != nil {
 			return err
 		}
 		for _, chunk := range prepared {
+			var chunkID uint64
 			if tx.Dialector.Name() == "postgres" {
-				err := tx.Exec(`INSERT INTO ai_knowledge_chunks
-					(document_id, chunk_index, content, content_hash, search_tokens, embedding,
-					 section_title, source_locator, embedding_model_version, metadata, created_at)
-					VALUES (?, ?, ?, ?, ?, ?::vector, ?, ?, ?, ?::jsonb, ?)`,
-					document.ID, chunk.index, chunk.content, chunk.contentHash, chunk.searchTokens,
-					formatEmbedding(chunk.embedding), chunk.sectionTitle, chunk.sourceLocator,
-					w.modelVersion, string(chunk.metadata), time.Now()).Error
+				var inserted struct{ ID uint64 }
+				var err error
+				if embeddingDimensions == 1536 {
+					err = tx.Raw(`INSERT INTO ai_knowledge_chunks
+						(document_id, chunk_index, content, content_hash, search_tokens, embedding,
+						 section_title, source_locator, embedding_model_version, metadata, created_at)
+						VALUES (?, ?, ?, ?, ?, ?::vector, ?, ?, ?, ?::jsonb, ?) RETURNING id`,
+						document.ID, chunk.index, chunk.content, chunk.contentHash, chunk.searchTokens,
+						formatEmbedding(chunk.embedding), chunk.sectionTitle, chunk.sourceLocator,
+						w.modelVersion, string(chunk.metadata), time.Now()).Scan(&inserted).Error
+				} else {
+					err = tx.Raw(`INSERT INTO ai_knowledge_chunks
+						(document_id, chunk_index, content, content_hash, search_tokens,
+						 section_title, source_locator, embedding_model_version, metadata, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?) RETURNING id`,
+						document.ID, chunk.index, chunk.content, chunk.contentHash, chunk.searchTokens,
+						chunk.sectionTitle, chunk.sourceLocator, w.modelVersion, string(chunk.metadata), time.Now()).Scan(&inserted).Error
+				}
 				if err != nil {
 					return err
+				}
+				chunkID = inserted.ID
+				if chunkID == 0 {
+					return errors.New("knowledge_chunk_insert_missing_id")
 				}
 			} else {
 				row := models.AIKnowledgeChunk{
 					DocumentID: document.ID, ChunkIndex: chunk.index, Content: chunk.content,
 					ContentHash: chunk.contentHash, SearchTokens: chunk.searchTokens,
-					Embedding: formatEmbedding(chunk.embedding), SectionTitle: chunk.sectionTitle,
+					SectionTitle:  chunk.sectionTitle,
 					SourceLocator: chunk.sourceLocator, EmbeddingModelVersion: w.modelVersion,
 					Metadata: chunk.metadata,
+				}
+				if embeddingDimensions == 1536 {
+					row.Embedding = formatEmbedding(chunk.embedding)
+				}
+				if err := tx.Create(&row).Error; err != nil {
+					return err
+				}
+				chunkID = row.ID
+			}
+			if tx.Dialector.Name() == "postgres" {
+				if err := tx.Exec(`INSERT INTO ai_knowledge_chunk_embeddings
+					(chunk_id, model_version, dimensions, embedding, created_at)
+					VALUES (?, ?, ?, ?::vector, ?)`, chunkID, w.modelVersion, embeddingDimensions,
+					formatEmbedding(chunk.embedding), time.Now()).Error; err != nil {
+					return err
+				}
+			} else {
+				row := models.AIKnowledgeChunkEmbedding{
+					ChunkID: chunkID, ModelVersion: w.modelVersion, Dimensions: embeddingDimensions,
+					Embedding: formatEmbedding(chunk.embedding),
 				}
 				if err := tx.Create(&row).Error; err != nil {
 					return err
@@ -259,8 +295,9 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 		inspection, _ := json.Marshal(map[string]interface{}{
 			"bytes": len(document.Content), "runes": utf8.RuneCountInString(document.Content),
 			"content_hash": document.ContentHash, "unresolved_items": []string{},
-			"chunk_count": len(prepared), "chunking_version": structuredChunkingVersion,
-			"embedding_model_version": w.modelVersion,
+			"chunk_count": len(prepared), "chunking_version": chunkResult.ChunkingVersion,
+			"embedding_model_name": embeddingModelName, "embedding_model_version": w.modelVersion,
+			"embedding_dimensions": embeddingDimensions,
 		})
 		now := time.Now()
 		restoreStatus := job.RestoreStatus
@@ -308,44 +345,45 @@ func (w *KnowledgeIngestionWorker) failJob(job models.AIKnowledgeIngestionJob, p
 	})
 }
 
-func ensureActiveEmbeddingModel(tx *gorm.DB, version string) error {
-	var active models.AIEmbeddingModelRegistry
-	err := tx.Where("active = ?", true).First(&active).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		now := time.Now()
-		return tx.Create(&models.AIEmbeddingModelRegistry{
-			Version: version, ModelName: version, Dimensions: 1536, Active: true, ActivatedAt: &now,
-		}).Error
+func ensureActiveEmbeddingModel(tx *gorm.DB, modelName, version string, dimensions int) error {
+	if strings.TrimSpace(modelName) == "" || strings.TrimSpace(version) == "" || dimensions <= 0 || dimensions > 2000 {
+		return errors.New("invalid_embedding_model_contract")
 	}
-	if err != nil {
+	var registered models.AIEmbeddingModelRegistry
+	err := tx.Where("version = ?", version).First(&registered).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		var activeCount int64
+		if err := tx.Model(&models.AIEmbeddingModelRegistry{}).Where("active = ?", true).Count(&activeCount).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		registered = models.AIEmbeddingModelRegistry{
+			Version: version, ModelName: modelName, Dimensions: dimensions,
+			Active: activeCount == 0,
+		}
+		if registered.Active {
+			registered.ActivatedAt = &now
+		}
+		if err := tx.Create(&registered).Error; err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
-	if active.Version != version || active.Dimensions != 1536 {
+	if registered.ModelName != modelName || registered.Dimensions != dimensions {
+		return errors.New("embedding_model_registry_mismatch")
+	}
+	if !registered.Active {
 		return errors.New("active_embedding_model_mismatch")
 	}
 	return nil
 }
 
-func buildKnowledgeEmbeddingText(document models.AIKnowledgeDocument, chunk knowledgeTextChunk) string {
-	sectionPath := strings.Join(chunk.SectionPath, " > ")
-	if sectionPath == "" {
-		sectionPath = chunk.SectionTitle
+func sameOptionalTime(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
 	}
-	parts := []string{
-		document.Title,
-		document.DocumentType,
-		document.Department,
-		sectionPath,
-		strings.Join(chunk.Aliases, " "),
-		chunk.Content,
-	}
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			result = append(result, part)
-		}
-	}
-	return strings.Join(result, "\n")
+	return left.Equal(*right)
 }
 
 func formatEmbedding(values []float32) string {

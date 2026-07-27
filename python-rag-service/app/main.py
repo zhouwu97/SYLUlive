@@ -25,6 +25,12 @@ from app.chains import (
 )
 from app.ingestion import FastEmbedLangChainEmbeddings, chunk_policy_document
 from app.providers import build_policy_chat_provider
+from app.rerankers import (
+    FastEmbedCrossEncoderRerankModel,
+    POLICY_DOCUMENT_TYPE_LABEL_VERSION,
+    PolicyReranker,
+    UnavailablePolicyRerankModel,
+)
 from app.retrievers import HybridPolicyRetriever, PostgresPolicySearchStore, UnavailablePolicySearchStore
 from app.schemas import (
     KnowledgeChunkRequest,
@@ -34,6 +40,13 @@ from app.schemas import (
     PolicyRAGInput,
     PolicyRAGResult,
 )
+
+
+def _env_enabled(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 SERVICE_TOKEN = os.environ.get("RAG_SERVICE_TOKEN", "").strip()
@@ -49,6 +62,28 @@ MAX_CONCURRENCY = max(1, min(int(os.environ.get("RAG_MAX_CONCURRENCY", "2")), 4)
 QUERY_TIMEOUT_SECONDS = max(5, min(int(os.environ.get("RAG_QUERY_TIMEOUT_SECONDS", "60")), 120))
 MAX_TEXT_CHARS = 100_000
 MAX_POLICY_RESPONSE_BYTES = 1 << 20
+RERANKER_ENABLED = _env_enabled("RAG_RERANKER_ENABLED")
+RERANKER_ALLOW_MODEL_DOWNLOAD = _env_enabled("RAG_RERANKER_ALLOW_MODEL_DOWNLOAD")
+RERANKER_MODEL_NAME = os.environ.get(
+    "RAG_RERANKER_MODEL", "BAAI/bge-reranker-base"
+).strip()
+RERANKER_MODEL_VERSION = os.environ.get(
+    "RAG_RERANKER_MODEL_VERSION", "bge-reranker-base-fastembed-v1"
+).strip()
+RERANKER_RELEVANCE_THRESHOLD = max(
+    0.0,
+    min(
+        float(os.environ.get("RAG_RERANKER_RELEVANCE_THRESHOLD", "0.689045")),
+        1.0,
+    ),
+)
+RERANKER_TIMEOUT_SECONDS = max(
+    0.1, min(float(os.environ.get("RAG_RERANKER_TIMEOUT_SECONDS", "5")), 30.0)
+)
+RERANKER_BATCH_SIZE = max(1, min(int(os.environ.get("RAG_RERANKER_BATCH_SIZE", "16")), 64))
+RERANKER_MAX_DOCUMENT_CHARS = max(
+    128, min(int(os.environ.get("RAG_RERANKER_MAX_DOCUMENT_CHARS", "4000")), 8_000)
+)
 
 model: FastEmbedLangChainEmbeddings | None = None
 model_error = ""
@@ -61,12 +96,18 @@ policy_model_name = "unconfigured"
 policy_query_planner = PolicyQueryPlanner()
 retrieval_ready = False
 retrieval_error = "missing_database_dsn"
+reranker_ready = False
+reranker_error = "disabled"
+
+
+def _planned_reranker_query(question: str) -> str:
+    return policy_query_planner.invoke(question).retrieval_query
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global model, model_error, policy_chain, policy_provider_ready, policy_provider_name, policy_model_name
-    global retrieval_ready, retrieval_error
+    global retrieval_ready, retrieval_error, reranker_ready, reranker_error
     model = None
     model_error = ""
     if not SERVICE_TOKEN:
@@ -118,11 +159,43 @@ async def lifespan(_: FastAPI):
         embedding_model_version=MODEL_VERSION,
         channel_timeout_seconds=channel_timeout,
     )
+    reranker: PolicyReranker | None = None
+    reranker_ready = False
+    reranker_error = "disabled"
+    if RERANKER_ENABLED:
+        try:
+            rerank_model = FastEmbedCrossEncoderRerankModel(
+                model_name=RERANKER_MODEL_NAME,
+                model_version=RERANKER_MODEL_VERSION,
+                allow_model_download=RERANKER_ALLOW_MODEL_DOWNLOAD,
+                cache_dir=os.environ.get("FASTEMBED_CACHE_PATH", "").strip() or None,
+                batch_size=RERANKER_BATCH_SIZE,
+                max_concurrency=MAX_CONCURRENCY,
+            )
+            reranker_ready = True
+            reranker_error = ""
+        except Exception as exc:
+            rerank_model = UnavailablePolicyRerankModel()
+            reranker_error = type(exc).__name__
+        reranker = PolicyReranker(
+            rerank_model=rerank_model,
+            model_name=RERANKER_MODEL_NAME,
+            model_version=RERANKER_MODEL_VERSION,
+            top_n=10,
+            max_candidates=20,
+            timeout_seconds=RERANKER_TIMEOUT_SECONDS,
+            max_document_chars=RERANKER_MAX_DOCUMENT_CHARS,
+            max_concurrency=MAX_CONCURRENCY,
+            query_transform=_planned_reranker_query,
+            query_strategy="policy-planned-query-v1",
+        )
     policy_chain = build_policy_rag_chain(
         retriever,
         provider.model,
         provider_name=provider.provider_name,
         model_name=provider.model_name,
+        reranker=reranker,
+        relevance_threshold=RERANKER_RELEVANCE_THRESHOLD,
     )
     yield
 
@@ -196,6 +269,19 @@ async def health():
             "chat_provider": policy_provider_ready,
             "policy_database": retrieval_ready,
             "hybrid_retriever": retrieval_ready and model is not None,
+            "reranker_enabled": RERANKER_ENABLED,
+            "reranker": reranker_ready if RERANKER_ENABLED else False,
+        },
+        "reranker": {
+            "enabled": RERANKER_ENABLED,
+            "ready": reranker_ready,
+            "model": RERANKER_MODEL_NAME if RERANKER_ENABLED else "disabled",
+            "model_version": RERANKER_MODEL_VERSION if RERANKER_ENABLED else "disabled",
+            "relevance_threshold": RERANKER_RELEVANCE_THRESHOLD,
+            "model_download_allowed": RERANKER_ALLOW_MODEL_DOWNLOAD,
+            "query_strategy": "policy-planned-query-v1",
+            "document_type_label_version": POLICY_DOCUMENT_TYPE_LABEL_VERSION,
+            "error_class": reranker_error,
         },
     }
 

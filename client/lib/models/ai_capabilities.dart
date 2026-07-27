@@ -55,7 +55,7 @@ class AiCapabilities {
       quota: AiQuota.fromJson(
         quotaJson is Map ? Map<String, dynamic>.from(quotaJson) : const {},
       ),
-      maxMessageChars: _positiveInt(json['max_message_chars'], fallback: 20),
+      maxMessageChars: _positiveInt(json['max_message_chars'], fallback: 120),
     );
   }
 }

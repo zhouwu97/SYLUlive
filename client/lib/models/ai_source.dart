@@ -7,9 +7,13 @@ class AiSource {
   final String title;
   final String publisher;
   final String status;
+  final String confidence;
   final String? url;
   final List<int> citationNumbers;
   final List<String> locators;
+  final DateTime? effectiveFrom;
+  final DateTime? effectiveTo;
+  final DateTime? publishedAt;
 
   const AiSource({
     required this.type,
@@ -18,9 +22,13 @@ class AiSource {
     required this.title,
     this.publisher = '',
     this.status = '',
+    this.confidence = '',
     this.url,
     this.citationNumbers = const [],
     this.locators = const [],
+    this.effectiveFrom,
+    this.effectiveTo,
+    this.publishedAt,
   });
 
   factory AiSource.fromJson(Map<String, dynamic> json) {
@@ -35,11 +43,14 @@ class AiSource {
       title: json['title']?.toString() ?? '',
       publisher:
           json['publisher']?.toString() ?? json['department']?.toString() ?? '',
-      status:
-          json['status']?.toString() ?? json['confidence']?.toString() ?? '',
+      status: json['status']?.toString() ?? '',
+      confidence: json['confidence']?.toString() ?? '',
       url: json['url']?.toString(),
       citationNumbers: _intList(json['citation_numbers']),
       locators: _stringList(json['locators']),
+      effectiveFrom: _policyDate(json['effective_from']),
+      effectiveTo: _policyDate(json['effective_to']),
+      publishedAt: _dateTime(json['published_at']),
     );
   }
 
@@ -51,6 +62,35 @@ class AiSource {
 
   String get citationLabel =>
       citationNumbers.map((number) => '[$number]').join();
+
+  String get departmentLabel =>
+      publisher.trim().isEmpty ? '未标注' : publisher.trim();
+
+  String get statusLabel {
+    switch (status.trim().toLowerCase()) {
+      case 'published':
+        return '已发布';
+      case 'revoked':
+        return '已撤销';
+      case 'superseded':
+        return '已被替代';
+      case 'draft':
+        return '草稿';
+      default:
+        return status.trim().isEmpty ? '未标注' : status.trim();
+    }
+  }
+
+  String get effectiveLabel {
+    final from = effectiveFrom == null ? '' : _formatDate(effectiveFrom!);
+    final to = effectiveTo == null ? '' : _formatDate(effectiveTo!);
+    if (from.isNotEmpty && to.isNotEmpty) return '$from 至 $to';
+    if (from.isNotEmpty) return '$from 起';
+    if (to.isNotEmpty) return '截至 $to';
+    return '未标注';
+  }
+
+  String get locatorLabel => locators.isEmpty ? '未标注' : locators.join(' · ');
 }
 
 class AiSourceContent {
@@ -96,4 +136,24 @@ List<String> _stringList(dynamic value) {
       .map((item) => item.toString().trim())
       .where((item) => item.isNotEmpty)
       .toList(growable: false);
+}
+
+DateTime? _dateTime(dynamic value) {
+  final raw = value?.toString().trim() ?? '';
+  if (raw.isEmpty) return null;
+  return DateTime.tryParse(raw);
+}
+
+// 政策生效区间是日期语义，不能因终端时区换算而偏移一天。
+DateTime? _policyDate(dynamic value) {
+  final raw = value?.toString().trim() ?? '';
+  if (raw.isEmpty) return null;
+  final matched = RegExp(r'^\d{4}-\d{2}-\d{2}').firstMatch(raw)?.group(0);
+  return DateTime.tryParse(matched ?? raw);
+}
+
+String _formatDate(DateTime value) {
+  return '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
 }

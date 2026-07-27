@@ -25,14 +25,17 @@ void main() {
 
   test('按文档聚合来源并解析公开引用编号', () {
     final event = AiRunEvent.parseSse(
-      '{"run_id":"run-1","seq":9,"type":"sources.ready","payload":{"sources":[{"document_id":3,"primary_chunk_id":18,"title":"学生手册","department":"学生处","citation_numbers":[1,2],"locators":["第十条","第十一条"]}]}}',
+      '{"run_id":"run-1","seq":9,"type":"sources.ready","payload":{"sources":[{"document_id":3,"primary_chunk_id":18,"title":"学生手册","department":"学生处","status":"published","effective_from":"2025-09-01T00:00:00+08:00","effective_to":"2027-08-31T23:59:59+08:00","citation_numbers":[1,2],"locators":["第十条","第十一条"]}]}}',
     );
 
     final source = event.sources.single;
     expect(source.documentId, 3);
     expect(source.chunkId, 18);
     expect(source.publisher, '学生处');
+    expect(source.statusLabel, '已发布');
+    expect(source.effectiveLabel, '2025-09-01 至 2027-08-31');
     expect(source.citationLabel, '[1][2]');
     expect(source.locators, ['第十条', '第十一条']);
+    expect(source.locatorLabel, '第十条 · 第十一条');
   });
 }

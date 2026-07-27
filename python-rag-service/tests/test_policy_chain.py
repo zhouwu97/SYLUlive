@@ -9,12 +9,18 @@ from langchain_core.documents import Document
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
+from langchain_core.runnables import RunnableLambda
 from pydantic import PrivateAttr
 
-from app.chains import astream_policy_events, build_policy_rag_chain
+from app.chains import (
+    astream_policy_events,
+    bound_policy_history,
+    build_policy_query_rewriter,
+    build_policy_rag_chain,
+)
 from app.providers import FakePolicyChatModel
 from app.retrievers import FakePolicyRetriever
-from app.schemas import PolicyRAGInput, PolicyRAGResult
+from app.schemas import PolicyHistoryMessage, PolicyRAGInput, PolicyRAGResult
 
 
 def _answer_json(
@@ -93,7 +99,7 @@ def test_policy_chain_invoke_uses_lcel_runnable():
     assert isinstance(result, PolicyRAGResult)
     assert result.status == "completed"
     assert result.chain_name == "shenliyuan_policy_rag"
-    assert result.chain_version == "answer-citations-v3"
+    assert result.chain_version == "conversation-context-v4"
     assert result.sources[0].chunk_id == 18
     assert result.sources[0].citation_number == 1
     assert result.usage.input_tokens == 20
@@ -125,6 +131,105 @@ def test_prompt_uses_query_plan_temporary_references_and_pydantic_schema():
     assert "chunk_id" not in prompt_text
     assert "current_rules" in prompt_text
     assert "historical_rules" in prompt_text
+
+
+def test_query_rewrite_runnable_completes_short_follow_up_for_retrieval():
+    request = PolicyRAGInput(
+        request_id="follow-up",
+        question="那实验课呢",
+        history=[
+            PolicyHistoryMessage(role="user", content="补考成绩怎么算"),
+            PolicyHistoryMessage(role="assistant", content="补考规则需要区分现行与历史口径。"),
+        ],
+    )
+
+    rewritten = build_policy_query_rewriter().invoke(request)
+
+    assert rewritten == "补考成绩怎么算；追问：那实验课呢"
+
+
+def test_follow_up_chain_uses_rewritten_query_and_bounded_history_messages():
+    queries: list[str] = []
+    documents = [
+        Document(
+            page_content="实验、实习等实践教学环节不安排补考，应按培养方案重新修读。",
+            metadata={
+                "document_id": 12,
+                "chunk_id": 31,
+                "title": "本科课程考核管理办法",
+                "source_locator": "第二十二条",
+            },
+        )
+    ]
+
+    def retrieve(query: str) -> list[Document]:
+        queries.append(query)
+        return documents
+
+    model = RecordingPolicyChatModel(
+        response_text=_answer_json(
+            answer="实验等实践教学环节不安排补考，应重新修读。",
+            current_rules=[
+                {
+                    "statement": "实验等实践教学环节不安排补考，应重新修读。",
+                    "citation_ids": ["R1"],
+                }
+            ],
+            citations=[
+                {
+                    "reference_id": "R1",
+                    "quote": "实验、实习等实践教学环节不安排补考，应按培养方案重新修读。",
+                }
+            ],
+        ),
+        input_tokens=24,
+        output_tokens=10,
+    )
+    chain = build_policy_rag_chain(
+        RunnableLambda(retrieve),
+        model,
+        provider_name="fake",
+        model_name="fake-v1",
+    )
+
+    result = chain.invoke(
+        PolicyRAGInput(
+            request_id="follow-up-chain",
+            question="那实验课呢",
+            history=[
+                PolicyHistoryMessage(role="user", content="补考成绩怎么算"),
+                PolicyHistoryMessage(
+                    role="assistant", content="补考规则需要区分现行与历史口径。"
+                ),
+            ],
+        )
+    )
+
+    assert result.status == "completed"
+    assert queries == ["补考成绩怎么算；追问：那实验课呢"]
+    prompt_messages = [str(message.content) for message in model._messages]
+    assert "补考成绩怎么算" in prompt_messages
+    assert "补考规则需要区分现行与历史口径。" in prompt_messages
+
+
+def test_python_history_copy_is_deterministically_bounded_by_complete_rounds():
+    history: list[PolicyHistoryMessage] = []
+    for index in range(4):
+        history.extend(
+            [
+                PolicyHistoryMessage(role="user", content=f"问题{index}" * 200),
+                PolicyHistoryMessage(role="assistant", content=f"回答{index}" * 500),
+            ]
+        )
+
+    bounded = bound_policy_history(history)
+
+    assert bounded
+    assert len(bounded) <= 8
+    assert len(bounded) % 2 == 0
+    assert [item.role for item in bounded] == ["user", "assistant"] * (len(bounded) // 2)
+    assert sum(len(item.content) for item in bounded) <= 2_400
+    assert all(len(item.content) <= (300 if item.role == "user" else 600) for item in bounded)
 
 
 @pytest.mark.asyncio
@@ -179,7 +284,7 @@ def test_policy_query_endpoints_use_injected_lcel_chain(monkeypatch):
             json={"request_id": "http-1", "question": "怎么请假"},
         )
         assert response.status_code == 200, response.text
-        assert response.json()["chain_version"] == "answer-citations-v3"
+        assert response.json()["chain_version"] == "conversation-context-v4"
 
         with client.stream(
             "POST",
@@ -217,7 +322,7 @@ def test_completed_result_rejects_missing_usage():
             {
                 "request_id": "bad-usage",
                 "chain_name": "shenliyuan_policy_rag",
-                "chain_version": "answer-citations-v3",
+                "chain_version": "conversation-context-v4",
                 "status": "completed",
                 "answer": "回答",
                 "sources": [],

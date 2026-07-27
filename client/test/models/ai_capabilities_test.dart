@@ -16,7 +16,7 @@ void main() {
         'window_seconds': 3600,
         'reset_at': '2026-07-19T12:30:00+08:00',
       },
-      'max_message_chars': 20,
+      'max_message_chars': 120,
     });
 
     expect(capabilities.isVisible, isTrue);
@@ -24,7 +24,7 @@ void main() {
     expect(capabilities.phase, 'p0');
     expect(capabilities.quota.remaining, 2);
     expect(capabilities.quota.resetAt, isNotNull);
-    expect(capabilities.maxMessageChars, 20);
+    expect(capabilities.maxMessageChars, 120);
   });
 
   test('无资格账号不会显示入口', () {
@@ -36,5 +36,6 @@ void main() {
     });
 
     expect(capabilities.isVisible, isFalse);
+    expect(capabilities.maxMessageChars, 120);
   });
 }

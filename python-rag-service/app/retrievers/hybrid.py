@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 import math
 import re
+import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime, timezone
@@ -327,6 +329,8 @@ class HybridPolicyRetriever(BaseRetriever):
     search_store: Any
     embeddings: Embeddings | None = None
     embedding_model_version: str = ""
+    shadow_index_enabled: bool = True
+    metrics_recorder: Any = Field(default=None, exclude=True)
     k: int = Field(default=6, ge=1, le=10)
     channel_limit: int = Field(default=30, ge=1, le=100)
     channel_timeout_seconds: float = Field(default=2.5, gt=0, le=30)
@@ -344,8 +348,11 @@ class HybridPolicyRetriever(BaseRetriever):
                 "run_name": "policy_query_planner",
             },
         )
-        channel_results, degraded = self._run_channels_sync(plan)
-        return fuse_policy_candidates(plan, channel_results, self.k, degraded)
+        channel_results, degraded, channel_metrics = self._run_channels_sync(plan)
+        documents = fuse_policy_candidates(plan, channel_results, self.k, degraded)
+        self._record_retrieval_metrics(query, channel_metrics, documents, degraded)
+        _require_successful_channel(channel_results)
+        return documents
 
     async def _aget_relevant_documents(
         self,
@@ -360,8 +367,33 @@ class HybridPolicyRetriever(BaseRetriever):
                 "run_name": "policy_query_planner",
             },
         )
-        channel_results, degraded = await self._run_channels_async(plan)
-        return fuse_policy_candidates(plan, channel_results, self.k, degraded)
+        channel_results, degraded, channel_metrics = await self._run_channels_async(plan)
+        documents = fuse_policy_candidates(plan, channel_results, self.k, degraded)
+        self._record_retrieval_metrics(query, channel_metrics, documents, degraded)
+        _require_successful_channel(channel_results)
+        return documents
+
+    def _active_channels(self) -> tuple[RetrievalChannel, ...]:
+        if self.shadow_index_enabled:
+            return RETRIEVAL_CHANNELS
+        return tuple(channel for channel in RETRIEVAL_CHANNELS if channel != "vector")
+
+    def _record_retrieval_metrics(
+        self,
+        query: str,
+        channel_metrics: Mapping[str, Mapping[str, Any]],
+        documents: Sequence[Document],
+        degraded_modes: Sequence[str],
+    ) -> None:
+        recorder = self.metrics_recorder
+        if recorder is None:
+            return
+        recorder.record_retrieval_channels(
+            query,
+            channel_metrics,
+            candidate_count=len(documents),
+            degraded_modes=degraded_modes,
+        )
 
     def _run_channel_sync(
         self, channel: RetrievalChannel, plan: PolicyQueryPlan
@@ -404,53 +436,143 @@ class HybridPolicyRetriever(BaseRetriever):
 
     def _run_channels_sync(
         self, plan: PolicyQueryPlan
-    ) -> tuple[dict[RetrievalChannel, list[RankedCandidate]], list[str]]:
+    ) -> tuple[
+        dict[RetrievalChannel, list[RankedCandidate]],
+        list[str],
+        dict[str, dict[str, int | float | str]],
+    ]:
+        active_channels = self._active_channels()
         executor = ThreadPoolExecutor(
-            max_workers=len(RETRIEVAL_CHANNELS), thread_name_prefix="policy-retrieval"
+            max_workers=len(active_channels), thread_name_prefix="policy-retrieval"
         )
+        started_at = {channel: time.perf_counter() for channel in active_channels}
+        completed_at: dict[RetrievalChannel, float] = {}
+        completion_lock = threading.Lock()
         futures: dict[Future[list[RetrievalCandidate]], RetrievalChannel] = {
             executor.submit(self._run_channel_sync, channel, plan): channel
-            for channel in RETRIEVAL_CHANNELS
+            for channel in active_channels
         }
+        for future, channel in futures.items():
+            def record_completion(
+                _: Future[list[RetrievalCandidate]],
+                *,
+                completed_channel: RetrievalChannel = channel,
+            ) -> None:
+                with completion_lock:
+                    completed_at[completed_channel] = time.perf_counter()
+
+            future.add_done_callback(record_completion)
         done, pending = wait(futures, timeout=self.channel_timeout_seconds)
         results: dict[RetrievalChannel, list[RankedCandidate]] = {}
         degraded: list[str] = []
+        metrics: dict[str, dict[str, int | float | str]] = {}
+        finished_at = time.perf_counter()
         for future, channel in futures.items():
+            with completion_lock:
+                channel_finished_at = completed_at.get(channel, finished_at)
+            duration_ms = (channel_finished_at - started_at[channel]) * 1_000
             if future in pending:
                 future.cancel()
                 degraded.append(channel + "_timeout")
+                metrics[channel] = {
+                    "duration_ms": duration_ms,
+                    "candidate_count": 0,
+                    "outcome": "timeout",
+                }
                 continue
             try:
                 results[channel] = _rank_candidates(future.result())
+                metrics[channel] = {
+                    "duration_ms": duration_ms,
+                    "candidate_count": len(results[channel]),
+                    "outcome": "ok",
+                }
             except Exception:
                 degraded.append(channel + "_failed")
+                metrics[channel] = {
+                    "duration_ms": duration_ms,
+                    "candidate_count": 0,
+                    "outcome": "failed",
+                }
+        if not self.shadow_index_enabled:
+            degraded.append("shadow_index_disabled")
+            metrics["vector"] = {
+                "duration_ms": 0.0,
+                "candidate_count": 0,
+                "outcome": "disabled",
+            }
         executor.shutdown(wait=False, cancel_futures=True)
-        _require_successful_channel(results)
-        return results, degraded
+        return results, degraded, metrics
 
     async def _run_channels_async(
         self, plan: PolicyQueryPlan
-    ) -> tuple[dict[RetrievalChannel, list[RankedCandidate]], list[str]]:
+    ) -> tuple[
+        dict[RetrievalChannel, list[RankedCandidate]],
+        list[str],
+        dict[str, dict[str, int | float | str]],
+    ]:
+        active_channels = self._active_channels()
+        started_at = {channel: time.perf_counter() for channel in active_channels}
+        completed_at: dict[RetrievalChannel, float] = {}
         tasks = {
             asyncio.create_task(self._run_channel_async(channel, plan)): channel
-            for channel in RETRIEVAL_CHANNELS
+            for channel in active_channels
         }
-        done, pending = await asyncio.wait(tasks, timeout=self.channel_timeout_seconds)
+        for task, channel in tasks.items():
+            task.add_done_callback(
+                lambda _, completed_channel=channel: completed_at.__setitem__(
+                    completed_channel, time.perf_counter()
+                )
+            )
+        try:
+            done, pending = await asyncio.wait(
+                tasks, timeout=self.channel_timeout_seconds
+            )
+        except asyncio.CancelledError:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         results: dict[RetrievalChannel, list[RankedCandidate]] = {}
         degraded: list[str] = []
+        metrics: dict[str, dict[str, int | float | str]] = {}
+        finished_at = time.perf_counter()
         for task, channel in tasks.items():
+            channel_finished_at = completed_at.get(channel, finished_at)
+            duration_ms = (channel_finished_at - started_at[channel]) * 1_000
             if task in pending:
                 task.cancel()
                 degraded.append(channel + "_timeout")
+                metrics[channel] = {
+                    "duration_ms": duration_ms,
+                    "candidate_count": 0,
+                    "outcome": "timeout",
+                }
                 continue
             try:
                 results[channel] = _rank_candidates(task.result())
+                metrics[channel] = {
+                    "duration_ms": duration_ms,
+                    "candidate_count": len(results[channel]),
+                    "outcome": "ok",
+                }
             except Exception:
                 degraded.append(channel + "_failed")
+                metrics[channel] = {
+                    "duration_ms": duration_ms,
+                    "candidate_count": 0,
+                    "outcome": "failed",
+                }
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
-        _require_successful_channel(results)
-        return results, degraded
+        if not self.shadow_index_enabled:
+            degraded.append("shadow_index_disabled")
+            metrics["vector"] = {
+                "duration_ms": 0.0,
+                "candidate_count": 0,
+                "outcome": "disabled",
+            }
+        return results, degraded, metrics
 
 
 def _require_successful_channel(

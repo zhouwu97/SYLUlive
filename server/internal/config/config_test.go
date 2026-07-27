@@ -213,6 +213,8 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 	t.Setenv("AI_POLICY_RAG_ENABLED", "false")
 	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "false")
+	t.Setenv("AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", "")
+	t.Setenv("AI_LEGACY_RAG_ENABLED", "")
 	t.Setenv("RAG_SERVICE_TOKEN", "")
 }
 
@@ -232,11 +234,60 @@ func TestLoadLangChainRAGDoesNotRequireGoProviderKey(t *testing.T) {
 	t.Setenv("AI_TEST_USER_IDS", "18")
 	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
 	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "true")
+	t.Setenv("AI_LEGACY_RAG_ENABLED", "false")
 	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
 	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
 	cfg := Load()
 	require.True(t, cfg.AILangChainRAGEnabled)
+	require.Equal(t, 100, cfg.AILangChainRAGRolloutPercent)
+	require.False(t, cfg.AILegacyRAGEnabled)
 	require.Empty(t, cfg.DeepSeekAPIKey)
+}
+
+func TestLoadLangChainRAGDefaultsToLegacyRollbackPath(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_TEST_USER_IDS", "18")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "true")
+	t.Setenv("DEEPSEEK_API_KEY", "legacy-rollback-key")
+	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+
+	cfg := Load()
+
+	require.True(t, cfg.AILegacyRAGEnabled)
+}
+
+func TestLoadPublicLangChainCanaryRequiresLegacyRollbackPath(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_INTERNAL_TEST_ONLY", "false")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", "5")
+	t.Setenv("AI_LEGACY_RAG_ENABLED", "false")
+	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+	require.Panics(t, func() { Load() })
+
+	t.Setenv("AI_LEGACY_RAG_ENABLED", "true")
+	t.Setenv("DEEPSEEK_API_KEY", "legacy-rollback-key")
+	cfg := Load()
+	require.Equal(t, 5, cfg.AILangChainRAGRolloutPercent)
+	require.True(t, cfg.AILegacyRAGEnabled)
+}
+
+func TestLoadRejectsCanaryPercentageWhenLangChainIsDisabled(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_INTERNAL_TEST_ONLY", "false")
+	t.Setenv("AI_TEST_USER_IDS", "")
+	t.Setenv("DEEPSEEK_API_KEY", "legacy-key")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", "5")
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+	require.Panics(t, func() { Load() })
 }
 
 func TestLoadLangChainRAGRequiresPolicyCapability(t *testing.T) {

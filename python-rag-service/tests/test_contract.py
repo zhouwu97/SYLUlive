@@ -46,7 +46,7 @@ def test_health_exposes_chain_identity_and_dependency_readiness(monkeypatch):
         assert response.status_code == 200
         payload = response.json()
         assert payload["chain_name"] == "shenliyuan_policy_rag"
-        assert payload["chain_version"] == "conversation-context-v4"
+        assert payload["chain_version"] == "observability-release-v5"
         assert payload["dimensions"] == 384
         assert payload["dependencies_ready"]["embedding"] is True
         assert payload["dependencies_ready"]["lcel"] is True
@@ -57,6 +57,17 @@ def test_health_exposes_chain_identity_and_dependency_readiness(monkeypatch):
             payload["reranker"]["document_type_label_version"]
             == "policy-document-type-zh-v1"
         )
+        assert payload["rollback_switches"] == {
+            "retriever_enabled": True,
+            "reranker_enabled": False,
+            "generation_enabled": True,
+            "shadow_index_enabled": True,
+        }
+        assert payload["observability"] == {
+            "mode": "local_only",
+            "langsmith_enabled": False,
+            "stores_sensitive_content": False,
+        }
 
 
 def test_policy_plan_endpoint_uses_the_single_python_domain_planner(monkeypatch):

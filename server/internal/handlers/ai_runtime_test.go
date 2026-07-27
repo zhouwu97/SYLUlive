@@ -83,6 +83,7 @@ func TestAIEventsDisconnectCancelsLangChainRequest(t *testing.T) {
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "test-secret", LangChainRAGEnabled: true,
+		LangChainRAGRolloutPercent: 100,
 	}, ai.WithLangChainRAG(blocking))
 	require.NoError(t, err)
 	run, _, err := runtime.CreateRun(context.Background(), 27, ai.CreateRunRequest{

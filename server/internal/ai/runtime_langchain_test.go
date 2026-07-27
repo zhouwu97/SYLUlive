@@ -123,9 +123,39 @@ func newLangChainTestRuntime(t *testing.T, client LangChainRAG) (*Runtime, *gorm
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "test-secret", LangChainRAGEnabled: true,
+		LangChainRAGRolloutPercent: 100,
 	}, WithLangChainRAG(client))
 	require.NoError(t, err)
 	return runtime, db
+}
+
+func TestLangChainRolloutUsesStableAccountBuckets(t *testing.T) {
+	runtime := &Runtime{config: RuntimeConfig{
+		AuditHashSecret: "stable-rollout-secret", LangChainRAGEnabled: true,
+		LangChainRAGRolloutPercent: 20, LegacyRAGEnabled: true,
+	}}
+	selected := 0
+	for userID := uint(1); userID <= 1_000; userID++ {
+		first := runtime.useLangChain(userID)
+		require.Equal(t, first, runtime.useLangChain(userID))
+		if first {
+			selected++
+		}
+	}
+	require.Greater(t, selected, 150)
+	require.Less(t, selected, 250)
+}
+
+func TestLangChainCanaryRequiresLegacyRuntimeDependencies(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	_, err := NewRuntime(db, nil, nil, NewEventBroker(), RuntimeConfig{
+		ProviderName: "rollout", Model: "policy-rag", RequestTimeout: 5 * time.Second,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		AuditHashSecret: "test-secret", LangChainRAGEnabled: true,
+		LangChainRAGRolloutPercent: 5,
+	}, WithLangChainRAG(&fakeLangChainRAG{}))
+	require.EqualError(t, err, "legacy AI runtime is required before LangChain reaches 100 percent")
 }
 
 func TestLangChainRuntimeUsesPythonResultAndSettlesOnce(t *testing.T) {

@@ -1,0 +1,112 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../providers/auth_provider.dart';
+import '../../providers/edu_provider.dart';
+import '../../services/push_settings_service.dart';
+import '../ai_runtime/personal_data/gateway/personal_account_context.dart';
+import '../ai_runtime/personal_data/gateway/personal_data_gateway_impl.dart';
+import 'device_job_client.dart';
+import 'device_job_models.dart';
+import 'device_job_permission_sheet.dart';
+import 'device_tool_worker.dart';
+
+/// 将设备 Worker 绑定到当前 Flutter 账号。账号或教务来源变化时，旧上下文不会继续回传结果。
+class DeviceToolBridgeHost extends StatefulWidget {
+  const DeviceToolBridgeHost({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<DeviceToolBridgeHost> createState() => _DeviceToolBridgeHostState();
+}
+
+class _DeviceToolBridgeHostState extends State<DeviceToolBridgeHost>
+    with WidgetsBindingObserver {
+  late final AuthProvider _auth;
+  late final EduProvider _edu;
+  late final DeviceToolWorker _worker;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _auth = context.read<AuthProvider>();
+    _edu = context.read<EduProvider>();
+    _worker = DeviceToolWorker(
+      client: DioDeviceJobClient(_auth.dio),
+      installationIdProvider: PushSettingsService.installationId,
+      contextResolver: _resolveContext,
+      permissionResolver: _requestPermission,
+    );
+    _auth.addListener(_scheduleSync);
+    _edu.addListener(_scheduleSync);
+    DeviceToolBridge.install(_worker);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncPending());
+  }
+
+  @override
+  void dispose() {
+    DeviceToolBridge.uninstall(_worker);
+    _auth.removeListener(_scheduleSync);
+    _edu.removeListener(_scheduleSync);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _syncPending();
+  }
+
+  void _scheduleSync() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncPending());
+  }
+
+  Future<void> _syncPending() async {
+    if (!mounted) return;
+    try {
+      await _worker.syncPending();
+    } catch (_) {
+      // 断网和服务端暂不可用保留任务，下一次前台恢复或推送会再次补拉。
+    }
+  }
+
+  Future<DeviceToolWorkerContext?> _resolveContext() async {
+    final appUserId = _auth.user?.id.toString().trim() ?? '';
+    final sourceAccountId = _edu.studentId.trim();
+    if (!_auth.isLoggedIn || appUserId.isEmpty || sourceAccountId.isEmpty) {
+      return null;
+    }
+    return DeviceToolWorkerContext(
+      appUserId: appUserId,
+      sourceAccountId: sourceAccountId,
+      createGateway: () => PersonalDataGatewayFactory().create(
+        PersonalAccountContext(
+          appUserId: appUserId,
+          sourceAccountId: sourceAccountId,
+        ),
+      ),
+      isCurrent: () async =>
+          mounted &&
+          _auth.isLoggedIn &&
+          _auth.user?.id.toString() == appUserId &&
+          _edu.studentId.trim() == sourceAccountId,
+    );
+  }
+
+  Future<DeviceToolPermissionDecision> _requestPermission(
+      DeviceToolJob job) async {
+    if (!mounted ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return DeviceToolPermissionDecision.defer;
+    }
+    final allowed = await DeviceJobPermissionSheet.request(context, job);
+    return allowed
+        ? DeviceToolPermissionDecision.allow
+        : DeviceToolPermissionDecision.deny;
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}

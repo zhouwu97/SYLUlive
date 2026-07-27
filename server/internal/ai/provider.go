@@ -7,8 +7,22 @@ import (
 
 // Message 是与具体模型厂商无关的对话消息。
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string            `json:"role"`
+	Content    string            `json:"content"`
+	ToolCalls  []ToolCallMessage `json:"tool_calls,omitempty"`
+	ToolCallID string            `json:"tool_call_id,omitempty"`
+}
+
+// ToolCallMessage 保留厂商兼容的工具调用回合，避免把工具结果伪装成用户输入。
+type ToolCallMessage struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
+}
+
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // ChatRequest 描述一次受 Context 控制的模型生成请求。

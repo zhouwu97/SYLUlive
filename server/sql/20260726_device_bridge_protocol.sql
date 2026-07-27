@@ -1,0 +1,3 @@
+ALTER TABLE user_devices
+    ADD COLUMN IF NOT EXISTS bridge_protocol_version INTEGER NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS client_version VARCHAR(32) NOT NULL DEFAULT '';

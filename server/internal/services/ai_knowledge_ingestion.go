@@ -154,7 +154,10 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 	prepared := make([]preparedKnowledgeChunk, len(chunks))
 	texts := make([]string, len(chunks))
 	for index, chunk := range chunks {
-		analysis, err := w.rag.Analyze(ctx, chunk.Content)
+		// 只把正文送进 Analyze/Embed 时，《课程重修管理办法》里写“首次考核不合格”的段落
+		// 在向量空间里无法与重修文件建立联系。标题、类型、部门和章节必须一起编码。
+		indexedText := knowledgeChunkIndexText(document, chunk)
+		analysis, err := w.rag.Analyze(ctx, indexedText)
 		if err != nil {
 			return fmt.Errorf("analyze_chunk: %w", err)
 		}
@@ -162,9 +165,9 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 		prepared[index] = preparedKnowledgeChunk{
 			index: index, content: chunk.Content, contentHash: hex.EncodeToString(hash[:]),
 			searchTokens: analysis.SearchString, sectionTitle: chunk.SectionTitle,
-			sourceLocator: fmt.Sprintf("chunk:%d", index+1),
+			sourceLocator: knowledgeSourceLocator(chunk.SectionTitle, index),
 		}
-		texts[index] = chunk.Content
+		texts[index] = indexedText
 	}
 	for start := 0; start < len(texts); start += 32 {
 		end := start + 32
@@ -286,6 +289,38 @@ func ensureActiveEmbeddingModel(tx *gorm.DB, version string) error {
 type knowledgeTextChunk struct {
 	Content      string
 	SectionTitle string
+}
+
+// knowledgeChunkIndexText 是同时用于 Analyze 与 Embed 的索引文本。
+// 两者必须一致，否则全文分词命中的段落和向量命中的段落会互相错开。
+func knowledgeChunkIndexText(document models.AIKnowledgeDocument, chunk knowledgeTextChunk) string {
+	parts := make([]string, 0, 5)
+	for _, value := range []string{
+		document.Title,
+		document.DocumentType,
+		document.Department,
+		chunk.SectionTitle,
+	} {
+		if value = strings.TrimSpace(value); value != "" {
+			parts = append(parts, value)
+		}
+	}
+	parts = append(parts, chunk.Content)
+	return strings.Join(parts, "\n")
+}
+
+// knowledgeSourceLocator 优先使用章节标题，让来源卡显示“第九条”而不是永远的 chunk:6。
+func knowledgeSourceLocator(sectionTitle string, index int) string {
+	sectionTitle = strings.TrimSpace(sectionTitle)
+	sectionTitle = strings.TrimLeft(sectionTitle, "# ")
+	sectionTitle = strings.TrimRight(sectionTitle, "：: ")
+	if sectionTitle == "" {
+		return fmt.Sprintf("chunk:%d", index+1)
+	}
+	if runes := []rune(sectionTitle); len(runes) > 40 {
+		sectionTitle = string(runes[:40])
+	}
+	return sectionTitle
 }
 
 func splitKnowledgeDocument(content string, maxRunes, overlapRunes int) []knowledgeTextChunk {

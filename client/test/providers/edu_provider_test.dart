@@ -548,6 +548,56 @@ void main() {
       expect(await store.readSnapshot(), isNull);
     });
 
+    test('clearMemoryForAccountTransition clears credit requirement cache',
+        () async {
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: const <String, dynamic>{
+                    'edu_authorized': true,
+                    'edu_student_id': '2403130233',
+                  },
+                ),
+              );
+              return;
+            }
+            if (options.path == '/edu/credit-requirements') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: const <String, dynamic>{
+                    'success': true,
+                    'status': 'available',
+                    'modules': <Map<String, dynamic>>[],
+                    'improvement_courses': <Map<String, dynamic>>[],
+                  },
+                ),
+              );
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+      final value = EduProvider(dio, createSnapshotStore);
+
+      await setBoundUser(value, 'user_credit');
+      expect((await value.fetchCreditRequirements()).success, isTrue);
+      expect(value.getCachedCreditRequirements(), isNotNull);
+
+      value.clearMemoryForAccountTransition();
+      value.setUserId('user_credit');
+
+      expect(value.getCachedCreditRequirements(), isNull);
+    });
+
     test('clearLocalSession clears local edu state and saved keys', () async {
       AppPreferencesStore.setMockInitialValues({
         'edu_bound_user_a': true,

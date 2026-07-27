@@ -16,7 +16,8 @@ knowledge-base/
 
 | 知识库 | 版本 | 状态 | 导入入口 |
 | --- | --- | --- | --- |
-| 沈阳理工大学官方学业政策 | v0.5 | 待导入/验收 | `sylu-academic-policy/v0.5/SYLUlive_AI官方全文导入包_v0.5.jsonl` |
+| 沈阳理工大学官方学业政策 | v0.6 | 已整理，待导入/验收 | `sylu-academic-policy/v0.6/SYLUlive_AI官方全文导入包_v0.6.jsonl` |
+| 沈阳理工大学学生资助政策增量 | v0.7 | 待导入/验收 | `sylu-academic-policy/v0.7/SYLUlive_AI学生资助政策增量导入包_v0.7.jsonl` |
 
 ## 管理约定
 

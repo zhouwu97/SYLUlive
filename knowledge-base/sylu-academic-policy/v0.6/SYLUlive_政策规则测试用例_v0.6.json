@@ -89,27 +89,58 @@
     {
       "case_id": "second-exam-colloquial-failed",
       "question": "挂科了怎么办",
-      "expected": "识别挂科为首次考核不合格。回答二次考试或重新学习；补充历史规则中开学初二考、未过进入缴费重修，并标注当前安排以教务通知为准。",
+      "expected": "识别为首次考核不合格。必须覆盖完整流程：当前处理方向、适用二次考试时的处理、未通过或不适用二考后的课程重修、实验实践类课程边界。历史资料只能补充现行文件未说明的环节并标注历史版本。",
       "must_not_answer": "当前资料不足",
+      "required_evidence_groups": [
+        [
+          "school_undergraduate_status_policy",
+          "school_policy_reasoning_card"
+        ],
+        [
+          "school_undergraduate_retake_policy"
+        ]
+      ],
       "sources": [
         "沈理工校〔2024〕23号第九条",
+        "沈理工教〔2025〕6号",
         "2004年课程免听、免修及重修规定"
+      ]
+    },
+    {
+      "case_id": "failed-course-must-cover-retake",
+      "question": "没拿到学分怎么办",
+      "expected": "不得只回答补考。必须同时给出现行学籍规定的二次考试或重新学习方向，以及现行课程重修管理办法的重修分支；缺少任一段正式依据时必须明确指出缺口。",
+      "must_not_answer": "只说明补考",
+      "required_evidence_groups": [
+        [
+          "school_undergraduate_status_policy",
+          "school_policy_reasoning_card"
+        ],
+        [
+          "school_undergraduate_retake_policy"
+        ]
+      ],
+      "sources": [
+        "沈理工校〔2024〕23号第九条",
+        "沈理工教〔2025〕6号"
       ]
     },
     {
       "case_id": "second-exam-gpa",
       "question": "补考成绩怎么算",
-      "expected": "说明历史校内规则中二考只记D/F，对应绩点1/0；补考60与100在该口径下均为D、绩点1.0。同时提示当前执行以教务系统和当期通知为准。",
+      "expected": "补考不是重修。当前没有已核验的正式文件规定统一的补考总成绩合成公式，因此不得给出具体比例、分数上限或绩点换算表；应说明成绩记载与合成方式以课程考核方案、当学期教务通知和教务系统为准。2004年D/F与绩点1/0必须标注为历史版本。",
       "must_not_answer": "无法回答",
       "sources": [
+        "2026年7月26日确认的补考与重修边界口径",
         "2004年课程免听、免修及重修规定"
       ]
     },
     {
       "case_id": "second-exam-100-gpa",
       "question": "补考考100分有多少绩点",
-      "expected": "按历史二考D/F口径，及格统一为D、绩点1.0，不按100分正常绩点换算；提示版本边界。",
+      "expected": "不能仅凭补考卷面100分直接给出总成绩或绩点，也不得自行给出合成比例。应说明需要该课程的考核方案和现行绩点规则，并标明历史文件中的D/F、绩点1/0属于历史版本。",
       "sources": [
+        "2026年7月26日确认的补考与重修边界口径",
         "2004年课程免听、免修及重修规定"
       ]
     },
@@ -122,9 +153,24 @@
       ]
     },
     {
+      "case_id": "retake-not-answered-by-history",
+      "question": "重修有什么规定",
+      "expected": "只依据2025年课程重修管理办法回答适用情形、报名缴费、门数限制和成绩记载；不得召回或引用2004年二次考试细则，也不得展开补考流程。",
+      "must_not_answer": "2004年二次考试细则",
+      "required_evidence_groups": [
+        [
+          "school_undergraduate_retake_policy"
+        ]
+      ],
+      "sources": [
+        "沈理工教〔2025〕6号"
+      ]
+    },
+    {
       "case_id": "practice-failed",
       "question": "实验课挂科也能开学补考吗",
-      "expected": "不能直接承诺。历史免费二考规则排除实践环节；当前2025办法明确实践教学环节不合格可重修。",
+      "expected": "不能直接承诺。历史免费二考规则排除实践环节，引用时必须标注历史版本；当前2025办法明确实践教学环节不合格可重修。",
+      "must_not_answer": "可以参加补考",
       "sources": [
         "2004年课程免听、免修及重修规定",
         "沈理工教〔2025〕6号"

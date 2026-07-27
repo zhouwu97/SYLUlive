@@ -23,6 +23,7 @@ import (
 var ErrRetrievalUnavailable = errors.New("knowledge retrieval unavailable")
 
 const maxRAGResponseBytes = 8 << 20
+const maxKnowledgeChunkResponseBytes = 64 << 20
 
 type RAGClient struct {
 	baseURL      string
@@ -52,38 +53,116 @@ type AnalyzeResult struct {
 
 type embeddingResponse struct {
 	Embeddings   [][]float32 `json:"embeddings"`
+	ModelName    string      `json:"model_name"`
 	ModelVersion string      `json:"model_version"`
 	Dimensions   int         `json:"dimensions"`
 }
 
-func (c *RAGClient) Embed(ctx context.Context, text string) ([]float32, string, error) {
+func (c *RAGClient) Embed(ctx context.Context, text string) ([]float32, string, int, error) {
 	var response embeddingResponse
 	if err := c.post(ctx, "/internal/rag/embed", map[string]interface{}{"text": text}, &response); err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
-	if len(response.Embeddings) != 1 || response.Dimensions != 1536 || len(response.Embeddings[0]) != 1536 || response.ModelVersion == "" {
-		return nil, "", fmt.Errorf("invalid embedding response")
+	if len(response.Embeddings) != 1 || response.Dimensions <= 0 || response.Dimensions > 2000 ||
+		len(response.Embeddings[0]) != response.Dimensions || response.ModelName == "" || len(response.ModelName) > 255 ||
+		response.ModelVersion == "" || len(response.ModelVersion) > 100 {
+		return nil, "", 0, fmt.Errorf("invalid embedding response")
 	}
-	return response.Embeddings[0], response.ModelVersion, nil
+	return response.Embeddings[0], response.ModelVersion, response.Dimensions, nil
 }
 
-func (c *RAGClient) EmbedBatch(ctx context.Context, texts []string) ([][]float32, string, error) {
+func (c *RAGClient) EmbedBatch(ctx context.Context, texts []string) ([][]float32, string, string, int, error) {
 	var response embeddingResponse
 	if len(texts) == 0 {
-		return nil, "", nil
+		return nil, "", "", 0, nil
 	}
 	if err := c.post(ctx, "/internal/rag/embed-batch", map[string]interface{}{"texts": texts}, &response); err != nil {
-		return nil, "", err
+		return nil, "", "", 0, err
 	}
-	if len(response.Embeddings) != len(texts) || response.Dimensions != 1536 || response.ModelVersion == "" {
-		return nil, "", fmt.Errorf("invalid batch embedding response")
+	if len(response.Embeddings) != len(texts) || response.Dimensions <= 0 || response.Dimensions > 2000 ||
+		response.ModelName == "" || len(response.ModelName) > 255 || response.ModelVersion == "" || len(response.ModelVersion) > 100 {
+		return nil, "", "", 0, fmt.Errorf("invalid batch embedding response")
 	}
 	for _, embedding := range response.Embeddings {
-		if len(embedding) != 1536 {
-			return nil, "", fmt.Errorf("invalid embedding dimensions")
+		if len(embedding) != response.Dimensions {
+			return nil, "", "", 0, fmt.Errorf("invalid embedding dimensions")
 		}
 	}
-	return response.Embeddings, response.ModelVersion, nil
+	return response.Embeddings, response.ModelName, response.ModelVersion, response.Dimensions, nil
+}
+
+// KnowledgeChunkRequest 是 Go 写入事务交给 Python LangChain 分块器的只读文档快照。
+type KnowledgeChunkRequest struct {
+	DocumentID    uint       `json:"document_id"`
+	Title         string     `json:"title"`
+	Content       string     `json:"content"`
+	SourceLocator string     `json:"source_locator,omitempty"`
+	DocumentType  string     `json:"document_type,omitempty"`
+	Department    string     `json:"department,omitempty"`
+	VersionStatus string     `json:"version_status"`
+	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
+	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
+	Aliases       []string   `json:"aliases,omitempty"`
+	ChunkSize     int        `json:"chunk_size"`
+	ChunkOverlap  int        `json:"chunk_overlap"`
+}
+
+type KnowledgeDocumentChunk struct {
+	Index         int             `json:"index"`
+	Content       string          `json:"content"`
+	ContentHash   string          `json:"content_hash"`
+	EmbeddingText string          `json:"embedding_text"`
+	SectionTitle  string          `json:"section_title"`
+	SourceLocator string          `json:"source_locator"`
+	Metadata      json.RawMessage `json:"metadata"`
+}
+
+type KnowledgeChunkResult struct {
+	DocumentID      uint                     `json:"document_id"`
+	ChunkingVersion string                   `json:"chunking_version"`
+	Chunks          []KnowledgeDocumentChunk `json:"chunks"`
+}
+
+func (c *RAGClient) ChunkKnowledgeDocument(ctx context.Context, request KnowledgeChunkRequest) (KnowledgeChunkResult, error) {
+	var response KnowledgeChunkResult
+	if err := c.postWithLimit(ctx, "/internal/rag/knowledge/chunk", request, &response, maxKnowledgeChunkResponseBytes); err != nil {
+		return KnowledgeChunkResult{}, err
+	}
+	if response.DocumentID != request.DocumentID || strings.TrimSpace(response.ChunkingVersion) == "" ||
+		len(response.Chunks) == 0 || len(response.Chunks) > 10000 {
+		return KnowledgeChunkResult{}, fmt.Errorf("invalid knowledge chunk response")
+	}
+	for index, chunk := range response.Chunks {
+		if chunk.Index != index || strings.TrimSpace(chunk.Content) == "" || len(chunk.ContentHash) != 64 ||
+			strings.TrimSpace(chunk.EmbeddingText) == "" || strings.TrimSpace(chunk.SourceLocator) == "" ||
+			len(chunk.Metadata) == 0 || len(chunk.Metadata) > 64<<10 || !json.Valid(chunk.Metadata) {
+			return KnowledgeChunkResult{}, fmt.Errorf("invalid knowledge chunk response")
+		}
+		var metadata map[string]json.RawMessage
+		if err := json.Unmarshal(chunk.Metadata, &metadata); err != nil {
+			return KnowledgeChunkResult{}, fmt.Errorf("invalid knowledge chunk metadata")
+		}
+		for _, key := range []string{
+			"document_id", "section_title", "section_path", "source_locator", "document_type",
+			"department", "version_status", "effective_from", "effective_to", "chunking_version",
+		} {
+			if _, exists := metadata[key]; !exists {
+				return KnowledgeChunkResult{}, fmt.Errorf("incomplete knowledge chunk metadata")
+			}
+		}
+		var metadataDocumentID uint
+		var metadataLocator, metadataChunkingVersion string
+		if err := json.Unmarshal(metadata["document_id"], &metadataDocumentID); err != nil || metadataDocumentID != request.DocumentID {
+			return KnowledgeChunkResult{}, fmt.Errorf("knowledge chunk metadata document mismatch")
+		}
+		if err := json.Unmarshal(metadata["source_locator"], &metadataLocator); err != nil || metadataLocator != chunk.SourceLocator {
+			return KnowledgeChunkResult{}, fmt.Errorf("knowledge chunk metadata locator mismatch")
+		}
+		if err := json.Unmarshal(metadata["chunking_version"], &metadataChunkingVersion); err != nil || metadataChunkingVersion != response.ChunkingVersion {
+			return KnowledgeChunkResult{}, fmt.Errorf("knowledge chunk metadata version mismatch")
+		}
+	}
+	return response, nil
 }
 
 func (c *RAGClient) Analyze(ctx context.Context, text string) (AnalyzeResult, error) {
@@ -134,6 +213,10 @@ func (c *RAGClient) Health(ctx context.Context) error {
 }
 
 func (c *RAGClient) post(ctx context.Context, path string, payload interface{}, target interface{}) error {
+	return c.postWithLimit(ctx, path, payload, target, maxRAGResponseBytes)
+}
+
+func (c *RAGClient) postWithLimit(ctx context.Context, path string, payload interface{}, target interface{}, responseLimit int64) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -149,11 +232,11 @@ func (c *RAGClient) post(ctx context.Context, path string, payload interface{}, 
 		return err
 	}
 	defer response.Body.Close()
-	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxRAGResponseBytes+1))
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
 	if err != nil {
 		return err
 	}
-	if len(responseBody) > maxRAGResponseBytes {
+	if int64(len(responseBody)) > responseLimit {
 		return fmt.Errorf("RAG response exceeds limit")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -289,12 +372,12 @@ func (r *HybridRetriever) Retrieve(ctx context.Context, query string) (Retrieval
 		degraded = append(degraded, string(retrievalChannelFTS))
 	}
 
-	embedding, embeddingVersion, embeddingErr := r.rag.Embed(ctx, queryText)
+	embedding, embeddingVersion, embeddingDimensions, embeddingErr := r.rag.Embed(ctx, queryText)
 	if embeddingErr == nil {
 		if embeddingVersion == "" {
 			embeddingVersion = r.modelVersion
 		}
-		if rows, searchErr := r.vectorSearch(ctx, embedding, embeddingVersion, plan, 30); searchErr == nil {
+		if rows, searchErr := r.vectorSearch(ctx, embedding, embeddingVersion, embeddingDimensions, plan, 30); searchErr == nil {
 			lists = append(lists, rankedChunkList{Channel: retrievalChannelVector, Items: rows})
 			successfulChannels++
 		} else {
@@ -364,16 +447,23 @@ func (r *HybridRetriever) exactSearch(ctx context.Context, plan PolicyQueryPlan,
 	return r.queryRanked(ctx, query, args...)
 }
 
-func (r *HybridRetriever) vectorSearch(ctx context.Context, embedding []float32, version string, plan PolicyQueryPlan, limit int) ([]rankedChunk, error) {
+func (r *HybridRetriever) vectorSearch(ctx context.Context, embedding []float32, version string, dimensions int, plan PolicyQueryPlan, limit int) ([]rankedChunk, error) {
 	if r.db.Dialector.Name() != "postgres" {
 		return nil, errors.New("vector search requires PostgreSQL")
 	}
 	vector := formatVector(embedding)
+	distanceSQL := "ce.embedding <=> ?::vector"
+	if dimensions == 384 {
+		distanceSQL = "ce.embedding::vector(384) <=> ?::vector(384)"
+	} else if dimensions == 1536 {
+		distanceSQL = "ce.embedding::vector(1536) <=> ?::vector(1536)"
+	}
 	return r.queryRanked(ctx, `
 		SELECT c.id AS chunk_id, c.document_id, c.content, d.title, d.document_type,
 		       d.source_type, d.department, d.source_uri, c.section_title,
 		       c.source_locator, d.effective_from, d.effective_to, d.published_at
 		FROM ai_knowledge_chunks c
+		JOIN ai_knowledge_chunk_embeddings ce ON ce.chunk_id = c.id
 		JOIN ai_knowledge_documents d ON d.id = c.document_id
 		WHERE d.status = 'published' AND d.deleted_at IS NULL
 		  AND (d.effective_from IS NULL OR d.effective_from <= ?)
@@ -381,9 +471,10 @@ func (r *HybridRetriever) vectorSearch(ctx context.Context, embedding []float32,
 			(NOT `+historicalDocumentSQL+` AND (d.effective_to IS NULL OR d.effective_to >= ?))
 			OR (? AND `+historicalDocumentSQL+`)
 		  )
-		  AND c.embedding_model_version = ?
-		ORDER BY c.embedding <=> ?::vector
-		LIMIT ?`, r.now(), r.now(), plan.AllowHistorical, version, vector, limit)
+		  AND ce.model_version = ?
+		  AND ce.dimensions = ?
+		ORDER BY `+distanceSQL+`
+		LIMIT ?`, r.now(), r.now(), plan.AllowHistorical, version, dimensions, vector, limit)
 }
 
 func (r *HybridRetriever) ftsSearch(ctx context.Context, query string, plan PolicyQueryPlan, limit int) ([]rankedChunk, error) {

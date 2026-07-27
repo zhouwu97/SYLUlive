@@ -95,7 +95,13 @@ def test_policy_query_endpoints_use_injected_lcel_chain(monkeypatch):
 
     main.SERVICE_TOKEN = "test-token"
     main.app.state.policy_chain = fake_chain()
-    monkeypatch.setattr(main, "TextEmbedding", lambda **_: object())
+
+    class ReadyTextEmbedding:
+        def embed(self, texts):
+            for _ in texts:
+                yield [0.0] * 384
+
+    monkeypatch.setattr(main, "TextEmbedding", lambda **_: ReadyTextEmbedding())
     with TestClient(main.app) as client:
         headers = {"X-Internal-Service-Token": "test-token"}
         response = client.post(

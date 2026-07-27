@@ -290,7 +290,7 @@ func Load() *Config {
 	ragServiceToken := strings.TrimSpace(os.Getenv("RAG_SERVICE_TOKEN"))
 	ragEmbeddingModelVersion := strings.TrimSpace(os.Getenv("RAG_EMBEDDING_MODEL_VERSION"))
 	if ragEmbeddingModelVersion == "" {
-		ragEmbeddingModelVersion = "paraphrase-multilingual-minilm-l12-v2-padded-1536-v1"
+		ragEmbeddingModelVersion = "paraphrase-multilingual-minilm-l12-v2-384-v1"
 	}
 	if err := validateAIConfig(aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey, deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled, aiLangChainRAGEnabled, ragServiceURL, ragServiceToken); err != nil {
 		panic(err)

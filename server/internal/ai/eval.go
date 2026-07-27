@@ -2,9 +2,11 @@ package ai
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -305,8 +307,8 @@ func LoadEvaluationCases(directory string) ([]EvaluationCase, error) {
 			if strings.TrimSpace(scanner.Text()) == "" {
 				continue
 			}
-			var testCase EvaluationCase
-			if err := json.Unmarshal(scanner.Bytes(), &testCase); err != nil {
+			testCase, err := decodeEvaluationCase(scanner.Bytes())
+			if err != nil {
 				file.Close()
 				return nil, fmt.Errorf("%s:%d: %w", path, line, err)
 			}
@@ -335,6 +337,24 @@ func LoadEvaluationCases(directory string) ([]EvaluationCase, error) {
 		return nil, fmt.Errorf("no evaluation cases")
 	}
 	return cases, nil
+}
+
+// decodeEvaluationCase 拒绝共享 Schema 之外的字段，防止 Go 与 Python 逐步形成不同语义。
+func decodeEvaluationCase(data []byte) (EvaluationCase, error) {
+	var testCase EvaluationCase
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&testCase); err != nil {
+		return EvaluationCase{}, err
+	}
+	var trailing interface{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return EvaluationCase{}, fmt.Errorf("evaluation case contains multiple JSON values")
+		}
+		return EvaluationCase{}, err
+	}
+	return testCase, nil
 }
 
 // RunFixedEvaluation 执行不访问网络、结果可复现的 fixture 评测集。

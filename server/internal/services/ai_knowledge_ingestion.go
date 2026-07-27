@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -292,17 +291,24 @@ func (w *KnowledgeIngestionWorker) process(ctx context.Context, job *models.AIKn
 				}
 			}
 		}
-		inspection, _ := json.Marshal(map[string]interface{}{
-			"bytes": len(document.Content), "runes": utf8.RuneCountInString(document.Content),
-			"content_hash": document.ContentHash, "unresolved_items": []string{},
-			"chunk_count": len(prepared), "chunking_version": chunkResult.ChunkingVersion,
-			"embedding_model_name": embeddingModelName, "embedding_model_version": w.modelVersion,
-			"embedding_dimensions": embeddingDimensions,
-		})
+		report, err := InspectKnowledgeDocument(ctx, tx, document)
+		if err != nil {
+			return err
+		}
+		report.ChunkCount = len(prepared)
+		report.ChunkingVersion = chunkResult.ChunkingVersion
+		report.EmbeddingModelName = embeddingModelName
+		report.EmbeddingModelVersion = w.modelVersion
+		report.EmbeddingDimensions = embeddingDimensions
+		inspection, _ := json.Marshal(report)
 		now := time.Now()
 		restoreStatus := job.RestoreStatus
 		if restoreStatus != models.KnowledgeStatusPublished {
-			restoreStatus = models.KnowledgeStatusInspected
+			if report.HasBlockingIssues() {
+				restoreStatus = models.KnowledgeStatusNeedsReview
+			} else {
+				restoreStatus = models.KnowledgeStatusInspected
+			}
 		}
 		if err := tx.Model(&models.AIKnowledgeDocument{}).Where("id = ?", document.ID).Updates(map[string]interface{}{
 			"status": restoreStatus, "inspection": string(inspection),

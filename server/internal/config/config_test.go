@@ -211,6 +211,9 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("AI_PROVIDER", "deepseek")
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	t.Setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "false")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "false")
+	t.Setenv("RAG_SERVICE_TOKEN", "")
 }
 
 func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
@@ -220,6 +223,28 @@ func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	require.True(t, cfg.AIInternalTestOnly)
 	require.Empty(t, cfg.DeepSeekAPIKey)
 	require.Equal(t, "deepseek-v4-flash", cfg.DeepSeekChatModel)
+	require.False(t, cfg.AILangChainRAGEnabled)
+}
+
+func TestLoadLangChainRAGDoesNotRequireGoProviderKey(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_TEST_USER_IDS", "18")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "true")
+	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+	cfg := Load()
+	require.True(t, cfg.AILangChainRAGEnabled)
+	require.Empty(t, cfg.DeepSeekAPIKey)
+}
+
+func TestLoadLangChainRAGRequiresPolicyCapability(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_TEST_USER_IDS", "18")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "true")
+	require.Panics(t, func() { Load() })
 }
 
 func TestLoadAIConfigRequiresServerKeyAndWhitelist(t *testing.T) {

@@ -652,19 +652,29 @@ func main() {
 			log.Fatalf("AI RAG 配置无效: %v", ragErr)
 		}
 		var provider ai.AIProvider
-		if cfg.AIProvider == "mock" {
-			provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
+		var retriever ai.PolicyRetriever
+		runtimeOptions := make([]ai.RuntimeOption, 0, 1)
+		providerName, modelName := cfg.AIProvider, cfg.DeepSeekChatModel
+		if cfg.AILangChainRAGEnabled {
+			// 新链开启时 Go 不再初始化模型或执行检索，避免 Go/Python 双重生成与双重计费。
+			providerName, modelName = "langchain", "python-policy-rag"
+			runtimeOptions = append(runtimeOptions, ai.WithLangChainRAG(ragClient))
 		} else {
-			providerHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
-			provider, ragErr = ai.NewDeepSeekProvider(cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekChatModel, providerHTTPClient)
-			if ragErr != nil {
-				log.Fatalf("AI Provider 初始化失败: %v", ragErr)
+			retriever = ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
+			if cfg.AIProvider == "mock" {
+				provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
+			} else {
+				providerHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
+				provider, ragErr = ai.NewDeepSeekProvider(cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekChatModel, providerHTTPClient)
+				if ragErr != nil {
+					log.Fatalf("AI Provider 初始化失败: %v", ragErr)
+				}
 			}
 		}
 		aiRuntime, ragErr = ai.NewRuntime(
-			db, provider, ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion), ai.NewEventBroker(),
+			db, provider, retriever, ai.NewEventBroker(),
 			ai.RuntimeConfig{
-				ProviderName: cfg.AIProvider, Model: cfg.DeepSeekChatModel,
+				ProviderName: providerName, Model: modelName,
 				RequestTimeout:  time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second,
 				MaxMessageChars: cfg.AIMaxMessageChars, HourlyMessageLimit: cfg.AIHourlyMessageLimit,
 				DefaultBudgetLimitMicroYuan:    cfg.AIUserBudgetLimitMicroYuan,
@@ -672,7 +682,9 @@ func main() {
 				InputPriceMicroYuanPerMillion:  cfg.AIInputPriceMicroYuanPerMillionTokens,
 				OutputPriceMicroYuanPerMillion: cfg.AIOutputPriceMicroYuanPerMillionTokens,
 				AuditHashSecret:                cfg.JWTSecret,
+				LangChainRAGEnabled:            cfg.AILangChainRAGEnabled,
 			},
+			runtimeOptions...,
 		)
 		if ragErr != nil {
 			log.Fatalf("AI Runtime 初始化失败: %v", ragErr)
@@ -770,7 +782,10 @@ func main() {
 			"ai": gin.H{
 				"enabled":         cfg.AIEnabled,
 				"runtime_enabled": aiRuntime != nil,
-				"policy_rag":      gin.H{"enabled": cfg.AIPolicyRAGEnabled, "status": ragHealth},
+				"policy_rag": gin.H{
+					"enabled": cfg.AIPolicyRAGEnabled, "langchain_enabled": cfg.AILangChainRAGEnabled,
+					"status": ragHealth,
+				},
 			},
 		})
 	})

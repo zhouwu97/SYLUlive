@@ -7,6 +7,7 @@ from app.schemas.policy import (
     PolicySource,
     PolicyUsage,
 )
+from app.schemas.retrieval import PolicyQueryPlan
 
 __all__ = [
     "KnowledgeChunk",
@@ -18,4 +19,5 @@ __all__ = [
     "PolicyRAGResult",
     "PolicySource",
     "PolicyUsage",
+    "PolicyQueryPlan",
 ]

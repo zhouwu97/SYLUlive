@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"sync"
 	"testing"
@@ -89,14 +90,15 @@ func newLangChainTestRuntime(t *testing.T, client LangChainRAG) (*Runtime, *gorm
 func TestLangChainRuntimeUsesPythonResultAndSettlesOnce(t *testing.T) {
 	result := validPolicyRAGResult("pending")
 	client := &fakeLangChainRAG{events: []PolicyRAGEvent{
-		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 1, Type: "planning", Timestamp: time.Now().Format(time.RFC3339Nano)},
-		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 2, Type: "retrieving", Timestamp: time.Now().Format(time.RFC3339Nano)},
-		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 3, Type: "reranking", Timestamp: time.Now().Format(time.RFC3339Nano)},
-		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 4, Type: "generating", Timestamp: time.Now().Format(time.RFC3339Nano)},
-		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 5, Type: "token", Timestamp: time.Now().Format(time.RFC3339Nano), Delta: result.Answer},
-		{SchemaVersion: "1.0", ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 6, Type: "completed", Timestamp: time.Now().Format(time.RFC3339Nano), Result: &result},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 1, Type: "planning", Timestamp: time.Now().Format(time.RFC3339Nano)},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 2, Type: "retrieving", Timestamp: time.Now().Format(time.RFC3339Nano)},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 3, Type: "reranking", Timestamp: time.Now().Format(time.RFC3339Nano)},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 4, Type: "generating", Timestamp: time.Now().Format(time.RFC3339Nano)},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 5, Type: "token", Timestamp: time.Now().Format(time.RFC3339Nano), Delta: result.Answer},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 6, Type: "completed", Timestamp: time.Now().Format(time.RFC3339Nano), Result: &result},
 	}}
 	runtime, db := newLangChainTestRuntime(t, client)
+	seedPublishedKnowledgeSource(t, db, 9, 18)
 	run, _, err := runtime.CreateRun(context.Background(), 31, CreateRunRequest{
 		ClientRequestID: uuid.NewString(), Message: "怎么请假",
 	})
@@ -138,4 +140,42 @@ func TestLangChainRuntimeCancelPropagatesAndReleasesReservation(t *testing.T) {
 		remaining, _, quotaErr := runtime.Quota(context.Background(), 32)
 		return quotaErr == nil && remaining == 3
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestLangChainRuntimeRejectsSourceRevokedBeforeFinalValidation(t *testing.T) {
+	result := validPolicyRAGResult("pending")
+	client := &fakeLangChainRAG{events: []PolicyRAGEvent{
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 1, Type: "generating", Timestamp: time.Now().Format(time.RFC3339Nano)},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 2, Type: "token", Timestamp: time.Now().Format(time.RFC3339Nano), Delta: result.Answer},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 3, Type: "completed", Timestamp: time.Now().Format(time.RFC3339Nano), Result: &result},
+	}}
+	runtime, db := newLangChainTestRuntime(t, client)
+	require.NoError(t, db.AutoMigrate(&models.AIKnowledgeDocument{}, &models.AIKnowledgeChunk{}))
+	require.NoError(t, db.Create(&models.AIKnowledgeDocument{
+		ID: 9, Title: "学生手册", SourceType: "official", Content: "正文", ContentHash: "doc-hash",
+		Status: models.KnowledgeStatusRevoked, CreatedBy: 1,
+	}).Error)
+	require.NoError(t, db.Create(&models.AIKnowledgeChunk{
+		ID: 18, DocumentID: 9, ChunkIndex: 0, Content: "学生请假应履行审批手续。",
+		ContentHash: "chunk-hash", EmbeddingModelVersion: "fixture-v1",
+	}).Error)
+
+	run, _, err := runtime.CreateRun(context.Background(), 33, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "怎么请假",
+	})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+
+	var messages []models.AIConversationMessage
+	require.NoError(t, db.Where("run_id = ?", run.ID).Order("created_at ASC").Find(&messages).Error)
+	require.Len(t, messages, 2)
+	require.Equal(t, "当前已发布资料不足，暂时无法给出可核验回答。", messages[1].Content)
+
+	var sourceEvent models.AIEvent
+	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "sources.ready").First(&sourceEvent).Error)
+	var payload struct {
+		Sources []SourceCard `json:"sources"`
+	}
+	require.NoError(t, json.Unmarshal(sourceEvent.Payload, &payload))
+	require.Empty(t, payload.Sources)
 }

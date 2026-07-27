@@ -271,22 +271,23 @@ func (c *RAGClient) postWithLimit(ctx context.Context, path string, payload inte
 }
 
 type RetrievedChunk struct {
-	ChunkID       uint64                `json:"chunk_id"`
-	DocumentID    uint                  `json:"document_id"`
-	Content       string                `json:"content"`
-	Title         string                `json:"title"`
-	DocumentType  string                `json:"document_type,omitempty"`
-	SourceType    string                `json:"-"`
-	Department    string                `json:"department,omitempty"`
-	SourceURI     string                `json:"source_url,omitempty"`
-	SectionTitle  string                `json:"section_title,omitempty"`
-	SourceLocator string                `json:"source_locator,omitempty"`
-	EffectiveFrom *time.Time            `json:"effective_from,omitempty"`
-	EffectiveTo   *time.Time            `json:"effective_to,omitempty"`
-	PublishedAt   *time.Time            `json:"published_at,omitempty"`
-	Historical    bool                  `json:"historical,omitempty"`
-	RRFScore      float64               `gorm:"-" json:"-"`
-	ScoreDetails  RetrievalScoreDetails `gorm:"-" json:"score_details,omitempty"`
+	ChunkID        uint64                `json:"chunk_id"`
+	DocumentID     uint                  `json:"document_id"`
+	Content        string                `json:"content"`
+	Title          string                `json:"title"`
+	DocumentType   string                `json:"document_type,omitempty"`
+	SourceType     string                `json:"-"`
+	Department     string                `json:"department,omitempty"`
+	SourceURI      string                `json:"source_url,omitempty"`
+	SectionTitle   string                `json:"section_title,omitempty"`
+	SourceLocator  string                `json:"source_locator,omitempty"`
+	EffectiveFrom  *time.Time            `json:"effective_from,omitempty"`
+	EffectiveTo    *time.Time            `json:"effective_to,omitempty"`
+	PublishedAt    *time.Time            `json:"published_at,omitempty"`
+	Historical     bool                  `json:"historical,omitempty"`
+	CitationNumber int                   `gorm:"-" json:"-"`
+	RRFScore       float64               `gorm:"-" json:"-"`
+	ScoreDetails   RetrievalScoreDetails `gorm:"-" json:"score_details,omitempty"`
 }
 
 // PolicyQueryPlanSummary 仅保留可审计的规划属性，不包含用户原问题和扩展查询正文。
@@ -858,25 +859,40 @@ func formatVector(values []float32) string {
 }
 
 type SourceCard struct {
-	ChunkID     uint64     `json:"chunk_id"`
-	DocumentID  uint       `json:"document_id"`
-	Title       string     `json:"title"`
-	Department  string     `json:"department,omitempty"`
-	URL         string     `json:"url,omitempty"`
-	Locator     string     `json:"locator,omitempty"`
-	PublishedAt *time.Time `json:"published_at,omitempty"`
-	Confidence  string     `json:"confidence"`
+	PrimaryChunkID  uint64     `json:"primary_chunk_id,omitempty"`
+	DocumentID      uint       `json:"document_id"`
+	Title           string     `json:"title"`
+	Department      string     `json:"department,omitempty"`
+	URL             string     `json:"url,omitempty"`
+	Locators        []string   `json:"locators,omitempty"`
+	CitationNumbers []int      `json:"citation_numbers"`
+	PublishedAt     *time.Time `json:"published_at,omitempty"`
+	Confidence      string     `json:"confidence"`
 }
 
-// ValidateCitations 严格删除不在本次召回集合中的引用，并由服务端构造来源卡片。
+// ValidateCitations 校验结构化数字引用；旧链路的 chunk 引用会被转换成公开编号。
 func ValidateCitations(answer string, chunks []RetrievedChunk) (string, []SourceCard, bool) {
+	structured := false
+	for _, chunk := range chunks {
+		if chunk.CitationNumber > 0 {
+			structured = true
+			break
+		}
+	}
+	if structured {
+		return validateNumberedCitations(answer, chunks)
+	}
+	return validateLegacyChunkCitations(answer, chunks)
+}
+
+func validateLegacyChunkCitations(answer string, chunks []RetrievedChunk) (string, []SourceCard, bool) {
 	allowed := make(map[uint64]RetrievedChunk, len(chunks))
 	for _, chunk := range chunks {
 		allowed[chunk.ChunkID] = chunk
 	}
 	var output strings.Builder
-	cards := make([]SourceCard, 0, len(chunks))
-	seen := make(map[uint64]struct{})
+	cited := make([]RetrievedChunk, 0, len(chunks))
+	numberByChunk := make(map[uint64]int, len(chunks))
 	invalid := false
 	for index := 0; index < len(answer); {
 		start := strings.Index(answer[index:], "[chunk:")
@@ -888,7 +904,7 @@ func ValidateCitations(answer string, chunks []RetrievedChunk) (string, []Source
 		output.WriteString(answer[index:start])
 		endOffset := strings.IndexByte(answer[start:], ']')
 		if endOffset < 0 {
-			output.WriteString(answer[start:])
+			invalid = true
 			break
 		}
 		end := start + endOffset + 1
@@ -900,18 +916,114 @@ func ValidateCitations(answer string, chunks []RetrievedChunk) (string, []Source
 			index = end
 			continue
 		}
-		output.WriteString(answer[start:end])
-		if _, exists := seen[id]; !exists {
-			seen[id] = struct{}{}
-			cards = append(cards, SourceCard{
-				ChunkID: id, DocumentID: chunk.DocumentID, Title: chunk.Title,
-				Department: chunk.Department, URL: chunk.SourceURI, Locator: chunk.SourceLocator,
-				PublishedAt: chunk.PublishedAt, Confidence: confidenceForScore(chunk.RRFScore),
-			})
+		number, exists := numberByChunk[id]
+		if !exists {
+			number = len(numberByChunk) + 1
+			numberByChunk[id] = number
+			chunk.CitationNumber = number
+			cited = append(cited, chunk)
 		}
+		output.WriteString("[" + strconv.Itoa(number) + "]")
 		index = end
 	}
-	return output.String(), cards, invalid
+	return output.String(), aggregateSourceCards(cited), invalid
+}
+
+func validateNumberedCitations(answer string, chunks []RetrievedChunk) (string, []SourceCard, bool) {
+	allowed := make(map[int]RetrievedChunk, len(chunks))
+	invalid := strings.Contains(strings.ToLower(answer), "[chunk:") || strings.Contains(answer, "[R")
+	for _, chunk := range chunks {
+		if chunk.CitationNumber <= 0 {
+			invalid = true
+			continue
+		}
+		if _, exists := allowed[chunk.CitationNumber]; exists {
+			invalid = true
+		}
+		allowed[chunk.CitationNumber] = chunk
+	}
+
+	seen := make(map[int]struct{}, len(allowed))
+	cited := make([]RetrievedChunk, 0, len(allowed))
+	for index := 0; index < len(answer); {
+		startOffset := strings.IndexByte(answer[index:], '[')
+		if startOffset < 0 {
+			break
+		}
+		start := index + startOffset
+		endOffset := strings.IndexByte(answer[start:], ']')
+		if endOffset < 0 {
+			break
+		}
+		end := start + endOffset
+		if end+1 < len(answer) && answer[end+1] == '(' {
+			// Markdown 数字链接标签不是政策引用，例如 [2026](https://example.edu)。
+			index = end + 1
+			continue
+		}
+		number, err := strconv.Atoi(answer[start+1 : end])
+		if err == nil {
+			chunk, ok := allowed[number]
+			if !ok {
+				invalid = true
+			} else if _, exists := seen[number]; !exists {
+				seen[number] = struct{}{}
+				cited = append(cited, chunk)
+			}
+		}
+		index = end + 1
+	}
+	if len(seen) == 0 || len(seen) != len(allowed) {
+		invalid = true
+	}
+	return answer, aggregateSourceCards(cited), invalid
+}
+
+func aggregateSourceCards(chunks []RetrievedChunk) []SourceCard {
+	cards := make([]SourceCard, 0, len(chunks))
+	indexByDocument := make(map[uint]int, len(chunks))
+	for _, chunk := range chunks {
+		index, exists := indexByDocument[chunk.DocumentID]
+		if !exists {
+			index = len(cards)
+			indexByDocument[chunk.DocumentID] = index
+			cards = append(cards, SourceCard{
+				PrimaryChunkID: chunk.ChunkID, DocumentID: chunk.DocumentID, Title: chunk.Title,
+				Department: chunk.Department, URL: chunk.SourceURI, PublishedAt: chunk.PublishedAt,
+				Confidence: confidenceForScore(chunk.RRFScore),
+			})
+		}
+		card := &cards[index]
+		if chunk.CitationNumber > 0 && !containsInt(card.CitationNumbers, chunk.CitationNumber) {
+			card.CitationNumbers = append(card.CitationNumbers, chunk.CitationNumber)
+		}
+		if chunk.SourceLocator != "" && !containsString(card.Locators, chunk.SourceLocator) {
+			card.Locators = append(card.Locators, chunk.SourceLocator)
+		}
+		confidence := confidenceForScore(chunk.RRFScore)
+		if confidence == "confirmed" || card.Confidence == "partial" && confidence == "supported" {
+			card.Confidence = confidence
+		}
+	}
+	return cards
+}
+
+func containsInt(values []int, target int) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func confidenceForScore(score float64) string {

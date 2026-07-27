@@ -352,8 +352,10 @@ func buildPolicyPrompt(question string, chunks []RetrievedChunk) string {
 func (r *Runtime) completeRun(runID, rawAnswer string, chunks []RetrievedChunk, usage ProviderEvent, latency time.Duration) {
 	chunks = r.currentPublishedChunks(chunks)
 	answer, sources, invalid := ValidateCitations(rawAnswer, chunks)
-	if len(sources) == 0 {
+	if invalid || len(sources) == 0 {
 		answer = "当前已发布资料不足，暂时无法给出可核验回答。"
+		sources = []SourceCard{}
+		invalid = true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -399,30 +401,39 @@ func (r *Runtime) currentPublishedChunks(chunks []RetrievedChunk) []RetrievedChu
 	for index, chunk := range chunks {
 		ids[index] = chunk.ChunkID
 	}
-	var validIDs []uint64
+	var rows []RetrievedChunk
 	now := time.Now()
 	err := r.db.Table("ai_knowledge_chunks AS c").
-		Select("c.id").
+		Select(`c.id AS chunk_id, c.document_id, c.content, d.title, d.document_type,
+			d.source_type, d.department, d.source_uri, c.section_title, c.source_locator,
+			d.effective_from, d.effective_to, d.published_at`).
 		Joins("JOIN ai_knowledge_documents d ON d.id = c.document_id").
 		Where("c.id IN ? AND d.status = ? AND d.deleted_at IS NULL", ids, models.KnowledgeStatusPublished).
-		Where("(d.effective_from IS NULL OR d.effective_from <= ?) AND (d.effective_to IS NULL OR d.effective_to >= ?)", now, now).
-		Scan(&validIDs).Error
+		Scan(&rows).Error
 	if err != nil {
-		// 测试或降级数据库没有知识表时，召回器本身仍是本次允许集合；生产库会执行二次状态核验。
-		if r.db.Dialector.Name() != "postgres" {
-			return chunks
-		}
+		// 发布前复核必须闭合失败，避免测试型或降级数据库绕过来源撤销状态。
 		return nil
 	}
-	valid := make(map[uint64]struct{}, len(validIDs))
-	for _, id := range validIDs {
-		valid[id] = struct{}{}
+	requested := make(map[uint64]RetrievedChunk, len(chunks))
+	for _, chunk := range chunks {
+		requested[chunk.ChunkID] = chunk
 	}
 	result := make([]RetrievedChunk, 0, len(chunks))
-	for _, chunk := range chunks {
-		if _, ok := valid[chunk.ChunkID]; ok {
-			result = append(result, chunk)
+	for _, row := range rows {
+		original, ok := requested[row.ChunkID]
+		if !ok || original.DocumentID != row.DocumentID {
+			continue
 		}
+		documentType := strings.ToLower(strings.TrimSpace(row.DocumentType))
+		sourceType := strings.ToLower(strings.TrimSpace(row.SourceType))
+		historical := strings.HasPrefix(documentType, "historical_") || strings.Contains(sourceType, "historical")
+		if !historical && (row.EffectiveFrom != nil && row.EffectiveFrom.After(now) || row.EffectiveTo != nil && row.EffectiveTo.Before(now)) {
+			continue
+		}
+		row.Historical = historical
+		row.CitationNumber = original.CitationNumber
+		row.RRFScore = original.RRFScore
+		result = append(result, row)
 	}
 	return result
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -234,7 +235,19 @@ def test_runnable_branch_uses_inclusive_calibrated_threshold(
     score: float, expected_status: str, expected_calls: int
 ):
     chat_model = _CountingChatModel(
-        response_text="有证据的回答。[chunk:1]", input_tokens=4, output_tokens=2
+        response_text=json.dumps(
+            {
+                "answer": "有证据的回答。",
+                "current_rules": [{"statement": "政策证据 1", "citation_ids": ["R1"]}],
+                "historical_rules": [],
+                "warnings": [],
+                "citations": [{"reference_id": "R1", "quote": "政策证据 1"}],
+                "confidence": "high",
+            },
+            ensure_ascii=False,
+        ),
+        input_tokens=4,
+        output_tokens=2,
     )
     chain = build_policy_rag_chain(
         FakePolicyRetriever(documents=[_document(1)]),
@@ -293,7 +306,19 @@ async def test_stream_reports_reranking_before_generation():
     chain = build_policy_rag_chain(
         FakePolicyRetriever(documents=[_document(1)]),
         FakePolicyChatModel(
-            response_text="有证据的回答。[chunk:1]", input_tokens=4, output_tokens=2
+            response_text=json.dumps(
+                {
+                    "answer": "有证据的回答。",
+                    "current_rules": [{"statement": "政策证据 1", "citation_ids": ["R1"]}],
+                    "historical_rules": [],
+                    "warnings": [],
+                    "citations": [{"reference_id": "R1", "quote": "政策证据 1"}],
+                    "confidence": "high",
+                },
+                ensure_ascii=False,
+            ),
+            input_tokens=4,
+            output_tokens=2,
         ),
         provider_name="fake",
         model_name="fake-v1",

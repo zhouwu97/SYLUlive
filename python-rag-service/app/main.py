@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import os
 import re
 from contextlib import asynccontextmanager
@@ -8,10 +9,22 @@ from typing import Annotated
 import jieba
 from bs4 import BeautifulSoup
 from docx import Document
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from fastembed import TextEmbedding
+from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
+
+from app.chains import (
+    POLICY_RAG_CHAIN_NAME,
+    POLICY_RAG_CHAIN_VERSION,
+    astream_policy_events,
+    build_policy_rag_chain,
+)
+from app.providers import build_policy_chat_provider
+from app.retrievers import FoundationPolicyRetriever
+from app.schemas import PolicyRAGEvent, PolicyRAGInput, PolicyRAGResult
 
 
 SERVICE_TOKEN = os.environ.get("RAG_SERVICE_TOKEN", "").strip()
@@ -23,17 +36,24 @@ MODEL_VERSION = os.environ.get(
 ).strip()
 MAX_BATCH = max(1, min(int(os.environ.get("RAG_MAX_BATCH", "32")), 64))
 MAX_CONCURRENCY = max(1, min(int(os.environ.get("RAG_MAX_CONCURRENCY", "2")), 4))
+QUERY_TIMEOUT_SECONDS = max(5, min(int(os.environ.get("RAG_QUERY_TIMEOUT_SECONDS", "60")), 120))
 MAX_TEXT_CHARS = 100_000
 TARGET_DIMENSIONS = 1536
+MAX_POLICY_RESPONSE_BYTES = 1 << 20
 
 model: TextEmbedding | None = None
 model_error = ""
 semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+query_semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+policy_chain: Runnable[PolicyRAGInput, PolicyRAGResult] | None = None
+policy_provider_ready = False
+policy_provider_name = "unconfigured"
+policy_model_name = "unconfigured"
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global model, model_error
+    global model, model_error, policy_chain, policy_provider_ready, policy_provider_name, policy_model_name
     if not SERVICE_TOKEN:
         model_error = "RAG_SERVICE_TOKEN is not configured"
     else:
@@ -41,6 +61,16 @@ async def lifespan(_: FastAPI):
             model = await asyncio.to_thread(TextEmbedding, model_name=MODEL_NAME)
         except Exception as exc:  # 健康接口仅返回分类，不泄露下载路径或请求细节。
             model_error = type(exc).__name__
+    provider = build_policy_chat_provider()
+    policy_provider_ready = provider.ready
+    policy_provider_name = provider.provider_name
+    policy_model_name = provider.model_name
+    policy_chain = build_policy_rag_chain(
+        FoundationPolicyRetriever(),
+        provider.model,
+        provider_name=provider.provider_name,
+        model_name=provider.model_name,
+    )
     yield
 
 
@@ -109,7 +139,88 @@ async def health():
         "model_version": MODEL_VERSION,
         "dimensions": TARGET_DIMENSIONS,
         "max_batch": MAX_BATCH,
+        "chain_name": POLICY_RAG_CHAIN_NAME,
+        "chain_version": POLICY_RAG_CHAIN_VERSION,
+        "dependencies_ready": {
+            "embedding": model is not None,
+            "lcel": policy_chain is not None,
+            "chat_provider": policy_provider_ready,
+        },
     }
+
+
+def _ready_policy_chain(request: Request) -> Runnable[PolicyRAGInput, PolicyRAGResult]:
+    injected = getattr(request.app.state, "policy_chain", None)
+    current = injected or policy_chain
+    if current is None:
+        raise HTTPException(status_code=503, detail="policy RAG chain unavailable")
+    return current
+
+
+@app.post(
+    "/internal/rag/policy/query",
+    response_model=PolicyRAGResult,
+    dependencies=[Depends(require_internal_service)],
+)
+async def policy_query(payload: PolicyRAGInput, request: Request):
+    chain = _ready_policy_chain(request)
+    try:
+        async with query_semaphore:
+            async with asyncio.timeout(QUERY_TIMEOUT_SECONDS):
+                result = await chain.ainvoke(payload)
+        validated = result if isinstance(result, PolicyRAGResult) else PolicyRAGResult.model_validate(result)
+        if len(validated.model_dump_json().encode("utf-8")) > MAX_POLICY_RESPONSE_BYTES:
+            raise ValueError("policy response exceeds limit")
+        return validated
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="policy RAG timeout") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="policy RAG failed") from exc
+
+
+@app.post(
+    "/internal/rag/policy/query/stream",
+    dependencies=[Depends(require_internal_service)],
+)
+async def policy_query_stream(payload: PolicyRAGInput, request: Request):
+    chain = _ready_policy_chain(request)
+
+    async def event_source():
+        total_bytes = 0
+        last_sequence = 0
+        try:
+            async with query_semaphore:
+                async with asyncio.timeout(QUERY_TIMEOUT_SECONDS):
+                    async for event in astream_policy_events(chain, payload):
+                        if await request.is_disconnected():
+                            raise asyncio.CancelledError
+                        encoded = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
+                        last_sequence = event.sequence
+                        frame = f"event: policy_rag\ndata: {encoded}\n\n".encode("utf-8")
+                        total_bytes += len(frame)
+                        if total_bytes > MAX_POLICY_RESPONSE_BYTES:
+                            raise ValueError("policy stream exceeds limit")
+                        yield frame
+        except TimeoutError:
+            # 流已开始后只能通过稳定事件报告超时，不能再改变 HTTP 状态码。
+            error = PolicyRAGEvent(
+                request_id=payload.request_id,
+                chain_name=POLICY_RAG_CHAIN_NAME,
+                chain_version=POLICY_RAG_CHAIN_VERSION,
+                sequence=last_sequence + 1,
+                type="failed",
+                error_code="rag_timeout",
+            )
+            encoded = json.dumps(error.model_dump(mode="json"), ensure_ascii=False)
+            yield f"event: policy_rag\ndata: {encoded}\n\n".encode("utf-8")
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/internal/rag/embed", dependencies=[Depends(require_internal_service)])

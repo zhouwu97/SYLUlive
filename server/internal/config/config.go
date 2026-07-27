@@ -48,6 +48,7 @@ type Config struct {
 	AIInputPriceMicroYuanPerMillionTokens  int64
 	AIOutputPriceMicroYuanPerMillionTokens int64
 	AIPolicyRAGEnabled                     bool   // 政策知识库能力独立开关
+	AILangChainRAGEnabled                  bool   // 政策请求改由 Python LCEL 完整编排
 	RAGServiceURL                          string // 独立 Embedding/分词服务地址
 	RAGServiceToken                        string // 内部服务鉴权令牌
 	RAGEmbeddingModelVersion               string // 当前写入和查询使用的模型版本
@@ -281,6 +282,7 @@ func Load() *Config {
 	aiInputPrice := envInt64InRange("AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS", 4_000_000, 0, 1_000_000_000)
 	aiOutputPrice := envInt64InRange("AI_OUTPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS", 16_000_000, 0, 1_000_000_000)
 	aiPolicyRAGEnabled := envBool("AI_POLICY_RAG_ENABLED", false)
+	aiLangChainRAGEnabled := envBool("AI_LANGCHAIN_RAG_ENABLED", false)
 	ragServiceURL := strings.TrimRight(strings.TrimSpace(os.Getenv("RAG_SERVICE_URL")), "/")
 	if ragServiceURL == "" {
 		ragServiceURL = "http://127.0.0.1:18001"
@@ -290,7 +292,7 @@ func Load() *Config {
 	if ragEmbeddingModelVersion == "" {
 		ragEmbeddingModelVersion = "paraphrase-multilingual-minilm-l12-v2-padded-1536-v1"
 	}
-	if err := validateAIConfig(aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey, deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled, ragServiceURL, ragServiceToken); err != nil {
+	if err := validateAIConfig(aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey, deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled, aiLangChainRAGEnabled, ragServiceURL, ragServiceToken); err != nil {
 		panic(err)
 	}
 
@@ -332,6 +334,7 @@ func Load() *Config {
 		AIInputPriceMicroYuanPerMillionTokens:  aiInputPrice,
 		AIOutputPriceMicroYuanPerMillionTokens: aiOutputPrice,
 		AIPolicyRAGEnabled:                     aiPolicyRAGEnabled,
+		AILangChainRAGEnabled:                  aiLangChainRAGEnabled,
 		RAGServiceURL:                          ragServiceURL,
 		RAGServiceToken:                        ragServiceToken,
 		RAGEmbeddingModelVersion:               ragEmbeddingModelVersion,
@@ -404,7 +407,7 @@ func splitNonEmpty(value string) []string {
 	return result
 }
 
-func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, apiKey, baseURL, model string, policyRAGEnabled bool, ragServiceURL, ragServiceToken string) error {
+func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, apiKey, baseURL, model string, policyRAGEnabled, langChainRAGEnabled bool, ragServiceURL, ragServiceToken string) error {
 	if provider != "deepseek" && provider != "mock" {
 		return fmt.Errorf("AI_PROVIDER 只能是 deepseek 或 mock")
 	}
@@ -414,7 +417,7 @@ func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, 
 	if internalOnly && len(whitelist) == 0 {
 		return fmt.Errorf("AI_INTERNAL_TEST_ONLY=true 时必须设置 AI_TEST_USER_IDS")
 	}
-	if provider == "deepseek" && apiKey == "" {
+	if provider == "deepseek" && apiKey == "" && !langChainRAGEnabled {
 		return fmt.Errorf("AI_ENABLED=true 且 AI_PROVIDER=deepseek 时必须设置 DEEPSEEK_API_KEY")
 	}
 	if strings.TrimSpace(model) == "" {
@@ -432,6 +435,9 @@ func validateAIConfig(enabled, internalOnly bool, whitelist []string, provider, 
 		if ragServiceToken == "" {
 			return fmt.Errorf("AI_POLICY_RAG_ENABLED=true 时必须设置 RAG_SERVICE_TOKEN")
 		}
+	}
+	if langChainRAGEnabled && !policyRAGEnabled {
+		return fmt.Errorf("AI_LANGCHAIN_RAG_ENABLED=true 时必须同时启用 AI_POLICY_RAG_ENABLED")
 	}
 	return nil
 }

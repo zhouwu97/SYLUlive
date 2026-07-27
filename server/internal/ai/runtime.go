@@ -33,6 +33,7 @@ type RuntimeConfig struct {
 	InputPriceMicroYuanPerMillion  int64
 	OutputPriceMicroYuanPerMillion int64
 	AuditHashSecret                string
+	LangChainRAGEnabled            bool
 }
 
 type RuntimeError struct {
@@ -46,11 +47,12 @@ func (e *RuntimeError) Error() string { return e.Code }
 var newlinePattern = regexp.MustCompile(`(?:\r?\n)+`)
 
 type Runtime struct {
-	db        *gorm.DB
-	provider  AIProvider
-	retriever PolicyRetriever
-	broker    *EventBroker
-	config    RuntimeConfig
+	db           *gorm.DB
+	provider     AIProvider
+	retriever    PolicyRetriever
+	langChainRAG LangChainRAG
+	broker       *EventBroker
+	config       RuntimeConfig
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -60,8 +62,16 @@ type PolicyRetriever interface {
 	Retrieve(context.Context, string) (RetrievalResult, error)
 }
 
-func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, broker *EventBroker, config RuntimeConfig) (*Runtime, error) {
-	if db == nil || provider == nil || retriever == nil {
+type RuntimeOption func(*Runtime)
+
+func WithLangChainRAG(client LangChainRAG) RuntimeOption {
+	return func(runtime *Runtime) {
+		runtime.langChainRAG = client
+	}
+}
+
+func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, broker *EventBroker, config RuntimeConfig, options ...RuntimeOption) (*Runtime, error) {
+	if db == nil {
 		return nil, errors.New("AI runtime dependencies are required")
 	}
 	if broker == nil {
@@ -70,7 +80,18 @@ func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, bro
 	if config.RequestTimeout < 5*time.Second || config.MaxMessageChars <= 0 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
 		return nil, errors.New("invalid AI runtime configuration")
 	}
-	return &Runtime{db: db, provider: provider, retriever: retriever, broker: broker, config: config, cancels: make(map[string]context.CancelFunc)}, nil
+	runtime := &Runtime{db: db, provider: provider, retriever: retriever, broker: broker, config: config, cancels: make(map[string]context.CancelFunc)}
+	for _, option := range options {
+		option(runtime)
+	}
+	if config.LangChainRAGEnabled {
+		if runtime.langChainRAG == nil {
+			return nil, errors.New("LangChain RAG client is required")
+		}
+	} else if provider == nil || retriever == nil {
+		return nil, errors.New("legacy AI runtime dependencies are required")
+	}
+	return runtime, nil
 }
 
 type CreateRunRequest struct {
@@ -228,6 +249,10 @@ func (r *Runtime) Execute(runID, message string) {
 		return
 	}
 	if err := r.transition(ctx, &run, models.AIRunStateBudgetReserved, models.AIRunStateRetrieving); err != nil {
+		return
+	}
+	if r.config.LangChainRAGEnabled {
+		r.executeLangChain(ctx, &run, message)
 		return
 	}
 	_, _ = r.appendEvent(ctx, runID, "retrieval.started", map[string]interface{}{}, true)

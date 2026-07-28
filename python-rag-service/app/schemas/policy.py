@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-POLICY_RAG_SCHEMA_VERSION = "1.1"
+POLICY_RAG_SCHEMA_VERSION = "1.2"
 
 
 class StrictSchema(BaseModel):
@@ -92,7 +92,15 @@ class PolicyRAGResult(StrictSchema):
     schema_version: Literal[POLICY_RAG_SCHEMA_VERSION] = POLICY_RAG_SCHEMA_VERSION
     chain_name: str = Field(min_length=1, max_length=100)
     chain_version: str = Field(min_length=1, max_length=100)
-    status: Literal["completed", "insufficient_sources", "citation_rejected"]
+    status: Literal[
+        "completed",
+        "general_completed",
+        "insufficient_sources",
+        "citation_rejected",
+    ]
+    answer_mode: Literal["verified_campus", "general_answer", "guided_gap"] = (
+        "verified_campus"
+    )
     answer: str = Field(min_length=1, max_length=32_000)
     warnings: list[str] = Field(default_factory=list, max_length=20)
     sources: list[PolicySource] = Field(default_factory=list, max_length=10)
@@ -101,13 +109,15 @@ class PolicyRAGResult(StrictSchema):
 
     @model_validator(mode="after")
     def validate_metering(self) -> "PolicyRAGResult":
-        if self.status in {"completed", "citation_rejected"}:
+        if self.status in {"completed", "general_completed", "citation_rejected"}:
             if not self.usage.metered:
                 raise ValueError("generated result must contain metered usage")
             if self.usage.input_tokens + self.usage.output_tokens <= 0:
                 raise ValueError("generated result must contain non-zero usage")
             if self.status == "citation_rejected" and self.sources:
                 raise ValueError("citation rejected result must not contain sources")
+            if self.status == "general_completed" and self.sources:
+                raise ValueError("general result must not contain sources")
         elif self.sources:
             raise ValueError("insufficient result must not contain sources")
         return self

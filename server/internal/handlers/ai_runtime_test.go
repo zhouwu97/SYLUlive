@@ -79,7 +79,7 @@ func TestAIEventsDisconnectCancelsLangChainRequest(t *testing.T) {
 	blocking := &handlerBlockingLangChain{cancelled: make(chan struct{})}
 	runtime, err := ai.NewRuntime(db, nil, nil, ai.NewEventBroker(), ai.RuntimeConfig{
 		ProviderName: "langchain", Model: "python-policy-rag", RequestTimeout: 5 * time.Second,
-		MaxMessageChars: 100, HourlyMessageLimit: 3,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "test-secret", LangChainRAGEnabled: true,
@@ -168,7 +168,7 @@ func TestDeleteConversationRetainsConsumedQuotaLedger(t *testing.T) {
 	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, emptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
 		MaxToolSteps:    3,
-		MaxMessageChars: 100, HourlyMessageLimit: 3,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "test-secret",
@@ -223,7 +223,7 @@ func TestListConversationsWithPreview(t *testing.T) {
 	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, emptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
 		MaxToolSteps:    3,
-		MaxMessageChars: 100, HourlyMessageLimit: 3,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "test-secret",

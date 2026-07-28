@@ -18,6 +18,8 @@ class AiFeatures {
 }
 
 class AiCapabilities {
+  static const int maximumMessageChars = 20;
+
   final bool enabled;
   final bool accessAllowed;
   final bool internalTestOnly;
@@ -43,6 +45,10 @@ class AiCapabilities {
   factory AiCapabilities.fromJson(Map<String, dynamic> json) {
     final featureJson = json['features'];
     final quotaJson = json['quota'];
+    final reportedMaxMessageChars = _positiveInt(
+      json['max_message_chars'],
+      fallback: maximumMessageChars,
+    );
     return AiCapabilities(
       enabled: json['enabled'] == true,
       accessAllowed: json['access_allowed'] == true,
@@ -55,7 +61,9 @@ class AiCapabilities {
       quota: AiQuota.fromJson(
         quotaJson is Map ? Map<String, dynamic>.from(quotaJson) : const {},
       ),
-      maxMessageChars: _positiveInt(json['max_message_chars'], fallback: 120),
+      maxMessageChars: reportedMaxMessageChars > maximumMessageChars
+          ? maximumMessageChars
+          : reportedMaxMessageChars,
     );
   }
 }

@@ -89,7 +89,7 @@ func newToolRuntimeWithMaxToolSteps(t *testing.T, db *gorm.DB, provider AIProvid
 	}}}}, NewEventBroker(), RuntimeConfig{
 		ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
 		MaxToolSteps:    maxToolSteps,
-		MaxMessageChars: 100, HourlyMessageLimit: 10,
+		MaxMessageChars: 20, HourlyMessageLimit: 10,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "tool-loop-test",
@@ -149,7 +149,7 @@ func TestRuntimeUsesVerifiedRAGWithoutPublicToolsForKnownPolicyIntent(t *testing
 		Content: "补考总成绩由原平时成绩与补考卷面成绩按课程规定比例合成。",
 	}}}}, NewEventBroker(), RuntimeConfig{
 		ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
-		MaxToolSteps: 4, MaxMessageChars: 100, HourlyMessageLimit: 10,
+		MaxToolSteps: 4, MaxMessageChars: 20, HourlyMessageLimit: 10,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "tool-loop-test",

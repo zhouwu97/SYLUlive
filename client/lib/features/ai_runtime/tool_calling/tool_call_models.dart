@@ -38,20 +38,35 @@ class ToolConversationMessage {
     required this.content,
     this.toolCall,
     this.toolCallId,
+    this.reasoningContent,
   });
 
   final ToolMessageRole role;
   final String content;
   final LocalToolCall? toolCall;
   final String? toolCallId;
+
+  /// 服务商要求在工具后续轮次原样回传的推理上下文，不用于界面展示或审计。
+  final String? reasoningContent;
 }
 
 class ToolModelTurn {
-  const ToolModelTurn.finalAnswer(this.text) : toolCall = null;
-  const ToolModelTurn.call(this.toolCall) : text = '';
+  const ToolModelTurn.finalAnswer(this.text)
+      : toolCall = null,
+        assistantContent = '',
+        reasoningContent = null;
+  const ToolModelTurn.call(
+    this.toolCall, {
+    this.assistantContent = '',
+    this.reasoningContent,
+  }) : text = '';
 
   final String text;
   final LocalToolCall? toolCall;
+
+  /// 工具调用所在的原始助手消息字段，仅用于构造下一轮模型请求。
+  final String assistantContent;
+  final String? reasoningContent;
 
   bool get isFinal => toolCall == null;
 }

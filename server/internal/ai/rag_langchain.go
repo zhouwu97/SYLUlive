@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	PolicyRAGSchemaVersion  = "1.1"
+	PolicyRAGSchemaVersion  = "1.2"
 	maxPolicyRAGEventBytes  = 256 << 10
 	defaultPolicyMaxSources = 6
 )
@@ -63,6 +63,7 @@ type PolicyRAGResult struct {
 	ChainName     string            `json:"chain_name"`
 	ChainVersion  string            `json:"chain_version"`
 	Status        string            `json:"status"`
+	AnswerMode    string            `json:"answer_mode"`
 	Answer        string            `json:"answer"`
 	Warnings      []string          `json:"warnings"`
 	Sources       []PolicyRAGSource `json:"sources"`
@@ -245,7 +246,7 @@ func (r PolicyRAGResult) validate(requestID string) error {
 		strings.TrimSpace(r.Answer) == "" || r.Usage == nil {
 		return fmt.Errorf("invalid policy RAG result")
 	}
-	if err := r.Usage.validate(r.Status == "completed" || r.Status == "citation_rejected"); err != nil {
+	if err := r.Usage.validate(r.Status == "completed" || r.Status == "general_completed" || r.Status == "citation_rejected"); err != nil {
 		return err
 	}
 	seenSources := make(map[uint64]struct{}, len(r.Sources))
@@ -266,17 +267,33 @@ func (r PolicyRAGResult) validate(requestID string) error {
 	}
 	switch r.Status {
 	case "completed":
+		if r.AnswerMode != "verified_campus" {
+			return fmt.Errorf("completed policy RAG result has invalid answer mode")
+		}
 		if len(r.Sources) == 0 {
 			return fmt.Errorf("completed policy RAG result has no sources")
 		}
 		if _, _, invalid := ValidateCitations(r.Answer, policyRAGSourcesToChunks(r.Sources)); invalid {
 			return fmt.Errorf("invalid policy RAG citations")
 		}
+	case "general_completed":
+		if r.AnswerMode != "general_answer" && r.AnswerMode != "guided_gap" {
+			return fmt.Errorf("general policy RAG result has invalid answer mode")
+		}
+		if len(r.Sources) != 0 {
+			return fmt.Errorf("general policy RAG result has sources")
+		}
 	case "insufficient_sources":
+		if r.AnswerMode != "guided_gap" {
+			return fmt.Errorf("insufficient policy RAG result has invalid answer mode")
+		}
 		if len(r.Sources) != 0 {
 			return fmt.Errorf("insufficient policy RAG result has sources")
 		}
 	case "citation_rejected":
+		if r.AnswerMode != "guided_gap" {
+			return fmt.Errorf("citation rejected policy RAG result has invalid answer mode")
+		}
 		if len(r.Sources) != 0 {
 			return fmt.Errorf("citation rejected policy RAG result has sources")
 		}

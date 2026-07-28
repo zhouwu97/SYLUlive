@@ -11,8 +11,18 @@ import (
 const (
 	aiHourlyLimit     = 3
 	aiWindowSeconds   = 60 * 60
-	aiMaxMessageChars = 20
+	aiMaxMessageChars = 200
+
+	AIToolHy3CompetitionCompare = "hy3_competition_compare"
+	AIToolHy3AcademicAnalysis   = "hy3_academic_analysis"
+	AIToolHy3WeekPlan           = "hy3_week_plan"
 )
+
+var publicAIToolCapabilities = map[string]struct{}{
+	AIToolHy3CompetitionCompare: {},
+	AIToolHy3AcademicAnalysis:   {},
+	AIToolHy3WeekPlan:           {},
+}
 
 // AICapabilitiesHandler 返回当前账号可见的 AI 能力。
 // P0 仅开放入口与状态验证，不暴露 Provider 配置，也不提供真实对话能力。
@@ -23,6 +33,7 @@ type AICapabilitiesHandler struct {
 	hourlyLimit        int
 	maxMessageChars    int
 	quotaExemptUserIDs map[uint]struct{}
+	toolCapabilities   map[string]struct{}
 }
 
 type AICapabilitiesOptions struct {
@@ -31,6 +42,7 @@ type AICapabilitiesOptions struct {
 	HourlyLimit        int
 	MaxMessageChars    int
 	QuotaExemptUserIDs []uint
+	ToolCapabilities   []string
 }
 
 func NewAICapabilitiesHandler(enabled bool, options ...AICapabilitiesOptions) *AICapabilitiesHandler {
@@ -52,6 +64,12 @@ func NewAICapabilitiesHandler(enabled bool, options ...AICapabilitiesOptions) *A
 		for _, userID := range options[0].QuotaExemptUserIDs {
 			if userID != 0 {
 				handler.quotaExemptUserIDs[userID] = struct{}{}
+			}
+		}
+		handler.toolCapabilities = make(map[string]struct{}, len(options[0].ToolCapabilities))
+		for _, capability := range options[0].ToolCapabilities {
+			if _, public := publicAIToolCapabilities[capability]; public {
+				handler.toolCapabilities[capability] = struct{}{}
 			}
 		}
 	}
@@ -81,6 +99,11 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 	if h.policyRAGEnabled {
 		phase = "p2"
 	}
+	toolAvailable := accessAllowed && h.runtime != nil
+	hasTool := func(name string) bool {
+		_, registered := h.toolCapabilities[name]
+		return toolAvailable && registered
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":            h.enabled,
@@ -89,8 +112,11 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 		"phase":              phase,
 		"chat_enabled":       chatEnabled,
 		"features": gin.H{
-			"policy_rag":       accessAllowed && h.policyRAGEnabled,
-			"schedule_windows": false,
+			"policy_rag":                accessAllowed && h.policyRAGEnabled,
+			"schedule_windows":          false,
+			AIToolHy3CompetitionCompare: hasTool(AIToolHy3CompetitionCompare),
+			AIToolHy3AcademicAnalysis:   hasTool(AIToolHy3AcademicAnalysis),
+			AIToolHy3WeekPlan:           hasTool(AIToolHy3WeekPlan),
 		},
 		"quota": gin.H{
 			"limit":          h.hourlyLimit,

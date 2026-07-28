@@ -78,7 +78,7 @@ func TestAICapabilitiesPublicAccess(t *testing.T) {
 	if body["access_allowed"] != true {
 		t.Fatalf("expected public access: %#v", body)
 	}
-	if body["max_message_chars"] != float64(20) {
+	if body["max_message_chars"] != float64(200) {
 		t.Fatalf("default max_message_chars mismatch: %#v", body)
 	}
 }
@@ -122,7 +122,13 @@ func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
 		t.Fatalf("create runtime: %v", err)
 	}
 	handler := NewAICapabilitiesHandler(true, AICapabilitiesOptions{
-		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 20,
+		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 200,
+		ToolCapabilities: []string{
+			AIToolHy3CompetitionCompare,
+			AIToolHy3AcademicAnalysis,
+			AIToolHy3WeekPlan,
+			"unknown_tool_must_not_leak",
+		},
 	})
 	body := requestAICapabilities(t, handler, user.ID)
 	if body["chat_enabled"] != true || body["access_allowed"] != true {
@@ -131,5 +137,21 @@ func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
 	quota, ok := body["quota"].(map[string]interface{})
 	if !ok || quota["unlimited"] != true || quota["remaining"] != float64(3) {
 		t.Fatalf("unexpected unlimited quota: %#v", body["quota"])
+	}
+	features, ok := body["features"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("features = %#v, want object", body["features"])
+	}
+	for _, capability := range []string{
+		AIToolHy3CompetitionCompare,
+		AIToolHy3AcademicAnalysis,
+		AIToolHy3WeekPlan,
+	} {
+		if features[capability] != true {
+			t.Fatalf("registered capability %s must be true: %#v", capability, features)
+		}
+	}
+	if _, leaked := features["unknown_tool_must_not_leak"]; leaked {
+		t.Fatalf("unknown capabilities must not be exposed: %#v", features)
 	}
 }

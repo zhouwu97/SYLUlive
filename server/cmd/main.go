@@ -666,6 +666,7 @@ func main() {
 
 	var ragClient *ai.RAGClient
 	var aiRuntime *ai.Runtime
+	var registeredAIToolCapabilities []string
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
 			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
@@ -757,6 +758,16 @@ func main() {
 							log.Printf("[AI_EXTERNAL_MCP_NO_COMPATIBLE_TOOLS]")
 						} else {
 							tools = append(tools, hy3Tools...)
+							for _, tool := range hy3Tools {
+								switch tool.Name() {
+								case "hy3_decision.compare_competitions":
+									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3CompetitionCompare)
+								case "hy3_decision.analyze_academic":
+									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3AcademicAnalysis)
+								case "hy3_decision.plan_student_week":
+									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3WeekPlan)
+								}
+							}
 						}
 					}
 				}
@@ -821,6 +832,7 @@ func main() {
 			HourlyLimit:        cfg.AIHourlyMessageLimit,
 			MaxMessageChars:    cfg.AIMaxMessageChars,
 			QuotaExemptUserIDs: cfg.AIQuotaExemptUserIDs,
+			ToolCapabilities:   registeredAIToolCapabilities,
 		},
 	)
 	var aiRuntimeHandler *handlers.AIRuntimeHandler

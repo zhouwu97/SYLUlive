@@ -123,14 +123,19 @@ func TestNormalizeUserMessageCountsGraphemeClusters(t *testing.T) {
 	require.Equal(t, "ai_message_too_long", runtimeErr.Code)
 }
 
-func TestRuntimeRejectsMessageLimitAboveTwenty(t *testing.T) {
+func TestRuntimeAcceptsMessageLimitAt500AndRejectsAboveIt(t *testing.T) {
 	db := newRuntimeTestDB(t)
-	_, err := NewRuntime(db, &MockProvider{}, fixedRetriever{}, NewEventBroker(), RuntimeConfig{
+	config := RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
-		MaxMessageChars: 21, HourlyMessageLimit: 3,
+		MaxMessageChars: 500, HourlyMessageLimit: 3,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		AuditHashSecret: "test-secret",
-	})
+	}
+	_, err := NewRuntime(db, &MockProvider{}, fixedRetriever{}, NewEventBroker(), config)
+	require.NoError(t, err)
+
+	config.MaxMessageChars = 501
+	_, err = NewRuntime(db, &MockProvider{}, fixedRetriever{}, NewEventBroker(), config)
 	require.EqualError(t, err, "invalid AI runtime configuration")
 }
 

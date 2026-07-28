@@ -3,22 +3,31 @@ import 'ai_quota.dart';
 class AiFeatures {
   final bool policyRag;
   final bool scheduleWindows;
+  final bool hy3CompetitionCompare;
+  final bool hy3AcademicAnalysis;
+  final bool hy3WeekPlan;
 
   const AiFeatures({
     required this.policyRag,
     required this.scheduleWindows,
+    this.hy3CompetitionCompare = false,
+    this.hy3AcademicAnalysis = false,
+    this.hy3WeekPlan = false,
   });
 
   factory AiFeatures.fromJson(Map<String, dynamic> json) {
     return AiFeatures(
       policyRag: json['policy_rag'] == true,
       scheduleWindows: json['schedule_windows'] == true,
+      hy3CompetitionCompare: json['hy3_competition_compare'] == true,
+      hy3AcademicAnalysis: json['hy3_academic_analysis'] == true,
+      hy3WeekPlan: json['hy3_week_plan'] == true,
     );
   }
 }
 
 class AiCapabilities {
-  static const int maximumMessageChars = 20;
+  static const int maximumMessageChars = 500;
 
   final bool enabled;
   final bool accessAllowed;

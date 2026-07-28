@@ -93,7 +93,7 @@ func TestAICapabilitiesPublicAccess(t *testing.T) {
 	if body["access_allowed"] != true {
 		t.Fatalf("expected public access: %#v", body)
 	}
-	if body["max_message_chars"] != float64(20) {
+	if body["max_message_chars"] != float64(500) {
 		t.Fatalf("default max_message_chars mismatch: %#v", body)
 	}
 }

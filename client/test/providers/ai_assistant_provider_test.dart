@@ -115,6 +115,43 @@ void main() {
     expect(aiVisibleCharacterCount('👨‍👩‍👧‍👦'), 1);
   });
 
+  test('Hy3 能力控制三个业务入口显示与隐藏', () {
+    final available = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: false,
+        chatEnabled: true,
+        phase: 'p2',
+        features: AiFeatures(
+          policyRag: false,
+          scheduleWindows: false,
+          hy3CompetitionCompare: true,
+          hy3AcademicAnalysis: true,
+          hy3WeekPlan: true,
+        ),
+        quota: AiQuota(limit: 3, remaining: 3, windowSeconds: 3600),
+        maxMessageChars: 20,
+      ),
+    );
+    addTearDown(available.dispose);
+
+    expect(
+      available.quickPrompts,
+      containsAll(const ['对比适合我的竞赛', '分析我的学业情况', '制定本周学习计划']),
+    );
+
+    final unavailable = AiAssistantProvider(
+      AiAssistantService(Dio()),
+      initialCapabilities: _p0Capabilities(),
+    );
+    addTearDown(unavailable.dispose);
+    expect(unavailable.quickPrompts, isNot(contains('对比适合我的竞赛')));
+    expect(unavailable.quickPrompts, isNot(contains('分析我的学业情况')));
+    expect(unavailable.quickPrompts, isNot(contains('制定本周学习计划')));
+  });
+
   test('P0 不构造假消息，也不会发起真实请求', () {
     final provider = AiAssistantProvider(
       AiAssistantService(Dio()),
@@ -126,18 +163,28 @@ void main() {
     expect(provider.error, contains('基础设施测试中'));
   });
 
-  test('20 个可见字符允许，21 个会在发送前拒绝', () {
+  test('500 个可见字符允许，501 个会在发送前拒绝', () {
     final provider = AiAssistantProvider(
       AiAssistantService(Dio()),
-      initialCapabilities: _p0Capabilities(),
+      initialCapabilities: AiCapabilities.fromJson(const {
+        'enabled': true,
+        'access_allowed': true,
+        'chat_enabled': false,
+        'max_message_chars': 500,
+        'quota': {
+          'limit': 3,
+          'remaining': 3,
+          'window_seconds': 3600,
+        },
+      }),
     );
 
     expect(
-      provider.submit(List.filled(20, '一').join()),
+      provider.submit(List.filled(500, '一').join()),
       AiSubmitResult.unavailable,
     );
     expect(
-      provider.submit(List.filled(21, '一').join()),
+      provider.submit(List.filled(501, '一').join()),
       AiSubmitResult.tooLong,
     );
   });

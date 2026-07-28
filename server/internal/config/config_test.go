@@ -256,13 +256,13 @@ func TestLoadIgnoresRetiredAIUserAccessVariables(t *testing.T) {
 	require.True(t, cfg.AIEnabled)
 }
 
-func TestLoadAIUnlimitedStudentIDsDefaultsAndNormalizes(t *testing.T) {
+func TestLoadAIUnlimitedStudentIDsDefaultsToEmptyAndNormalizesConfiguredValues(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_UNLIMITED_STUDENT_IDS", "")
-	require.Equal(t, []string{"2403130233"}, Load().AIUnlimitedStudentIDs)
+	require.Empty(t, Load().AIUnlimitedStudentIDs)
 
-	t.Setenv("AI_UNLIMITED_STUDENT_IDS", " 2403130233,2500000001,2403130233 ")
-	require.Equal(t, []string{"2403130233", "2500000001"}, Load().AIUnlimitedStudentIDs)
+	t.Setenv("AI_UNLIMITED_STUDENT_IDS", " student-a,student-b,student-a ")
+	require.Equal(t, []string{"student-a", "student-b"}, Load().AIUnlimitedStudentIDs)
 }
 
 func TestLoadLangChainRAGDoesNotRequireGoProviderKey(t *testing.T) {
@@ -357,19 +357,19 @@ func TestLoadAIRejectsUnsafeLimits(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "0")
 	require.Panics(t, func() { Load() })
-	t.Setenv("AI_MAX_MESSAGE_CHARS", "21")
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "501")
 	require.Panics(t, func() { Load() })
 }
 
-func TestLoadAIMessageLimitDefaultsTo20AndAllowsConfiguredRange(t *testing.T) {
+func TestLoadAIMessageLimitDefaultsTo500AndAllowsConfiguredRange(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "")
-	require.Equal(t, 20, Load().AIMaxMessageChars)
+	require.Equal(t, 500, Load().AIMaxMessageChars)
 
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "1")
 	require.Equal(t, 1, Load().AIMaxMessageChars)
-	t.Setenv("AI_MAX_MESSAGE_CHARS", "20")
-	require.Equal(t, 20, Load().AIMaxMessageChars)
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "500")
+	require.Equal(t, 500, Load().AIMaxMessageChars)
 }
 
 func TestLoadAILegacyOutputLimitDefaultsTo4096AndAllowsConfiguredRange(t *testing.T) {

@@ -163,6 +163,15 @@ class AiAssistantProvider extends ChangeNotifier {
 
   List<String> get quickPrompts {
     final prompts = <String>[];
+    if (_capabilities?.features.hy3CompetitionCompare == true) {
+      prompts.add('对比适合我的竞赛');
+    }
+    if (_capabilities?.features.hy3AcademicAnalysis == true) {
+      prompts.add('分析我的学业情况');
+    }
+    if (_capabilities?.features.hy3WeekPlan == true) {
+      prompts.add('制定本周学习计划');
+    }
     if (_capabilities?.features.policyRag == true) {
       prompts.addAll(const ['补考成绩怎么算', '重修有什么规定', '奖学金怎么评', '校历如何安排']);
     }

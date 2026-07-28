@@ -101,7 +101,7 @@ func NewRuntime(db *gorm.DB, provider AIProvider, retriever PolicyRetriever, bro
 	if config.MaxToolSteps == 0 {
 		config.MaxToolSteps = 3
 	}
-	if config.RequestTimeout < 5*time.Second || config.MaxOutputTokens < 256 || config.MaxOutputTokens > 8192 || config.MaxToolSteps < 1 || config.MaxToolSteps > 5 || config.MaxMessageChars <= 0 || config.MaxMessageChars > 20 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
+	if config.RequestTimeout < 5*time.Second || config.MaxOutputTokens < 256 || config.MaxOutputTokens > 8192 || config.MaxToolSteps < 1 || config.MaxToolSteps > 5 || config.MaxMessageChars <= 0 || config.MaxMessageChars > 500 || config.HourlyMessageLimit <= 0 || config.ReservationMicroYuan <= 0 || config.DefaultBudgetLimitMicroYuan < config.ReservationMicroYuan {
 		return nil, errors.New("invalid AI runtime configuration")
 	}
 	unlimitedStudentIDs := make(map[string]struct{}, len(config.UnlimitedStudentIDs))

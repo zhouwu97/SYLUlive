@@ -89,7 +89,7 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Docker Compose 必须提供根目录 .env.example，便于复制为 .env: %v", err)
 	}
-	composeEnvText := string(composeEnvExample)
+	composeEnvText := strings.ReplaceAll(string(composeEnvExample), "\r\n", "\n")
 	for _, key := range []string{
 		"DB_PASSWORD=",
 		"JWT_SECRET=",
@@ -104,6 +104,12 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 		if !strings.Contains(composeEnvText, key) {
 			t.Fatalf("根目录 .env.example 必须包含 Docker Compose 所需变量 %s", key)
 		}
+	}
+	if !strings.Contains("\n"+composeEnvText, "\nAI_UNLIMITED_STUDENT_IDS=\n") {
+		t.Fatal("根目录 .env.example 不得为任何账号预设不限额权限")
+	}
+	if !strings.Contains(composeText, "AI_UNLIMITED_STUDENT_IDS=${AI_UNLIMITED_STUDENT_IDS:-}") {
+		t.Fatal("Docker Compose 的不限额账号默认值必须为空")
 	}
 
 	dockerfile, err := os.ReadFile(filepath.Join(repoRoot, "server", "Dockerfile"))

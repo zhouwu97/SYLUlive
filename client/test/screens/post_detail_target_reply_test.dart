@@ -12,6 +12,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 
 final List<int> transparentImage = [
   0x89,
@@ -755,5 +757,46 @@ void main() {
 
     expect(find.byKey(const ValueKey('market-seller-row')), findsOneWidget);
     expect(find.text('secret_wx_123'), findsNothing);
+  });
+
+  testWidgets('帖子评论栏可直接插入表情并根据内容启用发送按钮', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = _postWithImages(
+      id: 102,
+      title: 'Emoji reply',
+      imageUrls: ['http://example.com/one.png'],
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('写下你的想法...').last);
+    await tester.pumpAndSettle();
+
+    final sendButton = find.byKey(const ValueKey('post-reply-send-button'));
+    expect(tester.widget<IconButton>(sendButton).onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    await tester.tap(find.text('😀').first);
+    await tester.pump();
+
+    final input = tester.widget<TextField>(
+      find.byKey(const ValueKey('post-reply-input')),
+    );
+    expect(input.controller?.text, '😀');
+    final enabledSendButton = tester.widget<IconButton>(sendButton);
+    expect(enabledSendButton.onPressed, isNotNull);
+    expect(
+      enabledSendButton.style?.backgroundColor?.resolve({}),
+      const Color(0xFF6B8EFF),
+    );
+    expect(tester.takeException(), isNull);
   });
 }

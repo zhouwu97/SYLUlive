@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 /// 全局导航 Key，用于在 Dio 拦截器等无 BuildContext 的地方执行导航
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
+/// 页面可见性观察器，用于避免被图片查看器等路由覆盖时误标私信已读。
+final RouteObserver<PageRoute<dynamic>> appRouteObserver =
+    RouteObserver<PageRoute<dynamic>>();
+
 /// 全局 ScaffoldMessenger Key，用于在无 BuildContext 的地方显示 SnackBar
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();

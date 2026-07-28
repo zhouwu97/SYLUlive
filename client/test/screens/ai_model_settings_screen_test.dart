@@ -35,6 +35,34 @@ void main() {
     expect((await store.readConfig())?.wireApi, OpenAIWireApi.responses);
   });
 
+  test('Anthropic Messages 配置可兼容读取并持久化', () async {
+    final legacy = AIModelProviderConfig.fromJson(const <String, dynamic>{
+      'provider_config_id': 'default',
+      'kind': 'openai_compatible',
+      'endpoint': 'https://api.anthropic.com',
+      'model': 'claude-sonnet-4-5',
+      'wire_api': 'messages',
+    });
+    expect(legacy.wireApi, OpenAIWireApi.anthropicMessages);
+    expect(legacy.toJson()['wire_api'], 'anthropic_messages');
+
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
+    final store = AIProviderSettingsStore(
+      appUserId: '10001',
+      secureStore: _MemoryProviderSecureStore(),
+    );
+    await store.saveOpenAICompatible(
+      endpoint: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-5',
+      wireApi: OpenAIWireApi.anthropicMessages,
+      apiKey: 'secret',
+    );
+    expect(
+      (await store.readConfig())?.wireApi,
+      OpenAIWireApi.anthropicMessages,
+    );
+  });
+
   testWidgets('校园公益旧配置会引导用户配置个人助手模型', (tester) async {
     AppPreferencesStore.setMockInitialValues(<String, Object>{});
     final store = AIProviderSettingsStore(
@@ -122,6 +150,31 @@ void main() {
     expect(probeCount, 1);
     expect(find.text('连接成功，Tool Calling 验证通过'), findsOneWidget);
     expect(find.text('选择模型'), findsNothing);
+  });
+
+  testWidgets('请求协议下拉框包含 Anthropic Messages', (tester) async {
+    AppPreferencesStore.setMockInitialValues(<String, Object>{});
+    final store = AIProviderSettingsStore(
+      appUserId: '10001',
+      secureStore: _MemoryProviderSecureStore(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AIModelSettingsScreen(
+          appUserId: '10001',
+          settingsStore: store,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final dropdown = find.byType(DropdownButtonFormField<OpenAIWireApi>);
+    await tester.ensureVisible(dropdown);
+    await tester.tap(dropdown);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Anthropic Messages'), findsOneWidget);
   });
 }
 

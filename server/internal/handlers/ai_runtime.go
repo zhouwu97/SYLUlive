@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -204,6 +205,7 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 			RunID: event.RunID, Seq: event.Seq, Type: event.Type,
 			Timestamp: event.CreatedAt, Payload: json.RawMessage(event.Payload),
 		}); err != nil {
+			h.cancelDisconnectedRun(userID, runID)
 			return
 		}
 		lastSent = event.Seq
@@ -219,6 +221,7 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 	for {
 		select {
 		case <-c.Request.Context().Done():
+			h.cancelDisconnectedRun(userID, runID)
 			return
 		case event, open := <-live:
 			if !open {
@@ -228,6 +231,7 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 				continue
 			}
 			if err := writeSSE(c.Writer, event); err != nil {
+				h.cancelDisconnectedRun(userID, runID)
 				return
 			}
 			lastSent = event.Seq
@@ -238,11 +242,20 @@ func (h *AIRuntimeHandler) Events(c *gin.Context) {
 		case timestamp := <-heartbeat.C:
 			payload, _ := json.Marshal(gin.H{"run_id": runID, "type": "heartbeat", "timestamp": timestamp})
 			if _, err := fmt.Fprintf(c.Writer, "event: heartbeat\ndata: %s\n\n", payload); err != nil {
+				h.cancelDisconnectedRun(userID, runID)
 				return
 			}
 			flusher.Flush()
 		}
 	}
+}
+
+// cancelDisconnectedRun 使用独立短 Context 更新状态；HTTP Context 在客户端断开时已经取消。
+// Runtime 随后会取消同一个 Python 请求 Context，实现从客户端到模型的取消传播。
+func (h *AIRuntimeHandler) cancelDisconnectedRun(userID uint, runID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _ = h.runtime.Cancel(ctx, userID, runID)
 }
 
 func writeSSE(writer http.ResponseWriter, event ai.RunEvent) error {

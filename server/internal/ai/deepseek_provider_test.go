@@ -52,6 +52,7 @@ func TestDeepSeekProviderStreamingContract(t *testing.T) {
 		flusher := w.(http.Flusher)
 		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"回答\",\"reasoning_content\":\"不得返回\"}}]}\n\n"))
 		flusher.Flush()
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"))
 		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":3,\"prompt_cache_hit_tokens\":2}}\n\n"))
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
@@ -77,7 +78,41 @@ func TestDeepSeekProviderStreamingContract(t *testing.T) {
 		t.Fatalf("usage event = %#v err=%v", usageEvent, err)
 	}
 	completed, err := stream.Next(context.Background())
-	if err != nil || completed.Type != ProviderEventCompleted {
+	if err != nil || completed.Type != ProviderEventCompleted || completed.FinishReason != "stop" {
+		t.Fatalf("completed event = %#v err=%v", completed, err)
+	}
+}
+
+func TestDeepSeekProviderPreservesLengthFinishReason(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"未完成回答\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":800}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	provider, err := NewDeepSeekProvider(server.URL, "server-secret", "deepseek-chat", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := provider.Start(context.Background(), ProviderRequest{Messages: []Message{{Role: "user", Content: "问题"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	textEvent, err := stream.Next(context.Background())
+	if err != nil || textEvent.Text != "未完成回答" {
+		t.Fatalf("text event = %#v err=%v", textEvent, err)
+	}
+	usageEvent, err := stream.Next(context.Background())
+	if err != nil || usageEvent.OutputTokens != 800 {
+		t.Fatalf("usage event = %#v err=%v", usageEvent, err)
+	}
+	completed, err := stream.Next(context.Background())
+	if err != nil || completed.Type != ProviderEventCompleted || completed.FinishReason != "length" {
 		t.Fatalf("completed event = %#v err=%v", completed, err)
 	}
 }

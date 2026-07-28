@@ -18,9 +18,15 @@ class CampusAiEntryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = isDark ? Colors.white : CampusTheme.text;
+    final quotaDescription = capabilities.quota.unlimited
+        ? '使用次数不限'
+        : '每小时 ${capabilities.quota.limit} 次';
+    final quotaBadge = capabilities.quota.unlimited
+        ? '不限次数'
+        : '剩余 ${capabilities.quota.remaining} 次';
     return Semantics(
       button: true,
-      label: '打开沈理 AI，剩余 ${capabilities.quota.remaining} 次',
+      label: '打开沈理 AI，$quotaDescription',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -77,7 +83,7 @@ class CampusAiEntryCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '每小时 ${capabilities.quota.limit} 次 · 每次最多 ${capabilities.maxMessageChars} 字',
+                        '$quotaDescription · 每次最多 ${capabilities.maxMessageChars} 字',
                         style: TextStyle(
                           color: isDark ? Colors.white38 : Colors.black45,
                           fontSize: 11,
@@ -91,7 +97,7 @@ class CampusAiEntryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '剩余 ${capabilities.quota.remaining} 次',
+                      quotaBadge,
                       style: const TextStyle(
                         color: CampusTheme.primary,
                         fontSize: 12,

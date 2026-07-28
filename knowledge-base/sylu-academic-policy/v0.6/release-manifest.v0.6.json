@@ -1,0 +1,222 @@
+{
+  "schema_version": "sylu-ai-kb-release/v1",
+  "knowledge_base": "sylu-academic-policy",
+  "version": "v0.6",
+  "generated_at": "2026-07-27T18:50:11Z",
+  "bundle_file": "SYLUlive_AI官方全文导入包_v0.6.jsonl",
+  "bundle_sha256": "fbcac62ed1975e5358e3e87af149e7ea950b78a5f4a8c0136632471d66588a63",
+  "document_count": 14,
+  "chunking_version": "langchain-chinese-policy-v1",
+  "embedding_model_name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "embedding_model_version": "paraphrase-multilingual-minilm-l12-v2-384-v1",
+  "embedding_dimensions": 384,
+  "supersedes_versions": [
+    "v0.1",
+    "v0.2",
+    "v0.3",
+    "v0.4",
+    "v0.5"
+  ],
+  "documents": [
+    {
+      "document_key": "retained-v04-1",
+      "title": "普通高等学校学生管理规定：学生学业、转专业、重修、处分、毕业与申诉正文",
+      "content_hash": "fd87b51905cde7a6a0565b84a8c48167e5f788b0da2c8994e7156362f6e80508",
+      "expected_document_type": "national_student_management_regulation",
+      "source_type": "text",
+      "source_uri": "https://www.moe.gov.cn/srcsite/A02/s5911/moe_621/201702/t20170216_296385.html",
+      "department": "中华人民共和国教育部",
+      "currentness": "current"
+    },
+    {
+      "document_key": "retained-v04-2",
+      "title": "学士学位授权与授予管理办法：本科生学位规则正文",
+      "content_hash": "39db79c941dd6f46f749cfc082da7f9ca6feda3713d3829b2687bf8f986aa924",
+      "expected_document_type": "national_bachelor_degree_regulation",
+      "source_type": "text",
+      "source_uri": "https://www.moe.gov.cn/srcsite/A22/yjss_xwgl/moe_818/201907/t20190726_392378.html",
+      "department": "国务院学位委员会",
+      "currentness": "current"
+    },
+    {
+      "document_key": "retained-v04-3",
+      "title": "计算机科学与技术专业官方正文",
+      "content_hash": "2df6b8da9aa123ef4dbddd2f06f14bf939f9929512b0a19406f717576d96db29",
+      "expected_document_type": "official_major_profile",
+      "source_type": "text",
+      "source_uri": "https://sise.sylu.edu.cn/zyjs/zyjs/jsjkxyjs.htm",
+      "department": "信息科学与工程学院",
+      "currentness": "current"
+    },
+    {
+      "document_key": "retained-v04-4",
+      "title": "通信工程专业官方正文",
+      "content_hash": "977c9b9c4ec848bb78cf26f07478db9d49cae9b88c7f19592794d33936774931",
+      "expected_document_type": "official_major_profile",
+      "source_type": "text",
+      "source_uri": "https://sise.sylu.edu.cn/zyjs/zyjs/txgc.htm",
+      "department": "信息科学与工程学院",
+      "currentness": "current"
+    },
+    {
+      "document_key": "retained-v04-5",
+      "title": "电子信息工程专业官方正文",
+      "content_hash": "c23f9d2154e0dead8f6c13e526926e383df5ae6399b42047a4960db61d66b0b1",
+      "expected_document_type": "official_major_profile",
+      "source_type": "text",
+      "source_uri": "https://sise.sylu.edu.cn/zyjs/zyjs/dzxxgc.htm",
+      "department": "信息科学与工程学院",
+      "currentness": "current"
+    },
+    {
+      "document_key": "retained-v04-6",
+      "title": "智能科学与技术专业官方正文",
+      "content_hash": "d9ac7e5cbd94fb16ac70742d05646cbdad255933fbeda15b442e3d09790da4a5",
+      "expected_document_type": "official_major_profile",
+      "source_type": "text",
+      "source_uri": "https://sise.sylu.edu.cn/zyjs/zyjs/znkxyjs.htm",
+      "department": "信息科学与工程学院",
+      "currentness": "current"
+    },
+    {
+      "document_key": "sylu-student-status-2024-23",
+      "title": "沈阳理工大学本科生学籍管理规定（沈理工校〔2024〕23号）",
+      "content_hash": "f73f1939dde2ca0d36d26d78cc1febfd45f3c5ef5cccfef857b0039102700651",
+      "expected_document_type": "school_undergraduate_status_policy",
+      "source_type": "pdf",
+      "source_uri": "uploaded-official-file",
+      "source_file_name": "沈阳理工大学本科生学籍管理规定-沈理工校〔2024〕23号.pdf",
+      "department": "沈阳理工大学教务处",
+      "effective_from": "2024-04-26",
+      "currentness": "current"
+    },
+    {
+      "document_key": "sylu-retake-2025-6",
+      "title": "沈阳理工大学本科生课程重修管理办法（沈理工教〔2025〕6号）",
+      "content_hash": "401cf1da70b44269c46ff9df3f1996d21476e922760fdf1b1f198e4959e33378",
+      "expected_document_type": "school_undergraduate_retake_policy",
+      "source_type": "doc",
+      "source_uri": "uploaded-official-file",
+      "source_file_name": "沈理工教〔2025〕6号-关于印发《沈阳理工大学本科生课程重修管理办法》的通知.doc",
+      "department": "沈阳理工大学教务处",
+      "effective_from": "2025-08-10",
+      "currentness": "current"
+    },
+    {
+      "document_key": "sylu-major-transfer-2020-4",
+      "title": "沈阳理工大学本科生转专业管理办法（沈理工教〔2020〕4号）",
+      "content_hash": "6e41a43314d1870857afe23cb4fd477e637de22b5e77dc56699b478f6e74c0b2",
+      "expected_document_type": "school_undergraduate_major_transfer_policy",
+      "source_type": "doc",
+      "source_uri": "uploaded-official-file",
+      "source_file_name": "沈阳理工大学本科生转专业管理办法.doc",
+      "department": "沈阳理工大学教务处",
+      "effective_from": "2020-06-02",
+      "currentness": "current"
+    },
+    {
+      "document_key": "sylu-exam-misconduct-2024-17",
+      "title": "沈阳理工大学学生考试违纪和考试作弊行为认定及处理办法（沈理工校〔2024〕17号）",
+      "content_hash": "c99352c4381302d65dcb6759b074c7b4b7111ad440a133f5d9af38395931a180",
+      "expected_document_type": "school_exam_misconduct_policy",
+      "source_type": "docx",
+      "source_uri": "uploaded-official-file",
+      "source_file_name": "沈理工校〔2024〕17号.docx",
+      "department": "沈阳理工大学教务处/研究生院/学生处",
+      "effective_from": "2024-04-02",
+      "currentness": "current"
+    },
+    {
+      "document_key": "sylu-competition-grade-reward-2024-54",
+      "title": "沈阳理工大学鼓励本科生参加课外活动（竞赛）的有关规定（沈理工校〔2024〕54号）",
+      "content_hash": "0887ce055269ee806b9b4bc8f2ce2afdf7b62ac25ad31e2cd48129a0dd7f00b7",
+      "expected_document_type": "school_competition_course_grade_reward_policy",
+      "source_type": "pdf",
+      "source_uri": "uploaded-official-file",
+      "source_file_name": "沈阳理工大学鼓励本科生参加课外活动（竞赛）的有关规定-沈理工校〔2024〕54号.pdf",
+      "department": "沈阳理工大学教务处/创新创业学院/团委",
+      "effective_from": "2024-09-11",
+      "currentness": "current"
+    },
+    {
+      "document_key": "sylu-competition-grade-reward-forms-2024-54",
+      "title": "沈理工校〔2024〕54号附件：竞赛备案与奖励成绩申请表",
+      "content_hash": "4abcb0019baf1f4b01605b85435a0076b1216ac1aa75f995246925bd6aa6af50",
+      "expected_document_type": "school_competition_grade_reward_forms",
+      "source_type": "doc",
+      "source_uri": "uploaded-official-file",
+      "source_file_name": "沈理工校〔2024〕54号附件.doc",
+      "department": "沈阳理工大学教务处/科技处/竞赛组织单位",
+      "effective_from": "2024-09-11",
+      "currentness": "current"
+    },
+    {
+      "document_key": "bundle-013",
+      "title": "挂科、二次考试（补考）与重修规则卡",
+      "content_hash": "5656c99b05cef34fdf792cc91f4eda8ff1c55ee715a9317b51d533af65c0607b",
+      "expected_document_type": "school_policy_reasoning_card",
+      "source_type": "curated_official_reasoning_card",
+      "source_uri": "uploaded-official-files",
+      "source_file_name": "教学管理文件汇编.pdf；沈理工校〔2024〕23号；沈理工教〔2025〕6号",
+      "department": "沈阳理工大学教务处",
+      "effective_from": "2024-04-26",
+      "currentness": "mixed"
+    },
+    {
+      "document_key": "bundle-014",
+      "title": "历史校内规则：课程免听、免修及重修规定中的二次考试口径（2004）",
+      "content_hash": "48473fc8c270d9122ef2a1a212f2ad21be7f49e7ce6277fafc0f485e0605d417",
+      "expected_document_type": "historical_school_second_exam_policy",
+      "source_type": "official_historical_compilation",
+      "source_uri": "uploaded-official-file",
+      "source_file_name": "教学管理文件汇编.pdf",
+      "department": "沈阳理工大学教务处",
+      "effective_from": "2004-09-14",
+      "currentness": "historical"
+    }
+  ],
+  "unresolved_items": [
+    {
+      "code": "missing_official_source",
+      "severity": "requires_review",
+      "title": "沈阳理工大学“第二课堂成绩单”制度实施办法及积分表",
+      "detail": "P0：回答毕业二课要求、竞赛/志愿/证书积分、二课补修与重复认定"
+    },
+    {
+      "code": "missing_official_source",
+      "severity": "requires_review",
+      "title": "现行本科生综合测评管理办法及各学院细则",
+      "detail": "P0：计算综测、评奖评优、违纪扣分和项目封顶"
+    },
+    {
+      "code": "missing_official_source",
+      "severity": "requires_review",
+      "title": "沈阳理工大学学生违纪纪律处分办法及解除处分办法",
+      "detail": "P0：考试以外违纪、处分期限、解除、评奖和学位影响"
+    },
+    {
+      "code": "missing_official_source",
+      "severity": "requires_review",
+      "title": "现行学士学位授予细则",
+      "detail": "P0：确认基础学位槛值、特殊条件、处分与学位关系"
+    },
+    {
+      "code": "missing_official_source",
+      "severity": "requires_review",
+      "title": "各入学年级、各专业人才培养方案",
+      "detail": "P0：毕业总学分、必修/选修/实践模块、课程先修关系和毕业风险计算"
+    },
+    {
+      "code": "missing_official_source",
+      "severity": "requires_review",
+      "title": "创新创业竞赛A/B/C/D/E分类认定办法",
+      "detail": "P1：将具体竞赛映射到沈理工校〔2024〕54号表3系数"
+    },
+    {
+      "code": "current_second_exam_policy_unverified",
+      "severity": "requires_review",
+      "title": "当前二次考试成绩记载口径或当期教务通知",
+      "detail": "P0：2004年正式文件明确D/F、绩点1/0和开学初二考，但需确认2026年当前教务系统是否仍按该口径执行。"
+    }
+  ]
+}

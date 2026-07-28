@@ -79,30 +79,50 @@ const (
 	PolicyBreadthFocused           = "focused"
 )
 
-// PolicyQueryPlan 将学生口语确定性映射为可审计的制度检索计划。
+// PolicyQueryPlan 同时承载 Python Planner 返回值和旧 Go 路径的确定性规划结果。
+// Python Planner 是主路径；Go 字段仅用于灰度降级和旧调用方兼容。
 type PolicyQueryPlan struct {
-	Intent        string
-	Focus         string
-	Breadth       string
-	OriginalQuery string
-	ExpandedQuery string
+	SchemaVersion   string `json:"schema_version,omitempty"`
+	PlannerName     string `json:"planner_name,omitempty"`
+	PlannerVersion  string `json:"planner_version,omitempty"`
+	Intent          string `json:"intent"`
+	Focus           string `json:"focus,omitempty"`
+	Breadth         string `json:"breadth,omitempty"`
+	OriginalQuery   string `json:"original_query,omitempty"`
+	NormalizedQuery string `json:"normalized_question,omitempty"`
+	ExpandedQuery   string `json:"expanded_query,omitempty"`
 
 	// ExactTerms 用于在向量与全文检索之前做确定性的制度术语命中。
-	ExactTerms []string
+	ExactTerms    []string `json:"exact_terms,omitempty"`
+	ExpandedTerms []string `json:"expanded_terms,omitempty"`
 
 	// PreferredDocTypes 只影响排序；RequiredDocGroups 决定必须覆盖的证据组。
-	PreferredDocTypes []string
-	RequiredDocGroups [][]string
+	PreferredDocTypes []string   `json:"preferred_document_types,omitempty"`
+	RequiredDocGroups [][]string `json:"required_document_groups,omitempty"`
 
-	HistoricalMode HistoricalPolicyMode
+	HistoricalMode  HistoricalPolicyMode `json:"historical_mode,omitempty"`
+	HistoryPolicy   string               `json:"history_policy,omitempty"`
+	VersionBoundary string               `json:"version_boundary,omitempty"`
+	AllowHistorical bool                 `json:"allow_historical"`
 
-	AnswerMode             string
-	RequiredAnswerSections []string
+	AnswerMode             string   `json:"answer_mode,omitempty"`
+	RequiredAnswerSections []string `json:"required_answer_sections,omitempty"`
 }
 
 // AllowsHistorical 报告本次检索是否可以引用历史制度文件。
 func (p PolicyQueryPlan) AllowsHistorical() bool {
-	return p.HistoricalMode == HistoricalPolicyFallback || p.HistoricalMode == HistoricalPolicyRequired
+	return p.AllowHistorical || p.HistoricalMode == HistoricalPolicyFallback || p.HistoricalMode == HistoricalPolicyRequired
+}
+
+func (p PolicyQueryPlan) retrievalQuery() string {
+	if strings.TrimSpace(p.ExpandedQuery) != "" {
+		return strings.TrimSpace(p.ExpandedQuery)
+	}
+	values := make([]string, 0, 1+len(p.ExactTerms)+len(p.ExpandedTerms))
+	values = append(values, p.NormalizedQuery)
+	values = append(values, p.ExactTerms...)
+	values = append(values, p.ExpandedTerms...)
+	return strings.TrimSpace(strings.Join(values, " "))
 }
 
 // IsPolicyIntent 报告本次问题是否命中了确定性制度意图。

@@ -1046,8 +1046,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       ? !_personalSending && !_personalHistoryLoading
                       : capabilities.chatEnabled &&
                           (quota.unlimited || quota.remaining > 0),
-                  running:
-                      _personalMode ? _personalSending : provider.isRunning,
+                  running: _personalMode
+                      ? _personalSending
+                      : provider.isRunning,
                   onSend: _submit,
                   onCancel: _personalMode ? _cancelPersonal : provider.cancel,
                   hintText: _personalMode ? '问问你的课程、成绩或计划' : '输入校园问题',

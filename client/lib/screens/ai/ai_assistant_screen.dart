@@ -47,7 +47,6 @@ import '../../widgets/ai/ai_quota_banner.dart';
 import '../../widgets/ai/ai_typing_status.dart';
 import '../../widgets/app_action_popup_menu.dart';
 import '../../widgets/app_page_app_bar.dart';
-import '../../widgets/campus/campus_theme.dart';
 import 'ai_model_settings_screen.dart';
 import 'ai_feature_settings_screen.dart';
 import 'graduation_checklist_screen.dart';
@@ -62,6 +61,7 @@ class AiAssistantScreen extends StatefulWidget {
   final AiAssistantService service;
   final Dio dio;
   final bool initialPersonalMode;
+  final String? initialPrompt;
   final PersonalConversationStore Function(String accountKey)?
       personalConversationStoreFactory;
 
@@ -71,6 +71,7 @@ class AiAssistantScreen extends StatefulWidget {
     required this.service,
     required this.dio,
     this.initialPersonalMode = false,
+    this.initialPrompt,
     this.personalConversationStoreFactory,
   });
 
@@ -80,7 +81,6 @@ class AiAssistantScreen extends StatefulWidget {
 
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
   late final AiAssistantProvider _provider;
-  final ScrollController _messagesScrollController = ScrollController();
   final FocusNode _inputFocusNode = FocusNode();
   final TextEditingController _inputController = TextEditingController();
 
@@ -118,6 +118,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       deviceToolSync: DeviceToolBridge.syncPending,
     );
     _provider.addListener(_handleRunConsentRequired);
+    final initialPrompt = widget.initialPrompt?.trim() ?? '';
+    if (initialPrompt.isNotEmpty) {
+      _inputController.value = TextEditingValue(
+        text: initialPrompt,
+        selection: TextSelection.collapsed(offset: initialPrompt.length),
+      );
+    }
     unawaited(_provider.initialize());
   }
 
@@ -448,7 +455,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         settingsStore: AIProviderSettingsStore(appUserId: appUserId),
       );
     } catch (error) {
-      if (_isCurrentPersonalRequest(requestEpoch)) {
+      if (mounted && _isCurrentPersonalRequest(requestEpoch)) {
         setState(() {
           _personalError = error.toString();
           _personalNeedsModelConfiguration = true;
@@ -745,7 +752,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         ).showSnackBar(SnackBar(content: Text(error.message)));
       }
     } catch (_) {
-      if (_isCurrentPersonalRequest(requestEpoch)) {
+      if (mounted && _isCurrentPersonalRequest(requestEpoch)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('加入计划失败，请稍后重试')));
@@ -1046,9 +1053,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       ? !_personalSending && !_personalHistoryLoading
                       : capabilities.chatEnabled &&
                           (quota.unlimited || quota.remaining > 0),
-                  running: _personalMode
-                      ? _personalSending
-                      : provider.isRunning,
+                  running:
+                      _personalMode ? _personalSending : provider.isRunning,
                   onSend: _submit,
                   onCancel: _personalMode ? _cancelPersonal : provider.cancel,
                   hintText: _personalMode ? '问问你的课程、成绩或计划' : '输入校园问题',

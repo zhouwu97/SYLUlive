@@ -37,7 +37,15 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
 
   Future<void> _loadRecent() async {
     final recent = await _recentService.load();
-    if (mounted) setState(() => _recent = recent);
+    if (!mounted) return;
+    setState(() {
+      _recent = recent;
+      if (_categoryIndex == 0 &&
+          recent.isEmpty &&
+          appEmojiCategoryNames.length > 1) {
+        _categoryIndex = 1;
+      }
+    });
   }
 
   List<String> get _activeEmojis {

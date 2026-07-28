@@ -1307,6 +1307,10 @@ func main() {
 
 		messages.GET("/conversations", messageHandler.GetConversations)
 
+		messages.GET("/events", messageHandler.Events)
+
+		messages.GET("/users/:target_user_id/conversation", messageHandler.GetConversationWithUser)
+
 		messages.GET("/conversations/:id", messageHandler.GetMessages)
 
 		messages.GET("/:user_id/send-state", messageHandler.GetSendState)

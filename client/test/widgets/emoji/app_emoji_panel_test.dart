@@ -5,8 +5,32 @@ import '../../../lib/services/emoji_recent_service.dart';
 import '../../../lib/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 void main() {
+  testWidgets('empty recent history opens the first Emoji category',
+      (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    final service = EmojiRecentService(
+      preferencesLoader: AppPreferencesStore.getInstance,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          height: 280,
+          child: AppEmojiPanel(
+            recentService: service,
+            onEmojiSelected: (_) {},
+            onBackspace: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('😀'), findsOneWidget);
+    expect(find.text('暂无最近使用'), findsNothing);
+  });
+
   testWidgets('selects Emoji and exposes complete-character delete action',
       (tester) async {
     AppPreferencesStore.setMockInitialValues({});

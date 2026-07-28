@@ -321,6 +321,22 @@ func TestClientReconnectsAfterConnectionLoss(t *testing.T) {
 	require.Equal(t, 2, *dialCount)
 }
 
+func TestClientMissingLocalWrapperFailsClosed(t *testing.T) {
+	client, err := New(Config{
+		Enabled:        true,
+		Transport:      TransportLocalStdio,
+		Command:        filepath.Join(t.TempDir(), "missing-mcp-wrapper"),
+		ToolTimeout:    time.Second,
+		MaxCallsPerRun: 1,
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	require.NoError(t, err)
+
+	err = client.Connect(context.Background())
+	require.Equal(t, ErrorUnavailable, ErrorCode(err))
+	require.False(t, client.Healthy())
+	require.Equal(t, ExternalMCPHealthStatus{}, client.HealthStatus())
+}
+
 func TestSSHCommandBracketsIPv6AndDoesNotPassRemoteCommand(t *testing.T) {
 	config := Config{
 		Enabled:           true,

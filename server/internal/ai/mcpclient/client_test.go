@@ -122,6 +122,21 @@ func TestClientRejectsSessionWithoutCompatibleCoreTools(t *testing.T) {
 	require.Empty(t, definitions)
 }
 
+func TestClientHealthStatusReflectsValidatedSessionAndClearsOnClose(t *testing.T) {
+	session := newHealthyFakeSession()
+	client, _ := newTestClient(t, time.Second, session)
+
+	require.NoError(t, client.Connect(context.Background()))
+	status := client.HealthStatus()
+	require.True(t, status.Healthy)
+	require.Equal(t, "fixture", status.Mode)
+	require.Equal(t, expectedRemoteContractVersion, status.ContractVersion)
+	require.Equal(t, 3, status.AvailableTools)
+
+	require.NoError(t, client.Close())
+	require.Equal(t, ExternalMCPHealthStatus{}, client.HealthStatus())
+}
+
 func compatibleDefinitions() []RemoteToolDefinition {
 	return []RemoteToolDefinition{
 		{Name: statusToolName, InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`), OutputSchema: json.RawMessage(`{"type":"object"}`)},

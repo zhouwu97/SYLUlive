@@ -24,6 +24,21 @@ func (capabilitiesEmptyPolicyRetriever) Retrieve(context.Context, string) (ai.Re
 	return ai.RetrievalResult{}, nil
 }
 
+type capabilitiesTool struct{ name string }
+
+func (tool capabilitiesTool) Name() string    { return tool.name }
+func (tool capabilitiesTool) Version() string { return "test" }
+func (tool capabilitiesTool) Definition() ai.ToolDefinition {
+	return ai.ToolDefinition{Name: tool.name, Parameters: map[string]interface{}{"type": "object"}}
+}
+func (tool capabilitiesTool) Execute(context.Context, uint, json.RawMessage) (interface{}, error) {
+	return map[string]interface{}{}, nil
+}
+
+type capabilitiesExternalMCPHealth struct{ healthy bool }
+
+func (health *capabilitiesExternalMCPHealth) Healthy() bool { return health.healthy }
+
 func requestAICapabilities(t *testing.T, handler *AICapabilitiesHandler, userID uint, role ...string) map[string]interface{} {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -91,6 +106,44 @@ func TestAICapabilitiesDoesNotExposeRetiredServerScheduleFeature(t *testing.T) {
 	}
 	if features["schedule_windows"] != false {
 		t.Fatalf("retired schedule skill must stay unavailable: %#v", features)
+	}
+}
+
+func TestAICapabilitiesReportsOnlyHealthyRegisteredHy3Features(t *testing.T) {
+	registry, err := ai.NewToolRegistry(nil,
+		capabilitiesTool{name: "hy3_decision.compare_competitions"},
+		capabilitiesTool{name: "hy3_decision.analyze_academic"},
+		capabilitiesTool{name: "hy3_decision.plan_student_week"},
+	)
+	if err != nil {
+		t.Fatalf("create tool registry: %v", err)
+	}
+	health := &capabilitiesExternalMCPHealth{healthy: true}
+	handler := NewAICapabilitiesHandler(true, AICapabilitiesOptions{
+		ExternalMCPConfigured: true,
+		ExternalMCPHealth:     health,
+		ToolRegistry:          registry,
+	})
+
+	body := requestAICapabilities(t, handler, 99)
+	features := body["features"].(map[string]interface{})
+	for _, name := range []string{
+		"hy3_competition_compare", "hy3_academic_analysis", "hy3_week_plan",
+	} {
+		if features[name] != true {
+			t.Fatalf("feature %s should be available: %#v", name, features)
+		}
+	}
+
+	health.healthy = false
+	body = requestAICapabilities(t, handler, 99)
+	features = body["features"].(map[string]interface{})
+	for _, name := range []string{
+		"hy3_competition_compare", "hy3_academic_analysis", "hy3_week_plan",
+	} {
+		if features[name] != false {
+			t.Fatalf("feature %s must fail closed: %#v", name, features)
+		}
 	}
 }
 

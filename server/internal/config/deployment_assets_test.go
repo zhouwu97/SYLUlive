@@ -95,6 +95,11 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 		"JWT_SECRET=",
 		"SUPER_ADMIN_ID=",
 		"SUPER_ADMIN_PASSWORD=",
+		"AI_EXTERNAL_MCP_ENABLED=",
+		"AI_EXTERNAL_MCP_TRANSPORT=",
+		"AI_EXTERNAL_MCP_COMMAND=",
+		"AI_EXTERNAL_MCP_TOOL_TIMEOUT_SECONDS=",
+		"AI_EXTERNAL_MCP_MAX_CALLS_PER_RUN=",
 	} {
 		if !strings.Contains(composeEnvText, key) {
 			t.Fatalf("根目录 .env.example 必须包含 Docker Compose 所需变量 %s", key)
@@ -111,6 +116,21 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	}
 	if !strings.Contains(dockerfileText, "chmod 0700 /app/private /app/private/exam-papers") {
 		t.Fatal("Dockerfile 必须同时收紧 /app/private 父目录和试卷私有目录权限")
+	}
+	for _, expected := range []string{
+		"AI_EXTERNAL_MCP_ENABLED=${AI_EXTERNAL_MCP_ENABLED:-false}",
+		"AI_EXTERNAL_MCP_TRANSPORT=${AI_EXTERNAL_MCP_TRANSPORT:-ssh_stdio}",
+		"AI_EXTERNAL_MCP_SSH_KEY_PATH=/run/secrets/mcp_ed25519",
+		"AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH=/run/secrets/mcp_known_hosts",
+		"source: mcp_ssh_key",
+		"source: mcp_known_hosts",
+	} {
+		if !strings.Contains(composeText, expected) {
+			t.Fatalf("Docker Compose 缺少外部 MCP ssh_stdio 部署项 %q", expected)
+		}
+	}
+	if !strings.Contains(dockerfileText, "openssh-client") {
+		t.Fatal("server 镜像启用 ssh_stdio 前必须安装 openssh-client")
 	}
 }
 

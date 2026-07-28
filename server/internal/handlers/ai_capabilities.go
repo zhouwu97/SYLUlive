@@ -17,20 +17,30 @@ const (
 // AICapabilitiesHandler 返回当前账号可见的 AI 能力。
 // P0 仅开放入口与状态验证，不暴露 Provider 配置，也不提供真实对话能力。
 type AICapabilitiesHandler struct {
-	enabled            bool
-	runtime            *ai.Runtime
-	policyRAGEnabled   bool
-	hourlyLimit        int
-	maxMessageChars    int
-	quotaExemptUserIDs map[uint]struct{}
+	enabled               bool
+	runtime               *ai.Runtime
+	policyRAGEnabled      bool
+	hourlyLimit           int
+	maxMessageChars       int
+	quotaExemptUserIDs    map[uint]struct{}
+	externalMCPConfigured bool
+	externalMCPHealth     externalMCPHealthReader
+	toolRegistry          *ai.ToolRegistry
+}
+
+type externalMCPHealthReader interface {
+	Healthy() bool
 }
 
 type AICapabilitiesOptions struct {
-	Runtime            *ai.Runtime
-	PolicyRAGEnabled   bool
-	HourlyLimit        int
-	MaxMessageChars    int
-	QuotaExemptUserIDs []uint
+	Runtime               *ai.Runtime
+	PolicyRAGEnabled      bool
+	HourlyLimit           int
+	MaxMessageChars       int
+	QuotaExemptUserIDs    []uint
+	ExternalMCPConfigured bool
+	ExternalMCPHealth     externalMCPHealthReader
+	ToolRegistry          *ai.ToolRegistry
 }
 
 func NewAICapabilitiesHandler(enabled bool, options ...AICapabilitiesOptions) *AICapabilitiesHandler {
@@ -54,6 +64,9 @@ func NewAICapabilitiesHandler(enabled bool, options ...AICapabilitiesOptions) *A
 				handler.quotaExemptUserIDs[userID] = struct{}{}
 			}
 		}
+		handler.externalMCPConfigured = options[0].ExternalMCPConfigured
+		handler.externalMCPHealth = options[0].ExternalMCPHealth
+		handler.toolRegistry = options[0].ToolRegistry
 	}
 	return handler
 }
@@ -81,6 +94,8 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 	if h.policyRAGEnabled {
 		phase = "p2"
 	}
+	externalMCPAvailable := accessAllowed && h.externalMCPConfigured &&
+		h.externalMCPHealth != nil && h.externalMCPHealth.Healthy()
 
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":            h.enabled,
@@ -89,8 +104,11 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 		"phase":              phase,
 		"chat_enabled":       chatEnabled,
 		"features": gin.H{
-			"policy_rag":       accessAllowed && h.policyRAGEnabled,
-			"schedule_windows": false,
+			"policy_rag":              accessAllowed && h.policyRAGEnabled,
+			"schedule_windows":        false,
+			"hy3_competition_compare": externalMCPAvailable && h.toolRegistry.HasTool("hy3_decision.compare_competitions"),
+			"hy3_academic_analysis":   externalMCPAvailable && h.toolRegistry.HasTool("hy3_decision.analyze_academic"),
+			"hy3_week_plan":           externalMCPAvailable && h.toolRegistry.HasTool("hy3_decision.plan_student_week"),
 		},
 		"quota": gin.H{
 			"limit":          h.hourlyLimit,

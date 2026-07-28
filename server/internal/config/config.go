@@ -35,8 +35,6 @@ type Config struct {
 	SuperAdminPass                string // 超级管理员密码
 
 	AIEnabled                              bool     // AI 总开关
-	AIInternalTestOnly                     bool     // 仅允许内测白名单访问
-	AITestUserIDs                          []string // AI 内测用户 ID 白名单
 	AIProvider                             string   // AI Provider 名称
 	DeepSeekAPIKey                         string   // 仅从服务端环境变量读取的 DeepSeek 密钥
 	DeepSeekBaseURL                        string   // DeepSeek API 地址
@@ -54,7 +52,7 @@ type Config struct {
 	AIOutputPriceMicroYuanPerMillionTokens int64
 	AIPolicyRAGEnabled                     bool   // 政策知识库能力独立开关
 	AILangChainRAGEnabled                  bool   // 政策请求改由 Python LCEL 完整编排
-	AILangChainRAGRolloutPercent           int    // 非内测模式下稳定分配给 LangChain 的账号比例
+	AILangChainRAGRolloutPercent           int    // 稳定分配给 LangChain 的账号比例
 	AILegacyRAGEnabled                     bool   // 旧 Go 检索与生成路径独立回滚开关
 	RAGServiceURL                          string // 独立 Embedding/分词服务地址
 	RAGServiceToken                        string // 内部服务鉴权令牌
@@ -275,8 +273,6 @@ func Load() *Config {
 	}
 
 	aiEnabled := envBool("AI_ENABLED", false)
-	aiInternalTestOnly := envBool("AI_INTERNAL_TEST_ONLY", true)
-	aiTestUserIDs := splitNonEmpty(os.Getenv("AI_TEST_USER_IDS"))
 	aiProvider := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
 	if aiProvider == "" {
 		aiProvider = "deepseek"
@@ -309,8 +305,8 @@ func Load() *Config {
 	// 灰度和 100% 观察窗口默认保留旧路径，关闭必须是单独的显式评审结果。
 	aiLegacyRAGEnabled := envBool("AI_LEGACY_RAG_ENABLED", true)
 	rolloutDefault := 0
-	if aiLangChainRAGEnabled && aiInternalTestOnly {
-		// 内测模式只有白名单账号可访问，因此该阶段本身就是受控灰度。
+	if aiLangChainRAGEnabled {
+		// 开启新链路但未声明灰度比例时按全量处理，避免部署后静默回落到旧链路。
 		rolloutDefault = 100
 	}
 	aiLangChainRAGRolloutPercent := envIntInRange(
@@ -339,7 +335,7 @@ func Load() *Config {
 	aiExternalMCPSshKeyPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_KEY_PATH"))
 	aiExternalMCPKnownHostsPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH"))
 	if err := validateAIConfig(
-		aiEnabled, aiInternalTestOnly, aiTestUserIDs, aiProvider, deepSeekAPIKey,
+		aiEnabled, aiProvider, deepSeekAPIKey,
 		deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled,
 		aiLangChainRAGEnabled, aiLegacyRAGEnabled, aiLangChainRAGRolloutPercent,
 		ragServiceURL, ragServiceToken,
@@ -378,8 +374,6 @@ func Load() *Config {
 		SuperAdminPass:                superAdminPass,
 
 		AIEnabled:                              aiEnabled,
-		AIInternalTestOnly:                     aiInternalTestOnly,
-		AITestUserIDs:                          aiTestUserIDs,
 		AIProvider:                             aiProvider,
 		DeepSeekAPIKey:                         deepSeekAPIKey,
 		DeepSeekBaseURL:                        deepSeekBaseURL,
@@ -495,8 +489,7 @@ func envPositiveUintList(name string) []uint {
 }
 
 func validateAIConfig(
-	enabled, internalOnly bool,
-	whitelist []string,
+	enabled bool,
 	provider, apiKey, baseURL, model string,
 	policyRAGEnabled, langChainRAGEnabled, legacyRAGEnabled bool,
 	langChainRolloutPercent int,
@@ -507,9 +500,6 @@ func validateAIConfig(
 	}
 	if !enabled {
 		return nil
-	}
-	if internalOnly && len(whitelist) == 0 {
-		return fmt.Errorf("AI_INTERNAL_TEST_ONLY=true 时必须设置 AI_TEST_USER_IDS")
 	}
 	if provider == "deepseek" && apiKey == "" && legacyRAGEnabled {
 		return fmt.Errorf("AI_ENABLED=true 且 AI_PROVIDER=deepseek 时必须设置 DEEPSEEK_API_KEY")
@@ -539,10 +529,7 @@ func validateAIConfig(
 	if policyRAGEnabled && !langChainRAGEnabled && !legacyRAGEnabled {
 		return fmt.Errorf("政策 RAG 必须至少启用 LangChain 或旧 Go 路径之一")
 	}
-	if langChainRAGEnabled && internalOnly && langChainRolloutPercent != 100 {
-		return fmt.Errorf("内测阶段的 LangChain 灰度比例必须为 100，仅白名单账号可访问")
-	}
-	if langChainRAGEnabled && !internalOnly && langChainRolloutPercent < 100 && !legacyRAGEnabled {
+	if langChainRAGEnabled && langChainRolloutPercent < 100 && !legacyRAGEnabled {
 		return fmt.Errorf("LangChain 未全量时必须启用 AI_LEGACY_RAG_ENABLED 作为未命中账号路径")
 	}
 	return nil

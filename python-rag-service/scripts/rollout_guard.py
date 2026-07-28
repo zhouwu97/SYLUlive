@@ -83,20 +83,17 @@ def validate_evidence(
 def environment_for_stage(stage: str) -> dict[str, str]:
     if stage == "off":
         return {
-            "AI_INTERNAL_TEST_ONLY": "false",
             "AI_LANGCHAIN_RAG_ENABLED": "false",
             "AI_LANGCHAIN_RAG_ROLLOUT_PERCENT": "0",
             "AI_LEGACY_RAG_ENABLED": "true",
         }
     if stage == "internal":
         return {
-            "AI_INTERNAL_TEST_ONLY": "true",
             "AI_LANGCHAIN_RAG_ENABLED": "true",
             "AI_LANGCHAIN_RAG_ROLLOUT_PERCENT": "100",
             "AI_LEGACY_RAG_ENABLED": "true",
         }
     return {
-        "AI_INTERNAL_TEST_ONLY": "false",
         "AI_LANGCHAIN_RAG_ENABLED": "true",
         "AI_LANGCHAIN_RAG_ROLLOUT_PERCENT": stage,
         # 到达 100% 后仍保留旧路径，完成观察窗口后才能另行评审是否移除。

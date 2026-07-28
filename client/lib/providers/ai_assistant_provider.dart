@@ -186,10 +186,8 @@ class AiAssistantProvider extends ChangeNotifier {
     _notify();
 
     try {
-      await Future.wait([
-        refreshCapabilities(silent: true),
-        loadConversations(),
-      ]);
+      await refreshCapabilities(silent: true);
+      await loadConversations();
     } finally {
       _loading = false;
       _notify();
@@ -219,6 +217,12 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   Future<void> loadConversations() async {
+    if (_capabilities?.chatEnabled != true) {
+      _conversations.clear();
+      _loadingConversations = false;
+      _notify();
+      return;
+    }
     _loadingConversations = true;
     _notify();
     try {
@@ -290,7 +294,8 @@ class AiAssistantProvider extends ChangeNotifier {
   AiSubmitResult submit(String rawMessage) {
     final message = normalizeAiMessage(rawMessage);
     if (message.isEmpty) return AiSubmitResult.blank;
-    final maxChars = _capabilities?.maxMessageChars ?? 120;
+    final maxChars =
+        _capabilities?.maxMessageChars ?? AiCapabilities.maximumMessageChars;
     if (message.characters.length > maxChars) return AiSubmitResult.tooLong;
     final blocked = _submissionBlocker();
     if (blocked != null) return blocked;
@@ -601,7 +606,8 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   Future<void> _finishRun() async {
-    await Future.wait([refreshCapabilities(silent: true), loadConversations()]);
+    await refreshCapabilities(silent: true);
+    await loadConversations();
   }
 
   Future<void> _restoreSources(List<AiConversationMessage> history) async {

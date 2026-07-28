@@ -4,14 +4,15 @@ enum AIModelProviderKind {
   openAICompatible,
 }
 
-/// OpenAI 兼容服务实际采用的请求协议。
+/// 第三方模型服务实际采用的请求协议。
 ///
-/// 自动模式优先尝试 Responses API，仅在服务明确不兼容时回退到
-/// Chat Completions，避免把网络超时或鉴权错误误判为协议不兼容。
+/// 自动模式根据官方服务地址选择首选协议，未知服务依次探测 Responses、
+/// Chat Completions 和 Anthropic Messages，网络或鉴权错误不会触发回退。
 enum OpenAIWireApi {
   auto,
   responses,
   chatCompletions,
+  anthropicMessages,
 }
 
 extension OpenAIWireApiLabel on OpenAIWireApi {
@@ -19,12 +20,14 @@ extension OpenAIWireApiLabel on OpenAIWireApi {
         OpenAIWireApi.auto => 'auto',
         OpenAIWireApi.responses => 'responses',
         OpenAIWireApi.chatCompletions => 'chat_completions',
+        OpenAIWireApi.anthropicMessages => 'anthropic_messages',
       };
 
   String get displayName => switch (this) {
         OpenAIWireApi.auto => '自动识别',
         OpenAIWireApi.responses => 'Responses API',
         OpenAIWireApi.chatCompletions => 'Chat Completions',
+        OpenAIWireApi.anthropicMessages => 'Anthropic Messages',
       };
 
   static OpenAIWireApi fromStorage(String? value) => switch (value) {
@@ -33,7 +36,11 @@ extension OpenAIWireApiLabel on OpenAIWireApi {
         'chat_completions' ||
         'chatCompletions' =>
           OpenAIWireApi.chatCompletions,
-        _ => throw const FormatException('未知 OpenAI 请求协议'),
+        'anthropic_messages' ||
+        'anthropicMessages' ||
+        'messages' =>
+          OpenAIWireApi.anthropicMessages,
+        _ => throw const FormatException('未知第三方模型请求协议'),
       };
 }
 
@@ -45,7 +52,7 @@ extension AIModelProviderKindLabel on AIModelProviderKind {
 
   String get displayName => switch (this) {
         AIModelProviderKind.campusPublic => '校园公益 AI',
-        AIModelProviderKind.openAICompatible => 'OpenAI 兼容服务',
+        AIModelProviderKind.openAICompatible => '第三方模型服务',
       };
 
   static AIModelProviderKind fromStorage(String? value) => switch (value) {

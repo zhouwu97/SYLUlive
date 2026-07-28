@@ -510,11 +510,13 @@ class _AIModelSettingsScreenState extends State<AIModelSettingsScreen> {
                 Text(
                   switch (_wireApi) {
                     OpenAIWireApi.auto =>
-                      '优先使用 Responses API，不兼容时自动回退到 Chat Completions。',
+                      '自动识别 Claude、DeepSeek 等官方地址；其他服务依次尝试 Responses、Chat Completions 和 Anthropic Messages。',
                     OpenAIWireApi.responses =>
                       '适用于配置中 wire_api = responses 的服务。',
                     OpenAIWireApi.chatCompletions =>
                       '适用于 DeepSeek 等 OpenAI Chat Completions 兼容服务。',
+                    OpenAIWireApi.anthropicMessages =>
+                      '适用于 Claude 官方 API 和 Anthropic Messages 兼容服务。',
                   },
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

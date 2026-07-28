@@ -84,7 +84,7 @@ func TestAICapabilitiesPublicAccess(t *testing.T) {
 	if body["access_allowed"] != true {
 		t.Fatalf("expected public access: %#v", body)
 	}
-	if body["max_message_chars"] != float64(120) {
+	if body["max_message_chars"] != float64(20) {
 		t.Fatalf("default max_message_chars mismatch: %#v", body)
 	}
 }
@@ -118,7 +118,7 @@ func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
 	}
 	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, capabilitiesEmptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
-		MaxMessageChars: 120, HourlyMessageLimit: 3,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
 		UnlimitedStudentIDs:         []string{"2403130233"},
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
@@ -128,7 +128,7 @@ func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
 		t.Fatalf("create runtime: %v", err)
 	}
 	handler := NewAICapabilitiesHandler(true, false, nil, AICapabilitiesOptions{
-		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 120,
+		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 20,
 	})
 	body := requestAICapabilities(t, handler, user.ID)
 	quota, ok := body["quota"].(map[string]interface{})

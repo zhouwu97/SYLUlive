@@ -19,7 +19,7 @@ func validPolicyRAGResult(requestID string) PolicyRAGResult {
 	return PolicyRAGResult{
 		RequestID: requestID, SchemaVersion: PolicyRAGSchemaVersion,
 		ChainName: "shenliyuan_policy_rag", ChainVersion: "answer-citations-v3",
-		Status: "completed", Answer: "请履行审批手续。[1]",
+		Status: "completed", AnswerMode: "verified_campus", Answer: "请履行审批手续。[1]",
 		Sources: []PolicyRAGSource{{
 			SourceID: "R1", DocumentID: 9, ChunkID: 18, CitationNumber: 1, Title: "学生手册",
 			Content: "学生请假应履行审批手续。",
@@ -27,6 +27,19 @@ func validPolicyRAGResult(requestID string) PolicyRAGResult {
 		Usage: &PolicyRAGUsage{
 			Provider: "fake", Model: "fake-v1", InputTokens: policyInt(20),
 			OutputTokens: policyInt(8), CacheHitTokens: policyInt(0), Metered: policyBool(true),
+		},
+	}
+}
+
+func validGeneralRAGResult(requestID string) PolicyRAGResult {
+	return PolicyRAGResult{
+		RequestID: requestID, SchemaVersion: PolicyRAGSchemaVersion,
+		ChainName: "shenliyuan_policy_rag", ChainVersion: "campus-assistant-release-v6",
+		Status: "general_completed", AnswerMode: "general_answer",
+		Answer: "你好，我是沈理校园 AI。",
+		Usage: &PolicyRAGUsage{
+			Provider: "fake", Model: "fake-v1", InputTokens: policyInt(12),
+			OutputTokens: policyInt(6), CacheHitTokens: policyInt(0), Metered: policyBool(true),
 		},
 	}
 }
@@ -89,6 +102,14 @@ func TestPolicyRAGResultRejectsForgedNumberedCitation(t *testing.T) {
 	result = validPolicyRAGResult("source-mismatch")
 	result.Sources[0].SourceID = "R9"
 	require.Error(t, result.validate("source-mismatch"))
+}
+
+func TestPolicyRAGResultAcceptsGeneralAnswerWithoutSources(t *testing.T) {
+	result := validGeneralRAGResult("general")
+	require.NoError(t, result.validate("general"))
+
+	result.AnswerMode = "verified_campus"
+	require.Error(t, result.validate("general"))
 }
 
 func TestRAGClientStreamPolicyConsumesVersionedEvents(t *testing.T) {

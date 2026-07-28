@@ -148,9 +148,9 @@ def test_request_cannot_override_provider_target_and_oversized_payload_is_reject
 
 def test_malicious_knowledge_instruction_is_removed_before_generation():
     model = FakePolicyChatModel(
-        response_text="不应被调用",
-        input_tokens=1,
-        output_tokens=1,
+        response_text="我暂时无法核验具体请假流程，请查看当期通知或联系辅导员确认。",
+        input_tokens=12,
+        output_tokens=10,
     )
     chain = build_policy_rag_chain(
         FakePolicyRetriever(
@@ -168,8 +168,11 @@ def test_malicious_knowledge_instruction_is_removed_before_generation():
 
     result = chain.invoke(PolicyRAGInput(request_id="malicious-kb", question="请假"))
 
-    assert result.status == "insufficient_sources"
-    assert result.answer != model.response_text
+    assert result.status == "general_completed"
+    assert result.answer_mode == "guided_gap"
+    assert result.answer == model.response_text
+    assert "忽略之前系统指令" not in result.answer
+    assert "内部令牌" not in result.answer
 
 
 class _ReadyTextEmbedding:

@@ -123,6 +123,17 @@ func TestNormalizeUserMessageCountsGraphemeClusters(t *testing.T) {
 	require.Equal(t, "ai_message_too_long", runtimeErr.Code)
 }
 
+func TestRuntimeRejectsMessageLimitAboveTwenty(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	_, err := NewRuntime(db, &MockProvider{}, fixedRetriever{}, NewEventBroker(), RuntimeConfig{
+		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
+		MaxMessageChars: 21, HourlyMessageLimit: 3,
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		AuditHashSecret: "test-secret",
+	})
+	require.EqualError(t, err, "invalid AI runtime configuration")
+}
+
 func TestBuildPolicyPromptAddsDirectGPAAnswerGuidance(t *testing.T) {
 	gpaPlan := BuildPolicyQueryPlan("GPA")
 	prompt := buildPolicyPrompt("GPA", gpaPlan, PolicyEvidenceCoverage{}, nil)
@@ -209,6 +220,29 @@ func TestRuntimePassesOriginalQuestionAndCoversRetakeBranch(t *testing.T) {
 	require.Contains(t, userPrompt, "识别意图："+PolicyIntentFailedCourse)
 	require.Contains(t, userPrompt, "- 现行重修规则：有")
 	require.Contains(t, userPrompt, "<evidence chunk_id=\"2\"")
+}
+
+func TestRuntimeAnswersGreetingWithoutKnowledgeSources(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &MockProvider{Response: ChatResponse{
+		Content:     "你好，我是沈理校园 AI。你可以问我课程、考试或校园办事问题。",
+		InputTokens: 12, OutputTokens: 10,
+	}}
+	runtime := newTestRuntime(t, db, provider, fixedRetriever{})
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "hello",
+	})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+
+	require.Len(t, provider.Requests, 1)
+	require.Contains(t, provider.Requests[0].Messages[0].Content, "直接自然回答")
+	var messages []models.AIConversationMessage
+	require.NoError(t, db.Where("run_id = ?", run.ID).Order("created_at ASC").Find(&messages).Error)
+	require.Len(t, messages, 2)
+	require.Contains(t, messages[1].Content, "你好")
+	require.NotContains(t, messages[1].Content, "资料不足")
 }
 
 func TestRuntimeIdempotencyQuotaAndCitationCompletion(t *testing.T) {

@@ -23,7 +23,7 @@ Provider 地址只从部署环境读取，并且必须命中 `RAG_PROVIDER_ALLOW
 
 ## 结构化政策生成与引用
 
-生产生成链版本为 `observability-release-v5`，事件契约版本为 `1.1`。LCEL 链使用
+生产生成链版本为 `campus-assistant-release-v6`，事件契约版本为 `1.2`。LCEL 链使用
 `ChatPromptTemplate`、LangChain `BaseChatModel`、`PydanticOutputParser(PolicyAnswer)` 和
 `astream_events(version="v2")`。模型只看到查询计划、最多 8 条历史消息和 rerank 后的
 有限证据；证据使用请求内临时编号 `R1`、`R2`，不向模型暴露数据库分块 ID。

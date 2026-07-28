@@ -23,7 +23,7 @@ void main() {
                   'remaining': 3,
                   'window_seconds': 3600,
                 },
-                'max_message_chars': 120,
+                'max_message_chars': 20,
               },
             ),
           );
@@ -34,6 +34,7 @@ void main() {
     final result = await AiAssistantService(dio).getCapabilities();
     expect(result.isVisible, isTrue);
     expect(result.quota.limit, 3);
+    expect(result.maxMessageChars, 20);
   });
 
   test('创建 Run 将 429 配额错误转换为可识别异常', () async {
@@ -330,8 +331,8 @@ void main() {
       );
     }
     expect(
-      isTransientCreateRunError(DioException(
-          requestOptions: options, type: DioExceptionType.cancel)),
+      isTransientCreateRunError(
+          DioException(requestOptions: options, type: DioExceptionType.cancel)),
       isFalse,
     );
   });

@@ -134,7 +134,7 @@ func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, messa
 				}
 				return
 			}
-			if result.Status != "completed" && result.Status != "citation_rejected" {
+			if result.Status != "completed" && result.Status != "general_completed" && result.Status != "citation_rejected" {
 				r.failLangChainProtocol(runID, generated, "invalid_response", time.Since(startedAt))
 				return
 			}
@@ -155,9 +155,16 @@ func (r *Runtime) executeLangChain(ctx context.Context, run *models.AIRun, messa
 			}).Error
 			_, _ = r.appendEvent(ctx, runID, "rag.completed", map[string]interface{}{
 				"chain_name": result.ChainName, "chain_version": result.ChainVersion,
-				"degraded_modes": result.DegradedModes,
+				"answer_mode": result.AnswerMode, "degraded_modes": result.DegradedModes,
 			}, true)
-			r.completeRun(runID, result.Answer, policyRAGSourcesToChunks(result.Sources), usage, time.Since(startedAt), true)
+			r.completeRun(
+				runID,
+				result.Answer,
+				policyRAGSourcesToChunks(result.Sources),
+				usage,
+				time.Since(startedAt),
+				result.Status == "completed",
+			)
 			return
 		}
 	}

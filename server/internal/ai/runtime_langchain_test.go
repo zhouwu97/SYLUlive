@@ -186,6 +186,31 @@ func TestLangChainRuntimeUsesPythonResultAndSettlesOnce(t *testing.T) {
 	var events []models.AIEvent
 	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "rag.completed").Find(&events).Error)
 	require.Len(t, events, 1)
+	require.Contains(t, string(events[0].Payload), `"answer_mode":"verified_campus"`)
+}
+
+func TestLangChainRuntimeCompletesGeneralAnswerWithoutSources(t *testing.T) {
+	result := validGeneralRAGResult("pending")
+	client := &fakeLangChainRAG{events: []PolicyRAGEvent{
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 1, Type: "generating", Timestamp: time.Now().Format(time.RFC3339Nano)},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 2, Type: "token", Timestamp: time.Now().Format(time.RFC3339Nano), Delta: result.Answer},
+		{SchemaVersion: PolicyRAGSchemaVersion, ChainName: result.ChainName, ChainVersion: result.ChainVersion, Sequence: 3, Type: "completed", Timestamp: time.Now().Format(time.RFC3339Nano), Result: &result},
+	}}
+	runtime, db := newLangChainTestRuntime(t, client)
+
+	run, _, err := runtime.CreateRun(context.Background(), 34, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "hello",
+	})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+
+	var messages []models.AIConversationMessage
+	require.NoError(t, db.Where("run_id = ?", run.ID).Order("created_at ASC").Find(&messages).Error)
+	require.Len(t, messages, 2)
+	require.Equal(t, result.Answer, messages[1].Content)
+	var sourceEvent models.AIEvent
+	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "sources.ready").First(&sourceEvent).Error)
+	require.Contains(t, string(sourceEvent.Payload), `"sources":[]`)
 }
 
 func TestLangChainRuntimePassesOnlyRecentOwnedConversationHistory(t *testing.T) {
@@ -356,7 +381,7 @@ func TestLangChainRuntimeRejectsSourceRevokedBeforeFinalValidation(t *testing.T)
 	var messages []models.AIConversationMessage
 	require.NoError(t, db.Where("run_id = ?", run.ID).Order("created_at ASC").Find(&messages).Error)
 	require.Len(t, messages, 2)
-	require.Equal(t, "当前已发布资料不足，暂时无法给出可核验回答。", messages[1].Content)
+	require.Equal(t, unverifiableCampusAnswer, messages[1].Content)
 
 	var sourceEvent models.AIEvent
 	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "sources.ready").First(&sourceEvent).Error)

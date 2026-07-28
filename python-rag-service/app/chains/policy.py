@@ -29,7 +29,7 @@ from app.chains.query_rewriter import (
     build_policy_query_rewriter,
     history_messages,
 )
-from app.prompts import build_policy_answer_prompt
+from app.prompts import build_campus_fallback_prompt, build_policy_answer_prompt
 from app.schemas import (
     PolicyAnswer,
     PolicyQueryPlan,
@@ -43,8 +43,13 @@ from app.schemas import (
 
 
 POLICY_RAG_CHAIN_NAME = "shenliyuan_policy_rag"
-POLICY_RAG_CHAIN_VERSION = "observability-release-v5"
-INSUFFICIENT_ANSWER = "当前已发布资料不足，暂时无法给出可核验回答。"
+POLICY_RAG_CHAIN_VERSION = "campus-assistant-release-v6"
+GUIDED_GAP_ANSWER = (
+    "我暂时无法从已发布的校园资料中核验这项具体信息。"
+    "你可以补充涉及的校区、课程或办理事项，我会继续帮你缩小查询范围；"
+    "也可以查看对应事项的当期通知，或向负责该事项的学院老师确认。"
+)
+INSUFFICIENT_ANSWER = GUIDED_GAP_ANSWER
 HISTORY_BOUNDARY_WARNING = "历史规则不代表当前执行口径，请以教务系统或当期通知核验。"
 _CALCULATION_TERMS = (
     "平时成绩",
@@ -321,6 +326,7 @@ def _parse_generated(state: dict[str, Any], provider_name: str, model_name: str)
             chain_version=POLICY_RAG_CHAIN_VERSION,
             status="citation_rejected",
             answer=INSUFFICIENT_ANSWER,
+            answer_mode="guided_gap",
             warnings=["rag_structured_output_invalid"],
             usage=usage,
             degraded_modes=_degraded_modes(documents),
@@ -334,6 +340,7 @@ def _parse_generated(state: dict[str, Any], provider_name: str, model_name: str)
             chain_version=POLICY_RAG_CHAIN_VERSION,
             status="citation_rejected",
             answer=INSUFFICIENT_ANSWER,
+            answer_mode="guided_gap",
             warnings=["rag_citation_validation_failed"],
             usage=usage,
             degraded_modes=_degraded_modes(documents),
@@ -350,6 +357,7 @@ def _parse_generated(state: dict[str, Any], provider_name: str, model_name: str)
         chain_version=POLICY_RAG_CHAIN_VERSION,
         status="completed",
         answer=_render_structured_answer(structured),
+        answer_mode="verified_campus",
         warnings=list(structured.warnings),
         sources=[
             _source_from_document(references[reference_id], reference_id=reference_id)
@@ -377,7 +385,8 @@ def _insufficient(state: dict[str, Any], provider_name: str, model_name: str) ->
         chain_name=POLICY_RAG_CHAIN_NAME,
         chain_version=POLICY_RAG_CHAIN_VERSION,
         status="insufficient_sources",
-        answer=INSUFFICIENT_ANSWER,
+        answer=GUIDED_GAP_ANSWER,
+        answer_mode="guided_gap",
         warnings=["rag_insufficient_sources"],
         degraded_modes=_degraded_modes(documents),
         usage=PolicyUsage(
@@ -387,6 +396,86 @@ def _insufficient(state: dict[str, Any], provider_name: str, model_name: str) ->
             output_tokens=0,
             metered=False,
         ),
+    )
+
+
+_CAMPUS_SPECIFIC_TERMS = (
+    "沈理",
+    "学校",
+    "校内",
+    "校园",
+    "教务",
+    "学院",
+    "辅导员",
+    "学生处",
+    "宿舍",
+    "食堂",
+    "补考",
+    "二考",
+    "重修",
+    "奖学金",
+    "助学金",
+    "转专业",
+    "请假",
+    "门禁",
+)
+
+
+def _fallback_answer_mode(state: dict[str, Any]) -> str:
+    request: PolicyRAGInput = state["request"]
+    plan: PolicyQueryPlan = state["query_plan"]
+    if plan.intent != "general_policy" or any(
+        term in request.question for term in _CAMPUS_SPECIFIC_TERMS
+    ):
+        return "guided_gap"
+    return "general_answer"
+
+
+def _fallback_prompt_input(state: dict[str, Any]) -> dict[str, Any]:
+    request: PolicyRAGInput = state["request"]
+    answer_mode = _fallback_answer_mode(state)
+    hint = (
+        "这是缺少校内依据的校园事项。不要猜测校内结论，要给出具体核验或下一步引导。"
+        if answer_mode == "guided_gap"
+        else "这是不依赖校内专属资料的通用问题。请直接自然回答。"
+    )
+    return {
+        "question": request.question,
+        "history": history_messages(request.history),
+        "answer_mode_hint": hint,
+    }
+
+
+def _parse_fallback_generated(
+    state: dict[str, Any], provider_name: str, model_name: str
+) -> PolicyRAGResult:
+    original: dict[str, Any] = state["state"]
+    request: PolicyRAGInput = original["request"]
+    message: BaseMessage = state["message"]
+    usage = _usage_from_message(message, provider_name, model_name)
+    answer = _message_text(message)
+    if not answer or _RAW_REFERENCE_PATTERN.search(answer):
+        return PolicyRAGResult(
+            request_id=request.request_id,
+            chain_name=POLICY_RAG_CHAIN_NAME,
+            chain_version=POLICY_RAG_CHAIN_VERSION,
+            status="citation_rejected",
+            answer=GUIDED_GAP_ANSWER,
+            answer_mode="guided_gap",
+            warnings=["general_answer_validation_failed"],
+            usage=usage,
+            degraded_modes=_degraded_modes(original.get("documents", [])),
+        )
+    return PolicyRAGResult(
+        request_id=request.request_id,
+        chain_name=POLICY_RAG_CHAIN_NAME,
+        chain_version=POLICY_RAG_CHAIN_VERSION,
+        status="general_completed",
+        answer=answer,
+        answer_mode=_fallback_answer_mode(original),
+        warnings=["campus_sources_unavailable"],
+        usage=usage,
+        degraded_modes=_degraded_modes(original.get("documents", [])),
     )
 
 
@@ -409,6 +498,17 @@ def _has_sufficient_reranked_evidence(
         if 0 <= score <= 1:
             scores.append(score)
     return bool(scores) and max(scores) >= relevance_threshold
+
+
+def _should_generate_verified_answer(
+    state: dict[str, Any], relevance_threshold: float, reranker_enabled: bool
+) -> bool:
+    # 通用问题不能因为向量检索偶然召回弱相关材料而退化为政策回答。
+    if _fallback_answer_mode(state) != "guided_gap":
+        return False
+    if reranker_enabled:
+        return _has_sufficient_reranked_evidence(state, relevance_threshold)
+    return _has_documents(state)
 
 
 def _validate_result(result: PolicyRAGResult | dict[str, Any]) -> PolicyRAGResult:
@@ -458,6 +558,7 @@ def build_policy_rag_chain(
 
     parser = PydanticOutputParser(pydantic_object=PolicyAnswer)
     prompt = build_policy_answer_prompt()
+    fallback_prompt = build_campus_fallback_prompt()
 
     def generate_sync(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
         prompt_value = prompt.invoke(_generation_context(state, parser), config=config)
@@ -489,15 +590,41 @@ def build_policy_rag_chain(
             lambda state: _parse_generated(state, provider_name, model_name)
         ).with_config(run_name="citation_validation")
     )
-    insufficient = RunnableLambda(
-        lambda state: _insufficient(state, provider_name, model_name)
-    ).with_config(run_name="insufficient_sources")
-    gate = (
-        (lambda state: _has_sufficient_reranked_evidence(state, relevance_threshold))
-        if reranker is not None
-        else _has_documents
+
+    def generate_fallback_sync(
+        state: dict[str, Any], config: RunnableConfig
+    ) -> dict[str, Any]:
+        prompt_value = fallback_prompt.invoke(_fallback_prompt_input(state), config=config)
+        message = chat_model.invoke(prompt_value, config=config)
+        return {"state": state, "message": message}
+
+    async def generate_fallback_async(
+        state: dict[str, Any], config: RunnableConfig
+    ) -> dict[str, Any]:
+        prompt_value = await fallback_prompt.ainvoke(
+            _fallback_prompt_input(state), config=config
+        )
+        message: BaseMessage | None = None
+        async for chunk in chat_model.astream(prompt_value, config=config):
+            message = chunk if message is None else message + chunk
+        if message is None:
+            raise ValueError("empty fallback model stream")
+        return {"state": state, "message": message}
+
+    fallback_generation = (
+        RunnableLambda(generate_fallback_sync, afunc=generate_fallback_async).with_config(
+            run_name="campus_fallback_generation"
+        )
+        | RunnableLambda(
+            lambda state: _parse_fallback_generated(
+                state, provider_name, model_name
+            )
+        ).with_config(run_name="general_answer_validation")
     )
-    branch = RunnableBranch((gate, generation), insufficient).with_config(
+    gate = lambda state: _should_generate_verified_answer(
+        state, relevance_threshold, reranker is not None
+    )
+    branch = RunnableBranch((gate, generation), fallback_generation).with_config(
         run_name="evidence_gate"
     )
     return (

@@ -1,13 +1,28 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+
+	"shenliyuan/internal/ai"
+	"shenliyuan/internal/models"
 )
+
+type capabilitiesEmptyPolicyRetriever struct{}
+
+func (capabilitiesEmptyPolicyRetriever) Retrieve(context.Context, string) (ai.RetrievalResult, error) {
+	return ai.RetrievalResult{}, nil
+}
 
 func requestAICapabilities(t *testing.T, handler *AICapabilitiesHandler, userID uint, role ...string) map[string]interface{} {
 	t.Helper()
@@ -34,45 +49,42 @@ func requestAICapabilities(t *testing.T, handler *AICapabilitiesHandler, userID 
 }
 
 func TestAICapabilitiesDisabled(t *testing.T) {
-	body := requestAICapabilities(t, NewAICapabilitiesHandler(false, true, []string{"7"}), 7)
+	body := requestAICapabilities(t, NewAICapabilitiesHandler(false), 7)
 	if body["enabled"] != false || body["access_allowed"] != false {
 		t.Fatalf("unexpected disabled response: %#v", body)
 	}
 }
 
-func TestAICapabilitiesInternalWhitelist(t *testing.T) {
-	handler := NewAICapabilitiesHandler(true, true, []string{" 7 ", "39"})
-	allowed := requestAICapabilities(t, handler, 7)
-	denied := requestAICapabilities(t, handler, 8)
-	if allowed["access_allowed"] != true || denied["access_allowed"] != false {
-		t.Fatalf("whitelist result mismatch: allowed=%#v denied=%#v", allowed, denied)
+func TestAICapabilitiesUsesSameAccessForAllAuthenticatedUsers(t *testing.T) {
+	handler := NewAICapabilitiesHandler(true)
+	user := requestAICapabilities(t, handler, 7, "user")
+	admin := requestAICapabilities(t, handler, 8, "admin")
+	if user["access_allowed"] != true || admin["access_allowed"] != true {
+		t.Fatalf("access should not depend on role: user=%#v admin=%#v", user, admin)
 	}
-	if _, leaked := allowed["api_key"]; leaked {
+	if user["internal_test_only"] != false || admin["internal_test_only"] != false {
+		t.Fatalf("internal access restriction must stay disabled: user=%#v admin=%#v", user, admin)
+	}
+	if _, leaked := user["api_key"]; leaked {
 		t.Fatal("capabilities response must not expose provider credentials")
 	}
-	if allowed["chat_enabled"] != false || allowed["phase"] != "p0" {
-		t.Fatalf("P0 contract mismatch: %#v", allowed)
-	}
-}
-
-func TestAICapabilitiesAdministratorsCanEnterInternalTest(t *testing.T) {
-	handler := NewAICapabilitiesHandler(true, true, []string{"7"})
-	admin := requestAICapabilities(t, handler, 8, "admin")
-	superAdmin := requestAICapabilities(t, handler, 9, "super_admin")
-	if admin["access_allowed"] != true || superAdmin["access_allowed"] != true {
-		t.Fatalf("administrators should be allowed: admin=%#v super=%#v", admin, superAdmin)
+	if user["chat_enabled"] != false || user["phase"] != "p0" {
+		t.Fatalf("P0 contract mismatch: %#v", user)
 	}
 }
 
 func TestAICapabilitiesPublicAccess(t *testing.T) {
-	body := requestAICapabilities(t, NewAICapabilitiesHandler(true, false, nil), 99)
+	body := requestAICapabilities(t, NewAICapabilitiesHandler(true), 99)
 	if body["access_allowed"] != true {
 		t.Fatalf("expected public access: %#v", body)
+	}
+	if body["max_message_chars"] != float64(20) {
+		t.Fatalf("default max_message_chars mismatch: %#v", body)
 	}
 }
 
 func TestAICapabilitiesDoesNotExposeRetiredServerScheduleFeature(t *testing.T) {
-	body := requestAICapabilities(t, NewAICapabilitiesHandler(true, false, nil), 99)
+	body := requestAICapabilities(t, NewAICapabilitiesHandler(true), 99)
 	features, ok := body["features"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("features = %#v, want object", body["features"])
@@ -82,22 +94,42 @@ func TestAICapabilitiesDoesNotExposeRetiredServerScheduleFeature(t *testing.T) {
 	}
 }
 
-func TestAICapabilitiesMarksConfiguredAccountQuotaUnlimited(t *testing.T) {
-	handler := NewAICapabilitiesHandler(
-		true,
-		false,
-		nil,
-		AICapabilitiesOptions{QuotaExemptUserIDs: []uint{2}},
-	)
-	body := requestAICapabilities(t, handler, 2)
-	quota, ok := body["quota"].(map[string]interface{})
-	if !ok || quota["unlimited"] != true {
-		t.Fatalf("quota should be unlimited for configured account: %#v", body)
+func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
 	}
-
-	regular := requestAICapabilities(t, handler, 3)
-	regularQuota := regular["quota"].(map[string]interface{})
-	if regularQuota["unlimited"] != false {
-		t.Fatalf("regular account must keep quota enforcement: %#v", regular)
+	if err := db.AutoMigrate(&models.User{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	verifiedAt := time.Now()
+	user := models.User{
+		ID: 77, StudentID: "2403130233", StudentVerifiedAt: &verifiedAt,
+		PasswordHash: "test", AccountStatus: "active",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, capabilitiesEmptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
+		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
+		UnlimitedStudentIDs:         []string{"2403130233"},
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+		AuditHashSecret: "test-secret",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	handler := NewAICapabilitiesHandler(true, AICapabilitiesOptions{
+		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 20,
+	})
+	body := requestAICapabilities(t, handler, user.ID)
+	if body["chat_enabled"] != true || body["access_allowed"] != true {
+		t.Fatalf("authenticated user should have chat access: %#v", body)
+	}
+	quota, ok := body["quota"].(map[string]interface{})
+	if !ok || quota["unlimited"] != true || quota["remaining"] != float64(3) {
+		t.Fatalf("unexpected unlimited quota: %#v", body["quota"])
 	}
 }

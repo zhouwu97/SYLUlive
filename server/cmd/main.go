@@ -668,9 +668,7 @@ func main() {
 	var aiRuntime *ai.Runtime
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
-			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 server/sql/20260719_ai_runtime_rag.sql、"+
-				"20260725_ai_user_permissions.sql、20260726_ai_external_model_permission.sql、"+
-				"20260726_ai_run_consents.sql：%v", schemaErr)
+			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
 		}
 		ragHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
 		var ragErr error
@@ -679,13 +677,24 @@ func main() {
 			log.Fatalf("AI RAG 配置无效: %v", ragErr)
 		}
 		var provider ai.AIProvider
-		if cfg.AIProvider == "mock" {
-			provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
-		} else {
-			providerHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
-			provider, ragErr = ai.NewDeepSeekProvider(cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekChatModel, providerHTTPClient)
-			if ragErr != nil {
-				log.Fatalf("AI Provider 初始化失败: %v", ragErr)
+		var retriever ai.PolicyRetriever
+		runtimeOptions := make([]ai.RuntimeOption, 0, 1)
+		providerName, modelName := cfg.AIProvider, cfg.DeepSeekChatModel
+		if cfg.AILangChainRAGEnabled {
+			providerName, modelName = "rag-rollout", "policy-rag"
+			runtimeOptions = append(runtimeOptions, ai.WithLangChainRAG(ragClient))
+		}
+		if cfg.AILegacyRAGEnabled {
+			// 灰度期只为分配到旧路径的请求调用这些依赖，同一请求不会双重检索或生成。
+			retriever = ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
+			if cfg.AIProvider == "mock" {
+				provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
+			} else {
+				providerHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
+				provider, ragErr = ai.NewDeepSeekProvider(cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekChatModel, providerHTTPClient)
+				if ragErr != nil {
+					log.Fatalf("AI Provider 初始化失败: %v", ragErr)
+				}
 			}
 		}
 		deviceJobScheduler := ai.DeviceJobSchedulerFunc(func(ctx context.Context, request ai.DeviceJobRequest) (ai.DeviceJobReference, error) {
@@ -757,21 +766,27 @@ func main() {
 		if registryErr != nil {
 			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
 		}
+		runtimeOptions = append(runtimeOptions, ai.WithToolRegistry(toolRegistry))
 		aiRuntime, ragErr = ai.NewRuntime(
-			db, provider, policyRetriever, ai.NewEventBroker(),
+			db, provider, retriever, ai.NewEventBroker(),
 			ai.RuntimeConfig{
-				ProviderName: cfg.AIProvider, Model: cfg.DeepSeekChatModel,
+				ProviderName: providerName, Model: modelName,
 				RequestTimeout:  time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second,
+				MaxOutputTokens: cfg.AILegacyMaxOutputTokens,
 				MaxToolSteps:    cfg.AIMaxToolSteps,
 				MaxMessageChars: cfg.AIMaxMessageChars, HourlyMessageLimit: cfg.AIHourlyMessageLimit,
+				UnlimitedStudentIDs:            cfg.AIUnlimitedStudentIDs,
 				QuotaExemptUserIDs:             cfg.AIQuotaExemptUserIDs,
 				DefaultBudgetLimitMicroYuan:    cfg.AIUserBudgetLimitMicroYuan,
 				ReservationMicroYuan:           cfg.AIReserveMicroYuan,
 				InputPriceMicroYuanPerMillion:  cfg.AIInputPriceMicroYuanPerMillionTokens,
 				OutputPriceMicroYuanPerMillion: cfg.AIOutputPriceMicroYuanPerMillionTokens,
 				AuditHashSecret:                cfg.JWTSecret,
+				LangChainRAGEnabled:            cfg.AILangChainRAGEnabled,
+				LangChainRAGRolloutPercent:     cfg.AILangChainRAGRolloutPercent,
+				LegacyRAGEnabled:               cfg.AILegacyRAGEnabled,
 			},
-			toolRegistry,
+			runtimeOptions...,
 		)
 		if ragErr != nil {
 			log.Fatalf("AI Runtime 初始化失败: %v", ragErr)
@@ -801,8 +816,6 @@ func main() {
 	knowledgeHandler := handlers.NewAIKnowledgeHandler(db, ragClient)
 	aiCapabilitiesHandler := handlers.NewAICapabilitiesHandler(
 		cfg.AIEnabled,
-		cfg.AIInternalTestOnly,
-		cfg.AITestUserIDs,
 		handlers.AICapabilitiesOptions{
 			Runtime: aiRuntime, PolicyRAGEnabled: cfg.AIPolicyRAGEnabled && aiRuntime != nil,
 			HourlyLimit:        cfg.AIHourlyMessageLimit,
@@ -872,7 +885,12 @@ func main() {
 			"ai": gin.H{
 				"enabled":         cfg.AIEnabled,
 				"runtime_enabled": aiRuntime != nil,
-				"policy_rag":      gin.H{"enabled": cfg.AIPolicyRAGEnabled, "status": ragHealth},
+				"policy_rag": gin.H{
+					"enabled": cfg.AIPolicyRAGEnabled, "langchain_enabled": cfg.AILangChainRAGEnabled,
+					"langchain_rollout_percent": cfg.AILangChainRAGRolloutPercent,
+					"legacy_go_enabled":         cfg.AILegacyRAGEnabled,
+					"status":                    ragHealth,
+				},
 			},
 		})
 	})
@@ -1869,6 +1887,8 @@ func main() {
 	knowledgeAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 	{
 		knowledgeAdmin.POST("/import", knowledgeHandler.Import)
+		knowledgeAdmin.POST("/release", knowledgeHandler.ReleaseBatch)
+		knowledgeAdmin.POST("/rollback", knowledgeHandler.RollbackBatch)
 		knowledgeAdmin.GET("", knowledgeHandler.List)
 		knowledgeAdmin.GET("/:id", knowledgeHandler.Read)
 		knowledgeAdmin.POST("/:id/inspect", knowledgeHandler.Inspect)
@@ -1879,7 +1899,7 @@ func main() {
 		knowledgeAdmin.POST("/:id/supersede", knowledgeHandler.Supersede)
 	}
 
-	// 能力探测保持可达，未获内测资格的客户端据此安静隐藏入口。
+	// 能力探测保持可达，客户端据此读取统一的服务状态与账号配额。
 	aiCapabilities := r.Group("/api/ai")
 	aiCapabilities.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
@@ -1891,7 +1911,7 @@ func main() {
 		aiProtected := r.Group("/api/ai")
 		aiProtected.Use(
 			middleware.AuthMiddleware(db, cfg.JWTSecret),
-			middleware.AIAccessMiddleware(cfg.AIEnabled, cfg.AIInternalTestOnly, cfg.AITestUserIDs),
+			middleware.AIAccessMiddleware(cfg.AIEnabled),
 		)
 		{
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)

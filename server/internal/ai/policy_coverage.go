@@ -17,7 +17,7 @@ const (
 // policyCompositeScore 融合 RRF 名次分、精确命中分和文档类型偏好分。
 // 偏好分只做微调，不能压过真实召回名次。
 func policyCompositeScore(plan PolicyQueryPlan, chunk RetrievedChunk) float64 {
-	return chunk.RRFScore + chunk.ExactScore + float64(policyDocumentPreferenceBonus(plan, chunk.DocumentType))*0.004
+	return chunk.RRFScore + chunk.ScoreDetails.Exact + float64(policyDocumentPreferenceBonus(plan, chunk.DocumentType))*0.004
 }
 
 func docTypeInGroup(docType string, group []string) bool {

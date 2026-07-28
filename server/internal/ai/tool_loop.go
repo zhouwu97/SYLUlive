@@ -66,7 +66,7 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 			requestTools = nil
 		}
 		stream, err := r.provider.Start(ctx, ProviderRequest{
-			Messages: messages, Temperature: 0.1, MaxTokens: 800, Tools: requestTools,
+			Messages: messages, Temperature: 0.1, MaxTokens: r.config.MaxOutputTokens, Tools: requestTools,
 		})
 		if err != nil {
 			if r.runIsCancelled(run.ID) {
@@ -305,6 +305,13 @@ func (r *Runtime) collectProviderRound(ctx context.Context, run *models.AIRun, s
 		case ProviderEventToolCallCompleted:
 			// 参数由 arguments_delta 完整累积；该事件仅用于兼容不带载荷的 Provider。
 		case ProviderEventCompleted:
+			finishReason := strings.ToLower(strings.TrimSpace(event.FinishReason))
+			if finishReason != "tool_calls" || len(calls) == 0 {
+				if code := providerFinishError(finishReason); code != "" {
+					outcome.failureCode = code
+					return "", nil, outcome
+				}
+			}
 			return answer.String(), calls, outcome
 		}
 	}

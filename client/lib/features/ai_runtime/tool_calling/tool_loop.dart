@@ -109,7 +109,8 @@ class LocalToolLoop {
                 : ToolLoopStatus.completed,
             answer: answer,
             evidence: List<SkillEvidence>.unmodifiable(evidence),
-            actionArtifacts: List<SkillActionArtifact>.unmodifiable(actionArtifacts),
+            actionArtifacts:
+                List<SkillActionArtifact>.unmodifiable(actionArtifacts),
           );
         }
 
@@ -234,8 +235,9 @@ class LocalToolLoop {
           ..add(
             ToolConversationMessage(
               role: ToolMessageRole.assistant,
-              content: '',
+              content: turn.assistantContent,
               toolCall: call,
+              reasoningContent: turn.reasoningContent,
             ),
           )
           ..add(

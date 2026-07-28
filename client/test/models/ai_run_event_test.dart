@@ -23,29 +23,19 @@ void main() {
     expect(event.retryable, isTrue);
   });
 
-  test('一次性授权事件解析权限范围和原因', () {
+  test('按文档聚合来源并解析公开引用编号', () {
     final event = AiRunEvent.parseSse(
-      '{"run_id":"run-1","seq":10,"type":"consent.required",'
-      '"payload":{"scope":"ai_personal_data_access","reason":"grade_summary"}}',
+      '{"run_id":"run-1","seq":9,"type":"sources.ready","payload":{"sources":[{"document_id":3,"primary_chunk_id":18,"title":"学生手册","department":"学生处","status":"published","effective_from":"2025-09-01T00:00:00+08:00","effective_to":"2027-08-31T23:59:59+08:00","citation_numbers":[1,2],"locators":["第十条","第十一条"]}]}}',
     );
 
-    expect(event.type, AiRunEventType.consentRequired);
-    expect(event.consentScope, 'ai_personal_data_access');
-    expect(event.consentReason, 'grade_summary');
-  });
-
-  test('个人数据证据事件只解析来源元数据', () {
-    final event = AiRunEvent.parseSse(
-      '{"run_id":"run-1","seq":9,"type":"personal_data.evidence",'
-      '"payload":{"call_id":"call-1","evidence":[{'
-      '"source":"device_encrypted_cache","dataset":"schedule",'
-      '"fetched_at":"2026-07-25T09:20:00Z","is_stale":true}]}}',
-    );
-
-    expect(event.type, AiRunEventType.personalDataEvidence);
-    expect(event.personalDataEvidence, hasLength(1));
-    expect(event.personalDataEvidence.single.sourceLabel, '手机本地加密缓存');
-    expect(event.personalDataEvidence.single.datasetLabel, '课表');
-    expect(event.personalDataEvidence.single.isStale, isTrue);
+    final source = event.sources.single;
+    expect(source.documentId, 3);
+    expect(source.chunkId, 18);
+    expect(source.publisher, '学生处');
+    expect(source.statusLabel, '已发布');
+    expect(source.effectiveLabel, '2025-09-01 至 2027-08-31');
+    expect(source.citationLabel, '[1][2]');
+    expect(source.locators, ['第十条', '第十一条']);
+    expect(source.locatorLabel, '第十条 · 第十一条');
   });
 }

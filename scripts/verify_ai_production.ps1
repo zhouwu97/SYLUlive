@@ -1,13 +1,46 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)] [string] $BaseUrl,
-    [Parameter(Mandatory = $true)] [string] $Jwt,
-    [string] $AdminJwt,
+    [string] $BaseUrl = '',
+    [string] $Jwt = '',
+    [string] $AdminJwt = '',
     [string] $Message = '请假政策',
-    [int] $TimeoutSeconds = 45
+    [int] $TimeoutSeconds = 45,
+    [switch] $Execute,
+    [switch] $ConsumeQuota,
+    [string] $ConfirmQuotaExhaustion = '',
+    [string] $Confirm = ''
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $Execute) {
+    Write-Host 'dry-run：将检查 capabilities、SSE、取消与额度边界；默认不发出请求。'
+    Write-Host '执行非额度耗尽验收需提供 -Execute -Confirm RUN:AI-PRODUCTION。'
+    Write-Host '额度耗尽演练还必须提供 -ConsumeQuota -ConfirmQuotaExhaustion CONSUME:REMAINING-QUOTA，且只能在获批的测试账号上执行。'
+    return
+}
+if ($Confirm -ne 'RUN:AI-PRODUCTION') {
+    throw '确认短语必须为 RUN:AI-PRODUCTION；未发出请求。'
+}
+if ([string]::IsNullOrWhiteSpace($BaseUrl) -or [string]::IsNullOrWhiteSpace($Jwt)) {
+    throw '执行验收必须提供 -BaseUrl 与测试账号 -Jwt。'
+}
+try { $targetUri = [uri]$BaseUrl } catch { throw 'BaseUrl 必须是合法的绝对 HTTP(S) 地址。' }
+if (-not $targetUri.IsAbsoluteUri -or $targetUri.Scheme -notin @('http', 'https') -or
+    -not [string]::IsNullOrEmpty($targetUri.UserInfo) -or
+    -not [string]::IsNullOrEmpty($targetUri.Query) -or
+    -not [string]::IsNullOrEmpty($targetUri.Fragment)) {
+    throw 'BaseUrl 必须是无用户信息、查询参数和片段的绝对 HTTP(S) 地址。'
+}
+$isLocalTarget = $targetUri.Host -in @('127.0.0.1', 'localhost', '::1')
+if (-not $isLocalTarget -and $targetUri.Scheme -ne 'https') {
+    throw '远程验收目标必须使用 HTTPS，未发出请求。'
+}
+if ($TimeoutSeconds -lt 10 -or $TimeoutSeconds -gt 180) {
+    throw 'TimeoutSeconds 必须在 10 到 180 之间。'
+}
+if ($ConsumeQuota -and $ConfirmQuotaExhaustion -ne 'CONSUME:REMAINING-QUOTA') {
+    throw '额度耗尽演练还必须提供 -ConfirmQuotaExhaustion CONSUME:REMAINING-QUOTA。'
+}
 $base = $BaseUrl.TrimEnd('/')
 $headers = @{ Authorization = "Bearer $Jwt" }
 
@@ -62,8 +95,15 @@ function Read-SseUntilTerminal([string] $runId, [int64] $lastEventId = 0, [int] 
         if (-not $response.IsSuccessStatusCode) { throw "SSE HTTP $([int]$response.StatusCode)" }
         $reader = [System.IO.StreamReader]::new($response.Content.ReadAsStream())
         $deadline = [DateTime]::UtcNow.AddMilliseconds($maxMilliseconds)
-        while ([DateTime]::UtcNow -lt $deadline -and -not $reader.EndOfStream) {
-            $line = $reader.ReadLine()
+        while ([DateTime]::UtcNow -lt $deadline) {
+            $remainingMilliseconds = [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+            if ($remainingMilliseconds -le 0) { break }
+            $readTask = $reader.ReadLineAsync()
+            if (-not $readTask.Wait($remainingMilliseconds)) {
+                throw "SSE 读取超过 $maxMilliseconds 毫秒。"
+            }
+            $line = $readTask.Result
+            if ($null -eq $line) { break }
             if ($line -match '^id: (\d+)$') {
                 $last = [int64]$Matches[1]
                 if ($StopAfterFirstEvent) { break }
@@ -121,7 +161,13 @@ do {
 } while ($cancelled.state -notin @('cancelled', 'completed', 'failed') -and [DateTime]::UtcNow -lt $cancelDeadline)
 if ($cancelled.state -ne 'cancelled') { throw "Run 未进入 cancelled，实际状态为 $($cancelled.state)" }
 
-Write-Host '验证额度耗尽（脚本会使用当前账号的剩余额度，不修改预算上限）...'
+if (-not $ConsumeQuota) {
+    Write-Host '跳过额度耗尽演练；未提供 -ConsumeQuota。'
+    Write-Host 'AI 生产端到端非破坏性验收通过。'
+    return
+}
+
+Write-Host '验证额度耗尽（仅允许使用明确获批的测试账号）...'
 $quotaCapabilities = Invoke-Api 'Get' '/api/ai/capabilities' $null
 if (-not $quotaCapabilities.access_allowed -or -not $quotaCapabilities.chat_enabled) {
     throw '取消测试后 AI 能力不可用，无法继续额度验收。'

@@ -210,21 +210,24 @@ class _CompetitionAwardVerificationAdminScreenState
       key: Key('award-verification-${item.id}'),
       margin: const EdgeInsets.only(bottom: 10),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
-      child: ListTile(
-        onTap: () => _open(item),
-        title: Text(
-          item.competitionTitle,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Text(
-            '${item.userNickname} · ${item.competitionYear}\n$result · $status · ${item.evidenceCount} 份材料',
+      child: Material(
+        type: MaterialType.transparency,
+        child: ListTile(
+          onTap: () => _open(item),
+          title: Text(
+            item.competitionTitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              '${item.userNickname} · ${item.competitionYear}\n$result · $status · ${item.evidenceCount} 份材料',
+            ),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
         ),
-        trailing: const Icon(Icons.chevron_right_rounded),
       ),
     );
   }

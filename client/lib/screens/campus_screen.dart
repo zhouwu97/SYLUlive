@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 
 import '../app_bootstrap.dart';
-import '../providers/auth_provider.dart';
 import '../models/campus_article.dart';
 import '../models/ai_capabilities.dart';
-import '../models/ai_quota.dart';
 import '../services/ai_assistant_service.dart';
 import '../services/campus_article_service.dart';
 import '../widgets/home_tab_reveal.dart';
@@ -14,7 +11,6 @@ import '../utils/campus_asset_preloader.dart';
 
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/campus/campus_ai_entry_card.dart';
-import '../widgets/campus/campus_model_chat_entry_card.dart';
 import '../widgets/campus/campus_header.dart';
 import '../widgets/campus/campus_feature_notice_card.dart';
 import '../widgets/campus/campus_service_grid.dart';
@@ -44,18 +40,6 @@ class CampusScreen extends StatefulWidget {
 
 class _CampusScreenState extends State<CampusScreen>
     with AutomaticKeepAliveClientMixin {
-  /// 公益 AI 不可用时仅作为页面结构占位，不会向校园模型发送请求。
-  static const _personalOnlyCapabilities = AiCapabilities(
-    enabled: false,
-    accessAllowed: false,
-    internalTestOnly: false,
-    chatEnabled: false,
-    phase: 'personal_only',
-    features: AiFeatures(policyRag: false, scheduleWindows: false),
-    quota: AiQuota(limit: 0, remaining: 0, windowSeconds: 3600),
-    maxMessageChars: 20,
-  );
-
   @override
   bool get wantKeepAlive => true;
 
@@ -192,7 +176,7 @@ class _CampusScreenState extends State<CampusScreen>
 
   void _handleLoadError(String message, int generation, {required bool isLatest}) {
     if (!mounted || _loadGeneration != generation) return;
-    
+
     final hasOldData = isLatest ? _latestArticle != null : _recentArticles.isNotEmpty;
     if (hasOldData) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -257,7 +241,6 @@ class _CampusScreenState extends State<CampusScreen>
     super.build(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final appUserId = _modelChatUserId(context);
 
     return Scaffold(
       backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
@@ -283,36 +266,26 @@ class _CampusScreenState extends State<CampusScreen>
                       index: 1,
                       child: _buildLatestCard(isDark),
                     ),
-                    const SizedBox(height: 12),
-                    HomeTabRevealItem(
-                      index: 2,
-                      child: _aiCapabilities != null
-                          ? CampusAiEntryCard(
+                    if (_aiCapabilities != null) ...[
+                      const SizedBox(height: 12),
+                      HomeTabRevealItem(
+                        index: 2,
+                        child: CampusAiEntryCard(
+                          capabilities: _aiCapabilities!,
+                          isDark: isDark,
+                          onTap: () => _openPage(
+                            AiAssistantScreen(
                               capabilities: _aiCapabilities!,
-                              isDark: isDark,
-                              onTap: () => _openPage(
-                                AiAssistantScreen(
-                                  capabilities: _aiCapabilities!,
-                                  service: _aiService,
-                                  dio: getSharedDio(),
-                                ),
-                              ),
-                            )
-                          : CampusModelChatEntryCard(
-                              isDark: isDark,
-                              onTap: () => _openPage(
-                                AiAssistantScreen(
-                                  capabilities: _personalOnlyCapabilities,
-                                  service: _aiService,
-                                  dio: getSharedDio(),
-                                  initialPersonalMode: true,
-                                ),
-                              ),
+                              service: _aiService,
+                              dio: getSharedDio(),
                             ),
-                    ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: 3,
+                      index: _aiCapabilities == null ? 2 : 3,
                       child: CampusServiceGrid(
                         isDark: isDark,
                         onEduTap: () => _openPage(const EduScreen()),
@@ -326,7 +299,7 @@ class _CampusScreenState extends State<CampusScreen>
                     ),
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: 4,
+                      index: _aiCapabilities == null ? 3 : 4,
                       child: CampusNewsSectionHeader(
                         isDark: isDark,
                         onCompetitionTap: () =>
@@ -341,7 +314,7 @@ class _CampusScreenState extends State<CampusScreen>
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 126),
                 sliver: SliverToBoxAdapter(
                   child: HomeTabRevealItem(
-                    index: 5,
+                    index: _aiCapabilities == null ? 4 : 5,
                     child: _buildRecentList(isDark),
                   ),
                 ),
@@ -351,15 +324,6 @@ class _CampusScreenState extends State<CampusScreen>
         ),
       ),
     );
-  }
-
-  String? _modelChatUserId(BuildContext context) {
-    try {
-      return context.read<AuthProvider>().user?.id.toString();
-    } on ProviderNotFoundException {
-      // 未认证或隔离的页面测试不创建第三方模型配置上下文。
-      return null;
-    }
   }
 
   // ── 最新文章卡片 ───────────────────────────────────────────────

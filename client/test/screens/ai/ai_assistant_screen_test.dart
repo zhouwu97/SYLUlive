@@ -160,13 +160,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    
-    // Counter is hidden when empty in public mode
+
+    // 公共模式输入为空时隐藏计数器。
     expect(find.text('0/20'), findsNothing);
 
     await tester.tap(find.text('个人助手'));
     await tester.pumpAndSettle();
-    // Counter is hidden when empty in personal mode
+    // 个人模式输入为空时隐藏计数器。
     expect(find.text('0/8000'), findsNothing);
 
     await tester.enterText(find.byType(TextField), 'a');

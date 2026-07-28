@@ -18,7 +18,6 @@ import 'package:shenliyuan/services/ai_assistant_service.dart';
 import 'package:shenliyuan/platform/contracts/secure_store.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 class _MemorySecureStore implements AppSecretStore {
   final Map<String, String> values = <String, String>{};
 
@@ -127,6 +126,41 @@ void main() {
         () => AIEndpointPolicy.parseBaseEndpoint(
             'https://models.example.com/v1/../other'),
         throwsA(isA<AIModelProviderException>()),
+      );
+    });
+
+    test('DeepSeek 官方地址兼容历史 /v1 别名', () {
+      final deepSeekBase =
+          AIEndpointPolicy.parseBaseEndpoint('https://api.deepseek.com/v1');
+      expect(
+        AIEndpointPolicy.endpointFor(deepSeekBase, 'chat/completions'),
+        Uri.parse('https://api.deepseek.com/chat/completions'),
+      );
+      expect(
+        AIEndpointPolicy.endpointFor(
+          Uri.parse('https://models.example.com/v1/'),
+          'chat/completions',
+        ),
+        Uri.parse('https://models.example.com/v1/chat/completions'),
+      );
+    });
+
+    test('带版本的 Anthropic 基础地址不会重复生成 /v1', () {
+      expect(
+        AIEndpointPolicy.versionedEndpointFor(
+          Uri.parse('https://api.anthropic.com/'),
+          version: 'v1',
+          relativePath: 'messages',
+        ),
+        Uri.parse('https://api.anthropic.com/v1/messages'),
+      );
+      expect(
+        AIEndpointPolicy.versionedEndpointFor(
+          Uri.parse('https://api.anthropic.com/v1/'),
+          version: 'v1',
+          relativePath: 'messages',
+        ),
+        Uri.parse('https://api.anthropic.com/v1/messages'),
       );
     });
 
@@ -426,6 +460,88 @@ void main() {
       ]);
       expect(result.content, '普通回答');
       expect(result.model, 'chat-model');
+    });
+
+    test('Claude 官方地址使用 Anthropic 模型列表端点和鉴权头', () async {
+      final dio = Dio();
+      late RequestOptions request;
+      dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (options, handler) {
+          request = options;
+          handler.resolve(Response<dynamic>(
+            requestOptions: options,
+            statusCode: 200,
+            data: <String, dynamic>{
+              'data': <Map<String, String>>[
+                <String, String>{'id': 'claude-sonnet-4-5'},
+              ],
+            },
+          ));
+        },
+      ));
+      final provider = OpenAICompatibleProvider(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://api.anthropic.com/v1',
+          model: 'claude-sonnet-4-5',
+        ),
+        apiKey: 'claude-key',
+        dio: dio,
+      );
+
+      final capabilities = await provider.discoverCapabilities();
+
+      expect(request.uri.path, '/v1/models');
+      expect(request.headers['x-api-key'], 'claude-key');
+      expect(request.headers['anthropic-version'], '2023-06-01');
+      expect(request.headers.containsKey('Authorization'), isFalse);
+      expect(capabilities.models, <String>['claude-sonnet-4-5']);
+    });
+
+    test('Claude 普通聊天发送 Messages 请求并解析文本块', () async {
+      final dio = Dio();
+      late RequestOptions request;
+      dio.interceptors.add(InterceptorsWrapper(
+        onRequest: (options, handler) {
+          request = options;
+          handler.resolve(Response<dynamic>(
+            requestOptions: options,
+            statusCode: 200,
+            data: <String, dynamic>{
+              'model': 'claude-sonnet-4-5',
+              'content': <Map<String, dynamic>>[
+                <String, dynamic>{'type': 'text', 'text': 'Claude 回答'},
+              ],
+            },
+          ));
+        },
+      ));
+      final provider = OpenAICompatibleProvider(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://api.anthropic.com',
+          model: 'claude-sonnet-4-5',
+        ),
+        apiKey: 'claude-key',
+        dio: dio,
+      );
+
+      final result = await provider.complete(const <AIModelChatMessage>[
+        AIModelChatMessage(
+          role: AIModelMessageRole.user,
+          content: '你好',
+        ),
+      ]);
+
+      final data = Map<String, dynamic>.from(request.data as Map);
+      expect(request.uri.path, '/v1/messages');
+      expect(data['max_tokens'], 4096);
+      expect(data.containsKey('tools'), isFalse);
+      expect(data['messages'], <Map<String, String>>[
+        <String, String>{'role': 'user', 'content': '你好'},
+      ]);
+      expect(result.content, 'Claude 回答');
+      expect(result.model, 'claude-sonnet-4-5');
     });
 
     test('重定向响应不会继续请求目标地址', () async {

@@ -47,7 +47,7 @@ class AiMessageCard extends StatelessWidget {
                 )
               else
                 MarkdownBody(
-                  data: message.content,
+                  data: sanitizeAiCitationDisplay(message.content),
                   selectable: true,
                   styleSheet: MarkdownStyleSheet(
                     p: const TextStyle(
@@ -77,4 +77,12 @@ class AiMessageCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 旧链路若返回内部 chunk 引用，展示层只保留“来源”语义，不暴露内部 ID。
+String sanitizeAiCitationDisplay(String content) {
+  return content.replaceAll(
+    RegExp(r'\[chunk:[^\]\s]*(?:\]|$)', caseSensitive: false),
+    '[来源]',
+  );
 }

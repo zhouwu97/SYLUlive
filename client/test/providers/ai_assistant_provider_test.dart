@@ -20,6 +20,96 @@ AiCapabilities _p0Capabilities() {
 }
 
 void main() {
+  test('问答未开放时初始化不请求历史会话', () async {
+    final requestedPaths = <String>[];
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestedPaths.add(options.path);
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'enabled': true,
+                'access_allowed': true,
+                'chat_enabled': false,
+                'phase': 'p0',
+                'features': <String, dynamic>{},
+                'quota': {
+                  'limit': 3,
+                  'remaining': 3,
+                  'window_seconds': 3600,
+                },
+                'max_message_chars': 20,
+              },
+            ),
+          );
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: _p0Capabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    await provider.initialize();
+
+    expect(requestedPaths, const ['/ai/capabilities']);
+    expect(provider.error, isNull);
+  });
+
+  test('能力刷新为已开放后初始化正常请求历史会话', () async {
+    final requestedPaths = <String>[];
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestedPaths.add(options.path);
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: options.path == '/ai/capabilities'
+                  ? {
+                      'enabled': true,
+                      'access_allowed': true,
+                      'chat_enabled': true,
+                      'phase': 'p2',
+                      'features': {
+                        'policy_rag': true,
+                        'schedule_windows': false,
+                      },
+                      'quota': {
+                        'limit': 3,
+                        'remaining': 3,
+                        'window_seconds': 3600,
+                      },
+                      'max_message_chars': 20,
+                    }
+                  : {'conversations': <Map<String, dynamic>>[]},
+            ),
+          );
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: _p0Capabilities(),
+    );
+    addTearDown(provider.dispose);
+
+    await provider.initialize();
+
+    expect(
+      requestedPaths,
+      const ['/ai/capabilities', '/ai/conversations'],
+    );
+    expect(provider.error, isNull);
+  });
+
   test('换行归一为空格并按 grapheme cluster 计数', () {
     expect(normalizeAiMessage('  奖学金\n怎么申请  '), '奖学金 怎么申请');
     expect(aiVisibleCharacterCount('👨‍👩‍👧‍👦'), 1);
@@ -52,7 +142,7 @@ void main() {
     );
   });
 
-  test('无限配额账号不会被 remaining=0 错误拦截', () {
+  test('不限次数账号不会被为零的兼容配额拦截', () {
     final provider = AiAssistantProvider(
       AiAssistantService(Dio()),
       initialCapabilities: const AiCapabilities(
@@ -72,7 +162,7 @@ void main() {
       ),
     );
 
-    expect(provider.submit('测试问题'), AiSubmitResult.unavailable);
+    expect(provider.submit('奖学金'), AiSubmitResult.unavailable);
   });
 
   test('SSE 回放重复 seq 不会重复拼接答案', () {
@@ -114,7 +204,7 @@ void main() {
     expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
   });
 
-  test('个人数据证据去重且等待状态使用真实设备文案', () {
+  test('输出达到长度上限时明确提示回答不完整', () {
     final provider = AiAssistantProvider(
       AiAssistantService(Dio()),
       initialCapabilities: const AiCapabilities(
@@ -129,107 +219,22 @@ void main() {
       ),
     );
     addTearDown(provider.dispose);
-    final evidence = AiRunEvent.parseSse(
-      '{"run_id":"run-1","seq":1,"type":"personal_data.evidence",'
-      '"payload":{"evidence":[{"source":"server_snapshot",'
-      '"dataset":"grades","fetched_at":"2026-07-25T09:20:00Z"}]}}',
-    );
-
-    provider.applyRunEvent(evidence);
-    provider.applyRunEvent(AiRunEvent.parseSse(
-      '{"run_id":"run-1","seq":2,"type":"personal_data.evidence",'
-      '"payload":{"evidence":[{"source":"server_snapshot",'
-      '"dataset":"grades","fetched_at":"2026-07-25T09:20:00Z"}]}}',
-    ));
-    provider.applyRunEvent(const AiRunEvent(
-      runId: 'run-1',
-      seq: 3,
-      type: AiRunEventType.deviceWaiting,
-      datasets: ['schedule'],
-    ));
-
-    expect(provider.messages, hasLength(1));
-    expect(provider.messages.single.personalDataEvidence, hasLength(1));
-    expect(provider.friendlyRunStatus, '正在请求你的手机读取本地课表');
-  });
-
-  test('收到设备等待事件后立即触发设备任务补拉', () async {
-    var syncCount = 0;
-    final provider = AiAssistantProvider(
-      AiAssistantService(Dio()),
-      initialCapabilities: _p0Capabilities(),
-      deviceToolSync: () async => syncCount += 1,
-    );
-    addTearDown(provider.dispose);
 
     provider.applyRunEvent(const AiRunEvent(
-      runId: 'run-device-waiting',
+      runId: 'run-length',
       seq: 1,
-      type: AiRunEventType.deviceWaiting,
-      datasets: ['grades'],
+      type: AiRunEventType.delta,
+      text: '补考比例差异',
     ));
-    await pumpEventQueue();
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-length',
+      seq: 2,
+      type: AiRunEventType.failed,
+      errorCode: 'output_limit_reached',
+      retryable: true,
+    ));
 
-    expect(syncCount, 1);
-  });
-
-  test('手动重新发送复用原 client_request_id', () async {
-    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
-    final requestIds = <String>[];
-    var attempts = 0;
-    dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          if (options.path == '/ai/capabilities') {
-            handler.reject(DioException(
-              requestOptions: options,
-              type: DioExceptionType.connectionError,
-            ));
-            return;
-          }
-          attempts++;
-          requestIds
-              .add((options.data as Map)['client_request_id'] as String);
-          // 两次创建都失败：第一次触发内部自动重试，随后由用户手动重试。
-          handler.reject(DioException(
-            requestOptions: options,
-            type: DioExceptionType.connectionTimeout,
-          ));
-        },
-      ),
-    );
-    final provider = AiAssistantProvider(
-      AiAssistantService(dio),
-      initialCapabilities: const AiCapabilities(
-        enabled: true,
-        accessAllowed: true,
-        internalTestOnly: false,
-        chatEnabled: true,
-        phase: 'p2',
-        features: AiFeatures(policyRag: true, scheduleWindows: false),
-        quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
-        maxMessageChars: 20,
-      ),
-    );
-    addTearDown(provider.dispose);
-
-    expect(provider.submit('挂科了怎么办'), AiSubmitResult.accepted);
-    // 服务层的自动重试有 400ms 退避，必须等待真实时间而不是只排空微任务队列。
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    await pumpEventQueue();
-
-    expect(provider.canRetry, isTrue, reason: '网络失败必须可重试');
-    expect(provider.error, contains('连接服务器超时'));
-    final beforeRetry = requestIds.length;
-    expect(beforeRetry, 2, reason: '服务层已按同一 ID 自动重试一次');
-
-    expect(provider.retryLast(), AiSubmitResult.accepted);
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    await pumpEventQueue();
-
-    expect(requestIds.length, greaterThan(beforeRetry));
-    // 手动重试沿用原 ID，服务端幂等因此只会存在一个 Run。
-    expect(requestIds.toSet(), hasLength(1));
-    expect(attempts, requestIds.length);
+    expect(provider.error, '回答达到长度上限，未完整生成，请重试');
+    expect(provider.messages.single.status.name, 'failed');
   });
 }

@@ -4,7 +4,7 @@ import 'package:shenliyuan/models/ai_quota.dart';
 import 'package:shenliyuan/widgets/ai/ai_quota_banner.dart';
 
 void main() {
-  testWidgets('无限配额账号显示不限次数', (tester) async {
+  testWidgets('不限次数配额横幅显示明确状态', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
@@ -21,7 +21,6 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('测试账号不限提问次数'), findsOneWidget);
-    expect(find.textContaining('额度已用完'), findsNothing);
+    expect(find.text('使用次数不限 · 每次最多 20 字'), findsOneWidget);
   });
 }

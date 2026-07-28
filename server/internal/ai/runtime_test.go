@@ -30,6 +30,22 @@ func (r recordingRetriever) Retrieve(ctx context.Context, query string) (Retriev
 	return r.fixedRetriever.Retrieve(ctx, query)
 }
 
+type staticEventProvider struct {
+	events   []ProviderEvent
+	requests chan ProviderRequest
+}
+
+func (p *staticEventProvider) Name() string { return "static-events" }
+
+func (p *staticEventProvider) Capabilities() ProviderCapabilities {
+	return ProviderCapabilities{Streaming: true, UsageInStream: true}
+}
+
+func (p *staticEventProvider) Start(_ context.Context, request ProviderRequest) (ProviderStream, error) {
+	p.requests <- request
+	return &sliceProviderStream{events: p.events}, nil
+}
+
 func (r fixedRetriever) Retrieve(context.Context, string) (RetrievalResult, error) {
 	return r.result, r.err
 }
@@ -65,6 +81,19 @@ func newTestRuntime(t *testing.T, db *gorm.DB, provider AIProvider, retriever Po
 	return runtime
 }
 
+func seedPublishedKnowledgeSource(t *testing.T, db *gorm.DB, documentID uint, chunkID uint64) {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(&models.AIKnowledgeDocument{}, &models.AIKnowledgeChunk{}))
+	require.NoError(t, db.Create(&models.AIKnowledgeDocument{
+		ID: documentID, Title: "学生手册", SourceType: "official", Content: "正文",
+		ContentHash: fmt.Sprintf("doc-%d", documentID), Status: models.KnowledgeStatusPublished, CreatedBy: 1,
+	}).Error)
+	require.NoError(t, db.Create(&models.AIKnowledgeChunk{
+		ID: chunkID, DocumentID: documentID, ChunkIndex: 0, Content: "请假需审批",
+		ContentHash: fmt.Sprintf("chunk-%d", chunkID), EmbeddingModelVersion: "fixture-v1",
+	}).Error)
+}
+
 func waitRunState(t *testing.T, db *gorm.DB, runID string, states ...string) models.AIRun {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -92,6 +121,17 @@ func TestNormalizeUserMessageCountsGraphemeClusters(t *testing.T) {
 	var runtimeErr *RuntimeError
 	require.ErrorAs(t, err, &runtimeErr)
 	require.Equal(t, "ai_message_too_long", runtimeErr.Code)
+}
+
+func TestRuntimeRejectsMessageLimitAboveTwenty(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	_, err := NewRuntime(db, &MockProvider{}, fixedRetriever{}, NewEventBroker(), RuntimeConfig{
+		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
+		MaxMessageChars: 21, HourlyMessageLimit: 3,
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		AuditHashSecret: "test-secret",
+	})
+	require.EqualError(t, err, "invalid AI runtime configuration")
 }
 
 func TestBuildPolicyPromptAddsDirectGPAAnswerGuidance(t *testing.T) {
@@ -182,8 +222,32 @@ func TestRuntimePassesOriginalQuestionAndCoversRetakeBranch(t *testing.T) {
 	require.Contains(t, userPrompt, "<evidence chunk_id=\"2\"")
 }
 
+func TestRuntimeAnswersGreetingWithoutKnowledgeSources(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &MockProvider{Response: ChatResponse{
+		Content:     "你好，我是沈理校园 AI。你可以问我课程、考试或校园办事问题。",
+		InputTokens: 12, OutputTokens: 10,
+	}}
+	runtime := newTestRuntime(t, db, provider, fixedRetriever{})
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "hello",
+	})
+	require.NoError(t, err)
+	waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+
+	require.Len(t, provider.Requests, 1)
+	require.Contains(t, provider.Requests[0].Messages[0].Content, "直接自然回答")
+	var messages []models.AIConversationMessage
+	require.NoError(t, db.Where("run_id = ?", run.ID).Order("created_at ASC").Find(&messages).Error)
+	require.Len(t, messages, 2)
+	require.Contains(t, messages[1].Content, "你好")
+	require.NotContains(t, messages[1].Content, "资料不足")
+}
+
 func TestRuntimeIdempotencyQuotaAndCitationCompletion(t *testing.T) {
 	db := newRuntimeTestDB(t)
+	seedPublishedKnowledgeSource(t, db, 9, 1)
 	provider := &MockProvider{Response: ChatResponse{Content: "请按规定办理。[chunk:1]", InputTokens: 20, OutputTokens: 8}}
 	retriever := fixedRetriever{result: RetrievalResult{Chunks: []RetrievedChunk{{
 		ChunkID: 1, DocumentID: 9, Content: "请假需审批", Title: "学生手册", RRFScore: 0.05,
@@ -215,7 +279,159 @@ func TestRuntimeIdempotencyQuotaAndCitationCompletion(t *testing.T) {
 	var messages []models.AIConversationMessage
 	require.NoError(t, db.Where("run_id = ?", run.ID).Order("created_at ASC").Find(&messages).Error)
 	require.Len(t, messages, 2)
-	require.Contains(t, messages[1].Content, "[chunk:1]")
+	require.Contains(t, messages[1].Content, "[1]")
+	require.NotContains(t, messages[1].Content, "chunk:")
+}
+
+func TestRuntimeUnlimitedQuotaUsesVerifiedServerIdentity(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.User{}))
+	verifiedAt := time.Now()
+	unlimitedUser := models.User{
+		ID: 101, StudentID: "2403130233", StudentVerifiedAt: &verifiedAt,
+		PasswordHash: "test", AccountStatus: "active",
+	}
+	normalUser := models.User{
+		ID: 102, StudentID: "2403130234", StudentVerifiedAt: &verifiedAt,
+		PasswordHash: "test", AccountStatus: "active",
+	}
+	unverifiedUser := models.User{
+		ID: 103, StudentID: "2403130999", PasswordHash: "test", AccountStatus: "active",
+	}
+	require.NoError(t, db.Create(&unlimitedUser).Error)
+	require.NoError(t, db.Create(&normalUser).Error)
+	require.NoError(t, db.Create(&unverifiedUser).Error)
+
+	for _, userID := range []uint{unlimitedUser.ID, normalUser.ID, unverifiedUser.ID} {
+		for index := 0; index < 3; index++ {
+			require.NoError(t, db.Create(&models.AIQuotaEntry{
+				UserID: userID, RunID: uuid.NewString(), Status: "consumed", CreatedAt: time.Now(),
+			}).Error)
+		}
+	}
+
+	runtime, err := NewRuntime(db, &MockProvider{}, fixedRetriever{}, NewEventBroker(), RuntimeConfig{
+		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
+		UnlimitedStudentIDs:         []string{" 2403130233 ", "2403130233", "2403130999"},
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+		AuditHashSecret: "test-secret",
+	})
+	require.NoError(t, err)
+
+	quota, err := runtime.Quota(context.Background(), unlimitedUser.ID)
+	require.NoError(t, err)
+	require.True(t, quota.Unlimited)
+	require.Equal(t, 3, quota.Remaining)
+	require.Nil(t, quota.ResetAt)
+
+	created, _, err := runtime.CreateRun(context.Background(), unlimitedUser.ID, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "请假规定",
+	})
+	require.NoError(t, err)
+	waitRunState(t, db, created.ID, models.AIRunStateFailed)
+
+	normalQuota, err := runtime.Quota(context.Background(), normalUser.ID)
+	require.NoError(t, err)
+	require.False(t, normalQuota.Unlimited)
+	require.Zero(t, normalQuota.Remaining)
+	_, _, err = runtime.CreateRun(context.Background(), normalUser.ID, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "请假规定",
+	})
+	var runtimeErr *RuntimeError
+	require.ErrorAs(t, err, &runtimeErr)
+	require.Equal(t, "ai_quota_exceeded", runtimeErr.Code)
+
+	unverifiedQuota, err := runtime.Quota(context.Background(), unverifiedUser.ID)
+	require.NoError(t, err)
+	require.False(t, unverifiedQuota.Unlimited)
+	require.Zero(t, unverifiedQuota.Remaining)
+}
+
+func TestRuntimeRejectsLengthTruncatedProviderAnswer(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	seedPublishedKnowledgeSource(t, db, 19, 91)
+	provider := &staticEventProvider{
+		requests: make(chan ProviderRequest, 1),
+		events: []ProviderEvent{
+			{Type: ProviderEventTextDelta, Text: "补考比例差异"},
+			{Type: ProviderEventUsage, InputTokens: 120, OutputTokens: 4096},
+			{Type: ProviderEventCompleted, FinishReason: "length"},
+		},
+	}
+	retriever := fixedRetriever{result: RetrievalResult{Chunks: []RetrievedChunk{{
+		ChunkID: 91, DocumentID: 19, Content: "补考成绩计算规则", Title: "学生手册", RRFScore: 0.05,
+	}}}}
+	runtime := newTestRuntime(t, db, provider, retriever)
+
+	run, _, err := runtime.CreateRun(context.Background(), 21, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "补考怎么算",
+	})
+	require.NoError(t, err)
+	request := <-provider.requests
+	require.Equal(t, 4096, request.MaxTokens)
+
+	failed := waitRunState(t, db, run.ID, models.AIRunStateFailed)
+	require.Equal(t, ProviderErrorOutputLimit, failed.ErrorCode)
+	require.Empty(t, failed.AnswerCheckpoint)
+
+	var assistantMessages int64
+	require.NoError(t, db.Model(&models.AIConversationMessage{}).
+		Where("run_id = ? AND role = ?", run.ID, "assistant").Count(&assistantMessages).Error)
+	require.Zero(t, assistantMessages)
+
+	var completedEvents int64
+	require.NoError(t, db.Model(&models.AIEvent{}).
+		Where("run_id = ? AND type = ?", run.ID, "run.completed").Count(&completedEvents).Error)
+	require.Zero(t, completedEvents)
+
+	var usage models.AIUsageRecord
+	require.NoError(t, db.First(&usage, "run_id = ?", run.ID).Error)
+	require.Equal(t, 4096, usage.OutputTokens)
+	require.Equal(t, ProviderErrorOutputLimit, usage.ErrorClass)
+}
+
+func TestCurrentPublishedChunksFailsClosedWhenKnowledgeTablesAreUnavailable(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	runtime := &Runtime{db: db}
+
+	chunks := runtime.currentPublishedChunks([]RetrievedChunk{{ChunkID: 1, DocumentID: 9}})
+
+	require.Empty(t, chunks)
+}
+
+func TestCurrentPublishedChunksEnforcesDocumentAndVersionBoundary(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.AIKnowledgeDocument{}, &models.AIKnowledgeChunk{}))
+	past := time.Now().Add(-time.Hour)
+	documents := []models.AIKnowledgeDocument{
+		{ID: 1, Title: "过期现行规定", SourceType: "official", DocumentType: "school_policy", Content: "正文一", ContentHash: "doc-1", Status: models.KnowledgeStatusPublished, EffectiveTo: &past, CreatedBy: 1},
+		{ID: 2, Title: "正式历史规定", SourceType: "official_historical_compilation", DocumentType: "historical_school_policy", Content: "正文二", ContentHash: "doc-2", Status: models.KnowledgeStatusPublished, EffectiveTo: &past, CreatedBy: 1},
+		{ID: 3, Title: "现行规定", SourceType: "official", DocumentType: "school_policy", Content: "正文三", ContentHash: "doc-3", Status: models.KnowledgeStatusPublished, CreatedBy: 1},
+	}
+	require.NoError(t, db.Create(&documents).Error)
+	chunks := []models.AIKnowledgeChunk{
+		{ID: 11, DocumentID: 1, ChunkIndex: 0, Content: "过期规则", ContentHash: "chunk-11", EmbeddingModelVersion: "fixture-v1"},
+		{ID: 22, DocumentID: 2, ChunkIndex: 0, Content: "历史规则", ContentHash: "chunk-22", EmbeddingModelVersion: "fixture-v1"},
+		{ID: 33, DocumentID: 3, ChunkIndex: 0, Content: "现行规则", ContentHash: "chunk-33", EmbeddingModelVersion: "fixture-v1"},
+	}
+	require.NoError(t, db.Create(&chunks).Error)
+	runtime := &Runtime{db: db}
+
+	validated := runtime.currentPublishedChunks([]RetrievedChunk{
+		{ChunkID: 11, DocumentID: 1, CitationNumber: 1},
+		{ChunkID: 22, DocumentID: 2, CitationNumber: 2},
+		{ChunkID: 33, DocumentID: 99, CitationNumber: 3},
+	})
+
+	require.Len(t, validated, 1)
+	require.Equal(t, uint64(22), validated[0].ChunkID)
+	require.True(t, validated[0].Historical)
+	require.Equal(t, models.KnowledgeStatusPublished, validated[0].Status)
+	require.NotNil(t, validated[0].EffectiveTo)
+	require.True(t, validated[0].EffectiveTo.Equal(past))
+	require.Equal(t, 2, validated[0].CitationNumber)
 }
 
 func TestRuntimeQuotaExemptionAppliesOnlyToConfiguredUser(t *testing.T) {
@@ -249,10 +465,10 @@ func TestRuntimeQuotaExemptionAppliesOnlyToConfiguredUser(t *testing.T) {
 	}
 	require.True(t, runtime.IsQuotaExempt(2))
 	require.False(t, runtime.IsQuotaExempt(3))
-	remaining, resetAt, err := runtime.Quota(context.Background(), 2)
+	quota, err := runtime.Quota(context.Background(), 2)
 	require.NoError(t, err)
-	require.Equal(t, 3, remaining)
-	require.Nil(t, resetAt)
+	require.Equal(t, 3, quota.Remaining)
+	require.Nil(t, quota.ResetAt)
 }
 
 func TestRuntimeReleasesQuotaAndBudgetBeforeGeneration(t *testing.T) {
@@ -261,9 +477,9 @@ func TestRuntimeReleasesQuotaAndBudgetBeforeGeneration(t *testing.T) {
 	run, _, err := runtime.CreateRun(context.Background(), 11, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "请假规定"})
 	require.NoError(t, err)
 	waitRunState(t, db, run.ID, models.AIRunStateFailed)
-	remaining, _, err := runtime.Quota(context.Background(), 11)
+	quota, err := runtime.Quota(context.Background(), 11)
 	require.NoError(t, err)
-	require.Equal(t, 3, remaining)
+	require.Equal(t, 3, quota.Remaining)
 	var budget models.AIUserBudget
 	require.NoError(t, db.First(&budget, "user_id = ?", 11).Error)
 	require.Zero(t, budget.ReservedMicroYuan)
@@ -298,8 +514,8 @@ func TestRuntimeCancelStopsProviderAndDoesNotConsumePreGenerationQuota(t *testin
 	require.NoError(t, err)
 	waitRunState(t, db, run.ID, models.AIRunStateCancelled)
 	require.Eventually(t, func() bool {
-		remaining, _, quotaErr := runtime.Quota(context.Background(), 13)
-		return quotaErr == nil && remaining == 3
+		quota, quotaErr := runtime.Quota(context.Background(), 13)
+		return quotaErr == nil && quota.Remaining == 3
 	}, time.Second, 10*time.Millisecond)
 }
 

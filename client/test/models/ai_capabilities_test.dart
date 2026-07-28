@@ -17,7 +17,7 @@ void main() {
         'window_seconds': 3600,
         'reset_at': '2026-07-19T12:30:00+08:00',
       },
-      'max_message_chars': 20,
+      'max_message_chars': 120,
     });
 
     expect(capabilities.isVisible, isTrue);
@@ -38,5 +38,6 @@ void main() {
     });
 
     expect(capabilities.isVisible, isFalse);
+    expect(capabilities.maxMessageChars, 20);
   });
 }

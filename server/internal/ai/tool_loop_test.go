@@ -89,11 +89,11 @@ func newToolRuntimeWithMaxToolSteps(t *testing.T, db *gorm.DB, provider AIProvid
 	}}}}, NewEventBroker(), RuntimeConfig{
 		ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
 		MaxToolSteps:    maxToolSteps,
-		MaxMessageChars: 100, HourlyMessageLimit: 10,
+		MaxMessageChars: 20, HourlyMessageLimit: 10,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "tool-loop-test",
-	}, registry)
+	}, WithToolRegistry(registry))
 	require.NoError(t, err)
 	return runtime
 }
@@ -130,6 +130,7 @@ func TestRuntimeToolLoopSynthesizesFinalAnswerAfterConfiguredMaxToolSteps(t *tes
 
 func TestRuntimeUsesVerifiedRAGWithoutPublicToolsForKnownPolicyIntent(t *testing.T) {
 	db := newRuntimeTestDB(t)
+	seedPublishedKnowledgeSource(t, db, 1, 1)
 	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{{
 		{Type: ProviderEventTextDelta, Text: "补考总成绩按课程比例合成。[chunk:1]"},
 		{Type: ProviderEventCompleted},
@@ -148,17 +149,17 @@ func TestRuntimeUsesVerifiedRAGWithoutPublicToolsForKnownPolicyIntent(t *testing
 		Content: "补考总成绩由原平时成绩与补考卷面成绩按课程规定比例合成。",
 	}}}}, NewEventBroker(), RuntimeConfig{
 		ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
-		MaxToolSteps: 4, MaxMessageChars: 100, HourlyMessageLimit: 10,
+		MaxToolSteps: 4, MaxMessageChars: 20, HourlyMessageLimit: 10,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "tool-loop-test",
-	}, registry)
+	}, WithToolRegistry(registry))
 	require.NoError(t, err)
 
 	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{ClientRequestID: uuid.NewString(), Message: "补考成绩怎么算"})
 	require.NoError(t, err)
 	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
-	require.Contains(t, completed.AnswerCheckpoint, "[chunk:1]")
+	require.Contains(t, completed.AnswerCheckpoint, "[1]")
 	require.Len(t, provider.Requests(), 1)
 	require.Empty(t, provider.Requests()[0].Tools)
 }

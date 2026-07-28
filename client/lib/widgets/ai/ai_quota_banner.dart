@@ -13,7 +13,9 @@ class AiQuotaBanner extends StatelessWidget {
   });
 
   String get _message {
-    if (quota.unlimited) return '测试账号不限提问次数';
+    if (quota.unlimited) {
+      return '使用次数不限';
+    }
     if (quota.remaining >= quota.limit) {
       return '本小时可提问 ${quota.remaining} 次';
     }

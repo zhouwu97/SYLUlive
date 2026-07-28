@@ -29,15 +29,6 @@ import 'competition_preference_screen.dart';
 
 import 'competition_admin_center_screen.dart';
 
-const _competitionBg = Color(0xFFFAF8FF);
-const _competitionPrimary = Color(0xFF7367C6);
-const _competitionPrimaryDark = Color(0xFF4F46A5);
-const _competitionLight = Color(0xFFECE9FF);
-const _competitionBorder = Color(0xFFE8E4F0);
-const _competitionMuted = Color(0xFF8B8794);
-const _competitionOrange = Color(0xFFF59E0B);
-const _competitionDanger = Color(0xFFEF4444);
-
 class CompetitionCenterScreen extends StatefulWidget {
   const CompetitionCenterScreen({super.key});
 
@@ -47,6 +38,8 @@ class CompetitionCenterScreen extends StatefulWidget {
 }
 
 class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
+  static const int _pageSize = 20;
+
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   late Dio _dio;
@@ -305,7 +298,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         queryParameters: {
           ..._queryParams(),
           'page': nextPage,
-          'page_size': 20,
+          'page_size': _pageSize,
         },
       );
       final data = Map<String, dynamic>.from(response.data as Map);
@@ -327,7 +320,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         }
         _eventTotal = total;
         _currentPage = nextPage;
-        _hasMore = _events.length < total;
+        // 服务端返回不足一页即视为到底。只比较 total 会在跨页重复项出现时失效：
+        // 去重后的 _events.length 永远追不上 total，滚动到底会无限翻页空转。
+        _hasMore = items.length >= _pageSize && _events.length < total;
         _eventsLoading = false;
         _loadingMore = false;
         _eventsError = null;
@@ -1048,10 +1043,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
   Widget _buildEventList({required bool isAdmin, required bool isDark}) {
     if (_eventsLoading && _events.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 40),
+      return Padding(
+        padding: const EdgeInsets.only(top: 40),
         child: Center(
-          child: CircularProgressIndicator(color: _competitionPrimary),
+          child: CircularProgressIndicator(
+            color: CompetitionUiTokens.accent(isDark),
+          ),
         ),
       );
     }
@@ -1083,9 +1080,11 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         children: [
           ..._events.map((e) => _buildEventCard(e, isAdmin)),
           if (_loadingMore)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: CircularProgressIndicator(color: _competitionPrimary),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: CircularProgressIndicator(
+                color: CompetitionUiTokens.accent(isDark),
+              ),
             ),
           if (_eventsError != null && _events.isNotEmpty)
             TextButton.icon(
@@ -1305,6 +1304,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
   CompetitionEvent? _event;
   Map<String, dynamic> _eventRaw = {};
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -1314,13 +1314,29 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
 
   Future<void> _load() async {
     final dio = context.read<AuthProvider>().dio;
-    final resp = await dio.get('/competitions/events/${widget.eventId}');
-    if (!mounted) return;
-    setState(() {
-      _eventRaw = Map<String, dynamic>.from(resp.data as Map);
-      _event = CompetitionEvent.fromJson(_eventRaw);
-      _loading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final resp = await dio.get('/competitions/events/${widget.eventId}');
+      if (!mounted) return;
+      setState(() {
+        _eventRaw = Map<String, dynamic>.from(resp.data as Map);
+        _event = CompetitionEvent.fromJson(_eventRaw);
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '比赛详情加载失败')
+            : '比赛详情解析失败';
+      });
+    }
   }
 
   Future<void> _addToPlan(CompetitionEvent event) async {
@@ -1344,153 +1360,223 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final event = _event;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageBg = CompetitionUiTokens.pageBg(isDark);
+    final titleColor = CompetitionUiTokens.titleColor(isDark);
+
     return Scaffold(
-      backgroundColor: _competitionBg,
+      backgroundColor: pageBg,
       appBar: AppBar(
-        backgroundColor: _competitionBg,
+        backgroundColor: pageBg,
         surfaceTintColor: Colors.transparent,
-        title: const Text('比赛详情'),
+        elevation: 0,
+        foregroundColor: titleColor,
+        title: Text('比赛详情', style: TextStyle(color: titleColor)),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : event == null
-              ? const Center(child: Text('比赛不存在'))
-              : ListView(
-                  padding: const EdgeInsets.all(16),
+          ? Center(
+              child: CircularProgressIndicator(
+                color: CompetitionUiTokens.accent(isDark),
+              ),
+            )
+          : _error != null
+              ? ListView(
+                  padding: const EdgeInsets.only(top: 24),
                   children: [
-                    _detailCard(
-                      children: [
-                        Text(
-                          event.title,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF242330),
-                            height: 1.25,
-                          ),
+                    CompetitionEmptyState(
+                      title: '比赛详情加载失败',
+                      message: _error!,
+                      primaryText: '重试',
+                      onPrimaryTap: _load,
+                      secondaryText: '返回',
+                      onSecondaryTap: () => Navigator.maybePop(context),
+                    ),
+                  ],
+                )
+              : event == null
+                  ? Center(
+                      child: Text(
+                        '比赛不存在',
+                        style: TextStyle(
+                          color: CompetitionUiTokens.subColor(isDark),
                         ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                      ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        _detailCard(
+                          isDark: isDark,
                           children: [
-                            if (BetaReleasePolicy.competitionRecommendations)
-                              _detailChip('${event.recommendationLevel}推荐'),
-                            _detailChip(event.primaryCategory?.name ?? '未分类'),
-                            _detailChip(_competitionTimeState(event).label),
+                            Text(
+                              event.title,
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: titleColor,
+                                height: 1.25,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                if (BetaReleasePolicy
+                                    .competitionRecommendations)
+                                  _detailChip(
+                                      '${event.recommendationLevel}推荐', isDark),
+                                _detailChip(
+                                    event.primaryCategory?.name ?? '未分类',
+                                    isDark),
+                                _detailChip(
+                                    _competitionTimeStateLabel(event), isDark),
+                              ],
+                            ),
+                            if (BetaReleasePolicy.competitionRecommendations &&
+                                event.recommendationReason.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Text(
+                                event.recommendationReason,
+                                style: TextStyle(
+                                  color: CompetitionUiTokens.subColor(isDark),
+                                  height: 1.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
-                        if (BetaReleasePolicy.competitionRecommendations &&
-                            event.recommendationReason.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          Text(
-                            event.recommendationReason,
-                            style: const TextStyle(
-                              color: _competitionMuted,
-                              height: 1.5,
-                              fontWeight: FontWeight.w600,
+                        _detailCard(
+                          title: '时间安排',
+                          isDark: isDark,
+                          children: [
+                            _detailInfo(
+                              _competitionTimeLine(event)?.label ?? '报名安排',
+                              _competitionTimeLine(event)?.value ?? '时间待公布',
+                              isDark,
                             ),
+                            _detailInfo('比赛时间', event.eventTimeText, isDark),
+                            _detailInfo(
+                                '时间状态', _competitionTimeStateLabel(event), isDark),
+                            _detailInfo(
+                                '时间精度', event.timePrecisionLabel, isDark),
+                            _detailInfo('时间说明', event.timeNote, isDark),
+                          ],
+                        ),
+                        _detailCard(
+                          title: '参赛信息',
+                          isDark: isDark,
+                          children: [
+                            _detailInfo(
+                              '学校认定',
+                              competitionRecognitionLabel(
+                                  event.schoolRecognitionStatus),
+                              isDark,
+                            ),
+                            _detailInfo(
+                                '学校等级', event.schoolRecognitionGrade, isDark),
+                            if (BetaReleasePolicy
+                                .competitionRecommendations) ...[
+                              _detailInfo(
+                                  '推荐等级', event.recommendationLevel, isDark),
+                              _detailInfo(
+                                  '推荐理由', event.recommendationReason, isDark),
+                            ],
+                            _detailInfo(
+                                '适合对象', _rawValue('target_audience'), isDark),
+                            _detailInfo('参赛形式',
+                                _rawValue('participation_type'), isDark),
+                          ],
+                        ),
+                        _detailCard(
+                          title: '基本信息',
+                          isDark: isDark,
+                          children: [
+                            _detailInfo('主办方', event.organizer, isDark),
+                            _detailInfo(
+                                '比赛级别', event.competitionLevel, isDark),
+                            _detailInfo('地点',
+                                event.isOnline ? '线上' : event.location, isDark),
+                            _detailInfo(
+                                '来源', _sourceLabel(event.sourceChannel), isDark),
+                          ],
+                        ),
+                        _detailCard(
+                          title: '比赛说明',
+                          isDark: isDark,
+                          children: [
+                            Text(
+                              (event.description.isNotEmpty
+                                      ? event.description
+                                      : event.summary)
+                                  .trim(),
+                              style: TextStyle(height: 1.6, color: titleColor),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () => _addToPlan(event),
+                          style: FilledButton.styleFrom(
+                            backgroundColor:
+                                CompetitionUiTokens.accent(isDark),
+                            foregroundColor: Colors.white,
                           ),
-                        ],
-                      ],
-                    ),
-                    _detailCard(
-                      title: '时间安排',
-                      children: [
-                        _detailInfo(
-                          _competitionTimeLine(event)?.label ?? '报名安排',
-                          _competitionTimeLine(event)?.value ?? '时间待公布',
+                          icon: const Icon(Icons.add),
+                          label: const Text('加入我的计划'),
                         ),
-                        _detailInfo('比赛时间', event.eventTimeText),
-                        _detailInfo('时间状态', _competitionTimeState(event).label),
-                        _detailInfo('时间精度', event.timePrecisionLabel),
-                        _detailInfo('时间说明', event.timeNote),
+                        if (event.officialUrl.isNotEmpty)
+                          OutlinedButton.icon(
+                            onPressed: () => ExternalNavigator.current()
+                                .open(Uri.parse(event.officialUrl)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: titleColor,
+                              side: BorderSide(
+                                color: CompetitionUiTokens.borderColor(isDark),
+                              ),
+                            ),
+                            icon: const Icon(Icons.open_in_new),
+                            label: const Text('打开官网'),
+                          ),
+                        if (event.noticeUrl.isNotEmpty)
+                          OutlinedButton.icon(
+                            onPressed: () => ExternalNavigator.current()
+                                .open(Uri.parse(event.noticeUrl)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: titleColor,
+                              side: BorderSide(
+                                color: CompetitionUiTokens.borderColor(isDark),
+                              ),
+                            ),
+                            icon: const Icon(Icons.article_outlined),
+                            label: const Text('查看通知'),
+                          ),
                       ],
                     ),
-                    _detailCard(
-                      title: '参赛信息',
-                      children: [
-                        _detailInfo(
-                          '学校认定',
-                          competitionRecognitionLabel(
-                              event.schoolRecognitionStatus),
-                        ),
-                        _detailInfo('学校等级', event.schoolRecognitionGrade),
-                        if (BetaReleasePolicy.competitionRecommendations) ...[
-                          _detailInfo('推荐等级', event.recommendationLevel),
-                          _detailInfo('推荐理由', event.recommendationReason),
-                        ],
-                        _detailInfo('适合对象', _rawValue('target_audience')),
-                        _detailInfo('参赛形式', _rawValue('participation_type')),
-                      ],
-                    ),
-                    _detailCard(
-                      title: '基本信息',
-                      children: [
-                        _detailInfo('主办方', event.organizer),
-                        _detailInfo('比赛级别', event.competitionLevel),
-                        _detailInfo(
-                            '地点', event.isOnline ? '线上' : event.location),
-                        _detailInfo('来源', _sourceLabel(event.sourceChannel)),
-                      ],
-                    ),
-                    _detailCard(
-                      title: '比赛说明',
-                      children: [
-                        Text(
-                          (event.description.isNotEmpty
-                                  ? event.description
-                                  : event.summary)
-                              .trim(),
-                          style: const TextStyle(height: 1.6),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: () => _addToPlan(event),
-                      icon: const Icon(Icons.add),
-                      label: const Text('加入我的计划'),
-                    ),
-                    if (event.officialUrl.isNotEmpty)
-                      OutlinedButton.icon(
-                        onPressed: () => ExternalNavigator.current()
-                            .open(Uri.parse(event.officialUrl)),
-                        icon: const Icon(Icons.open_in_new),
-                        label: const Text('打开官网'),
-                      ),
-                    if (event.noticeUrl.isNotEmpty)
-                      OutlinedButton.icon(
-                        onPressed: () => ExternalNavigator.current()
-                            .open(Uri.parse(event.noticeUrl)),
-                        icon: const Icon(Icons.article_outlined),
-                        label: const Text('查看通知'),
-                      ),
-                  ],
-                ),
     );
   }
 }
 
-Widget _detailCard({String? title, required List<Widget> children}) {
+Widget _detailCard({
+  String? title,
+  required bool isDark,
+  required List<Widget> children,
+}) {
   return Container(
     margin: const EdgeInsets.only(bottom: 12),
     padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: _competitionBorder),
-    ),
+    decoration: CompetitionUiTokens.cardDecoration(isDark),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (title != null) ...[
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w900,
-              color: Color(0xFF242330),
+              color: CompetitionUiTokens.titleColor(isDark),
             ),
           ),
           const SizedBox(height: 10),
@@ -1501,17 +1587,17 @@ Widget _detailCard({String? title, required List<Widget> children}) {
   );
 }
 
-Widget _detailChip(String label) {
+Widget _detailChip(String label, bool isDark) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
     decoration: BoxDecoration(
-      color: _competitionLight,
-      borderRadius: BorderRadius.circular(999),
+      color: CompetitionUiTokens.accentSoft(isDark),
+      borderRadius: BorderRadius.circular(CompetitionUiTokens.chipRadius),
     ),
     child: Text(
       label,
-      style: const TextStyle(
-        color: _competitionPrimaryDark,
+      style: TextStyle(
+        color: CompetitionUiTokens.accent(isDark),
         fontSize: 12,
         fontWeight: FontWeight.w800,
       ),
@@ -1519,7 +1605,7 @@ Widget _detailChip(String label) {
   );
 }
 
-Widget _detailInfo(String label, String value) {
+Widget _detailInfo(String label, String value, bool isDark) {
   if (value.trim().isEmpty) return const SizedBox.shrink();
   return Padding(
     padding: const EdgeInsets.only(bottom: 8),
@@ -1530,8 +1616,8 @@ Widget _detailInfo(String label, String value) {
           width: 74,
           child: Text(
             label,
-            style: const TextStyle(
-              color: _competitionMuted,
+            style: TextStyle(
+              color: CompetitionUiTokens.subColor(isDark),
               fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
@@ -1540,8 +1626,8 @@ Widget _detailInfo(String label, String value) {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
-              color: Color(0xFF242330),
+            style: TextStyle(
+              color: CompetitionUiTokens.titleColor(isDark),
               fontSize: 13,
               height: 1.4,
               fontWeight: FontWeight.w600,
@@ -1606,15 +1692,18 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return DraggableScrollableSheet(
       initialChildSize: 0.78,
       minChildSize: 0.45,
       maxChildSize: 0.92,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: _competitionBg,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          decoration: BoxDecoration(
+            color: CompetitionUiTokens.pageBg(isDark),
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(
             children: [
@@ -1623,20 +1712,22 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
                 width: 38,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: _competitionBorder,
-                  borderRadius: BorderRadius.circular(999),
+                  color: CompetitionUiTokens.borderColor(isDark),
+                  borderRadius:
+                      BorderRadius.circular(CompetitionUiTokens.chipRadius),
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 16, 12, 8),
                 child: Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         '筛选比赛',
                         style: TextStyle(
                           fontSize: 19,
                           fontWeight: FontWeight.w900,
+                          color: CompetitionUiTokens.titleColor(isDark),
                         ),
                       ),
                     ),
@@ -1727,7 +1818,7 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
                     ),
                     style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
-                      backgroundColor: _competitionPrimary,
+                      backgroundColor: CompetitionUiTokens.accent(isDark),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -1745,10 +1836,11 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
   }
 
   Widget _sheetSection(String title) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Text(
       title,
-      style: const TextStyle(
-        color: Color(0xFF252433),
+      style: TextStyle(
+        color: CompetitionUiTokens.titleColor(isDark),
         fontSize: 15,
         fontWeight: FontWeight.w900,
       ),
@@ -1785,23 +1877,28 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
   }
 
   Widget _choiceChip(String label, bool selected, VoidCallback onTap) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return ChoiceChip(
       label: Text(label),
       selected: selected,
       onSelected: (_) => onTap(),
       visualDensity: VisualDensity.compact,
       labelStyle: TextStyle(
-        color: selected ? _competitionPrimaryDark : _competitionMuted,
+        color: selected
+            ? CompetitionUiTokens.accent(isDark)
+            : CompetitionUiTokens.subColor(isDark),
         fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
       ),
-      selectedColor: _competitionLight,
-      backgroundColor: Colors.white,
+      selectedColor: CompetitionUiTokens.accentSoft(isDark),
+      backgroundColor: CompetitionUiTokens.cardBg(isDark),
       side: BorderSide(
         color: selected
-            ? _competitionPrimary.withValues(alpha: 0.32)
-            : _competitionBorder,
+            ? CompetitionUiTokens.accent(isDark).withValues(alpha: 0.32)
+            : CompetitionUiTokens.borderColor(isDark),
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(CompetitionUiTokens.chipRadius),
+      ),
     );
   }
 }
@@ -3050,6 +3147,7 @@ class _CompetitionShareImportScreenState
   @override
   Widget build(BuildContext context) {
     final items = (_preview?['items'] as List?) ?? [];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(title: const Text('导入计划')),
       body: ListView(
@@ -3086,16 +3184,20 @@ class _CompetitionShareImportScreenState
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: CompetitionUiTokens.cardBg(isDark),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE8E4F0)),
+                border:
+                    Border.all(color: CompetitionUiTokens.borderColor(isDark)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     _jsonFileName == null ? '未选择文件' : '已选择: $_jsonFileName',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: CompetitionUiTokens.titleColor(isDark),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
@@ -3138,119 +3240,67 @@ class _CompetitionShareImportScreenState
   }
 }
 
-class _CompetitionTimeState {
-  final String label;
-  final Color color;
-  final bool highlight;
-
-  const _CompetitionTimeState({
-    required this.label,
-    required this.color,
-    this.highlight = false,
-  });
-}
-
 class _CompetitionTimeLine {
-  final IconData icon;
   final String label;
   final String value;
 
   const _CompetitionTimeLine({
-    required this.icon,
     required this.label,
     required this.value,
   });
 }
 
-_CompetitionTimeState _competitionTimeState(CompetitionEvent event) {
+/// 时间状态只用于展示文案，配色统一走 [CompetitionUiTokens]。
+String _competitionTimeStateLabel(CompetitionEvent event) {
   final deadline = event.registrationEnd;
   if (deadline != null) {
-    if (deadline.isBefore(DateTime.now())) {
-      return const _CompetitionTimeState(
-        label: '已截止',
-        color: _competitionDanger,
-      );
-    }
-    return const _CompetitionTimeState(
-      label: '已确认',
-      color: _competitionPrimary,
-      highlight: true,
-    );
+    return deadline.isBefore(DateTime.now()) ? '已截止' : '已确认';
   }
 
   if (event.hasTimeStatus) {
     switch (event.timeStatus) {
       case 'confirmed':
-        return const _CompetitionTimeState(
-          label: '已确认',
-          color: _competitionPrimary,
-          highlight: true,
-        );
+        return '已确认';
       case 'estimated':
-        return const _CompetitionTimeState(
-          label: '预计时间',
-          color: _competitionOrange,
-          highlight: true,
-        );
+        return '预计时间';
       case 'historical':
-        return const _CompetitionTimeState(
-          label: '往年参考',
-          color: _competitionPrimaryDark,
-        );
+        return '往年参考';
       default:
-        return const _CompetitionTimeState(
-          label: '时间待公布',
-          color: _competitionMuted,
-        );
+        return '时间待公布';
     }
   }
 
   final text = '${event.registrationTimeText} ${event.eventTimeText}';
   if (_containsAny(text, const ['预计', '暂定', '计划', '大概', '约'])) {
-    return const _CompetitionTimeState(
-      label: '预计时间',
-      color: _competitionOrange,
-      highlight: true,
-    );
+    return '预计时间';
   }
   if (_containsAny(text, const ['往年', '历年', '通常', '一般', '参考'])) {
-    return const _CompetitionTimeState(
-      label: '往年参考',
-      color: _competitionPrimaryDark,
-    );
+    return '往年参考';
   }
-  return const _CompetitionTimeState(
-    label: '时间待公布',
-    color: _competitionMuted,
-  );
+  return '时间待公布';
 }
 
 _CompetitionTimeLine? _competitionTimeLine(CompetitionEvent event) {
-  final deadline = _deadlineText(event);
   if (event.registrationEnd != null) {
     return _CompetitionTimeLine(
-      icon: Icons.alarm_rounded,
       label: '报名截止',
-      value: deadline,
+      value: _deadlineText(event),
     );
   }
   if (event.registrationTimeText.trim().isNotEmpty) {
     return _CompetitionTimeLine(
-      icon: Icons.schedule_rounded,
       label: '报名窗口',
       value: event.registrationTimeText.trim(),
     );
   }
   if (event.eventTimeText.trim().isNotEmpty) {
     return _CompetitionTimeLine(
-      icon: Icons.calendar_month_rounded,
       label: '比赛时间',
       value: event.eventTimeText.trim(),
     );
   }
   if (event.sortMonth >= 1 && event.sortMonth <= 12) {
     return _CompetitionTimeLine(
-      icon: Icons.event_note_rounded,
       label: '预计月份',
       value: '${event.sortMonth} 月左右',
     );

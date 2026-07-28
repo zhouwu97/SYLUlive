@@ -153,11 +153,12 @@ func (p *DeepSeekProvider) Start(ctx context.Context, request ProviderRequest) (
 }
 
 type deepSeekStream struct {
-	body      io.ReadCloser
-	scanner   *bufio.Scanner
-	pending   []ProviderEvent
-	toolCalls map[int]streamToolCall
-	closed    bool
+	body         io.ReadCloser
+	scanner      *bufio.Scanner
+	pending      []ProviderEvent
+	toolCalls    map[int]streamToolCall
+	finishReason string
+	closed       bool
 }
 
 type streamToolCall struct {
@@ -188,7 +189,7 @@ func (s *deepSeekStream) Next(ctx context.Context) (ProviderEvent, error) {
 		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if data == "[DONE]" {
-			return ProviderEvent{Type: ProviderEventCompleted}, nil
+			return ProviderEvent{Type: ProviderEventCompleted, FinishReason: s.finishReason}, nil
 		}
 		var chunk struct {
 			Choices []struct {
@@ -219,6 +220,9 @@ func (s *deepSeekStream) Next(ctx context.Context) (ProviderEvent, error) {
 			s.pending = append(s.pending, ProviderEvent{Type: ProviderEventUsage, InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens, CacheHitTokens: chunk.Usage.PromptCacheHitTokens})
 		}
 		for _, choice := range chunk.Choices {
+			if choice.FinishReason != nil {
+				s.finishReason = strings.ToLower(strings.TrimSpace(*choice.FinishReason))
+			}
 			if choice.Delta.Content != "" {
 				s.pending = append(s.pending, ProviderEvent{Type: ProviderEventTextDelta, Text: choice.Delta.Content})
 			}

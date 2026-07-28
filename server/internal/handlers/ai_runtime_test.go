@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,31 @@ func (emptyPolicyRetriever) Retrieve(context.Context, string) (ai.RetrievalResul
 	return ai.RetrievalResult{}, nil
 }
 
+type handlerBlockingLangChain struct {
+	cancelled chan struct{}
+}
+
+func (b *handlerBlockingLangChain) QueryPolicy(context.Context, ai.PolicyRAGInput) (ai.PolicyRAGResult, error) {
+	return ai.PolicyRAGResult{}, nil
+}
+
+func (b *handlerBlockingLangChain) StreamPolicy(context.Context, ai.PolicyRAGInput) (ai.PolicyRAGEventStream, error) {
+	return &handlerBlockingPolicyStream{cancelled: b.cancelled}, nil
+}
+
+type handlerBlockingPolicyStream struct {
+	cancelled chan struct{}
+	once      sync.Once
+}
+
+func (s *handlerBlockingPolicyStream) Next(ctx context.Context) (ai.PolicyRAGEvent, error) {
+	<-ctx.Done()
+	s.once.Do(func() { close(s.cancelled) })
+	return ai.PolicyRAGEvent{}, ctx.Err()
+}
+
+func (s *handlerBlockingPolicyStream) Close() error { return nil }
+
 func TestTerminalAIEvents(t *testing.T) {
 	for _, eventType := range []string{"run.completed", "run.failed", "run.cancelled"} {
 		if !isTerminalAIEvent(eventType) {
@@ -41,60 +67,61 @@ func TestParseLastEventIDSupportsRunPrefix(t *testing.T) {
 	}
 }
 
-func TestEventsReturnsWhenTerminalRunWasAlreadyFullyReplayed(t *testing.T) {
+func TestAIEventsDisconnectCancelsLangChainRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.AIRun{}, &models.AIEvent{}))
-
-	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, emptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
-		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
-		MaxToolSteps: 3, MaxMessageChars: 100, HourlyMessageLimit: 3,
+	require.NoError(t, db.AutoMigrate(
+		&models.AIConversation{}, &models.AIConversationMessage{}, &models.AIRun{},
+		&models.AIEvent{}, &models.AIToolCall{}, &models.AIQuotaEntry{},
+		&models.AIUserBudget{}, &models.AIBudgetReservation{}, &models.AIUsageRecord{},
+	))
+	blocking := &handlerBlockingLangChain{cancelled: make(chan struct{})}
+	runtime, err := ai.NewRuntime(db, nil, nil, ai.NewEventBroker(), ai.RuntimeConfig{
+		ProviderName: "langchain", Model: "python-policy-rag", RequestTimeout: 5 * time.Second,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
-		AuditHashSecret: "test-secret",
+		AuditHashSecret: "test-secret", LangChainRAGEnabled: true,
+		LangChainRAGRolloutPercent: 100,
+	}, ai.WithLangChainRAG(blocking))
+	require.NoError(t, err)
+	run, _, err := runtime.CreateRun(context.Background(), 27, ai.CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "怎么请假",
 	})
 	require.NoError(t, err)
-
-	const (
-		userID  = uint(19)
-		lastSeq = int64(36)
-	)
-	now := time.Now()
-	run := models.AIRun{
-		ID: uuid.NewString(), UserID: userID, ConversationID: uuid.NewString(), ClientRequestID: uuid.NewString(),
-		State: models.AIRunStateFailed, Provider: "mock", Model: "mock", MessageHash: "hash",
-		MessageLength: 1, LastEventSeq: lastSeq, ErrorCode: "tool_loop_limit",
-		ExpiresAt: now.Add(time.Hour), CompletedAt: &now,
-	}
-	require.NoError(t, db.Create(&run).Error)
-	require.NoError(t, db.Create(&models.AIEvent{
-		RunID: run.ID, Seq: lastSeq, Type: "run.failed", Payload: []byte(`{"state":"failed"}`), CreatedAt: now,
-	}).Error)
+	require.Eventually(t, func() bool {
+		current, getErr := runtime.GetRun(context.Background(), 27, run.ID)
+		return getErr == nil && current.State == models.AIRunStateRetrieving
+	}, time.Second, 10*time.Millisecond)
 
 	router := gin.New()
-	router.GET("/runs/:id/events", func(c *gin.Context) {
-		c.Set("user_id", userID)
+	router.GET("/events/:id", func(c *gin.Context) {
+		c.Set("user_id", uint(27))
 		NewAIRuntimeHandler(db, runtime).Events(c)
 	})
-	request := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/events", nil)
-	request.Header.Set("Last-Event-ID", fmt.Sprint(lastSeq))
-	ctx, cancel := context.WithCancel(request.Context())
-	defer cancel()
-	request = request.WithContext(ctx)
+	server := httptest.NewServer(router)
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/events/"+run.ID, nil)
+	require.NoError(t, err)
+	response, err := server.Client().Do(request)
+	require.NoError(t, err)
+	cancel()
+	require.NoError(t, response.Body.Close())
 
-	done := make(chan struct{})
-	go func() {
-		router.ServeHTTP(httptest.NewRecorder(), request)
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(250 * time.Millisecond):
-		cancel()
-		<-done
-		t.Fatal("终态 Run 的末事件已被确认后，SSE 仍未关闭")
-	}
+	require.Eventually(t, func() bool {
+		select {
+		case <-blocking.cancelled:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		current, getErr := runtime.GetRun(context.Background(), 27, run.ID)
+		return getErr == nil && current.State == models.AIRunStateCancelled
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestGetSourceChunkOnlyReturnsPublishedKnowledge(t *testing.T) {
@@ -141,7 +168,7 @@ func TestDeleteConversationRetainsConsumedQuotaLedger(t *testing.T) {
 	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, emptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
 		MaxToolSteps:    3,
-		MaxMessageChars: 100, HourlyMessageLimit: 3,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "test-secret",
@@ -176,9 +203,9 @@ func TestDeleteConversationRetainsConsumedQuotaLedger(t *testing.T) {
 	require.NoError(t, db.Where("user_id = ?", userID).First(&quota).Error)
 	require.Equal(t, "consumed", quota.Status)
 	require.NotEqual(t, runID, quota.RunID)
-	remaining, _, err := runtime.Quota(context.Background(), userID)
+	quotaStatus, err := runtime.Quota(context.Background(), userID)
 	require.NoError(t, err)
-	require.Equal(t, 2, remaining)
+	require.Equal(t, 2, quotaStatus.Remaining)
 	var runCount, conversationCount int64
 	require.NoError(t, db.Model(&models.AIRun{}).Where("id = ?", runID).Count(&runCount).Error)
 	require.NoError(t, db.Model(&models.AIConversation{}).Where("id = ?", conversationID).Count(&conversationCount).Error)
@@ -196,7 +223,7 @@ func TestListConversationsWithPreview(t *testing.T) {
 	runtime, err := ai.NewRuntime(db, &ai.MockProvider{}, emptyPolicyRetriever{}, ai.NewEventBroker(), ai.RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,
 		MaxToolSteps:    3,
-		MaxMessageChars: 100, HourlyMessageLimit: 3,
+		MaxMessageChars: 20, HourlyMessageLimit: 3,
 		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
 		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
 		AuditHashSecret: "test-secret",

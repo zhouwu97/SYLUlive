@@ -1,12 +1,12 @@
 {
   "version": "v0.6",
-  "generated_at": "2026-07-23",
+  "generated_at": "2026-07-28",
   "document_count": 14,
   "new_school_full_text_document_count": 6,
   "link_only_documents": 0,
   "empty_content_documents": [],
   "invalid_json_files": [],
-  "source_file_hash_count": 6,
+  "source_file_hash_count": 7,
   "rule_count": 57,
   "test_case_count": 19,
   "checks": {
@@ -16,15 +16,52 @@
     "supersession_recorded": true,
     "high_risk_rules_have_source_locator": true,
     "second_exam_answer_card_present": true,
-    "historical_currentness_boundary_present": true
+    "historical_currentness_boundary_present": true,
+    "release_manifest_present": true,
+    "duplicate_content_hash_check_enabled": true,
+    "published_version_conflict_check_enabled": true,
+    "langchain_chunk_embedding_contract_recorded": true
   },
   "supersedes_knowledge_base_versions": [
     "v0.1",
     "v0.2",
     "v0.3",
-    "v0.4"
+    "v0.4",
+    "v0.5"
   ],
-  "production_note": "先将旧知识库文档标记为superseded或撤销发布，再导入v0.5，避免旧规则与新正式文件同时召回。",
+  "production_status": "candidate_not_verified_as_published",
+  "production_note": "先导入并索引 v0.6 候选；全部检查通过后在单事务中 publish/supersede。禁止预先撤销旧 published 文档。",
+  "release_manifest": "release-manifest.v0.6.json",
+  "unresolved_items": [
+    {
+      "code": "missing_official_source",
+      "title": "沈阳理工大学“第二课堂成绩单”制度实施办法及积分表"
+    },
+    {
+      "code": "missing_official_source",
+      "title": "现行本科生综合测评管理办法及各学院细则"
+    },
+    {
+      "code": "missing_official_source",
+      "title": "沈阳理工大学学生违纪纪律处分办法及解除处分办法"
+    },
+    {
+      "code": "missing_official_source",
+      "title": "现行学士学位授予细则"
+    },
+    {
+      "code": "missing_official_source",
+      "title": "各入学年级、各专业人才培养方案"
+    },
+    {
+      "code": "missing_official_source",
+      "title": "创新创业竞赛A/B/C/D/E分类认定办法"
+    },
+    {
+      "code": "current_second_exam_policy_unverified",
+      "title": "当前二次考试成绩记载口径或当期教务通知"
+    }
+  ],
   "new_features": [
     "挂科/补考/二考/重修确定性同义词映射",
     "当前规则与历史细则分层",

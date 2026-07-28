@@ -13,7 +13,7 @@ func ValidateAIRuntimeSchema(db *gorm.DB) error {
 		return fmt.Errorf("database is nil")
 	}
 	tables := []string{
-		"ai_knowledge_documents", "ai_knowledge_chunks", "ai_knowledge_ingestion_jobs",
+		"ai_knowledge_documents", "ai_knowledge_chunks", "ai_knowledge_chunk_embeddings", "ai_knowledge_ingestion_jobs",
 		"ai_embedding_model_registry", "ai_conversations", "ai_conversation_messages",
 		"ai_runs", "ai_events", "ai_tool_calls", "ai_run_resume_jobs", "ai_quota_entries",
 		"ai_user_budgets", "ai_budget_reservations", "ai_usage_records", "class_period_profiles",
@@ -39,10 +39,12 @@ func ValidateAIRuntimeSchema(db *gorm.DB) error {
 		}
 		var indexCount int64
 		if err := db.Raw(`SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN
-			('idx_ai_knowledge_chunks_embedding', 'idx_ai_knowledge_chunks_fts', 'idx_ai_knowledge_chunks_trgm')`).Scan(&indexCount).Error; err != nil {
+			('idx_ai_knowledge_chunks_embedding', 'idx_ai_knowledge_chunks_fts', 'idx_ai_knowledge_chunks_trgm',
+			 'idx_ai_chunk_embeddings_model_dimensions', 'idx_ai_chunk_embeddings_hnsw_384',
+			 'idx_ai_chunk_embeddings_hnsw_1536')`).Scan(&indexCount).Error; err != nil {
 			return fmt.Errorf("inspect AI indexes: %w", err)
 		}
-		if indexCount != 3 {
+		if indexCount != 6 {
 			return fmt.Errorf("hybrid retrieval indexes are incomplete")
 		}
 		var quotaRunForeignKeys int64

@@ -85,7 +85,7 @@ def test_rollout_guard_allows_emergency_rollback_with_failed_gate(tmp_path):
 
 
 def test_rollout_environment_keeps_legacy_path_during_full_observation_window():
-    assert environment_for_stage("internal")["AI_INTERNAL_TEST_ONLY"] == "true"
+    assert environment_for_stage("internal")["AI_LANGCHAIN_RAG_ROLLOUT_PERCENT"] == "100"
     assert environment_for_stage("5")["AI_LANGCHAIN_RAG_ROLLOUT_PERCENT"] == "5"
     assert environment_for_stage("100")["AI_LEGACY_RAG_ENABLED"] == "true"
     assert environment_for_stage("off")["AI_LANGCHAIN_RAG_ENABLED"] == "false"

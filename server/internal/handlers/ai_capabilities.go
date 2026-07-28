@@ -2,8 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -20,8 +18,6 @@ const (
 // P0 仅开放入口与状态验证，不暴露 Provider 配置，也不提供真实对话能力。
 type AICapabilitiesHandler struct {
 	enabled            bool
-	internalTestOnly   bool
-	allowedUserIDs     map[string]struct{}
 	runtime            *ai.Runtime
 	policyRAGEnabled   bool
 	hourlyLimit        int
@@ -37,19 +33,11 @@ type AICapabilitiesOptions struct {
 	QuotaExemptUserIDs []uint
 }
 
-func NewAICapabilitiesHandler(enabled, internalTestOnly bool, allowedUserIDs []string, options ...AICapabilitiesOptions) *AICapabilitiesHandler {
-	allowed := make(map[string]struct{}, len(allowedUserIDs))
-	for _, id := range allowedUserIDs {
-		if normalized := strings.TrimSpace(id); normalized != "" {
-			allowed[normalized] = struct{}{}
-		}
-	}
+func NewAICapabilitiesHandler(enabled bool, options ...AICapabilitiesOptions) *AICapabilitiesHandler {
 	handler := &AICapabilitiesHandler{
-		enabled:          enabled,
-		internalTestOnly: internalTestOnly,
-		allowedUserIDs:   allowed,
-		hourlyLimit:      aiHourlyLimit,
-		maxMessageChars:  aiMaxMessageChars,
+		enabled:         enabled,
+		hourlyLimit:     aiHourlyLimit,
+		maxMessageChars: aiMaxMessageChars,
 	}
 	if len(options) > 0 {
 		handler.runtime = options[0].Runtime
@@ -71,16 +59,10 @@ func NewAICapabilitiesHandler(enabled, internalTestOnly bool, allowedUserIDs []s
 }
 
 // Get 处理 GET /api/ai/capabilities。
-// 未获内测资格时仍返回 200，由客户端安静隐藏入口，避免影响“校园”页其他模块。
+// 所有通过认证的账号共享相同访问能力，配额与预算仍按账号独立计算。
 func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 	numericUserID := c.GetUint("user_id")
-	userID := strconv.FormatUint(uint64(numericUserID), 10)
 	accessAllowed := h.enabled
-	if accessAllowed && h.internalTestOnly {
-		role := c.GetString("role")
-		_, whitelisted := h.allowedUserIDs[userID]
-		accessAllowed = whitelisted || role == "admin" || role == "super_admin"
-	}
 	remaining := h.hourlyLimit
 	unlimited := false
 	var resetAt interface{}
@@ -103,7 +85,7 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":            h.enabled,
 		"access_allowed":     accessAllowed,
-		"internal_test_only": h.internalTestOnly,
+		"internal_test_only": false, // 保留旧客户端协议字段，访问限制已永久停用。
 		"phase":              phase,
 		"chat_enabled":       chatEnabled,
 		"features": gin.H{

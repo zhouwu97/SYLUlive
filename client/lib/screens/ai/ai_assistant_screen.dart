@@ -978,6 +978,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                 AiPublicEmptyState(
                                   chatEnabled: capabilities.chatEnabled,
                                   quickPrompts: provider.quickPrompts,
+                                  onRefreshPrompts:
+                                      provider.refreshQuickPrompts,
                                   onPromptSelected: (prompt) {
                                     _inputController.text = prompt;
                                     _inputController.selection =

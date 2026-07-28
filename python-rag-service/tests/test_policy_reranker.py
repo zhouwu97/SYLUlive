@@ -229,7 +229,7 @@ def test_query_transform_failure_degrades_without_calling_model():
 
 @pytest.mark.parametrize(
     ("score", "expected_status", "expected_calls"),
-    [(0.439999, "insufficient_sources", 0), (0.44, "completed", 1)],
+    [(0.439999, "general_completed", 1), (0.44, "completed", 1)],
 )
 def test_runnable_branch_uses_inclusive_calibrated_threshold(
     score: float, expected_status: str, expected_calls: int
@@ -258,16 +258,16 @@ def test_runnable_branch_uses_inclusive_calibrated_threshold(
         relevance_threshold=0.44,
     )
 
-    result = chain.invoke(PolicyRAGInput(request_id="gate", question="明显无关问题"))
+    result = chain.invoke(PolicyRAGInput(request_id="gate", question="请假规定"))
 
     assert result.status == expected_status
     assert chat_model.calls == expected_calls
-    if expected_status == "insufficient_sources":
-        assert result.warnings == ["rag_insufficient_sources"]
-        assert result.usage.metered is False
+    if expected_status == "general_completed":
+        assert result.warnings == ["campus_sources_unavailable"]
+        assert result.usage.metered is True
 
 
-def test_reranker_failure_preserves_degraded_mode_and_blocks_generation():
+def test_reranker_failure_preserves_degraded_mode_and_uses_fallback_generation():
     chat_model = _CountingChatModel(
         response_text="不应调用", input_tokens=1, output_tokens=1
     )
@@ -282,9 +282,9 @@ def test_reranker_failure_preserves_degraded_mode_and_blocks_generation():
 
     result = chain.invoke(PolicyRAGInput(request_id="degraded", question="问题"))
 
-    assert result.status == "insufficient_sources"
+    assert result.status == "general_completed"
     assert result.degraded_modes == ["rerank"]
-    assert chat_model.calls == 0
+    assert chat_model.calls == 1
 
 
 @pytest.mark.asyncio

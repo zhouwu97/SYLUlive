@@ -357,21 +357,21 @@ func TestLoadPolicyRAGRequiresInternalServiceToken(t *testing.T) {
 
 func TestLoadAIRejectsUnsafeLimits(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
-	t.Setenv("AI_MAX_MESSAGE_CHARS", "49")
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "0")
 	require.Panics(t, func() { Load() })
-	t.Setenv("AI_MAX_MESSAGE_CHARS", "301")
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "21")
 	require.Panics(t, func() { Load() })
 }
 
-func TestLoadAIMessageLimitDefaultsTo120AndAllowsConfiguredRange(t *testing.T) {
+func TestLoadAIMessageLimitDefaultsTo20AndAllowsConfiguredRange(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "")
-	require.Equal(t, 120, Load().AIMaxMessageChars)
+	require.Equal(t, 20, Load().AIMaxMessageChars)
 
-	t.Setenv("AI_MAX_MESSAGE_CHARS", "50")
-	require.Equal(t, 50, Load().AIMaxMessageChars)
-	t.Setenv("AI_MAX_MESSAGE_CHARS", "300")
-	require.Equal(t, 300, Load().AIMaxMessageChars)
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "1")
+	require.Equal(t, 1, Load().AIMaxMessageChars)
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "20")
+	require.Equal(t, 20, Load().AIMaxMessageChars)
 }
 
 func TestLoadAILegacyOutputLimitDefaultsTo4096AndAllowsConfiguredRange(t *testing.T) {

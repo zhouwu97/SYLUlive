@@ -99,7 +99,7 @@ def test_policy_chain_invoke_uses_lcel_runnable():
     assert isinstance(result, PolicyRAGResult)
     assert result.status == "completed"
     assert result.chain_name == "shenliyuan_policy_rag"
-    assert result.chain_version == "observability-release-v5"
+    assert result.chain_version == "campus-assistant-release-v6"
     assert result.sources[0].chunk_id == 18
     assert result.sources[0].citation_number == 1
     assert result.usage.input_tokens == 20
@@ -284,7 +284,7 @@ def test_policy_query_endpoints_use_injected_lcel_chain(monkeypatch):
             json={"request_id": "http-1", "question": "怎么请假"},
         )
         assert response.status_code == 200, response.text
-        assert response.json()["chain_version"] == "observability-release-v5"
+        assert response.json()["chain_version"] == "campus-assistant-release-v6"
 
         with client.stream(
             "POST",
@@ -301,19 +301,83 @@ def test_policy_query_endpoints_use_injected_lcel_chain(monkeypatch):
     del main.app.state.policy_chain
 
 
-def test_foundation_chain_fails_closed_without_sources():
+def test_foundation_chain_answers_general_question_without_sources():
     chain = build_policy_rag_chain(
         FakePolicyRetriever(documents=[]),
-        FakePolicyChatModel(response_text="不应被调用", input_tokens=1, output_tokens=1),
+        FakePolicyChatModel(
+            response_text="你好，我是沈理校园 AI。你可以问我课程、考试或校园办事问题。",
+            input_tokens=12,
+            output_tokens=10,
+        ),
         provider_name="fake",
         model_name="fake-policy-chat-v1",
     )
-    result = chain.invoke(PolicyRAGInput(request_id="empty-1", question="未知规定"))
+    result = chain.invoke(PolicyRAGInput(request_id="empty-1", question="hello"))
 
-    assert result.status == "insufficient_sources"
+    assert result.status == "general_completed"
+    assert result.answer_mode == "general_answer"
+    assert "你好" in result.answer
     assert result.sources == []
-    assert result.usage.metered is False
-    assert result.warnings == ["rag_insufficient_sources"]
+    assert result.usage.metered is True
+    assert result.warnings == ["campus_sources_unavailable"]
+
+
+def test_foundation_chain_guides_campus_question_without_sources():
+    model = RecordingPolicyChatModel(
+        response_text=(
+            "我暂时无法核验你所在宿舍的当前门禁时间。"
+            "请先查看所在公寓的最新通知，或补充校区和公寓名称。"
+        ),
+        input_tokens=18,
+        output_tokens=16,
+    )
+    chain = build_policy_rag_chain(
+        FakePolicyRetriever(documents=[]),
+        model,
+        provider_name="fake",
+        model_name="fake-policy-chat-v1",
+    )
+
+    result = chain.invoke(
+        PolicyRAGInput(request_id="guided-gap", question="宿舍几点关门")
+    )
+
+    assert result.status == "general_completed"
+    assert result.answer_mode == "guided_gap"
+    assert "公寓" in result.answer
+    assert "门禁时间" in result.answer
+    assert result.sources == []
+    prompt_text = "\n".join(str(message.content) for message in model._messages)
+    assert "不要猜测校内结论" in prompt_text
+
+
+def test_general_question_ignores_incidental_campus_source():
+    model = RecordingPolicyChatModel(
+        response_text="你好，我可以帮你处理校园学习和办事问题。",
+        input_tokens=10,
+        output_tokens=8,
+    )
+    chain = build_policy_rag_chain(
+        FakePolicyRetriever(
+            documents=[
+                Document(
+                    page_content="学生请假应履行审批手续。",
+                    metadata={"document_id": 9, "chunk_id": 18, "title": "学生手册"},
+                )
+            ]
+        ),
+        model,
+        provider_name="fake",
+        model_name="fake-policy-chat-v1",
+    )
+
+    result = chain.invoke(PolicyRAGInput(request_id="incidental", question="hello"))
+
+    assert result.status == "general_completed"
+    assert result.answer_mode == "general_answer"
+    assert result.sources == []
+    prompt_text = "\n".join(str(message.content) for message in model._messages)
+    assert "学生请假应履行审批手续" not in prompt_text
 
 
 def test_completed_result_rejects_missing_usage():
@@ -322,7 +386,7 @@ def test_completed_result_rejects_missing_usage():
             {
                 "request_id": "bad-usage",
                 "chain_name": "shenliyuan_policy_rag",
-                "chain_version": "observability-release-v5",
+                "chain_version": "campus-assistant-release-v6",
                 "status": "completed",
                 "answer": "回答",
                 "sources": [],
@@ -444,7 +508,7 @@ def test_forged_temporary_citation_is_rejected_without_exposing_model_answer():
     result = chain.invoke(PolicyRAGInput(request_id="forged", question="怎么请假"))
 
     assert result.status == "citation_rejected"
-    assert result.answer == "当前已发布资料不足，暂时无法给出可核验回答。"
+    assert "无法从已发布的校园资料中核验" in result.answer
     assert result.sources == []
     assert result.usage.metered is True
 

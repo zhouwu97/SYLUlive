@@ -15,12 +15,12 @@ void main() {
               windowSeconds: 3600,
               unlimited: true,
             ),
-            maxCharacters: 120,
+            maxCharacters: 20,
           ),
         ),
       ),
     );
 
-    expect(find.text('使用次数不限 · 每次最多 120 字'), findsOneWidget);
+    expect(find.text('使用次数不限 · 每次最多 20 字'), findsOneWidget);
   });
 }

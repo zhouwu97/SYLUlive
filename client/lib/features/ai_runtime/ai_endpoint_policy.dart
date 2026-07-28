@@ -54,8 +54,31 @@ class AIEndpointPolicy {
   }
 
   static Uri endpointFor(Uri baseEndpoint, String relativePath) {
-    return baseEndpoint.resolve(relativePath);
+    final normalizedBase = _isDeepSeekV1Alias(baseEndpoint)
+        ? baseEndpoint.replace(path: '/')
+        : baseEndpoint;
+    return normalizedBase.resolve(relativePath);
   }
+
+  /// 兼容基础地址已经包含协议版本段的配置，避免生成重复的 `/v1/v1`。
+  static Uri versionedEndpointFor(
+    Uri baseEndpoint, {
+    required String version,
+    required String relativePath,
+  }) {
+    final segments = baseEndpoint.pathSegments
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+    final path = segments.isNotEmpty && segments.last == version
+        ? relativePath
+        : '$version/$relativePath';
+    return baseEndpoint.resolve(path);
+  }
+
+  /// DeepSeek 早期兼容配置常带 `/v1`，当前官方接口以根路径作为基础地址。
+  static bool _isDeepSeekV1Alias(Uri endpoint) =>
+      endpoint.host.toLowerCase() == 'api.deepseek.com' &&
+      (endpoint.path == '/v1' || endpoint.path == '/v1/');
 
   static Options directRequestOptions(Map<String, dynamic> headers) {
     return Options(

@@ -26,7 +26,7 @@ void main() {
     expect(capabilities.quota.remaining, 2);
     expect(capabilities.quota.unlimited, isTrue);
     expect(capabilities.quota.resetAt, isNotNull);
-    expect(capabilities.maxMessageChars, 120);
+    expect(capabilities.maxMessageChars, 20);
   });
 
   test('无资格账号不会显示入口', () {
@@ -38,6 +38,6 @@ void main() {
     });
 
     expect(capabilities.isVisible, isFalse);
-    expect(capabilities.maxMessageChars, 120);
+    expect(capabilities.maxMessageChars, 20);
   });
 }

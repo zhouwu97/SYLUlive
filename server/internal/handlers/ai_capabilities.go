@@ -13,7 +13,7 @@ import (
 const (
 	aiHourlyLimit     = 3
 	aiWindowSeconds   = 60 * 60
-	aiMaxMessageChars = 120
+	aiMaxMessageChars = 20
 )
 
 // AICapabilitiesHandler 返回当前账号可见的 AI 能力。

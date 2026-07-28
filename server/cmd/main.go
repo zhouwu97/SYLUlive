@@ -816,8 +816,6 @@ func main() {
 	knowledgeHandler := handlers.NewAIKnowledgeHandler(db, ragClient)
 	aiCapabilitiesHandler := handlers.NewAICapabilitiesHandler(
 		cfg.AIEnabled,
-		cfg.AIInternalTestOnly,
-		cfg.AITestUserIDs,
 		handlers.AICapabilitiesOptions{
 			Runtime: aiRuntime, PolicyRAGEnabled: cfg.AIPolicyRAGEnabled && aiRuntime != nil,
 			HourlyLimit:        cfg.AIHourlyMessageLimit,
@@ -1897,7 +1895,7 @@ func main() {
 		knowledgeAdmin.POST("/:id/supersede", knowledgeHandler.Supersede)
 	}
 
-	// 能力探测保持可达，未获内测资格的客户端据此安静隐藏入口。
+	// 能力探测保持可达，客户端据此读取统一的服务状态与账号配额。
 	aiCapabilities := r.Group("/api/ai")
 	aiCapabilities.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
@@ -1909,7 +1907,7 @@ func main() {
 		aiProtected := r.Group("/api/ai")
 		aiProtected.Use(
 			middleware.AuthMiddleware(db, cfg.JWTSecret),
-			middleware.AIAccessMiddleware(cfg.AIEnabled, cfg.AIInternalTestOnly, cfg.AITestUserIDs),
+			middleware.AIAccessMiddleware(cfg.AIEnabled),
 		)
 		{
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)

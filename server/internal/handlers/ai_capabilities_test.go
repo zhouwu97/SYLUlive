@@ -49,38 +49,32 @@ func requestAICapabilities(t *testing.T, handler *AICapabilitiesHandler, userID 
 }
 
 func TestAICapabilitiesDisabled(t *testing.T) {
-	body := requestAICapabilities(t, NewAICapabilitiesHandler(false, true, []string{"7"}), 7)
+	body := requestAICapabilities(t, NewAICapabilitiesHandler(false), 7)
 	if body["enabled"] != false || body["access_allowed"] != false {
 		t.Fatalf("unexpected disabled response: %#v", body)
 	}
 }
 
-func TestAICapabilitiesInternalWhitelist(t *testing.T) {
-	handler := NewAICapabilitiesHandler(true, true, []string{" 7 ", "39"})
-	allowed := requestAICapabilities(t, handler, 7)
-	denied := requestAICapabilities(t, handler, 8)
-	if allowed["access_allowed"] != true || denied["access_allowed"] != false {
-		t.Fatalf("whitelist result mismatch: allowed=%#v denied=%#v", allowed, denied)
+func TestAICapabilitiesUsesSameAccessForAllAuthenticatedUsers(t *testing.T) {
+	handler := NewAICapabilitiesHandler(true)
+	user := requestAICapabilities(t, handler, 7, "user")
+	admin := requestAICapabilities(t, handler, 8, "admin")
+	if user["access_allowed"] != true || admin["access_allowed"] != true {
+		t.Fatalf("access should not depend on role: user=%#v admin=%#v", user, admin)
 	}
-	if _, leaked := allowed["api_key"]; leaked {
+	if user["internal_test_only"] != false || admin["internal_test_only"] != false {
+		t.Fatalf("internal access restriction must stay disabled: user=%#v admin=%#v", user, admin)
+	}
+	if _, leaked := user["api_key"]; leaked {
 		t.Fatal("capabilities response must not expose provider credentials")
 	}
-	if allowed["chat_enabled"] != false || allowed["phase"] != "p0" {
-		t.Fatalf("P0 contract mismatch: %#v", allowed)
-	}
-}
-
-func TestAICapabilitiesAdministratorsCanEnterInternalTest(t *testing.T) {
-	handler := NewAICapabilitiesHandler(true, true, []string{"7"})
-	admin := requestAICapabilities(t, handler, 8, "admin")
-	superAdmin := requestAICapabilities(t, handler, 9, "super_admin")
-	if admin["access_allowed"] != true || superAdmin["access_allowed"] != true {
-		t.Fatalf("administrators should be allowed: admin=%#v super=%#v", admin, superAdmin)
+	if user["chat_enabled"] != false || user["phase"] != "p0" {
+		t.Fatalf("P0 contract mismatch: %#v", user)
 	}
 }
 
 func TestAICapabilitiesPublicAccess(t *testing.T) {
-	body := requestAICapabilities(t, NewAICapabilitiesHandler(true, false, nil), 99)
+	body := requestAICapabilities(t, NewAICapabilitiesHandler(true), 99)
 	if body["access_allowed"] != true {
 		t.Fatalf("expected public access: %#v", body)
 	}
@@ -90,7 +84,7 @@ func TestAICapabilitiesPublicAccess(t *testing.T) {
 }
 
 func TestAICapabilitiesDoesNotExposeRetiredServerScheduleFeature(t *testing.T) {
-	body := requestAICapabilities(t, NewAICapabilitiesHandler(true, false, nil), 99)
+	body := requestAICapabilities(t, NewAICapabilitiesHandler(true), 99)
 	features, ok := body["features"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("features = %#v, want object", body["features"])
@@ -127,10 +121,13 @@ func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create runtime: %v", err)
 	}
-	handler := NewAICapabilitiesHandler(true, false, nil, AICapabilitiesOptions{
+	handler := NewAICapabilitiesHandler(true, AICapabilitiesOptions{
 		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 20,
 	})
 	body := requestAICapabilities(t, handler, user.ID)
+	if body["chat_enabled"] != true || body["access_allowed"] != true {
+		t.Fatalf("authenticated user should have chat access: %#v", body)
+	}
 	quota, ok := body["quota"].(map[string]interface{})
 	if !ok || quota["unlimited"] != true || quota["remaining"] != float64(3) {
 		t.Fatalf("unexpected unlimited quota: %#v", body["quota"])

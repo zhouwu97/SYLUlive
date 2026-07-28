@@ -115,13 +115,36 @@ exec env -i \
   HY3_API_BASE="$HY3_API_BASE" \
   HY3_API_KEY="$HY3_API_KEY" \
   HY3_MODEL="$HY3_MODEL" \
-  /opt/SYLUlive_MCP/.venv/bin/hy3-campus-decision-mcp
+  /opt/SYLUlive_MCP/.venv/bin/python -m hy3_campus_decision_mcp
 ```
+
+模块入口不会依赖虚拟环境安装时写入 console-script 的绝对 shebang，因此部署目录从 staging
+原子切换到生产路径后仍可执行。
 
 `local_stdio` 传输同样不再继承主服务环境：Go 侧 `localCommand` 会显式设置 `cmd.Env`，只透传
 `HY3_` 前缀变量和最小 `PATH`/`HOME`/`LANG`。生产环境仍建议直接使用 `ssh_stdio`。
 
 脚本及环境文件应由管理员管理，并限制为运行账户可执行或读取。SSH 只承载 stdio，不要为 MCP 配置 Nginx、反向代理、TCP 转发或云安全组端口。
+
+## Docker Compose
+
+仓库内的 server 镜像安装了 `openssh-client`，Compose 仅支持通过 `ssh_stdio` 连接外部 MCP。
+私钥和 `known_hosts` 由 Compose secrets 只读挂载，不放入镜像或环境变量。复制
+`.env.example` 后至少填写：
+
+```dotenv
+AI_EXTERNAL_MCP_ENABLED=true
+AI_EXTERNAL_MCP_TRANSPORT=ssh_stdio
+AI_EXTERNAL_MCP_SSH_HOST=10.0.0.8
+AI_EXTERNAL_MCP_SSH_PORT=22
+AI_EXTERNAL_MCP_SSH_USER=mcp-runner
+AI_EXTERNAL_MCP_SSH_KEY_FILE=/宿主机绝对路径/mcp_ed25519
+AI_EXTERNAL_MCP_KNOWN_HOSTS_FILE=/宿主机绝对路径/mcp_known_hosts
+```
+
+默认占位 secret 只用于 `AI_EXTERNAL_MCP_ENABLED=false` 时让 Compose 配置可解析，不是有效
+密钥。容器内不要配置 `local_stdio`，除非自定义镜像同时只读挂载完整 MCP 运行目录、包装器和
+运行环境文件；只注入 `AI_EXTERNAL_MCP_COMMAND` 无法访问宿主机可执行文件。
 
 ## 启动与降级
 
@@ -134,6 +157,20 @@ hy3_decision.plan_student_week
 ```
 
 MCP 连接失败、远端工具缺失或 Schema 不兼容时，Go Runtime 继续启动并保留本地校园工具；Hy3 工具不会注册。运行期间的连接错误会返回稳定错误码，例如 `external_mcp_unavailable`、`external_mcp_timeout` 或 `external_mcp_constraint_violation`，外层 Agent 应根据已取得的本地确定性数据继续回答。
+
+公开 `/health` 的 `ai.external_mcp` 只返回配置状态、当前健康状态、契约版本、运行模式和
+实际注册的生产工具数，不返回命令、主机、账户或环境变量。登录态 `/api/ai/capabilities`
+只有在 MCP 健康且对应 Go 包装工具已进入当前 ToolRegistry 时，才会返回：
+
+```json
+{
+  "features": {
+    "hy3_competition_compare": true,
+    "hy3_academic_analysis": true,
+    "hy3_week_plan": true
+  }
+}
+```
 
 每个 AI Run 最多调用一次独立 MCP，单次调用最大 90 秒，结果最大 128 KiB。计划工具会在 Go 本地复核课表、睡眠和每日时长约束；冲突计划不会返回给模型。
 

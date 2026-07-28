@@ -198,3 +198,16 @@ psql "$DSN" -f server/sql/20260726_ai_run_consents.sql
    在该清单全部通过之前，`AI_EXTERNAL_MCP_ENABLED` 必须保持 `false`。
 
 密钥、SSH 私钥或服务器密码一旦出现在聊天记录、终端历史或提交记录中，应立即在相应系统轮换。
+
+## 2026-07-28 生产基线
+
+| 项目 | 冻结值 |
+| --- | --- |
+| SYLUlive 实现 | `51f41de8cbf3f6761ddbdfc96b781ad3f6a65549` |
+| Go 1.25 Linux/amd64 二进制 SHA-256 | `5040ffd609c98babe1d281e38838ef212f2fee52b6b851b924b67a1f8b409440` |
+| SYLUlive_MCP 标签 | `sylulive-mcp-prod-20260728` |
+| SYLUlive_MCP 实现 | `765a5b634f18aaa616b3c424462572651c54b034` |
+| 契约版本 | `sylulive-hy3/1` |
+
+生产 `/health` 已验证返回外部 MCP 健康、Live 模式和三个已注册工具。登录态
+`/api/ai/capabilities` 仍需使用专用测试账号完成生产响应验收。

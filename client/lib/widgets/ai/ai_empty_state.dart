@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../models/ai_quick_prompt.dart';
 import '../campus/campus_theme.dart';
 import 'ai_quick_action_card.dart';
 
 class AiPublicEmptyState extends StatelessWidget {
   final bool chatEnabled;
-  final List<String> quickPrompts;
+  final List<AiQuickPrompt> quickPrompts;
   final ValueChanged<String>? onPromptSelected;
   final VoidCallback? onRefreshPrompts;
 
@@ -55,7 +56,9 @@ class AiPublicEmptyState extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  chatEnabled ? '可查询已开放的校园政策\n与本机课表缓存' : '当前仅验证入口、权限与配额展示，\n暂不发送真实问题。',
+                  chatEnabled
+                      ? '可查询已开放的校园政策\n与本机课表缓存'
+                      : '当前仅验证入口、权限与配额展示，\n暂不发送真实问题。',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Color(0xFF7B8388),
@@ -105,12 +108,10 @@ class AiPublicEmptyState extends StatelessWidget {
               itemCount: quickPrompts.length > 4 ? 4 : quickPrompts.length,
               itemBuilder: (context, index) {
                 final prompt = quickPrompts[index];
-                final categories = ['学业考试', '教学管理', '奖助评优', '校园日程'];
-                final category = categories[index % categories.length];
                 return AiPromptCard(
-                  category: category,
-                  prompt: prompt,
-                  onTap: () => onPromptSelected?.call(prompt),
+                  category: prompt.category,
+                  prompt: prompt.question,
+                  onTap: () => onPromptSelected?.call(prompt.question),
                 );
               },
             ),

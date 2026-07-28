@@ -110,6 +110,15 @@ func (r *ToolRegistry) Definitions() []ToolDefinition {
 	return result
 }
 
+// HasTool 按内部规范名判断工具是否已进入当前运行时注册表。
+func (r *ToolRegistry) HasTool(name string) bool {
+	if r == nil {
+		return false
+	}
+	_, exists := r.tools[name]
+	return exists
+}
+
 // modelSafeToolName 将内部命名空间转换为模型供应商共同接受的函数名。
 // 内部名称和审计记录保持不变，避免供应商约束污染 MCP 稳定契约。
 func modelSafeToolName(canonical string) (string, error) {

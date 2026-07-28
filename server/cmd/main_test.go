@@ -2,11 +2,55 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
 	"time"
+
+	"shenliyuan/internal/ai"
+	"shenliyuan/internal/ai/mcpclient"
 )
+
+type healthTool struct{ name string }
+
+func (tool healthTool) Name() string    { return tool.name }
+func (tool healthTool) Version() string { return "test" }
+func (tool healthTool) Definition() ai.ToolDefinition {
+	return ai.ToolDefinition{Name: tool.name, Parameters: map[string]interface{}{"type": "object"}}
+}
+func (tool healthTool) Execute(context.Context, uint, json.RawMessage) (interface{}, error) {
+	return map[string]interface{}{}, nil
+}
+
+type externalMCPHealthStub struct {
+	status mcpclient.ExternalMCPHealthStatus
+}
+
+func (stub externalMCPHealthStub) Healthy() bool { return stub.status.Healthy }
+func (stub externalMCPHealthStub) HealthStatus() mcpclient.ExternalMCPHealthStatus {
+	return stub.status
+}
+
+func TestExternalMCPHealthPayloadUsesVerifiedSessionAndRegisteredTools(t *testing.T) {
+	registry, err := ai.NewToolRegistry(nil,
+		healthTool{name: "hy3_decision.compare_competitions"},
+		healthTool{name: "hy3_decision.analyze_academic"},
+		healthTool{name: "hy3_decision.plan_student_week"},
+	)
+	if err != nil {
+		t.Fatalf("create registry: %v", err)
+	}
+	client := externalMCPHealthStub{status: mcpclient.ExternalMCPHealthStatus{
+		Healthy: true, Mode: "live", ContractVersion: "sylulive-hy3/1", AvailableTools: 3,
+	}}
+
+	payload := externalMCPHealthPayload(true, client, registry)
+	if !payload.Configured || !payload.Healthy || payload.Mode != "live" ||
+		payload.ContractVersion != "sylulive-hy3/1" || payload.AvailableTools != 3 {
+		t.Fatalf("unexpected external MCP health payload: %#v", payload)
+	}
+}
 
 type examPaperStorageJobAttemptProcessorStub struct {
 	jobID uint

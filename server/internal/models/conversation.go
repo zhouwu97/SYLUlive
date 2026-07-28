@@ -29,6 +29,13 @@ func (c *Conversation) BeforeSave(_ *gorm.DB) error {
 }
 
 func EnsureConversationIndexes(db *gorm.DB) error {
+	if db.Migrator().HasTable(&Message{}) &&
+		!db.Migrator().HasColumn(&Message{}, "ClientMessageID") {
+		if err := db.Migrator().AddColumn(&Message{}, "ClientMessageID"); err != nil {
+			return fmt.Errorf("add messages.client_message_id: %w", err)
+		}
+	}
+
 	indexes := []struct {
 		model interface{}
 		name  string
@@ -38,6 +45,7 @@ func EnsureConversationIndexes(db *gorm.DB) error {
 		{&Conversation{}, "idx_conversations_user2_last_message"},
 		{&Message{}, "idx_messages_conversation_id_id"},
 		{&Message{}, "idx_messages_conversation_read_sender"},
+		{&Message{}, "idx_messages_sender_client_message"},
 	}
 
 	for _, index := range indexes {
@@ -54,15 +62,16 @@ func EnsureConversationIndexes(db *gorm.DB) error {
 
 // Message 私信消息
 type Message struct {
-	ID             uint       `gorm:"primaryKey;index:idx_messages_conversation_id_id,priority:2" json:"id"`
-	ConversationID uint       `gorm:"not null;index;index:idx_messages_conversation_id_id,priority:1;index:idx_messages_conversation_read_sender,priority:1" json:"conversation_id"`
-	SenderID       uint       `gorm:"not null;index:idx_messages_conversation_read_sender,priority:3" json:"sender_id"`
-	Content        string     `gorm:"type:text" json:"content"`
-	FileID         *uint      `json:"file_id"` // 可选图片
-	CreatedAt      time.Time  `json:"created_at"`
-	ReadAt         *time.Time `gorm:"index:idx_messages_conversation_read_sender,priority:2" json:"read_at"`
-	Sender         User       `gorm:"foreignKey:SenderID" json:"sender"`
-	File           *File      `gorm:"foreignKey:FileID" json:"file"`
+	ID              uint       `gorm:"primaryKey;index:idx_messages_conversation_id_id,priority:2" json:"id"`
+	ConversationID  uint       `gorm:"not null;index;index:idx_messages_conversation_id_id,priority:1;index:idx_messages_conversation_read_sender,priority:1" json:"conversation_id"`
+	SenderID        uint       `gorm:"not null;index:idx_messages_conversation_read_sender,priority:3;uniqueIndex:idx_messages_sender_client_message,priority:1" json:"sender_id"`
+	ClientMessageID *string    `gorm:"size:96;uniqueIndex:idx_messages_sender_client_message,priority:2" json:"client_message_id,omitempty"`
+	Content         string     `gorm:"type:text" json:"content"`
+	FileID          *uint      `json:"file_id"` // 可选图片
+	CreatedAt       time.Time  `json:"created_at"`
+	ReadAt          *time.Time `gorm:"index:idx_messages_conversation_read_sender,priority:2" json:"read_at"`
+	Sender          User       `gorm:"foreignKey:SenderID" json:"sender"`
+	File            *File      `gorm:"foreignKey:FileID" json:"file"`
 }
 
 // NormalizeConversationPairs repairs legacy reversed/duplicate pairs before

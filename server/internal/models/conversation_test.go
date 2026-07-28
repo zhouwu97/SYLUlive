@@ -76,6 +76,7 @@ func TestEnsureConversationIndexesCreatesMissingIndexes(t *testing.T) {
 		{&models.Conversation{}, "idx_conversations_user2_last_message"},
 		{&models.Message{}, "idx_messages_conversation_id_id"},
 		{&models.Message{}, "idx_messages_conversation_read_sender"},
+		{&models.Message{}, "idx_messages_sender_client_message"},
 	}
 	for _, index := range expected {
 		if !db.Migrator().HasIndex(index.model, index.name) {

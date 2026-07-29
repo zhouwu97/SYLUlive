@@ -161,6 +161,306 @@ void main() {
       expect(turn.text, '已完成分析。');
     });
 
+    test('DeepSeek 自动模式使用 Chat Completions 且不发送 tool_choice', () async {
+      late RequestOptions captured;
+      var requestCount = 0;
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          requestCount++;
+          captured = options;
+          return _jsonResponse(<String, dynamic>{
+            'choices': <Object>[
+              <String, dynamic>{
+                'message': <String, dynamic>{
+                  'content': '',
+                  'reasoning_content': '需要调用连接测试工具。',
+                  'tool_calls': <Object>[
+                    <String, dynamic>{
+                      'id': 'call-probe',
+                      'type': 'function',
+                      'function': <String, dynamic>{
+                        'name': 'connection_test',
+                        'arguments': '{"status":"ok"}',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }, options);
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://api.deepseek.com/v1',
+          model: 'deepseek-v4-flash',
+        ),
+        apiKey: 'test-key',
+        dio: dio,
+      );
+
+      await model.probeToolCalling();
+
+      expect(requestCount, 1);
+      expect(captured.uri.path, '/chat/completions');
+      final payload = Map<String, dynamic>.from(captured.data as Map);
+      expect(payload.containsKey('tool_choice'), isFalse);
+      expect((payload['tools'] as List), isNotEmpty);
+    });
+
+    test('Claude Messages 解析 tool_use 并在下一轮回传 tool_result', () async {
+      final requests = <RequestOptions>[];
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          requests.add(options);
+          if (requests.length == 1) {
+            return _jsonResponse(<String, dynamic>{
+              'content': <Object>[
+                <String, dynamic>{
+                  'type': 'text',
+                  'text': '正在读取本地学业概览。',
+                },
+                <String, dynamic>{
+                  'type': 'tool_use',
+                  'id': 'toolu-1',
+                  'name': 'personal__academic__overview',
+                  'input': <String, dynamic>{},
+                },
+              ],
+              'stop_reason': 'tool_use',
+            }, options);
+          }
+          return _jsonResponse(<String, dynamic>{
+            'content': <Object>[
+              <String, dynamic>{'type': 'text', 'text': '已完成分析。'},
+              <String, dynamic>{'type': 'text', 'text': '结果正常。'},
+            ],
+            'stop_reason': 'end_turn',
+          }, options);
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://api.anthropic.com/v1',
+          model: 'claude-sonnet-4-5',
+        ),
+        apiKey: 'claude-key',
+        dio: dio,
+      );
+      final tools = <ToolDefinition>[
+        ToolDefinition(
+          id: AcademicOverviewSkill.skillId,
+          description: '读取学业概览',
+          parameters: const <String, dynamic>{'type': 'object'},
+        ),
+      ];
+
+      final firstTurn = await model.nextTurn(
+        messages: const <ToolConversationMessage>[
+          ToolConversationMessage(
+            role: ToolMessageRole.system,
+            content: '只使用提供的工具。',
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '查看学业概览',
+          ),
+        ],
+        tools: tools,
+      );
+
+      expect(requests.first.uri.path, '/v1/messages');
+      expect(requests.first.headers['x-api-key'], 'claude-key');
+      expect(requests.first.headers['anthropic-version'], '2023-06-01');
+      expect(requests.first.headers.containsKey('Authorization'), isFalse);
+      final firstPayload =
+          Map<String, dynamic>.from(requests.first.data as Map);
+      expect(firstPayload['system'], '只使用提供的工具。');
+      expect(firstPayload['max_tokens'], 4096);
+      final tool = Map<String, dynamic>.from(
+        (firstPayload['tools'] as List).first as Map,
+      );
+      expect(tool['name'], 'personal__academic__overview');
+      expect(tool['input_schema'], <String, dynamic>{'type': 'object'});
+      expect(firstTurn.toolCall?.id, 'toolu-1');
+      expect(firstTurn.toolCall?.tool, AcademicOverviewSkill.skillId);
+      expect(firstTurn.assistantContent, '正在读取本地学业概览。');
+
+      final call = firstTurn.toolCall!;
+      final secondTurn = await model.nextTurn(
+        messages: <ToolConversationMessage>[
+          const ToolConversationMessage(
+            role: ToolMessageRole.system,
+            content: '只使用提供的工具。',
+          ),
+          const ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '查看学业概览',
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.assistant,
+            content: firstTurn.assistantContent,
+            toolCall: call,
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.tool,
+            content: '{"status":"success"}',
+            toolCallId: call.id,
+            toolCall: call,
+          ),
+        ],
+        tools: tools,
+      );
+
+      final secondPayload =
+          Map<String, dynamic>.from(requests.last.data as Map);
+      final messages = (secondPayload['messages'] as List).cast<Map>();
+      final assistantBlocks = (messages[1]['content'] as List).cast<Map>();
+      expect(
+        assistantBlocks.map((block) => block['type']),
+        <String>['text', 'tool_use'],
+      );
+      expect(assistantBlocks.last['id'], 'toolu-1');
+      final resultBlocks = (messages[2]['content'] as List).cast<Map>();
+      expect(resultBlocks.single['type'], 'tool_result');
+      expect(resultBlocks.single['tool_use_id'], 'toolu-1');
+      expect(resultBlocks.single['content'], '{"status":"success"}');
+      expect(secondTurn.text, '已完成分析。\n结果正常。');
+    });
+
+    test('Claude 连接探测会强制指定工具并禁用并行工具调用', () async {
+      late RequestOptions captured;
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          captured = options;
+          return _jsonResponse(<String, dynamic>{
+            'content': <Object>[
+              <String, dynamic>{
+                'type': 'tool_use',
+                'id': 'toolu-probe',
+                'name': 'connection_test',
+                'input': <String, dynamic>{'status': 'ok'},
+              },
+            ],
+          }, options);
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://api.anthropic.com',
+          model: 'claude-sonnet-4-5',
+        ),
+        apiKey: 'claude-key',
+        dio: dio,
+      );
+
+      await model.probeToolCalling();
+
+      final payload = Map<String, dynamic>.from(captured.data as Map);
+      final choice = Map<String, dynamic>.from(payload['tool_choice'] as Map);
+      expect(choice['type'], 'tool');
+      expect(choice['name'], 'connection_test');
+      expect(choice['disable_parallel_tool_use'], isTrue);
+    });
+
+    test('Chat Completions 完整回传工具调用的推理上下文', () async {
+      final requests = <RequestOptions>[];
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          requests.add(options);
+          if (requests.length == 1) {
+            return _jsonResponse(<String, dynamic>{
+              'choices': <Object>[
+                <String, dynamic>{
+                  'message': <String, dynamic>{
+                    'content': '正在读取本地学业概览。',
+                    'reasoning_content': ' 保留首尾空格的推理上下文 ',
+                    'tool_calls': <Object>[
+                      <String, dynamic>{
+                        'id': 'call-1',
+                        'type': 'function',
+                        'function': <String, dynamic>{
+                          'name': 'personal__academic__overview',
+                          'arguments': '{}',
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            }, options);
+          }
+          return _jsonResponse(<String, dynamic>{
+            'choices': <Object>[
+              <String, dynamic>{
+                'message': <String, dynamic>{'content': '已完成分析。'},
+              },
+            ],
+          }, options);
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://api.deepseek.com',
+          model: 'deepseek-v4-flash',
+          wireApi: OpenAIWireApi.chatCompletions,
+        ),
+        apiKey: 'test-key',
+        dio: dio,
+      );
+      final tools = <ToolDefinition>[
+        ToolDefinition(
+          id: AcademicOverviewSkill.skillId,
+          description: '读取学业概览',
+          parameters: const <String, dynamic>{'type': 'object'},
+        ),
+      ];
+
+      final firstTurn = await model.nextTurn(
+        messages: const <ToolConversationMessage>[
+          ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '查看学业概览',
+          ),
+        ],
+        tools: tools,
+      );
+      expect(firstTurn.assistantContent, '正在读取本地学业概览。');
+      expect(firstTurn.reasoningContent, ' 保留首尾空格的推理上下文 ');
+
+      final call = firstTurn.toolCall!;
+      await model.nextTurn(
+        messages: <ToolConversationMessage>[
+          const ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '查看学业概览',
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.assistant,
+            content: firstTurn.assistantContent,
+            toolCall: call,
+            reasoningContent: firstTurn.reasoningContent,
+          ),
+          ToolConversationMessage(
+            role: ToolMessageRole.tool,
+            content: '{"status":"success"}',
+            toolCallId: call.id,
+            toolCall: call,
+          ),
+        ],
+        tools: tools,
+      );
+
+      final secondPayload =
+          Map<String, dynamic>.from(requests.last.data as Map);
+      final messages = (secondPayload['messages'] as List).cast<Map>();
+      expect(messages[1]['content'], '正在读取本地学业概览。');
+      expect(
+        messages[1]['reasoning_content'],
+        ' 保留首尾空格的推理上下文 ',
+      );
+    });
+
     test('自动模式在 Responses 明确不兼容时回退 Chat Completions', () async {
       final paths = <String>[];
       final dio = Dio()
@@ -188,8 +488,8 @@ void main() {
       final model = OpenAIToolCallingModel.fromConfig(
         config: const AIModelProviderConfig(
           kind: AIModelProviderKind.openAICompatible,
-          endpoint: 'https://api.deepseek.com',
-          model: 'deepseek-v4-pro',
+          endpoint: 'https://example.com',
+          model: 'test-model',
         ),
         apiKey: 'test-key',
         dio: dio,
@@ -207,6 +507,158 @@ void main() {
 
       expect(paths, <String>['/responses', '/chat/completions']);
       expect(turn.text, '普通回答');
+    });
+
+    test('未知服务可从两种 OpenAI 协议继续回退 Anthropic Messages', () async {
+      final requests = <RequestOptions>[];
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          requests.add(options);
+          if (options.uri.path == '/responses') {
+            return Future<ResponseBody>.value(
+              ResponseBody.fromString(
+                '{"error":{"message":"not found"}}',
+                404,
+                headers: <String, List<String>>{
+                  Headers.contentTypeHeader: <String>['application/json'],
+                },
+              ),
+            );
+          }
+          if (options.uri.path == '/chat/completions') {
+            return Future<ResponseBody>.value(
+              ResponseBody.fromString(
+                '{"error":{"message":"method not allowed"}}',
+                405,
+                headers: <String, List<String>>{
+                  Headers.contentTypeHeader: <String>['application/json'],
+                },
+              ),
+            );
+          }
+          return _jsonResponse(<String, dynamic>{
+            'content': <Object>[
+              <String, dynamic>{'type': 'text', 'text': 'Claude 网关回答'},
+            ],
+          }, options);
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://models.example.com',
+          model: 'claude-compatible',
+        ),
+        apiKey: 'gateway-key',
+        dio: dio,
+      );
+
+      final turn = await model.nextTurn(
+        messages: const <ToolConversationMessage>[
+          ToolConversationMessage(
+            role: ToolMessageRole.user,
+            content: '你好',
+          ),
+        ],
+        tools: const <ToolDefinition>[],
+      );
+
+      expect(
+        requests.map((request) => request.uri.path),
+        <String>['/responses', '/chat/completions', '/v1/messages'],
+      );
+      expect(requests.last.headers['x-api-key'], 'gateway-key');
+      expect(requests.last.headers['Authorization'], 'Bearer gateway-key');
+      expect(turn.text, 'Claude 网关回答');
+    });
+
+    test('自动协议遇到鉴权失败时不会继续回退', () async {
+      var requestCount = 0;
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          requestCount++;
+          return Future<ResponseBody>.value(
+            ResponseBody.fromString(
+              '{"error":{"message":"invalid api key"}}',
+              401,
+              headers: <String, List<String>>{
+                Headers.contentTypeHeader: <String>['application/json'],
+              },
+            ),
+          );
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://models.example.com',
+          model: 'test-model',
+        ),
+        apiKey: 'invalid-key',
+        dio: dio,
+      );
+
+      await expectLater(
+        model.nextTurn(
+          messages: const <ToolConversationMessage>[
+            ToolConversationMessage(
+              role: ToolMessageRole.user,
+              content: '你好',
+            ),
+          ],
+          tools: const <ToolDefinition>[],
+        ),
+        throwsA(
+          isA<AIModelProviderException>().having(
+            (error) => error.message,
+            'message',
+            'invalid api key',
+          ),
+        ),
+      );
+      expect(requestCount, 1);
+    });
+
+    test('Chat Completions 的参数错误保留服务端原始信息', () async {
+      final dio = Dio()
+        ..httpClientAdapter = _CallbackAdapter((options) {
+          return Future<ResponseBody>.value(
+            ResponseBody.fromString(
+              '{"error":{"message":"thinking mode rejects this parameter"}}',
+              422,
+              headers: <String, List<String>>{
+                Headers.contentTypeHeader: <String>['application/json'],
+              },
+            ),
+          );
+        });
+      final model = OpenAIToolCallingModel.fromConfig(
+        config: const AIModelProviderConfig(
+          kind: AIModelProviderKind.openAICompatible,
+          endpoint: 'https://api.deepseek.com',
+          model: 'deepseek-v4-flash',
+          wireApi: OpenAIWireApi.chatCompletions,
+        ),
+        apiKey: 'test-key',
+        dio: dio,
+      );
+
+      await expectLater(
+        model.nextTurn(
+          messages: const <ToolConversationMessage>[
+            ToolConversationMessage(
+              role: ToolMessageRole.user,
+              content: '你好',
+            ),
+          ],
+          tools: const <ToolDefinition>[],
+        ),
+        throwsA(
+          isA<AIModelProviderException>().having(
+            (error) => error.message,
+            'message',
+            'thinking mode rejects this parameter',
+          ),
+        ),
+      );
     });
   });
 
@@ -514,6 +966,31 @@ void main() {
           model.receivedMessages.last.content, isNot(contains('student_id')));
       expect(audit.entries.single.skillId, AcademicOverviewSkill.skillId);
       expect(audit.entries.single.status, SkillStatus.success.name);
+    });
+
+    test('工具循环把模型推理上下文带入下一轮请求', () async {
+      final model = _ScriptedModel(<ToolModelTurn>[
+        ToolModelTurn.call(
+          _academicCall('call-1'),
+          assistantContent: '准备读取本地数据。',
+          reasoningContent: '需要调用学业概览工具。',
+        ),
+        const ToolModelTurn.finalAnswer('已完成。'),
+      ]);
+
+      final outcome = await _loop(model: model).run(
+        userMessage: '查看学业概览',
+        tools: buildStageSixToolDefinitions(),
+      );
+
+      expect(outcome.status, ToolLoopStatus.completed);
+      final assistant = model.receivedMessages.singleWhere(
+        (message) =>
+            message.role == ToolMessageRole.assistant &&
+            message.toolCall != null,
+      );
+      expect(assistant.content, '准备读取本地数据。');
+      expect(assistant.reasoningContent, '需要调用学业概览工具。');
     });
 
     test('未授权不执行 Skill 且不继续请求模型', () async {

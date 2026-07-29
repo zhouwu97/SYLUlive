@@ -1,0 +1,18 @@
+---
+title: "沈阳理工大学孤儿学生资助政策"
+source_type: "official_transcript"
+source_uri: "user-provided-campus-article-published-2024-11-05"
+source_file_name: "孤儿学生学费住宿费减免细则"
+document_type: "school_orphan_aid_policy"
+department: "沈阳理工大学学生处"
+effective_from: ""
+effective_to: ""
+---
+
+# 孤儿学生资助
+
+符合孤儿认定材料要求的全日制本科、专升本在籍学生，可申请学费和住宿费按当年实际收费标准全额减免。二年级及以上学生在每学年结束前申请，新生在开学三周内申请，经学院初审、学生处审核、学校审批后办理。
+
+孤儿学生全部享受国家助学金；国家励志奖学金同等条件下优先；社会奖助学金、教育捐赠和勤工助学岗位也优先倾斜。受纪律处分会取消本学年及后续在校期间孤儿减免资格。
+
+系统不得根据聊天内容判断孤儿身份，具体证明材料和审核结果以学校正式要求为准。

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -9,9 +10,14 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/services/emoji_favorite_service.dart';
+import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
+import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 
 final List<int> transparentImage = [
   0x89,
@@ -755,5 +761,190 @@ void main() {
 
     expect(find.byKey(const ValueKey('market-seller-row')), findsOneWidget);
     expect(find.text('secret_wx_123'), findsNothing);
+  });
+
+  testWidgets('帖子评论栏可直接插入表情并根据内容启用发送按钮', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = _postWithImages(
+      id: 102,
+      title: 'Emoji reply',
+      imageUrls: ['http://example.com/one.png'],
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('写下你的想法...').last);
+    await tester.pumpAndSettle();
+
+    final sendButton = find.byKey(const ValueKey('post-reply-send-button'));
+    expect(tester.widget<IconButton>(sendButton).onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('emoji-tab-face')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('😀').first);
+    await tester.pump();
+
+    final input = tester.widget<TextField>(
+      find.byKey(const ValueKey('post-reply-input')),
+    );
+    expect(input.controller?.text, '😀');
+    final enabledSendButton = tester.widget<IconButton>(sendButton);
+    expect(enabledSendButton.onPressed, isNotNull);
+    expect(
+      enabledSendButton.style?.backgroundColor?.resolve({}),
+      const Color(0xFF6B8EFF),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('帖子评论输入文字与表情按钮垂直居中对齐', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = _postWithImages(
+      id: 104,
+      title: 'Centered reply input',
+      imageUrls: ['http://example.com/one.png'],
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('写下你的想法...').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('post-reply-input')),
+      '0000',
+    );
+    await tester.pump();
+
+    final editableFinder = find.descendant(
+      of: find.byKey(const ValueKey('post-reply-input')),
+      matching: find.byType(EditableText),
+    );
+    RenderEditable? editable;
+    late void Function(RenderObject) findEditable;
+    findEditable = (renderObject) {
+      if (renderObject is RenderEditable) {
+        editable = renderObject;
+        return;
+      }
+      renderObject.visitChildren((child) {
+        if (editable == null) findEditable(child);
+      });
+    };
+    findEditable(tester.renderObject(editableFinder));
+    expect(editable, isNotNull);
+    final renderEditable = editable!;
+    final caretRect = renderEditable.getLocalRectForCaret(
+      const TextPosition(offset: 2),
+    );
+    final textCenterY = renderEditable.localToGlobal(caretRect.center).dy;
+    final emojiCenterY = tester
+        .getCenter(find.byKey(const ValueKey('post-reply-emoji-button')))
+        .dy;
+
+    expect((textCenterY - emojiCenterY).abs(), lessThanOrEqualTo(1));
+  });
+
+  testWidgets('帖子评论栏选择表情包后进入编辑器预览', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = _postWithImages(
+      id: 103,
+      title: 'Sticker reply',
+      imageUrls: ['http://example.com/one.png'],
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('写下你的想法...').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        ValueKey('sticker-pack-tab-${appStickerGroups.first.id}'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final sticker = appStickerGroups.first.items.first;
+    await tester.tap(find.byKey(ValueKey('sticker-${sticker.id}')));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('sticker-composer-preview')),
+      findsOneWidget,
+    );
+    final sendButton = tester.widget<IconButton>(
+      find.byKey(const ValueKey('post-reply-send-button')),
+    );
+    expect(sendButton.onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('帖子评论栏选择收藏图片后进入编辑器预览', (tester) async {
+    const imageUrl = '/uploads/reply-favorite.png';
+    AppPreferencesStore.setMockInitialValues({
+      EmojiFavoriteService.storageKey: jsonEncode([
+        {'type': 'image', 'image_url': imageUrl},
+      ]),
+    });
+    EmojiFavoriteService.resetSharedInstanceForTesting();
+    addTearDown(EmojiFavoriteService.resetSharedInstanceForTesting);
+    expect(
+      (await EmojiFavoriteService.instance.load()).single.imageUrl,
+      imageUrl,
+    );
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = _postWithImages(
+      id: 105,
+      title: 'Favorite image reply',
+      imageUrls: ['http://example.com/one.png'],
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('写下你的想法...').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    await tester.tap(
+      find.byKey(
+        const ValueKey('favorite-image:/uploads/reply-favorite.png'),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      find.byKey(const ValueKey('favorite-image-composer-preview')),
+      findsOneWidget,
+    );
+    final sendButton = tester.widget<IconButton>(
+      find.byKey(const ValueKey('post-reply-send-button')),
+    );
+    expect(sendButton.onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
   });
 }

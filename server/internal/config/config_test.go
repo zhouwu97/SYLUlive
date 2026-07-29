@@ -1,10 +1,29 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestValidateExternalMCPConfigAcceptsBareIPv6AndRejectsUnsafeValues(t *testing.T) {
+	keyPath := filepath.Join(os.TempDir(), "mcp_ed25519")
+	knownHostsPath := filepath.Join(os.TempDir(), "mcp_known_hosts")
+	require.NoError(t, validateExternalMCPConfig(
+		true, "ssh_stdio", "", 90, 1,
+		"2001:db8::8", 22, "mcp-runner", keyPath, knownHostsPath,
+	))
+	require.Error(t, validateExternalMCPConfig(
+		true, "ssh_stdio", "", 90, 1,
+		"mcp-runner@example.com", 22, "mcp-runner", keyPath, knownHostsPath,
+	))
+	require.Error(t, validateExternalMCPConfig(
+		true, "local_stdio", "/opt/mcp\n--unsafe", 90, 1,
+		"", 0, "", "", "",
+	))
+}
 
 func TestLoadExamPaperDirDefaultsByEnvironmentAndAllowsOverride(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret")
@@ -206,40 +225,123 @@ func setBaseConfigEnv(t *testing.T, ginMode string) {
 	t.Setenv("EXAM_PAPER_STORAGE_SIGNING_SECRET", "")
 	t.Setenv("EXAM_PAPER_STORAGE_RECEIPT_SECRET", "")
 	t.Setenv("AI_ENABLED", "false")
-	t.Setenv("AI_INTERNAL_TEST_ONLY", "true")
-	t.Setenv("AI_TEST_USER_IDS", "")
 	t.Setenv("AI_PROVIDER", "deepseek")
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	t.Setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "false")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "false")
+	t.Setenv("AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", "")
+	t.Setenv("AI_LEGACY_RAG_ENABLED", "")
+	t.Setenv("RAG_SERVICE_TOKEN", "")
 }
 
 func TestLoadAIConfigDefaultsDisabled(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	cfg := Load()
 	require.False(t, cfg.AIEnabled)
-	require.True(t, cfg.AIInternalTestOnly)
 	require.Empty(t, cfg.DeepSeekAPIKey)
 	require.Equal(t, "deepseek-v4-flash", cfg.DeepSeekChatModel)
+	require.False(t, cfg.AILangChainRAGEnabled)
 }
 
-func TestLoadAIConfigRequiresServerKeyAndWhitelist(t *testing.T) {
+func TestLoadIgnoresRetiredAIUserAccessVariables(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_INTERNAL_TEST_ONLY", "true")
+	t.Setenv("AI_TEST_USER_IDS", "")
+	t.Setenv("DEEPSEEK_API_KEY", "server-only-key")
+
+	cfg := Load()
+
+	require.True(t, cfg.AIEnabled)
+}
+
+func TestLoadAIUnlimitedStudentIDsDefaultsAndNormalizes(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_UNLIMITED_STUDENT_IDS", "")
+	require.Equal(t, []string{"2403130233"}, Load().AIUnlimitedStudentIDs)
+
+	t.Setenv("AI_UNLIMITED_STUDENT_IDS", " 2403130233,2500000001,2403130233 ")
+	require.Equal(t, []string{"2403130233", "2500000001"}, Load().AIUnlimitedStudentIDs)
+}
+
+func TestLoadLangChainRAGDoesNotRequireGoProviderKey(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "true")
+	t.Setenv("AI_LEGACY_RAG_ENABLED", "false")
+	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+	cfg := Load()
+	require.True(t, cfg.AILangChainRAGEnabled)
+	require.Equal(t, 100, cfg.AILangChainRAGRolloutPercent)
+	require.False(t, cfg.AILegacyRAGEnabled)
+	require.Empty(t, cfg.DeepSeekAPIKey)
+}
+
+func TestLoadLangChainRAGDefaultsToLegacyRollbackPath(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "true")
+	t.Setenv("DEEPSEEK_API_KEY", "legacy-rollback-key")
+	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+
+	cfg := Load()
+
+	require.True(t, cfg.AILegacyRAGEnabled)
+}
+
+func TestLoadPublicLangChainCanaryRequiresLegacyRollbackPath(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", "5")
+	t.Setenv("AI_LEGACY_RAG_ENABLED", "false")
+	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+	require.Panics(t, func() { Load() })
+
+	t.Setenv("AI_LEGACY_RAG_ENABLED", "true")
+	t.Setenv("DEEPSEEK_API_KEY", "legacy-rollback-key")
+	cfg := Load()
+	require.Equal(t, 5, cfg.AILangChainRAGRolloutPercent)
+	require.True(t, cfg.AILegacyRAGEnabled)
+}
+
+func TestLoadRejectsCanaryPercentageWhenLangChainIsDisabled(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("DEEPSEEK_API_KEY", "legacy-key")
+	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ROLLOUT_PERCENT", "5")
+	t.Setenv("RAG_SERVICE_TOKEN", "internal-rag-token")
+	require.Panics(t, func() { Load() })
+}
+
+func TestLoadLangChainRAGRequiresPolicyCapability(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_ENABLED", "true")
+	t.Setenv("AI_LANGCHAIN_RAG_ENABLED", "true")
+	require.Panics(t, func() { Load() })
+}
+
+func TestLoadAIConfigRequiresServerKey(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_ENABLED", "true")
 	require.Panics(t, func() { Load() })
 
-	t.Setenv("AI_TEST_USER_IDS", "18, 19")
-	require.Panics(t, func() { Load() })
-
 	t.Setenv("DEEPSEEK_API_KEY", "server-only-key")
 	cfg := Load()
-	require.Equal(t, []string{"18", "19"}, cfg.AITestUserIDs)
 	require.Equal(t, "server-only-key", cfg.DeepSeekAPIKey)
 }
 
 func TestLoadPolicyRAGRequiresInternalServiceToken(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_ENABLED", "true")
-	t.Setenv("AI_TEST_USER_IDS", "18")
 	t.Setenv("DEEPSEEK_API_KEY", "server-only-key")
 	t.Setenv("AI_POLICY_RAG_ENABLED", "true")
 	t.Setenv("RAG_SERVICE_URL", "http://127.0.0.1:18001")
@@ -255,6 +357,30 @@ func TestLoadAIRejectsUnsafeLimits(t *testing.T) {
 	setBaseConfigEnv(t, "debug")
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "0")
 	require.Panics(t, func() { Load() })
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "19")
+	require.Panics(t, func() { Load() })
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "501")
+	require.Panics(t, func() { Load() })
+}
+
+func TestLoadAIMessageLimitDefaultsTo200AndAllowsLegacyRange(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "")
+	require.Equal(t, 200, Load().AIMaxMessageChars)
+
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "20")
+	require.Equal(t, 20, Load().AIMaxMessageChars)
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "500")
+	require.Equal(t, 500, Load().AIMaxMessageChars)
+}
+
+func TestLoadAILegacyOutputLimitDefaultsTo4096AndAllowsConfiguredRange(t *testing.T) {
+	setBaseConfigEnv(t, "debug")
+	t.Setenv("AI_LEGACY_MAX_OUTPUT_TOKENS", "")
+	require.Equal(t, 4096, Load().AILegacyMaxOutputTokens)
+
+	t.Setenv("AI_LEGACY_MAX_OUTPUT_TOKENS", "2048")
+	require.Equal(t, 2048, Load().AILegacyMaxOutputTokens)
 }
 
 func assertLoadPanics(t *testing.T) {

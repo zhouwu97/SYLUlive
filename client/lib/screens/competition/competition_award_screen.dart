@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/competition_award.dart';
 import '../../utils/app_feedback.dart';
+import '../../widgets/competition/competition_page_scaffold.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import 'competition_award_editor_screen.dart';
 
@@ -188,14 +189,18 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      appBar: AppBar(title: const Text('我的竞赛经历')),
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('competition-award-add'),
-        onPressed: _openEditor,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('添加经历'),
-      ),
+    return CompetitionPageScaffold(
+      title: '我的竞赛经历',
+      actions: _items.isEmpty || _loading || _error != null
+          ? null
+          : [
+              IconButton(
+                key: const Key('competition-award-add'),
+                tooltip: '添加经历',
+                onPressed: _openEditor,
+                icon: const Icon(Icons.add_rounded),
+              ),
+            ],
       body: _body(isDark),
     );
   }
@@ -218,7 +223,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
           icon: Icons.workspace_premium_outlined,
           title: '还没有竞赛经历',
           subtitle: '记录参赛、获奖和你在团队中的贡献',
-          actionLabel: '添加经历',
+          actionLabel: '添加第一段经历',
           onAction: _openEditor,
         ),
       );
@@ -226,7 +231,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 96),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
         itemCount: _items.length,
         itemBuilder: (context, index) => _awardCard(_items[index], isDark),
       ),
@@ -234,20 +239,16 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
   }
 
   Widget _awardCard(CompetitionAward award, bool isDark) {
-    final status = competitionAwardStatusLabels[award.verificationStatus] ??
-        competitionAwardStatusLabels['self_reported']!;
-    final visibility = competitionAwardVisibilityLabels[award.visibility] ??
-        competitionAwardVisibilityLabels['private']!;
     final role = competitionAwardRoleLabels[award.role] ?? award.role;
     final stage = competitionAwardStageLabels[award.competitionStage] ??
         award.competitionStage;
-    final resultText = [award.awardLevel, award.awardName, stage]
+    final trackText = [stage, award.trackName]
         .where((value) => value.trim().isNotEmpty)
         .join(' · ');
     return Container(
       key: Key('competition-award-${award.id}'),
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(15, 14, 8, 14),
+      padding: const EdgeInsets.fromLTRB(15, 13, 8, 13),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -264,31 +265,36 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
                     color: CompetitionUiTokens.titleColor(isDark),
                   ),
                 ),
-                const SizedBox(height: 7),
-                Text(resultText,
+                const SizedBox(height: 5),
+                Text(trackText,
                     style: TextStyle(
                         color: CompetitionUiTokens.subColor(isDark),
                         fontSize: 13,
                         fontWeight: FontWeight.w600)),
-                const SizedBox(height: 7),
+                const SizedBox(height: 5),
+                Text(
+                  [award.awardLevel, award.awardName]
+                      .where((value) => value.trim().isNotEmpty)
+                      .join(' · '),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: CompetitionUiTokens.titleColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Wrap(
-                  spacing: 10,
+                  spacing: 7,
                   runSpacing: 5,
                   children: [
-                    Text('角色：$role'),
-                    Text('状态：$status'),
-                    Text('可见范围：$visibility'),
-                  ]
-                      .map((child) => DefaultTextStyle.merge(
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: CompetitionUiTokens.subColor(isDark)),
-                            child: child,
-                          ))
-                      .toList(),
+                    _labelChip(role, isDark),
+                    _statusChip(award.verificationStatus, isDark),
+                  ],
                 ),
-                const SizedBox(height: 10),
-                _verificationContent(award, isDark),
+                if (_showsVerificationAction(award)) ...[
+                  const SizedBox(height: 9),
+                  _verificationContent(award, isDark),
+                ],
               ],
             ),
           ),
@@ -305,9 +311,17 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
                     if (value == 'edit') _openEditor(award);
                     if (value == 'delete') _delete(award);
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('编辑')),
-                    PopupMenuItem(value: 'delete', child: Text('删除')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: Text(
+                        award.verificationStatus == 'pending' ||
+                                award.verificationStatus == 'verified'
+                            ? '查看 / 修改可见范围'
+                            : '编辑',
+                      ),
+                    ),
+                    const PopupMenuItem(value: 'delete', child: Text('删除')),
                   ],
                 ),
         ],
@@ -319,10 +333,9 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
     final busy = _changingVerification.contains(award.id);
     switch (award.verificationStatus) {
       case 'pending':
-        return _statusPanel(
-          isDark,
-          '核验期间核心信息暂不可修改。',
-          OutlinedButton(
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton(
             key: Key('competition-award-cancel-${award.id}'),
             onPressed:
                 busy ? null : () => _changeVerification(award, submit: false),
@@ -330,11 +343,7 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
           ),
         );
       case 'verified':
-        return _statusPanel(
-          isDark,
-          '平台仅核验提交材料与填写信息是否一致，不代表学校教务或官方认证。',
-          null,
-        );
+        return const SizedBox.shrink();
       case 'rejected':
         return _statusPanel(
           isDark,
@@ -359,10 +368,9 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
           ),
         );
       default:
-        return _statusPanel(
-          isDark,
-          '该经历尚未经过平台材料核验。',
-          FilledButton(
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton(
             key: Key('competition-award-submit-${award.id}'),
             onPressed:
                 busy ? null : () => _changeVerification(award, submit: true),
@@ -372,13 +380,64 @@ class _CompetitionAwardScreenState extends State<CompetitionAwardScreen> {
     }
   }
 
+  bool _showsVerificationAction(CompetitionAward award) =>
+      award.verificationStatus != 'verified';
+
+  Widget _labelChip(String text, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: CompetitionUiTokens.accentSoft(isDark),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: CompetitionUiTokens.accent(isDark),
+        ),
+      ),
+    );
+  }
+
+  Widget _statusChip(String status, bool isDark) {
+    final color = switch (status) {
+      'pending' => CompetitionUiTokens.warningColor(isDark),
+      'verified' => CompetitionUiTokens.accent(isDark),
+      'rejected' => CompetitionUiTokens.dangerColor(isDark),
+      _ => CompetitionUiTokens.subColor(isDark),
+    };
+    final label = competitionAwardStatusLabels[status] ??
+        competitionAwardStatusLabels['self_reported']!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: .30)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   Widget _statusPanel(bool isDark, String message, Widget? action) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: CompetitionUiTokens.accentSoft(isDark),
+        color: CompetitionUiTokens.dangerColor(isDark).withValues(alpha: .08),
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: CompetitionUiTokens.dangerColor(isDark).withValues(alpha: .24),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

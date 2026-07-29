@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
@@ -17,11 +18,17 @@ import '../providers/post_provider.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
+import '../services/emoji_favorite_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
+import '../utils/text_editing_helper.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
+import '../widgets/emoji/app_emoji_panel.dart';
+import '../widgets/emoji/favorite_image_composer_preview.dart';
+import '../widgets/emoji/sticker_composer_preview.dart';
+import '../widgets/emoji/sticker_catalog.dart';
 import '../models/unread_reply_notification.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
@@ -173,6 +180,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final _replyController = TextEditingController();
   final _replyFocus = FocusNode();
   bool _isReplyComposerOpen = false;
+  bool _showReplyEmojiPanel = false;
+  AppSticker? _selectedReplySticker;
+  EmojiFavoriteItem? _selectedReplyFavoriteImage;
   int _marketImageIndex = 0;
   int? _parentReplyId;
   String? _replyToName;
@@ -393,37 +403,119 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _sendReply() async {
     if (_isSending) return;
     final content = _replyController.text.trim();
-    if (content.isEmpty) return;
+    final selectedSticker = _selectedReplySticker;
+    final selectedFavoriteImage = _selectedReplyFavoriteImage;
+    if (content.isEmpty &&
+        selectedSticker == null &&
+        selectedFavoriteImage == null) {
+      return;
+    }
 
     if (mounted) setState(() => _isSending = true);
 
     final parentId = _parentReplyId;
     final replyToUserId = _replyToUserId;
 
-    _replyController.clear();
-    _replyFocus.unfocus();
-    if (mounted) {
-      setState(() {
-        _isReplyComposerOpen = false;
-        _parentReplyId = null;
-        _replyToName = null;
-        _replyToUserId = null;
-      });
-    }
-
     try {
-      await _submitReplyContent(
+      final fileIds = selectedFavoriteImage == null
+          ? const <int>[]
+          : <int>[await _uploadFavoriteImage(selectedFavoriteImage)];
+      final sent = await _submitReplyContent(
         content: content,
+        stickerId: selectedSticker?.id,
+        fileIds: fileIds,
         parentReplyId: parentId,
         replyToUserId: replyToUserId,
       );
+      if (sent && mounted) {
+        _replyController.clear();
+        _replyFocus.unfocus();
+        setState(() {
+          _isReplyComposerOpen = false;
+          _showReplyEmojiPanel = false;
+          _selectedReplySticker = null;
+          _selectedReplyFavoriteImage = null;
+          _parentReplyId = null;
+          _replyToName = null;
+          _replyToUserId = null;
+        });
+      }
+    } on DioException catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(
+          context,
+          AppFeedback.dioErrorMessage(error, fallback: '收藏图片上传失败'),
+          isError: true,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '收藏图片上传失败', isError: true);
+      }
+      debugPrint('上传收藏图片失败: $error');
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
   }
 
+  void _selectReplySticker(AppSticker sticker) {
+    if (_isSending) return;
+    setState(() {
+      _selectedReplySticker = sticker;
+      _selectedReplyFavoriteImage = null;
+    });
+  }
+
+  void _removeSelectedReplySticker() {
+    if (_isSending) return;
+    setState(() => _selectedReplySticker = null);
+  }
+
+  void _selectReplyFavoriteImage(EmojiFavoriteItem favorite) {
+    if (_isSending || favorite.type != EmojiFavoriteType.image) return;
+    setState(() {
+      _selectedReplyFavoriteImage = favorite;
+      _selectedReplySticker = null;
+    });
+  }
+
+  void _removeSelectedReplyFavoriteImage() {
+    if (_isSending) return;
+    setState(() => _selectedReplyFavoriteImage = null);
+  }
+
+  Future<int> _uploadFavoriteImage(EmojiFavoriteItem favorite) async {
+    final imageUrl = favorite.imageUrl?.trim();
+    if (imageUrl == null || imageUrl.isEmpty) {
+      throw StateError('收藏图片地址为空');
+    }
+    final file = await DefaultCacheManager().getSingleFile(
+      ApiConstants.fullUrl(imageUrl),
+    );
+    final pathSegments = Uri.tryParse(imageUrl)?.pathSegments ?? const [];
+    final originalName = pathSegments.isEmpty ? '' : pathSegments.last.trim();
+    final fileName = originalName.isEmpty ? 'favorite-image.jpg' : originalName;
+    final response = await _dio.post(
+      '/upload',
+      data: FormData.fromMap({
+        'file': await MultipartFile.fromFile(file.path, filename: fileName),
+      }),
+    );
+    final rawFileId =
+        response.data is Map ? (response.data as Map)['file_id'] : null;
+    final fileId = rawFileId is num
+        ? rawFileId.toInt()
+        : int.tryParse(rawFileId?.toString() ?? '');
+    if (fileId == null || fileId <= 0) {
+      throw StateError('服务器未返回有效图片 ID');
+    }
+    return fileId;
+  }
+
   Future<bool> _submitReplyContent({
     required String content,
+    String? stickerId,
+    List<int> fileIds = const [],
     required int? parentReplyId,
     required int? replyToUserId,
   }) async {
@@ -444,13 +536,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     // 乐观更新：立即在本地插入评论
     final user = context.read<AuthProvider>().user;
-    if (user != null && _post != null) {
+    if (user != null && _post != null && fileIds.isEmpty) {
       tempReplyId = -DateTime.now().microsecondsSinceEpoch;
       final tempReply = Reply(
         id: tempReplyId,
         postId: widget.postId,
         authorId: user.id,
         content: content,
+        stickerId: stickerId,
         createdAt: DateTime.now(),
         author: User(
           id: user.id,
@@ -472,6 +565,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     try {
       final formData = FormData.fromMap({
         'content': content,
+        if (stickerId != null) 'sticker_id': stickerId,
+        if (fileIds.isNotEmpty) 'file_ids': fileIds.join(','),
         if (parentReplyId != null) 'parent_reply_id': parentReplyId.toString(),
         if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
       });
@@ -1370,52 +1465,60 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final bool transparentMode =
         widget.isDesktopSplitMode && widget.hideBackButton;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: overlayStyle,
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        backgroundColor: transparentMode
-            ? Colors.transparent
-            : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
-        appBar: transparentMode
-            ? AppBar(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                automaticallyImplyLeading: false,
-              )
-            : widget.isMarket
-                ? _buildMarketAppBar(
-                    isDark,
-                    canEdit: canEdit,
-                    canDelete: canDelete,
-                    isOwn: isOwn,
-                    isAdmin: isAdmin,
-                  )
-                : _buildWaterAppBar(isDark,
-                    canEdit: canEdit,
-                    canDelete: canDelete,
-                    isOwn: isOwn,
-                    isAdmin: isAdmin),
-        body: Stack(
-          children: [
-            if (_isLoading)
-              const SafeArea(
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_errorMessage != null)
-              SafeArea(child: _buildErrorView(isDark))
-            else if (_post == null)
-              SafeArea(child: _buildEmptyView(isDark))
-            else if (widget.isMarket)
-              _buildMarketDetail(isDark)
-            else
-              Column(
-                children: [
-                  Expanded(child: _buildWaterDetail(isDark)),
-                  _buildWaterReplyBar(isDark),
-                ],
-              ),
-          ],
+    return PopScope(
+      canPop: !_showReplyEmojiPanel,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _showReplyEmojiPanel) {
+          setState(() => _showReplyEmojiPanel = false);
+        }
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: overlayStyle,
+        child: Scaffold(
+          resizeToAvoidBottomInset: false,
+          backgroundColor: transparentMode
+              ? Colors.transparent
+              : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
+          appBar: transparentMode
+              ? AppBar(
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  automaticallyImplyLeading: false,
+                )
+              : widget.isMarket
+                  ? _buildMarketAppBar(
+                      isDark,
+                      canEdit: canEdit,
+                      canDelete: canDelete,
+                      isOwn: isOwn,
+                      isAdmin: isAdmin,
+                    )
+                  : _buildWaterAppBar(isDark,
+                      canEdit: canEdit,
+                      canDelete: canDelete,
+                      isOwn: isOwn,
+                      isAdmin: isAdmin),
+          body: Stack(
+            children: [
+              if (_isLoading)
+                const SafeArea(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_errorMessage != null)
+                SafeArea(child: _buildErrorView(isDark))
+              else if (_post == null)
+                SafeArea(child: _buildEmptyView(isDark))
+              else if (widget.isMarket)
+                _buildMarketDetail(isDark)
+              else
+                Column(
+                  children: [
+                    Expanded(child: _buildWaterDetail(isDark)),
+                    _buildWaterReplyBar(isDark),
+                  ],
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2177,6 +2280,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ImageViewerScreen(imageUrls: urls, initialIndex: index),
                 ),
               ),
+              onLongPress: () => _showImageFavoriteAction(urls[index]),
               child: CachedNetworkImage(
                 cacheManager: PostImageCache.manager,
                 imageUrl: urls[index],
@@ -2496,6 +2600,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         ),
       ),
+      onLongPress: () => _showImageFavoriteAction(url),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: CachedNetworkImage(
@@ -2539,6 +2644,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                 ),
               ),
+              onLongPress: () => _showImageFavoriteAction(url),
               child: Container(
                 margin: EdgeInsets.only(
                   right: index == 0 ? 2 : 0,
@@ -2591,6 +2697,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ImageViewerScreen(imageUrls: urls, initialIndex: index),
               ),
             ),
+            onLongPress: () => _showImageFavoriteAction(urls[index]),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -2734,9 +2841,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // ---- 水帖底部回复栏 ----
 
+  void _toggleReplyEmojiPanel() {
+    if (_showReplyEmojiPanel) {
+      setState(() => _showReplyEmojiPanel = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _replyFocus.requestFocus();
+      });
+      return;
+    }
+
+    _replyFocus.unfocus();
+    setState(() => _showReplyEmojiPanel = true);
+  }
+
+  void _insertReplyEmoji(String emoji) {
+    insertAtSelection(_replyController, emoji);
+  }
+
+  double get _replyEmojiPanelHeight {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    return (screenHeight * 0.34).clamp(228.0, 300.0).toDouble();
+  }
+
   Widget _buildComposerBody(bool isDark) {
     final viewInsets = MediaQuery.viewInsetsOf(context);
-    final bottomPadding = viewInsets.bottom;
+    final bottomPadding = _showReplyEmojiPanel ? 0.0 : viewInsets.bottom;
 
     return AnimatedPadding(
       padding: EdgeInsets.only(bottom: bottomPadding),
@@ -2757,116 +2886,171 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: SafeArea(
           top: false,
           bottom: bottomPadding == 0,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    _replyController.clear();
-                    _replyFocus.unfocus();
-                    if (mounted) {
-                      setState(() {
-                        _isReplyComposerOpen = false;
-                        _parentReplyId = null;
-                        _replyToName = null;
-                        _replyToUserId = null;
-                      });
-                    }
-                  },
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    margin: const EdgeInsets.only(bottom: 3),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : const Color(0xFFF3F4F6),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 20,
-                      color: isDark ? Colors.white54 : Colors.grey[600],
-                    ),
-                  ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_selectedReplySticker != null)
+                StickerComposerPreview(
+                  sticker: _selectedReplySticker!,
+                  onRemove: _removeSelectedReplySticker,
+                  enabled: !_isSending,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
-                    constraints: const BoxConstraints(minHeight: 42),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : const Color(0xFFF3F4F6),
-                      borderRadius: BorderRadius.circular(21),
-                    ),
-                    child: TextField(
-                      controller: _replyController,
-                      focusNode: _replyFocus,
-                      minLines: 1,
-                      maxLines: 3,
-                      textAlignVertical: TextAlignVertical.center,
-                      textInputAction: TextInputAction.newline,
-                      decoration: InputDecoration(
-                        hintText: _replyToName != null
-                            ? '回复 @$_replyToName'
-                            : '写下你的想法...',
-                        hintStyle: TextStyle(
-                          color: isDark ? Colors.white30 : Colors.grey[400],
-                          fontSize: 14,
-                        ),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                      ),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? Colors.white : Colors.black87,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
+              if (_selectedReplyFavoriteImage != null)
+                FavoriteImageComposerPreview(
+                  favorite: _selectedReplyFavoriteImage!,
+                  onRemove: _removeSelectedReplyFavoriteImage,
+                  enabled: !_isSending,
                 ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _isSending ? null : _sendReply,
-                  child: Container(
-                    width: 42,
-                    height: 42,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: _isSending
-                          ? (isDark ? Colors.white24 : Colors.grey[300])
-                          : (isDark
-                              ? const Color(0xFF82A0FF)
-                              : const Color(0xFF6B8EFF)),
-                      shape: BoxShape.circle,
-                    ),
-                    child: _isSending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.white,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 44),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : const Color(0xFFF3F4F6),
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                key: const ValueKey('post-reply-input'),
+                                controller: _replyController,
+                                focusNode: _replyFocus,
+                                enabled: !_isSending,
+                                readOnly: _isSending,
+                                onTap: () {
+                                  if (_showReplyEmojiPanel) {
+                                    setState(
+                                      () => _showReplyEmojiPanel = false,
+                                    );
+                                  }
+                                },
+                                minLines: 1,
+                                maxLines: 4,
+                                textAlignVertical: TextAlignVertical.center,
+                                textInputAction: TextInputAction.newline,
+                                decoration: InputDecoration(
+                                  constraints:
+                                      const BoxConstraints(minHeight: 44),
+                                  hintText: _replyToName != null
+                                      ? '回复 @$_replyToName'
+                                      : '写下你的想法...',
+                                  hintStyle: TextStyle(
+                                    color: isDark
+                                        ? Colors.white30
+                                        : Colors.grey[400],
+                                    fontSize: 14,
+                                  ),
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.fromLTRB(
+                                    14,
+                                    13,
+                                    4,
+                                    9,
+                                  ),
+                                ),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF22242A),
+                                  height: 1.3,
+                                ),
+                              ),
                             ),
-                          )
-                        : const Icon(
-                            Icons.send_rounded,
-                            color: Colors.white,
-                            size: 20,
+                            SizedBox(
+                              width: 42,
+                              height: 44,
+                              child: IconButton(
+                                key: const ValueKey(
+                                  'post-reply-emoji-button',
+                                ),
+                                tooltip: _showReplyEmojiPanel ? '打开键盘' : '选择表情',
+                                onPressed:
+                                    _isSending ? null : _toggleReplyEmojiPanel,
+                                padding: EdgeInsets.zero,
+                                icon: Icon(
+                                  _showReplyEmojiPanel
+                                      ? Icons.keyboard_alt_outlined
+                                      : Icons.sentiment_satisfied_alt_outlined,
+                                  size: 22,
+                                  color: isDark
+                                      ? Colors.white60
+                                      : const Color(0xFF60646C),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _replyController,
+                      builder: (context, value, _) {
+                        final canSend = !_isSending &&
+                            (value.text.trim().isNotEmpty ||
+                                _selectedReplySticker != null ||
+                                _selectedReplyFavoriteImage != null);
+                        return IconButton.filled(
+                          key: const ValueKey('post-reply-send-button'),
+                          tooltip: '发送评论',
+                          onPressed: canSend ? _sendReply : null,
+                          style: IconButton.styleFrom(
+                            fixedSize: const Size(44, 44),
+                            backgroundColor: isDark
+                                ? const Color(0xFF82A0FF)
+                                : const Color(0xFF6B8EFF),
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: isDark
+                                ? Colors.white.withValues(alpha: 0.10)
+                                : const Color(0xFFE5E7EB),
+                            disabledForegroundColor: isDark
+                                ? Colors.white30
+                                : const Color(0xFF9CA3AF),
                           ),
-                  ),
+                          icon: _isSending
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.send_rounded, size: 20),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                child: _showReplyEmojiPanel
+                    ? SizedBox(
+                        height: _replyEmojiPanelHeight,
+                        child: AppEmojiPanel(
+                          onEmojiSelected: _insertReplyEmoji,
+                          onStickerSelected: _selectReplySticker,
+                          onFavoriteImageSelected: _selectReplyFavoriteImage,
+                          onBackspace: () =>
+                              deletePreviousCharacter(_replyController),
+                          enabled: !_isSending,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
           ),
         ),
       ),
@@ -3567,14 +3751,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                   const SizedBox(height: 4),
                   SelectionContainer.disabled(
-                    child: Text(
-                      r.content,
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.55,
-                        color: isDark ? Colors.white70 : Colors.grey[800],
-                      ),
-                    ),
+                    child: _buildReplyContent(r, isDark),
                   ),
                   const SizedBox(height: 6),
                   Row(
@@ -3670,6 +3847,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   InlineSpan _buildCompactContentSpan(Reply r, bool isDark) {
+    if (r.hasSticker) {
+      return TextSpan(
+        text: r.hasTextContent ? '${r.content} [表情]' : '[表情]',
+        style: TextStyle(
+          fontSize: 12.5,
+          color: isDark ? Colors.white60 : const Color(0xFF4B5563),
+        ),
+      );
+    }
     final content = r.content;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
@@ -3959,14 +4145,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
                 const SizedBox(height: 4),
                 SelectionContainer.disabled(
-                  child: Text(
-                    r.content,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.55,
-                      color: isDark ? Colors.white70 : Colors.grey[800],
-                    ),
-                  ),
+                  child: _buildReplyContent(r, isDark),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -4334,6 +4513,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   /// 解析子回复内容中的 @用户名 并高亮
   Widget _buildChildContent(Reply r, bool isDark) {
+    if (r.hasSticker) {
+      return SelectionContainer.disabled(
+        child: _buildReplyContent(r, isDark, size: 104),
+      );
+    }
     final content = r.content;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
@@ -4377,6 +4561,124 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     // 禁用文字选择，让行级长按直接弹出操作菜单
     return SelectionContainer.disabled(child: textWidget);
+  }
+
+  Widget _buildReplyContent(Reply reply, bool isDark, {double size = 132}) {
+    final textWidget = Text(
+      reply.content,
+      style: TextStyle(
+        fontSize: 14,
+        height: 1.55,
+        color: isDark ? Colors.white70 : Colors.grey[800],
+      ),
+    );
+    final contentWidgets = <Widget>[];
+    if (reply.hasTextContent) {
+      contentWidgets.add(textWidget);
+    }
+    if (reply.hasSticker) {
+      final localSticker = appStickerById(reply.stickerId);
+      contentWidgets.add(
+        GestureDetector(
+          onLongPress: localSticker == null
+              ? null
+              : () => _showStickerFavoriteAction(localSticker),
+          child: CachedNetworkImage(
+            key: ValueKey('reply-sticker-${reply.id}'),
+            imageUrl: ApiConstants.fullUrl(reply.stickerUrl),
+            width: size,
+            height: size,
+            fit: BoxFit.contain,
+            placeholder: (_, __) => localSticker == null
+                ? SizedBox(
+                    width: size,
+                    height: size,
+                    child: const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : Image.asset(
+                    localSticker.thumbnailAsset,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.contain,
+                  ),
+            errorWidget: (_, __, ___) => localSticker == null
+                ? SizedBox(
+                    width: size,
+                    height: size,
+                    child:
+                        const Center(child: Icon(Icons.broken_image_outlined)),
+                  )
+                : Image.asset(
+                    localSticker.thumbnailAsset,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.contain,
+                  ),
+          ),
+        ),
+      );
+    }
+    final imageUrls = reply.images
+        .map((image) => image.file?.url.trim() ?? '')
+        .where((url) => url.isNotEmpty)
+        .map(ApiConstants.fullUrl)
+        .toList(growable: false);
+    if (imageUrls.isNotEmpty) {
+      contentWidgets.add(
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: List.generate(imageUrls.length, (index) {
+            final imageSize = imageUrls.length == 1 ? size * 1.45 : 88.0;
+            return GestureDetector(
+              key: ValueKey('reply-image-${reply.id}-$index'),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageViewerScreen(
+                    imageUrls: imageUrls,
+                    initialIndex: index,
+                  ),
+                ),
+              ),
+              onLongPress: () => _showImageFavoriteAction(imageUrls[index]),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: CachedNetworkImage(
+                  imageUrl: imageUrls[index],
+                  width: imageSize,
+                  height: imageSize,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => SizedBox(
+                    width: imageSize,
+                    height: imageSize,
+                    child: const Icon(Icons.broken_image_outlined),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      );
+    }
+    if (contentWidgets.isEmpty) return textWidget;
+    if (contentWidgets.length == 1) return contentWidgets.single;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var index = 0; index < contentWidgets.length; index++) ...[
+          if (index > 0) const SizedBox(height: 8),
+          contentWidgets[index],
+        ],
+      ],
+    );
   }
 
   // ---- 回复输入（集市保留） ----
@@ -4534,6 +4836,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (mounted)
       setState(() {
         _isReplyComposerOpen = true;
+        _showReplyEmojiPanel = false;
         _parentReplyId = parentReplyId;
         _replyToName = replyToName;
         _replyToUserId = replyToUserId;
@@ -4601,6 +4904,62 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showStickerFavoriteAction(AppSticker sticker) async {
+    final service = EmojiFavoriteService.instance;
+    final isFavorite = await service.containsSticker(sticker.id);
+    if (!mounted) return;
+    final shouldToggle = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListTile(
+          leading: Icon(
+            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          ),
+          title: Text(isFavorite ? '取消收藏' : '收藏'),
+          onTap: () => Navigator.pop(context, true),
+        ),
+      ),
+    );
+    if (shouldToggle != true) return;
+    final added = await service.toggleSticker(sticker.id);
+    if (mounted) {
+      AppFeedback.showSnackBar(
+        context,
+        added ? '已添加到收藏' : '已取消收藏',
+      );
+    }
+  }
+
+  Future<void> _showImageFavoriteAction(String imageUrl) async {
+    final normalizedUrl = imageUrl.trim();
+    if (normalizedUrl.isEmpty) return;
+    final service = EmojiFavoriteService.instance;
+    final isFavorite = await service.containsImage(normalizedUrl);
+    if (!mounted) return;
+    final shouldToggle = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListTile(
+          leading: Icon(
+            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          ),
+          title: Text(isFavorite ? '取消收藏' : '收藏'),
+          onTap: () => Navigator.pop(context, true),
+        ),
+      ),
+    );
+    if (shouldToggle != true) return;
+    final added = await service.toggleImage(normalizedUrl);
+    if (mounted) {
+      AppFeedback.showSnackBar(
+        context,
+        added ? '已添加到收藏' : '已取消收藏',
+      );
+    }
   }
 
   Future<void> _deleteReply(Reply r) async {

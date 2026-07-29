@@ -6,7 +6,10 @@ import 'package:flutter/material.dart';
 import '../../models/competition_capability_profile.dart';
 import '../../models/competition_preference.dart';
 import '../../utils/app_feedback.dart';
+import '../../widgets/competition/competition_page_scaffold.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
+import 'competition_award_screen.dart';
+import 'competition_preference_screen.dart';
 
 class CompetitionCapabilityProfileScreen extends StatefulWidget {
   final Dio dio;
@@ -27,9 +30,11 @@ class _CompetitionCapabilityProfileScreenState
     extends State<CompetitionCapabilityProfileScreen> {
   CompetitionCapabilityProfile? _profile;
   CompetitionCapabilityAIAccess? _aiAccess;
-  bool _loading = true;
+  bool _profileLoading = true;
+  bool _accessLoading = true;
   bool _savingAccess = false;
-  String? _error;
+  String? _profileError;
+  String? _accessError;
   int _loadSerial = 0;
 
   @override
@@ -46,44 +51,72 @@ class _CompetitionCapabilityProfileScreenState
       setState(() {
         _profile = null;
         _aiAccess = null;
-        _loading = true;
+        _profileLoading = true;
+        _accessLoading = true;
         _savingAccess = false;
-        _error = null;
+        _profileError = null;
+        _accessError = null;
       });
       _load();
     }
   }
 
   Future<void> _load() async {
+    await Future.wait([_loadProfile(), _loadAIAccess()]);
+  }
+
+  Future<void> _loadProfile() async {
     final serial = ++_loadSerial;
     if (mounted) {
       setState(() {
-        _loading = true;
-        _error = null;
+        _profileLoading = true;
+        _profileError = null;
       });
     }
     try {
-      final responses = await Future.wait([
-        widget.dio.get('/user/competition-capability-profile'),
-        widget.dio.get('/user/competition-capability-profile/ai-access'),
-      ]);
+      final response =
+          await widget.dio.get('/user/competition-capability-profile');
       if (!mounted || serial != _loadSerial) return;
       setState(() {
         _profile = CompetitionCapabilityProfile.fromJson(
-          Map<String, dynamic>.from(responses[0].data as Map),
+          Map<String, dynamic>.from(response.data as Map),
         );
-        _aiAccess = CompetitionCapabilityAIAccess.fromJson(
-          Map<String, dynamic>.from(responses[1].data as Map),
-        );
-        _loading = false;
+        _profileLoading = false;
       });
     } catch (error) {
       if (!mounted || serial != _loadSerial) return;
       setState(() {
-        _loading = false;
-        _error = error is DioException
+        _profileLoading = false;
+        _profileError = error is DioException
             ? AppFeedback.dioErrorMessage(error, fallback: '能力画像加载失败')
             : '能力画像数据解析失败';
+      });
+    }
+  }
+
+  Future<void> _loadAIAccess() async {
+    final account = widget.accountKey;
+    setState(() {
+      _accessLoading = true;
+      _accessError = null;
+    });
+    try {
+      final response = await widget.dio
+          .get('/user/competition-capability-profile/ai-access');
+      if (!mounted || account != widget.accountKey) return;
+      setState(() {
+        _aiAccess = CompetitionCapabilityAIAccess.fromJson(
+          Map<String, dynamic>.from(response.data as Map),
+        );
+        _accessLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || account != widget.accountKey) return;
+      setState(() {
+        _accessLoading = false;
+        _accessError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: 'AI 授权状态读取失败')
+            : 'AI 授权状态解析失败';
       });
     }
   }
@@ -123,42 +156,34 @@ class _CompetitionCapabilityProfileScreenState
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final background = CompetitionUiTokens.pageBg(isDark);
-    return Scaffold(
-      backgroundColor: background,
-      appBar: AppBar(
-        backgroundColor: background,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        title: const Text(
-          '我的能力画像',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-        ),
-      ),
+    return CompetitionPageScaffold(
+      title: '我的能力画像',
       body: _buildBody(isDark),
     );
   }
 
   Widget _buildBody(bool isDark) {
-    if (_loading) {
+    if (_profileLoading && _profile == null) {
       return Center(
         child: CircularProgressIndicator(
           color: CompetitionUiTokens.accent(isDark),
         ),
       );
     }
-    if (_error != null || _profile == null || _aiAccess == null) {
+    if (_profileError != null || _profile == null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(_error ?? '能力画像暂不可用', textAlign: TextAlign.center),
+              Text(
+                _profileError ?? '能力画像暂不可用',
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 12),
               FilledButton.icon(
-                onPressed: _load,
+                onPressed: _loadProfile,
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('重试'),
               ),
@@ -169,50 +194,159 @@ class _CompetitionCapabilityProfileScreenState
     }
 
     final profile = _profile!;
+    final ready = profile.preferenceConfigured ||
+        profile.verifiedAwardCount + profile.selfReportedAwardCount > 0;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
-        children: [
-          _countBand(profile, isDark),
-          _sectionTitle('技能', isDark),
-          if (profile.skillSummary.isEmpty)
-            _emptyLine('暂无可汇总的竞赛技能', isDark)
-          else
-            ...profile.skillSummary.map(
-              (item) => _summaryRow(item.value, item, isDark),
-            ),
-          _sectionTitle('经历角色', isDark),
-          if (profile.roleSummary.isEmpty)
-            _emptyLine('暂无可汇总的竞赛角色', isDark)
-          else
-            ...profile.roleSummary.map(
-              (item) => _summaryRow(
-                competitionRoleLabels[item.value] ?? item.value,
-                item,
-                isDark,
+        children: ready
+            ? [
+                _countBand(profile, isDark),
+                _sectionTitle('技能', isDark),
+                if (profile.skillSummary.isEmpty)
+                  _emptyLine('暂无可汇总的竞赛技能', isDark)
+                else
+                  ...profile.skillSummary.map(
+                    (item) => _summaryRow(item.value, item, isDark),
+                  ),
+                _sectionTitle('经历角色', isDark),
+                if (profile.roleSummary.isEmpty)
+                  _emptyLine('暂无可汇总的竞赛角色', isDark)
+                else
+                  ...profile.roleSummary.map(
+                    (item) => _summaryRow(
+                      competitionRoleLabels[item.value] ?? item.value,
+                      item,
+                      isDark,
+                    ),
+                  ),
+                _sectionTitle('竞赛目标', isDark),
+                _preferenceSummary(profile, isDark),
+                const SizedBox(height: 16),
+                _buildAIAccess(isDark),
+              ]
+            : [
+                _emptyProfileCard(isDark),
+              ],
+      ),
+    );
+  }
+
+  Widget _buildAIAccess(bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
+        ),
+      ),
+      child: _accessError != null && _aiAccess == null
+          ? ListTile(
+              contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              title: const Text('AI 授权状态读取失败'),
+              subtitle: Text(
+                _accessError!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
+              trailing: IconButton(
+                tooltip: '重试',
+                onPressed: _loadAIAccess,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            )
+          : SwitchListTile(
+              key: const Key('competition-capability-ai-access'),
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              value: _aiAccess?.enabled ?? false,
+              onChanged: _savingAccess || _accessLoading || _aiAccess == null
+                  ? null
+                  : _setAIAccess,
+              title: const Text(
+                '允许 AI 使用此画像',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text('仅包含竞赛目标和本页汇总，不包含证明材料'),
             ),
-          _sectionTitle('竞赛目标', isDark),
-          _preferenceSummary(profile, isDark),
-          const SizedBox(height: 16),
-          Divider(color: CompetitionUiTokens.borderColor(isDark), height: 1),
-          SwitchListTile(
-            key: const Key('competition-capability-ai-access'),
-            contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            value: _aiAccess!.enabled,
-            onChanged: _savingAccess ? null : _setAIAccess,
-            activeTrackColor: CompetitionUiTokens.accent(isDark),
-            title: const Text(
-              '允许 AI 使用此画像',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+    );
+  }
+
+  Widget _emptyProfileCard(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 30, 20, 24),
+      decoration: CompetitionUiTokens.cardDecoration(isDark),
+      child: Column(
+        children: [
+          Icon(
+            Icons.diamond_outlined,
+            size: 40,
+            color: CompetitionUiTokens.accent(isDark),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            '还不能生成能力画像',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: CompetitionUiTokens.titleColor(isDark),
             ),
-            subtitle: const Text('仅包含竞赛目标和本页汇总，不包含证明材料'),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '设置竞赛目标或添加竞赛经历后，\n这里会汇总你的技能、角色和参赛方向。',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.5,
+              color: CompetitionUiTokens.subColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _openPreference,
+                  child: const Text('设置竞赛目标'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: _openAwards,
+                  child: const Text('添加竞赛经历'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openPreference() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CompetitionPreferenceScreen(
+          dio: widget.dio,
+          accountKey: widget.accountKey,
+        ),
+      ),
+    );
+    if (mounted) await _loadProfile();
+  }
+
+  Future<void> _openAwards() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CompetitionAwardScreen(
+          dio: widget.dio,
+          accountKey: widget.accountKey,
+        ),
+      ),
+    );
+    if (mounted) await _loadProfile();
   }
 
   Widget _countBand(CompetitionCapabilityProfile profile, bool isDark) {

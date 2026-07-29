@@ -3,8 +3,9 @@ import 'package:flutter/foundation.dart';
 
 import 'ai_endpoint_policy.dart';
 import 'ai_model_provider.dart';
+import 'ai_wire_api_policy.dart';
 
-/// OpenAI Chat Completions 兼容实现，阶段 1 仅允许非流式普通文本聊天。
+/// 第三方模型兼容实现，仅允许非流式普通文本聊天。
 class OpenAICompatibleProvider implements AIModelProvider {
   OpenAICompatibleProvider({
     required AIModelProviderConfig config,
@@ -39,9 +40,11 @@ class OpenAICompatibleProvider implements AIModelProvider {
   @override
   Future<AIModelCapabilities> discoverCapabilities() async {
     _ensureApiKey();
+    final wireApi = _resolvedWireApi;
     final response = await _request(
-      'models',
+      AIWireApiPolicy.modelsEndpoint(_baseEndpoint, wireApi),
       method: 'GET',
+      wireApi: wireApi,
     );
     _expectSuccess(response, fallback: '读取模型列表失败');
     final data = _map(response.data, '模型服务返回格式错误');
@@ -70,29 +73,22 @@ class OpenAICompatibleProvider implements AIModelProvider {
     if (model.isEmpty) {
       throw const AIModelProviderException('请先选择或填写模型名称');
     }
-    final payload = <String, dynamic>{
-      'model': model,
-      'stream': false,
-      'tools': const <Object>[],
-      'messages': messages.map((message) => message.toOpenAIJson()).toList(),
-    };
+    final wireApi = _resolvedWireApi;
+    final payload = _completionPayload(wireApi, model, messages);
     final response = await _request(
-      'chat/completions',
+      AIWireApiPolicy.inferenceEndpoint(_baseEndpoint, wireApi),
       method: 'POST',
+      wireApi: wireApi,
       data: payload,
     );
     _expectSuccess(response, fallback: '普通聊天请求失败');
     final data = _map(response.data, '模型服务返回格式错误');
-    final choices = data['choices'];
-    if (choices is! List || choices.isEmpty || choices.first is! Map) {
-      throw const AIModelProviderException('模型服务没有返回聊天内容');
-    }
-    final message = Map<String, dynamic>.from(choices.first as Map)['message'];
-    if (message is! Map) {
-      throw const AIModelProviderException('模型服务返回的聊天内容格式错误');
-    }
-    final content =
-        _messageContent(Map<String, dynamic>.from(message)['content']);
+    final content = switch (wireApi) {
+      OpenAIWireApi.responses => _responsesText(data),
+      OpenAIWireApi.chatCompletions => _chatCompletionText(data),
+      OpenAIWireApi.anthropicMessages => _messageContent(data['content']),
+      OpenAIWireApi.auto => throw StateError('请求前必须解析自动协议'),
+    };
     if (content.isEmpty) {
       throw const AIModelProviderException('模型服务没有返回文本内容');
     }
@@ -104,14 +100,70 @@ class OpenAICompatibleProvider implements AIModelProvider {
     );
   }
 
+  Map<String, dynamic> _completionPayload(
+    OpenAIWireApi wireApi,
+    String model,
+    List<AIModelChatMessage> messages,
+  ) {
+    final serialized =
+        messages.map((message) => message.toOpenAIJson()).toList();
+    return switch (wireApi) {
+      OpenAIWireApi.responses => <String, dynamic>{
+          'model': model,
+          'stream': false,
+          'input': serialized,
+        },
+      OpenAIWireApi.chatCompletions => <String, dynamic>{
+          'model': model,
+          'stream': false,
+          'tools': const <Object>[],
+          'messages': serialized,
+        },
+      OpenAIWireApi.anthropicMessages => <String, dynamic>{
+          'model': model,
+          'max_tokens': 4096,
+          'stream': false,
+          'messages': serialized,
+        },
+      OpenAIWireApi.auto => throw StateError('请求前必须解析自动协议'),
+    };
+  }
+
+  String _chatCompletionText(Map<String, dynamic> data) {
+    final choices = data['choices'];
+    if (choices is! List || choices.isEmpty || choices.first is! Map) {
+      throw const AIModelProviderException('模型服务没有返回聊天内容');
+    }
+    final message = Map<String, dynamic>.from(choices.first as Map)['message'];
+    if (message is! Map) {
+      throw const AIModelProviderException('模型服务返回的聊天内容格式错误');
+    }
+    return _messageContent(Map<String, dynamic>.from(message)['content']);
+  }
+
+  String _responsesText(Map<String, dynamic> data) {
+    final direct = data['output_text'];
+    if (direct is String && direct.trim().isNotEmpty) return direct.trim();
+    final output = data['output'];
+    if (output is! List) return '';
+    return output
+        .whereType<Map>()
+        .where((item) => item['type'] == 'message')
+        .map((item) => _messageContent(item['content']))
+        .where((text) => text.isNotEmpty)
+        .join('\n')
+        .trim();
+  }
+
   @override
   Future<void> cancelActiveRequest() async {
     _activeCancelToken?.cancel('client_ai_context_closed');
   }
 
   Future<Response<dynamic>> _request(
-    String path, {
+    Uri uri, {
     required String method,
+    required OpenAIWireApi wireApi,
     Object? data,
   }) async {
     if (kIsWeb) {
@@ -123,14 +175,17 @@ class OpenAICompatibleProvider implements AIModelProvider {
     _activeCancelToken = cancelToken;
     try {
       final response = await _dio.requestUri<dynamic>(
-        AIEndpointPolicy.endpointFor(_baseEndpoint, path),
+        uri,
         data: data,
         cancelToken: cancelToken,
-        options: AIEndpointPolicy.directRequestOptions(<String, dynamic>{
-          'Authorization': 'Bearer $_apiKey',
-          'Accept': 'application/json',
-          if (method == 'POST') 'Content-Type': 'application/json',
-        }).copyWith(method: method),
+        options: AIEndpointPolicy.directRequestOptions(
+          AIWireApiPolicy.requestHeaders(
+            endpoint: _baseEndpoint,
+            wireApi: wireApi,
+            apiKey: _apiKey,
+            hasBody: method == 'POST',
+          ),
+        ).copyWith(method: method),
       );
       AIEndpointPolicy.ensureDirectResponse(response);
       return response;
@@ -154,6 +209,16 @@ class OpenAICompatibleProvider implements AIModelProvider {
     if (_apiKey.isEmpty) {
       throw const AIModelProviderException('未找到 API Key，请在模型设置中重新保存');
     }
+  }
+
+  OpenAIWireApi get _resolvedWireApi {
+    if (_config.wireApi != OpenAIWireApi.auto) return _config.wireApi;
+    final preferred = AIWireApiPolicy.preferredAutoApi(_baseEndpoint);
+    // 普通聊天以兼容面更广的 Chat Completions 为默认值；Tool Calling
+    // 模型会单独执行 Responses 优先的协议探测。
+    return preferred == OpenAIWireApi.responses
+        ? OpenAIWireApi.chatCompletions
+        : preferred;
   }
 
   void _expectSuccess(Response<dynamic> response, {required String fallback}) {

@@ -1,5 +1,6 @@
 import 'ai_source.dart';
 import 'competition_action_draft.dart';
+import 'ai_personal_data_evidence.dart';
 
 enum AiMessageRole { user, assistant }
 
@@ -12,6 +13,7 @@ class AiChatMessage {
   final String content;
   final AiMessageStatus status;
   final List<AiSource> sources;
+  final List<AiPersonalDataEvidence> personalDataEvidence;
   final List<CompetitionPlanActionDraft> actionDrafts;
   final DateTime createdAt;
 
@@ -23,6 +25,7 @@ class AiChatMessage {
     required this.status,
     required this.createdAt,
     this.sources = const [],
+    this.personalDataEvidence = const [],
     this.actionDrafts = const [],
   });
 
@@ -30,6 +33,7 @@ class AiChatMessage {
     String? content,
     AiMessageStatus? status,
     List<AiSource>? sources,
+    List<AiPersonalDataEvidence>? personalDataEvidence,
     List<CompetitionPlanActionDraft>? actionDrafts,
   }) {
     return AiChatMessage(
@@ -40,6 +44,7 @@ class AiChatMessage {
       status: status ?? this.status,
       createdAt: createdAt,
       sources: sources ?? this.sources,
+      personalDataEvidence: personalDataEvidence ?? this.personalDataEvidence,
       actionDrafts: actionDrafts ?? this.actionDrafts,
     );
   }

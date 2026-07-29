@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -62,7 +61,7 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   void _startPolling() {
     _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) {
         context.read<MessageProvider>().loadConversations(silent: true);
       }
@@ -259,31 +258,15 @@ class _ChatListScreenState extends State<ChatListScreen>
       );
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Transform.scale(
-          scale: 1.06,
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: Image(
-              image: imageProvider,
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) =>
-                  const ColoredBox(color: fallbackColor),
-            ),
-          ),
-        ),
-        Image(
-          image: imageProvider,
-          fit: BoxFit.contain,
-          alignment: Alignment.center,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-        ),
-      ],
+    return ColoredBox(
+      color: fallbackColor,
+      child: Image(
+        image: imageProvider,
+        fit: BoxFit.contain,
+        alignment: Alignment.center,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      ),
     );
   }
 
@@ -409,8 +392,10 @@ class _ChatListScreenState extends State<ChatListScreen>
         }
 
         return _buildConversationTile(
+          provider,
           conversation,
           targetUser,
+          currentUserId: currentUserId,
           splitMode: splitMode,
         );
       },
@@ -418,18 +403,31 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Widget _buildConversationTile(
+    MessageProvider provider,
     Conversation conversation,
     User targetUser, {
+    required int currentUserId,
     required bool splitMode,
   }) {
-    final lastMessage = conversation.lastMessage;
-    final preview = lastMessage == null
-        ? '暂无消息'
-        : lastMessage.content.trim().isNotEmpty
-            ? lastMessage.content.trim()
-            : lastMessage.file != null
-                ? '[图片]'
-                : '暂无消息';
+    final cachedMessage =
+        provider.latestCachedMessageForConversation(conversation.id);
+    final serverMessage = conversation.lastMessage;
+    final lastMessage = cachedMessage != null &&
+            (serverMessage == null ||
+                !cachedMessage.createdAt.isBefore(serverMessage.createdAt))
+        ? cachedMessage
+        : serverMessage;
+    final draft = provider.draftFor(targetUser.id).trim();
+    final draftStickerId = provider.draftStickerFor(targetUser.id);
+    final preview = _conversationPreview(
+      message: lastMessage,
+      draft: draft,
+      draftStickerId: draftStickerId,
+      currentUserId: currentUserId,
+    );
+    final previewIsAlert = draft.isNotEmpty ||
+        draftStickerId != null ||
+        lastMessage?.isFailed == true;
     final selected = splitMode && _selectedConversationId == conversation.id;
 
     return ListTile(
@@ -456,7 +454,9 @@ class _ChatListScreenState extends State<ChatListScreen>
         preview,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: Colors.grey.shade600),
+        style: TextStyle(
+          color: previewIsAlert ? Colors.red.shade600 : Colors.grey.shade600,
+        ),
       ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -464,7 +464,9 @@ class _ChatListScreenState extends State<ChatListScreen>
         children: [
           Text(
             _formatConversationTime(
-              lastMessage?.createdAt ?? conversation.lastMessageAt,
+              draft.isNotEmpty
+                  ? conversation.lastMessageAt
+                  : lastMessage?.createdAt ?? conversation.lastMessageAt,
             ),
             style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
           ),
@@ -489,6 +491,35 @@ class _ChatListScreenState extends State<ChatListScreen>
       ),
       onTap: () => _openConversation(conversation, targetUser, splitMode),
     );
+  }
+
+  String _conversationPreview({
+    required Message? message,
+    required String draft,
+    required String? draftStickerId,
+    required int currentUserId,
+  }) {
+    if (draft.isNotEmpty || draftStickerId != null) {
+      final draftBody = [
+        if (draft.isNotEmpty) draft,
+        if (draftStickerId != null) '[表情]',
+      ].join(' ');
+      return '草稿：$draftBody';
+    }
+    if (message == null) return '暂无消息';
+    if (message.isFailed) return '发送失败';
+
+    final content = message.content.trim();
+    final body = content.isNotEmpty
+        ? content
+        : message.isSticker
+            ? '[表情]'
+            : message.file != null ||
+                    message.fileId != null ||
+                    message.localImagePath?.isNotEmpty == true
+                ? '[图片]'
+                : '暂无消息';
+    return message.senderId == currentUserId ? '你：$body' : body;
   }
 
   Future<void> _openConversation(

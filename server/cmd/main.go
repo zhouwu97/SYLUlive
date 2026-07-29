@@ -23,6 +23,7 @@ import (
 
 	"shenliyuan/internal/academiccalendar"
 	"shenliyuan/internal/ai"
+	"shenliyuan/internal/ai/mcpclient"
 	"shenliyuan/internal/clients"
 
 	"shenliyuan/internal/config"
@@ -154,6 +155,12 @@ func main() {
 
 		&models.PersonalDataRequest{},
 		&models.EduCredentialCleanupJob{},
+		&models.AcademicSnapshot{},
+		&models.PersonalUploadedSnapshot{},
+		&models.AIUserPermission{},
+		&models.AIRunConsent{},
+		&models.UserDevice{},
+		&models.DeviceToolJob{},
 
 		&models.Post{},
 		&models.Poll{},
@@ -447,6 +454,9 @@ func main() {
 	// 法律页面无需登录和客户端版本头，供浏览器、下载页和分享页访问。
 	r.StaticFile("/terms", filepath.Join("static", "legal", "terms.html"))
 	r.StaticFile("/privacy", filepath.Join("static", "legal", "privacy.html"))
+	// 公共表情使用内容寻址 ID，可长期缓存且不依赖登录态或版本请求头。
+	r.GET("/stickers/:id", handlers.ServeSticker)
+	r.HEAD("/stickers/:id", handlers.ServeSticker)
 
 	// 最低支持版本拦截位于 CORS 之后、业务路由之前。公开更新接口和迁移期
 	// 登录接口由中间件内部放行，避免用户在被拦截后无法获得新安装包。
@@ -477,6 +487,18 @@ func main() {
 
 	eduCredentialCleanupJobs := services.NewEduCredentialCleanupJobService(db, handlers.PythonEduCredentialCleanupRemote{}, time.Now)
 	eduBindingRecovery := services.NewEduBindingRecoveryService(db, handlers.PythonEduBindingRecoveryRemote{}, eduCredentialCleanupJobs, time.Now)
+	academicSnapshotService := services.NewAcademicSnapshotService(db, time.Now)
+	personalSnapshotService := services.NewPersonalSnapshotService(db, time.Now)
+	eduClient := clients.NewEduClient(clients.EduClientOptions{
+		BaseURL: func() string { return cfg.EduServiceURL },
+		Token:   func() string { return cfg.EduServiceToken },
+	})
+	eduFetchOrchestrator := services.NewEduFetchOrchestrator(
+		db,
+		eduClient,
+		academicSnapshotService,
+		services.EduFetchOrchestratorOptions{},
+	)
 	authHandler := handlers.NewAuthHandlerWithEmailVerificationAndCleanup(db, cfg.JWTSecret, emailVerification, eduCredentialCleanupJobs)
 
 	userHandler := handlers.NewUserHandler(db)
@@ -569,7 +591,13 @@ func main() {
 		cfg.AppReleaseAccelPrefix,
 	)
 
-	eduHandler := handlers.NewEduHandlerWithLifecycle(db, cfg.JWTSecret, eduCredentialCleanupJobs)
+	eduHandler := handlers.NewEduHandlerWithAcademicFetch(db, cfg.JWTSecret, eduCredentialCleanupJobs, eduFetchOrchestrator)
+	deviceJobService := services.NewDeviceJobService(db)
+	deviceJobHandler := handlers.NewDeviceJobHandler(deviceJobService)
+	aiUserPermissionService := services.NewAIUserPermissionService(db)
+	aiUserPermissionHandler := handlers.NewAIUserPermissionHandler(aiUserPermissionService)
+	personalSnapshotHandler := handlers.NewPersonalSnapshotHandler(personalSnapshotService)
+	personalSnapshotHandler.SetAIUserPermissionService(aiUserPermissionService)
 
 	teacherHandler := handlers.NewTeacherHandler(db)
 
@@ -641,9 +669,10 @@ func main() {
 
 	var ragClient *ai.RAGClient
 	var aiRuntime *ai.Runtime
+	var registeredAIToolCapabilities []string
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
-			log.Fatalf("AI Runtime Schema 未就绪，请先执行 server/sql/20260719_ai_runtime_rag.sql: %v", schemaErr)
+			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
 		}
 		ragHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
 		var ragErr error
@@ -652,31 +681,132 @@ func main() {
 			log.Fatalf("AI RAG 配置无效: %v", ragErr)
 		}
 		var provider ai.AIProvider
-		if cfg.AIProvider == "mock" {
-			provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
-		} else {
-			providerHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
-			provider, ragErr = ai.NewDeepSeekProvider(cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekChatModel, providerHTTPClient)
-			if ragErr != nil {
-				log.Fatalf("AI Provider 初始化失败: %v", ragErr)
+		var retriever ai.PolicyRetriever
+		runtimeOptions := make([]ai.RuntimeOption, 0, 1)
+		providerName, modelName := cfg.AIProvider, cfg.DeepSeekChatModel
+		if cfg.AILangChainRAGEnabled {
+			providerName, modelName = "rag-rollout", "policy-rag"
+			runtimeOptions = append(runtimeOptions, ai.WithLangChainRAG(ragClient))
+		}
+		if cfg.AILegacyRAGEnabled {
+			// 灰度期只为分配到旧路径的请求调用这些依赖，同一请求不会双重检索或生成。
+			retriever = ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
+			if cfg.AIProvider == "mock" {
+				provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
+			} else {
+				providerHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
+				provider, ragErr = ai.NewDeepSeekProvider(cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekChatModel, providerHTTPClient)
+				if ragErr != nil {
+					log.Fatalf("AI Provider 初始化失败: %v", ragErr)
+				}
 			}
 		}
+		deviceJobScheduler := ai.DeviceJobSchedulerFunc(func(ctx context.Context, request ai.DeviceJobRequest) (ai.DeviceJobReference, error) {
+			job, err := deviceJobService.CreateJob(ctx, services.CreateDeviceJobRequest{
+				UserID: request.UserID, RunID: request.RunID, ToolCallID: request.ToolCallID,
+				ToolName: request.ToolName, Arguments: request.Arguments, RequiredDataTypes: request.RequiredDataTypes,
+				ExpiresAt: request.ExpiresAt,
+			})
+			if err != nil {
+				return ai.DeviceJobReference{}, err
+			}
+			return ai.DeviceJobReference{ID: job.ID}, nil
+		})
+		policyRetriever := ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion)
+		tools := ai.NewCampusMCPTools(
+			db, academicSnapshotService, personalSnapshotService,
+			ai.WithCampusPolicyRetriever(policyRetriever),
+			ai.WithCampusDeviceJobScheduler(deviceJobScheduler),
+			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
+		)
+		if cfg.AIExternalMCPEnabled {
+			externalMCPClient, externalMCPErr := mcpclient.New(mcpclient.Config{
+				Enabled:           true,
+				Transport:         cfg.AIExternalMCPTransport,
+				Command:           cfg.AIExternalMCPCommand,
+				ToolTimeout:       time.Duration(cfg.AIExternalMCPToolTimeoutSeconds) * time.Second,
+				MaxCallsPerRun:    cfg.AIExternalMCPMaxCallsPerRun,
+				SSHHost:           cfg.AIExternalMCPSshHost,
+				SSHPort:           cfg.AIExternalMCPSshPort,
+				SSHUser:           cfg.AIExternalMCPSshUser,
+				SSHKeyPath:        cfg.AIExternalMCPSshKeyPath,
+				SSHKnownHostsPath: cfg.AIExternalMCPKnownHostsPath,
+			}, nil)
+			if externalMCPErr != nil {
+				log.Printf("[AI_EXTERNAL_MCP_CONFIGURATION_INVALID] %v", externalMCPErr)
+			} else {
+				defer func() {
+					if err := externalMCPClient.Close(); err != nil {
+						log.Printf("[AI_EXTERNAL_MCP_CLOSE_FAILED] %v", err)
+					}
+				}()
+				connectCtx, cancelConnect := context.WithTimeout(appCtx, time.Duration(cfg.AIExternalMCPToolTimeoutSeconds)*time.Second)
+				externalMCPErr = externalMCPClient.Connect(connectCtx)
+				cancelConnect()
+				if externalMCPErr != nil {
+					log.Printf("[AI_EXTERNAL_MCP_CONNECT_FAILED] code=%s", mcpclient.ErrorCode(externalMCPErr))
+				} else {
+					log.Printf("独立 Hy3 MCP 已完成 stdio 健康检查 transport=%s", cfg.AIExternalMCPTransport)
+					listCtx, cancelList := context.WithTimeout(appCtx, time.Duration(cfg.AIExternalMCPToolTimeoutSeconds)*time.Second)
+					definitions, listErr := externalMCPClient.ListTools(listCtx)
+					cancelList()
+					if listErr != nil {
+						log.Printf("[AI_EXTERNAL_MCP_TOOL_LIST_FAILED] code=%s", mcpclient.ErrorCode(listErr))
+					} else {
+						hy3Tools := ai.NewValidatedHy3DecisionTools(
+							db, academicSnapshotService, personalSnapshotService, externalMCPClient, definitions,
+							ai.WithHy3DecisionPersonalDataPermissionReader(aiUserPermissionService),
+						)
+						if len(hy3Tools) == 0 {
+							log.Printf("[AI_EXTERNAL_MCP_NO_COMPATIBLE_TOOLS]")
+						} else {
+							tools = append(tools, hy3Tools...)
+							for _, tool := range hy3Tools {
+								switch tool.Name() {
+								case "hy3_decision.compare_competitions":
+									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3CompetitionCompare)
+								case "hy3_decision.analyze_academic":
+									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3AcademicAnalysis)
+								case "hy3_decision.plan_student_week":
+									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3WeekPlan)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		toolRegistry, registryErr := ai.NewToolRegistry(db, tools...)
+		if registryErr != nil {
+			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
+		}
+		runtimeOptions = append(runtimeOptions, ai.WithToolRegistry(toolRegistry))
 		aiRuntime, ragErr = ai.NewRuntime(
-			db, provider, ai.NewHybridRetriever(db, ragClient, cfg.RAGEmbeddingModelVersion), ai.NewEventBroker(),
+			db, provider, retriever, ai.NewEventBroker(),
 			ai.RuntimeConfig{
-				ProviderName: cfg.AIProvider, Model: cfg.DeepSeekChatModel,
+				ProviderName: providerName, Model: modelName,
 				RequestTimeout:  time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second,
+				MaxOutputTokens: cfg.AILegacyMaxOutputTokens,
+				MaxToolSteps:    cfg.AIMaxToolSteps,
 				MaxMessageChars: cfg.AIMaxMessageChars, HourlyMessageLimit: cfg.AIHourlyMessageLimit,
+				UnlimitedStudentIDs:            cfg.AIUnlimitedStudentIDs,
+				QuotaExemptUserIDs:             cfg.AIQuotaExemptUserIDs,
 				DefaultBudgetLimitMicroYuan:    cfg.AIUserBudgetLimitMicroYuan,
 				ReservationMicroYuan:           cfg.AIReserveMicroYuan,
 				InputPriceMicroYuanPerMillion:  cfg.AIInputPriceMicroYuanPerMillionTokens,
 				OutputPriceMicroYuanPerMillion: cfg.AIOutputPriceMicroYuanPerMillionTokens,
 				AuditHashSecret:                cfg.JWTSecret,
+				LangChainRAGEnabled:            cfg.AILangChainRAGEnabled,
+				LangChainRAGRolloutPercent:     cfg.AILangChainRAGRolloutPercent,
+				LegacyRAGEnabled:               cfg.AILegacyRAGEnabled,
 			},
+			runtimeOptions...,
 		)
 		if ragErr != nil {
 			log.Fatalf("AI Runtime 初始化失败: %v", ragErr)
 		}
+		deviceJobHandler.SetRunResumer(aiRuntime)
+		eduHandler.SetUserConsentRunResumer(aiRuntime)
 		if ragErr := aiRuntime.RecoverAbandonedRuns(appCtx); ragErr != nil {
 			log.Printf("[AI_RECOVERY_FAILED] %v", ragErr)
 		}
@@ -700,12 +830,12 @@ func main() {
 	knowledgeHandler := handlers.NewAIKnowledgeHandler(db, ragClient)
 	aiCapabilitiesHandler := handlers.NewAICapabilitiesHandler(
 		cfg.AIEnabled,
-		cfg.AIInternalTestOnly,
-		cfg.AITestUserIDs,
 		handlers.AICapabilitiesOptions{
 			Runtime: aiRuntime, PolicyRAGEnabled: cfg.AIPolicyRAGEnabled && aiRuntime != nil,
-			HourlyLimit:     cfg.AIHourlyMessageLimit,
-			MaxMessageChars: cfg.AIMaxMessageChars,
+			HourlyLimit:        cfg.AIHourlyMessageLimit,
+			MaxMessageChars:    cfg.AIMaxMessageChars,
+			QuotaExemptUserIDs: cfg.AIQuotaExemptUserIDs,
+			ToolCapabilities:   registeredAIToolCapabilities,
 		},
 	)
 	var aiRuntimeHandler *handlers.AIRuntimeHandler
@@ -770,10 +900,44 @@ func main() {
 			"ai": gin.H{
 				"enabled":         cfg.AIEnabled,
 				"runtime_enabled": aiRuntime != nil,
-				"policy_rag":      gin.H{"enabled": cfg.AIPolicyRAGEnabled, "status": ragHealth},
+				"policy_rag": gin.H{
+					"enabled": cfg.AIPolicyRAGEnabled, "langchain_enabled": cfg.AILangChainRAGEnabled,
+					"langchain_rollout_percent": cfg.AILangChainRAGRolloutPercent,
+					"legacy_go_enabled":         cfg.AILegacyRAGEnabled,
+					"status":                    ragHealth,
+				},
 			},
 		})
 	})
+
+	// 设备工具桥接使用普通 JWT 鉴权，不能依赖校园 Agent 内测开关；
+	// 已登记安装实例仍须在每个 Handler 中按 user_id + installation_id 双重校验。
+	deviceAPI := r.Group("/api/device")
+	deviceAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		deviceAPI.PUT("/registration", deviceJobHandler.Register)
+		deviceAPI.GET("/jobs/pending", deviceJobHandler.Pending)
+		deviceAPI.GET("/jobs/:id", deviceJobHandler.Get)
+		deviceAPI.POST("/jobs/:id/claim", deviceJobHandler.Claim)
+		deviceAPI.POST("/jobs/:id/complete", deviceJobHandler.Complete)
+		deviceAPI.POST("/jobs/:id/fail", deviceJobHandler.Fail)
+		deviceAPI.POST("/jobs/:id/cancel", deviceJobHandler.Cancel)
+	}
+
+	personalSnapshotsAPI := r.Group("/api/personal-snapshots")
+	personalSnapshotsAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		personalSnapshotsAPI.PUT("/erke", personalSnapshotHandler.PutErke)
+		personalSnapshotsAPI.GET("/erke", personalSnapshotHandler.GetErke)
+		personalSnapshotsAPI.DELETE("/erke", personalSnapshotHandler.DeleteErke)
+	}
+
+	personalDataAccessAPI := r.Group("/api/ai/personal-data-access")
+	personalDataAccessAPI.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		personalDataAccessAPI.GET("", aiUserPermissionHandler.List)
+		personalDataAccessAPI.PUT("", aiUserPermissionHandler.Update)
+	}
 
 	// 静态文件服务
 
@@ -888,6 +1052,7 @@ func main() {
 		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
 		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
 		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
+		user.GET("/competitions/dashboard", competitionHandler.GetCompetitionDashboard)
 		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
 		user.PUT("/competition-preference", competitionHandler.PutCompetitionPreference)
 		user.GET("/competition-capability-profile", competitionHandler.GetCompetitionCapabilityProfile)
@@ -1175,6 +1340,10 @@ func main() {
 	{
 
 		messages.GET("/conversations", messageHandler.GetConversations)
+
+		messages.GET("/events", messageHandler.Events)
+
+		messages.GET("/users/:target_user_id/conversation", messageHandler.GetConversationWithUser)
 
 		messages.GET("/conversations/:id", messageHandler.GetMessages)
 
@@ -1734,6 +1903,8 @@ func main() {
 	knowledgeAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 	{
 		knowledgeAdmin.POST("/import", knowledgeHandler.Import)
+		knowledgeAdmin.POST("/release", knowledgeHandler.ReleaseBatch)
+		knowledgeAdmin.POST("/rollback", knowledgeHandler.RollbackBatch)
 		knowledgeAdmin.GET("", knowledgeHandler.List)
 		knowledgeAdmin.GET("/:id", knowledgeHandler.Read)
 		knowledgeAdmin.POST("/:id/inspect", knowledgeHandler.Inspect)
@@ -1744,7 +1915,7 @@ func main() {
 		knowledgeAdmin.POST("/:id/supersede", knowledgeHandler.Supersede)
 	}
 
-	// 能力探测保持可达，未获内测资格的客户端据此安静隐藏入口。
+	// 能力探测保持可达，客户端据此读取统一的服务状态与账号配额。
 	aiCapabilities := r.Group("/api/ai")
 	aiCapabilities.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
@@ -1756,13 +1927,14 @@ func main() {
 		aiProtected := r.Group("/api/ai")
 		aiProtected.Use(
 			middleware.AuthMiddleware(db, cfg.JWTSecret),
-			middleware.AIAccessMiddleware(cfg.AIEnabled, cfg.AIInternalTestOnly, cfg.AITestUserIDs),
+			middleware.AIAccessMiddleware(cfg.AIEnabled),
 		)
 		{
 			aiProtected.POST("/runs", aiRuntimeHandler.CreateRun)
 			aiProtected.GET("/runs/:id", aiRuntimeHandler.GetRun)
 			aiProtected.GET("/runs/:id/events", aiRuntimeHandler.Events)
 			aiProtected.GET("/sources/chunks/:chunk_id", aiRuntimeHandler.GetSourceChunk)
+			aiProtected.POST("/runs/:id/consent", aiRuntimeHandler.SubmitRunConsent)
 			aiProtected.POST("/runs/:id/cancel", aiRuntimeHandler.CancelRun)
 			aiProtected.GET("/conversations", aiRuntimeHandler.ListConversations)
 			aiProtected.POST("/conversations", aiRuntimeHandler.CreateConversation)

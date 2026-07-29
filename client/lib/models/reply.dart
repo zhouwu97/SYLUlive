@@ -8,6 +8,7 @@ class Reply {
   final int? parentReplyId;
   final int authorId;
   final String content;
+  final String? stickerId;
   final String status;
   final int likeCount;
   final bool isLiked;
@@ -23,6 +24,7 @@ class Reply {
     this.parentReplyId,
     required this.authorId,
     required this.content,
+    this.stickerId,
     this.status = 'normal',
     this.likeCount = 0,
     this.isLiked = false,
@@ -40,6 +42,7 @@ class Reply {
       parentReplyId: json['parent_reply_id'],
       authorId: json['author_id'] ?? 0,
       content: json['content'] ?? '',
+      stickerId: json['sticker_id']?.toString(),
       status: json['status'] ?? 'normal',
       likeCount: json['like_count'] ?? 0,
       isLiked: json['is_liked'] == true,
@@ -58,6 +61,22 @@ class Reply {
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
     );
   }
+
+  bool get hasSticker => stickerId?.trim().isNotEmpty == true;
+
+  bool get hasTextContent {
+    final text = content.trim();
+    return text.isNotEmpty && !(hasSticker && text == '[表情]');
+  }
+
+  bool get isStickerOnly => hasSticker && !hasTextContent;
+
+  bool get isMixedTextSticker => hasSticker && hasTextContent;
+
+  // 兼容现有调用方；新渲染逻辑应根据纯表情或混合回复选择布局。
+  bool get isSticker => hasSticker;
+
+  String get stickerUrl => hasSticker ? '/stickers/$stickerId' : '';
 }
 
 // 回复图片模型

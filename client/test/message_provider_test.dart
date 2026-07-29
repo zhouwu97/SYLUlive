@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/providers/message_provider.dart';
@@ -10,19 +12,21 @@ void main() {
       InterceptorsWrapper(
         onRequest: (options, handler) {
           if (options.method == 'GET' &&
-              options.path == '/messages/conversations') {
+              options.path == '/messages/users/3/conversation') {
             handler.resolve(
               Response(
                 requestOptions: options,
                 statusCode: 200,
-                data: [
-                  {
+                data: {
+                  'conversation': {
                     'id': 42,
                     'user1_id': 3,
                     'user2_id': 8,
                     'last_message_at': '2026-06-14T08:14:00Z',
                   },
-                ],
+                  'can_send': true,
+                  'reason': null,
+                },
               ),
             );
             return;
@@ -73,6 +77,58 @@ void main() {
     expect(conversationId, 42);
     expect(provider.currentConversationId, 42);
     expect(provider.messages.single.content, 'hello');
+  });
+
+  test('stale conversation lookup cannot replace a newer chat', () async {
+    final dio = Dio();
+    final lookupGate = Completer<void>();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'GET' &&
+              options.path == '/messages/users/3/conversation') {
+            lookupGate.future.then((_) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'conversation': {
+                      'id': 42,
+                      'user1_id': 3,
+                      'user2_id': 8,
+                      'last_message_at': '2026-06-14T08:14:00Z',
+                    },
+                  },
+                ),
+              );
+            });
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations/7') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+
+    final staleLookup = provider.openConversationWithUser(
+      currentUserId: 8,
+      targetUserId: 3,
+    );
+    await Future<void>.delayed(Duration.zero);
+    await provider.loadMessages(7);
+    lookupGate.complete();
+
+    expect(await staleLookup, isNull);
+    expect(provider.currentConversationId, 7);
+    expect(provider.messages, isEmpty);
   });
 
   test('refreshMessages fetches only messages after the latest id', () async {
@@ -376,10 +432,16 @@ void main() {
     final provider = MessageProvider(Dio());
 
     provider.updateDraft(3, 'draft');
+    provider.updateDraftSticker(3, 'sticker-1');
     expect(provider.draftFor(3), 'draft');
+    expect(provider.draftStickerFor(3), 'sticker-1');
+
+    provider.updateDraft(3, 'updated');
+    expect(provider.draftStickerFor(3), 'sticker-1');
 
     provider.clearDraft(3);
     expect(provider.draftFor(3), '');
+    expect(provider.draftStickerFor(3), isNull);
   });
 
   test('tracks loaded conversations and sums unread private messages',
@@ -433,4 +495,549 @@ void main() {
     expect(provider.hasLoadedConversations, isTrue);
     expect(provider.unreadMessageCount, 5);
   });
+
+  test('sendMessage inserts a pending message before the request completes',
+      () async {
+    final dio = Dio();
+    final responseGate = Completer<void>();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            final data = Map<String, dynamic>.from(options.data as Map);
+            responseGate.future.then((_) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 201,
+                  data: _messageJson(
+                    id: 101,
+                    clientMessageId: data['client_message_id'] as String,
+                  ),
+                ),
+              );
+            });
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+
+    final send = provider.sendMessage(3, 'hello', senderId: 8);
+
+    expect(provider.messages, hasLength(1));
+    expect(provider.messages.single.isPending, isTrue);
+    expect(provider.messages.single.content, 'hello');
+    expect(provider.messages.single.clientMessageId, isNotEmpty);
+
+    responseGate.complete();
+    final confirmed = await send;
+
+    expect(confirmed?.id, 101);
+    expect(provider.messages, hasLength(1));
+    expect(provider.messages.single.isPending, isFalse);
+    expect(provider.messages.single.id, 101);
+  });
+
+  test('sendMessage submits text and sticker as one message', () async {
+    final dio = Dio();
+    Map<String, dynamic>? requestData;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            requestData = Map<String, dynamic>.from(options.data as Map);
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 201,
+                data: {
+                  ..._messageJson(
+                    id: 102,
+                    clientMessageId:
+                        requestData!['client_message_id'] as String,
+                    content: '晚安',
+                  ),
+                  'sticker_id': 'sticker-1',
+                },
+              ),
+            );
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+
+    final confirmed = await provider.sendMessage(
+      3,
+      '晚安',
+      stickerId: 'sticker-1',
+      senderId: 8,
+    );
+
+    expect(requestData?['content'], '晚安');
+    expect(requestData?['sticker_id'], 'sticker-1');
+    expect(provider.messages, hasLength(1));
+    expect(confirmed?.isMixedTextSticker, isTrue);
+  });
+
+  test('sendMessage allows multiple requests to remain in flight', () async {
+    final dio = Dio();
+    final responseGate = Completer<void>();
+    var requestIndex = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            final currentIndex = ++requestIndex;
+            final data = Map<String, dynamic>.from(options.data as Map);
+            responseGate.future.then((_) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 201,
+                  data: _messageJson(
+                    id: 200 + currentIndex,
+                    clientMessageId: data['client_message_id'] as String,
+                    content: data['content'] as String,
+                  ),
+                ),
+              );
+            });
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+
+    final first = provider.sendMessage(3, 'first', senderId: 8);
+    final second = provider.sendMessage(3, 'second', senderId: 8);
+
+    expect(provider.messages, hasLength(2));
+    expect(provider.messages.every((message) => message.isPending), isTrue);
+    expect(
+      provider.messages.map((message) => message.clientMessageId).toSet(),
+      hasLength(2),
+    );
+
+    responseGate.complete();
+    await Future.wait([first, second]);
+
+    expect(provider.messages, hasLength(2));
+    expect(provider.messages.every((message) => !message.isPending), isTrue);
+  });
+
+  test('retryMessage reuses the original client message id', () async {
+    final dio = Dio();
+    final clientMessageIds = <String>[];
+    var postCount = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            postCount++;
+            final data = Map<String, dynamic>.from(options.data as Map);
+            final clientMessageId = data['client_message_id'] as String;
+            clientMessageIds.add(clientMessageId);
+            if (postCount == 1) {
+              handler.reject(
+                DioException(
+                  requestOptions: options,
+                  type: DioExceptionType.connectionError,
+                  message: 'offline',
+                ),
+              );
+            } else {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 201,
+                  data: _messageJson(
+                    id: 301,
+                    clientMessageId: clientMessageId,
+                  ),
+                ),
+              );
+            }
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+
+    expect(await provider.sendMessage(3, 'retry me', senderId: 8), isNull);
+    final failed = provider.messages.single;
+    expect(failed.isFailed, isTrue);
+
+    final retry = provider.retryMessage(3, failed.clientMessageId!);
+    expect(provider.messages.single.isPending, isTrue);
+    final confirmed = await retry;
+
+    expect(confirmed?.id, 301);
+    expect(clientMessageIds, hasLength(2));
+    expect(clientMessageIds[1], clientMessageIds[0]);
+    expect(provider.messages.single.isFailed, isFalse);
+  });
+
+  test('fallback sync clears a confirmed pending context', () async {
+    final dio = Dio();
+    String? clientMessageId;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            final data = Map<String, dynamic>.from(options.data as Map);
+            clientMessageId = data['client_message_id'] as String;
+            handler.reject(
+              DioException(
+                requestOptions: options,
+                type: DioExceptionType.connectionError,
+                message: 'response lost',
+              ),
+            );
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations/42') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: [
+                  _messageJson(
+                    id: 302,
+                    clientMessageId: clientMessageId!,
+                  ),
+                ],
+              ),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio)
+      ..prepareNewConversation(targetUserId: 3);
+
+    expect(await provider.sendMessage(3, 'response lost', senderId: 8), isNull);
+    expect(provider.messages.single.isFailed, isTrue);
+
+    await provider.loadMessages(42);
+    expect(provider.messages.single.id, 302);
+    expect(provider.messages.single.isFailed, isFalse);
+
+    provider.prepareNewConversation(targetUserId: 3);
+    expect(provider.messages, isEmpty);
+  });
+
+  test('realtime created merges pending and read updates delivery state',
+      () async {
+    final dio = Dio();
+    final responseGate = Completer<void>();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            final data = Map<String, dynamic>.from(options.data as Map);
+            responseGate.future.then((_) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 201,
+                  data: _messageJson(
+                    id: 401,
+                    clientMessageId: data['client_message_id'] as String,
+                  ),
+                ),
+              );
+            });
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+
+    final send = provider.sendMessage(3, 'hello', senderId: 8);
+    final clientMessageId = provider.messages.single.clientMessageId!;
+    provider.applyRealtimeEventForTest('message.created', {
+      'message': _messageJson(
+        id: 401,
+        clientMessageId: clientMessageId,
+      ),
+    });
+
+    expect(provider.currentConversationId, 42);
+    expect(provider.messages, hasLength(1));
+    expect(provider.messages.single.id, 401);
+    expect(provider.messages.single.isPending, isFalse);
+
+    provider.applyRealtimeEventForTest('message.read', {
+      'conversation_id': 42,
+      'read_by_user_id': 3,
+      'read_at': '2026-06-14T08:16:00Z',
+    });
+    expect(provider.messages.single.readAt, isNotNull);
+
+    responseGate.complete();
+    await send;
+    expect(provider.messages, hasLength(1));
+  });
+
+  test('read receipt only updates messages through its server boundary',
+      () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations/42') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: [
+                  {
+                    'id': 10,
+                    'conversation_id': 42,
+                    'sender_id': 8,
+                    'content': 'first',
+                    'created_at': '2026-06-14T08:14:00Z',
+                  },
+                  {
+                    'id': 11,
+                    'conversation_id': 42,
+                    'sender_id': 8,
+                    'content': 'concurrent',
+                    'created_at': '2026-06-14T08:16:01Z',
+                  },
+                ],
+              ),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+    await provider.loadMessages(42);
+
+    provider.applyRealtimeEventForTest('message.read', {
+      'conversation_id': 42,
+      'read_by_user_id': 3,
+      'read_through_message_id': 10,
+      'read_at': '2026-06-14T08:16:00Z',
+    });
+
+    expect(provider.messages[0].readAt, isNotNull);
+    expect(provider.messages[1].readAt, isNull);
+  });
+
+  test('duplicate realtime event does not double conversation unread count',
+      () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: [
+                  {
+                    'id': 42,
+                    'user1_id': 3,
+                    'user2_id': 8,
+                    'last_message_at': '2026-06-14T08:31:00Z',
+                    'unread_count': 1,
+                    'last_message': {
+                      'id': 31,
+                      'conversation_id': 42,
+                      'sender_id': 3,
+                      'content': 'already synchronized',
+                      'created_at': '2026-06-14T08:31:00Z',
+                    },
+                  },
+                ],
+              ),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+    await provider.loadConversations();
+
+    provider.applyRealtimeEventForTest('message.created', {
+      'message': {
+        'id': 31,
+        'conversation_id': 42,
+        'sender_id': 3,
+        'content': 'already synchronized',
+        'created_at': '2026-06-14T08:31:00Z',
+      },
+    });
+
+    expect(provider.conversations.single.unreadCount, 1);
+    expect(provider.conversations.single.lastMessage?.id, 31);
+  });
+
+  test('send response updates its origin cache after switching conversations',
+      () async {
+    final dio = Dio();
+    final responseGate = Completer<void>();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'GET' &&
+              (options.path == '/messages/conversations/42' ||
+                  options.path == '/messages/conversations/7')) {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            final data = Map<String, dynamic>.from(options.data as Map);
+            responseGate.future.then((_) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 201,
+                  data: _messageJson(
+                    id: 501,
+                    clientMessageId: data['client_message_id'] as String,
+                  ),
+                ),
+              );
+            });
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+    await provider.loadMessages(42);
+
+    final send = provider.sendMessage(3, 'from 42', senderId: 8);
+    expect(provider.messages.single.isPending, isTrue);
+    await provider.loadMessages(7);
+    expect(provider.currentConversationId, 7);
+    expect(provider.messages, isEmpty);
+
+    responseGate.complete();
+    await send;
+
+    expect(provider.currentConversationId, 7);
+    expect(provider.messages, isEmpty);
+    expect(provider.latestCachedMessageForConversation(42)?.id, 501);
+  });
+
+  test('active conversation is independent from the loaded conversation',
+      () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations/42') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio)..setActiveConversation(99);
+
+    await provider.loadMessages(42);
+
+    expect(provider.currentConversationId, 42);
+    expect(provider.activeConversationId, 99);
+    provider.setActiveConversation(null);
+    expect(provider.currentConversationId, 42);
+    expect(provider.activeConversationId, isNull);
+  });
+}
+
+Map<String, dynamic> _messageJson({
+  required int id,
+  required String clientMessageId,
+  String content = 'hello',
+}) {
+  return {
+    'id': id,
+    'conversation_id': 42,
+    'sender_id': 8,
+    'client_message_id': clientMessageId,
+    'content': content,
+    'created_at': '2026-06-14T08:14:00Z',
+  };
+}
+
+DioException _unexpectedRequest(RequestOptions options) {
+  return DioException(
+    requestOptions: options,
+    message: 'Unexpected request: ${options.method} ${options.path}',
+  );
 }

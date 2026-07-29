@@ -76,7 +76,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('还没有竞赛经历'), findsOneWidget);
-    expect(find.text('添加经历'), findsNWidgets(2));
+    expect(find.text('添加第一段经历'), findsOneWidget);
+    expect(find.byKey(const Key('competition-award-add')), findsNothing);
   });
 
   testWidgets('列表区分核验状态且不暴露证明材料', (tester) async {
@@ -89,9 +90,9 @@ void main() {
     await tester.pumpWidget(_app(dio));
     await tester.pumpAndSettle();
 
-    expect(find.text('状态：本人填写'), findsOneWidget);
-    expect(find.text('状态：平台已核验'), findsOneWidget);
-    expect(find.text('可见范围：仅自己'), findsNWidgets(2));
+    expect(find.text('本人填写'), findsOneWidget);
+    expect(find.text('平台已核验'), findsOneWidget);
+    expect(find.byKey(const Key('competition-award-add')), findsOneWidget);
     expect(find.textContaining('987654'), findsNothing);
     expect(find.textContaining('证明材料'), findsNothing);
   });
@@ -116,11 +117,11 @@ void main() {
     await tester.pumpWidget(_app(dio));
     await tester.pumpAndSettle();
 
-    expect(find.text('状态：本人填写'), findsOneWidget);
-    expect(find.text('状态：材料待核验'), findsOneWidget);
-    expect(find.text('状态：平台已核验'), findsOneWidget);
-    expect(find.text('状态：核验未通过'), findsOneWidget);
-    expect(find.textContaining('不代表学校教务或官方认证'), findsOneWidget);
+    expect(find.text('本人填写'), findsOneWidget);
+    expect(find.text('材料待核验'), findsOneWidget);
+    expect(find.text('平台已核验'), findsOneWidget);
+    expect(find.text('核验未通过'), findsOneWidget);
+    expect(find.textContaining('不代表学校教务或官方认证'), findsNothing);
     expect(find.textContaining('证明材料无法确认奖项等级'), findsOneWidget);
     expect(find.text('取消核验'), findsOneWidget);
     expect(find.text('重新提交'), findsOneWidget);

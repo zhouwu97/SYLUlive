@@ -1,16 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 
-import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../models/conversation.dart';
 import '../models/message_send_state.dart';
 import '../utils/app_feedback.dart';
 
 class MessageProvider extends ChangeNotifier {
   static const int _pageSize = 30;
+  static const Duration _sendTimeout = Duration(seconds: 35);
+  static const Duration _maxRealtimeRetryDelay = Duration(seconds: 15);
   static const int maxMessageLength = 2000;
 
   final Dio _dio;
+  final Random _random = Random.secure();
 
   List<Conversation> _conversations = [];
   List<Message> _messages = [];
@@ -19,42 +26,102 @@ class MessageProvider extends ChangeNotifier {
   bool _conversationLoading = false;
   bool _messageLoading = false;
   bool _loadingMore = false;
-  bool _sending = false;
   bool _hasMore = true;
   String? _conversationError;
   String? _messageError;
   int? _currentConversationId;
+  int? _activeConversationId;
+  bool _activeConversationEmbedded = false;
+  int? _messageFocusRequestId;
   int _messageRequestVersion = 0;
+  int _nextLocalMessageId = -1;
   final Set<int> _refreshingConversationIds = {};
   final Map<int, int> _lastMarkedReadMessageIds = {};
-  final Map<int, String> _drafts = {};
+  final Map<int, _MessageDraft> _drafts = {};
+  final Map<String, _PendingMessageContext> _pendingMessages = {};
   bool _hasLoadedConversations = false;
+  int? _sessionUserId;
+  CancelToken? _eventCancelToken;
+  int _realtimeGeneration = 0;
+  bool _disposed = false;
+
+  MessageProvider(this._dio);
 
   List<Conversation> get conversations => _conversations;
   List<Message> get messages => _messages;
   bool get conversationLoading => _conversationLoading;
   bool get messageLoading => _messageLoading;
   bool get loadingMore => _loadingMore;
-  bool get sending => _sending;
+  bool get sending => _messages.any((message) => message.isPending);
   bool get hasMore => _hasMore;
   String? get conversationError => _conversationError;
   String? get messageError => _messageError;
   int? get currentConversationId => _currentConversationId;
+  int? get activeConversationId => _activeConversationId;
+  bool get activeConversationEmbedded => _activeConversationEmbedded;
   bool get hasLoadedConversations => _hasLoadedConversations;
   int get unreadMessageCount => _conversations.fold<int>(
         0,
         (sum, conversation) => sum + conversation.unreadCount,
       );
 
-  MessageProvider(this._dio);
+  Message? get latestIncomingMessage {
+    final userId = _sessionUserId;
+    if (userId == null) return null;
+    return latestIncomingMessageFor(userId);
+  }
 
-  String draftFor(int targetUserId) => _drafts[targetUserId] ?? '';
+  Message? latestIncomingMessageFor(int userId) {
+    for (var index = _messages.length - 1; index >= 0; index--) {
+      final message = _messages[index];
+      if (message.id > 0 && message.senderId != userId) return message;
+    }
+    return null;
+  }
+
+  String draftFor(int targetUserId) => _drafts[targetUserId]?.content ?? '';
+
+  String? draftStickerFor(int targetUserId) => _drafts[targetUserId]?.stickerId;
+
+  Message? latestCachedMessageForConversation(int conversationId) {
+    final source = _currentConversationId == conversationId
+        ? _messages
+        : _messageCache[conversationId];
+    if (source == null || source.isEmpty) return null;
+    Message? latest;
+    for (final message in source) {
+      if (latest == null || message.createdAt.isAfter(latest.createdAt)) {
+        latest = message;
+      }
+    }
+    return latest;
+  }
 
   void updateDraft(int targetUserId, String content) {
-    if (content.isEmpty) {
+    final current = _drafts[targetUserId];
+    final stickerId = current?.stickerId;
+    if (content.isEmpty && stickerId == null) {
       _drafts.remove(targetUserId);
     } else {
-      _drafts[targetUserId] = content;
+      _drafts[targetUserId] = _MessageDraft(
+        content: content,
+        stickerId: stickerId,
+      );
+    }
+  }
+
+  void updateDraftSticker(int targetUserId, String? stickerId) {
+    final normalized = stickerId?.trim();
+    final selectedStickerId =
+        normalized?.isNotEmpty == true ? normalized : null;
+    final content = _drafts[targetUserId]?.content ?? '';
+    if (content.isEmpty && selectedStickerId == null) {
+      _drafts.remove(targetUserId);
+    } else {
+      _drafts[targetUserId] = _MessageDraft(
+        content: content,
+        stickerId: selectedStickerId,
+      );
     }
   }
 
@@ -62,12 +129,14 @@ class MessageProvider extends ChangeNotifier {
     _drafts.remove(targetUserId);
   }
 
-  int? _sessionUserId;
-
   void syncSessionUser(int? userId) {
     if (_sessionUserId == userId) return;
+    _stopRealtime();
     _sessionUserId = userId;
     resetSession();
+    if (userId != null) {
+      unawaited(_runRealtimeLoop(userId, _realtimeGeneration));
+    }
   }
 
   void resetSession() {
@@ -79,18 +148,42 @@ class MessageProvider extends ChangeNotifier {
     _refreshingConversationIds.clear();
     _lastMarkedReadMessageIds.clear();
     _drafts.clear();
+    _pendingMessages.clear();
 
     _conversationLoading = false;
     _messageLoading = false;
     _loadingMore = false;
-    _sending = false;
     _hasMore = true;
     _conversationError = null;
     _messageError = null;
     _currentConversationId = null;
+    _activeConversationId = null;
+    _activeConversationEmbedded = false;
+    _messageFocusRequestId = null;
     _hasLoadedConversations = false;
 
     notifyListeners();
+  }
+
+  void setActiveConversation(
+    int? conversationId, {
+    bool embedded = false,
+  }) {
+    _activeConversationId = conversationId;
+    _activeConversationEmbedded = conversationId != null && embedded;
+  }
+
+  Future<void> requestMessageFocus(int messageId) async {
+    if (messageId <= 0) return;
+    if (!containsMessage(messageId)) await loadAroundMessage(messageId);
+    _messageFocusRequestId = messageId;
+    notifyListeners();
+  }
+
+  int? takeMessageFocusRequest() {
+    final messageId = _messageFocusRequestId;
+    _messageFocusRequestId = null;
+    return messageId;
   }
 
   Future<void> loadConversations({bool silent = false}) async {
@@ -102,19 +195,22 @@ class MessageProvider extends ChangeNotifier {
 
     try {
       final response = await _dio.get('/messages/conversations');
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && response.data is List) {
         _conversations = (response.data as List)
             .map(
-              (e) => Conversation.fromJson(Map<String, dynamic>.from(e as Map)),
+              (item) => Conversation.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ),
             )
             .toList();
         _hasLoadedConversations = true;
       }
-    } on DioException catch (e) {
-      _conversationError = AppFeedback.dioErrorMessage(e, fallback: '加载会话列表失败');
-    } catch (e) {
+    } on DioException catch (error) {
+      _conversationError =
+          AppFeedback.dioErrorMessage(error, fallback: '加载会话列表失败');
+    } catch (error) {
       _conversationError = '加载会话列表失败';
-      debugPrint('加载会话列表失败: $e');
+      debugPrint('加载会话列表失败: $error');
     } finally {
       _conversationLoading = false;
       notifyListeners();
@@ -129,34 +225,37 @@ class MessageProvider extends ChangeNotifier {
     final cachedConversation = _findConversation(currentUserId, targetUserId);
     if (cachedConversation != null) {
       await loadMessages(cachedConversation.id, preferCache: true);
-      return cachedConversation.id;
+      return _currentConversationId == cachedConversation.id
+          ? cachedConversation.id
+          : null;
     }
 
-    _messageRequestVersion++;
-    _currentConversationId = null;
-    _messages = [];
-    _hasMore = true;
-    _messageLoading = true;
-    _loadingMore = false;
+    // 先展示空聊天壳，轻量接口返回后再补入历史消息。
+    prepareNewConversation(targetUserId: targetUserId);
+    final requestVersion = _messageRequestVersion;
+    try {
+      final response = await _dio.get(
+        '/messages/users/$targetUserId/conversation',
+      );
+      if (requestVersion != _messageRequestVersion) return null;
+      final data = response.data;
+      if (response.statusCode != 200 || data is! Map) return null;
+      final rawConversation = data['conversation'];
+      if (rawConversation is! Map) return null;
+      final conversation = Conversation.fromJson(
+        Map<String, dynamic>.from(rawConversation),
+      );
+      if (conversation.id <= 0) return null;
+      await loadMessages(conversation.id, preferCache: true);
+      return _currentConversationId == conversation.id ? conversation.id : null;
+    } on DioException catch (error) {
+      _messageError = AppFeedback.dioErrorMessage(error, fallback: '查询会话失败');
+    } catch (error) {
+      _messageError = '查询会话失败';
+      debugPrint('查询私信会话失败: $error');
+    }
     notifyListeners();
-    await loadConversations(silent: true);
-
-    if (_conversationError != null) {
-      _messageError = _conversationError;
-      _messageLoading = false;
-      notifyListeners();
-      return null;
-    }
-
-    final existingConversation = _findConversation(currentUserId, targetUserId);
-
-    if (existingConversation == null) {
-      prepareNewConversation();
-      return null;
-    }
-
-    await loadMessages(existingConversation.id, preferCache: true);
-    return existingConversation.id;
+    return null;
   }
 
   Conversation? _findConversation(int currentUserId, int targetUserId) {
@@ -165,9 +264,7 @@ class MessageProvider extends ChangeNotifier {
           conversation.user2Id == targetUserId;
       final matchesReverse = conversation.user1Id == targetUserId &&
           conversation.user2Id == currentUserId;
-      if (matchesForward || matchesReverse) {
-        return conversation;
-      }
+      if (matchesForward || matchesReverse) return conversation;
     }
     return null;
   }
@@ -184,6 +281,7 @@ class MessageProvider extends ChangeNotifier {
   }) async {
     final requestVersion = ++_messageRequestVersion;
     _currentConversationId = conversationId;
+    _messageFocusRequestId = null;
     final cachedMessages = _messageCache[conversationId];
     final cacheContainsTarget = aroundMessageId == null ||
         cachedMessages?.any((message) => message.id == aroundMessageId) == true;
@@ -194,12 +292,11 @@ class MessageProvider extends ChangeNotifier {
       _messageLoading = false;
       _loadingMore = false;
       notifyListeners();
-      await markRead(conversationId);
-      if (requestVersion == _messageRequestVersion) {
-        await refreshLatestMessages();
-        if (aroundMessageId != null && !containsMessage(aroundMessageId)) {
-          await loadAroundMessage(aroundMessageId);
-        }
+      await refreshLatestMessages();
+      if (requestVersion == _messageRequestVersion &&
+          aroundMessageId != null &&
+          !containsMessage(aroundMessageId)) {
+        await loadAroundMessage(aroundMessageId);
       }
       return;
     }
@@ -220,20 +317,18 @@ class MessageProvider extends ChangeNotifier {
       );
       if (requestVersion != _messageRequestVersion) return;
       if (response.statusCode == 200 && response.data is List) {
-        _messages = (response.data as List)
-            .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
+        _messages = _parseMessages(response.data as List);
+        _sortMessages();
         _hasMore = _messages.length == _pageSize;
         _rememberMessages(conversationId);
-        await markRead(conversationId);
       }
-    } on DioException catch (e) {
+    } on DioException catch (error) {
       if (requestVersion != _messageRequestVersion) return;
-      _messageError = AppFeedback.dioErrorMessage(e, fallback: '加载消息失败');
-    } catch (e) {
+      _messageError = AppFeedback.dioErrorMessage(error, fallback: '加载消息失败');
+    } catch (error) {
       if (requestVersion != _messageRequestVersion) return;
       _messageError = '加载消息失败';
-      debugPrint('加载消息失败: $e');
+      debugPrint('加载消息失败: $error');
     } finally {
       if (requestVersion == _messageRequestVersion) {
         _messageLoading = false;
@@ -249,38 +344,38 @@ class MessageProvider extends ChangeNotifier {
   Future<void> loadOlderMessages() async {
     final conversationId = _currentConversationId;
     final requestVersion = _messageRequestVersion;
+    final oldestMessageId = _messages
+        .where((message) => message.id > 0)
+        .map((message) => message.id)
+        .fold<int?>(
+            null, (oldest, id) => oldest == null || id < oldest ? id : oldest);
     if (conversationId == null ||
         _loadingMore ||
         !_hasMore ||
-        _messages.isEmpty) {
+        oldestMessageId == null) {
       return;
     }
 
     _loadingMore = true;
     notifyListeners();
-    final oldestMessageId = _messages.first.id;
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
         queryParameters: {'limit': _pageSize, 'before_id': oldestMessageId},
       );
       if (_currentConversationId != conversationId ||
-          requestVersion != _messageRequestVersion) {
+          requestVersion != _messageRequestVersion ||
+          response.data is! List) {
         return;
       }
-      final older = (response.data as List)
-          .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      final knownIds = _messages.map((message) => message.id).toSet();
-      _messages = [
-        ...older.where((message) => !knownIds.contains(message.id)),
-        ..._messages,
-      ]..sort((a, b) => a.id.compareTo(b.id));
+      final older = _parseMessages(response.data as List);
+      _mergeCurrentMessages(older);
       _hasMore = older.length == _pageSize;
       _rememberMessages(conversationId);
-    } on DioException catch (e) {
+    } on DioException catch (error) {
       if (requestVersion == _messageRequestVersion) {
-        _messageError = AppFeedback.dioErrorMessage(e, fallback: '加载更早消息失败');
+        _messageError =
+            AppFeedback.dioErrorMessage(error, fallback: '加载更早消息失败');
       }
     } finally {
       if (requestVersion == _messageRequestVersion) {
@@ -295,63 +390,30 @@ class MessageProvider extends ChangeNotifier {
     if (conversationId == null || _messageLoading) return;
     if (!_refreshingConversationIds.add(conversationId)) return;
 
-    if (_messages.isEmpty) {
-      // Don't fall through to loadMessages – that would set _messageLoading
-      // and trigger the full-screen spinner during a background poll.
-      // Instead, do a silent fetch inline.
-      try {
-        final requestVersion = _messageRequestVersion;
-        final response = await _dio.get(
-          '/messages/conversations/$conversationId',
-          queryParameters: {'limit': _pageSize},
-        );
-        if (_currentConversationId != conversationId ||
-            requestVersion != _messageRequestVersion ||
-            response.data is! List) {
-          return;
-        }
-        _messages = (response.data as List)
-            .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-        _hasMore = _messages.length == _pageSize;
-        _rememberMessages(conversationId);
-        _markReadIfNeeded(conversationId, currentUserId: currentUserId);
-        notifyListeners();
-      } catch (e) {
-        debugPrint('静默刷新消息失败: $e');
-      } finally {
-        _refreshingConversationIds.remove(conversationId);
-      }
-      return;
-    }
-
     final requestVersion = _messageRequestVersion;
-    final afterId = _messages.last.id;
+    final afterId = _latestServerMessageId;
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
-        queryParameters: {'limit': _pageSize, 'after_id': afterId},
+        queryParameters: {
+          'limit': _pageSize,
+          if (afterId != null) 'after_id': afterId,
+        },
       );
       if (_currentConversationId != conversationId ||
           requestVersion != _messageRequestVersion ||
           response.data is! List) {
         return;
       }
-      final latest = (response.data as List)
-          .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
+      final latest = _parseMessages(response.data as List);
       if (latest.isNotEmpty) {
-        final byId = <int, Message>{
-          for (final message in _messages) message.id: message,
-          for (final message in latest) message.id: message,
-        };
-        _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+        _mergeCurrentMessages(latest);
+        _hasMore = afterId == null ? latest.length == _pageSize : _hasMore;
         _rememberMessages(conversationId);
-        _markReadIfNeeded(conversationId, currentUserId: currentUserId);
         notifyListeners();
       }
-    } catch (e) {
-      debugPrint('刷新消息失败: $e');
+    } catch (error) {
+      debugPrint('刷新消息失败: $error');
     } finally {
       _refreshingConversationIds.remove(conversationId);
     }
@@ -372,20 +434,13 @@ class MessageProvider extends ChangeNotifier {
           response.data is! List) {
         return;
       }
-      final latest = (response.data as List)
-          .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      final byId = <int, Message>{
-        for (final message in _messages) message.id: message,
-        for (final message in latest) message.id: message,
-      };
-      _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+      final latest = _parseMessages(response.data as List);
+      _mergeCurrentMessages(latest);
       _hasMore = _hasMore || latest.length == _pageSize;
       _rememberMessages(conversationId);
-      _markReadIfNeeded(conversationId);
       notifyListeners();
-    } catch (e) {
-      debugPrint('刷新最新消息失败: $e');
+    } catch (error) {
+      debugPrint('刷新最新消息失败: $error');
     }
   }
 
@@ -404,20 +459,13 @@ class MessageProvider extends ChangeNotifier {
           response.data is! List) {
         return;
       }
-      final around = (response.data as List)
-          .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      final byId = <int, Message>{
-        for (final message in _messages) message.id: message,
-        for (final message in around) message.id: message,
-      };
-      _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+      final around = _parseMessages(response.data as List);
+      _mergeCurrentMessages(around);
       _hasMore = _hasMore || around.length == _pageSize;
       _rememberMessages(conversationId);
-      _markReadIfNeeded(conversationId);
       notifyListeners();
-    } catch (e) {
-      debugPrint('加载目标消息失败: $e');
+    } catch (error) {
+      debugPrint('加载目标消息失败: $error');
     }
   }
 
@@ -425,89 +473,371 @@ class MessageProvider extends ChangeNotifier {
     int targetUserId,
     String content, {
     int? fileId,
-  }) async {
+    String? stickerId,
+    int? senderId,
+    String? localImagePath,
+  }) {
     final trimmed = content.trim();
-    if (_sending || (trimmed.isEmpty && fileId == null)) return null;
+    final normalizedStickerId = stickerId?.trim();
+    final hasSticker = normalizedStickerId?.isNotEmpty == true;
+    if (trimmed.isEmpty && fileId == null && !hasSticker) {
+      return Future.value(null);
+    }
+    if (fileId != null && hasSticker) return Future.value(null);
+    final pending = _insertPendingMessage(
+      targetUserId: targetUserId,
+      content: trimmed,
+      fileId: fileId,
+      stickerId: hasSticker ? normalizedStickerId : null,
+      senderId: senderId,
+      localImagePath: localImagePath,
+    );
+    return _sendPendingMessage(targetUserId, pending.clientMessageId!);
+  }
 
-    _sending = true;
+  Future<Message?> sendImageMessage(
+    int targetUserId,
+    XFile image, {
+    int? senderId,
+  }) async {
+    final pending = _insertPendingMessage(
+      targetUserId: targetUserId,
+      content: '',
+      senderId: senderId,
+      localImagePath: image.path,
+    );
+    final clientMessageId = pending.clientMessageId!;
+    try {
+      final fileId = await _uploadImage(image);
+      _updatePendingMessage(
+        clientMessageId,
+        (message) => message.copyWith(fileId: fileId),
+      );
+      return _sendPendingMessage(targetUserId, clientMessageId);
+    } on DioException catch (error) {
+      _markPendingFailed(
+        clientMessageId,
+        AppFeedback.dioErrorMessage(error, fallback: '图片上传失败'),
+      );
+    } catch (error) {
+      _markPendingFailed(clientMessageId, '图片上传失败');
+      debugPrint('私信图片上传失败: $error');
+    }
+    return null;
+  }
+
+  Future<Message?> sendStickerMessage(
+    int targetUserId,
+    String stickerId, {
+    int? senderId,
+  }) {
+    return sendMessage(
+      targetUserId,
+      '',
+      stickerId: stickerId,
+      senderId: senderId,
+    );
+  }
+
+  Future<Message?> retryMessage(
+    int targetUserId,
+    String clientMessageId,
+  ) async {
+    final failed = _messageByClientMessageID(clientMessageId);
+    final pendingContext = _pendingMessages[clientMessageId];
+    if (failed == null ||
+        !failed.isFailed ||
+        (pendingContext != null &&
+            pendingContext.targetUserId != targetUserId)) {
+      return null;
+    }
+    _updatePendingMessage(
+      clientMessageId,
+      (message) => message.copyWith(
+        localStatus: MessageLocalStatus.pending,
+        clearLocalError: true,
+      ),
+    );
     _messageError = null;
     notifyListeners();
-    Timer? sendingGuard;
-    sendingGuard = Timer(const Duration(seconds: 35), () {
-      if (!_sending) return;
-      _sending = false;
-      _messageError = '发送超时，请检查网络后重试';
-      notifyListeners();
-    });
+
+    var pending = _messageByClientMessageID(clientMessageId)!;
+    if (pending.fileId == null && pending.localImagePath != null) {
+      try {
+        final image = XFile(pending.localImagePath!);
+        final fileId = await _uploadImage(image);
+        _updatePendingMessage(
+          clientMessageId,
+          (message) => message.copyWith(fileId: fileId),
+        );
+        pending = _messageByClientMessageID(clientMessageId)!;
+      } on DioException catch (error) {
+        _markPendingFailed(
+          clientMessageId,
+          AppFeedback.dioErrorMessage(error, fallback: '图片上传失败'),
+        );
+        return null;
+      } catch (error) {
+        _markPendingFailed(clientMessageId, '图片上传失败');
+        return null;
+      }
+    }
+    return _sendPendingMessage(targetUserId, pending.clientMessageId!);
+  }
+
+  void deleteFailedMessage(String clientMessageId) {
+    _messages.removeWhere(
+      (message) =>
+          message.clientMessageId == clientMessageId && message.isFailed,
+    );
+    for (final cached in _messageCache.values) {
+      cached.removeWhere(
+        (message) =>
+            message.clientMessageId == clientMessageId && message.isFailed,
+      );
+    }
+    _pendingMessages.remove(clientMessageId);
+    _rememberCurrentMessages();
+    notifyListeners();
+  }
+
+  Message _insertPendingMessage({
+    required int targetUserId,
+    required String content,
+    int? fileId,
+    String? stickerId,
+    int? senderId,
+    String? localImagePath,
+  }) {
+    final clientMessageId = _newClientMessageId();
+    final pending = Message(
+      id: _nextLocalMessageId--,
+      conversationId: _currentConversationId ?? 0,
+      senderId: senderId ?? _sessionUserId ?? 0,
+      clientMessageId: clientMessageId,
+      content: content,
+      fileId: fileId,
+      stickerId: stickerId,
+      createdAt: DateTime.now().toUtc(),
+      localStatus: MessageLocalStatus.pending,
+      localImagePath: localImagePath,
+    );
+    _pendingMessages[clientMessageId] = _PendingMessageContext(
+      targetUserId: targetUserId,
+      originConversationId: _currentConversationId,
+      message: pending,
+    );
+    _messageError = null;
+    _messages.add(pending);
+    _sortMessages();
+    _rememberCurrentMessages();
+    notifyListeners();
+    return pending;
+  }
+
+  Future<Message?> _sendPendingMessage(
+    int targetUserId,
+    String clientMessageId,
+  ) async {
+    final pending = _messageByClientMessageID(clientMessageId);
+    if (pending == null) return null;
+    if (pending.content.isEmpty &&
+        pending.fileId == null &&
+        !pending.isSticker) {
+      _markPendingFailed(clientMessageId, '消息内容不能为空');
+      return null;
+    }
+
+    final cancelToken = CancelToken();
+    final timeoutTimer = Timer(
+      _sendTimeout,
+      () => cancelToken.cancel('发送超时'),
+    );
     try {
       final response = await _dio.post(
         '/messages/$targetUserId',
-        data: {'content': trimmed, if (fileId != null) 'file_id': fileId},
+        data: {
+          'content': pending.content,
+          if (pending.fileId != null) 'file_id': pending.fileId,
+          if (pending.isSticker) 'sticker_id': pending.stickerId,
+          'client_message_id': clientMessageId,
+        },
+        cancelToken: cancelToken,
+        options: Options(
+          sendTimeout: _sendTimeout,
+          receiveTimeout: _sendTimeout,
+        ),
       );
-      if (response.statusCode == 201) {
-        final message = Message.fromJson(
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          response.data is Map) {
+        final serverMessage = Message.fromJson(
           Map<String, dynamic>.from(response.data as Map),
         );
-        _currentConversationId = message.conversationId;
-        if (!_messages.any((item) => item.id == message.id)) {
-          _messages.add(message);
-          _messages.sort((a, b) => a.id.compareTo(b.id));
-          _rememberMessages(message.conversationId);
-        }
-        clearDraft(targetUserId);
-        notifyListeners();
-        await loadConversations(silent: true);
-        return message;
+        _replacePendingWithServer(clientMessageId, serverMessage);
+        unawaited(loadConversations(silent: true));
+        return serverMessage;
       }
-    } on DioException catch (e) {
-      _messageError = AppFeedback.dioErrorMessage(e, fallback: '发送消息失败');
-    } catch (e) {
-      _messageError = '发送消息失败';
-      debugPrint('发送消息失败: $e');
+      _markPendingFailed(clientMessageId, '发送消息失败');
+    } on DioException catch (error) {
+      final message = CancelToken.isCancel(error)
+          ? '发送超时，请检查网络后重试'
+          : AppFeedback.dioErrorMessage(error, fallback: '发送消息失败');
+      _markPendingFailed(clientMessageId, message);
+    } catch (error) {
+      _markPendingFailed(clientMessageId, '发送消息失败');
+      debugPrint('发送消息失败: $error');
     } finally {
-      sendingGuard.cancel();
-      if (_sending) {
-        _sending = false;
-        notifyListeners();
+      timeoutTimer.cancel();
+    }
+    return null;
+  }
+
+  void _replacePendingWithServer(
+    String clientMessageId,
+    Message serverMessage,
+  ) {
+    final visibleIndex = _indexByClientMessageID(clientMessageId);
+    final existing = _messageByClientMessageID(clientMessageId);
+    final confirmed = serverMessage.copyWith(
+      clientMessageId: clientMessageId,
+      localStatus: MessageLocalStatus.sent,
+      localImagePath: existing?.localImagePath,
+      clearLocalError: true,
+    );
+
+    // 先从所有缓存移除本地占位，避免切换会话后把回包写进当前会话。
+    for (final cached in _messageCache.values) {
+      cached.removeWhere(
+        (message) => message.clientMessageId == clientMessageId,
+      );
+    }
+    if (visibleIndex >= 0) {
+      _messages[visibleIndex] = confirmed;
+      _currentConversationId = confirmed.conversationId;
+      _adoptConversationID(confirmed.conversationId);
+      _sortMessages();
+      _rememberMessages(confirmed.conversationId);
+      _messageError = null;
+    } else {
+      final destination = _messageCache.putIfAbsent(
+        confirmed.conversationId,
+        () => <Message>[],
+      );
+      if (!destination.any((message) => message.id == confirmed.id)) {
+        destination.add(confirmed);
+        destination.sort(_compareMessages);
+      }
+    }
+    _pendingMessages.remove(clientMessageId);
+    _updateConversationFromMessage(confirmed);
+    notifyListeners();
+  }
+
+  void _markPendingFailed(String clientMessageId, String error) {
+    final isVisible = _indexByClientMessageID(clientMessageId) >= 0;
+    _updatePendingMessage(
+      clientMessageId,
+      (message) => message.copyWith(
+        localStatus: MessageLocalStatus.failed,
+        localError: error,
+      ),
+    );
+    if (isVisible) _messageError = error;
+    notifyListeners();
+  }
+
+  void _updatePendingMessage(
+    String clientMessageId,
+    Message Function(Message message) update,
+  ) {
+    final pendingContext = _pendingMessages[clientMessageId];
+    final source = _messageByClientMessageID(clientMessageId);
+    if (source == null) return;
+    final updated = update(source);
+    if (pendingContext != null) pendingContext.message = updated;
+
+    final currentIndex = _indexByClientMessageID(clientMessageId);
+    if (currentIndex >= 0) {
+      _messages[currentIndex] = updated;
+      _rememberCurrentMessages();
+    }
+    for (final cached in _messageCache.values) {
+      final cachedIndex = cached.indexWhere(
+        (message) => message.clientMessageId == clientMessageId,
+      );
+      if (cachedIndex >= 0) cached[cachedIndex] = updated;
+    }
+  }
+
+  int _indexByClientMessageID(String clientMessageId) {
+    return _messages.indexWhere(
+      (message) => message.clientMessageId == clientMessageId,
+    );
+  }
+
+  Message? _messageByClientMessageID(String clientMessageId) {
+    final currentIndex = _indexByClientMessageID(clientMessageId);
+    if (currentIndex >= 0) return _messages[currentIndex];
+    final pending = _pendingMessages[clientMessageId]?.message;
+    if (pending != null) return pending;
+    for (final cached in _messageCache.values) {
+      for (final message in cached) {
+        if (message.clientMessageId == clientMessageId) return message;
       }
     }
     return null;
   }
 
-  /// Only sends a /read request when the latest incoming message ID has changed
-  /// for this conversation. Skips if the latest message is from the current user.
-  void _markReadIfNeeded(int conversationId, {int? currentUserId}) {
-    if (_messages.isEmpty) return;
+  Future<int> _uploadImage(XFile image) async {
+    final bytes = await image.readAsBytes();
+    final filename = _safeUploadFilename(image.name);
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
+    });
+    final response = await _dio.post(
+      '/upload',
+      data: formData,
+      options: Options(
+        sendTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 60),
+      ),
+    );
+    final data = response.data;
+    final fileId = data is Map ? data['file_id'] : null;
+    if (fileId is num && fileId.toInt() > 0) return fileId.toInt();
+    throw StateError('上传接口未返回有效文件ID');
+  }
 
-    // Find the latest incoming message (not from current user).
-    // If currentUserId is unknown, fall back to using the latest message ID.
-    int? latestIncomingId;
-    if (currentUserId != null) {
-      for (var i = _messages.length - 1; i >= 0; i--) {
-        if (_messages[i].senderId != currentUserId) {
-          latestIncomingId = _messages[i].id;
-          break;
-        }
-      }
-      if (latestIncomingId == null) return; // All messages are from self
-    } else {
-      latestIncomingId = _messages.last.id;
+  String _safeUploadFilename(String rawName) {
+    final name = rawName.trim();
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.gif')) {
+      return name;
     }
+    return 'message_${DateTime.now().millisecondsSinceEpoch}.jpg';
+  }
 
-    final lastMarkedId = _lastMarkedReadMessageIds[conversationId];
-    if (latestIncomingId == lastMarkedId) return;
-    // Don't record yet – only record after the API call succeeds.
-    markRead(conversationId, markedMessageId: latestIncomingId);
+  String _newClientMessageId() {
+    final randomPart = _random.nextInt(0x7fffffff).toRadixString(36);
+    return '${_sessionUserId ?? 0}-${DateTime.now().microsecondsSinceEpoch}-$randomPart';
   }
 
   Future<void> markRead(int conversationId, {int? markedMessageId}) async {
+    final latestIncomingId = markedMessageId ??
+        (_currentConversationId == conversationId
+            ? latestIncomingMessage?.id
+            : null);
+    if (latestIncomingId != null &&
+        _lastMarkedReadMessageIds[conversationId] == latestIncomingId) {
+      return;
+    }
     try {
       await _dio.post('/messages/conversations/$conversationId/read');
-      // Only record after success so that a failed request gets retried.
-      if (markedMessageId != null) {
-        _lastMarkedReadMessageIds[conversationId] = markedMessageId;
-      } else if (_messages.isNotEmpty) {
-        _lastMarkedReadMessageIds[conversationId] = _messages.last.id;
+      if (latestIncomingId != null) {
+        _lastMarkedReadMessageIds[conversationId] = latestIncomingId;
       }
       final index = _conversations.indexWhere(
         (conversation) => conversation.id == conversationId,
@@ -516,13 +846,11 @@ class MessageProvider extends ChangeNotifier {
         _conversations[index] = _conversations[index].copyWith(unreadCount: 0);
         notifyListeners();
       }
-    } catch (e) {
-      debugPrint('标记消息已读失败: $e');
+    } catch (error) {
+      debugPrint('标记消息已读失败: $error');
     }
   }
 
-  /// 拉取陌生人私信发送状态。
-  /// 返回 null 表示查询失败，调用方按"允许发送"宽松处理避免阻塞 UI。
   Future<MessageSendState?> getSendState(int targetUserId) async {
     try {
       final response = await _dio.get('/messages/$targetUserId/send-state');
@@ -530,20 +858,33 @@ class MessageProvider extends ChangeNotifier {
       if (data is Map<String, dynamic>) {
         return MessageSendState.fromJson(data);
       }
+      if (data is Map) {
+        return MessageSendState.fromJson(Map<String, dynamic>.from(data));
+      }
       return null;
-    } on DioException catch (e) {
-      debugPrint('拉取私信发送状态失败: $e');
+    } on DioException catch (error) {
+      debugPrint('拉取私信发送状态失败: $error');
       return null;
-    } catch (e) {
-      debugPrint('拉取私信发送状态失败: $e');
+    } catch (error) {
+      debugPrint('拉取私信发送状态失败: $error');
       return null;
     }
   }
 
-  void prepareNewConversation() {
+  void prepareNewConversation({int? targetUserId}) {
     _messageRequestVersion++;
     _currentConversationId = null;
-    _messages = [];
+    _messages = targetUserId == null
+        ? []
+        : _pendingMessages.values
+            .where(
+              (pending) =>
+                  pending.targetUserId == targetUserId &&
+                  pending.originConversationId == null,
+            )
+            .map((pending) => pending.message)
+            .toList();
+    _sortMessages();
     _messageError = null;
     _messageLoading = false;
     _loadingMore = false;
@@ -561,4 +902,309 @@ class MessageProvider extends ChangeNotifier {
     _hasMore = true;
     notifyListeners();
   }
+
+  List<Message> _parseMessages(List<dynamic> data) {
+    return data
+        .map(
+          (item) => _reconcileServerMessage(
+            Message.fromJson(Map<String, dynamic>.from(item as Map)),
+          ),
+        )
+        .toList();
+  }
+
+  Message _reconcileServerMessage(Message message) {
+    final clientMessageId = message.clientMessageId;
+    if (clientMessageId == null) return message;
+
+    final localMessage = _messageByClientMessageID(clientMessageId);
+    _pendingMessages.remove(clientMessageId);
+    return message.copyWith(
+      localImagePath: localMessage?.localImagePath,
+      localStatus: MessageLocalStatus.sent,
+      clearLocalError: true,
+    );
+  }
+
+  int? get _latestServerMessageId {
+    int? latest;
+    for (final message in _messages) {
+      if (message.id > 0 && (latest == null || message.id > latest)) {
+        latest = message.id;
+      }
+    }
+    return latest;
+  }
+
+  void _mergeCurrentMessages(Iterable<Message> incoming) {
+    for (final next in incoming) {
+      final index = _messages.indexWhere(
+        (existing) =>
+            existing.id == next.id ||
+            (next.clientMessageId != null &&
+                existing.clientMessageId == next.clientMessageId),
+      );
+      if (index >= 0) {
+        final existing = _messages[index];
+        _messages[index] = next.copyWith(
+          localImagePath: existing.localImagePath,
+          localStatus: MessageLocalStatus.sent,
+          clearLocalError: true,
+        );
+      } else {
+        _messages.add(next);
+      }
+    }
+    _sortMessages();
+  }
+
+  void _sortMessages() {
+    _messages.sort(_compareMessages);
+  }
+
+  int _compareMessages(Message left, Message right) {
+    if (left.id > 0 && right.id > 0) return left.id.compareTo(right.id);
+    final byTime = left.createdAt.compareTo(right.createdAt);
+    if (byTime != 0) return byTime;
+    return left.stableKey.compareTo(right.stableKey);
+  }
+
+  void _adoptConversationID(int conversationId) {
+    for (var index = 0; index < _messages.length; index++) {
+      final message = _messages[index];
+      if (message.conversationId == 0) {
+        _messages[index] = message.copyWith(conversationId: conversationId);
+      }
+    }
+  }
+
+  void _rememberCurrentMessages() {
+    final conversationId = _currentConversationId;
+    if (conversationId != null) _rememberMessages(conversationId);
+  }
+
+  void _updateConversationFromMessage(Message message) {
+    final index = _conversations.indexWhere(
+      (conversation) => conversation.id == message.conversationId,
+    );
+    if (index < 0) {
+      if (_hasLoadedConversations) unawaited(loadConversations(silent: true));
+      return;
+    }
+    final conversation = _conversations[index];
+    final previousLastMessage = conversation.lastMessage;
+    final previousLastID = previousLastMessage?.id;
+    final isIncoming = message.senderId != _sessionUserId;
+    final hasComparableServerIDs =
+        previousLastID != null && previousLastID > 0 && message.id > 0;
+    final alreadyAccountedFor =
+        hasComparableServerIDs && previousLastID >= message.id;
+    final advancesPreview = previousLastMessage == null ||
+        (hasComparableServerIDs
+            ? message.id > previousLastID
+            : !message.createdAt.isBefore(previousLastMessage.createdAt));
+    _conversations[index] = conversation.copyWith(
+      lastMessage: advancesPreview ? message : previousLastMessage,
+      lastMessageAt:
+          advancesPreview ? message.createdAt : conversation.lastMessageAt,
+      unreadCount: isIncoming && !alreadyAccountedFor
+          ? conversation.unreadCount + 1
+          : conversation.unreadCount,
+    );
+    _conversations.sort(
+      (left, right) => right.lastMessageAt.compareTo(left.lastMessageAt),
+    );
+  }
+
+  void _stopRealtime() {
+    _realtimeGeneration++;
+    _eventCancelToken?.cancel('会话已切换');
+    _eventCancelToken = null;
+  }
+
+  Future<void> _runRealtimeLoop(int userId, int generation) async {
+    var retryDelay = const Duration(seconds: 1);
+    while (!_disposed &&
+        _sessionUserId == userId &&
+        generation == _realtimeGeneration) {
+      final cancelToken = CancelToken();
+      _eventCancelToken = cancelToken;
+      try {
+        final response = await _dio.get<ResponseBody>(
+          '/messages/events',
+          cancelToken: cancelToken,
+          options: Options(
+            responseType: ResponseType.stream,
+            receiveTimeout: Duration.zero,
+            headers: const {'Accept': 'text/event-stream'},
+          ),
+        );
+        final body = response.data;
+        if (body == null) throw StateError('实时消息响应为空');
+        retryDelay = const Duration(seconds: 1);
+        await _consumeEventStream(body, userId, generation);
+      } on DioException catch (error) {
+        if (CancelToken.isCancel(error) ||
+            _sessionUserId != userId ||
+            generation != _realtimeGeneration) {
+          return;
+        }
+        debugPrint('私信实时连接中断，等待重连: $error');
+      } catch (error) {
+        if (_sessionUserId != userId || generation != _realtimeGeneration) {
+          return;
+        }
+        debugPrint('私信实时事件解析失败，等待重连: $error');
+      }
+
+      await Future<void>.delayed(retryDelay);
+      final nextSeconds = min(
+        retryDelay.inSeconds * 2,
+        _maxRealtimeRetryDelay.inSeconds,
+      );
+      retryDelay = Duration(seconds: nextSeconds);
+    }
+  }
+
+  Future<void> _consumeEventStream(
+    ResponseBody body,
+    int userId,
+    int generation,
+  ) async {
+    var eventType = 'message';
+    final dataLines = <String>[];
+    final lines = body.stream
+        .cast<List<int>>()
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+    await for (final line in lines) {
+      if (_sessionUserId != userId || generation != _realtimeGeneration) return;
+      if (line.isEmpty) {
+        if (dataLines.isNotEmpty && eventType != 'ping') {
+          final decoded = jsonDecode(dataLines.join('\n'));
+          if (decoded is Map) {
+            _applyRealtimeEvent(
+              eventType,
+              Map<String, dynamic>.from(decoded),
+            );
+          }
+        }
+        eventType = 'message';
+        dataLines.clear();
+      } else if (line.startsWith('event:')) {
+        eventType = line.substring(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.add(line.substring(5).trimLeft());
+      }
+    }
+  }
+
+  @visibleForTesting
+  void applyRealtimeEventForTest(
+    String eventType,
+    Map<String, dynamic> data,
+  ) {
+    _applyRealtimeEvent(eventType, data);
+  }
+
+  void _applyRealtimeEvent(
+    String eventType,
+    Map<String, dynamic> data,
+  ) {
+    if (eventType == 'message.created') {
+      final rawMessage = data['message'];
+      if (rawMessage is! Map) return;
+      final message = Message.fromJson(
+        Map<String, dynamic>.from(rawMessage),
+      );
+      final clientMessageId = message.clientMessageId;
+      final pendingMatch = clientMessageId != null &&
+          _pendingMessages.containsKey(clientMessageId);
+      if (pendingMatch) {
+        _replacePendingWithServer(clientMessageId, message);
+        return;
+      }
+      if (_currentConversationId == message.conversationId) {
+        _mergeCurrentMessages([message]);
+        _rememberMessages(message.conversationId);
+      } else {
+        final cached = _messageCache[message.conversationId];
+        if (cached != null && !cached.any((item) => item.id == message.id)) {
+          cached.add(message);
+          cached.sort((left, right) => left.id.compareTo(right.id));
+        }
+      }
+      _updateConversationFromMessage(message);
+      notifyListeners();
+      return;
+    }
+
+    if (eventType == 'message.read') {
+      final conversationId = (data['conversation_id'] as num?)?.toInt();
+      final readByUserId = (data['read_by_user_id'] as num?)?.toInt();
+      final readThroughMessageId =
+          (data['read_through_message_id'] as num?)?.toInt();
+      final readAt = DateTime.tryParse(data['read_at']?.toString() ?? '');
+      if (conversationId == null || readByUserId == null || readAt == null) {
+        return;
+      }
+      bool isCoveredByReceipt(Message message) {
+        if (message.id <= 0 || message.senderId == readByUserId) return false;
+        if (readThroughMessageId != null) {
+          return message.id <= readThroughMessageId;
+        }
+        // 兼容尚未返回 read_through_message_id 的旧服务端。
+        return !message.createdAt.isAfter(readAt);
+      }
+
+      var changed = false;
+      if (_currentConversationId == conversationId) {
+        for (var index = 0; index < _messages.length; index++) {
+          final message = _messages[index];
+          if (message.readAt == null && isCoveredByReceipt(message)) {
+            _messages[index] = message.copyWith(readAt: readAt);
+            changed = true;
+          }
+        }
+        if (changed) _rememberMessages(conversationId);
+      }
+      final cached = _messageCache[conversationId];
+      if (cached != null) {
+        for (var index = 0; index < cached.length; index++) {
+          final message = cached[index];
+          if (message.readAt == null && isCoveredByReceipt(message)) {
+            cached[index] = message.copyWith(readAt: readAt);
+            changed = true;
+          }
+        }
+      }
+      if (changed) notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _stopRealtime();
+    super.dispose();
+  }
+}
+
+class _PendingMessageContext {
+  _PendingMessageContext({
+    required this.targetUserId,
+    required this.originConversationId,
+    required this.message,
+  });
+
+  final int targetUserId;
+  final int? originConversationId;
+  Message message;
+}
+
+class _MessageDraft {
+  const _MessageDraft({required this.content, this.stickerId});
+
+  final String content;
+  final String? stickerId;
 }

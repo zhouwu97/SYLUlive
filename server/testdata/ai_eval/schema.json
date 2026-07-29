@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shenliyuan.local/schemas/ai-evaluation-case-v1.json",
+  "title": "沈理 AI 政策 RAG 统一评测用例",
+  "description": "每个 JSONL 行都必须符合此 Schema。Go Runner 与后续 Python Runner 共同读取同一份数据。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "name": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["citation", "policy"]},
+    "category": {"type": "string", "minLength": 1},
+    "question": {"type": "string", "minLength": 1},
+    "answer": {"type": "string"},
+    "allowed_chunk_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "arguments": true,
+    "expected_valid": {"type": "boolean"},
+    "target_document_types": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "target_sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "must_contain": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "must_not_contain": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "allow_historical": {"type": "boolean"},
+    "should_refuse": {"type": "boolean"},
+    "fixture": {"$ref": "#/$defs/fixture"}
+  },
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunk_id"],
+      "properties": {
+        "chunk_id": {"type": "integer", "minimum": 1},
+        "document_id": {"type": "integer", "minimum": 1},
+        "title": {"type": "string"},
+        "content": {"type": "string"},
+        "source": {"type": "string"},
+        "document_type": {"type": "string"},
+        "historical": {"type": "boolean"},
+        "source_locator": {"type": "string"}
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retrieved": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/document"}
+        },
+        "answer": {"type": "string"},
+        "refused": {"type": "boolean"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "citation"}}, "required": ["kind"]},
+      "then": {
+        "required": ["answer", "allowed_chunk_ids", "expected_valid"],
+        "anyOf": [{"required": ["id"]}, {"required": ["name"]}]
+      }
+    },
+    {
+      "if": {"properties": {"kind": {"const": "policy"}}, "required": ["kind"]},
+      "then": {
+        "required": ["id", "category", "question", "fixture"],
+        "anyOf": [
+          {"properties": {"should_refuse": {"const": true}}, "required": ["should_refuse"]},
+          {"required": ["target_document_types", "target_sources"]}
+        ]
+      }
+    }
+  ]
+}

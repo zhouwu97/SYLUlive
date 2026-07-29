@@ -9,22 +9,33 @@ void main() {
       'internal_test_only': true,
       'phase': 'p0',
       'chat_enabled': false,
-      'features': {'policy_rag': false, 'schedule_windows': false},
+      'features': {
+        'policy_rag': false,
+        'schedule_windows': false,
+        'hy3_competition_compare': true,
+        'hy3_academic_analysis': true,
+        'hy3_week_plan': true,
+      },
       'quota': {
         'limit': 3,
         'remaining': 2,
+        'unlimited': true,
         'window_seconds': 3600,
         'reset_at': '2026-07-19T12:30:00+08:00',
       },
-      'max_message_chars': 20,
+      'max_message_chars': 200,
     });
 
     expect(capabilities.isVisible, isTrue);
     expect(capabilities.chatEnabled, isFalse);
     expect(capabilities.phase, 'p0');
     expect(capabilities.quota.remaining, 2);
+    expect(capabilities.quota.unlimited, isTrue);
     expect(capabilities.quota.resetAt, isNotNull);
-    expect(capabilities.maxMessageChars, 20);
+    expect(capabilities.maxMessageChars, 200);
+    expect(capabilities.features.hy3CompetitionCompare, isTrue);
+    expect(capabilities.features.hy3AcademicAnalysis, isTrue);
+    expect(capabilities.features.hy3WeekPlan, isTrue);
   });
 
   test('无资格账号不会显示入口', () {
@@ -36,5 +47,7 @@ void main() {
     });
 
     expect(capabilities.isVisible, isFalse);
+    expect(capabilities.maxMessageChars, 200);
+    expect(capabilities.features.hy3CompetitionCompare, isFalse);
   });
 }

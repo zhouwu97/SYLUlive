@@ -203,11 +203,16 @@ psql "$DSN" -f server/sql/20260726_ai_run_consents.sql
 
 | 项目 | 冻结值 |
 | --- | --- |
-| SYLUlive 实现 | `51f41de8cbf3f6761ddbdfc96b781ad3f6a65549` |
-| Go 1.25 Linux/amd64 二进制 SHA-256 | `5040ffd609c98babe1d281e38838ef212f2fee52b6b851b924b67a1f8b409440` |
+| SYLUlive 实现 | `53d8ed5f875e9d7174335b2965def05f377e1bf3` |
+| Go 1.25 Linux/amd64 二进制 SHA-256 | `00e49a4177d26a4c6da63fba5f8564b09b7e4995ac633971177b7d78a703f896` |
 | SYLUlive_MCP 标签 | `sylulive-mcp-prod-20260728` |
 | SYLUlive_MCP 实现 | `765a5b634f18aaa616b3c424462572651c54b034` |
 | 契约版本 | `sylulive-hy3/1` |
+| 公共 AI 消息上限 | `500` 个 grapheme cluster |
+| 不限额学号仓库默认值 | 空；生产值仅允许存在于受控环境文件 |
 
-生产 `/health` 已验证返回外部 MCP 健康、Live 模式和三个已注册工具。登录态
-`/api/ai/capabilities` 仍需使用专用测试账号完成生产响应验收。
+2026-07-28 23:30 CST 已完成原子部署和独立复核：生产 `/health` 返回外部 MCP
+健康、Live 模式和三个已注册工具，匿名 `/api/ai/capabilities` 保持 `401`，启动日志未出现
+MCP 连接、工具列表、兼容工具、panic 或 fatal 错误。旧二进制与旧环境文件均已保留为回滚备份，
+且旧二进制摘要已复核为 `5040ffd609c98babe1d281e38838ef212f2fee52b6b851b924b67a1f8b409440`。
+登录态 `/api/ai/capabilities` 仍需使用专用测试账号完成生产响应验收。

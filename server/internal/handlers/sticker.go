@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -68,12 +69,37 @@ func ServeSticker(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
+	etag := fmt.Sprintf("\"sticker-%s\"", stickerID)
+	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.Header("ETag", etag)
+	if matchesIfNoneMatch(c.GetHeader("If-None-Match"), etag) {
+		c.Status(http.StatusNotModified)
+		return
+	}
 	data, err := stickerAssetFS.ReadFile("sticker_assets/" + asset.File)
 	if err != nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.Header("Cache-Control", "public, max-age=31536000, immutable")
-	c.Header("ETag", fmt.Sprintf("\"sticker-%s\"", stickerID))
+	if c.Request.Method == http.MethodHead {
+		c.Header("Content-Type", asset.MimeType)
+		c.Header("Content-Length", strconv.Itoa(len(data)))
+		c.Status(http.StatusOK)
+		return
+	}
 	c.Data(http.StatusOK, asset.MimeType, data)
+}
+
+func matchesIfNoneMatch(header, etag string) bool {
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" {
+			return true
+		}
+		candidate = strings.TrimSpace(strings.TrimPrefix(candidate, "W/"))
+		if candidate == etag {
+			return true
+		}
+	}
+	return false
 }

@@ -422,13 +422,15 @@ func (h *MessageHandler) Send(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "表情不存在"})
 			return
 		}
-		if input.Content != "" || input.FileID != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "表情消息不能同时包含文字或图片"})
+		if input.FileID != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "表情消息不能同时包含图片"})
 			return
 		}
 		input.StickerID = &stickerID
-		// 旧客户端不认识 sticker_id，保留可读的文本回退，避免显示空气泡。
-		input.Content = stickerFallbackText
+		if input.Content == "" {
+			// 旧客户端不认识 sticker_id，纯表情仍保留可读的文本回退。
+			input.Content = stickerFallbackText
+		}
 	}
 	if utf8.RuneCountInString(input.Content) > maxMessageLength {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能超过2000个字符"})
@@ -759,7 +761,7 @@ func (h *MessageHandler) pushPrivateMessage(targetUserID uint, sender models.Use
 
 func privateMessagePreview(message models.Message) string {
 	content := strings.TrimSpace(message.Content)
-	if message.StickerID != nil {
+	if message.StickerID != nil && (content == "" || content == stickerFallbackText) {
 		return stickerFallbackText
 	}
 	if content == "" && message.FileID != nil {

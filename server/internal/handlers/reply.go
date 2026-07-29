@@ -107,10 +107,16 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "表情不存在"})
 			return
 		}
-		if input.Content != "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "表情回复不能同时包含文字"})
-			return
-		}
+	}
+	fileIDs := c.PostForm("file_ids")
+	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.StickerID != "" && len(parsedFileIDs) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "表情回复不能同时包含图片"})
+		return
 	}
 
 	// 检查帖子是否存在
@@ -145,8 +151,10 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	var stickerID *string
 	if input.StickerID != "" {
 		stickerID = &input.StickerID
-		// 旧客户端按普通评论展示文本回退，新客户端优先渲染 sticker_id。
-		input.Content = stickerFallbackText
+		if input.Content == "" {
+			// 旧客户端按普通评论展示纯表情的文本回退。
+			input.Content = stickerFallbackText
+		}
 	}
 	reply := models.Reply{
 		PostID:        uint(postID),
@@ -159,12 +167,6 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 
 	// 回复、回复图片和帖子活跃统计必须原子提交，避免列表出现已显示回复却没有刷新活跃时间的状态。
-	fileIDs := c.PostForm("file_ids")
-	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if _, err := services.ValidateImageFileIDs(tx, parsedFileIDs, 9, userID.(uint)); err != nil {
 			return err
@@ -225,9 +227,6 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 
 	// 发送通知（数据库 + 极光推送）
 	contentPreview := utils.TruncateGraphemes(input.Content, 80)
-	if input.StickerID != "" {
-		contentPreview = stickerFallbackText
-	}
 	if input.ParentReplyID != nil {
 		// 回复别人的评论 → 通知被回复的评论作者
 		var parentReply models.Reply

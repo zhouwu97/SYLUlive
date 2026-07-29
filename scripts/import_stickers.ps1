@@ -248,5 +248,16 @@ foreach ($group in $catalog) {
     [void]$dart.AppendLine("  ]),")
 }
 [void]$dart.AppendLine("] ;")
+[void]$dart.AppendLine("")
+[void]$dart.AppendLine("AppSticker? appStickerById(String? id) {")
+[void]$dart.AppendLine("  final normalized = id?.trim();")
+[void]$dart.AppendLine("  if (normalized == null || normalized.isEmpty) return null;")
+[void]$dart.AppendLine("  for (final group in appStickerGroups) {")
+[void]$dart.AppendLine("    for (final sticker in group.items) {")
+[void]$dart.AppendLine("      if (sticker.id == normalized) return sticker;")
+[void]$dart.AppendLine("    }")
+[void]$dart.AppendLine("  }")
+[void]$dart.AppendLine("  return null;")
+[void]$dart.AppendLine("}")
 [System.IO.File]::WriteAllText($clientCatalogPath, $dart.ToString(), [System.Text.UTF8Encoding]::new($false))
 Write-Host "已导入 $((($catalog | ForEach-Object { $_.items.Count }) | Measure-Object -Sum).Sum) 个表情。"

@@ -24,6 +24,7 @@ import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
+import '../widgets/emoji/sticker_composer_preview.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import '../models/unread_reply_notification.dart';
 import 'create_post_screen.dart';
@@ -177,6 +178,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final _replyFocus = FocusNode();
   bool _isReplyComposerOpen = false;
   bool _showReplyEmojiPanel = false;
+  AppSticker? _selectedReplySticker;
   int _marketImageIndex = 0;
   int? _parentReplyId;
   String? _replyToName;
@@ -397,64 +399,46 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _sendReply() async {
     if (_isSending) return;
     final content = _replyController.text.trim();
-    if (content.isEmpty) return;
+    final selectedSticker = _selectedReplySticker;
+    if (content.isEmpty && selectedSticker == null) return;
 
     if (mounted) setState(() => _isSending = true);
 
     final parentId = _parentReplyId;
     final replyToUserId = _replyToUserId;
 
-    _replyController.clear();
-    _replyFocus.unfocus();
-    if (mounted) {
-      setState(() {
-        _isReplyComposerOpen = false;
-        _showReplyEmojiPanel = false;
-        _parentReplyId = null;
-        _replyToName = null;
-        _replyToUserId = null;
-      });
-    }
-
     try {
-      await _submitReplyContent(
+      final sent = await _submitReplyContent(
         content: content,
+        stickerId: selectedSticker?.id,
         parentReplyId: parentId,
         replyToUserId: replyToUserId,
       );
+      if (sent && mounted) {
+        _replyController.clear();
+        _replyFocus.unfocus();
+        setState(() {
+          _isReplyComposerOpen = false;
+          _showReplyEmojiPanel = false;
+          _selectedReplySticker = null;
+          _parentReplyId = null;
+          _replyToName = null;
+          _replyToUserId = null;
+        });
+      }
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
   }
 
-  Future<void> _sendReplySticker(AppSticker sticker) async {
+  void _selectReplySticker(AppSticker sticker) {
     if (_isSending) return;
-    if (mounted) setState(() => _isSending = true);
+    setState(() => _selectedReplySticker = sticker);
+  }
 
-    final parentId = _parentReplyId;
-    final replyToUserId = _replyToUserId;
-    _replyController.clear();
-    _replyFocus.unfocus();
-    if (mounted) {
-      setState(() {
-        _isReplyComposerOpen = false;
-        _showReplyEmojiPanel = false;
-        _parentReplyId = null;
-        _replyToName = null;
-        _replyToUserId = null;
-      });
-    }
-
-    try {
-      await _submitReplyContent(
-        content: '',
-        stickerId: sticker.id,
-        parentReplyId: parentId,
-        replyToUserId: replyToUserId,
-      );
-    } finally {
-      if (mounted) setState(() => _isSending = false);
-    }
+  void _removeSelectedReplySticker() {
+    if (_isSending) return;
+    setState(() => _selectedReplySticker = null);
   }
 
   Future<bool> _submitReplyContent({
@@ -2828,6 +2812,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (_selectedReplySticker != null)
+                StickerComposerPreview(
+                  sticker: _selectedReplySticker!,
+                  onRemove: _removeSelectedReplySticker,
+                  enabled: !_isSending,
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                 child: Row(
@@ -2850,6 +2840,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 key: const ValueKey('post-reply-input'),
                                 controller: _replyController,
                                 focusNode: _replyFocus,
+                                enabled: !_isSending,
+                                readOnly: _isSending,
                                 onTap: () {
                                   if (_showReplyEmojiPanel) {
                                     setState(
@@ -2897,7 +2889,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   'post-reply-emoji-button',
                                 ),
                                 tooltip: _showReplyEmojiPanel ? '打开键盘' : '选择表情',
-                                onPressed: _toggleReplyEmojiPanel,
+                                onPressed:
+                                    _isSending ? null : _toggleReplyEmojiPanel,
                                 padding: EdgeInsets.zero,
                                 icon: Icon(
                                   _showReplyEmojiPanel
@@ -2918,8 +2911,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ValueListenableBuilder<TextEditingValue>(
                       valueListenable: _replyController,
                       builder: (context, value, _) {
-                        final canSend =
-                            !_isSending && value.text.trim().isNotEmpty;
+                        final canSend = !_isSending &&
+                            (value.text.trim().isNotEmpty ||
+                                _selectedReplySticker != null);
                         return IconButton.filled(
                           key: const ValueKey('post-reply-send-button'),
                           tooltip: '发送评论',
@@ -2961,9 +2955,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         height: _replyEmojiPanelHeight,
                         child: AppEmojiPanel(
                           onEmojiSelected: _insertReplyEmoji,
-                          onStickerSelected: _sendReplySticker,
+                          onStickerSelected: _selectReplySticker,
                           onBackspace: () =>
                               deletePreviousCharacter(_replyController),
+                          enabled: !_isSending,
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -3765,9 +3760,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   InlineSpan _buildCompactContentSpan(Reply r, bool isDark) {
-    if (r.isSticker) {
+    if (r.hasSticker) {
       return TextSpan(
-        text: '[表情]',
+        text: r.hasTextContent ? '${r.content} [表情]' : '[表情]',
         style: TextStyle(
           fontSize: 12.5,
           color: isDark ? Colors.white60 : const Color(0xFF4B5563),
@@ -4431,7 +4426,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   /// 解析子回复内容中的 @用户名 并高亮
   Widget _buildChildContent(Reply r, bool isDark) {
-    if (r.isSticker) {
+    if (r.hasSticker) {
       return SelectionContainer.disabled(
         child: _buildReplyContent(r, isDark, size: 104),
       );
@@ -4482,32 +4477,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildReplyContent(Reply reply, bool isDark, {double size = 132}) {
-    if (reply.isSticker) {
-      return CachedNetworkImage(
-        key: ValueKey('reply-sticker-${reply.id}'),
-        imageUrl: ApiConstants.fullUrl(reply.stickerUrl),
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-        placeholder: (_, __) => SizedBox(
-          width: size,
-          height: size,
-          child: const Center(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-        ),
-        errorWidget: (_, __, ___) => SizedBox(
-          width: size,
-          height: size,
-          child: const Center(child: Icon(Icons.broken_image_outlined)),
-        ),
-      );
-    }
-    return Text(
+    final textWidget = Text(
       reply.content,
       style: TextStyle(
         fontSize: 14,
@@ -4515,6 +4485,57 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         color: isDark ? Colors.white70 : Colors.grey[800],
       ),
     );
+    if (reply.hasSticker) {
+      final localSticker = appStickerById(reply.stickerId);
+      final stickerWidget = CachedNetworkImage(
+        key: ValueKey('reply-sticker-${reply.id}'),
+        imageUrl: ApiConstants.fullUrl(reply.stickerUrl),
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        placeholder: (_, __) => localSticker == null
+            ? SizedBox(
+                width: size,
+                height: size,
+                child: const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            : Image.asset(
+                localSticker.thumbnailAsset,
+                width: size,
+                height: size,
+                fit: BoxFit.contain,
+              ),
+        errorWidget: (_, __, ___) => localSticker == null
+            ? SizedBox(
+                width: size,
+                height: size,
+                child: const Center(child: Icon(Icons.broken_image_outlined)),
+              )
+            : Image.asset(
+                localSticker.thumbnailAsset,
+                width: size,
+                height: size,
+                fit: BoxFit.contain,
+              ),
+      );
+      if (!reply.hasTextContent) return stickerWidget;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          textWidget,
+          const SizedBox(height: 8),
+          stickerWidget,
+        ],
+      );
+    }
+    return textWidget;
   }
 
   // ---- 回复输入（集市保留） ----

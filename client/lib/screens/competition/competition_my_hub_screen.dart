@@ -69,8 +69,7 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
       _dashboardError = null;
     });
     try {
-      final response =
-          await widget.dio.get('/user/competitions/dashboard');
+      final response = await widget.dio.get('/user/competitions/dashboard');
       if (!mounted || serial != _loadSerial) return;
       setState(() {
         _dashboard = CompetitionDashboardSummary.fromJson(
@@ -280,8 +279,7 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
   String _preferenceSubtitle(CompetitionDashboardSummary? value) {
     if (value == null) return _dashboardError ?? '正在读取竞赛目标';
     if (!value.preferenceConfigured) return '设置参赛方向、角色和可投入时间';
-    final goal =
-        competitionGoalLabels[value.primaryGoal] ?? value.primaryGoal;
+    final goal = competitionGoalLabels[value.primaryGoal] ?? value.primaryGoal;
     return [
       if (goal.isNotEmpty) goal,
       if (value.primaryDirection.isNotEmpty) value.primaryDirection,

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../models/competition_dashboard_summary.dart';
-import '../../models/competition_preference.dart';
 import 'competition_ui_tokens.dart';
 
 class CompetitionProfileCompactCard extends StatelessWidget {
@@ -27,8 +26,7 @@ class CompetitionProfileCompactCard extends StatelessWidget {
     if (error != null && summary == null) return '竞赛档案暂时无法读取';
     if (loading && summary == null) return '正在读取竞赛档案';
     final data = summary;
-    if (data == null ||
-        (!data.preferenceConfigured && data.awardTotal == 0)) {
+    if (data == null || (!data.preferenceConfigured && data.awardTotal == 0)) {
       return '还未完善 · 设置目标或添加竞赛经历';
     }
     if (data.pendingAwardCount > 0) {
@@ -38,13 +36,7 @@ class CompetitionProfileCompactCard extends StatelessWidget {
       return '目标${data.preferenceConfigured ? '已设置' : '待完善'} · '
           '${data.awardTotal}段经历 · ${data.verifiedAwardCount}项已核验';
     }
-    final goal = competitionGoalLabels[data.primaryGoal] ?? data.primaryGoal;
-    final parts = <String>[
-      if (goal.isNotEmpty) goal,
-      if (data.primaryDirection.isNotEmpty) data.primaryDirection,
-      '暂无竞赛经历',
-    ];
-    return parts.join(' · ');
+    return '目标已设置 · 暂无竞赛经历 · 画像待完善';
   }
 
   @override

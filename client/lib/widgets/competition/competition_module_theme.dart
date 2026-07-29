@@ -58,9 +58,7 @@ class CompetitionModuleTheme {
               : CompetitionUiTokens.subColor(isDark),
         ),
         trackColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
-              ? accent
-              : border,
+          (states) => states.contains(WidgetState.selected) ? accent : border,
         ),
       ),
       chipTheme: base.chipTheme.copyWith(
@@ -71,16 +69,15 @@ class CompetitionModuleTheme {
         shape: compactChipShape,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         labelPadding: const EdgeInsets.symmetric(horizontal: 2),
-        visualDensity: const VisualDensity(horizontal: 0, vertical: -2),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
           minimumSize: const WidgetStatePropertyAll(Size(48, 40)),
-          visualDensity:
-              const WidgetStatePropertyAll(VisualDensity(vertical: -1)),
+          visualDensity: const VisualDensity(vertical: -1),
           foregroundColor: WidgetStateProperty.resolveWith(
-            (states) =>
-                states.contains(WidgetState.selected) ? Colors.white : foreground,
+            (states) => states.contains(WidgetState.selected)
+                ? Colors.white
+                : foreground,
           ),
           backgroundColor: WidgetStateProperty.resolveWith(
             (states) => states.contains(WidgetState.selected)

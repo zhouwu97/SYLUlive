@@ -145,6 +145,59 @@ void main() {
   });
 
   group('CompetitionCenterScreen 分页', () {
+    testWidgets('首页只保留一个竞赛档案组件并使用单行筛选', (tester) async {
+      final adapter = _CompetitionAdapter((options) {
+        if (options.path == '/competitions/events') {
+          return _json({
+            'items': [_event(1)],
+            'total': 1,
+          });
+        }
+        return _catalogStub(options);
+      });
+
+      await _pump(tester, _dio(adapter), const CompetitionCenterScreen());
+
+      expect(
+        find.byKey(const Key('competition-profile-compact-card')),
+        findsOneWidget,
+      );
+      expect(find.text('我的竞赛目标'), findsNothing);
+      expect(find.text('我的竞赛经历'), findsNothing);
+      expect(find.text('我的能力画像'), findsNothing);
+      final horizontal = tester.widgetList<SingleChildScrollView>(
+        find.byType(SingleChildScrollView),
+      );
+      expect(
+        horizontal.any((view) => view.scrollDirection == Axis.horizontal),
+        isTrue,
+      );
+    });
+
+    for (final width in [360.0, 411.0]) {
+      testWidgets('${width.toInt()}px 宽度首屏可看到比赛目录或首张比赛卡片', (tester) async {
+        tester.view.physicalSize = Size(width, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final adapter = _CompetitionAdapter((options) {
+          if (options.path == '/competitions/events') {
+            return _json({
+              'items': [_event(1)],
+              'total': 1,
+            });
+          }
+          return _catalogStub(options);
+        });
+
+        await _pump(tester, _dio(adapter), const CompetitionCenterScreen());
+
+        final directory = find.text('共 1 个结果 · 全部分类');
+        expect(directory, findsOneWidget);
+        expect(tester.getTopLeft(directory).dy, lessThan(800));
+      });
+    }
+
     testWidgets('返回不足一页时滚动到底不再请求下一页', (tester) async {
       final pages = <int>[];
       final adapter = _CompetitionAdapter((options) {

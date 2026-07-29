@@ -666,285 +666,6 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     }
   }
 
-  Widget _buildPreferenceEntry(bool isDark) {
-    final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
-    final preference = _competitionPreference;
-    String title = '完善竞赛目标';
-    String subtitle = '让“适合我”更符合你的方向';
-    if (!isLoggedIn) {
-      subtitle = '登录后设置你的参赛方向和投入时间';
-    } else if (_preferenceLoading && preference == null) {
-      subtitle = '正在读取你的竞赛目标';
-    } else if (_preferenceError != null && preference == null) {
-      subtitle = '读取失败，点击重试';
-    } else if (preference?.configured == true) {
-      title = '我的竞赛目标';
-      final parts = <String>[];
-      if (preference!.goals.isNotEmpty) {
-        parts.add(competitionGoalLabels[preference.goals.first] ??
-            preference.goals.first);
-      }
-      if (preference.directionTags.isNotEmpty) {
-        parts.add(preference.directionTags.first);
-      }
-      parts.add(competitionWeeklyHourLabels[preference.weeklyHours] ??
-          '每周 ${preference.weeklyHours} 小时');
-      subtitle = parts.join(' · ');
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        CompetitionUiTokens.pagePadding,
-        0,
-        CompetitionUiTokens.pagePadding,
-        14,
-      ),
-      child: Material(
-        color: CompetitionUiTokens.cardBg(isDark),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-        ),
-        child: InkWell(
-          onTap: _preferenceError != null && preference == null
-              ? _loadPreference
-              : _openCompetitionPreference,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                Icon(Icons.flag_outlined,
-                    color: CompetitionUiTokens.accent(isDark), size: 21),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title,
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: CompetitionUiTokens.titleColor(isDark))),
-                      const SizedBox(height: 3),
-                      Text(
-                        subtitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: CompetitionUiTokens.subColor(isDark)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.chevron_right_rounded,
-                    color: CompetitionUiTokens.subColor(isDark)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openCompetitionPreference() async {
-    var auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) {
-      await Navigator.pushNamed(context, '/login');
-      if (!mounted) return;
-      auth = context.read<AuthProvider>();
-      if (!auth.isLoggedIn) return;
-    }
-    final accountID = auth.user?.id;
-    if (accountID == null) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CompetitionPreferenceScreen(
-          dio: auth.dio,
-          accountKey: accountID,
-        ),
-      ),
-    );
-    if (mounted && context.read<AuthProvider>().user?.id == accountID) {
-      await _loadPreference();
-    }
-  }
-
-  Widget _buildAwardEntry(bool isDark) {
-    final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        CompetitionUiTokens.pagePadding,
-        0,
-        CompetitionUiTokens.pagePadding,
-        14,
-      ),
-      child: Material(
-        color: CompetitionUiTokens.cardBg(isDark),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-        ),
-        child: InkWell(
-          key: const Key('competition-award-entry'),
-          onTap: _openCompetitionAwards,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.workspace_premium_outlined,
-                  color: CompetitionUiTokens.accent(isDark),
-                  size: 21,
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '我的竞赛经历',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: CompetitionUiTokens.titleColor(isDark),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        isLoggedIn ? '记录参赛、获奖和团队贡献' : '登录后管理你的私有竞赛档案',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: CompetitionUiTokens.subColor(isDark),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: CompetitionUiTokens.subColor(isDark),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openCompetitionAwards() async {
-    var auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) {
-      await Navigator.pushNamed(context, '/login');
-      if (!mounted) return;
-      auth = context.read<AuthProvider>();
-      if (!auth.isLoggedIn) return;
-    }
-    final accountID = auth.user?.id;
-    if (accountID == null) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CompetitionAwardScreen(
-          dio: auth.dio,
-          accountKey: accountID,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCapabilityProfileEntry(bool isDark) {
-    final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        CompetitionUiTokens.pagePadding,
-        0,
-        CompetitionUiTokens.pagePadding,
-        14,
-      ),
-      child: Material(
-        color: CompetitionUiTokens.cardBg(isDark),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-        ),
-        child: InkWell(
-          key: const Key('competition-capability-profile-entry'),
-          onTap: _openCompetitionCapabilityProfile,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.account_tree_outlined,
-                  color: CompetitionUiTokens.accent(isDark),
-                  size: 21,
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '我的能力画像',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: CompetitionUiTokens.titleColor(isDark),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        isLoggedIn ? '查看经历与目标的结构化汇总' : '登录后查看你的竞赛能力画像',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: CompetitionUiTokens.subColor(isDark),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: CompetitionUiTokens.subColor(isDark),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openCompetitionCapabilityProfile() async {
-    var auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) {
-      await Navigator.pushNamed(context, '/login');
-      if (!mounted) return;
-      auth = context.read<AuthProvider>();
-      if (!auth.isLoggedIn) return;
-    }
-    final accountID = auth.user?.id;
-    if (accountID == null) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CompetitionCapabilityProfileScreen(
-          dio: auth.dio,
-          accountKey: accountID,
-        ),
-      ),
-    );
-  }
-
   Widget _buildStatBand(
     bool isDark,
     List<(String, String, VoidCallback?)> items,
@@ -1519,8 +1240,8 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                               isDark,
                             ),
                             _detailInfo('比赛时间', event.eventTimeText, isDark),
-                            _detailInfo(
-                                '时间状态', _competitionTimeStateLabel(event), isDark),
+                            _detailInfo('时间状态',
+                                _competitionTimeStateLabel(event), isDark),
                             _detailInfo(
                                 '时间精度', event.timePrecisionLabel, isDark),
                             _detailInfo('时间说明', event.timeNote, isDark),
@@ -1547,8 +1268,8 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                             ],
                             _detailInfo(
                                 '适合对象', _rawValue('target_audience'), isDark),
-                            _detailInfo('参赛形式',
-                                _rawValue('participation_type'), isDark),
+                            _detailInfo('参赛形式', _rawValue('participation_type'),
+                                isDark),
                           ],
                         ),
                         _detailCard(
@@ -1556,12 +1277,11 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                           isDark: isDark,
                           children: [
                             _detailInfo('主办方', event.organizer, isDark),
-                            _detailInfo(
-                                '比赛级别', event.competitionLevel, isDark),
+                            _detailInfo('比赛级别', event.competitionLevel, isDark),
                             _detailInfo('地点',
                                 event.isOnline ? '线上' : event.location, isDark),
-                            _detailInfo(
-                                '来源', _sourceLabel(event.sourceChannel), isDark),
+                            _detailInfo('来源', _sourceLabel(event.sourceChannel),
+                                isDark),
                           ],
                         ),
                         _detailCard(
@@ -1581,8 +1301,7 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                         FilledButton.icon(
                           onPressed: () => _addToPlan(event),
                           style: FilledButton.styleFrom(
-                            backgroundColor:
-                                CompetitionUiTokens.accent(isDark),
+                            backgroundColor: CompetitionUiTokens.accent(isDark),
                             foregroundColor: Colors.white,
                           ),
                           icon: const Icon(Icons.add),
@@ -1764,8 +1483,7 @@ class _CompetitionFilterSheetState extends State<_CompetitionFilterSheet> {
         return Container(
           decoration: BoxDecoration(
             color: CompetitionUiTokens.pageBg(isDark),
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(28)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(
             children: [

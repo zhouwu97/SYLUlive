@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -799,6 +800,58 @@ void main() {
       const Color(0xFF6B8EFF),
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('帖子评论输入文字与表情按钮垂直居中对齐', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = _postWithImages(
+      id: 104,
+      title: 'Centered reply input',
+      imageUrls: ['http://example.com/one.png'],
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('写下你的想法...').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('post-reply-input')),
+      '0000',
+    );
+    await tester.pump();
+
+    final editableFinder = find.descendant(
+      of: find.byKey(const ValueKey('post-reply-input')),
+      matching: find.byType(EditableText),
+    );
+    RenderEditable? editable;
+    late void Function(RenderObject) findEditable;
+    findEditable = (renderObject) {
+      if (renderObject is RenderEditable) {
+        editable = renderObject;
+        return;
+      }
+      renderObject.visitChildren((child) {
+        if (editable == null) findEditable(child);
+      });
+    };
+    findEditable(tester.renderObject(editableFinder));
+    expect(editable, isNotNull);
+    final renderEditable = editable!;
+    final caretRect = renderEditable.getLocalRectForCaret(
+      const TextPosition(offset: 2),
+    );
+    final textCenterY = renderEditable.localToGlobal(caretRect.center).dy;
+    final emojiCenterY = tester
+        .getCenter(find.byKey(const ValueKey('post-reply-emoji-button')))
+        .dy;
+
+    expect((textCenterY - emojiCenterY).abs(), lessThanOrEqualTo(1));
   });
 
   testWidgets('帖子评论栏选择表情包后进入编辑器预览', (tester) async {

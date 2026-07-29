@@ -71,6 +71,7 @@ class Message {
   final String? clientMessageId;
   final String content;
   final int? fileId;
+  final String? stickerId;
   final DateTime createdAt;
   final DateTime? readAt;
   final User? sender;
@@ -86,6 +87,7 @@ class Message {
     this.clientMessageId,
     required this.content,
     this.fileId,
+    this.stickerId,
     required this.createdAt,
     this.readAt,
     this.sender,
@@ -103,6 +105,7 @@ class Message {
       clientMessageId: json['client_message_id'] as String?,
       content: json['content'] ?? '',
       fileId: json['file_id'],
+      stickerId: json['sticker_id']?.toString(),
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       readAt:
           json['read_at'] != null ? DateTime.tryParse(json['read_at']) : null,
@@ -112,6 +115,10 @@ class Message {
   }
 
   String get imageUrl => file?.url ?? '';
+
+  bool get isSticker => stickerId?.isNotEmpty == true;
+
+  String get stickerUrl => isSticker ? '/stickers/$stickerId' : '';
 
   bool get isPending => localStatus == MessageLocalStatus.pending;
 
@@ -128,6 +135,7 @@ class Message {
     String? clientMessageId,
     String? content,
     int? fileId,
+    String? stickerId,
     DateTime? createdAt,
     DateTime? readAt,
     User? sender,
@@ -144,6 +152,7 @@ class Message {
       clientMessageId: clientMessageId ?? this.clientMessageId,
       content: content ?? this.content,
       fileId: fileId ?? this.fileId,
+      stickerId: stickerId ?? this.stickerId,
       createdAt: createdAt ?? this.createdAt,
       readAt: readAt ?? this.readAt,
       sender: sender ?? this.sender,

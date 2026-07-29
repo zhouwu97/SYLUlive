@@ -532,6 +532,42 @@ func TestMessageSendImageResponseAndPush(t *testing.T) {
 	}
 }
 
+func TestMessageSendStickerValidatesCatalogAndPersistsID(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	handler := NewMessageHandler(db)
+
+	invalid := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1,
+		`{"sticker_id":"not-in-catalog"}`,
+	)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid sticker status=%d body=%s", invalid.Code, invalid.Body.String())
+	}
+
+	const stickerID = "0cc4a3688e7b222b977fef3a078619b6"
+	response := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1,
+		`{"sticker_id":"`+stickerID+`"}`,
+	)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("send sticker status=%d body=%s", response.Code, response.Body.String())
+	}
+	var message models.Message
+	if err := json.Unmarshal(response.Body.Bytes(), &message); err != nil {
+		t.Fatalf("decode sticker message: %v", err)
+	}
+	if message.StickerID == nil || *message.StickerID != stickerID {
+		t.Fatalf("sticker_id=%v body=%s", message.StickerID, response.Body.String())
+	}
+	if message.Content != stickerFallbackText {
+		t.Fatalf("fallback content=%q", message.Content)
+	}
+}
+
 func TestMessageEventBrokerPublishesOnlyToSubscribedUsers(t *testing.T) {
 	broker := newMessageEventBroker()
 	userEvents, unsubscribe := broker.subscribe(7)

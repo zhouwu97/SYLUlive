@@ -21,6 +21,7 @@ import '../utils/app_time.dart';
 import '../utils/text_editing_helper.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
+import '../widgets/emoji/sticker_catalog.dart';
 import 'image_viewer_screen.dart';
 
 class ChatDetailScreen extends StatefulWidget {
@@ -467,6 +468,24 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (_sendState?.isBlocked ?? false) return;
     insertAtSelection(_textController, emoji);
     _saveDraft();
+  }
+
+  Future<void> _sendSticker(AppSticker sticker) async {
+    if (_sendState?.isBlocked ?? false) return;
+    final provider = context.read<MessageProvider>();
+    final sendFuture = provider.sendStickerMessage(
+      widget.targetUser.id,
+      sticker.id,
+      senderId: context.read<AuthProvider>().user?.id,
+    );
+    _lastMessageActivity = DateTime.now();
+    unawaited(_scrollToLatestMessage(settle: true));
+    final message = await sendFuture;
+    if (!mounted || message == null) return;
+    _conversationId = message.conversationId;
+    _activateConversationIfVisible();
+    unawaited(_refreshSendState());
+    _startPolling();
   }
 
   double get _emojiPanelHeight {
@@ -1136,6 +1155,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         : ApiConstants.fullUrl(message.imageUrl);
     final localImagePath = message.localImagePath?.trim();
     final hasImage = imageUrl != null || localImagePath?.isNotEmpty == true;
+    final stickerUrl =
+        message.isSticker ? ApiConstants.fullUrl(message.stickerUrl) : null;
+    final hasMedia = hasImage || stickerUrl != null;
     final sender = isMine ? currentUser : (message.sender ?? widget.targetUser);
     final senderAvatar = sender?.avatar.isEmpty ?? true
         ? null
@@ -1184,24 +1206,28 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                           .clamp(180.0, 420.0)
                           .toDouble(),
                     ),
-                    padding: hasImage
+                    padding: hasMedia
                         ? const EdgeInsets.all(4)
                         : const EdgeInsets.symmetric(
                             horizontal: 13,
                             vertical: 9,
                           ),
                     decoration: BoxDecoration(
-                      color: bubbleColor,
+                      color:
+                          stickerUrl != null ? Colors.transparent : bubbleColor,
                       borderRadius: bubbleRadius,
                       border: Border.all(
-                        color: isMine
-                            ? colorScheme.primary.withValues(alpha: 0.12)
-                            : Colors.black.withValues(alpha: 0.05),
+                        color: stickerUrl != null
+                            ? Colors.transparent
+                            : isMine
+                                ? colorScheme.primary.withValues(alpha: 0.12)
+                                : Colors.black.withValues(alpha: 0.05),
                       ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (stickerUrl != null) _buildStickerImage(stickerUrl),
                         if (hasImage)
                           GestureDetector(
                             onTap: imageUrl == null
@@ -1222,7 +1248,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                               ),
                             ),
                           ),
-                        if (message.content.isNotEmpty)
+                        if (message.content.isNotEmpty && !message.isSticker)
                           Padding(
                             padding: hasImage
                                 ? const EdgeInsets.fromLTRB(8, 7, 8, 6)
@@ -1339,6 +1365,36 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       );
     }
     return networkImage();
+  }
+
+  Widget _buildStickerImage(String imageUrl) {
+    return CachedNetworkImage(
+      key: ValueKey('message-sticker-$imageUrl'),
+      imageUrl: imageUrl,
+      width: 156,
+      height: 156,
+      fit: BoxFit.contain,
+      placeholder: (_, __) => const SizedBox(
+        width: 156,
+        height: 156,
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+      errorWidget: (_, __, ___) => _buildBrokenStickerImage(),
+    );
+  }
+
+  Widget _buildBrokenStickerImage() {
+    return const SizedBox(
+      width: 156,
+      height: 156,
+      child: Center(child: Icon(Icons.broken_image_outlined)),
+    );
   }
 
   Widget _buildBrokenMessageImage() {
@@ -1601,6 +1657,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     height: _emojiPanelHeight,
                     child: AppEmojiPanel(
                       onEmojiSelected: _insertEmoji,
+                      onStickerSelected: _sendSticker,
                       onBackspace: () =>
                           deletePreviousCharacter(_textController),
                     ),

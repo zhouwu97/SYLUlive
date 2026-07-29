@@ -67,7 +67,8 @@ type Message struct {
 	SenderID        uint       `gorm:"not null;index:idx_messages_conversation_read_sender,priority:3;uniqueIndex:idx_messages_sender_client_message,priority:1" json:"sender_id"`
 	ClientMessageID *string    `gorm:"size:96;uniqueIndex:idx_messages_sender_client_message,priority:2" json:"client_message_id,omitempty"`
 	Content         string     `gorm:"type:text" json:"content"`
-	FileID          *uint      `json:"file_id"` // 可选图片
+	FileID          *uint      `json:"file_id"`                                   // 可选图片
+	StickerID       *string    `gorm:"size:64;index" json:"sticker_id,omitempty"` // 公共表情白名单 ID
 	CreatedAt       time.Time  `json:"created_at"`
 	ReadAt          *time.Time `gorm:"index:idx_messages_conversation_read_sender,priority:2" json:"read_at"`
 	Sender          User       `gorm:"foreignKey:SenderID" json:"sender"`

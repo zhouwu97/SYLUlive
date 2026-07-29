@@ -71,6 +71,10 @@ flutter:
     - assets/images/sjys.png
     - assets/images/tablet_default_landscape.png
     - assets/images/wallpaper_thumbs/
+    - assets/images/stickers/mingfeng-daily/
+    - assets/images/stickers/mingfeng-ovo/
+    - assets/images/stickers/mingfengfeng/
+    - assets/images/stickers/mingfeng/
     - assets/images/xiaoli.jpg
     - assets/images/yuanshen.jpg
     - assets/data/

@@ -497,6 +497,21 @@ class MessageProvider extends ChangeNotifier {
     return null;
   }
 
+  Future<Message?> sendStickerMessage(
+    int targetUserId,
+    String stickerId, {
+    int? senderId,
+  }) {
+    if (stickerId.trim().isEmpty) return Future.value(null);
+    final pending = _insertPendingMessage(
+      targetUserId: targetUserId,
+      content: '',
+      stickerId: stickerId.trim(),
+      senderId: senderId,
+    );
+    return _sendPendingMessage(targetUserId, pending.clientMessageId!);
+  }
+
   Future<Message?> retryMessage(
     int targetUserId,
     String clientMessageId,
@@ -563,6 +578,7 @@ class MessageProvider extends ChangeNotifier {
     required int targetUserId,
     required String content,
     int? fileId,
+    String? stickerId,
     int? senderId,
     String? localImagePath,
   }) {
@@ -574,6 +590,7 @@ class MessageProvider extends ChangeNotifier {
       clientMessageId: clientMessageId,
       content: content,
       fileId: fileId,
+      stickerId: stickerId,
       createdAt: DateTime.now().toUtc(),
       localStatus: MessageLocalStatus.pending,
       localImagePath: localImagePath,
@@ -597,8 +614,10 @@ class MessageProvider extends ChangeNotifier {
   ) async {
     final pending = _messageByClientMessageID(clientMessageId);
     if (pending == null) return null;
-    if (pending.content.isEmpty && pending.fileId == null) {
-      _markPendingFailed(clientMessageId, '图片尚未上传完成');
+    if (pending.content.isEmpty &&
+        pending.fileId == null &&
+        !pending.isSticker) {
+      _markPendingFailed(clientMessageId, '消息内容不能为空');
       return null;
     }
 
@@ -613,6 +632,7 @@ class MessageProvider extends ChangeNotifier {
         data: {
           'content': pending.content,
           if (pending.fileId != null) 'file_id': pending.fileId,
+          if (pending.isSticker) 'sticker_id': pending.stickerId,
           'client_message_id': clientMessageId,
         },
         cancelToken: cancelToken,

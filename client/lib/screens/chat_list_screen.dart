@@ -501,11 +501,13 @@ class _ChatListScreenState extends State<ChatListScreen>
     final content = message.content.trim();
     final body = content.isNotEmpty
         ? content
-        : message.file != null ||
-                message.fileId != null ||
-                message.localImagePath?.isNotEmpty == true
-            ? '[图片]'
-            : '暂无消息';
+        : message.isSticker
+            ? '[表情]'
+            : message.file != null ||
+                    message.fileId != null ||
+                    message.localImagePath?.isNotEmpty == true
+                ? '[图片]'
+                : '暂无消息';
     return message.senderId == currentUserId ? '你：$body' : body;
   }
 

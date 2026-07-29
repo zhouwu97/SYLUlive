@@ -8,6 +8,7 @@ class Reply {
   final int? parentReplyId;
   final int authorId;
   final String content;
+  final String? stickerId;
   final String status;
   final int likeCount;
   final bool isLiked;
@@ -23,6 +24,7 @@ class Reply {
     this.parentReplyId,
     required this.authorId,
     required this.content,
+    this.stickerId,
     this.status = 'normal',
     this.likeCount = 0,
     this.isLiked = false,
@@ -40,6 +42,7 @@ class Reply {
       parentReplyId: json['parent_reply_id'],
       authorId: json['author_id'] ?? 0,
       content: json['content'] ?? '',
+      stickerId: json['sticker_id']?.toString(),
       status: json['status'] ?? 'normal',
       likeCount: json['like_count'] ?? 0,
       isLiked: json['is_liked'] == true,
@@ -58,6 +61,10 @@ class Reply {
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
     );
   }
+
+  bool get isSticker => stickerId?.isNotEmpty == true;
+
+  String get stickerUrl => isSticker ? '/stickers/$stickerId' : '';
 }
 
 // 回复图片模型

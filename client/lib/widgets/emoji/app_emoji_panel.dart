@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../services/emoji_recent_service.dart';
 import 'emoji_catalog.dart';
+import 'sticker_catalog.dart';
 
 /// 内嵌式 Emoji 选择面板，只负责选择和删除回调，不负责发送消息。
 class AppEmojiPanel extends StatefulWidget {
   final ValueChanged<String> onEmojiSelected;
   final VoidCallback onBackspace;
+  final ValueChanged<AppSticker>? onStickerSelected;
   final bool enabled;
   final EmojiRecentService? recentService;
 
@@ -14,6 +16,7 @@ class AppEmojiPanel extends StatefulWidget {
     super.key,
     required this.onEmojiSelected,
     required this.onBackspace,
+    this.onStickerSelected,
     this.enabled = true,
     this.recentService,
   });
@@ -24,6 +27,7 @@ class AppEmojiPanel extends StatefulWidget {
 
 class _AppEmojiPanelState extends State<AppEmojiPanel> {
   int _categoryIndex = 0;
+  int _stickerGroupIndex = 0;
   List<String> _recent = const <String>[];
 
   EmojiRecentService get _recentService =>
@@ -40,18 +44,36 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
     if (!mounted) return;
     setState(() {
       _recent = recent;
-      if (_categoryIndex == 0 &&
-          recent.isEmpty &&
-          appEmojiCategoryNames.length > 1) {
-        _categoryIndex = 1;
+      if (_categoryIndex == 0 && recent.isEmpty) {
+        final firstEmojiCategory = _categoryNames.indexOf(
+          appEmojiCategoryNames[1],
+        );
+        if (firstEmojiCategory > 0) {
+          _categoryIndex = firstEmojiCategory;
+        }
       }
     });
   }
 
   List<String> get _activeEmojis {
     if (_categoryIndex == 0) return _recent;
-    return appEmojiCatalog[appEmojiCategoryNames[_categoryIndex]] ??
-        const <String>[];
+    return appEmojiCatalog[_categoryNames[_categoryIndex]] ?? const <String>[];
+  }
+
+  List<String> get _categoryNames => widget.onStickerSelected == null
+      ? appEmojiCategoryNames
+      : [
+          appEmojiCategoryNames.first,
+          '表情包',
+          ...appEmojiCategoryNames.skip(1),
+        ];
+
+  AppStickerGroup? get _activeStickerGroup {
+    if (widget.onStickerSelected == null ||
+        _categoryNames[_categoryIndex] != '表情包') {
+      return null;
+    }
+    return appStickerGroups[_stickerGroupIndex];
   }
 
   Future<void> _selectEmoji(String emoji) async {
@@ -81,9 +103,10 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    itemCount: appEmojiCategoryNames.length,
+                    itemCount: _categoryNames.length,
                     itemBuilder: (context, index) {
-                      final name = appEmojiCategoryNames[index];
+                      final name = _categoryNames[index];
+                      final isStickerGroup = name == '表情包';
                       final selected = index == _categoryIndex;
                       return InkWell(
                         onTap: widget.enabled
@@ -96,7 +119,9 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
-                                appEmojiCategoryIcons[name],
+                                isStickerGroup
+                                    ? Icons.pets_outlined
+                                    : appEmojiCategoryIcons[name],
                                 size: 18,
                                 color: selected
                                     ? Theme.of(context).colorScheme.primary
@@ -133,55 +158,122 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
             ),
           ),
           Expanded(
-            child: _activeEmojis.isEmpty
-                ? Center(
-                    child: Text(
-                      '暂无最近使用',
-                      style: TextStyle(color: muted, fontSize: 13),
-                    ),
-                  )
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      return GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 56,
-                          mainAxisExtent: 48,
+            child: _activeStickerGroup != null
+                ? _buildStickerGrid(_activeStickerGroup!, muted)
+                : _activeEmojis.isEmpty
+                    ? Center(
+                        child: Text(
+                          '暂无最近使用',
+                          style: TextStyle(color: muted, fontSize: 13),
                         ),
-                        itemCount: _activeEmojis.length,
-                        itemBuilder: (context, index) {
-                          final emoji = _activeEmojis[index];
-                          return Semantics(
-                            button: true,
-                            label: '插入表情 $emoji',
-                            child: InkWell(
-                              onTap: widget.enabled
-                                  ? () => _selectEmoji(emoji)
-                                  : null,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Center(
-                                child: Text(
-                                  emoji,
-                                  style: const TextStyle(
-                                    fontSize: 28,
-                                    fontFamilyFallback: [
-                                      'Noto Color Emoji',
-                                      'Segoe UI Emoji',
-                                      'Apple Color Emoji',
-                                    ],
+                      )
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          return GridView.builder(
+                            padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 56,
+                              mainAxisExtent: 48,
+                            ),
+                            itemCount: _activeEmojis.length,
+                            itemBuilder: (context, index) {
+                              final emoji = _activeEmojis[index];
+                              return Semantics(
+                                button: true,
+                                label: '插入表情 $emoji',
+                                child: InkWell(
+                                  onTap: widget.enabled
+                                      ? () => _selectEmoji(emoji)
+                                      : null,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Center(
+                                    child: Text(
+                                      emoji,
+                                      style: const TextStyle(
+                                        fontSize: 28,
+                                        fontFamilyFallback: [
+                                          'Noto Color Emoji',
+                                          'Segoe UI Emoji',
+                                          'Apple Color Emoji',
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
+                              );
+                            },
                           );
                         },
-                      );
-                    },
-                  ),
+                      ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStickerGrid(AppStickerGroup group, Color muted) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 36,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            itemCount: appStickerGroups.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 4),
+            itemBuilder: (context, index) {
+              final item = appStickerGroups[index];
+              final selected = index == _stickerGroupIndex;
+              return ChoiceChip(
+                label: Text(item.name),
+                selected: selected,
+                showCheckmark: false,
+                visualDensity: VisualDensity.compact,
+                onSelected: widget.enabled
+                    ? (_) => setState(() => _stickerGroupIndex = index)
+                    : null,
+              );
+            },
+          ),
+        ),
+        Expanded(
+          child: GridView.builder(
+            key: ValueKey('sticker-group-${group.id}'),
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 82,
+              mainAxisExtent: 76,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
+            ),
+            itemCount: group.items.length,
+            itemBuilder: (context, index) {
+              final sticker = group.items[index];
+              return Semantics(
+                button: true,
+                label: '发送表情 ${sticker.label}',
+                child: InkWell(
+                  key: ValueKey('sticker-${sticker.id}'),
+                  onTap: widget.enabled
+                      ? () => widget.onStickerSelected?.call(sticker)
+                      : null,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Image.asset(
+                      sticker.thumbnailAsset,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) =>
+                          Icon(Icons.broken_image_outlined, color: muted),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

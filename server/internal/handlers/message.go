@@ -122,6 +122,7 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		ClientMessageID *string      `json:"client_message_id,omitempty"`
 		Content         string       `json:"content"`
 		FileID          *uint        `json:"file_id"`
+		StickerID       *string      `json:"sticker_id,omitempty"`
 		CreatedAt       time.Time    `json:"created_at"`
 		ReadAt          *time.Time   `json:"read_at"`
 		File            *models.File `json:"file"`
@@ -208,6 +209,7 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 					ClientMessageID: message.ClientMessageID,
 					Content:         message.Content,
 					FileID:          message.FileID,
+					StickerID:       message.StickerID,
 					CreatedAt:       message.CreatedAt,
 					ReadAt:          message.ReadAt,
 					File:            message.File,
@@ -380,6 +382,7 @@ func parseMessageLimit(raw string) int {
 type SendMessageInput struct {
 	Content         string  `json:"content"`
 	FileID          *uint   `json:"file_id"`
+	StickerID       *string `json:"sticker_id"`
 	ClientMessageID *string `json:"client_message_id"`
 }
 
@@ -409,9 +412,23 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	}
 
 	input.Content = strings.TrimSpace(input.Content)
-	if input.Content == "" && input.FileID == nil {
+	if input.Content == "" && input.FileID == nil && input.StickerID == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能为空"})
 		return
+	}
+	if input.StickerID != nil {
+		stickerID := strings.TrimSpace(*input.StickerID)
+		if !IsValidStickerID(stickerID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "表情不存在"})
+			return
+		}
+		if input.Content != "" || input.FileID != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "表情消息不能同时包含文字或图片"})
+			return
+		}
+		input.StickerID = &stickerID
+		// 旧客户端不认识 sticker_id，保留可读的文本回退，避免显示空气泡。
+		input.Content = stickerFallbackText
 	}
 	if utf8.RuneCountInString(input.Content) > maxMessageLength {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能超过2000个字符"})
@@ -529,6 +546,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 			ClientMessageID: input.ClientMessageID,
 			Content:         input.Content,
 			FileID:          input.FileID,
+			StickerID:       input.StickerID,
 		}
 		if err := tx.Create(&message).Error; err != nil {
 			return err
@@ -741,6 +759,9 @@ func (h *MessageHandler) pushPrivateMessage(targetUserID uint, sender models.Use
 
 func privateMessagePreview(message models.Message) string {
 	content := strings.TrimSpace(message.Content)
+	if message.StickerID != nil {
+		return stickerFallbackText
+	}
 	if content == "" && message.FileID != nil {
 		return "[图片]"
 	}

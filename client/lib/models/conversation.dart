@@ -116,9 +116,21 @@ class Message {
 
   String get imageUrl => file?.url ?? '';
 
-  bool get isSticker => stickerId?.isNotEmpty == true;
+  bool get hasSticker => stickerId?.trim().isNotEmpty == true;
 
-  String get stickerUrl => isSticker ? '/stickers/$stickerId' : '';
+  bool get hasTextContent {
+    final text = content.trim();
+    return text.isNotEmpty && !(hasSticker && text == '[表情]');
+  }
+
+  bool get isStickerOnly => hasSticker && !hasTextContent;
+
+  bool get isMixedTextSticker => hasSticker && hasTextContent;
+
+  // 兼容现有调用方；新渲染逻辑应根据纯表情或混合消息选择布局。
+  bool get isSticker => hasSticker;
+
+  String get stickerUrl => hasSticker ? '/stickers/$stickerId' : '';
 
   bool get isPending => localStatus == MessageLocalStatus.pending;
 

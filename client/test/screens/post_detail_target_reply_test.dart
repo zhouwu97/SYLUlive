@@ -14,6 +14,7 @@ import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
+import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 
 final List<int> transparentImage = [
   0x89,
@@ -797,6 +798,43 @@ void main() {
       enabledSendButton.style?.backgroundColor?.resolve({}),
       const Color(0xFF6B8EFF),
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('帖子评论栏选择表情包后进入编辑器预览', (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = _postWithImages(
+      id: 103,
+      title: 'Sticker reply',
+      imageUrls: ['http://example.com/one.png'],
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('写下你的想法...').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('表情包'));
+    await tester.pumpAndSettle();
+
+    final sticker = appStickerGroups.first.items.first;
+    await tester.tap(find.byKey(ValueKey('sticker-${sticker.id}')));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('sticker-composer-preview')),
+      findsOneWidget,
+    );
+    final sendButton = tester.widget<IconButton>(
+      find.byKey(const ValueKey('post-reply-send-button')),
+    );
+    expect(sendButton.onPressed, isNotNull);
     expect(tester.takeException(), isNull);
   });
 }

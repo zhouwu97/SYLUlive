@@ -432,10 +432,16 @@ void main() {
     final provider = MessageProvider(Dio());
 
     provider.updateDraft(3, 'draft');
+    provider.updateDraftSticker(3, 'sticker-1');
     expect(provider.draftFor(3), 'draft');
+    expect(provider.draftStickerFor(3), 'sticker-1');
+
+    provider.updateDraft(3, 'updated');
+    expect(provider.draftStickerFor(3), 'sticker-1');
 
     provider.clearDraft(3);
     expect(provider.draftFor(3), '');
+    expect(provider.draftStickerFor(3), isNull);
   });
 
   test('tracks loaded conversations and sums unread private messages',
@@ -540,6 +546,57 @@ void main() {
     expect(provider.messages, hasLength(1));
     expect(provider.messages.single.isPending, isFalse);
     expect(provider.messages.single.id, 101);
+  });
+
+  test('sendMessage submits text and sticker as one message', () async {
+    final dio = Dio();
+    Map<String, dynamic>? requestData;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'POST' && options.path == '/messages/3') {
+            requestData = Map<String, dynamic>.from(options.data as Map);
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 201,
+                data: {
+                  ..._messageJson(
+                    id: 102,
+                    clientMessageId:
+                        requestData!['client_message_id'] as String,
+                    content: '晚安',
+                  ),
+                  'sticker_id': 'sticker-1',
+                },
+              ),
+            );
+            return;
+          }
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200, data: []),
+            );
+            return;
+          }
+          handler.reject(_unexpectedRequest(options));
+        },
+      ),
+    );
+    final provider = MessageProvider(dio);
+
+    final confirmed = await provider.sendMessage(
+      3,
+      '晚安',
+      stickerId: 'sticker-1',
+      senderId: 8,
+    );
+
+    expect(requestData?['content'], '晚安');
+    expect(requestData?['sticker_id'], 'sticker-1');
+    expect(provider.messages, hasLength(1));
+    expect(confirmed?.isMixedTextSticker, isTrue);
   });
 
   test('sendMessage allows multiple requests to remain in flight', () async {

@@ -21,6 +21,7 @@ import '../utils/app_time.dart';
 import '../utils/text_editing_helper.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
+import '../widgets/emoji/sticker_composer_preview.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import 'image_viewer_screen.dart';
 
@@ -58,6 +59,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   double _lastKeyboardInset = 0;
   double _lastKeyboardHeight = 280;
   bool _showEmojiPanel = false;
+  bool _isSending = false;
+  AppSticker? _selectedSticker;
   DateTime _lastMessageActivity = DateTime.now();
   final Map<int, GlobalKey> _messageKeys = {};
   MessageSendState? _sendState;
@@ -107,6 +110,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _initialPositionSettled = false;
     _initialLoadFinished = false;
     final draft = provider.draftFor(widget.targetUser.id);
+    _selectedSticker = appStickerById(
+      provider.draftStickerFor(widget.targetUser.id),
+    );
     if (draft.isNotEmpty && _textController.text.isEmpty) {
       _textController.text = draft;
       _textController.selection = TextSelection.collapsed(offset: draft.length);
@@ -338,7 +344,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Future<void> _sendMessage() async {
     final content = _textController.text.trim();
-    if (content.isEmpty) return;
+    final selectedSticker = _selectedSticker;
+    if (_isSending || (content.isEmpty && selectedSticker == null)) return;
     if (content.runes.length > MessageProvider.maxMessageLength) {
       AppFeedback.showSnackBar(
         context,
@@ -349,20 +356,26 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
 
     final provider = context.read<MessageProvider>();
+    setState(() => _isSending = true);
     final sendFuture = provider.sendMessage(
       widget.targetUser.id,
       content,
+      stickerId: selectedSticker?.id,
       senderId: context.read<AuthProvider>().user?.id,
     );
-    _textController.clear();
     _lastMessageActivity = DateTime.now();
     unawaited(_scrollToLatestMessage(settle: true));
     final message = await sendFuture;
     if (!mounted) return;
+    setState(() => _isSending = false);
     if (message == null) {
       unawaited(_refreshSendState());
       return;
     }
+
+    _textController.clear();
+    setState(() => _selectedSticker = null);
+    provider.clearDraft(widget.targetUser.id);
 
     _conversationId = message.conversationId;
     _activateConversationIfVisible();
@@ -373,7 +386,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Future<void> _pickAndSendImage() async {
-    if (_sendState?.isBlocked ?? false) return;
+    if ((_sendState?.isBlocked ?? false) ||
+        _isSending ||
+        _selectedSticker != null) {
+      return;
+    }
     try {
       final image = await ImagePicker().pickImage(
         source: ImageSource.gallery,
@@ -470,22 +487,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _saveDraft();
   }
 
-  Future<void> _sendSticker(AppSticker sticker) async {
-    if (_sendState?.isBlocked ?? false) return;
+  void _selectSticker(AppSticker sticker) {
+    if ((_sendState?.isBlocked ?? false) || _isSending) return;
     final provider = context.read<MessageProvider>();
-    final sendFuture = provider.sendStickerMessage(
-      widget.targetUser.id,
-      sticker.id,
-      senderId: context.read<AuthProvider>().user?.id,
-    );
-    _lastMessageActivity = DateTime.now();
-    unawaited(_scrollToLatestMessage(settle: true));
-    final message = await sendFuture;
-    if (!mounted || message == null) return;
-    _conversationId = message.conversationId;
-    _activateConversationIfVisible();
-    unawaited(_refreshSendState());
-    _startPolling();
+    setState(() => _selectedSticker = sticker);
+    provider.updateDraftSticker(widget.targetUser.id, sticker.id);
+  }
+
+  void _removeSelectedSticker() {
+    if (_isSending) return;
+    setState(() => _selectedSticker = null);
+    context.read<MessageProvider>().updateDraftSticker(
+          widget.targetUser.id,
+          null,
+        );
   }
 
   double get _emojiPanelHeight {
@@ -1156,8 +1171,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final localImagePath = message.localImagePath?.trim();
     final hasImage = imageUrl != null || localImagePath?.isNotEmpty == true;
     final stickerUrl =
-        message.isSticker ? ApiConstants.fullUrl(message.stickerUrl) : null;
-    final hasMedia = hasImage || stickerUrl != null;
+        message.hasSticker ? ApiConstants.fullUrl(message.stickerUrl) : null;
     final sender = isMine ? currentUser : (message.sender ?? widget.targetUser);
     final senderAvatar = sender?.avatar.isEmpty ?? true
         ? null
@@ -1206,18 +1220,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                           .clamp(180.0, 420.0)
                           .toDouble(),
                     ),
-                    padding: hasMedia
+                    padding: message.isStickerOnly || hasImage
                         ? const EdgeInsets.all(4)
                         : const EdgeInsets.symmetric(
                             horizontal: 13,
                             vertical: 9,
                           ),
                     decoration: BoxDecoration(
-                      color:
-                          stickerUrl != null ? Colors.transparent : bubbleColor,
+                      color: message.isStickerOnly
+                          ? Colors.transparent
+                          : bubbleColor,
                       borderRadius: bubbleRadius,
                       border: Border.all(
-                        color: stickerUrl != null
+                        color: message.isStickerOnly
                             ? Colors.transparent
                             : isMine
                                 ? colorScheme.primary.withValues(alpha: 0.12)
@@ -1227,7 +1242,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (stickerUrl != null) _buildStickerImage(stickerUrl),
+                        if (stickerUrl != null)
+                          _buildStickerImage(stickerUrl, message.stickerId),
                         if (hasImage)
                           GestureDetector(
                             onTap: imageUrl == null
@@ -1248,9 +1264,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                               ),
                             ),
                           ),
-                        if (message.content.isNotEmpty && !message.isSticker)
+                        if (message.hasTextContent)
                           Padding(
-                            padding: hasImage
+                            padding: hasImage || stickerUrl != null
                                 ? const EdgeInsets.fromLTRB(8, 7, 8, 6)
                                 : EdgeInsets.zero,
                             child: SelectableText(
@@ -1367,24 +1383,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     return networkImage();
   }
 
-  Widget _buildStickerImage(String imageUrl) {
+  Widget _buildStickerImage(String imageUrl, String? stickerId) {
+    final localSticker = appStickerById(stickerId);
     return CachedNetworkImage(
       key: ValueKey('message-sticker-$imageUrl'),
       imageUrl: imageUrl,
       width: 156,
       height: 156,
       fit: BoxFit.contain,
-      placeholder: (_, __) => const SizedBox(
-        width: 156,
-        height: 156,
-        child: Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      ),
+      placeholder: (_, __) => localSticker == null
+          ? const SizedBox(
+              width: 156,
+              height: 156,
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          : Image.asset(
+              localSticker.thumbnailAsset,
+              width: 156,
+              height: 156,
+              fit: BoxFit.contain,
+            ),
       errorWidget: (_, __, ___) => _buildBrokenStickerImage(),
     );
   }
@@ -1496,7 +1520,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       return KeyEventResult.ignored;
     }
     if (!(_sendState?.isBlocked ?? false) &&
-        _textController.text.trim().isNotEmpty) {
+        !_isSending &&
+        (_textController.text.trim().isNotEmpty || _selectedSticker != null)) {
       unawaited(_sendMessage());
     }
     return KeyEventResult.handled;
@@ -1511,6 +1536,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           if (blocked) _buildPMLockedBanner(),
+          if (_selectedSticker != null && !blocked)
+            StickerComposerPreview(
+              sticker: _selectedSticker!,
+              onRemove: _removeSelectedSticker,
+              enabled: !_isSending,
+            ),
           Container(
             padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
             decoration: BoxDecoration(
@@ -1532,7 +1563,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                   height: 44,
                   child: IconButton(
                     tooltip: '选择图片',
-                    onPressed: blocked ? null : _pickAndSendImage,
+                    onPressed: blocked || _isSending || _selectedSticker != null
+                        ? null
+                        : _pickAndSendImage,
                     padding: EdgeInsets.zero,
                     icon: const Icon(Icons.add_photo_alternate_outlined),
                   ),
@@ -1557,8 +1590,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                             unawaited(_scrollToLatestMessage(settle: true));
                           }
                         },
-                        enabled: !blocked,
-                        readOnly: blocked,
+                        enabled: !blocked && !_isSending,
+                        readOnly: blocked || _isSending,
                         style: TextStyle(
                           color: blocked
                               ? (isDark ? Colors.white38 : Colors.black38)
@@ -1606,7 +1639,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                   height: 44,
                   child: IconButton(
                     tooltip: _showEmojiPanel ? '打开键盘' : '选择表情',
-                    onPressed: blocked ? null : _toggleEmojiPanel,
+                    onPressed: blocked || _isSending ? null : _toggleEmojiPanel,
                     padding: EdgeInsets.zero,
                     icon: Icon(
                       _showEmojiPanel
@@ -1619,7 +1652,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _textController,
                   builder: (context, value, _) {
-                    final canSend = !blocked && value.text.trim().isNotEmpty;
+                    final canSend = !blocked &&
+                        !_isSending &&
+                        (value.text.trim().isNotEmpty ||
+                            _selectedSticker != null);
                     return SizedBox(
                       key: const ValueKey('chat-send-button-container'),
                       width: 44,
@@ -1657,9 +1693,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     height: _emojiPanelHeight,
                     child: AppEmojiPanel(
                       onEmojiSelected: _insertEmoji,
-                      onStickerSelected: _sendSticker,
+                      onStickerSelected: _selectSticker,
                       onBackspace: () =>
                           deletePreviousCharacter(_textController),
+                      enabled: !_isSending,
                     ),
                   )
                 : const SizedBox.shrink(),

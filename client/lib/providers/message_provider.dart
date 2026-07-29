@@ -37,7 +37,7 @@ class MessageProvider extends ChangeNotifier {
   int _nextLocalMessageId = -1;
   final Set<int> _refreshingConversationIds = {};
   final Map<int, int> _lastMarkedReadMessageIds = {};
-  final Map<int, String> _drafts = {};
+  final Map<int, _MessageDraft> _drafts = {};
   final Map<String, _PendingMessageContext> _pendingMessages = {};
   bool _hasLoadedConversations = false;
   int? _sessionUserId;
@@ -79,7 +79,9 @@ class MessageProvider extends ChangeNotifier {
     return null;
   }
 
-  String draftFor(int targetUserId) => _drafts[targetUserId] ?? '';
+  String draftFor(int targetUserId) => _drafts[targetUserId]?.content ?? '';
+
+  String? draftStickerFor(int targetUserId) => _drafts[targetUserId]?.stickerId;
 
   Message? latestCachedMessageForConversation(int conversationId) {
     final source = _currentConversationId == conversationId
@@ -96,10 +98,30 @@ class MessageProvider extends ChangeNotifier {
   }
 
   void updateDraft(int targetUserId, String content) {
-    if (content.isEmpty) {
+    final current = _drafts[targetUserId];
+    final stickerId = current?.stickerId;
+    if (content.isEmpty && stickerId == null) {
       _drafts.remove(targetUserId);
     } else {
-      _drafts[targetUserId] = content;
+      _drafts[targetUserId] = _MessageDraft(
+        content: content,
+        stickerId: stickerId,
+      );
+    }
+  }
+
+  void updateDraftSticker(int targetUserId, String? stickerId) {
+    final normalized = stickerId?.trim();
+    final selectedStickerId =
+        normalized?.isNotEmpty == true ? normalized : null;
+    final content = _drafts[targetUserId]?.content ?? '';
+    if (content.isEmpty && selectedStickerId == null) {
+      _drafts.remove(targetUserId);
+    } else {
+      _drafts[targetUserId] = _MessageDraft(
+        content: content,
+        stickerId: selectedStickerId,
+      );
     }
   }
 
@@ -451,15 +473,22 @@ class MessageProvider extends ChangeNotifier {
     int targetUserId,
     String content, {
     int? fileId,
+    String? stickerId,
     int? senderId,
     String? localImagePath,
   }) {
     final trimmed = content.trim();
-    if (trimmed.isEmpty && fileId == null) return Future.value(null);
+    final normalizedStickerId = stickerId?.trim();
+    final hasSticker = normalizedStickerId?.isNotEmpty == true;
+    if (trimmed.isEmpty && fileId == null && !hasSticker) {
+      return Future.value(null);
+    }
+    if (fileId != null && hasSticker) return Future.value(null);
     final pending = _insertPendingMessage(
       targetUserId: targetUserId,
       content: trimmed,
       fileId: fileId,
+      stickerId: hasSticker ? normalizedStickerId : null,
       senderId: senderId,
       localImagePath: localImagePath,
     );
@@ -502,14 +531,12 @@ class MessageProvider extends ChangeNotifier {
     String stickerId, {
     int? senderId,
   }) {
-    if (stickerId.trim().isEmpty) return Future.value(null);
-    final pending = _insertPendingMessage(
-      targetUserId: targetUserId,
-      content: '',
-      stickerId: stickerId.trim(),
+    return sendMessage(
+      targetUserId,
+      '',
+      stickerId: stickerId,
       senderId: senderId,
     );
-    return _sendPendingMessage(targetUserId, pending.clientMessageId!);
   }
 
   Future<Message?> retryMessage(
@@ -1173,4 +1200,11 @@ class _PendingMessageContext {
   final int targetUserId;
   final int? originConversationId;
   Message message;
+}
+
+class _MessageDraft {
+  const _MessageDraft({required this.content, this.stickerId});
+
+  final String content;
+  final String? stickerId;
 }

@@ -10,6 +10,7 @@ import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/chat_detail_screen.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
+import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 
 class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   _FakeAuthProvider(this.currentUser);
@@ -89,6 +90,51 @@ void main() {
       find.byKey(ValueKey('retry-${provider.messages.single.stableKey}')),
       findsOneWidget,
     );
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('failed mixed sticker send preserves composer draft',
+      (tester) async {
+    final failureGate = Completer<void>();
+    final provider = MessageProvider(_chatDio(failureGate: failureGate));
+    final sticker = appStickerGroups.first.items.first;
+    provider.updateDraftSticker(3, sticker.id);
+    await _pumpChat(tester, provider);
+
+    expect(
+      find.byKey(const ValueKey('sticker-composer-preview')),
+      findsOneWidget,
+    );
+    expect(_sendButton(tester).onPressed, isNotNull);
+    final imageButton = tester.widget<IconButton>(
+      find.descendant(
+        of: find.byKey(const ValueKey('chat-image-button')),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(imageButton.onPressed, isNull);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('chat-input')),
+      '晚安',
+    );
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pump();
+    failureGate.complete();
+    await _pumpFrames(tester);
+
+    expect(
+      find.byKey(const ValueKey('sticker-composer-preview')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('chat-input')))
+          .controller
+          ?.text,
+      '晚安',
+    );
+    expect(provider.draftStickerFor(3), sticker.id);
     await _disposeChat(tester, provider);
   });
 

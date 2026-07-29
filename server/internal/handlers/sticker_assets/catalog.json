@@ -4,115 +4,115 @@
     "name": "明风·日常",
     "items": [
       {
-        "id": "0eeed98ece4e89243db9dea7ccd796fd",
-        "label": "表情 1",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/0eeed98ece4e89243db9dea7ccd796fd.png",
-        "file": "0eeed98ece4e89243db9dea7ccd796fd.png",
-        "mime_type": "image/png"
-      },
-      {
-        "id": "1c704494bbb89fce27681425cffbe6fa",
-        "label": "表情 2",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/1c704494bbb89fce27681425cffbe6fa.png",
-        "file": "1c704494bbb89fce27681425cffbe6fa.png",
-        "mime_type": "image/png"
-      },
-      {
-        "id": "2d094a6c0e1ac32d31a65286eb141a57",
-        "label": "表情 3",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/2d094a6c0e1ac32d31a65286eb141a57.png",
-        "file": "2d094a6c0e1ac32d31a65286eb141a57.png",
-        "mime_type": "image/png"
-      },
-      {
-        "id": "36286e5249dbbd659981ca530e21c047",
-        "label": "表情 4",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/36286e5249dbbd659981ca530e21c047.png",
-        "file": "36286e5249dbbd659981ca530e21c047.png",
-        "mime_type": "image/png"
-      },
-      {
-        "id": "4535efdfbdc938e7c225528e8915285b",
-        "label": "表情 5",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/4535efdfbdc938e7c225528e8915285b.png",
-        "file": "4535efdfbdc938e7c225528e8915285b.png",
-        "mime_type": "image/png"
-      },
-      {
-        "id": "5d9aa5f7f3b304bf7cffa81cdde8901c",
-        "label": "表情 6",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/5d9aa5f7f3b304bf7cffa81cdde8901c.png",
-        "file": "5d9aa5f7f3b304bf7cffa81cdde8901c.png",
-        "mime_type": "image/png"
-      },
-      {
-        "id": "6608d1dacfcde27f87f7d3852330d0fb",
-        "label": "表情 7",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/6608d1dacfcde27f87f7d3852330d0fb.png",
-        "file": "6608d1dacfcde27f87f7d3852330d0fb.png",
-        "mime_type": "image/png"
-      },
-      {
-        "id": "6d65948c4146fc8a669b9bb10f3832e6",
-        "label": "表情 8",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/6d65948c4146fc8a669b9bb10f3832e6.png",
-        "file": "6d65948c4146fc8a669b9bb10f3832e6.png",
-        "mime_type": "image/png"
-      },
-      {
-        "id": "986e5bd2a4b13d23b32416c046ecb068",
-        "label": "表情 9",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/986e5bd2a4b13d23b32416c046ecb068.png",
-        "file": "986e5bd2a4b13d23b32416c046ecb068.png",
-        "mime_type": "image/png"
-      },
-      {
         "id": "aad70d8d064f9eb79286c1393490716c",
-        "label": "表情 10",
+        "label": "亲亲",
         "thumbnail_asset": "assets/images/stickers/mingfeng-daily/aad70d8d064f9eb79286c1393490716c.png",
         "file": "aad70d8d064f9eb79286c1393490716c.png",
         "mime_type": "image/png"
       },
       {
-        "id": "bf4fdc61f3162854bd1e8f80114f0624",
-        "label": "表情 11",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/bf4fdc61f3162854bd1e8f80114f0624.png",
-        "file": "bf4fdc61f3162854bd1e8f80114f0624.png",
-        "mime_type": "image/png"
-      },
-      {
-        "id": "d0ccdc6d8c3e941529e797b4d8d5ef85",
-        "label": "表情 12",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/d0ccdc6d8c3e941529e797b4d8d5ef85.png",
-        "file": "d0ccdc6d8c3e941529e797b4d8d5ef85.png",
-        "mime_type": "image/png"
-      },
-      {
         "id": "d0deb840abc781f414c7ad6824407964",
-        "label": "表情 13",
+        "label": "粘",
         "thumbnail_asset": "assets/images/stickers/mingfeng-daily/d0deb840abc781f414c7ad6824407964.png",
         "file": "d0deb840abc781f414c7ad6824407964.png",
         "mime_type": "image/png"
       },
       {
+        "id": "1c704494bbb89fce27681425cffbe6fa",
+        "label": "认真",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/1c704494bbb89fce27681425cffbe6fa.png",
+        "file": "1c704494bbb89fce27681425cffbe6fa.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "36286e5249dbbd659981ca530e21c047",
+        "label": "抱",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/36286e5249dbbd659981ca530e21c047.png",
+        "file": "36286e5249dbbd659981ca530e21c047.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "0eeed98ece4e89243db9dea7ccd796fd",
+        "label": "敢这么说话",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/0eeed98ece4e89243db9dea7ccd796fd.png",
+        "file": "0eeed98ece4e89243db9dea7ccd796fd.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "4535efdfbdc938e7c225528e8915285b",
+        "label": "花花",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/4535efdfbdc938e7c225528e8915285b.png",
+        "file": "4535efdfbdc938e7c225528e8915285b.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "d0ccdc6d8c3e941529e797b4d8d5ef85",
+        "label": "看手机",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/d0ccdc6d8c3e941529e797b4d8d5ef85.png",
+        "file": "d0ccdc6d8c3e941529e797b4d8d5ef85.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "5d9aa5f7f3b304bf7cffa81cdde8901c",
+        "label": "长条",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/5d9aa5f7f3b304bf7cffa81cdde8901c.png",
+        "file": "5d9aa5f7f3b304bf7cffa81cdde8901c.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "6d65948c4146fc8a669b9bb10f3832e6",
+        "label": "捏",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/6d65948c4146fc8a669b9bb10f3832e6.png",
+        "file": "6d65948c4146fc8a669b9bb10f3832e6.png",
+        "mime_type": "image/png"
+      },
+      {
         "id": "d931ab4696e4003b744092c1acd3b6c8",
-        "label": "表情 14",
+        "label": "拍照",
         "thumbnail_asset": "assets/images/stickers/mingfeng-daily/d931ab4696e4003b744092c1acd3b6c8.png",
         "file": "d931ab4696e4003b744092c1acd3b6c8.png",
         "mime_type": "image/png"
       },
       {
-        "id": "f05144bf668463d3f2742765d6f8da14",
-        "label": "表情 15",
-        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/f05144bf668463d3f2742765d6f8da14.png",
-        "file": "f05144bf668463d3f2742765d6f8da14.png",
+        "id": "2d094a6c0e1ac32d31a65286eb141a57",
+        "label": "阿巴",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/2d094a6c0e1ac32d31a65286eb141a57.png",
+        "file": "2d094a6c0e1ac32d31a65286eb141a57.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "bf4fdc61f3162854bd1e8f80114f0624",
+        "label": "猫",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/bf4fdc61f3162854bd1e8f80114f0624.png",
+        "file": "bf4fdc61f3162854bd1e8f80114f0624.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "6608d1dacfcde27f87f7d3852330d0fb",
+        "label": "叹气",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/6608d1dacfcde27f87f7d3852330d0fb.png",
+        "file": "6608d1dacfcde27f87f7d3852330d0fb.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "986e5bd2a4b13d23b32416c046ecb068",
+        "label": "苦露西",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/986e5bd2a4b13d23b32416c046ecb068.png",
+        "file": "986e5bd2a4b13d23b32416c046ecb068.png",
         "mime_type": "image/png"
       },
       {
         "id": "f824b5b93951ea809e59bab466114f71",
-        "label": "表情 16",
+        "label": "辛苦了",
         "thumbnail_asset": "assets/images/stickers/mingfeng-daily/f824b5b93951ea809e59bab466114f71.png",
         "file": "f824b5b93951ea809e59bab466114f71.png",
+        "mime_type": "image/png"
+      },
+      {
+        "id": "f05144bf668463d3f2742765d6f8da14",
+        "label": "疑惑",
+        "thumbnail_asset": "assets/images/stickers/mingfeng-daily/f05144bf668463d3f2742765d6f8da14.png",
+        "file": "f05144bf668463d3f2742765d6f8da14.png",
         "mime_type": "image/png"
       }
     ]

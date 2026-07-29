@@ -9,10 +9,53 @@ Add-Type -AssemblyName System.Drawing
 # 表情包导入器：客户端只保留缩略图，高清 PNG/GIF 嵌入服务端二进制。
 # GHF 会混淆 GIF 的文件头和调色板；动态文件还包含一个无法标准解码的封面帧。
 $groupDefinitions = @(
-    @{ Folder = "mingfengfneg1"; Id = "mingfeng-daily"; Name = "明风·日常"; Metadata = $null; Dynamic = $false },
-    @{ Folder = "mingfengfneg2"; Id = "mingfeng-ovo"; Name = "明风 OvO"; Metadata = "237834.jtmp"; Dynamic = $true },
-    @{ Folder = "mingfengfneg3"; Id = "mingfengfeng"; Name = "明风风"; Metadata = "234400.jtmp"; Dynamic = $false },
-    @{ Folder = "mingfengfneg4"; Id = "mingfeng"; Name = "明风"; Metadata = "234044.jtmp"; Dynamic = $false }
+    @{
+        Folder = "mingfengfneg1"
+        Id = "mingfeng-daily"
+        Name = "明风·日常"
+        Metadata = $null
+        Dynamic = $false
+        # 该包没有 jtmp 元数据，名称与顺序按源包详情页恢复。
+        Order = @(
+            "aad70d8d064f9eb79286c1393490716c",
+            "d0deb840abc781f414c7ad6824407964",
+            "1c704494bbb89fce27681425cffbe6fa",
+            "36286e5249dbbd659981ca530e21c047",
+            "0eeed98ece4e89243db9dea7ccd796fd",
+            "4535efdfbdc938e7c225528e8915285b",
+            "d0ccdc6d8c3e941529e797b4d8d5ef85",
+            "5d9aa5f7f3b304bf7cffa81cdde8901c",
+            "6d65948c4146fc8a669b9bb10f3832e6",
+            "d931ab4696e4003b744092c1acd3b6c8",
+            "2d094a6c0e1ac32d31a65286eb141a57",
+            "bf4fdc61f3162854bd1e8f80114f0624",
+            "6608d1dacfcde27f87f7d3852330d0fb",
+            "986e5bd2a4b13d23b32416c046ecb068",
+            "f824b5b93951ea809e59bab466114f71",
+            "f05144bf668463d3f2742765d6f8da14"
+        )
+        Labels = @{
+            "aad70d8d064f9eb79286c1393490716c" = "亲亲"
+            "d0deb840abc781f414c7ad6824407964" = "粘"
+            "1c704494bbb89fce27681425cffbe6fa" = "认真"
+            "36286e5249dbbd659981ca530e21c047" = "抱"
+            "0eeed98ece4e89243db9dea7ccd796fd" = "敢这么说话"
+            "4535efdfbdc938e7c225528e8915285b" = "花花"
+            "d0ccdc6d8c3e941529e797b4d8d5ef85" = "看手机"
+            "5d9aa5f7f3b304bf7cffa81cdde8901c" = "长条"
+            "6d65948c4146fc8a669b9bb10f3832e6" = "捏"
+            "d931ab4696e4003b744092c1acd3b6c8" = "拍照"
+            "2d094a6c0e1ac32d31a65286eb141a57" = "阿巴"
+            "bf4fdc61f3162854bd1e8f80114f0624" = "猫"
+            "6608d1dacfcde27f87f7d3852330d0fb" = "叹气"
+            "986e5bd2a4b13d23b32416c046ecb068" = "苦露西"
+            "f824b5b93951ea809e59bab466114f71" = "辛苦了"
+            "f05144bf668463d3f2742765d6f8da14" = "疑惑"
+        }
+    },
+    @{ Folder = "mingfengfneg2"; Id = "mingfeng-ovo"; Name = "明风 OvO"; Metadata = "237834.jtmp"; Dynamic = $true; Order = $null; Labels = $null },
+    @{ Folder = "mingfengfneg3"; Id = "mingfengfeng"; Name = "明风风"; Metadata = "234400.jtmp"; Dynamic = $false; Order = $null; Labels = $null },
+    @{ Folder = "mingfengfneg4"; Id = "mingfeng"; Name = "明风"; Metadata = "234044.jtmp"; Dynamic = $false; Order = $null; Labels = $null }
 )
 
 $ghfHeader = [byte[]](0x47, 0x48, 0x46, 0x39, 0x39, 0x60)
@@ -150,8 +193,17 @@ foreach ($definition in $groupDefinitions) {
     New-Item -ItemType Directory -Force -Path $clientGroup | Out-Null
 
     $labels = @{}
+    if ($definition.Labels) {
+        foreach ($id in $definition.Labels.Keys) {
+            $labels[[string]$id] = [string]$definition.Labels[$id]
+        }
+    }
     $orderedIds = [System.Collections.Generic.List[string]]::new()
-    if ($definition.Metadata) {
+    if ($definition.Order) {
+        foreach ($id in $definition.Order) {
+            $orderedIds.Add([string]$id)
+        }
+    } elseif ($definition.Metadata) {
         $metadataPath = Join-Path $sourceGroup $definition.Metadata
         $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($image in $metadata.imgs) {

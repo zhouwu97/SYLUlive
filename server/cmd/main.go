@@ -1052,6 +1052,7 @@ func main() {
 		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
 		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
 		user.GET("/competitions/state", competitionHandler.GetUserCompetitionState)
+		user.GET("/competitions/dashboard", competitionHandler.GetCompetitionDashboard)
 		user.GET("/competition-preference", competitionHandler.GetCompetitionPreference)
 		user.PUT("/competition-preference", competitionHandler.PutCompetitionPreference)
 		user.GET("/competition-capability-profile", competitionHandler.GetCompetitionCapabilityProfile)
@@ -1983,6 +1984,7 @@ func main() {
 func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 	var existing models.User
+	now := time.Now()
 
 	if err := db.Where("student_id = ?", studentID).First(&existing).Error; err == nil {
 
@@ -1997,7 +1999,15 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 			"role": models.RoleSuperAdmin,
 
 			"credit_score": 100,
+
+			"account_status": "active",
+
+			"cancelled_at": nil,
 		})
+		// 超管种子账号不经教务注册流程，但必须满足登录查询的已认证身份条件。
+		db.Model(&existing).
+			Where("student_verified_at IS NULL").
+			UpdateColumn("student_verified_at", now)
 
 	} else {
 
@@ -2014,6 +2024,10 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 			Role: models.RoleSuperAdmin,
 
 			CreditScore: 100,
+
+			AccountStatus: "active",
+
+			StudentVerifiedAt: &now,
 		}
 
 		db.Create(&user)

@@ -139,6 +139,43 @@ func TestReplyCreateRejectsImageWithSticker(t *testing.T) {
 	}
 }
 
+func TestReplyCreateAllowsImageOnly(t *testing.T) {
+	db := newReplyTestDB(t)
+	post := createReplyTestPost(t, db)
+	handler := NewReplyHandler(db, "", "")
+
+	uploadDir := t.TempDir()
+	t.Setenv("UPLOAD_DIR", uploadDir)
+	if err := os.WriteFile(filepath.Join(uploadDir, "favorite.png"), []byte("image"), 0o600); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	file := models.File{
+		Hash:     "favorite-image",
+		Path:     "/uploads/favorite.png",
+		Size:     5,
+		MimeType: "image/png",
+		Status:   "temporary",
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatalf("create image file: %v", err)
+	}
+
+	response := performReplyRequest(t, handler.Create, post.ID, url.Values{
+		"file_ids": {fmt.Sprint(file.ID)},
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create image-only reply status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	var reply models.Reply
+	if err := json.Unmarshal(response.Body.Bytes(), &reply); err != nil {
+		t.Fatalf("decode image-only reply: %v", err)
+	}
+	if reply.Content != "" || len(reply.Images) != 1 || reply.Images[0].FileID != file.ID {
+		t.Fatalf("unexpected image-only reply: %s", response.Body.String())
+	}
+}
+
 func TestReplyCreateUsesTextInMixedStickerNotification(t *testing.T) {
 	db := newReplyTestDB(t)
 	createMessageTestUser(t, db, 1, "Alice")

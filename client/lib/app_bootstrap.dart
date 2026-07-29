@@ -54,6 +54,8 @@ import 'services/post_cache_service.dart';
 import 'services/poll_service.dart';
 import 'services/app_update_coordinator.dart';
 import 'services/push_settings_service.dart';
+import 'features/ai_device_bridge/device_tool_bridge_host.dart';
+import 'features/ai_device_bridge/device_tool_worker.dart';
 import 'platform/platform_bootstrap.dart';
 import 'platform/platform_capabilities.dart';
 import 'widgets/app_update_gate.dart';
@@ -309,8 +311,8 @@ Future<void> appBootstrap() async {
 }
 
 /// 极光推送初始化
-late final PushClient pushClient = PushClient.current();
-late final SystemNotificationClient systemNotificationClient =
+final PushClient pushClient = PushClient.current();
+final SystemNotificationClient systemNotificationClient =
     SystemNotificationClient.current();
 bool _privateMessageNotificationsReady = false;
 const MethodChannel _privateMessageNotificationChannel = MethodChannel(
@@ -336,6 +338,7 @@ void _ensureJPushHandlersRegistered() {
 
   pushClient.setHandlers(
     onReceiveNotification: (Map<String, dynamic> message) async {
+      if (await _handleDeviceToolJobNotification(message)) return;
       // 极光 SDK 已展示通知，不弹本地兜底，避免双通知
       await _handlePrivateMessageNotification(
         message,
@@ -344,6 +347,7 @@ void _ensureJPushHandlersRegistered() {
       );
     },
     onNotifyMessageUnShow: (Map<String, dynamic> message) async {
+      if (await _handleDeviceToolJobNotification(message)) return;
       // 极光 SDK 未展示通知，需要 Flutter 本地兜底
       await _handlePrivateMessageNotification(
         message,
@@ -354,6 +358,7 @@ void _ensureJPushHandlersRegistered() {
     onOpenNotification: (Map<String, dynamic> message) async {
       debugPrint('点击通知原始数据: $message');
 
+      if (await _handleDeviceToolJobNotification(message)) return;
       if (await _handleUpdateNotification(message)) return;
       if (await _handlePrivateMessageNotification(message, opened: true)) {
         return;
@@ -370,6 +375,23 @@ void _ensureJPushHandlersRegistered() {
       _storeOrOpenNotificationTarget(target);
     },
   );
+}
+
+/// 设备工具推送体只识别 job_id；参数和个人数据必须由 Worker 使用 JWT 再次拉取。
+Future<bool> _handleDeviceToolJobNotification(
+  Map<String, dynamic> message,
+) async {
+  final extras = extractJPushExtras(message);
+  if (extras['type'] != 'ai_device_job') return false;
+  final jobId = extras['job_id'];
+  if (jobId is String && RegExp(r'^[0-9a-fA-F-]{1,36}$').hasMatch(jobId)) {
+    try {
+      await DeviceToolBridge.handlePush(jobId);
+    } catch (_) {
+      // 设备离线时由前台启动和生命周期恢复补拉 pending 任务。
+    }
+  }
+  return true;
 }
 
 NotificationOpenTarget? _lastOpenedNotificationTarget;
@@ -433,8 +455,6 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
         ),
       );
       return;
-
-
   }
 }
 
@@ -643,7 +663,7 @@ Future<bool> _handlePrivateMessageNotification(
 
   final lifecycleState = WidgetsBinding.instance.lifecycleState;
   final isAppForeground = lifecycleState == AppLifecycleState.resumed;
-  final currentConversationId = provider?.currentConversationId;
+  final currentConversationId = provider?.activeConversationId;
 
   // 后台收到通知时，完全交给 Android/极光处理。
   // 不清通知、不刷新当前会话、不标记已读。
@@ -672,10 +692,8 @@ Future<bool> _handlePrivateMessageNotification(
   );
 
   if (isViewingTargetConversation) {
-    // 只有应用真正处于前台，并且用户正在看这个会话时才清理。
-    await _clearPrivateMessageNotifications(target.conversationId);
+    // 是否已读由聊天页结合路由顶层状态和消息可见位置决定。
     await provider?.refreshMessages();
-    await provider?.markRead(target.conversationId);
     return true;
   }
 
@@ -712,14 +730,6 @@ Future<void> _showPrivateMessageLocalNotification(
   final title = target.displayName;
   final body = notificationContent(message);
   if (body.isEmpty) return;
-
-  final payload = jsonEncode({
-    'conversation_id': target.conversationId,
-    'sender_id': target.senderId,
-    'sender_name': target.displayName,
-    'sender_avatar': target.senderAvatar,
-    'message_id': target.messageId,
-  });
 
   try {
     await systemNotificationClient.showNotification(
@@ -776,26 +786,42 @@ void _navigateToPrivateMessage(PrivateMessageTarget target) {
   }
   final resolvedTarget = _resolvePrivateMessageTarget(target);
   debugPrint(
-    '🧭 navigate: popUntil+push conv=${resolvedTarget.conversationId} sender=${resolvedTarget.senderId}',
+    '🧭 navigate: push conv=${resolvedTarget.conversationId} sender=${resolvedTarget.senderId}',
   );
   try {
-    navigator.popUntil((route) => route.isFirst);
-    navigator.push(
-      MaterialPageRoute(
-        builder: (_) => ChatDetailScreen(
-          conversationId: resolvedTarget.conversationId,
-          initialMessageId: resolvedTarget.messageId,
-          targetUser: User(
-            id: resolvedTarget.senderId,
-            studentId: '',
-            nickname: resolvedTarget.displayName,
-            avatar: resolvedTarget.senderAvatar,
-            createdAt: DateTime.now(),
-          ),
+    final context = appNavigatorKey.currentContext;
+    final provider = context?.read<MessageProvider>();
+    if (provider?.activeConversationId == resolvedTarget.conversationId) {
+      final messageId = resolvedTarget.messageId;
+      if (messageId != null) {
+        unawaited(provider!.requestMessageFocus(messageId));
+      } else {
+        unawaited(provider?.refreshMessages() ?? Future<void>.value());
+      }
+      return;
+    }
+    final route = MaterialPageRoute<void>(
+      builder: (_) => ChatDetailScreen(
+        conversationId: resolvedTarget.conversationId,
+        initialMessageId: resolvedTarget.messageId,
+        targetUser: User(
+          id: resolvedTarget.senderId,
+          studentId: '',
+          nickname: resolvedTarget.displayName,
+          avatar: resolvedTarget.senderAvatar,
+          createdAt: DateTime.now(),
         ),
       ),
     );
-    debugPrint('✅ navigate: push 成功');
+    final replaceStandaloneChat = provider?.activeConversationId != null &&
+        provider?.activeConversationEmbedded == false;
+    if (replaceStandaloneChat) {
+      navigator.pushReplacement(route);
+      debugPrint('✅ navigate: replace 成功');
+    } else {
+      navigator.push(route);
+      debugPrint('✅ navigate: push 成功');
+    }
   } catch (e) {
     debugPrint('❌ navigate: push 失败 - $e');
   }
@@ -1021,7 +1047,9 @@ class MyApp extends StatelessWidget {
               provider!..syncSessionUser(auth.user?.id),
         ),
       ],
-      child: const _WidgetDeepLinkHandler(child: _AppContent()),
+      child: const DeviceToolBridgeHost(
+        child: _WidgetDeepLinkHandler(child: _AppContent()),
+      ),
     );
   }
 }
@@ -1194,6 +1222,7 @@ class _AppContent extends StatelessWidget {
       ),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       navigatorKey: appNavigatorKey,
+      navigatorObservers: [appRouteObserver],
       scaffoldMessengerKey: scaffoldMessengerKey,
       builder: (context, child) => AppUpdateGate(
         navigatorKey: appNavigatorKey,

@@ -20,6 +20,7 @@ type Reply struct {
 	ParentReplyID *uint       `gorm:"index" json:"parent_reply_id"` // 空表示顶级回复
 	AuthorID      uint        `gorm:"not null" json:"author_id"`
 	Content       string      `gorm:"type:text" json:"content"`
+	StickerID     *string     `gorm:"size:64;index" json:"sticker_id,omitempty"`
 	Status        ReplyStatus `gorm:"default:normal" json:"status"`
 	LikeCount     int         `gorm:"default:0" json:"like_count"`
 	IsLiked       bool        `gorm:"-" json:"is_liked"`

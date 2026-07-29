@@ -49,7 +49,9 @@ func newMessageTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
+		&models.UserFollow{},
 		&models.File{},
+		&models.FileUploadGrant{},
 		&models.Conversation{},
 		&models.Message{},
 	); err != nil {
@@ -276,6 +278,8 @@ func TestMessageConversationSummaryPaginationAndRead(t *testing.T) {
 		t.Fatalf("unexpected around page: %s", aroundPage.Body.String())
 	}
 
+	readEvents, unsubscribeReadEvents := handler.events.subscribe(2)
+	defer unsubscribeReadEvents()
 	read := performMessageRequest(
 		t,
 		handler.MarkRead,
@@ -294,6 +298,14 @@ func TestMessageConversationSummaryPaginationAndRead(t *testing.T) {
 		Count(&unread)
 	if unread != 0 {
 		t.Fatalf("unread count=%d want=0", unread)
+	}
+	select {
+	case event := <-readEvents:
+		if event.Type != "message.read" || event.ReadThroughID != messages[1].ID {
+			t.Fatalf("unexpected read event: %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for read event")
 	}
 
 	unreadResponse := performMessageRequest(
@@ -317,6 +329,20 @@ func TestMessageSendRateLimit(t *testing.T) {
 	createMessageTestUser(t, db, 1, "Alice")
 	createMessageTestUser(t, db, 2, "Bob")
 	handler := NewMessageHandler(db)
+
+	// 对方先回复后即为已建立会话，不再受陌生人首条消息规则限制。
+	reply := performMessageRequest(
+		t,
+		handler.Send,
+		http.MethodPost,
+		"/api/messages/1",
+		gin.Params{{Key: "user_id", Value: "1"}},
+		2,
+		`{"content":"reply"}`,
+	)
+	if reply.Code != http.StatusCreated {
+		t.Fatalf("reply status=%d body=%s", reply.Code, reply.Body.String())
+	}
 
 	for i := 0; i < maxPairMessagesPerMin; i++ {
 		response := performMessageRequest(
@@ -347,15 +373,119 @@ func TestMessageSendRateLimit(t *testing.T) {
 	}
 }
 
+func TestMessageSendIsIdempotentByClientMessageID(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	createMessageTestUser(t, db, 3, "Carol")
+	handler := NewMessageHandler(db)
+
+	body := `{"content":"hello","client_message_id":"client-001"}`
+	first := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1, body,
+	)
+	second := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1, body,
+	)
+	if first.Code != http.StatusCreated || second.Code != http.StatusCreated {
+		t.Fatalf("idempotent statuses=%d/%d bodies=%s / %s",
+			first.Code, second.Code, first.Body.String(), second.Body.String())
+	}
+	if second.Header().Get("X-Idempotent-Replay") != "true" {
+		t.Fatalf("missing replay header: %#v", second.Header())
+	}
+
+	var firstMessage, secondMessage models.Message
+	if err := json.Unmarshal(first.Body.Bytes(), &firstMessage); err != nil {
+		t.Fatalf("decode first message: %v", err)
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &secondMessage); err != nil {
+		t.Fatalf("decode second message: %v", err)
+	}
+	if firstMessage.ID != secondMessage.ID {
+		t.Fatalf("message ids differ: %d/%d", firstMessage.ID, secondMessage.ID)
+	}
+	var count int64
+	db.Model(&models.Message{}).Count(&count)
+	if count != 1 {
+		t.Fatalf("message count=%d want=1", count)
+	}
+
+	conflict := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/3",
+		gin.Params{{Key: "user_id", Value: "3"}}, 1, body,
+	)
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("cross-conversation replay status=%d body=%s", conflict.Code, conflict.Body.String())
+	}
+}
+
+func TestMessageConversationLookupReturnsExistingOrNull(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	createMessageTestUser(t, db, 3, "Carol")
+	handler := NewMessageHandler(db)
+	conversation := models.Conversation{User1ID: 1, User2ID: 2}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	existing := performMessageRequest(
+		t, handler.GetConversationWithUser, http.MethodGet,
+		"/api/messages/users/2/conversation",
+		gin.Params{{Key: "target_user_id", Value: "2"}}, 1, "",
+	)
+	if existing.Code != http.StatusOK ||
+		!strings.Contains(existing.Body.String(), fmt.Sprintf(`"id":%d`, conversation.ID)) {
+		t.Fatalf("existing lookup status=%d body=%s", existing.Code, existing.Body.String())
+	}
+
+	empty := performMessageRequest(
+		t, handler.GetConversationWithUser, http.MethodGet,
+		"/api/messages/users/3/conversation",
+		gin.Params{{Key: "target_user_id", Value: "3"}}, 1, "",
+	)
+	if empty.Code != http.StatusOK || !strings.Contains(empty.Body.String(), `"conversation":null`) {
+		t.Fatalf("empty lookup status=%d body=%s", empty.Code, empty.Body.String())
+	}
+}
+
+func TestMessageSendRejectsForeignImageReference(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	file := models.File{
+		Hash: "foreign-image", Path: "/uploads/foreign.png", Size: 12,
+		MimeType: "image/png", UploaderID: 2,
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	handler := NewMessageHandler(db)
+
+	response := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1,
+		fmt.Sprintf(`{"file_id":%d}`, file.ID),
+	)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("foreign image status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestMessageSendImageResponseAndPush(t *testing.T) {
 	db := newMessageTestDB(t)
 	createMessageTestUser(t, db, 1, "Alice")
 	createMessageTestUser(t, db, 2, "Bob")
 	file := models.File{
-		Hash:     "image-hash",
-		Path:     "/uploads/image.png",
-		Size:     128,
-		MimeType: "image/png",
+		Hash:       "image-hash",
+		Path:       "/uploads/image.png",
+		Size:       128,
+		MimeType:   "image/png",
+		UploaderID: 1,
 	}
 	if err := db.Create(&file).Error; err != nil {
 		t.Fatalf("create file: %v", err)
@@ -399,5 +529,100 @@ func TestMessageSendImageResponseAndPush(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected private message push call")
+	}
+}
+
+func TestMessageSendStickerValidatesCatalogAndPersistsID(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	handler := NewMessageHandler(db)
+
+	invalid := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1,
+		`{"sticker_id":"not-in-catalog"}`,
+	)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid sticker status=%d body=%s", invalid.Code, invalid.Body.String())
+	}
+
+	const stickerID = "0cc4a3688e7b222b977fef3a078619b6"
+	imageWithSticker := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1,
+		`{"file_id":1,"sticker_id":"`+stickerID+`"}`,
+	)
+	if imageWithSticker.Code != http.StatusBadRequest {
+		t.Fatalf("image with sticker status=%d body=%s", imageWithSticker.Code, imageWithSticker.Body.String())
+	}
+
+	response := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1,
+		`{"sticker_id":"`+stickerID+`"}`,
+	)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("send sticker status=%d body=%s", response.Code, response.Body.String())
+	}
+	var message models.Message
+	if err := json.Unmarshal(response.Body.Bytes(), &message); err != nil {
+		t.Fatalf("decode sticker message: %v", err)
+	}
+	if message.StickerID == nil || *message.StickerID != stickerID {
+		t.Fatalf("sticker_id=%v body=%s", message.StickerID, response.Body.String())
+	}
+	if message.Content != stickerFallbackText {
+		t.Fatalf("fallback content=%q", message.Content)
+	}
+}
+
+func TestMessageSendAllowsTextWithSticker(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	handler := NewMessageHandler(db)
+
+	const stickerID = "0cc4a3688e7b222b977fef3a078619b6"
+	response := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1,
+		`{"content":"晚安","sticker_id":"`+stickerID+`"}`,
+	)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("send text with sticker status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	var message models.Message
+	if err := json.Unmarshal(response.Body.Bytes(), &message); err != nil {
+		t.Fatalf("decode text with sticker message: %v", err)
+	}
+	if message.Content != "晚安" {
+		t.Fatalf("content=%q", message.Content)
+	}
+	if message.StickerID == nil || *message.StickerID != stickerID {
+		t.Fatalf("sticker_id=%v body=%s", message.StickerID, response.Body.String())
+	}
+}
+
+func TestMessageEventBrokerPublishesOnlyToSubscribedUsers(t *testing.T) {
+	broker := newMessageEventBroker()
+	userEvents, unsubscribe := broker.subscribe(7)
+	defer unsubscribe()
+	event := privateMessageEvent{Type: "message.created", ConversationID: 42}
+
+	broker.publish([]uint{7, 7, 8}, event)
+	select {
+	case received := <-userEvents:
+		if received.Type != event.Type || received.ConversationID != event.ConversationID {
+			t.Fatalf("unexpected event: %#v", received)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected realtime message event")
+	}
+	select {
+	case duplicate := <-userEvents:
+		t.Fatalf("received duplicate event: %#v", duplicate)
+	default:
 	}
 }

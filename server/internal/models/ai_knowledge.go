@@ -3,6 +3,7 @@ package models
 import (
 	"time"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -48,21 +49,35 @@ func (AIKnowledgeDocument) TableName() string { return "ai_knowledge_documents" 
 
 // AIKnowledgeChunk 是检索与引用验证的最小证据单元。
 type AIKnowledgeChunk struct {
-	ID                    uint64    `gorm:"primaryKey" json:"id"`
-	DocumentID            uint      `gorm:"not null;uniqueIndex:idx_ai_chunks_document_index,priority:1;index" json:"document_id"`
-	ChunkIndex            int       `gorm:"not null;uniqueIndex:idx_ai_chunks_document_index,priority:2" json:"chunk_index"`
-	Content               string    `gorm:"type:text;not null" json:"content"`
-	ContentHash           string    `gorm:"size:64;not null" json:"content_hash"`
-	SearchTokens          string    `gorm:"type:text;not null;default:''" json:"-"`
-	Embedding             string    `gorm:"type:vector(1536);not null" json:"-"`
-	PageNumber            *int      `json:"page_number,omitempty"`
-	SectionTitle          string    `gorm:"size:500;not null;default:''" json:"section_title,omitempty"`
-	SourceLocator         string    `gorm:"size:500;not null;default:''" json:"source_locator,omitempty"`
-	EmbeddingModelVersion string    `gorm:"size:100;not null;index" json:"embedding_model_version"`
-	CreatedAt             time.Time `json:"created_at"`
+	ID           uint64 `gorm:"primaryKey" json:"id"`
+	DocumentID   uint   `gorm:"not null;uniqueIndex:idx_ai_chunks_document_index,priority:1;index" json:"document_id"`
+	ChunkIndex   int    `gorm:"not null;uniqueIndex:idx_ai_chunks_document_index,priority:2" json:"chunk_index"`
+	Content      string `gorm:"type:text;not null" json:"content"`
+	ContentHash  string `gorm:"size:64;not null" json:"content_hash"`
+	SearchTokens string `gorm:"type:text;not null;default:''" json:"-"`
+	// Embedding 仅保留兼容旧索引；新向量按真实维度写入版本化影子表。
+	Embedding             string         `gorm:"type:vector(1536)" json:"-"`
+	PageNumber            *int           `json:"page_number,omitempty"`
+	SectionTitle          string         `gorm:"size:500;not null;default:''" json:"section_title,omitempty"`
+	SourceLocator         string         `gorm:"size:500;not null;default:''" json:"source_locator,omitempty"`
+	Metadata              datatypes.JSON `gorm:"type:jsonb;not null;default:'{}'" json:"-"`
+	EmbeddingModelVersion string         `gorm:"size:100;not null;index" json:"embedding_model_version"`
+	CreatedAt             time.Time      `json:"created_at"`
 }
 
 func (AIKnowledgeChunk) TableName() string { return "ai_knowledge_chunks" }
+
+// AIKnowledgeChunkEmbedding 将向量与展示正文分离，允许不同模型维度并存且不伪造补零维度。
+type AIKnowledgeChunkEmbedding struct {
+	ID           uint64    `gorm:"primaryKey" json:"id"`
+	ChunkID      uint64    `gorm:"not null;uniqueIndex:idx_ai_chunk_embedding_version,priority:1;index" json:"chunk_id"`
+	ModelVersion string    `gorm:"size:100;not null;uniqueIndex:idx_ai_chunk_embedding_version,priority:2;index" json:"model_version"`
+	Dimensions   int       `gorm:"not null;index" json:"dimensions"`
+	Embedding    string    `gorm:"type:vector;not null" json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (AIKnowledgeChunkEmbedding) TableName() string { return "ai_knowledge_chunk_embeddings" }
 
 type AIKnowledgeIngestionJob struct {
 	ID            string     `gorm:"type:varchar(36);primaryKey" json:"id"`

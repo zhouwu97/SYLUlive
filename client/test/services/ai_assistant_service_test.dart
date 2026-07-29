@@ -34,6 +34,7 @@ void main() {
     final result = await AiAssistantService(dio).getCapabilities();
     expect(result.isVisible, isTrue);
     expect(result.quota.limit, 3);
+    expect(result.maxMessageChars, 20);
   });
 
   test('创建 Run 将 429 配额错误转换为可识别异常', () async {
@@ -108,5 +109,231 @@ void main() {
     expect(firstPair.first.content, '补考正文');
     expect(identical(firstPair.first, firstPair.last), isTrue);
     expect(identical(firstPair.first, cached), isTrue);
+  });
+
+  test('一次性授权只提交 Run、scope 和决定', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.method, 'POST');
+          expect(options.path, '/ai/runs/run-1/consent');
+          expect(options.data, <String, dynamic>{
+            'scope': 'ai_personal_data_access',
+            'granted': true,
+          });
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 202,
+              data: const <String, dynamic>{'run_id': 'run-1'},
+            ),
+          );
+        },
+      ),
+    );
+
+    await AiAssistantService(dio).submitRunConsent(
+      runId: 'run-1',
+      scope: 'ai_personal_data_access',
+      granted: true,
+    );
+  });
+
+  test('连接超时用同一 request id 自动重试并接受 202', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    final seenRequestIds = <String>[];
+    var attempts = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          attempts++;
+          seenRequestIds
+              .add((options.data as Map)['client_request_id'] as String);
+          expect(
+            options.headers['X-Client-Request-ID'],
+            '00000000-0000-4000-8000-000000000002',
+          );
+          if (attempts == 1) {
+            handler.reject(DioException(
+              requestOptions: options,
+              type: DioExceptionType.connectionTimeout,
+            ));
+            return;
+          }
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 202,
+              data: {
+                'run': {
+                  'id': 'run-1',
+                  'conversation_id': 'conv-1',
+                  'state': 'created',
+                  'state_version': 1,
+                },
+                'duplicate': false,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final creation = await AiAssistantService(dio).createRun(
+      conversationId: '',
+      clientRequestId: '00000000-0000-4000-8000-000000000002',
+      message: '挂科了怎么办',
+    );
+
+    expect(attempts, 2);
+    expect(creation.run.id, 'run-1');
+    expect(creation.duplicate, isFalse);
+    // 重试必须复用同一个幂等键，否则服务端会创建出第二个 Run。
+    expect(seenRequestIds.toSet(), {'00000000-0000-4000-8000-000000000002'});
+  });
+
+  test('响应丢失后重试命中服务端幂等，只存在一个 Run', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    var attempts = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          attempts++;
+          if (attempts == 1) {
+            handler.reject(DioException(
+              requestOptions: options,
+              type: DioExceptionType.receiveTimeout,
+            ));
+            return;
+          }
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'run': {
+                  'id': 'run-existing',
+                  'conversation_id': 'conv-1',
+                  'state': 'generating',
+                  'state_version': 3,
+                },
+                'duplicate': true,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final creation = await AiAssistantService(dio).createRun(
+      conversationId: 'conv-1',
+      clientRequestId: '00000000-0000-4000-8000-000000000003',
+      message: '挂科了怎么办',
+    );
+
+    expect(creation.duplicate, isTrue);
+    expect(creation.run.id, 'run-existing');
+  });
+
+  test('业务拒绝状态码不自动重试', () async {
+    for (final status in [400, 401, 403, 422, 429]) {
+      final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+      var attempts = 0;
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            attempts++;
+            handler.reject(DioException(
+              requestOptions: options,
+              response: Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: status,
+                data: {'code': 'rejected', 'message': '被拒绝'},
+              ),
+            ));
+          },
+        ),
+      );
+
+      await expectLater(
+        AiAssistantService(dio).createRun(
+          conversationId: '',
+          clientRequestId: '00000000-0000-4000-8000-000000000004',
+          message: '挂科了怎么办',
+        ),
+        throwsA(isA<AiAssistantServiceException>()),
+      );
+      expect(attempts, 1, reason: 'HTTP $status 不应自动重试');
+    }
+  });
+
+  test('连续网络失败保留可重试标记和具体原因', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    var attempts = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          attempts++;
+          handler.reject(DioException(
+            requestOptions: options,
+            type: DioExceptionType.connectionTimeout,
+          ));
+        },
+      ),
+    );
+
+    await expectLater(
+      AiAssistantService(dio).createRun(
+        conversationId: '',
+        clientRequestId: '00000000-0000-4000-8000-000000000005',
+        message: '挂科了怎么办',
+      ),
+      throwsA(
+        isA<AiAssistantServiceException>()
+            .having((error) => error.code, 'code', 'network_connection_timeout')
+            .having((error) => error.retryable, 'retryable', isTrue),
+      ),
+    );
+    expect(attempts, 2);
+  });
+
+  test('isTransientCreateRunError 只对链路故障和 5xx 返回 true', () {
+    final options = RequestOptions(path: '/ai/runs');
+    for (final type in [
+      DioExceptionType.connectionTimeout,
+      DioExceptionType.sendTimeout,
+      DioExceptionType.receiveTimeout,
+      DioExceptionType.connectionError,
+    ]) {
+      expect(
+        isTransientCreateRunError(
+            DioException(requestOptions: options, type: type)),
+        isTrue,
+      );
+    }
+    expect(
+      isTransientCreateRunError(DioException(
+        requestOptions: options,
+        response: Response<dynamic>(requestOptions: options, statusCode: 503),
+      )),
+      isTrue,
+    );
+    for (final status in [400, 401, 403, 422, 429]) {
+      expect(
+        isTransientCreateRunError(DioException(
+          requestOptions: options,
+          response:
+              Response<dynamic>(requestOptions: options, statusCode: status),
+        )),
+        isFalse,
+        reason: 'HTTP $status',
+      );
+    }
+    expect(
+      isTransientCreateRunError(
+          DioException(requestOptions: options, type: DioExceptionType.cancel)),
+      isFalse,
+    );
   });
 }

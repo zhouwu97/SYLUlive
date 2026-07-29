@@ -6,6 +6,7 @@ import '../../models/ai_source.dart';
 import '../../models/competition_action_draft.dart';
 import '../campus/campus_theme.dart';
 import 'ai_competition_plan_draft_card.dart';
+import 'ai_evidence_card.dart';
 import 'ai_source_card.dart';
 
 class AiMessageCard extends StatelessWidget {
@@ -46,7 +47,7 @@ class AiMessageCard extends StatelessWidget {
                 )
               else
                 MarkdownBody(
-                  data: message.content,
+                  data: sanitizeAiCitationDisplay(message.content),
                   selectable: true,
                   styleSheet: MarkdownStyleSheet(
                     p: const TextStyle(
@@ -66,6 +67,8 @@ class AiMessageCard extends StatelessWidget {
                       ? null
                       : () => onViewCompetition!(draft.event.id),
                 ),
+              if (!isUser && message.personalDataEvidence.isNotEmpty)
+                AiCampusEvidenceCard(evidence: message.personalDataEvidence),
               for (final source in message.sources)
                 AiSourceCard(source: source, loadContent: loadSourceContent),
             ],
@@ -74,4 +77,12 @@ class AiMessageCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 旧链路若返回内部 chunk 引用，展示层只保留“来源”语义，不暴露内部 ID。
+String sanitizeAiCitationDisplay(String content) {
+  return content.replaceAll(
+    RegExp(r'\[chunk:[^\]\s]*(?:\]|$)', caseSensitive: false),
+    '[来源]',
+  );
 }

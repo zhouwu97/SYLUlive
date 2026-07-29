@@ -68,6 +68,7 @@ void main() {
             service: mockService,
             dio: Dio(),
             capabilities: AiCapabilities.fromJson(const {}),
+            initialPrompt: '分析我的学业情况',
           ),
         ),
       ),
@@ -77,6 +78,10 @@ void main() {
     expect(find.text('校园问答'), findsWidgets);
     expect(find.text('个人助手'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      '分析我的学业情况',
+    );
 
     await tester.tap(find.text('个人助手'));
     await tester.pumpAndSettle();
@@ -160,13 +165,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    
-    // Counter is hidden when empty in public mode
-    expect(find.text('0/20'), findsNothing);
+
+    // 公共模式输入为空时隐藏计数器。
+    expect(find.text('0/200'), findsNothing);
 
     await tester.tap(find.text('个人助手'));
     await tester.pumpAndSettle();
-    // Counter is hidden when empty in personal mode
+    // 个人模式输入为空时隐藏计数器。
     expect(find.text('0/8000'), findsNothing);
 
     await tester.enterText(find.byType(TextField), 'a');
@@ -197,7 +202,7 @@ void main() {
 
     await tester.tap(find.text('校园问答'));
     await tester.pump();
-    expect(find.text('8001/20'), findsOneWidget);
+    expect(find.text('8001/200'), findsOneWidget);
   });
 }
 

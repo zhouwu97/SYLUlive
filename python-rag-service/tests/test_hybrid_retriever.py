@@ -133,6 +133,63 @@ def test_policy_query_planner_treats_missing_credit_as_failed_course_flow():
     assert "school_undergraduate_retake_policy" in plan.preferred_document_types
 
 
+@pytest.mark.parametrize(
+    "question",
+    ["奖学金怎么评", "挂科影响奖学金吗"],
+)
+def test_policy_query_planner_routes_scholarship_questions_to_v08_documents(
+    question: str,
+):
+    plan = PolicyQueryPlanner().invoke(question)
+
+    assert plan.intent == "scholarship_selection"
+    assert plan.allow_historical is False
+    assert plan.preferred_document_types[0] == (
+        "school_undergraduate_scholarship_policy"
+    )
+    assert {"奖学金评审", "申报制", "综合测评", "专业年级排名"}.issubset(
+        plan.expanded_terms
+    )
+    assert "school_undergraduate_retake_policy" not in plan.preferred_document_types
+
+
+@pytest.mark.parametrize(
+    ("question", "intent", "document_type"),
+    [
+        ("国家助学金怎么申请", "hardship_aid", "school_national_grant_policy"),
+        ("生源地贷款怎么办", "student_loan", "school_student_loan_policy"),
+        ("孤儿减免需要什么材料", "orphan_aid", "school_orphan_aid_policy"),
+        ("勤工助学一小时多少钱", "work_study", "school_work_study_policy"),
+    ],
+)
+def test_policy_query_planner_routes_direct_aid_policy_names(
+    question: str, intent: str, document_type: str
+):
+    plan = PolicyQueryPlanner().invoke(question)
+
+    assert plan.intent == intent
+    assert document_type in plan.preferred_document_types
+    assert plan.expanded_terms
+
+
+def test_python_policy_contract_matches_the_knowledge_base_contract():
+    service_contract = (
+        Path(__file__).parents[1]
+        / "app"
+        / "chains"
+        / "policy_query_contract_v0.8.json"
+    ).read_text(encoding="utf-8")
+    knowledge_contract = (
+        Path(__file__).parents[2]
+        / "knowledge-base"
+        / "sylu-academic-policy"
+        / "v0.8"
+        / "policy_query_contract_v0.8.json"
+    ).read_text(encoding="utf-8")
+
+    assert json.loads(service_contract) == json.loads(knowledge_contract)
+
+
 def test_shadow_index_switch_disables_vector_and_records_channel_metrics():
     candidate = _candidate(1, 1, "school_undergraduate_status_policy")
     store = _FakeSearchStore(

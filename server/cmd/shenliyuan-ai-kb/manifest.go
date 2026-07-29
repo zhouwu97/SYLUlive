@@ -22,7 +22,9 @@ import (
 const (
 	manifestSchemaVersion        = "sylu-ai-kb-release/v1"
 	defaultKnowledgeBaseName     = "sylu-academic-policy"
-	defaultKnowledgeVersion      = "v0.6"
+	defaultKnowledgeVersion      = "v0.8"
+	defaultKnowledgeBundle       = "SYLUlive_AI学生资助政策完整导入包_v0.8.jsonl"
+	defaultKnowledgeManifest     = "release-manifest.v0.8.json"
 	defaultChunkingVersion       = "langchain-chinese-policy-v1"
 	defaultEmbeddingModelName    = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 	defaultEmbeddingModelVersion = "paraphrase-multilingual-minilm-l12-v2-384-v1"
@@ -92,8 +94,8 @@ type pendingSourceFile struct {
 func runManifest(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("manifest", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	bundle := flags.String("bundle", defaultKnowledgePath("SYLUlive_AI官方全文导入包_v0.6.jsonl"), "JSONL 导入包")
-	pending := flags.String("pending", defaultKnowledgePath("SYLUlive_待补官方文件清单_v0.6.json"), "待补官方文件清单")
+	bundle := flags.String("bundle", defaultKnowledgePath(defaultKnowledgeBundle), "JSONL 导入包")
+	pending := flags.String("pending", "", "待补官方文件清单")
 	version := flags.String("version", defaultKnowledgeVersion, "知识库版本")
 	output := flags.String("output", "", "输出文件；留空时写标准输出")
 	if err := flags.Parse(args); err != nil {
@@ -174,7 +176,7 @@ func buildReleaseManifest(version, bundlePath, pendingPath string, documents []r
 		BundleSHA256: hex.EncodeToString(bundleHash[:]), DocumentCount: len(documents),
 		ChunkingVersion: defaultChunkingVersion, EmbeddingModelName: defaultEmbeddingModelName,
 		EmbeddingModelVersion: defaultEmbeddingModelVersion, EmbeddingDimensions: defaultEmbeddingDimensions,
-		SupersedesVersions: []string{"v0.1", "v0.2", "v0.3", "v0.4", "v0.5"},
+		SupersedesVersions: supersededKnowledgeVersions(version),
 		Documents:          make([]manifestDocument, 0, len(documents)), UnresolvedItems: make([]manifestUnresolvedItem, 0),
 	}
 	for index, document := range documents {
@@ -289,8 +291,8 @@ func releaseDocumentCurrentness(document releaseDocument) string {
 
 func defaultKnowledgePath(fileName string) string {
 	candidates := []string{
-		filepath.Join("..", "knowledge-base", "sylu-academic-policy", "v0.6", fileName),
-		filepath.Join("knowledge-base", "sylu-academic-policy", "v0.6", fileName),
+		filepath.Join("..", "knowledge-base", "sylu-academic-policy", defaultKnowledgeVersion, fileName),
+		filepath.Join("knowledge-base", "sylu-academic-policy", defaultKnowledgeVersion, fileName),
 	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(candidate); err == nil {
@@ -301,7 +303,14 @@ func defaultKnowledgePath(fileName string) string {
 }
 
 func defaultManifestPath() string {
-	return defaultKnowledgePath("release-manifest.v0.6.json")
+	return defaultKnowledgePath(defaultKnowledgeManifest)
+}
+
+func supersededKnowledgeVersions(version string) []string {
+	if strings.TrimSpace(version) == "v0.8" {
+		return []string{"v0.7"}
+	}
+	return []string{"v0.1", "v0.2", "v0.3", "v0.4", "v0.5"}
 }
 
 func marshalIndented(value any) ([]byte, error) {

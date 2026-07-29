@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig, RunnableSerializable
@@ -10,7 +12,45 @@ from langchain_core.runnables import RunnableConfig, RunnableSerializable
 from app.schemas import PolicyQueryPlan
 
 
-POLICY_QUERY_PLANNER_VERSION = "policy-domain-rules-v1"
+POLICY_QUERY_PLANNER_VERSION = "policy-domain-rules-v2"
+
+
+def _load_policy_contract() -> dict[str, object]:
+    """加载与 Go 端同步的校园政策查询契约。"""
+
+    candidates = (
+        Path(__file__).with_name("policy_query_contract_v0.8.json"),
+        Path(__file__).resolve().parents[3]
+        / "knowledge-base"
+        / "sylu-academic-policy"
+        / "v0.8"
+        / "policy_query_contract_v0.8.json",
+    )
+    for path in candidates:
+        try:
+            contract = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if contract.get("version") == "v0.8" and contract.get("intents"):
+            return contract
+    raise RuntimeError("policy query contract v0.8 is unavailable")
+
+
+_POLICY_CONTRACT = _load_policy_contract()
+_CONTRACT_ALIASES = tuple(_POLICY_CONTRACT.get("aliases", ()))
+_CONTRACT_INTENTS = {
+    item["intent"]: item
+    for item in _POLICY_CONTRACT.get("intents", ())
+    if isinstance(item, dict) and item.get("intent")
+}
+_CONTRACT_PRIORITY = tuple(_POLICY_CONTRACT.get("intent_priority", ()))
+_CONTRACT_DOMAIN_TRIGGERS: Mapping[str, Sequence[str]] = {
+    "scholarship_selection": ("奖学金", "奖学金评选", "奖学金评审"),
+    "work_study": ("勤工助学", "勤工俭学"),
+    "student_loan": ("助学贷款", "生源地贷款", "校园地贷款"),
+    "orphan_aid": ("孤儿资助", "孤儿减免"),
+    "hardship_aid": ("困难认定", "校助学金", "临时困难补助", "国家助学金"),
+}
 
 _TYPO_REPLACEMENTS: Mapping[str, str] = {
     "补烤": "补考",
@@ -100,6 +140,54 @@ def _append_unique(target: list[str], value: str) -> None:
         target.append(value)
 
 
+def _match_contract_intent(question: str) -> str:
+    matched = {
+        str(alias.get("intent", ""))
+        for alias in _CONTRACT_ALIASES
+        if isinstance(alias, dict)
+        and str(alias.get("trigger", "")) in question
+    }
+    for intent in _CONTRACT_PRIORITY:
+        if intent in matched:
+            return intent
+        if any(
+            trigger in question
+            for trigger in _CONTRACT_DOMAIN_TRIGGERS.get(intent, ())
+        ):
+            return intent
+    return ""
+
+
+def _apply_contract_intent(
+    question: str,
+    intent: str,
+    exact_terms: list[str],
+    expanded_terms: list[str],
+    preferred_types: list[str],
+) -> bool:
+    profile = _CONTRACT_INTENTS.get(intent, {})
+    if not profile:
+        return False
+
+    exact_terms.clear()
+    expanded_terms.clear()
+    preferred_types.clear()
+    for alias in _CONTRACT_ALIASES:
+        if not isinstance(alias, dict) or alias.get("intent") != intent:
+            continue
+        trigger = str(alias.get("trigger", ""))
+        if trigger not in question:
+            continue
+        _append_unique(exact_terms, trigger)
+        for term in alias.get("terms", ()):
+            _append_unique(expanded_terms, str(term))
+    for term in profile.get("canonical_terms", ()):
+        _append_unique(expanded_terms, str(term))
+    for document_type in profile.get("preferred_document_types", ()):
+        _append_unique(preferred_types, str(document_type))
+    return str(profile.get("historical_mode", "none")) in {"fallback", "required"}
+
+
 class PolicyQueryPlanner(RunnableSerializable[str, PolicyQueryPlan]):
     """把学生口语映射为可复现、可审计的政策查询计划。"""
 
@@ -155,6 +243,13 @@ class PolicyQueryPlanner(RunnableSerializable[str, PolicyQueryPlan]):
                 _append_unique(exact_terms, trigger)
             for term in terms:
                 _append_unique(expanded_terms, term)
+
+        contract_intent = _match_contract_intent(question)
+        if contract_intent:
+            intent = contract_intent
+            second_exam = _apply_contract_intent(
+                question, intent, exact_terms, expanded_terms, preferred_types
+            )
 
         if second_exam:
             for document_type in reversed(_SECOND_EXAM_DOCUMENT_TYPES):

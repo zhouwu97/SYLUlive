@@ -1460,7 +1460,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 }
 
-// findLoginUser 依据新账号规则解析登录标识：邮箱、十位学号、兼容期 QQ 数字账号。
+// findLoginUser 依据新账号规则解析登录标识：邮箱、学号、兼容期 QQ 数字账号。
 func (h *AuthHandler) findLoginUser(account string) (models.User, error) {
 	var user models.User
 	// 未完成注册清理的占位账号不得登录，避免远端身份残留时产生可用会话。
@@ -1474,13 +1474,16 @@ func (h *AuthHandler) findLoginUser(account string) (models.User, error) {
 			return user, err
 		}
 		return user, activeUsers().Where("email = ? AND email_verified_at IS NOT NULL", email).First(&user).Error
-	case regexp.MustCompile(`^[0-9]{10}$`).MatchString(account):
+	case regexp.MustCompile(`^[0-9]{8,20}$`).MatchString(account):
 		err := activeUsers().Where("student_id = ? AND student_verified_at IS NOT NULL", account).First(&user).Error
 		if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
 			return user, err
 		}
-		// 十位 QQ 与学号长度可能相同，仅在真实学号未命中时回退兼容旧账号。
-		return user, activeUsers().Where("qq = ?", account).First(&user).Error
+		// 数字 QQ 与学号可能重叠，仅在已认证学号未命中时回退兼容旧账号。
+		if validateQQ(account) {
+			return user, activeUsers().Where("qq = ?", account).First(&user).Error
+		}
+		return user, gorm.ErrRecordNotFound
 	case validateQQ(account):
 		return user, activeUsers().Where("qq = ?", account).First(&user).Error
 	default:

@@ -7,8 +7,9 @@ from fastapi.testclient import TestClient
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.documents import Document
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessageChunk, BaseMessage
-from langchain_core.outputs import ChatGenerationChunk, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import RunnableLambda
 from pydantic import PrivateAttr
 
@@ -18,9 +19,11 @@ from app.chains import (
     build_policy_query_rewriter,
     build_policy_rag_chain,
 )
+from app.chains.policy import _bounded_documents, _parser_failure_reason
+from app.chains.query_planner import PolicyQueryPlanner
 from app.providers import FakePolicyChatModel
 from app.retrievers import FakePolicyRetriever
-from app.schemas import PolicyHistoryMessage, PolicyRAGInput, PolicyRAGResult
+from app.schemas import PolicyAnswer, PolicyHistoryMessage, PolicyRAGInput, PolicyRAGResult
 
 
 def _answer_json(
@@ -91,6 +94,63 @@ class RecordingPolicyChatModel(FakePolicyChatModel):
         return super()._generate(messages, stop, run_manager, **kwargs)
 
 
+class SequencedPolicyChatModel(FakePolicyChatModel):
+    _responses: list[str] = PrivateAttr()
+    _call_count: int = PrivateAttr(default=0)
+
+    def __init__(self, responses: list[str], **kwargs: object) -> None:
+        if not responses:
+            raise ValueError("responses must not be empty")
+        super().__init__(response_text=responses[-1], **kwargs)
+        self._responses = list(responses)
+
+    @property
+    def call_count(self) -> int:
+        return self._call_count
+
+    def _next_response(self) -> str:
+        index = min(self._call_count, len(self._responses) - 1)
+        self._call_count += 1
+        return self._responses[index]
+
+    def _message(self, response: str) -> AIMessage:
+        return AIMessage(
+            content=response,
+            usage_metadata=self._usage(),
+            response_metadata={"cache_hit_tokens": self.cache_hit_tokens},
+        )
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: object,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        return ChatResult(
+            generations=[ChatGeneration(message=self._message(self._next_response()))]
+        )
+
+    def _stream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: object,
+    ):
+        del messages, stop, run_manager, kwargs
+        response = self._next_response()
+        yield ChatGenerationChunk(message=AIMessageChunk(content=response))
+        yield ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                usage_metadata=self._usage(),
+                response_metadata={"cache_hit_tokens": self.cache_hit_tokens},
+            )
+        )
+
+
 def test_policy_chain_invoke_uses_lcel_runnable():
     result = fake_chain().invoke(
         PolicyRAGInput(request_id="invoke-1", question="怎么请假")
@@ -99,10 +159,57 @@ def test_policy_chain_invoke_uses_lcel_runnable():
     assert isinstance(result, PolicyRAGResult)
     assert result.status == "completed"
     assert result.chain_name == "shenliyuan_policy_rag"
-    assert result.chain_version == "campus-assistant-release-v6"
+    assert result.chain_version == "campus-assistant-release-v8"
     assert result.sources[0].chunk_id == 18
     assert result.sources[0].citation_number == 1
     assert result.usage.input_tokens == 20
+
+
+def test_policy_chain_drops_unrelated_policy_facts_from_warning_section():
+    retriever = FakePolicyRetriever(
+        documents=[
+            Document(
+                page_content="奖学金实行申报制，由学院组织评审。",
+                metadata={
+                    "document_id": 17,
+                    "chunk_id": 41,
+                    "title": "本科生奖学金评审办法",
+                    "document_type": "school_undergraduate_scholarship_policy",
+                },
+            )
+        ]
+    )
+    model = FakePolicyChatModel(
+        response_text=_answer_json(
+            answer="奖学金实行申报制。",
+            current_rules=[
+                {"statement": "奖学金由学院组织评审。", "citation_ids": ["R1"]}
+            ],
+            warnings=[
+                "孤儿学生还可以申请学费住宿费减免。",
+                "具体申报时间以学生处或学院当期通知为准。",
+            ],
+            citations=[
+                {
+                    "reference_id": "R1",
+                    "quote": "奖学金实行申报制，由学院组织评审。",
+                }
+            ],
+        ),
+        input_tokens=20,
+        output_tokens=8,
+    )
+
+    result = build_policy_rag_chain(
+        retriever,
+        model,
+        provider_name="fake",
+        model_name="fake-policy-chat-v1",
+    ).invoke(PolicyRAGInput(request_id="bounded-warnings", question="奖学金怎么评"))
+
+    assert result.status == "completed"
+    assert result.warnings == ["具体申报时间以学生处或学院当期通知为准。"]
+    assert "孤儿学生" not in result.answer
 
 
 def test_prompt_uses_query_plan_temporary_references_and_pydantic_schema():
@@ -131,6 +238,56 @@ def test_prompt_uses_query_plan_temporary_references_and_pydantic_schema():
     assert "chunk_id" not in prompt_text
     assert "current_rules" in prompt_text
     assert "historical_rules" in prompt_text
+    assert "answer 不超过 300 个中文字符" in prompt_text
+    assert "每个 quote 不超过 160 个中文字符" in prompt_text
+    assert "用户未明确询问“成绩怎么算" in prompt_text
+
+
+def test_evidence_budget_reapplies_planner_document_preference_after_reranking():
+    plan = PolicyQueryPlanner().invoke("挂科后该咋办")
+    documents = [
+        Document(
+            page_content="补考成绩按课程比例合成。",
+            metadata={
+                "document_id": 1,
+                "chunk_id": 1,
+                "document_type": "school_makeup_exam_current_practice",
+            },
+        ),
+        Document(
+            page_content="课程成绩不合格未取得相应学分者可以参加重修。",
+            metadata={
+                "document_id": 2,
+                "chunk_id": 2,
+                "document_type": "school_undergraduate_retake_policy",
+            },
+        ),
+        Document(
+            page_content="课程考核成绩不合格者需参加二次考试或重新学习。",
+            metadata={
+                "document_id": 3,
+                "chunk_id": 3,
+                "document_type": "school_undergraduate_status_policy",
+            },
+        ),
+    ]
+
+    selected = _bounded_documents(
+        {
+            "request": PolicyRAGInput(
+                request_id="preferred-evidence",
+                question="挂科后该咋办",
+                max_sources=2,
+            ),
+            "query_plan": plan,
+            "documents": documents,
+        }
+    )
+
+    assert [item.metadata["document_type"] for item in selected] == [
+        "school_undergraduate_retake_policy",
+        "school_undergraduate_status_policy",
+    ]
 
 
 def test_query_rewrite_runnable_completes_short_follow_up_for_retrieval():
@@ -284,7 +441,7 @@ def test_policy_query_endpoints_use_injected_lcel_chain(monkeypatch):
             json={"request_id": "http-1", "question": "怎么请假"},
         )
         assert response.status_code == 200, response.text
-        assert response.json()["chain_version"] == "campus-assistant-release-v6"
+        assert response.json()["chain_version"] == "campus-assistant-release-v8"
 
         with client.stream(
             "POST",
@@ -513,6 +670,153 @@ def test_forged_temporary_citation_is_rejected_without_exposing_model_answer():
     assert result.usage.metered is True
 
 
+def test_same_source_composite_quote_is_accepted_when_every_fragment_is_verbatim():
+    evidence = (
+        "各类奖学金实行申报制，未在规定时间申报视为自动放弃。"
+        "学院审核与评审后，学院公示不少于 2 个工作日；"
+        "学校审定后再公示 5 个工作日。\n\n"
+        "## 校长奖学金\n"
+        "- 学业门槛：综合测评 3.5 以上；本年级本专业前 10%。"
+    )
+    composite_quote = (
+        "各类奖学金实行申报制，未在规定时间申报视为自动放弃。"
+        "校长奖学金：综合测评 3.5 以上；本年级本专业前 10%。"
+    )
+    chain = build_policy_rag_chain(
+        FakePolicyRetriever(
+            documents=[
+                Document(
+                    page_content=evidence,
+                    metadata={
+                        "document_id": 17,
+                        "chunk_id": 41,
+                        "title": "本科生奖学金评审办法",
+                    },
+                )
+            ]
+        ),
+        FakePolicyChatModel(
+            response_text=_answer_json(
+                answer="奖学金实行申报制，校长奖学金还设有综合测评和专业排名门槛。",
+                current_rules=[
+                    {
+                        "statement": "校长奖学金要求综合测评 3.5 以上、专业排名前 10%。",
+                        "citation_ids": ["R1"],
+                    }
+                ],
+                citations=[
+                    {
+                        "reference_id": "R1",
+                        "quote": composite_quote,
+                    }
+                ],
+            ),
+            input_tokens=24,
+            output_tokens=12,
+        ),
+        provider_name="fake",
+        model_name="fake-v1",
+    )
+
+    result = chain.invoke(
+        PolicyRAGInput(request_id="composite-quote", question="奖学金怎么评")
+    )
+
+    assert result.status == "completed"
+    assert result.sources[0].document_type == ""
+
+
+def test_repeated_reference_id_is_accepted_when_each_quote_is_verbatim():
+    evidence = "学生申请转专业，应当由学校审核。学校根据社会需求和办学条件调整专业。"
+    chain = build_policy_rag_chain(
+        FakePolicyRetriever(
+            documents=[
+                Document(
+                    page_content=evidence,
+                    metadata={
+                        "document_id": 19,
+                        "chunk_id": 51,
+                        "title": "本科生转专业管理办法",
+                    },
+                )
+            ]
+        ),
+        FakePolicyChatModel(
+            response_text=_answer_json(
+                answer="转专业需要学校审核。",
+                current_rules=[
+                    {"statement": "转专业申请由学校审核。", "citation_ids": ["R1"]},
+                    {
+                        "statement": "学校会结合办学条件调整专业。",
+                        "citation_ids": ["R1"],
+                    },
+                ],
+                citations=[
+                    {"reference_id": "R1", "quote": "学生申请转专业，应当由学校审核。"},
+                    {
+                        "reference_id": "R1",
+                        "quote": "学校根据社会需求和办学条件调整专业。",
+                    },
+                ],
+            ),
+            input_tokens=24,
+            output_tokens=12,
+        ),
+        provider_name="fake",
+        model_name="fake-v1",
+    )
+
+    result = chain.invoke(
+        PolicyRAGInput(request_id="repeated-reference", question="能转专业吗")
+    )
+
+    assert result.status == "completed"
+    assert [source.source_id for source in result.sources] == ["R1"]
+
+
+def test_same_source_composite_quote_rejects_any_fabricated_fragment():
+    chain = build_policy_rag_chain(
+        FakePolicyRetriever(
+            documents=[
+                Document(
+                    page_content="奖学金实行申报制。学院审核后公示。",
+                    metadata={
+                        "document_id": 17,
+                        "chunk_id": 41,
+                        "title": "本科生奖学金评审办法",
+                    },
+                )
+            ]
+        ),
+        FakePolicyChatModel(
+            response_text=_answer_json(
+                current_rules=[
+                    {
+                        "statement": "奖学金实行申报制。",
+                        "citation_ids": ["R1"],
+                    }
+                ],
+                citations=[
+                    {
+                        "reference_id": "R1",
+                        "quote": "奖学金实行申报制。无需申报即可自动获得。",
+                    }
+                ],
+            ),
+            input_tokens=20,
+            output_tokens=10,
+        ),
+        provider_name="fake",
+        model_name="fake-v1",
+    )
+
+    result = chain.invoke(
+        PolicyRAGInput(request_id="fabricated-fragment", question="奖学金怎么评")
+    )
+
+    assert result.status == "citation_rejected"
+
+
 def test_current_and_historical_rules_keep_explicit_version_boundary():
     documents = [
         Document(
@@ -660,5 +964,141 @@ def test_invalid_structured_output_is_metered_and_fails_closed():
 
     assert result.status == "citation_rejected"
     assert result.warnings == ["rag_structured_output_invalid"]
-    assert result.usage.input_tokens == 9
-    assert result.usage.output_tokens == 3
+    assert result.usage.input_tokens == 18
+    assert result.usage.output_tokens == 6
+
+
+def test_failed_course_question_falls_back_to_current_extractive_evidence():
+    documents = [
+        Document(
+            page_content=(
+                "课程考核成绩不合格者，需参加由学校组织的二次考试或重新学习，"
+                "成绩合格者获得学分。"
+            ),
+            metadata={
+                "document_id": 8,
+                "chunk_id": 20,
+                "title": "本科生学籍管理规定",
+                "document_type": "school_undergraduate_status_policy",
+            },
+        ),
+        Document(
+            page_content=(
+                "课程重修是指学生对按教学计划已修读过的课程进行重新修读并考核。"
+                "课程成绩不合格未取得相应学分者可以参加相应课程重修。"
+            ),
+            metadata={
+                "document_id": 9,
+                "chunk_id": 30,
+                "title": "本科生课程重修管理办法",
+                "document_type": "school_undergraduate_retake_policy",
+            },
+        ),
+    ]
+    chain = build_policy_rag_chain(
+        FakePolicyRetriever(documents=documents),
+        FakePolicyChatModel(response_text="不是 JSON", input_tokens=9, output_tokens=3),
+        provider_name="fake",
+        model_name="fake-v1",
+    )
+
+    result = chain.invoke(
+        PolicyRAGInput(request_id="failed-course-extractive", question="挂科后该咋办")
+    )
+
+    assert result.status == "completed"
+    assert "二次考试" in result.answer
+    assert "课程重修" in result.answer
+    assert "比例" not in result.answer
+    assert {source.document_type for source in result.sources} == {
+        "school_undergraduate_status_policy",
+        "school_undergraduate_retake_policy",
+    }
+
+
+def test_parser_failure_reason_exposes_only_schema_locations_and_error_types():
+    parser = PydanticOutputParser(pydantic_object=PolicyAnswer)
+
+    with pytest.raises(Exception) as captured:
+        parser.invoke(AIMessage(content='{"answer":"有答案","citations":[]}'))
+
+    reason = _parser_failure_reason(captured.value)
+    assert "citations(too_short)" in reason
+    assert "confidence(missing)" in reason
+    assert "有答案" not in reason
+
+
+def test_descriptive_answer_can_cite_evidence_without_policy_rule_list():
+    chain = build_policy_rag_chain(
+        FakePolicyRetriever(
+            documents=[
+                Document(
+                    page_content="计算机专业主要学习程序设计、数据结构和计算机系统。",
+                    metadata={
+                        "document_id": 3,
+                        "chunk_id": 8,
+                        "title": "计算机科学与技术专业介绍",
+                        "document_type": "official_major_profile",
+                    },
+                )
+            ]
+        ),
+        FakePolicyChatModel(
+            response_text=_answer_json(
+                answer="计算机专业主要学习程序设计、数据结构和计算机系统。",
+                current_rules=[],
+                citations=[
+                    {
+                        "reference_id": "R1",
+                        "quote": "计算机专业主要学习程序设计、数据结构和计算机系统。",
+                    }
+                ],
+            ),
+            input_tokens=20,
+            output_tokens=8,
+        ),
+        provider_name="fake",
+        model_name="fake-v1",
+    )
+
+    result = chain.invoke(
+        PolicyRAGInput(request_id="descriptive-profile", question="计算机专业学什么")
+    )
+
+    assert result.status == "completed"
+    assert result.sources[0].document_type == "official_major_profile"
+
+
+@pytest.mark.asyncio
+async def test_invalid_first_generation_retries_once_and_aggregates_usage():
+    model = SequencedPolicyChatModel(
+        responses=["不是 JSON", _answer_json()],
+        input_tokens=9,
+        output_tokens=3,
+    )
+    chain = build_policy_rag_chain(
+        FakePolicyRetriever(
+            documents=[
+                Document(
+                    page_content="学生请假应履行审批手续。",
+                    metadata={
+                        "document_id": 1,
+                        "chunk_id": 1,
+                        "title": "学生手册",
+                    },
+                )
+            ]
+        ),
+        model,
+        provider_name="fake",
+        model_name="fake-v1",
+    )
+
+    result = await chain.ainvoke(
+        PolicyRAGInput(request_id="retry-invalid-json", question="怎么请假")
+    )
+
+    assert result.status == "completed"
+    assert model.call_count == 2
+    assert result.usage.input_tokens == 18
+    assert result.usage.output_tokens == 6

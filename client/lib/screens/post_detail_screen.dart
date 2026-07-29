@@ -2854,6 +2854,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 textAlignVertical: TextAlignVertical.center,
                                 textInputAction: TextInputAction.newline,
                                 decoration: InputDecoration(
+                                  constraints:
+                                      const BoxConstraints(minHeight: 44),
                                   hintText: _replyToName != null
                                       ? '回复 @$_replyToName'
                                       : '写下你的想法...',
@@ -2867,9 +2869,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   isDense: true,
                                   contentPadding: const EdgeInsets.fromLTRB(
                                     14,
-                                    11,
+                                    13,
                                     4,
-                                    11,
+                                    9,
                                   ),
                                 ),
                                 style: TextStyle(

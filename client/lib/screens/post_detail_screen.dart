@@ -24,6 +24,7 @@ import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
+import '../widgets/emoji/sticker_catalog.dart';
 import '../models/unread_reply_notification.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
@@ -426,8 +427,39 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _sendReplySticker(AppSticker sticker) async {
+    if (_isSending) return;
+    if (mounted) setState(() => _isSending = true);
+
+    final parentId = _parentReplyId;
+    final replyToUserId = _replyToUserId;
+    _replyController.clear();
+    _replyFocus.unfocus();
+    if (mounted) {
+      setState(() {
+        _isReplyComposerOpen = false;
+        _showReplyEmojiPanel = false;
+        _parentReplyId = null;
+        _replyToName = null;
+        _replyToUserId = null;
+      });
+    }
+
+    try {
+      await _submitReplyContent(
+        content: '',
+        stickerId: sticker.id,
+        parentReplyId: parentId,
+        replyToUserId: replyToUserId,
+      );
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
   Future<bool> _submitReplyContent({
     required String content,
+    String? stickerId,
     required int? parentReplyId,
     required int? replyToUserId,
   }) async {
@@ -455,6 +487,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         postId: widget.postId,
         authorId: user.id,
         content: content,
+        stickerId: stickerId,
         createdAt: DateTime.now(),
         author: User(
           id: user.id,
@@ -476,6 +509,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     try {
       final formData = FormData.fromMap({
         'content': content,
+        if (stickerId != null) 'sticker_id': stickerId,
         if (parentReplyId != null) 'parent_reply_id': parentReplyId.toString(),
         if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
       });
@@ -2927,6 +2961,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         height: _replyEmojiPanelHeight,
                         child: AppEmojiPanel(
                           onEmojiSelected: _insertReplyEmoji,
+                          onStickerSelected: _sendReplySticker,
                           onBackspace: () =>
                               deletePreviousCharacter(_replyController),
                         ),
@@ -3634,14 +3669,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                   const SizedBox(height: 4),
                   SelectionContainer.disabled(
-                    child: Text(
-                      r.content,
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.55,
-                        color: isDark ? Colors.white70 : Colors.grey[800],
-                      ),
-                    ),
+                    child: _buildReplyContent(r, isDark),
                   ),
                   const SizedBox(height: 6),
                   Row(
@@ -3737,6 +3765,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   InlineSpan _buildCompactContentSpan(Reply r, bool isDark) {
+    if (r.isSticker) {
+      return TextSpan(
+        text: '[表情]',
+        style: TextStyle(
+          fontSize: 12.5,
+          color: isDark ? Colors.white60 : const Color(0xFF4B5563),
+        ),
+      );
+    }
     final content = r.content;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
@@ -4026,14 +4063,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
                 const SizedBox(height: 4),
                 SelectionContainer.disabled(
-                  child: Text(
-                    r.content,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.55,
-                      color: isDark ? Colors.white70 : Colors.grey[800],
-                    ),
-                  ),
+                  child: _buildReplyContent(r, isDark),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -4401,6 +4431,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   /// 解析子回复内容中的 @用户名 并高亮
   Widget _buildChildContent(Reply r, bool isDark) {
+    if (r.isSticker) {
+      return SelectionContainer.disabled(
+        child: _buildReplyContent(r, isDark, size: 104),
+      );
+    }
     final content = r.content;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
@@ -4444,6 +4479,42 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     // 禁用文字选择，让行级长按直接弹出操作菜单
     return SelectionContainer.disabled(child: textWidget);
+  }
+
+  Widget _buildReplyContent(Reply reply, bool isDark, {double size = 132}) {
+    if (reply.isSticker) {
+      return CachedNetworkImage(
+        key: ValueKey('reply-sticker-${reply.id}'),
+        imageUrl: ApiConstants.fullUrl(reply.stickerUrl),
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        placeholder: (_, __) => SizedBox(
+          width: size,
+          height: size,
+          child: const Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+        errorWidget: (_, __, ___) => SizedBox(
+          width: size,
+          height: size,
+          child: const Center(child: Icon(Icons.broken_image_outlined)),
+        ),
+      );
+    }
+    return Text(
+      reply.content,
+      style: TextStyle(
+        fontSize: 14,
+        height: 1.55,
+        color: isDark ? Colors.white70 : Colors.grey[800],
+      ),
+    );
   }
 
   // ---- 回复输入（集市保留） ----

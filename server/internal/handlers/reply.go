@@ -75,7 +75,8 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 
 // CreateReplyInput 创建回复输入
 type CreateReplyInput struct {
-	Content       string `form:"content" binding:"required"`
+	Content       string `form:"content"`
+	StickerID     string `form:"sticker_id"`
 	ParentReplyID *uint  `form:"parent_reply_id"`
 	ReplyToUserID *uint  `form:"reply_to_user_id"`
 }
@@ -94,6 +95,22 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	if err := c.ShouldBind(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	input.Content = strings.TrimSpace(input.Content)
+	input.StickerID = strings.TrimSpace(input.StickerID)
+	if input.Content == "" && input.StickerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容不能为空"})
+		return
+	}
+	if input.StickerID != "" {
+		if !IsValidStickerID(input.StickerID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "表情不存在"})
+			return
+		}
+		if input.Content != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "表情回复不能同时包含文字"})
+			return
+		}
 	}
 
 	// 检查帖子是否存在
@@ -125,11 +142,18 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		}
 	}
 
+	var stickerID *string
+	if input.StickerID != "" {
+		stickerID = &input.StickerID
+		// 旧客户端按普通评论展示文本回退，新客户端优先渲染 sticker_id。
+		input.Content = stickerFallbackText
+	}
 	reply := models.Reply{
 		PostID:        uint(postID),
 		ParentReplyID: input.ParentReplyID,
 		AuthorID:      userID.(uint),
 		Content:       input.Content,
+		StickerID:     stickerID,
 		Status:        models.ReplyStatusNormal,
 		CreatedAt:     time.Now(),
 	}
@@ -201,6 +225,9 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 
 	// 发送通知（数据库 + 极光推送）
 	contentPreview := utils.TruncateGraphemes(input.Content, 80)
+	if input.StickerID != "" {
+		contentPreview = stickerFallbackText
+	}
 	if input.ParentReplyID != nil {
 		// 回复别人的评论 → 通知被回复的评论作者
 		var parentReply models.Reply

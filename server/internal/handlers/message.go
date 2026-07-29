@@ -23,7 +23,9 @@ const (
 	defaultMessagePageSize = 30
 	maxMessagePageSize     = 100
 	maxMessageLength       = 2000
-	maxPairMessagesPerMin  = 5
+	maxClientMessageIDSize = 96
+	maxPairMessagesPerMin  = 50
+	maxUserMessagesPerMin  = 120
 )
 
 // MessageHandler 私信处理器
@@ -31,6 +33,7 @@ type MessageHandler struct {
 	db          *gorm.DB
 	notifier    messageNotifier
 	rateLimiter *messageRateLimiter
+	events      *messageEventBroker
 }
 
 type messageNotifier interface {
@@ -47,18 +50,23 @@ func NewMessageHandler(db *gorm.DB, notifiers ...messageNotifier) *MessageHandle
 		db:          db,
 		notifier:    notifier,
 		rateLimiter: newMessageRateLimiter(),
+		events:      newMessageEventBroker(),
 	}
 }
 
 var _ messageNotifier = (*services.NotificationService)(nil)
 
 type messageRateLimiter struct {
-	mu   sync.Mutex
-	hits map[string][]time.Time
+	mu       sync.Mutex
+	pairHits map[string][]time.Time
+	userHits map[uint][]time.Time
 }
 
 func newMessageRateLimiter() *messageRateLimiter {
-	return &messageRateLimiter{hits: make(map[string][]time.Time)}
+	return &messageRateLimiter{
+		pairHits: make(map[string][]time.Time),
+		userHits: make(map[uint][]time.Time),
+	}
 }
 
 func (l *messageRateLimiter) allow(senderID, targetID uint, now time.Time) bool {
@@ -68,19 +76,26 @@ func (l *messageRateLimiter) allow(senderID, targetID uint, now time.Time) bool 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	recent := l.hits[key][:0]
-	for _, hit := range l.hits[key] {
+	pairRecent := recentMessageHits(l.pairHits[key], windowStart)
+	userRecent := recentMessageHits(l.userHits[senderID], windowStart)
+	if len(pairRecent) >= maxPairMessagesPerMin || len(userRecent) >= maxUserMessagesPerMin {
+		l.pairHits[key] = pairRecent
+		l.userHits[senderID] = userRecent
+		return false
+	}
+	l.pairHits[key] = append(pairRecent, now)
+	l.userHits[senderID] = append(userRecent, now)
+	return true
+}
+
+func recentMessageHits(hits []time.Time, windowStart time.Time) []time.Time {
+	recent := hits[:0]
+	for _, hit := range hits {
 		if hit.After(windowStart) {
 			recent = append(recent, hit)
 		}
 	}
-	if len(recent) >= maxPairMessagesPerMin {
-		l.hits[key] = recent
-		return false
-	}
-	recent = append(recent, now)
-	l.hits[key] = recent
-	return true
+	return recent
 }
 
 // GetConversations 获取会话列表
@@ -101,14 +116,16 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		Avatar   string `json:"avatar"`
 	}
 	type messageSummary struct {
-		ID             uint         `json:"id"`
-		ConversationID uint         `json:"conversation_id"`
-		SenderID       uint         `json:"sender_id"`
-		Content        string       `json:"content"`
-		FileID         *uint        `json:"file_id"`
-		CreatedAt      time.Time    `json:"created_at"`
-		ReadAt         *time.Time   `json:"read_at"`
-		File           *models.File `json:"file"`
+		ID              uint         `json:"id"`
+		ConversationID  uint         `json:"conversation_id"`
+		SenderID        uint         `json:"sender_id"`
+		ClientMessageID *string      `json:"client_message_id,omitempty"`
+		Content         string       `json:"content"`
+		FileID          *uint        `json:"file_id"`
+		StickerID       *string      `json:"sticker_id,omitempty"`
+		CreatedAt       time.Time    `json:"created_at"`
+		ReadAt          *time.Time   `json:"read_at"`
+		File            *models.File `json:"file"`
 	}
 	type conversationResponse struct {
 		ID            uint            `json:"id"`
@@ -186,14 +203,16 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 			}
 			for _, message := range messages {
 				lastMessageMap[message.ConversationID] = messageSummary{
-					ID:             message.ID,
-					ConversationID: message.ConversationID,
-					SenderID:       message.SenderID,
-					Content:        message.Content,
-					FileID:         message.FileID,
-					CreatedAt:      message.CreatedAt,
-					ReadAt:         message.ReadAt,
-					File:           message.File,
+					ID:              message.ID,
+					ConversationID:  message.ConversationID,
+					SenderID:        message.SenderID,
+					ClientMessageID: message.ClientMessageID,
+					Content:         message.Content,
+					FileID:          message.FileID,
+					StickerID:       message.StickerID,
+					CreatedAt:       message.CreatedAt,
+					ReadAt:          message.ReadAt,
+					File:            message.File,
 				}
 			}
 		}
@@ -227,6 +246,74 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// GetConversationWithUser 轻量查询两名用户之间是否已有会话。
+// 聊天壳可以先展示，再按返回的会话 ID 增量加载消息，无需扫描整个会话列表。
+func (h *MessageHandler) GetConversationWithUser(c *gin.Context) {
+	currentUserID := c.GetUint("user_id")
+	targetUserID, err := strconv.ParseUint(c.Param("target_user_id"), 10, 64)
+	if err != nil || targetUserID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
+		return
+	}
+	targetID := uint(targetUserID)
+	if targetID == currentUserID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能给自己发消息"})
+		return
+	}
+
+	var targetCount int64
+	if err := h.db.Model(&models.User{}).Where("id = ?", targetID).Count(&targetCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询目标用户失败"})
+		return
+	}
+	if targetCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "目标用户不存在"})
+		return
+	}
+
+	user1ID, user2ID := currentUserID, targetID
+	if user1ID > user2ID {
+		user1ID, user2ID = user2ID, user1ID
+	}
+	type conversationLookup struct {
+		ID            uint      `json:"id"`
+		User1ID       uint      `json:"user1_id"`
+		User2ID       uint      `json:"user2_id"`
+		LastMessageAt time.Time `json:"last_message_at"`
+		CreatedAt     time.Time `json:"created_at"`
+	}
+	var conversation models.Conversation
+	var summary *conversationLookup
+	conversationErr := h.db.Where("user1_id = ? AND user2_id = ?", user1ID, user2ID).
+		First(&conversation).Error
+	if conversationErr == nil {
+		summary = &conversationLookup{
+			ID:            conversation.ID,
+			User1ID:       conversation.User1ID,
+			User2ID:       conversation.User2ID,
+			LastMessageAt: conversation.LastMessageAt,
+			CreatedAt:     conversation.CreatedAt,
+		}
+	} else if !errors.Is(conversationErr, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询会话失败"})
+		return
+	}
+
+	_, reason, state, stateErr := h.canSendMessage(currentUserID, targetID)
+	if stateErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询发送状态失败"})
+		return
+	}
+	if !state.CanSend {
+		state.Reason = reason
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"conversation": summary,
+		"can_send":     state.CanSend,
+		"reason":       state.Reason,
+	})
 }
 
 // GetMessages 获取会话消息
@@ -293,8 +380,10 @@ func parseMessageLimit(raw string) int {
 
 // SendMessageInput 发送消息输入
 type SendMessageInput struct {
-	Content string `json:"content"`
-	FileID  *uint  `json:"file_id"`
+	Content         string  `json:"content"`
+	FileID          *uint   `json:"file_id"`
+	StickerID       *string `json:"sticker_id"`
+	ClientMessageID *string `json:"client_message_id"`
 }
 
 // Send 发送消息
@@ -323,13 +412,37 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	}
 
 	input.Content = strings.TrimSpace(input.Content)
-	if input.Content == "" && input.FileID == nil {
+	if input.Content == "" && input.FileID == nil && input.StickerID == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能为空"})
 		return
+	}
+	if input.StickerID != nil {
+		stickerID := strings.TrimSpace(*input.StickerID)
+		if !IsValidStickerID(stickerID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "表情不存在"})
+			return
+		}
+		if input.FileID != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "表情消息不能同时包含图片"})
+			return
+		}
+		input.StickerID = &stickerID
+		if input.Content == "" {
+			// 旧客户端不认识 sticker_id，纯表情仍保留可读的文本回退。
+			input.Content = stickerFallbackText
+		}
 	}
 	if utf8.RuneCountInString(input.Content) > maxMessageLength {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能超过2000个字符"})
 		return
+	}
+	if input.ClientMessageID != nil {
+		clientMessageID := strings.TrimSpace(*input.ClientMessageID)
+		if clientMessageID == "" || len(clientMessageID) > maxClientMessageIDSize {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "客户端消息ID无效"})
+			return
+		}
+		input.ClientMessageID = &clientMessageID
 	}
 
 	var targetUser models.User
@@ -342,9 +455,25 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 
-	if !h.rateLimiter.allow(currentUserID, targetID, time.Now()) {
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": "发送太频繁，请稍后再试"})
-		return
+	if input.ClientMessageID != nil {
+		existing, found, lookupErr := h.findIdempotentMessage(
+			currentUserID,
+			targetID,
+			*input.ClientMessageID,
+		)
+		if lookupErr != nil {
+			if errors.Is(lookupErr, errClientMessageTargetMismatch) {
+				c.JSON(http.StatusConflict, gin.H{"error": "客户端消息ID已用于其他会话"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "查询消息发送状态失败"})
+			}
+			return
+		}
+		if found {
+			c.Header("X-Idempotent-Replay", "true")
+			c.JSON(http.StatusCreated, existing)
+			return
+		}
 	}
 
 	// 陌生人私信限制：
@@ -379,7 +508,24 @@ func (h *MessageHandler) Send(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "私信附件必须是图片"})
 			return
 		}
+		var grantCount int64
+		if err := h.db.Model(&models.FileUploadGrant{}).
+			Where("file_id = ? AND user_id = ?", file.ID, currentUserID).
+			Count(&grantCount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "校验图片所有权失败"})
+			return
+		}
+		if file.UploaderID != currentUserID && grantCount == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权发送该图片"})
+			return
+		}
 		messageFile = &file
+	}
+
+	// 仅有效且有发送权限的请求才消耗限流额度。
+	if !h.rateLimiter.allow(currentUserID, targetID, time.Now()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "发送太频繁，请稍后再试"})
+		return
 	}
 
 	user1ID, user2ID := currentUserID, targetID
@@ -388,23 +534,41 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	}
 
 	var message models.Message
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
+	var conversation models.Conversation
+	createErr := h.db.Transaction(func(tx *gorm.DB) error {
 		conv, err := services.GetOrCreateConversation(tx, user1ID, user2ID, time.Now())
 		if err != nil {
 			return err
 		}
+		conversation = conv
 
 		message = models.Message{
-			ConversationID: conv.ID,
-			SenderID:       currentUserID,
-			Content:        input.Content,
-			FileID:         input.FileID,
+			ConversationID:  conv.ID,
+			SenderID:        currentUserID,
+			ClientMessageID: input.ClientMessageID,
+			Content:         input.Content,
+			FileID:          input.FileID,
+			StickerID:       input.StickerID,
 		}
 		if err := tx.Create(&message).Error; err != nil {
 			return err
 		}
 		return tx.Model(&conv).Update("last_message_at", message.CreatedAt).Error
-	}); err != nil {
+	})
+	if createErr != nil {
+		// 两个相同请求并发通过前置查询时，唯一索引决定最终结果。
+		if input.ClientMessageID != nil {
+			existing, found, lookupErr := h.findIdempotentMessage(
+				currentUserID,
+				targetID,
+				*input.ClientMessageID,
+			)
+			if lookupErr == nil && found {
+				c.Header("X-Idempotent-Replay", "true")
+				c.JSON(http.StatusCreated, existing)
+				return
+			}
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "发送消息失败"})
 		return
 	}
@@ -413,8 +577,45 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	if messageFile != nil {
 		message.File = messageFile
 	}
+	h.events.publish(
+		[]uint{conversation.User1ID, conversation.User2ID},
+		privateMessageEvent{
+			Type:           "message.created",
+			ConversationID: message.ConversationID,
+			Message:        &message,
+		},
+	)
 	h.pushPrivateMessage(targetID, sender, message)
 	c.JSON(http.StatusCreated, message)
+}
+
+var errClientMessageTargetMismatch = errors.New("client message id target mismatch")
+
+func (h *MessageHandler) findIdempotentMessage(
+	senderID uint,
+	targetID uint,
+	clientMessageID string,
+) (models.Message, bool, error) {
+	var message models.Message
+	err := h.db.Where("sender_id = ? AND client_message_id = ?", senderID, clientMessageID).
+		Preload("Sender").Preload("File").First(&message).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return models.Message{}, false, nil
+	}
+	if err != nil {
+		return models.Message{}, false, err
+	}
+
+	var conversation models.Conversation
+	if err := h.db.First(&conversation, message.ConversationID).Error; err != nil {
+		return models.Message{}, false, err
+	}
+	isExpectedPair := (conversation.User1ID == senderID && conversation.User2ID == targetID) ||
+		(conversation.User1ID == targetID && conversation.User2ID == senderID)
+	if !isExpectedPair {
+		return models.Message{}, false, errClientMessageTargetMismatch
+	}
+	return message, true, nil
 }
 
 // canSendMessage 陌生人私信限制
@@ -560,6 +761,9 @@ func (h *MessageHandler) pushPrivateMessage(targetUserID uint, sender models.Use
 
 func privateMessagePreview(message models.Message) string {
 	content := strings.TrimSpace(message.Content)
+	if message.StickerID != nil && (content == "" || content == stickerFallbackText) {
+		return stickerFallbackText
+	}
 	if content == "" && message.FileID != nil {
 		return "[图片]"
 	}
@@ -575,11 +779,32 @@ func (h *MessageHandler) MarkRead(c *gin.Context) {
 	}
 
 	now := time.Now()
-	if err := h.db.Model(&models.Message{}).
-		Where("conversation_id = ? AND sender_id != ? AND read_at IS NULL", convID, userID).
-		Update("read_at", now).Error; err != nil {
+	var readThroughID uint
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Message{}).
+			Where("conversation_id = ? AND sender_id != ? AND read_at IS NULL", convID, userID).
+			Update("read_at", now).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.Message{}).
+			Where("conversation_id = ? AND sender_id != ? AND read_at IS NOT NULL", convID, userID).
+			Select("COALESCE(MAX(id), 0)").Scan(&readThroughID).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "标记已读失败"})
 		return
+	}
+	var conversation models.Conversation
+	if err := h.db.First(&conversation, convID).Error; err == nil {
+		h.events.publish(
+			[]uint{conversation.User1ID, conversation.User2ID},
+			privateMessageEvent{
+				Type:           "message.read",
+				ConversationID: convID,
+				ReadByUserID:   userID.(uint),
+				ReadThroughID:  readThroughID,
+				ReadAt:         &now,
+			},
+		)
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已标记为已读"})
 }

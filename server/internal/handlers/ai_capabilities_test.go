@@ -175,7 +175,7 @@ func TestAICapabilitiesReturnsUnlimitedQuotaForVerifiedStudent(t *testing.T) {
 		t.Fatalf("create runtime: %v", err)
 	}
 	handler := NewAICapabilitiesHandler(true, AICapabilitiesOptions{
-		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 20,
+		Runtime: runtime, PolicyRAGEnabled: true, HourlyLimit: 3, MaxMessageChars: 200,
 	})
 	body := requestAICapabilities(t, handler, user.ID)
 	if body["chat_enabled"] != true || body["access_allowed"] != true {

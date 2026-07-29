@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -15,13 +16,13 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/emoji_favorite_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_time.dart';
 import '../utils/text_editing_helper.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
-import '../widgets/emoji/sticker_composer_preview.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import 'image_viewer_screen.dart';
 
@@ -60,7 +61,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   double _lastKeyboardHeight = 280;
   bool _showEmojiPanel = false;
   bool _isSending = false;
-  AppSticker? _selectedSticker;
   DateTime _lastMessageActivity = DateTime.now();
   final Map<int, GlobalKey> _messageKeys = {};
   MessageSendState? _sendState;
@@ -110,9 +110,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _initialPositionSettled = false;
     _initialLoadFinished = false;
     final draft = provider.draftFor(widget.targetUser.id);
-    _selectedSticker = appStickerById(
-      provider.draftStickerFor(widget.targetUser.id),
-    );
+    // 新版私信表情点击即发送，清理旧版本遗留的“待发送表情”草稿。
+    provider.updateDraftSticker(widget.targetUser.id, null);
     if (draft.isNotEmpty && _textController.text.isEmpty) {
       _textController.text = draft;
       _textController.selection = TextSelection.collapsed(offset: draft.length);
@@ -344,8 +343,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Future<void> _sendMessage() async {
     final content = _textController.text.trim();
-    final selectedSticker = _selectedSticker;
-    if (_isSending || (content.isEmpty && selectedSticker == null)) return;
+    if (_isSending || content.isEmpty) return;
     if (content.runes.length > MessageProvider.maxMessageLength) {
       AppFeedback.showSnackBar(
         context,
@@ -360,7 +358,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final sendFuture = provider.sendMessage(
       widget.targetUser.id,
       content,
-      stickerId: selectedSticker?.id,
       senderId: context.read<AuthProvider>().user?.id,
     );
     _lastMessageActivity = DateTime.now();
@@ -374,7 +371,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
 
     _textController.clear();
-    setState(() => _selectedSticker = null);
     provider.clearDraft(widget.targetUser.id);
 
     _conversationId = message.conversationId;
@@ -386,9 +382,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Future<void> _pickAndSendImage() async {
-    if ((_sendState?.isBlocked ?? false) ||
-        _isSending ||
-        _selectedSticker != null) {
+    if ((_sendState?.isBlocked ?? false) || _isSending) {
       return;
     }
     try {
@@ -487,20 +481,70 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _saveDraft();
   }
 
-  void _selectSticker(AppSticker sticker) {
+  Future<void> _selectSticker(AppSticker sticker) async {
     if ((_sendState?.isBlocked ?? false) || _isSending) return;
     final provider = context.read<MessageProvider>();
-    setState(() => _selectedSticker = sticker);
-    provider.updateDraftSticker(widget.targetUser.id, sticker.id);
+    setState(() => _isSending = true);
+    final sendFuture = provider.sendStickerMessage(
+      widget.targetUser.id,
+      sticker.id,
+      senderId: context.read<AuthProvider>().user?.id,
+    );
+    _lastMessageActivity = DateTime.now();
+    unawaited(_scrollToLatestMessage(settle: true));
+    final message = await sendFuture;
+    if (!mounted) return;
+    setState(() => _isSending = false);
+    if (message == null) {
+      unawaited(_refreshSendState());
+      return;
+    }
+
+    _conversationId = message.conversationId;
+    _activateConversationIfVisible();
+    unawaited(_refreshSendState());
+    _startPolling();
+    unawaited(_scrollToLatestMessage(settle: true));
   }
 
-  void _removeSelectedSticker() {
-    if (_isSending) return;
-    setState(() => _selectedSticker = null);
-    context.read<MessageProvider>().updateDraftSticker(
-          widget.targetUser.id,
-          null,
-        );
+  Future<void> _sendFavoriteImage(EmojiFavoriteItem favorite) async {
+    final imageUrl = favorite.imageUrl?.trim();
+    if (imageUrl == null ||
+        imageUrl.isEmpty ||
+        (_sendState?.isBlocked ?? false) ||
+        _isSending) {
+      return;
+    }
+
+    setState(() => _isSending = true);
+    try {
+      final file = await DefaultCacheManager().getSingleFile(
+        ApiConstants.fullUrl(imageUrl),
+      );
+      if (!mounted) return;
+      final provider = context.read<MessageProvider>();
+      final sendFuture = provider.sendImageMessage(
+        widget.targetUser.id,
+        XFile(file.path),
+        senderId: context.read<AuthProvider>().user?.id,
+      );
+      _lastMessageActivity = DateTime.now();
+      unawaited(_scrollToLatestMessage(settle: true));
+      final message = await sendFuture;
+      if (!mounted || message == null) return;
+      _conversationId = message.conversationId;
+      _activateConversationIfVisible();
+      unawaited(_refreshSendState());
+      _startPolling();
+      unawaited(_scrollToLatestMessage(settle: true));
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '收藏图片发送失败', isError: true);
+      }
+      debugPrint('发送收藏图片失败: $error');
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
   }
 
   double get _emojiPanelHeight {
@@ -1246,6 +1290,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                           _buildStickerImage(stickerUrl, message.stickerId),
                         if (hasImage)
                           GestureDetector(
+                            key: ValueKey(
+                              'message-image-${message.stableKey}',
+                            ),
                             onTap: imageUrl == null
                                 ? null
                                 : () => Navigator.push(
@@ -1466,7 +1513,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final canCopy = message.content.trim().isNotEmpty;
     final canDelete =
         isMine && message.isFailed && message.clientMessageId != null;
-    if (!canCopy && !canDelete) return;
+    final sticker = appStickerById(message.stickerId);
+    final favoriteImageUrl =
+        message.imageUrl.isEmpty ? null : message.imageUrl.trim();
+    final canFavorite = sticker != null || favoriteImageUrl != null;
+    if (!canCopy && !canDelete && !canFavorite) return;
+
+    final favoriteService = EmojiFavoriteService.instance;
+    final isFavorite = sticker != null
+        ? await favoriteService.containsSticker(sticker.id)
+        : favoriteImageUrl != null
+            ? await favoriteService.containsImage(favoriteImageUrl)
+            : false;
+    if (!mounted) return;
 
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -1480,6 +1539,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                 leading: const Icon(Icons.copy_outlined),
                 title: const Text('复制'),
                 onTap: () => Navigator.pop(context, 'copy'),
+              ),
+            if (canFavorite)
+              ListTile(
+                leading: Icon(
+                  isFavorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                ),
+                title: Text(isFavorite ? '取消收藏' : '收藏'),
+                onTap: () => Navigator.pop(context, 'favorite'),
               ),
             if (canDelete)
               ListTile(
@@ -1501,6 +1570,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       context.read<MessageProvider>().deleteFailedMessage(
             message.clientMessageId!,
           );
+    } else if (action == 'favorite') {
+      final added = sticker != null
+          ? await favoriteService.toggleSticker(sticker.id)
+          : await favoriteService.toggleImage(favoriteImageUrl!);
+      if (mounted) {
+        AppFeedback.showSnackBar(
+          context,
+          added ? '已添加到收藏' : '已取消收藏',
+        );
+      }
     }
   }
 
@@ -1521,7 +1600,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
     if (!(_sendState?.isBlocked ?? false) &&
         !_isSending &&
-        (_textController.text.trim().isNotEmpty || _selectedSticker != null)) {
+        _textController.text.trim().isNotEmpty) {
       unawaited(_sendMessage());
     }
     return KeyEventResult.handled;
@@ -1536,12 +1615,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         mainAxisSize: MainAxisSize.min,
         children: [
           if (blocked) _buildPMLockedBanner(),
-          if (_selectedSticker != null && !blocked)
-            StickerComposerPreview(
-              sticker: _selectedSticker!,
-              onRemove: _removeSelectedSticker,
-              enabled: !_isSending,
-            ),
           Container(
             padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
             decoration: BoxDecoration(
@@ -1563,9 +1636,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                   height: 44,
                   child: IconButton(
                     tooltip: '选择图片',
-                    onPressed: blocked || _isSending || _selectedSticker != null
-                        ? null
-                        : _pickAndSendImage,
+                    onPressed: blocked || _isSending ? null : _pickAndSendImage,
                     padding: EdgeInsets.zero,
                     icon: const Icon(Icons.add_photo_alternate_outlined),
                   ),
@@ -1652,10 +1723,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _textController,
                   builder: (context, value, _) {
-                    final canSend = !blocked &&
-                        !_isSending &&
-                        (value.text.trim().isNotEmpty ||
-                            _selectedSticker != null);
+                    final canSend =
+                        !blocked && !_isSending && value.text.trim().isNotEmpty;
                     return SizedBox(
                       key: const ValueKey('chat-send-button-container'),
                       width: 44,
@@ -1694,6 +1763,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     child: AppEmojiPanel(
                       onEmojiSelected: _insertEmoji,
                       onStickerSelected: _selectSticker,
+                      onFavoriteImageSelected: _sendFavoriteImage,
                       onBackspace: () =>
                           deletePreviousCharacter(_textController),
                       enabled: !_isSending,

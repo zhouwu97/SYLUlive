@@ -9,6 +9,8 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/message_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/screens/chat_detail_screen.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/services/emoji_favorite_service.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 
@@ -93,40 +95,32 @@ void main() {
     await _disposeChat(tester, provider);
   });
 
-  testWidgets('failed mixed sticker send preserves composer draft',
+  testWidgets('tapping a sticker sends immediately and preserves text draft',
       (tester) async {
     final failureGate = Completer<void>();
     final provider = MessageProvider(_chatDio(failureGate: failureGate));
     final sticker = appStickerGroups.first.items.first;
-    provider.updateDraftSticker(3, sticker.id);
     await _pumpChat(tester, provider);
-
-    expect(
-      find.byKey(const ValueKey('sticker-composer-preview')),
-      findsOneWidget,
-    );
-    expect(_sendButton(tester).onPressed, isNotNull);
-    final imageButton = tester.widget<IconButton>(
-      find.descendant(
-        of: find.byKey(const ValueKey('chat-image-button')),
-        matching: find.byType(IconButton),
-      ),
-    );
-    expect(imageButton.onPressed, isNull);
 
     await tester.enterText(
       find.byKey(const ValueKey('chat-input')),
       '晚安',
     );
-    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
-    await tester.pump();
-    failureGate.complete();
-    await _pumpFrames(tester);
-
-    expect(
-      find.byKey(const ValueKey('sticker-composer-preview')),
-      findsOneWidget,
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        ValueKey('sticker-pack-tab-${appStickerGroups.first.id}'),
+      ),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('sticker-${sticker.id}')));
+    await tester.pump();
+
+    expect(provider.messages, hasLength(1));
+    expect(provider.messages.single.stickerId, sticker.id);
+    expect(provider.messages.single.content, isEmpty);
+    expect(provider.messages.single.isPending, isTrue);
     expect(
       tester
           .widget<TextField>(find.byKey(const ValueKey('chat-input')))
@@ -134,7 +128,62 @@ void main() {
           ?.text,
       '晚安',
     );
-    expect(provider.draftStickerFor(3), sticker.id);
+
+    failureGate.complete();
+    await _pumpFrames(tester);
+
+    expect(provider.messages.single.isFailed, isTrue);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('chat-input')))
+          .controller
+          ?.text,
+      '晚安',
+    );
+    expect(provider.draftFor(3), '晚安');
+    expect(provider.draftStickerFor(3), isNull);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('long pressing a message image can add it to favorites',
+      (tester) async {
+    AppPreferencesStore.setMockInitialValues({});
+    EmojiFavoriteService.resetSharedInstanceForTesting();
+    addTearDown(EmojiFavoriteService.resetSharedInstanceForTesting);
+    const imagePath = '/uploads/chat-favorite.png';
+    final provider = MessageProvider(
+      _chatDio(messages: [
+        {
+          'id': 88,
+          'conversation_id': 42,
+          'sender_id': 3,
+          'content': '',
+          'file_id': 7,
+          'file': {
+            'id': 7,
+            'hash': 'favorite',
+            'path': imagePath,
+            'size': 5,
+            'mime_type': 'image/png',
+          },
+          'created_at': '2026-06-14T08:31:00Z',
+        },
+      ]),
+    );
+    await _pumpChat(tester, provider);
+
+    await tester.longPress(
+      find.byKey(const ValueKey('message-image-server-88')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('收藏'), findsOneWidget);
+    await tester.tap(find.text('收藏'));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      await EmojiFavoriteService.instance.containsImage(imagePath),
+      isTrue,
+    );
     await _disposeChat(tester, provider);
   });
 

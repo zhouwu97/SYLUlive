@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
@@ -17,6 +18,7 @@ import '../providers/post_provider.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
+import '../services/emoji_favorite_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../utils/text_editing_helper.dart';
@@ -24,6 +26,7 @@ import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/app_action_popup_menu.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
+import '../widgets/emoji/favorite_image_composer_preview.dart';
 import '../widgets/emoji/sticker_composer_preview.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import '../models/unread_reply_notification.dart';
@@ -179,6 +182,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isReplyComposerOpen = false;
   bool _showReplyEmojiPanel = false;
   AppSticker? _selectedReplySticker;
+  EmojiFavoriteItem? _selectedReplyFavoriteImage;
   int _marketImageIndex = 0;
   int? _parentReplyId;
   String? _replyToName;
@@ -400,7 +404,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_isSending) return;
     final content = _replyController.text.trim();
     final selectedSticker = _selectedReplySticker;
-    if (content.isEmpty && selectedSticker == null) return;
+    final selectedFavoriteImage = _selectedReplyFavoriteImage;
+    if (content.isEmpty &&
+        selectedSticker == null &&
+        selectedFavoriteImage == null) {
+      return;
+    }
 
     if (mounted) setState(() => _isSending = true);
 
@@ -408,9 +417,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final replyToUserId = _replyToUserId;
 
     try {
+      final fileIds = selectedFavoriteImage == null
+          ? const <int>[]
+          : <int>[await _uploadFavoriteImage(selectedFavoriteImage)];
       final sent = await _submitReplyContent(
         content: content,
         stickerId: selectedSticker?.id,
+        fileIds: fileIds,
         parentReplyId: parentId,
         replyToUserId: replyToUserId,
       );
@@ -421,11 +434,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _isReplyComposerOpen = false;
           _showReplyEmojiPanel = false;
           _selectedReplySticker = null;
+          _selectedReplyFavoriteImage = null;
           _parentReplyId = null;
           _replyToName = null;
           _replyToUserId = null;
         });
       }
+    } on DioException catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(
+          context,
+          AppFeedback.dioErrorMessage(error, fallback: '收藏图片上传失败'),
+          isError: true,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '收藏图片上传失败', isError: true);
+      }
+      debugPrint('上传收藏图片失败: $error');
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -433,7 +460,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   void _selectReplySticker(AppSticker sticker) {
     if (_isSending) return;
-    setState(() => _selectedReplySticker = sticker);
+    setState(() {
+      _selectedReplySticker = sticker;
+      _selectedReplyFavoriteImage = null;
+    });
   }
 
   void _removeSelectedReplySticker() {
@@ -441,9 +471,51 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     setState(() => _selectedReplySticker = null);
   }
 
+  void _selectReplyFavoriteImage(EmojiFavoriteItem favorite) {
+    if (_isSending || favorite.type != EmojiFavoriteType.image) return;
+    setState(() {
+      _selectedReplyFavoriteImage = favorite;
+      _selectedReplySticker = null;
+    });
+  }
+
+  void _removeSelectedReplyFavoriteImage() {
+    if (_isSending) return;
+    setState(() => _selectedReplyFavoriteImage = null);
+  }
+
+  Future<int> _uploadFavoriteImage(EmojiFavoriteItem favorite) async {
+    final imageUrl = favorite.imageUrl?.trim();
+    if (imageUrl == null || imageUrl.isEmpty) {
+      throw StateError('收藏图片地址为空');
+    }
+    final file = await DefaultCacheManager().getSingleFile(
+      ApiConstants.fullUrl(imageUrl),
+    );
+    final pathSegments = Uri.tryParse(imageUrl)?.pathSegments ?? const [];
+    final originalName = pathSegments.isEmpty ? '' : pathSegments.last.trim();
+    final fileName = originalName.isEmpty ? 'favorite-image.jpg' : originalName;
+    final response = await _dio.post(
+      '/upload',
+      data: FormData.fromMap({
+        'file': await MultipartFile.fromFile(file.path, filename: fileName),
+      }),
+    );
+    final rawFileId =
+        response.data is Map ? (response.data as Map)['file_id'] : null;
+    final fileId = rawFileId is num
+        ? rawFileId.toInt()
+        : int.tryParse(rawFileId?.toString() ?? '');
+    if (fileId == null || fileId <= 0) {
+      throw StateError('服务器未返回有效图片 ID');
+    }
+    return fileId;
+  }
+
   Future<bool> _submitReplyContent({
     required String content,
     String? stickerId,
+    List<int> fileIds = const [],
     required int? parentReplyId,
     required int? replyToUserId,
   }) async {
@@ -464,7 +536,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     // 乐观更新：立即在本地插入评论
     final user = context.read<AuthProvider>().user;
-    if (user != null && _post != null) {
+    if (user != null && _post != null && fileIds.isEmpty) {
       tempReplyId = -DateTime.now().microsecondsSinceEpoch;
       final tempReply = Reply(
         id: tempReplyId,
@@ -494,6 +566,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final formData = FormData.fromMap({
         'content': content,
         if (stickerId != null) 'sticker_id': stickerId,
+        if (fileIds.isNotEmpty) 'file_ids': fileIds.join(','),
         if (parentReplyId != null) 'parent_reply_id': parentReplyId.toString(),
         if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
       });
@@ -2207,6 +2280,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ImageViewerScreen(imageUrls: urls, initialIndex: index),
                 ),
               ),
+              onLongPress: () => _showImageFavoriteAction(urls[index]),
               child: CachedNetworkImage(
                 cacheManager: PostImageCache.manager,
                 imageUrl: urls[index],
@@ -2526,6 +2600,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         ),
       ),
+      onLongPress: () => _showImageFavoriteAction(url),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: CachedNetworkImage(
@@ -2569,6 +2644,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                 ),
               ),
+              onLongPress: () => _showImageFavoriteAction(url),
               child: Container(
                 margin: EdgeInsets.only(
                   right: index == 0 ? 2 : 0,
@@ -2621,6 +2697,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ImageViewerScreen(imageUrls: urls, initialIndex: index),
               ),
             ),
+            onLongPress: () => _showImageFavoriteAction(urls[index]),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -2818,6 +2895,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   onRemove: _removeSelectedReplySticker,
                   enabled: !_isSending,
                 ),
+              if (_selectedReplyFavoriteImage != null)
+                FavoriteImageComposerPreview(
+                  favorite: _selectedReplyFavoriteImage!,
+                  onRemove: _removeSelectedReplyFavoriteImage,
+                  enabled: !_isSending,
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                 child: Row(
@@ -2915,7 +2998,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       builder: (context, value, _) {
                         final canSend = !_isSending &&
                             (value.text.trim().isNotEmpty ||
-                                _selectedReplySticker != null);
+                                _selectedReplySticker != null ||
+                                _selectedReplyFavoriteImage != null);
                         return IconButton.filled(
                           key: const ValueKey('post-reply-send-button'),
                           tooltip: '发送评论',
@@ -2958,6 +3042,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         child: AppEmojiPanel(
                           onEmojiSelected: _insertReplyEmoji,
                           onStickerSelected: _selectReplySticker,
+                          onFavoriteImageSelected: _selectReplyFavoriteImage,
                           onBackspace: () =>
                               deletePreviousCharacter(_replyController),
                           enabled: !_isSending,
@@ -4487,57 +4572,113 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         color: isDark ? Colors.white70 : Colors.grey[800],
       ),
     );
+    final contentWidgets = <Widget>[];
+    if (reply.hasTextContent) {
+      contentWidgets.add(textWidget);
+    }
     if (reply.hasSticker) {
       final localSticker = appStickerById(reply.stickerId);
-      final stickerWidget = CachedNetworkImage(
-        key: ValueKey('reply-sticker-${reply.id}'),
-        imageUrl: ApiConstants.fullUrl(reply.stickerUrl),
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-        placeholder: (_, __) => localSticker == null
-            ? SizedBox(
-                width: size,
-                height: size,
-                child: const Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+      contentWidgets.add(
+        GestureDetector(
+          onLongPress: localSticker == null
+              ? null
+              : () => _showStickerFavoriteAction(localSticker),
+          child: CachedNetworkImage(
+            key: ValueKey('reply-sticker-${reply.id}'),
+            imageUrl: ApiConstants.fullUrl(reply.stickerUrl),
+            width: size,
+            height: size,
+            fit: BoxFit.contain,
+            placeholder: (_, __) => localSticker == null
+                ? SizedBox(
+                    width: size,
+                    height: size,
+                    child: const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  )
+                : Image.asset(
+                    localSticker.thumbnailAsset,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.contain,
                   ),
-                ),
-              )
-            : Image.asset(
-                localSticker.thumbnailAsset,
-                width: size,
-                height: size,
-                fit: BoxFit.contain,
-              ),
-        errorWidget: (_, __, ___) => localSticker == null
-            ? SizedBox(
-                width: size,
-                height: size,
-                child: const Center(child: Icon(Icons.broken_image_outlined)),
-              )
-            : Image.asset(
-                localSticker.thumbnailAsset,
-                width: size,
-                height: size,
-                fit: BoxFit.contain,
-              ),
-      );
-      if (!reply.hasTextContent) return stickerWidget;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          textWidget,
-          const SizedBox(height: 8),
-          stickerWidget,
-        ],
+            errorWidget: (_, __, ___) => localSticker == null
+                ? SizedBox(
+                    width: size,
+                    height: size,
+                    child:
+                        const Center(child: Icon(Icons.broken_image_outlined)),
+                  )
+                : Image.asset(
+                    localSticker.thumbnailAsset,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.contain,
+                  ),
+          ),
+        ),
       );
     }
-    return textWidget;
+    final imageUrls = reply.images
+        .map((image) => image.file?.url.trim() ?? '')
+        .where((url) => url.isNotEmpty)
+        .map(ApiConstants.fullUrl)
+        .toList(growable: false);
+    if (imageUrls.isNotEmpty) {
+      contentWidgets.add(
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: List.generate(imageUrls.length, (index) {
+            final imageSize = imageUrls.length == 1 ? size * 1.45 : 88.0;
+            return GestureDetector(
+              key: ValueKey('reply-image-${reply.id}-$index'),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageViewerScreen(
+                    imageUrls: imageUrls,
+                    initialIndex: index,
+                  ),
+                ),
+              ),
+              onLongPress: () => _showImageFavoriteAction(imageUrls[index]),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: CachedNetworkImage(
+                  imageUrl: imageUrls[index],
+                  width: imageSize,
+                  height: imageSize,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => SizedBox(
+                    width: imageSize,
+                    height: imageSize,
+                    child: const Icon(Icons.broken_image_outlined),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      );
+    }
+    if (contentWidgets.isEmpty) return textWidget;
+    if (contentWidgets.length == 1) return contentWidgets.single;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var index = 0; index < contentWidgets.length; index++) ...[
+          if (index > 0) const SizedBox(height: 8),
+          contentWidgets[index],
+        ],
+      ],
+    );
   }
 
   // ---- 回复输入（集市保留） ----
@@ -4763,6 +4904,62 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showStickerFavoriteAction(AppSticker sticker) async {
+    final service = EmojiFavoriteService.instance;
+    final isFavorite = await service.containsSticker(sticker.id);
+    if (!mounted) return;
+    final shouldToggle = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListTile(
+          leading: Icon(
+            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          ),
+          title: Text(isFavorite ? '取消收藏' : '收藏'),
+          onTap: () => Navigator.pop(context, true),
+        ),
+      ),
+    );
+    if (shouldToggle != true) return;
+    final added = await service.toggleSticker(sticker.id);
+    if (mounted) {
+      AppFeedback.showSnackBar(
+        context,
+        added ? '已添加到收藏' : '已取消收藏',
+      );
+    }
+  }
+
+  Future<void> _showImageFavoriteAction(String imageUrl) async {
+    final normalizedUrl = imageUrl.trim();
+    if (normalizedUrl.isEmpty) return;
+    final service = EmojiFavoriteService.instance;
+    final isFavorite = await service.containsImage(normalizedUrl);
+    if (!mounted) return;
+    final shouldToggle = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListTile(
+          leading: Icon(
+            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          ),
+          title: Text(isFavorite ? '取消收藏' : '收藏'),
+          onTap: () => Navigator.pop(context, true),
+        ),
+      ),
+    );
+    if (shouldToggle != true) return;
+    final added = await service.toggleImage(normalizedUrl);
+    if (mounted) {
+      AppFeedback.showSnackBar(
+        context,
+        added ? '已添加到收藏' : '已取消收藏',
+      );
+    }
   }
 
   Future<void> _deleteReply(Reply r) async {

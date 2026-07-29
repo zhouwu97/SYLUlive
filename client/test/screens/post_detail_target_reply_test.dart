@@ -10,10 +10,12 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:shenliyuan/services/emoji_favorite_service.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 
@@ -786,6 +788,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AppEmojiPanel), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('emoji-tab-face')));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('😀').first);
     await tester.pump();
 
@@ -873,7 +877,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('表情包'));
+    await tester.tap(
+      find.byKey(
+        ValueKey('sticker-pack-tab-${appStickerGroups.first.id}'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     final sticker = appStickerGroups.first.items.first;
@@ -882,6 +890,55 @@ void main() {
 
     expect(
       find.byKey(const ValueKey('sticker-composer-preview')),
+      findsOneWidget,
+    );
+    final sendButton = tester.widget<IconButton>(
+      find.byKey(const ValueKey('post-reply-send-button')),
+    );
+    expect(sendButton.onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('帖子评论栏选择收藏图片后进入编辑器预览', (tester) async {
+    const imageUrl = '/uploads/reply-favorite.png';
+    AppPreferencesStore.setMockInitialValues({
+      EmojiFavoriteService.storageKey: jsonEncode([
+        {'type': 'image', 'image_url': imageUrl},
+      ]),
+    });
+    EmojiFavoriteService.resetSharedInstanceForTesting();
+    addTearDown(EmojiFavoriteService.resetSharedInstanceForTesting);
+    expect(
+      (await EmojiFavoriteService.instance.load()).single.imageUrl,
+      imageUrl,
+    );
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = _postWithImages(
+      id: 105,
+      title: 'Favorite image reply',
+      imageUrls: ['http://example.com/one.png'],
+    );
+    await tester.pumpWidget(_postDetailTestApp(post));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('写下你的想法...').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('post-reply-emoji-button')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    await tester.tap(
+      find.byKey(
+        const ValueKey('favorite-image:/uploads/reply-favorite.png'),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      find.byKey(const ValueKey('favorite-image-composer-preview')),
       findsOneWidget,
     );
     final sendButton = tester.widget<IconButton>(

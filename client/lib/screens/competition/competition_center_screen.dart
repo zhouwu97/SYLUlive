@@ -10,11 +10,13 @@ import '../../platform/contracts/external_navigator.dart';
 
 import '../../config/beta_release_policy.dart';
 import '../../models/competition.dart';
-import '../../models/competition_preference.dart';
+import '../../models/competition_dashboard_summary.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/competition_batch_action_payload.dart';
 import '../../widgets/competition/competition_empty_state.dart';
+import '../../widgets/competition/competition_module_theme.dart';
+import '../../widgets/competition/competition_profile_compact_card.dart';
 import '../../widgets/competition/competition_status_helper.dart';
 import '../../widgets/competition/competition_student_event_card.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
@@ -23,9 +25,7 @@ import '../../widgets/competition/competition_batch_selection_bar.dart';
 import '../../widgets/competition/competition_batch_confirm_dialog.dart';
 import '../../widgets/competition/competition_batch_action_sheet.dart';
 import 'competition_calendar_item_detail_screen.dart';
-import 'competition_award_screen.dart';
-import 'competition_capability_profile_screen.dart';
-import 'competition_preference_screen.dart';
+import 'competition_my_hub_screen.dart';
 
 import 'competition_admin_center_screen.dart';
 
@@ -61,7 +61,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   int _eventTotal = 0;
   int _currentPage = 1;
   int _requestSerial = 0;
-  int _preferenceRequestSerial = 0;
+  int _dashboardRequestSerial = 0;
+  int _stateRequestSerial = 0;
   bool _hasMore = false;
   bool _profileReady = false;
   String? _categorySlug;
@@ -69,9 +70,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   final Set<String> _recognitions = {};
   final Set<String> _sources = {};
   int? _calendarCount;
-  CompetitionPreference? _competitionPreference;
-  bool _preferenceLoading = false;
-  String? _preferenceError;
+  CompetitionDashboardSummary? _competitionDashboard;
+  bool _dashboardLoading = false;
+  String? _dashboardError;
   int? _sessionGeneration;
 
   String _studentFocusFilter = 'all';
@@ -93,10 +94,15 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       _sessionGeneration = generation;
     } else if (_sessionGeneration != generation) {
       _sessionGeneration = generation;
-      _competitionPreference = null;
-      _preferenceError = null;
+      _dashboardRequestSerial++;
+      _stateRequestSerial++;
+      _competitionDashboard = null;
+      _dashboardError = null;
+      _calendarCount = null;
+      _profileReady = false;
+      _joinedEventIds.clear();
       _loadUserState();
-      _loadPreference();
+      _loadCompetitionDashboard();
     }
   }
 
@@ -115,45 +121,45 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       _loadOverview(),
       _loadEvents(reset: true),
       _loadUserState(),
-      _loadPreference(),
+      _loadCompetitionDashboard(),
     ]);
   }
 
-  Future<void> _loadPreference() async {
-    final request = ++_preferenceRequestSerial;
+  Future<void> _loadCompetitionDashboard() async {
+    final request = ++_dashboardRequestSerial;
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       if (mounted) {
         setState(() {
-          _competitionPreference = null;
-          _preferenceLoading = false;
-          _preferenceError = null;
+          _competitionDashboard = null;
+          _dashboardLoading = false;
+          _dashboardError = null;
         });
       }
       return;
     }
     if (mounted) {
       setState(() {
-        _preferenceLoading = true;
-        _preferenceError = null;
+        _dashboardLoading = true;
+        _dashboardError = null;
       });
     }
     try {
-      final response = await auth.dio.get('/user/competition-preference');
-      if (!mounted || request != _preferenceRequestSerial) return;
+      final response = await auth.dio.get('/user/competitions/dashboard');
+      if (!mounted || request != _dashboardRequestSerial) return;
       setState(() {
-        _competitionPreference = CompetitionPreference.fromJson(
+        _competitionDashboard = CompetitionDashboardSummary.fromJson(
           Map<String, dynamic>.from(response.data as Map),
         );
-        _preferenceLoading = false;
+        _dashboardLoading = false;
       });
     } catch (error) {
-      if (!mounted || request != _preferenceRequestSerial) return;
+      if (!mounted || request != _dashboardRequestSerial) return;
       setState(() {
-        _preferenceLoading = false;
-        _preferenceError = error is DioException
-            ? AppFeedback.dioErrorMessage(error, fallback: '竞赛目标加载失败')
-            : '竞赛目标数据解析失败';
+        _dashboardLoading = false;
+        _dashboardError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '竞赛档案加载失败')
+            : '竞赛档案数据解析失败';
       });
     }
   }
@@ -235,6 +241,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   }
 
   Future<void> _loadUserState() async {
+    final request = ++_stateRequestSerial;
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       if (mounted) {
@@ -253,7 +260,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       final data = Map<String, dynamic>.from(response.data as Map);
       final joined = ((data['joined_event_ids'] as List?) ?? [])
           .map((value) => (value as num).toInt());
-      if (!mounted) return;
+      if (!mounted || request != _stateRequestSerial) return;
       setState(() {
         _calendarCount = (data['calendar_count'] as num?)?.toInt() ?? 0;
         _profileReady = data['profile_ready'] == true;
@@ -267,7 +274,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         }
       });
     } catch (error) {
-      if (mounted) {
+      if (mounted && request == _stateRequestSerial) {
         setState(() {
           _stateLoading = false;
           _stateError = error is DioException
@@ -416,36 +423,40 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = CompetitionUiTokens.pageBg(isDark);
 
-    return Scaffold(
-      backgroundColor: pageBg,
-      appBar: AppBar(
+    return Theme(
+      data: CompetitionModuleTheme.of(context),
+      child: Scaffold(
         backgroundColor: pageBg,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        title: const Text(
-          '竞赛中心',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-        ),
-        actions: [
-          if (isAdmin)
-            TextButton.icon(
-              onPressed: _openAdminCenter,
-              icon: const Icon(Icons.admin_panel_settings_rounded, size: 18),
-              label: const Text('管理'),
-              style: TextButton.styleFrom(
-                foregroundColor: CompetitionUiTokens.accent(isDark),
+        appBar: AppBar(
+          backgroundColor: pageBg,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: true,
+          title: const Text(
+            '竞赛中心',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+          ),
+          actions: [
+            if (isAdmin)
+              TextButton.icon(
+                onPressed: _openAdminCenter,
+                icon: const Icon(Icons.admin_panel_settings_rounded, size: 18),
+                label: const Text('管理'),
+                style: TextButton.styleFrom(
+                  foregroundColor: CompetitionUiTokens.accent(isDark),
+                ),
               ),
-            ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadAll,
-        child: ListView(
-          controller: _scrollController,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 32),
-          children: _buildStudentHome(isDark),
+          ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: _loadAll,
+          child: ListView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 32),
+            children: _buildStudentHome(isDark),
+          ),
         ),
       ),
     );
@@ -455,9 +466,14 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     return [
       _buildSearchAndFilters(isDark),
       _buildStudentOverview(isDark),
-      _buildPreferenceEntry(isDark),
-      _buildAwardEntry(isDark),
-      _buildCapabilityProfileEntry(isDark),
+      CompetitionProfileCompactCard(
+        isLoggedIn: context.watch<AuthProvider>().isLoggedIn,
+        summary: _competitionDashboard,
+        loading: _dashboardLoading,
+        error: _dashboardError,
+        onTap: _openCompetitionHub,
+        onRetry: _loadCompetitionDashboard,
+      ),
       _buildStudentFocusTabs(isDark),
       _buildSectionTitle(
         title: _studentFocusTitle,
@@ -620,6 +636,34 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _openCompetitionHub() async {
+    var auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await Navigator.pushNamed(context, '/login');
+      if (!mounted) return;
+      auth = context.read<AuthProvider>();
+      if (!auth.isLoggedIn) return;
+    }
+    final accountID = auth.user?.id;
+    if (accountID == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CompetitionMyHubScreen(
+          dio: auth.dio,
+          accountKey: accountID,
+        ),
+      ),
+    );
+    if (!mounted || context.read<AuthProvider>().user?.id != accountID) return;
+    await Future.wait([
+      _loadCompetitionDashboard(),
+      _loadUserState(),
+    ]);
+    if (mounted && _studentFocusFilter == 'fit') {
+      await _loadEvents(reset: true);
+    }
   }
 
   Widget _buildPreferenceEntry(bool isDark) {
@@ -978,29 +1022,47 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         CompetitionUiTokens.pagePadding,
         14,
       ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final tab in tabs)
-            ChoiceChip(
-              label: Text(tab.$2),
-              selected: _studentFocusFilter == tab.$1,
-              onSelected: (_) {
-                setState(() => _studentFocusFilter = tab.$1);
-                _loadEvents(reset: true);
-              },
-              selectedColor: CompetitionUiTokens.accent(isDark),
-              backgroundColor: CompetitionUiTokens.cardBg(isDark),
-              side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-              labelStyle: TextStyle(
-                color: _studentFocusFilter == tab.$1
-                    ? Colors.white
-                    : CompetitionUiTokens.titleColor(isDark),
-                fontWeight: FontWeight.w700,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (var index = 0; index < tabs.length; index++) ...[
+              SizedBox(
+                height: 34,
+                child: ChoiceChip(
+                  label: Text(tabs[index].$2),
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 7),
+                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  visualDensity: const VisualDensity(vertical: -2),
+                  selected: _studentFocusFilter == tabs[index].$1,
+                  onSelected: (_) {
+                    setState(() => _studentFocusFilter = tabs[index].$1);
+                    _loadEvents(reset: true);
+                  },
+                  selectedColor: CompetitionUiTokens.accent(isDark),
+                  backgroundColor: CompetitionUiTokens.cardBg(isDark),
+                  side: BorderSide(
+                    color: _studentFocusFilter == tabs[index].$1
+                        ? CompetitionUiTokens.accent(isDark)
+                        : CompetitionUiTokens.borderColor(isDark),
+                  ),
+                  labelStyle: TextStyle(
+                    color: _studentFocusFilter == tabs[index].$1
+                        ? Colors.white
+                        : CompetitionUiTokens.titleColor(isDark),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                  showCheckmark: false,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
-            ),
-        ],
+              if (index != tabs.length - 1) const SizedBox(width: 8),
+            ],
+          ],
+        ),
       ),
     );
   }

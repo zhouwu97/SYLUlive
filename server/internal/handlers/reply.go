@@ -98,7 +98,13 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 	input.Content = strings.TrimSpace(input.Content)
 	input.StickerID = strings.TrimSpace(input.StickerID)
-	if input.Content == "" && input.StickerID == "" {
+	fileIDs := c.PostForm("file_ids")
+	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.Content == "" && input.StickerID == "" && len(parsedFileIDs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容不能为空"})
 		return
 	}
@@ -107,12 +113,6 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "表情不存在"})
 			return
 		}
-	}
-	fileIDs := c.PostForm("file_ids")
-	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
 	}
 	if input.StickerID != "" && len(parsedFileIDs) > 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "表情回复不能同时包含图片"})
@@ -227,6 +227,9 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 
 	// 发送通知（数据库 + 极光推送）
 	contentPreview := utils.TruncateGraphemes(input.Content, 80)
+	if contentPreview == "" && len(parsedFileIDs) > 0 {
+		contentPreview = "[图片]"
+	}
 	if input.ParentReplyID != nil {
 		// 回复别人的评论 → 通知被回复的评论作者
 		var parentReply models.Reply

@@ -116,12 +116,15 @@ void main() {
   });
 
   testWidgets('支持从手动赛事切换到目录赛事', (tester) async {
+    final eventRequests = <RequestOptions>[];
     final dio = _dio(_EditorAdapter((options, _) {
       if (options.method == 'GET') {
+        eventRequests.add(options);
         return _jsonResponse({
           'items': [
             {'id': 7, 'title': '全国大学生程序设计竞赛'},
           ],
+          'total': 1,
         });
       }
       return _jsonResponse({});
@@ -133,6 +136,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('competition-award-event')), findsOneWidget);
     expect(find.text('选择目录赛事'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('competition-award-event')));
+    await tester.pumpAndSettle();
+    expect(find.text('搜索赛事名称 / 赛道'), findsOneWidget);
+    expect(find.text('全国大学生程序设计竞赛'), findsOneWidget);
+    expect(eventRequests.single.queryParameters['page_size'], 20);
+
+    await tester.enterText(
+      find.byKey(const Key('competition-award-event-search')),
+      '算法',
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(eventRequests.last.queryParameters['keyword'], '算法');
   });
 
   testWidgets('保存载荷默认私有且连续点击只请求一次', (tester) async {
@@ -227,8 +244,15 @@ void main() {
     await tester.pumpWidget(_app(_dio(adapter), initial: initial));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('已下架但需要保留的赛事'), findsOneWidget);
-    expect(find.textContaining('目录中不可用'), findsOneWidget);
+    expect(find.textContaining('已下架但需要保留的赛事'), findsNWidgets(2));
+    expect(
+      tester
+          .widget<TextFormField>(
+            find.widgetWithText(TextFormField, '比赛名称（目录同步）'),
+          )
+          .enabled,
+      isFalse,
+    );
   });
 
   testWidgets('小屏大字体表单可滚动且不溢出', (tester) async {

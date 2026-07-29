@@ -418,12 +418,16 @@ class _ChatListScreenState extends State<ChatListScreen>
         ? cachedMessage
         : serverMessage;
     final draft = provider.draftFor(targetUser.id).trim();
+    final draftStickerId = provider.draftStickerFor(targetUser.id);
     final preview = _conversationPreview(
       message: lastMessage,
       draft: draft,
+      draftStickerId: draftStickerId,
       currentUserId: currentUserId,
     );
-    final previewIsAlert = draft.isNotEmpty || lastMessage?.isFailed == true;
+    final previewIsAlert = draft.isNotEmpty ||
+        draftStickerId != null ||
+        lastMessage?.isFailed == true;
     final selected = splitMode && _selectedConversationId == conversation.id;
 
     return ListTile(
@@ -492,9 +496,16 @@ class _ChatListScreenState extends State<ChatListScreen>
   String _conversationPreview({
     required Message? message,
     required String draft,
+    required String? draftStickerId,
     required int currentUserId,
   }) {
-    if (draft.isNotEmpty) return '草稿：$draft';
+    if (draft.isNotEmpty || draftStickerId != null) {
+      final draftBody = [
+        if (draft.isNotEmpty) draft,
+        if (draftStickerId != null) '[表情]',
+      ].join(' ');
+      return '草稿：$draftBody';
+    }
     if (message == null) return '暂无消息';
     if (message.isFailed) return '发送失败';
 

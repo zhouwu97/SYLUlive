@@ -548,6 +548,15 @@ func TestMessageSendStickerValidatesCatalogAndPersistsID(t *testing.T) {
 	}
 
 	const stickerID = "0cc4a3688e7b222b977fef3a078619b6"
+	imageWithSticker := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1,
+		`{"file_id":1,"sticker_id":"`+stickerID+`"}`,
+	)
+	if imageWithSticker.Code != http.StatusBadRequest {
+		t.Fatalf("image with sticker status=%d body=%s", imageWithSticker.Code, imageWithSticker.Body.String())
+	}
+
 	response := performMessageRequest(
 		t, handler.Send, http.MethodPost, "/api/messages/2",
 		gin.Params{{Key: "user_id", Value: "2"}}, 1,
@@ -565,6 +574,34 @@ func TestMessageSendStickerValidatesCatalogAndPersistsID(t *testing.T) {
 	}
 	if message.Content != stickerFallbackText {
 		t.Fatalf("fallback content=%q", message.Content)
+	}
+}
+
+func TestMessageSendAllowsTextWithSticker(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	handler := NewMessageHandler(db)
+
+	const stickerID = "0cc4a3688e7b222b977fef3a078619b6"
+	response := performMessageRequest(
+		t, handler.Send, http.MethodPost, "/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}}, 1,
+		`{"content":"晚安","sticker_id":"`+stickerID+`"}`,
+	)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("send text with sticker status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	var message models.Message
+	if err := json.Unmarshal(response.Body.Bytes(), &message); err != nil {
+		t.Fatalf("decode text with sticker message: %v", err)
+	}
+	if message.Content != "晚安" {
+		t.Fatalf("content=%q", message.Content)
+	}
+	if message.StickerID == nil || *message.StickerID != stickerID {
+		t.Fatalf("sticker_id=%v body=%s", message.StickerID, response.Body.String())
 	}
 }
 

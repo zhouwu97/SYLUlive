@@ -89,3 +89,14 @@ const List<AppStickerGroup> appStickerGroups = [
     AppSticker(id: '9f3cfb00a3e638491e5435e5550d5c83', label: '惊讶', thumbnailAsset: 'assets/images/stickers/mingfeng/9f3cfb00a3e638491e5435e5550d5c83.png'),
   ]),
 ] ;
+
+AppSticker? appStickerById(String? id) {
+  final normalized = id?.trim();
+  if (normalized == null || normalized.isEmpty) return null;
+  for (final group in appStickerGroups) {
+    for (final sticker in group.items) {
+      if (sticker.id == normalized) return sticker;
+    }
+  }
+  return null;
+}

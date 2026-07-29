@@ -36,6 +36,17 @@ void main() {
     );
   });
 
+  test('sticker resources include a cache-busting asset version', () {
+    expect(
+      ApiConstants.versionStickerResourceUrl('/stickers/sticker-id'),
+      '/stickers/sticker-id?v=${ApiConstants.stickerAssetVersion}',
+    );
+    expect(
+      ApiConstants.versionStickerResourceUrl('/stickers/sticker-id?v=old'),
+      '/stickers/sticker-id?v=${ApiConstants.stickerAssetVersion}',
+    );
+  });
+
   test('legacy http upload URLs can be normalized to same-origin paths', () {
     expect(
       ApiConstants.normalizeSameOriginResourceUrl(

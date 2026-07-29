@@ -133,7 +133,6 @@ func TestRuntimeAcceptsMessageLimitAt500AndRejectsAboveIt(t *testing.T) {
 	}
 	_, err := NewRuntime(db, &MockProvider{}, fixedRetriever{}, NewEventBroker(), config)
 	require.NoError(t, err)
-
 	config.MaxMessageChars = 501
 	_, err = NewRuntime(db, &MockProvider{}, fixedRetriever{}, NewEventBroker(), config)
 	require.EqualError(t, err, "invalid AI runtime configuration")

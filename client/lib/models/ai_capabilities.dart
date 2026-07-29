@@ -27,6 +27,7 @@ class AiFeatures {
 }
 
 class AiCapabilities {
+  static const int defaultMessageChars = 500;
   static const int maximumMessageChars = 500;
 
   final bool enabled;
@@ -56,7 +57,7 @@ class AiCapabilities {
     final quotaJson = json['quota'];
     final reportedMaxMessageChars = _positiveInt(
       json['max_message_chars'],
-      fallback: maximumMessageChars,
+      fallback: defaultMessageChars,
     );
     return AiCapabilities(
       enabled: json['enabled'] == true,

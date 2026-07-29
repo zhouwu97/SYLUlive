@@ -11,7 +11,7 @@
 - Python 上下文：使用 `ChatPromptTemplate`、`MessagesPlaceholder` 和独立无状态 Query Rewrite Runnable；Python 只处理 Go 传入的有限副本，并再次限制为 4 轮、8 条、2400 字符。
 - 查询改写：只对“那实验课呢”等短追问补入最近用户问题；查询规划、召回和 reranker 使用改写查询，生成仍使用有限原始历史。
 - 会话所有权：未引入 LangChain Memory，Python 不读取会话数据库，也不持久化历史。
-- 输入限制：`AI_MAX_MESSAGE_CHARS` 默认 120，可配置范围为 50 至 300；Runtime、capabilities 与客户端计数和提交校验保持一致。
+- 输入限制：`AI_MAX_MESSAGE_CHARS` 默认 200，可配置范围为 20 至 300；Runtime、capabilities 与客户端计数和提交校验保持一致。下限 20 仅用于兼容已有部署。
 - 来源体验：来源卡展示发布部门、文档状态、生效区间和 locator；折叠标题最多两行，展开后显示完整标题；客户端不展示裸 `chunk_id`。
 - 数据边界：未接入个人成绩、课表、体测、二课数据、MCP、Agent 或 Tool Calling。
 
@@ -41,7 +41,7 @@
 - 任务：T07“有界多轮上下文与客户端来源体验”。
 - 当前分支：`diaofenyuan`；本次未创建提交。
 - 数据库迁移：无。
-- 配置变化：`AI_MAX_MESSAGE_CHARS` 默认值由 20 调整为 120，合法范围调整为 50 至 300。
+- 配置变化：`AI_MAX_MESSAGE_CHARS` 默认值由 20 调整为 200，合法范围调整为 20 至 300。
 - 评测指标变化：本任务未运行需要生产知识库的 live 质量评测；离线短追问与边界回归全部通过。
 - 未完成事项：无。
 

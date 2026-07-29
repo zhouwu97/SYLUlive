@@ -174,10 +174,12 @@ class _CampusScreenState extends State<CampusScreen>
     }
   }
 
-  void _handleLoadError(String message, int generation, {required bool isLatest}) {
+  void _handleLoadError(String message, int generation,
+      {required bool isLatest}) {
     if (!mounted || _loadGeneration != generation) return;
 
-    final hasOldData = isLatest ? _latestArticle != null : _recentArticles.isNotEmpty;
+    final hasOldData =
+        isLatest ? _latestArticle != null : _recentArticles.isNotEmpty;
     if (hasOldData) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${isLatest ? '头条' : '资讯'}刷新失败: $message')),
@@ -208,6 +210,19 @@ class _CampusScreenState extends State<CampusScreen>
     await Navigator.of(
       context,
     ).push(MaterialPageRoute<void>(builder: (_) => page));
+  }
+
+  Future<void> _openAiAssistant({String? initialPrompt}) async {
+    final capabilities = _aiCapabilities;
+    if (capabilities == null) return;
+    await _openPage(
+      AiAssistantScreen(
+        capabilities: capabilities,
+        service: _aiService,
+        dio: getSharedDio(),
+        initialPrompt: initialPrompt,
+      ),
+    );
   }
 
   void _openArticleDetail(CampusArticleSummary article) {
@@ -273,12 +288,15 @@ class _CampusScreenState extends State<CampusScreen>
                         child: CampusAiEntryCard(
                           capabilities: _aiCapabilities!,
                           isDark: isDark,
-                          onTap: () => _openPage(
-                            AiAssistantScreen(
-                              capabilities: _aiCapabilities!,
-                              service: _aiService,
-                              dio: getSharedDio(),
-                            ),
+                          onTap: _openAiAssistant,
+                          onCompetitionCompareTap: () => _openAiAssistant(
+                            initialPrompt: '帮我比较适合我的校园竞赛，并说明推荐理由和准备重点',
+                          ),
+                          onAcademicAnalysisTap: () => _openAiAssistant(
+                            initialPrompt: '分析我的学业情况，找出主要风险并给出改进建议',
+                          ),
+                          onWeekPlanTap: () => _openAiAssistant(
+                            initialPrompt: '结合我的课表和目标，帮我制定本周学习计划',
                           ),
                         ),
                       ),

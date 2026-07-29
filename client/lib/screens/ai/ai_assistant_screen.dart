@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 
 import '../../config/beta_release_policy.dart';
 import '../../features/ai_runtime/ai_feature_flags.dart';
+import '../../features/ai_device_bridge/device_tool_worker.dart';
 import '../../features/ai_runtime/ai_provider_storage.dart';
 import '../../features/ai_runtime/personal_ai_runtime_limits.dart';
 import '../../features/ai_runtime/deterministic/graduation_requirement_engine.dart';
@@ -46,7 +47,6 @@ import '../../widgets/ai/ai_quota_banner.dart';
 import '../../widgets/ai/ai_typing_status.dart';
 import '../../widgets/app_action_popup_menu.dart';
 import '../../widgets/app_page_app_bar.dart';
-import '../../widgets/campus/campus_theme.dart';
 import 'ai_model_settings_screen.dart';
 import 'ai_feature_settings_screen.dart';
 import 'graduation_checklist_screen.dart';
@@ -61,8 +61,9 @@ class AiAssistantScreen extends StatefulWidget {
   final AiAssistantService service;
   final Dio dio;
   final bool initialPersonalMode;
+  final String? initialPrompt;
   final PersonalConversationStore Function(String accountKey)?
-  personalConversationStoreFactory;
+      personalConversationStoreFactory;
 
   const AiAssistantScreen({
     super.key,
@@ -70,6 +71,7 @@ class AiAssistantScreen extends StatefulWidget {
     required this.service,
     required this.dio,
     this.initialPersonalMode = false,
+    this.initialPrompt,
     this.personalConversationStoreFactory,
   });
 
@@ -79,11 +81,12 @@ class AiAssistantScreen extends StatefulWidget {
 
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
   late final AiAssistantProvider _provider;
-  final ScrollController _messagesScrollController = ScrollController();
   final FocusNode _inputFocusNode = FocusNode();
   final TextEditingController _inputController = TextEditingController();
 
   String? _lastBootstrapAuthKey;
+  bool _consentDialogVisible = false;
+  String _lastConsentDialogKey = '';
 
   final List<AiChatMessage> _personalMessages = <AiChatMessage>[];
   final List<PersonalConversationEntry> _personalConversationEntries =
@@ -112,7 +115,16 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     _provider = AiAssistantProvider(
       widget.service,
       initialCapabilities: widget.capabilities,
+      deviceToolSync: DeviceToolBridge.syncPending,
     );
+    _provider.addListener(_handleRunConsentRequired);
+    final initialPrompt = widget.initialPrompt?.trim() ?? '';
+    if (initialPrompt.isNotEmpty) {
+      _inputController.value = TextEditingValue(
+        text: initialPrompt,
+        selection: TextSelection.collapsed(offset: initialPrompt.length),
+      );
+    }
     unawaited(_provider.initialize());
   }
 
@@ -140,8 +152,66 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     unawaited(_activeToolModel?.cancel());
     _inputFocusNode.dispose();
     _inputController.dispose();
+    _provider.removeListener(_handleRunConsentRequired);
     _provider.dispose();
     super.dispose();
+  }
+
+  void _handleRunConsentRequired() {
+    final consent = _provider.pendingConsent;
+    if (!mounted ||
+        _personalMode ||
+        consent == null ||
+        consent.consentScope.isEmpty ||
+        _consentDialogVisible) {
+      return;
+    }
+    final key = '${consent.runId}:${consent.seq}:${consent.consentScope}';
+    if (key == _lastConsentDialogKey) return;
+    _lastConsentDialogKey = key;
+    _consentDialogVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        _consentDialogVisible = false;
+        return;
+      }
+      final granted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            consent.consentScope == 'ai_external_model_analysis'
+                ? '允许外部模型辅助分析？'
+                : '允许本次读取个人数据？',
+          ),
+          content: Text(
+            consent.consentScope == 'ai_external_model_analysis'
+                ? '本次分析会把经过最小化和去身份处理的课程成绩、学分、专业年级或课表时间发送给外部 Hy3 模型。\n\n不会发送姓名、学号、密码、Cookie、Token 或设备标识。'
+                : '校园 Agent 需要读取本次分析所需的最小化个人数据。此选择只对当前请求生效，不会修改个人数据保险箱中的长期设置。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('不允许'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('仅本次允许'),
+            ),
+          ],
+        ),
+      );
+      if (mounted && granted != null) {
+        final submitted = await _provider.submitConsent(granted);
+        if (!submitted && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_provider.error ?? '提交本次授权失败，请稍后重试')),
+          );
+        }
+      }
+      _consentDialogVisible = false;
+      if (mounted) _handleRunConsentRequired();
+    });
   }
 
   String _currentPersonalAccountKey() {
@@ -153,7 +223,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void _handleAccountContextChanged() {
     if (!mounted) return;
     _synchronizePersonalAccount();
-    
+
     final auth = _authProvider;
     final authKey = auth == null
         ? null
@@ -225,8 +295,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       return;
     }
     final requestEpoch = _personalSessionEpoch.capture();
-    final store =
-        widget.personalConversationStoreFactory?.call(accountKey) ??
+    final store = widget.personalConversationStoreFactory?.call(accountKey) ??
         PersonalConversationStore(accountKey: accountKey);
     _personalConversationStore = store;
     _loadedConversationAccountKey = accountKey;
@@ -386,7 +455,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         settingsStore: AIProviderSettingsStore(appUserId: appUserId),
       );
     } catch (error) {
-      if (_isCurrentPersonalRequest(requestEpoch)) {
+      if (mounted && _isCurrentPersonalRequest(requestEpoch)) {
         setState(() {
           _personalError = error.toString();
           _personalNeedsModelConfiguration = true;
@@ -470,30 +539,28 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         accountGeneration: () => _personalSessionEpoch.generation,
         skillTimeout: const Duration(seconds: 90),
       );
-      final tools = buildStageSixToolDefinitions()
-          .where((tool) {
-            if (!hasEduAccount &&
-                !competitionAdvisorAccountIndependentSkillIds.contains(
-                  tool.id,
-                ) &&
-                (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)) {
-              return false;
-            }
-            if (tool.id.startsWith('personal.academic.') &&
-                flags[AIFeatureFlag.academicEngine] != true) {
-              return false;
-            }
-            if (tool.id == GraduationReadinessSkill.skillId &&
-                flags[AIFeatureFlag.graduationAssistant] != true) {
-              return false;
-            }
-            if (tool.id == ExplainCompetitionMatchesSkill.skillId &&
-                flags[AIFeatureFlag.competitionFit] != true) {
-              return false;
-            }
-            return true;
-          })
-          .toList(growable: false);
+      final tools = buildStageSixToolDefinitions().where((tool) {
+        if (!hasEduAccount &&
+            !competitionAdvisorAccountIndependentSkillIds.contains(
+              tool.id,
+            ) &&
+            (registry.requiredDataTypesFor(tool.id)?.isNotEmpty ?? false)) {
+          return false;
+        }
+        if (tool.id.startsWith('personal.academic.') &&
+            flags[AIFeatureFlag.academicEngine] != true) {
+          return false;
+        }
+        if (tool.id == GraduationReadinessSkill.skillId &&
+            flags[AIFeatureFlag.graduationAssistant] != true) {
+          return false;
+        }
+        if (tool.id == ExplainCompetitionMatchesSkill.skillId &&
+            flags[AIFeatureFlag.competitionFit] != true) {
+          return false;
+        }
+        return true;
+      }).toList(growable: false);
       final unavailableToolReasons = <String, String>{
         if (!hasEduAccount)
           for (final tool in buildStageSixToolDefinitions())
@@ -568,12 +635,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 
   String _toolStatusMessage(ToolLoopStatus status) => switch (status) {
-    ToolLoopStatus.permissionDenied => '已取消个人数据授权',
-    ToolLoopStatus.cancelled => '请求已取消',
-    ToolLoopStatus.rejected => '请求未通过本地安全校验',
-    ToolLoopStatus.failed => '个人助手执行失败',
-    ToolLoopStatus.completed => '',
-  };
+        ToolLoopStatus.permissionDenied => '已取消个人数据授权',
+        ToolLoopStatus.cancelled => '请求已取消',
+        ToolLoopStatus.rejected => '请求未通过本地安全校验',
+        ToolLoopStatus.failed => '个人助手执行失败',
+        ToolLoopStatus.completed => '',
+      };
 
   Future<void> _cancelPersonal() async {
     _toolCancellation?.cancel();
@@ -625,15 +692,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       barrierColor: Colors.black.withValues(alpha: 0.28),
       builder: (sheetContext) =>
           ChangeNotifierProvider<AiAssistantProvider>.value(
-            value: _provider,
-            child: AiHistorySheet(
-              onFocusRequest: () {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _inputFocusNode.requestFocus();
-                });
-              },
-            ),
-          ),
+        value: _provider,
+        child: AiHistorySheet(
+          onFocusRequest: () {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _inputFocusNode.requestFocus();
+            });
+          },
+        ),
+      ),
     );
   }
 
@@ -685,7 +752,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         ).showSnackBar(SnackBar(content: Text(error.message)));
       }
     } catch (_) {
-      if (_isCurrentPersonalRequest(requestEpoch)) {
+      if (mounted && _isCurrentPersonalRequest(requestEpoch)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('加入计划失败，请稍后重试')));
@@ -706,11 +773,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               .toList(growable: false),
         );
       }
-      for (
-        var index = 0;
-        index < _personalConversationEntries.length;
-        index++
-      ) {
+      for (var index = 0;
+          index < _personalConversationEntries.length;
+          index++) {
         final entry = _personalConversationEntries[index];
         if (!entry.message.actionDrafts.any((item) => item.id == updated.id)) {
           continue;
@@ -788,23 +853,24 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       'model' => AIModelSettingsScreen(appUserId: appUserId),
       'flags' => const AIFeatureSettingsScreen(),
       'data' => PersonalDataCenterScreen(
-        appUserId: appUserId,
-        sourceAccountId: edu.studentId,
-      ),
-      'graduation' => GraduationChecklistScreen(
-        readiness: GraduationReadiness(
-          policyId: 'unknown',
-          items: const <GraduationRequirementItem>[
-            GraduationRequirementItem(
-              id: 'policy',
-              label: '培养方案',
-              state: RequirementState.blocked,
-              summary: '请先通过个人助手加载已审核的适用培养方案',
-            ),
-          ],
-          warnings: const <String>['当前没有可执行的已审核政策规则'],
+          appUserId: appUserId,
+          sourceAccountId: edu.studentId,
+          dio: widget.dio,
         ),
-      ),
+      'graduation' => GraduationChecklistScreen(
+          readiness: GraduationReadiness(
+            policyId: 'unknown',
+            items: const <GraduationRequirementItem>[
+              GraduationRequirementItem(
+                id: 'policy',
+                label: '培养方案',
+                state: RequirementState.blocked,
+                summary: '请先通过个人助手加载已审核的适用培养方案',
+              ),
+            ],
+            warnings: const <String>['当前没有可执行的已审核政策规则'],
+          ),
+        ),
       _ => const AIFeatureSettingsScreen(),
     };
     final saved = await Navigator.of(
@@ -849,6 +915,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     tooltip: '新建个人会话',
                     onPressed: _clearPersonalConversation,
                     icon: const Icon(Icons.note_add_outlined),
+                  ),
+                if (_personalMode)
+                  IconButton(
+                    tooltip: '更新个人数据',
+                    onPressed: () => _openAiSetting('data'),
+                    icon: const Icon(Icons.refresh_rounded),
                   ),
                 AppActionPopupMenu(
                   icon: const Icon(Icons.settings_outlined),
@@ -908,69 +980,70 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   child: _personalMode
                       ? _buildPersonalBody()
                       : provider.messages.isEmpty
-                      ? ListView(
-                          children: [
-                            AiPublicEmptyState(
-                              chatEnabled: capabilities.chatEnabled,
-                              quickPrompts: provider.quickPrompts,
-                              onPromptSelected: (prompt) {
-                                _inputController.text = prompt;
-                                _inputController.selection =
-                                    TextSelection.collapsed(
+                          ? ListView(
+                              children: [
+                                AiPublicEmptyState(
+                                  chatEnabled: capabilities.chatEnabled,
+                                  quickPrompts: provider.quickPrompts,
+                                  onPromptSelected: (prompt) {
+                                    _inputController.text = prompt;
+                                    _inputController.selection =
+                                        TextSelection.collapsed(
                                       offset: prompt.length,
                                     );
-                              },
+                                  },
+                                ),
+                                if (provider.error != null)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                    ),
+                                    child: AiErrorCard(
+                                      message: provider.error!,
+                                      actionLabel: provider.canRetry
+                                          ? '重试'
+                                          : provider.canReconnectRun
+                                              ? '重新连接'
+                                              : '重试加载',
+                                      onAction: provider.canRetry
+                                          ? provider.retryLast
+                                          : provider.canReconnectRun
+                                              ? provider.reconnect
+                                              : provider.retryBootstrap,
+                                    ),
+                                  ),
+                              ],
+                            )
+                          : ListView(
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 10, 16, 18),
+                              children: [
+                                for (final message in provider.messages)
+                                  AiMessageCard(
+                                    message: message,
+                                    loadSourceContent:
+                                        widget.service.getSourceContent,
+                                  ),
+                                if (provider.isRunning)
+                                  AiTypingStatus(
+                                    status: provider.friendlyRunStatus,
+                                  ),
+                                if (provider.error != null)
+                                  AiErrorCard(
+                                    message: provider.error!,
+                                    actionLabel: provider.canRetry
+                                        ? '重试'
+                                        : provider.canReconnectRun
+                                            ? '重新连接'
+                                            : '重试加载',
+                                    onAction: provider.canRetry
+                                        ? provider.retryLast
+                                        : provider.canReconnectRun
+                                            ? provider.reconnect
+                                            : provider.retryBootstrap,
+                                  ),
+                              ],
                             ),
-                            if (provider.error != null)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                child: AiErrorCard(
-                                  message: provider.error!,
-                                  actionLabel: provider.canRetry
-                                      ? '重试'
-                                      : provider.canReconnectRun
-                                          ? '重新连接'
-                                          : '重试加载',
-                                  onAction: provider.canRetry
-                                      ? provider.retryLast
-                                      : provider.canReconnectRun
-                                          ? provider.reconnect
-                                          : provider.retryBootstrap,
-                                ),
-                              ),
-                          ],
-                        )
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-                          children: [
-                            for (final message in provider.messages)
-                              AiMessageCard(
-                                message: message,
-                                loadSourceContent:
-                                    widget.service.getSourceContent,
-                              ),
-                            if (provider.isRunning)
-                              AiTypingStatus(
-                                status: provider.friendlyRunStatus,
-                              ),
-                            if (provider.error != null)
-                              AiErrorCard(
-                                message: provider.error!,
-                                actionLabel: provider.canRetry
-                                    ? '重试'
-                                    : provider.canReconnectRun
-                                        ? '重新连接'
-                                        : '重试加载',
-                                onAction: provider.canRetry
-                                    ? provider.retryLast
-                                    : provider.canReconnectRun
-                                        ? provider.reconnect
-                                        : provider.retryBootstrap,
-                              ),
-                          ],
-                        ),
                 ),
                 AiInputComposer(
                   controller: _inputController,
@@ -978,10 +1051,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   maxCharacters: maxInputCharacters,
                   enabled: _personalMode
                       ? !_personalSending && !_personalHistoryLoading
-                      : capabilities.chatEnabled && quota.remaining > 0,
-                  running: _personalMode
-                      ? _personalSending
-                      : provider.isRunning,
+                      : capabilities.chatEnabled &&
+                          (quota.unlimited || quota.remaining > 0),
+                  running:
+                      _personalMode ? _personalSending : provider.isRunning,
                   onSend: _submit,
                   onCancel: _personalMode ? _cancelPersonal : provider.cancel,
                   hintText: _personalMode ? '问问你的课程、成绩或计划' : '输入校园问题',

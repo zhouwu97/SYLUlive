@@ -9,6 +9,7 @@ class ApiConstants {
   static const String _appBaseUrl = String.fromEnvironment('APP_API_URL');
   static const String _legacyBaseUrl = String.fromEnvironment('API_URL');
   static const String _defaultAppBaseUrl = 'https://sylulive.online/api';
+  static const String stickerAssetVersion = '20260729-1';
 
   static String get baseUrl {
     if (kIsWeb) return _webBaseUrl.isNotEmpty ? _webBaseUrl : '/api';
@@ -25,7 +26,21 @@ class ApiConstants {
 
   /// 将服务端返回的相对路径转为完整 URL
   static String fullUrl(String path) {
-    return fullUrlForBase(normalizeWebResourceUrl(path), baseUrl);
+    final normalizedPath = normalizeWebResourceUrl(path);
+    return fullUrlForBase(versionStickerResourceUrl(normalizedPath), baseUrl);
+  }
+
+  static String versionStickerResourceUrl(String path) {
+    final uri = Uri.tryParse(path.trim());
+    if (uri == null || uri.hasScheme || !uri.path.startsWith('/stickers/')) {
+      return path;
+    }
+    return uri.replace(
+      queryParameters: {
+        ...uri.queryParameters,
+        'v': stickerAssetVersion,
+      },
+    ).toString();
   }
 
   static String normalizeWebResourceUrl(String path) {

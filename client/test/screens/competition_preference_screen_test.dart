@@ -104,6 +104,27 @@ void main() {
     expect(find.text('暂不确定'), findsOneWidget);
     expect(
         find.byKey(const Key('competition-preference-save')), findsOneWidget);
+    final save = tester.widget<FilledButton>(
+      find.byKey(const Key('competition-preference-save')),
+    );
+    expect(save.onPressed, isNull);
+  });
+
+  testWidgets('修改后启用保存并在返回时确认未保存修改', (tester) async {
+    final adapter = _PreferenceAdapter((_, __) => _jsonResponse(_preference()));
+    await _pumpLoaded(tester, _app(_dio(adapter)));
+
+    await tester.tap(find.text('能力成长'));
+    await tester.pump();
+    final save = tester.widget<FilledButton>(
+      find.byKey(const Key('competition-preference-save')),
+    );
+    expect(save.onPressed, isNotNull);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('放弃未保存的修改？'), findsOneWidget);
+    expect(find.text('继续编辑'), findsOneWidget);
   });
 
   testWidgets('已设置偏好完整回显', (tester) async {
@@ -189,6 +210,7 @@ void main() {
     });
     await _pumpLoaded(tester, _app(_dio(adapter)));
     await tester.tap(find.text('简历提升'));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('competition-preference-save')));
     await tester.pumpAndSettle();
 
@@ -197,7 +219,8 @@ void main() {
             .widget<FilterChip>(find.widgetWithText(FilterChip, '简历提升'))
             .selected,
         isTrue);
-    expect(find.text('暂时不可用'), findsOneWidget);
+    expect(adapter.putCount, 1);
+    expect(find.textContaining('暂时不可用'), findsOneWidget);
   });
 
   testWidgets('账号变化时先清空旧偏好再加载新账号', (tester) async {

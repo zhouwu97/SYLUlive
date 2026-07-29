@@ -7,16 +7,20 @@
 ```text
 knowledge-base/
 └─ sylu-academic-policy/
-   └─ v0.5/
+   ├─ v0.5/
+   └─ v0.6/
 ```
 
-`sylu-academic-policy` 用于管理沈阳理工大学官方学业政策知识库。每个已发布版本使用独立目录保存，不直接覆盖历史版本。
+`sylu-academic-policy` 用于管理沈阳理工大学官方学业政策知识库。每个候选版本使用独立目录保存，不直接覆盖历史版本。仓库版本状态不等于生产数据库状态；生产状态必须通过管理员 API 的只读清单确认。
 
 ## 当前版本
 
 | 知识库 | 版本 | 状态 | 导入入口 |
 | --- | --- | --- | --- |
-| 沈阳理工大学官方学业政策 | v0.5 | 待导入/验收 | `sylu-academic-policy/v0.5/SYLUlive_AI官方全文导入包_v0.5.jsonl` |
+| 沈阳理工大学官方学业政策 | v0.6 | 候选，未在本仓库确认生产发布 | `sylu-academic-policy/v0.6/SYLUlive_AI官方全文导入包_v0.6.jsonl` |
+| 沈阳理工大学官方学业政策 | v0.5 | 冻结历史基线，由 v0.6 候选替代 | `sylu-academic-policy/v0.5/` |
+
+v0.6 的机器清单位于 `sylu-academic-policy/v0.6/release-manifest.v0.6.json`。其中固定记录内容 hash、预期 `document_type`、分块器版本、embedding 模型版本与真实维度。
 
 ## 管理约定
 
@@ -25,3 +29,5 @@ knowledge-base/
 3. 导入生产知识库前必须完成完整性审计、规则回归测试和人工抽查。
 4. 第二课堂、综测、处分、学位和培养方案等缺失材料不得由 AI 推断补全。
 5. 运行时索引和数据库内容由 RAG 服务管理，不提交到本目录。
+6. 自动抓取内容只能以 `crawler` 来源进入 `needs_review`，不得直接进入发布批次。
+7. 发布前先执行本地 `dry-run`，再在明确授权下通过管理员 API 发布；工具不得直接连接生产数据库。

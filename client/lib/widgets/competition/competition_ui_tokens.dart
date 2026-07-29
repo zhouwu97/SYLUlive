@@ -42,6 +42,8 @@ class CompetitionUiTokens {
   // --- Dimensions ---
   static const double pagePadding = 16.0;
   static const double cardRadius = 18.0;
+  static const double compactCardRadius = 14.0;
+  static const double controlRadius = 10.0;
   static const double chipRadius = 999.0;
 
   // --- Decorations ---

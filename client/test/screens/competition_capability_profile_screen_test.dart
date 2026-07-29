@@ -10,7 +10,7 @@ class _CapabilityAdapter implements HttpClientAdapter {
   _CapabilityAdapter(this.handler);
 
   final FutureOr<ResponseBody> Function(RequestOptions options, String body)
-  handler;
+      handler;
   int accessPutCount = 0;
   final List<Map<String, dynamic>> accessBodies = [];
 
@@ -93,7 +93,7 @@ _CapabilityAdapter _loadedAdapter({bool access = false}) {
       if (options.method == 'PUT') {
         final enabled =
             (Map<String, dynamic>.from(jsonDecode(body) as Map))['enabled'] ==
-            true;
+                true;
         return _jsonResponse({
           'enabled': enabled,
           'enabled_at': enabled ? '2026-07-23T00:00:00Z' : null,
@@ -196,9 +196,10 @@ void main() {
     });
     await _pumpLoaded(tester, _app(_dio(adapter)));
 
-    expect(find.text('暂无可汇总的竞赛技能'), findsOneWidget);
-    expect(find.text('暂无可汇总的竞赛角色'), findsOneWidget);
-    expect(find.text('尚未设置竞赛目标'), findsOneWidget);
+    expect(find.text('还不能生成能力画像'), findsOneWidget);
+    expect(find.text('设置竞赛目标'), findsOneWidget);
+    expect(find.text('添加竞赛经历'), findsOneWidget);
+    expect(find.text('暂无可汇总的竞赛技能'), findsNothing);
   });
 
   testWidgets('账号变化时不保留上一用户画像', (tester) async {
@@ -228,6 +229,22 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('暂无可汇总的竞赛技能'), findsOneWidget);
+  });
+
+  testWidgets('授权接口失败不阻止画像内容展示', (tester) async {
+    final adapter = _CapabilityAdapter((options, _) {
+      if (options.path.endsWith('/ai-access')) {
+        return _jsonResponse({'error': '授权服务暂不可用'}, 500);
+      }
+      return _jsonResponse(_profile());
+    });
+
+    await _pumpLoaded(tester, _app(_dio(adapter)));
+
+    expect(find.text('Python'), findsOneWidget);
+    expect(find.text('已核验经历'), findsOneWidget);
+    expect(find.text('AI 授权状态读取失败'), findsOneWidget);
+    expect(find.byIcon(Icons.refresh_rounded), findsOneWidget);
   });
 
   testWidgets('小屏大字体布局不溢出', (tester) async {

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../ai_endpoint_policy.dart';
 import '../ai_model_provider.dart';
 import '../ai_provider_storage.dart';
+import '../ai_wire_api_policy.dart';
 import 'tool_call_models.dart';
 
 class OpenAIToolCallingModel implements ToolCallingModel {
@@ -146,40 +147,42 @@ class OpenAIToolCallingModel implements ToolCallingModel {
     }
 
     final configured = _config.wireApi;
-    final selected = configured == OpenAIWireApi.auto
-        ? (_detectedWireApi ?? OpenAIWireApi.responses)
-        : configured;
-    try {
-      final turn = await _requestTurn(
-        selected,
-        messages: messages,
-        tools: tools,
-        forcedToolName: forcedToolName,
-      );
-      if (configured == OpenAIWireApi.auto) _detectedWireApi = selected;
-      return turn;
-    } on _WireApiRejectedException {
-      if (configured != OpenAIWireApi.auto ||
-          selected != OpenAIWireApi.responses) {
-        throw const AIModelProviderCompatibilityException(
-          '模型服务不支持所选请求协议',
-        );
-      }
+    final candidates = configured == OpenAIWireApi.auto
+        ? _autoCandidates()
+        : <OpenAIWireApi>[configured];
+    for (var index = 0; index < candidates.length; index++) {
+      final candidate = candidates[index];
       try {
         final turn = await _requestTurn(
-          OpenAIWireApi.chatCompletions,
+          candidate,
           messages: messages,
           tools: tools,
           forcedToolName: forcedToolName,
         );
-        _detectedWireApi = OpenAIWireApi.chatCompletions;
+        if (configured == OpenAIWireApi.auto) _detectedWireApi = candidate;
         return turn;
       } on _WireApiRejectedException {
-        throw const AIModelProviderCompatibilityException(
-          '模型服务同时不支持 Responses API 和 Chat Completions',
-        );
+        if (index < candidates.length - 1) continue;
       }
     }
+    if (configured != OpenAIWireApi.auto) {
+      throw const AIModelProviderCompatibilityException(
+        '模型服务不支持所选请求协议',
+      );
+    }
+    throw const AIModelProviderCompatibilityException(
+      '模型服务不支持 Responses API、Chat Completions 或 Anthropic Messages',
+    );
+  }
+
+  List<OpenAIWireApi> _autoCandidates() {
+    final defaults = AIWireApiPolicy.autoCandidates(_baseEndpoint);
+    final detected = _detectedWireApi;
+    if (detected == null || !defaults.contains(detected)) return defaults;
+    return <OpenAIWireApi>[
+      detected,
+      ...defaults.where((candidate) => candidate != detected),
+    ];
   }
 
   Future<ToolModelTurn> _requestTurn(
@@ -191,26 +194,34 @@ class OpenAIToolCallingModel implements ToolCallingModel {
     final token = CancelToken();
     _cancelToken = token;
     try {
-      final isResponses = wireApi == OpenAIWireApi.responses;
       final response = await _dio.postUri<dynamic>(
-        AIEndpointPolicy.endpointFor(
-          _baseEndpoint,
-          isResponses ? 'responses' : 'chat/completions',
-        ),
-        data: isResponses
-            ? _responsesPayload(messages, tools, forcedToolName)
-            : _chatPayload(messages, tools, forcedToolName),
+        AIWireApiPolicy.inferenceEndpoint(_baseEndpoint, wireApi),
+        data: switch (wireApi) {
+          OpenAIWireApi.responses =>
+            _responsesPayload(messages, tools, forcedToolName),
+          OpenAIWireApi.chatCompletions => _chatPayload(messages, tools),
+          OpenAIWireApi.anthropicMessages =>
+            _anthropicPayload(messages, tools, forcedToolName),
+          OpenAIWireApi.auto => throw StateError('请求前必须解析自动协议'),
+        },
         cancelToken: token,
-        options: AIEndpointPolicy.directRequestOptions(<String, dynamic>{
-          'Authorization': 'Bearer $_apiKey',
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        }),
+        options: AIEndpointPolicy.directRequestOptions(
+          AIWireApiPolicy.requestHeaders(
+            endpoint: _baseEndpoint,
+            wireApi: wireApi,
+            apiKey: _apiKey,
+            hasBody: true,
+          ),
+        ),
       );
       AIEndpointPolicy.ensureDirectResponse(response);
-      return isResponses
-          ? _parseResponsesTurn(response.data, tools)
-          : _parseChatTurn(response.data, tools);
+      return switch (wireApi) {
+        OpenAIWireApi.responses => _parseResponsesTurn(response.data, tools),
+        OpenAIWireApi.chatCompletions => _parseChatTurn(response.data, tools),
+        OpenAIWireApi.anthropicMessages =>
+          _parseAnthropicTurn(response.data, tools),
+        OpenAIWireApi.auto => throw StateError('请求前必须解析自动协议'),
+      };
     } on AIModelProviderException {
       rethrow;
     } on DioException catch (error) {
@@ -218,16 +229,15 @@ class OpenAIToolCallingModel implements ToolCallingModel {
         throw const AIModelProviderException('Tool Calling 已取消');
       }
       final status = error.response?.statusCode;
-      if (status == 400 ||
-          status == 404 ||
-          status == 405 ||
-          status == 415 ||
-          status == 422) {
+      if (status == 404 || status == 405 || status == 415) {
         throw const _WireApiRejectedException();
       }
       final serverMessage = _serverErrorMessage(error.response?.data);
       if (serverMessage.isNotEmpty) {
         throw AIModelProviderException(serverMessage);
+      }
+      if (status == 400 || status == 422) {
+        throw AIModelProviderException('模型服务拒绝了请求参数（HTTP $status）');
       }
       if (error.type == DioExceptionType.connectionTimeout ||
           error.type == DioExceptionType.sendTimeout ||
@@ -278,7 +288,6 @@ class OpenAIToolCallingModel implements ToolCallingModel {
   Map<String, dynamic> _chatPayload(
     List<ToolConversationMessage> messages,
     List<ToolDefinition> tools,
-    String? forcedToolName,
   ) {
     return <String, dynamic>{
       'model': _config.model.trim(),
@@ -296,14 +305,46 @@ class OpenAIToolCallingModel implements ToolCallingModel {
             },
           )
           .toList(growable: false),
-      'tool_choice': forcedToolName == null
-          ? 'auto'
-          : <String, dynamic>{
-              'type': 'function',
-              'function': <String, dynamic>{
-                'name': _wireToolName(forcedToolName),
+      // 不传时 OpenAI 规范默认自动选择工具，同时兼容拒绝该字段的
+      // DeepSeek V4 思考模式。连接探测仍通过固定提示和返回值进行校验。
+    };
+  }
+
+  Map<String, dynamic> _anthropicPayload(
+    List<ToolConversationMessage> messages,
+    List<ToolDefinition> tools,
+    String? forcedToolName,
+  ) {
+    final system = messages
+        .where((message) => message.role == ToolMessageRole.system)
+        .map((message) => message.content.trim())
+        .where((content) => content.isNotEmpty)
+        .join('\n\n');
+    return <String, dynamic>{
+      'model': _config.model.trim(),
+      'max_tokens': 4096,
+      'stream': false,
+      if (system.isNotEmpty) 'system': system,
+      'messages': messages
+          .where((message) => message.role != ToolMessageRole.system)
+          .map(_anthropicMessage)
+          .toList(growable: false),
+      if (tools.isNotEmpty)
+        'tools': tools
+            .map(
+              (tool) => <String, dynamic>{
+                'name': _wireToolName(tool.id),
+                'description': tool.description,
+                'input_schema': tool.parameters,
               },
-            },
+            )
+            .toList(growable: false),
+      if (tools.isNotEmpty)
+        'tool_choice': <String, dynamic>{
+          'type': forcedToolName == null ? 'auto' : 'tool',
+          if (forcedToolName != null) 'name': _wireToolName(forcedToolName),
+          'disable_parallel_tool_use': true,
+        },
     };
   }
 
@@ -364,8 +405,9 @@ class OpenAIToolCallingModel implements ToolCallingModel {
     }
     return <String, dynamic>{
       'role': role,
-      if (message.role != ToolMessageRole.assistant || call == null)
-        'content': message.content,
+      'content': message.content,
+      if (message.reasoningContent?.trim().isNotEmpty ?? false)
+        'reasoning_content': message.reasoningContent,
       if (message.toolCallId != null) 'tool_call_id': message.toolCallId,
       if (call != null)
         'tool_calls': <Map<String, dynamic>>[
@@ -378,6 +420,44 @@ class OpenAIToolCallingModel implements ToolCallingModel {
             },
           },
         ],
+    };
+  }
+
+  Map<String, dynamic> _anthropicMessage(ToolConversationMessage message) {
+    if (message.role == ToolMessageRole.tool) {
+      return <String, dynamic>{
+        'role': 'user',
+        'content': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'type': 'tool_result',
+            'tool_use_id': message.toolCallId ?? message.toolCall?.id ?? '',
+            'content': message.content,
+          },
+        ],
+      };
+    }
+    final call = message.toolCall;
+    if (message.role == ToolMessageRole.assistant && call != null) {
+      return <String, dynamic>{
+        'role': 'assistant',
+        'content': <Map<String, dynamic>>[
+          if (message.content.trim().isNotEmpty)
+            <String, dynamic>{
+              'type': 'text',
+              'text': message.content,
+            },
+          <String, dynamic>{
+            'type': 'tool_use',
+            'id': call.id,
+            'name': _wireToolName(call.tool),
+            'input': call.arguments,
+          },
+        ],
+      };
+    }
+    return <String, dynamic>{
+      'role': message.role == ToolMessageRole.assistant ? 'assistant' : 'user',
+      'content': message.content,
     };
   }
 
@@ -448,6 +528,8 @@ class OpenAIToolCallingModel implements ToolCallingModel {
           rawArguments: function['arguments'],
           tools: tools,
         ),
+        assistantContent: _chatContent(message['content']),
+        reasoningContent: _optionalString(message['reasoning_content']),
       );
     }
     final legacy = message['function_call'];
@@ -464,6 +546,40 @@ class OpenAIToolCallingModel implements ToolCallingModel {
       );
     }
     return ToolModelTurn.finalAnswer(_chatContent(message['content']));
+  }
+
+  ToolModelTurn _parseAnthropicTurn(
+    dynamic value,
+    List<ToolDefinition> tools,
+  ) {
+    final data = _asMap(value, 'Anthropic Messages 返回格式错误');
+    final content = data['content'];
+    if (content is! List) {
+      throw const AIModelProviderCompatibilityException(
+        'Anthropic Messages 未返回 content',
+      );
+    }
+    final blocks = content.whereType<Map>().toList(growable: false);
+    final text = blocks
+        .where((block) => block['type'] == 'text')
+        .map((block) => block['text']?.toString().trim() ?? '')
+        .where((part) => part.isNotEmpty)
+        .join('\n')
+        .trim();
+    final calls = blocks.where((block) => block['type'] == 'tool_use');
+    if (calls.isNotEmpty) {
+      final call = calls.first;
+      return ToolModelTurn.call(
+        _localCall(
+          id: call['id']?.toString() ?? '',
+          wireName: call['name']?.toString() ?? '',
+          rawArguments: call['input'],
+          tools: tools,
+        ),
+        assistantContent: text,
+      );
+    }
+    return ToolModelTurn.finalAnswer(text);
   }
 
   LocalToolCall _localCall({
@@ -527,6 +643,11 @@ class OpenAIToolCallingModel implements ToolCallingModel {
         })
         .join()
         .trim();
+  }
+
+  String? _optionalString(dynamic value) {
+    if (value is! String) return null;
+    return value.trim().isEmpty ? null : value;
   }
 
   String _wireToolName(String toolId) =>

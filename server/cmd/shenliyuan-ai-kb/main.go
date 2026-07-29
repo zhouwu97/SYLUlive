@@ -1,79 +1,55 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
-	"time"
 )
 
+const cliUsage = `用法: shenliyuan-ai-kb <command> [options]
+
+只读命令:
+  manifest   根据 JSONL 导入包生成版本清单
+  dry-run    校验清单并报告新增、替代、跳过和阻塞项
+  check      在 dry-run 基础上强制执行 LangChain 分块与向量化检查
+
+写操作:
+  release    导入、检查、验证并原子发布整个版本
+  rollback   根据发布记录原子恢复上一个版本
+  publish|revoke|inspect|reindex|supersede
+
+任何写操作都必须同时提供短期管理员 JWT、--execute 和命令输出要求的精确确认短语。`
+
+type environment func(string) string
+
 func main() {
-	if len(os.Args) < 2 {
-		fatal("用法: shenliyuan-ai-kb <publish|revoke|inspect|reindex|supersede> --document-id ID")
-	}
-	action := os.Args[1]
-	if action != "publish" && action != "revoke" && action != "inspect" && action != "reindex" && action != "supersede" {
-		fatal("未知动作: " + action)
-	}
-	flags := flag.NewFlagSet(action, flag.ExitOnError)
-	documentID := flags.Uint("document-id", 0, "知识文档 ID")
-	replacementID := flags.Uint("replacement-document-id", 0, "替代文档 ID（仅 supersede）")
-	baseURL := flags.String("base-url", envOrDefault("SHENLIYUAN_API_BASE_URL", "http://127.0.0.1:8080"), "服务端 API 地址")
-	if err := flags.Parse(os.Args[2:]); err != nil {
-		fatal(err.Error())
-	}
-	if *documentID == 0 {
-		fatal("必须提供 --document-id")
-	}
-	token := strings.TrimSpace(os.Getenv("SHENLIYUAN_ADMIN_JWT"))
-	if token == "" {
-		fatal("必须通过 SHENLIYUAN_ADMIN_JWT 环境变量提供短期管理员 JWT")
-	}
-
-	var body io.Reader
-	if action == "supersede" {
-		if *replacementID == 0 {
-			fatal("supersede 必须提供 --replacement-document-id")
-		}
-		payload, _ := json.Marshal(map[string]uint{"replacement_document_id": *replacementID})
-		body = bytes.NewReader(payload)
-	}
-	endpoint := strings.TrimRight(*baseURL, "/") + "/api/admin/ai/knowledge/" + strconv.FormatUint(uint64(*documentID), 10) + "/" + action
-	request, err := http.NewRequest(http.MethodPost, endpoint, body)
-	if err != nil {
-		fatal(err.Error())
-	}
-	request.Header.Set("Authorization", "Bearer "+token)
-	if body != nil {
-		request.Header.Set("Content-Type", "application/json")
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	response, err := client.Do(request)
-	if err != nil {
-		fatal(err.Error())
-	}
-	defer response.Body.Close()
-	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		fatal(fmt.Sprintf("API 返回 HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody))))
-	}
-	fmt.Println(strings.TrimSpace(string(responseBody)))
+	os.Exit(run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr, &http.Client{}))
 }
 
-func envOrDefault(name, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
-		return value
+func run(args []string, getenv environment, stdout, stderr io.Writer, client *http.Client) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, cliUsage)
+		return 2
 	}
-	return fallback
-}
-
-func fatal(message string) {
-	fmt.Fprintln(os.Stderr, message)
-	os.Exit(1)
+	switch args[0] {
+	case "help", "-h", "--help":
+		fmt.Fprintln(stdout, cliUsage)
+		return 0
+	case "manifest":
+		return runManifest(args[1:], stdout, stderr)
+	case "dry-run":
+		return runDryRun(args[1:], getenv, stdout, stderr, client, false)
+	case "check":
+		return runDryRun(args[1:], getenv, stdout, stderr, client, true)
+	case "release":
+		return runRelease(args[1:], getenv, stdout, stderr, client)
+	case "rollback":
+		return runRollback(args[1:], getenv, stdout, stderr, client)
+	case "publish", "revoke", "inspect", "reindex", "supersede":
+		return runDocumentMutation(args[0], args[1:], getenv, stdout, stderr, client)
+	default:
+		fmt.Fprintf(stderr, "未知命令：%s\n%s\n", args[0], cliUsage)
+		return 2
+	}
 }

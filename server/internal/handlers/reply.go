@@ -75,7 +75,8 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 
 // CreateReplyInput 创建回复输入
 type CreateReplyInput struct {
-	Content       string `form:"content" binding:"required"`
+	Content       string `form:"content"`
+	StickerID     string `form:"sticker_id"`
 	ParentReplyID *uint  `form:"parent_reply_id"`
 	ReplyToUserID *uint  `form:"reply_to_user_id"`
 }
@@ -93,6 +94,28 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	var input CreateReplyInput
 	if err := c.ShouldBind(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	input.Content = strings.TrimSpace(input.Content)
+	input.StickerID = strings.TrimSpace(input.StickerID)
+	fileIDs := c.PostForm("file_ids")
+	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.Content == "" && input.StickerID == "" && len(parsedFileIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容不能为空"})
+		return
+	}
+	if input.StickerID != "" {
+		if !IsValidStickerID(input.StickerID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "表情不存在"})
+			return
+		}
+	}
+	if input.StickerID != "" && len(parsedFileIDs) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "表情回复不能同时包含图片"})
 		return
 	}
 
@@ -125,22 +148,25 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		}
 	}
 
+	var stickerID *string
+	if input.StickerID != "" {
+		stickerID = &input.StickerID
+		if input.Content == "" {
+			// 旧客户端按普通评论展示纯表情的文本回退。
+			input.Content = stickerFallbackText
+		}
+	}
 	reply := models.Reply{
 		PostID:        uint(postID),
 		ParentReplyID: input.ParentReplyID,
 		AuthorID:      userID.(uint),
 		Content:       input.Content,
+		StickerID:     stickerID,
 		Status:        models.ReplyStatusNormal,
 		CreatedAt:     time.Now(),
 	}
 
 	// 回复、回复图片和帖子活跃统计必须原子提交，避免列表出现已显示回复却没有刷新活跃时间的状态。
-	fileIDs := c.PostForm("file_ids")
-	parsedFileIDs, err := services.ParseImageFileIDs(fileIDs)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		if _, err := services.ValidateImageFileIDs(tx, parsedFileIDs, 9, userID.(uint)); err != nil {
 			return err
@@ -201,6 +227,9 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 
 	// 发送通知（数据库 + 极光推送）
 	contentPreview := utils.TruncateGraphemes(input.Content, 80)
+	if contentPreview == "" && len(parsedFileIDs) > 0 {
+		contentPreview = "[图片]"
+	}
 	if input.ParentReplyID != nil {
 		// 回复别人的评论 → 通知被回复的评论作者
 		var parentReply models.Reply

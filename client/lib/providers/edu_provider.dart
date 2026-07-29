@@ -254,7 +254,9 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null &&
         _studentId.isEmpty &&
         _gradeCache.isEmpty &&
-        _academicSituationCache.isEmpty) {
+        _gradeDetailCache.isEmpty &&
+        _academicSituationCache.isEmpty &&
+        _creditRequirementCache.isEmpty) {
       return;
     }
     _statusGeneration++;
@@ -273,6 +275,7 @@ class EduProvider extends ChangeNotifier {
     _gradeCache.clear();
     _gradeDetailCache.clear();
     _academicSituationCache.clear();
+    _creditRequirementCache.clear();
     notifyListeners();
   }
 

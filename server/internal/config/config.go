@@ -289,8 +289,8 @@ func Load() *Config {
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
 	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
 	aiMaxToolSteps := envIntInRange("AI_MAX_TOOL_STEPS", 3, 1, 5)
-	// 继续接受旧部署的 20 字限制；仓库默认值提升到 200，满足普通校园问答。
-	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 200, 20, 300)
+	// 兼容旧部署的 20 字限制与线上 500 字配置；默认值保持 200。
+	aiMaxMessageChars := envIntInRange("AI_MAX_MESSAGE_CHARS", 200, 20, 500)
 	aiHourlyMessageLimit := envIntInRange("AI_HOURLY_MESSAGE_LIMIT", 3, 1, 100)
 	aiUnlimitedStudentIDs := splitNonEmpty(os.Getenv("AI_UNLIMITED_STUDENT_IDS"))
 	if len(aiUnlimitedStudentIDs) == 0 {

@@ -359,7 +359,7 @@ func TestLoadAIRejectsUnsafeLimits(t *testing.T) {
 	require.Panics(t, func() { Load() })
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "19")
 	require.Panics(t, func() { Load() })
-	t.Setenv("AI_MAX_MESSAGE_CHARS", "301")
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "501")
 	require.Panics(t, func() { Load() })
 }
 
@@ -370,8 +370,8 @@ func TestLoadAIMessageLimitDefaultsTo200AndAllowsLegacyRange(t *testing.T) {
 
 	t.Setenv("AI_MAX_MESSAGE_CHARS", "20")
 	require.Equal(t, 20, Load().AIMaxMessageChars)
-	t.Setenv("AI_MAX_MESSAGE_CHARS", "300")
-	require.Equal(t, 300, Load().AIMaxMessageChars)
+	t.Setenv("AI_MAX_MESSAGE_CHARS", "500")
+	require.Equal(t, 500, Load().AIMaxMessageChars)
 }
 
 func TestLoadAILegacyOutputLimitDefaultsTo4096AndAllowsConfiguredRange(t *testing.T) {

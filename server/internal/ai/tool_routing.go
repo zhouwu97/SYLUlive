@@ -10,11 +10,14 @@ const (
 )
 
 // routeModelTools 根据用户意图缩小模型可见工具集合。
-// Hy3 能力缺失时保留完整工具集，由普通校园工具提供降级回答。
+// Hy3 能力缺失时只暴露同领域的普通校园工具，避免模型跨领域乱选工具。
 func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinition {
 	targets, requiredHy3 := hy3RouteTargets(message)
 	if len(targets) == 0 {
 		if isPersonalToolIntent(message) {
+			if containsAny(strings.ToLower(message), "学业", "成绩", "gpa", "绩点", "学分", "挂科") {
+				return academicToolDefinitions(definitions)
+			}
 			return definitions
 		}
 		return publicToolDefinitions(definitions)
@@ -24,6 +27,9 @@ func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinit
 		available[definition.Name] = struct{}{}
 	}
 	if _, found := available[requiredHy3]; !found {
+		if containsAny(strings.ToLower(message), "学业", "成绩", "gpa", "绩点", "学分", "挂科") {
+			return academicToolDefinitions(definitions)
+		}
 		return definitions
 	}
 	selected := make([]ToolDefinition, 0, len(targets))
@@ -31,6 +37,19 @@ func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinit
 		if _, include := targets[definition.Name]; include {
 			selected = append(selected, definition)
 		}
+	}
+	return selected
+}
+
+func academicToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
+	selected := make([]ToolDefinition, 0, len(definitions))
+	for _, definition := range definitions {
+		if strings.HasPrefix(definition.Name, "academic_") || strings.HasPrefix(definition.Name, "schedule_") {
+			selected = append(selected, definition)
+		}
+	}
+	if len(selected) == 0 {
+		return definitions
 	}
 	return selected
 }

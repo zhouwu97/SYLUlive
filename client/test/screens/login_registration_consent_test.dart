@@ -7,6 +7,25 @@ import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/screens/login_screen.dart';
 
 void main() {
+  testWidgets('登录账号框允许输入完整邮箱', (tester) async {
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AuthProvider>(
+        create: (_) => AuthProvider(
+          Dio(),
+          loadStoredAuth: false,
+          onAuthenticated: () {},
+        ),
+        child: const MaterialApp(home: LoginScreen()),
+      ),
+    );
+
+    final accountField = tester.widget<TextField>(
+      find.byType(TextField).first,
+    );
+    expect(accountField.maxLength, 254);
+    expect(accountField.keyboardType, TextInputType.emailAddress);
+  });
+
   testWidgets('注册协议分别确认并按注册身份展示教务授权', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;

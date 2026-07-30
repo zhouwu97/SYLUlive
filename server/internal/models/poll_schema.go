@@ -35,9 +35,19 @@ func EnsurePollSchema(db *gorm.DB) error {
 	if db.Dialector.Name() != "postgres" {
 		return nil
 	}
+	if err := db.Exec(
+		`ALTER TABLE polls DROP CONSTRAINT IF EXISTS chk_polls_results_visibility`,
+	).Error; err != nil {
+		return fmt.Errorf("删除旧投票结果可见性约束: %w", err)
+	}
+	if err := db.Exec(`
+		ALTER TABLE polls ADD CONSTRAINT chk_polls_results_visibility
+		CHECK (results_visibility IN ('always', 'after_vote', 'after_end', 'private'))`,
+	).Error; err != nil {
+		return fmt.Errorf("更新投票结果可见性约束: %w", err)
+	}
 	constraints := []string{
 		`ALTER TABLE polls ADD CONSTRAINT chk_polls_selection_mode CHECK (selection_mode IN ('single', 'multiple'))`,
-		`ALTER TABLE polls ADD CONSTRAINT chk_polls_results_visibility CHECK (results_visibility IN ('always', 'after_vote', 'after_end'))`,
 		`ALTER TABLE polls ADD CONSTRAINT chk_polls_status CHECK (status IN ('active', 'closed', 'deleted'))`,
 		`ALTER TABLE polls ADD CONSTRAINT chk_polls_participant_count CHECK (participant_count >= 0)`,
 		`ALTER TABLE polls ADD CONSTRAINT chk_polls_choice_count CHECK (choice_count >= 0)`,

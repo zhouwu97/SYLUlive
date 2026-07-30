@@ -16,7 +16,9 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
+import '../services/root_page_state_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_time.dart';
@@ -24,6 +26,7 @@ import '../utils/text_editing_helper.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
+import '../widgets/swipe_to_exit.dart';
 import 'image_viewer_screen.dart';
 
 class ChatDetailScreen extends StatefulWidget {
@@ -235,6 +238,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   void didPop() {
     _isRouteVisible = false;
     _deactivateConversation();
+    unawaited(_clearRestorableConversation());
   }
 
   @override
@@ -558,6 +562,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   void _activateConversationIfVisible() {
     final conversationId = _conversationId;
     if (!_isChatActive || conversationId == null) return;
+    unawaited(_saveRestorableConversation(conversationId));
     _messageProvider?.setActiveConversation(
       conversationId,
       embedded: widget.embedded,
@@ -565,6 +570,52 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     unawaited(_syncCurrentConversationToPlatform(conversationId));
     _startPolling();
     unawaited(_markVisibleMessagesRead());
+  }
+
+  Future<void> _saveRestorableConversation(int conversationId) async {
+    final accountId = context.read<AuthProvider>().user?.id;
+    if (accountId == null || accountId <= 0 || conversationId <= 0) return;
+    try {
+      await RootPageStateStore.instance.saveConversation(
+        RestorableConversationState(
+          accountId: accountId,
+          conversationId: conversationId,
+          targetUserId: widget.targetUser.id,
+          targetNickname: widget.targetUser.nickname,
+          targetAvatar: widget.targetUser.avatar,
+        ),
+      );
+    } catch (error) {
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '存储',
+        type: '私信页面状态保存失败',
+        summary: '无法保存当前私信会话位置',
+        detail: error.toString(),
+        eventCode: 'navigation_conversation_state_save_failed',
+        category: 'navigation',
+        operation: 'save',
+        result: 'failure',
+      );
+    }
+  }
+
+  Future<void> _clearRestorableConversation() async {
+    try {
+      await RootPageStateStore.instance.clearConversation();
+    } catch (error) {
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '存储',
+        type: '私信页面状态清理失败',
+        summary: '无法清除已退出的私信会话位置',
+        detail: error.toString(),
+        eventCode: 'navigation_conversation_state_clear_failed',
+        category: 'navigation',
+        operation: 'clear',
+        result: 'failure',
+      );
+    }
   }
 
   void _deactivateConversation() {
@@ -814,26 +865,28 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       );
     }
 
-    return PopScope(
-      canPop: !_showEmojiPanel,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && _showEmojiPanel) {
-          setState(() => _showEmojiPanel = false);
-        }
-      },
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        backgroundColor: Colors.transparent,
-        extendBodyBehindAppBar: true,
-        appBar: AppBar(
-          title: _buildTitle(),
-          backgroundColor:
-              isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-          foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
+    return SwipeToExit(
+      child: PopScope(
+        canPop: !_showEmojiPanel,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop && _showEmojiPanel) {
+            setState(() => _showEmojiPanel = false);
+          }
+        },
+        child: Scaffold(
+          resizeToAvoidBottomInset: false,
+          backgroundColor: Colors.transparent,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            title: _buildTitle(),
+            backgroundColor:
+                isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+            foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+          ),
+          body: body,
         ),
-        body: body,
       ),
     );
   }

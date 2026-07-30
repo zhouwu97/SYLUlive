@@ -99,4 +99,5 @@ dependencies {
     // WorkManager — 后台定时刷新
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("cn.jiguang.sdk:jpush:6.1.0")
+    testImplementation("junit:junit:4.13.2")
 }

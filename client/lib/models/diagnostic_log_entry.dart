@@ -16,6 +16,18 @@ class DiagnosticLogEntry {
   final int repeatCount;
   final int firstSeenAt;
   final int lastSeenAt;
+  final String eventCode;
+  final String category;
+  final String operation;
+  final String result;
+  final String traceId;
+  final int? durationMs;
+  final int? httpStatus;
+  final int retryCount;
+  final String route;
+  final int? taskId;
+  final bool? isForeground;
+  final Map<String, Object?> metadata;
 
   DiagnosticLogEntry({
     required this.id,
@@ -35,12 +47,25 @@ class DiagnosticLogEntry {
     required this.repeatCount,
     required this.firstSeenAt,
     required this.lastSeenAt,
+    this.eventCode = '',
+    this.category = 'app',
+    this.operation = '',
+    this.result = '',
+    this.traceId = '',
+    this.durationMs,
+    this.httpStatus,
+    this.retryCount = 0,
+    this.route = '',
+    this.taskId,
+    this.isForeground,
+    this.metadata = const <String, Object?>{},
   });
 
   factory DiagnosticLogEntry.fromMap(Map<Object?, Object?> map) {
+    final timestamp = (map['timestamp'] as num?)?.toInt() ?? 0;
     return DiagnosticLogEntry(
       id: map['id']?.toString() ?? '',
-      timestamp: (map['timestamp'] as num?)?.toInt() ?? 0,
+      timestamp: timestamp,
       elapsedRealtime: (map['elapsedRealtime'] as num?)?.toInt() ?? 0,
       level: map['level']?.toString() ?? 'info',
       source: map['source']?.toString() ?? '未知',
@@ -54,12 +79,31 @@ class DiagnosticLogEntry {
       model: map['model']?.toString() ?? '',
       sdkInt: (map['sdkInt'] as num?)?.toInt() ?? 0,
       repeatCount: (map['repeatCount'] as num?)?.toInt() ?? 1,
-      firstSeenAt: (map['firstSeenAt'] as num?)?.toInt() ?? 0,
-      lastSeenAt: (map['lastSeenAt'] as num?)?.toInt() ?? 0,
+      firstSeenAt: (map['firstSeenAt'] as num?)?.toInt() ?? timestamp,
+      lastSeenAt: (map['lastSeenAt'] as num?)?.toInt() ?? timestamp,
+      eventCode: map['eventCode']?.toString() ?? '',
+      category: map['category']?.toString() ?? 'app',
+      operation: map['operation']?.toString() ?? '',
+      result: map['result']?.toString() ?? '',
+      traceId: map['traceId']?.toString() ?? '',
+      durationMs: (map['durationMs'] as num?)?.toInt(),
+      httpStatus: (map['httpStatus'] as num?)?.toInt(),
+      retryCount: (map['retryCount'] as num?)?.toInt() ?? 0,
+      route: map['route']?.toString() ?? '',
+      taskId: (map['taskId'] as num?)?.toInt(),
+      isForeground: map['isForeground'] as bool?,
+      metadata: _stringKeyedMap(map['metadata']),
     );
   }
 
   bool get isError => level == 'error';
   bool get isWarning => level == 'warning';
   bool get isInfo => level == 'info';
+}
+
+Map<String, Object?> _stringKeyedMap(Object? value) {
+  if (value is! Map) return const <String, Object?>{};
+  return Map<String, Object?>.unmodifiable(
+    value.map((key, item) => MapEntry(key.toString(), item)),
+  );
 }

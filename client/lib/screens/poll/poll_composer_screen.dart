@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/api_constants.dart';
+import '../../models/poll_visibility.dart';
 import '../../models/post.dart';
 import '../../providers/poll_provider.dart';
 import '../../services/poll_service.dart';
@@ -23,8 +24,12 @@ class PollComposerScreen extends StatefulWidget {
 
 class _PollComposerScreenState extends State<PollComposerScreen> {
   static const _accent = CampusTheme.primary;
-  static const _categoryNames = {'campus_life': '校园生活', 'study': '学习', 'activity': '活动', 'other': '其他'};
-  static const _visibilityNames = {'always': '始终可见', 'after_vote': '投票后可见', 'after_end': '结束后可见'};
+  static const _categoryNames = {
+    'campus_life': '校园生活',
+    'study': '学习',
+    'activity': '活动',
+    'other': '其他'
+  };
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _titleFocus = FocusNode();
@@ -35,7 +40,7 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
   String _category = 'campus_life';
   String _selectionMode = 'single';
   int _maxChoices = 1;
-  String _resultsVisibility = 'after_vote';
+  String _resultsVisibility = PollVisibility.always;
   bool _allowChange = true;
   int? _durationHours = 72;
   DateTime? _customEndsAt;
@@ -56,7 +61,10 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
       _category = poll.category;
       _selectionMode = poll.selectionMode;
       _maxChoices = poll.maxChoices;
-      _resultsVisibility = poll.resultsVisibility;
+      _resultsVisibility =
+          poll.resultsVisibility == 'after_vote' && !_rulesLocked
+              ? PollVisibility.afterEnd
+              : poll.resultsVisibility;
       _allowChange = poll.allowChange;
       _durationHours = null;
       _customEndsAt = poll.endsAt;
@@ -277,20 +285,26 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                     counterText: '',
                     filled: true,
                     fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 14),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: CampusTheme.border, width: 1),
+                      borderSide:
+                          const BorderSide(color: CampusTheme.border, width: 1),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: CampusTheme.primary, width: 1),
+                      borderSide: const BorderSide(
+                          color: CampusTheme.primary, width: 1),
                     ),
                   ),
                 ),
                 Padding(
-                  padding: EdgeInsets.only(right: 12, bottom: _titleError != null ? 30 : 12),
-                  child: Text('${_titleController.text.length}/80', style: const TextStyle(fontSize: 11, color: CampusTheme.subText)),
+                  padding: EdgeInsets.only(
+                      right: 12, bottom: _titleError != null ? 30 : 12),
+                  child: Text('${_titleController.text.length}/80',
+                      style: const TextStyle(
+                          fontSize: 11, color: CampusTheme.subText)),
                 ),
               ],
             ),
@@ -310,20 +324,25 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                     counterText: '',
                     filled: true,
                     fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 14),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: CampusTheme.border, width: 1),
+                      borderSide:
+                          const BorderSide(color: CampusTheme.border, width: 1),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: CampusTheme.primary, width: 1),
+                      borderSide: const BorderSide(
+                          color: CampusTheme.primary, width: 1),
                     ),
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(right: 12, bottom: 12),
-                  child: Text('${_descriptionController.text.length}/1000', style: const TextStyle(fontSize: 11, color: CampusTheme.subText)),
+                  child: Text('${_descriptionController.text.length}/1000',
+                      style: const TextStyle(
+                          fontSize: 11, color: CampusTheme.subText)),
                 ),
               ],
             ),
@@ -331,7 +350,8 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
             Row(children: [
               Expanded(child: _sectionTitle('图片（最多 3 张）')),
               Text('${_existingImages.length + _newImages.length}/3',
-                  style: const TextStyle(fontSize: 13, color: CampusTheme.subText)),
+                  style: const TextStyle(
+                      fontSize: 13, color: CampusTheme.subText)),
             ]),
             const SizedBox(height: 10),
             SizedBox(
@@ -358,7 +378,9 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                         width: 108,
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          border: Border.all(color: CampusTheme.primary.withValues(alpha: 0.3)),
+                          border: Border.all(
+                              color:
+                                  CampusTheme.primary.withValues(alpha: 0.3)),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Column(
@@ -366,7 +388,8 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                           children: [
                             Icon(Icons.add, size: 34, color: _accent),
                             SizedBox(height: 6),
-                            Text('添加图片', style: TextStyle(fontSize: 13, color: _accent)),
+                            Text('添加图片',
+                                style: TextStyle(fontSize: 13, color: _accent)),
                           ],
                         ),
                       ),
@@ -451,17 +474,22 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                       enabled: !_rulesLocked,
                       color: Colors.white,
                       elevation: 3,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       position: PopupMenuPosition.under,
                       onSelected: (value) => setState(() => _category = value),
                       itemBuilder: (_) => _categoryNames.entries
                           .map((entry) => PopupMenuItem(
-                              value: entry.key, child: Text(entry.value, style: const TextStyle(fontSize: 14))))
+                              value: entry.key,
+                              child: Text(entry.value,
+                                  style: const TextStyle(fontSize: 14))))
                           .toList(),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text(_categoryNames[_category]!, style: const TextStyle(fontSize: 14)),
+                        Text(_categoryNames[_category]!,
+                            style: const TextStyle(fontSize: 14)),
                         const SizedBox(width: 4),
-                        const Icon(Icons.chevron_right, size: 20, color: CampusTheme.subText),
+                        const Icon(Icons.chevron_right,
+                            size: 20, color: CampusTheme.subText),
                       ]),
                     ),
                   ),
@@ -475,36 +503,46 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                       icon: Icons.format_list_numbered,
                       title: '每人最多选择',
                       trailing: PopupMenuButton<int>(
-                        initialValue: _maxChoices.clamp(2, _optionControllers.length),
+                        initialValue:
+                            _maxChoices.clamp(2, _optionControllers.length),
                         enabled: !_rulesLocked,
                         color: Colors.white,
                         elevation: 3,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         position: PopupMenuPosition.under,
-                        onSelected: (value) => setState(() => _maxChoices = value),
+                        onSelected: (value) =>
+                            setState(() => _maxChoices = value),
                         itemBuilder: (_) => List.generate(
                                 (_optionControllers.length - 1).clamp(1, 9),
                                 (index) => index + 2)
                             .map((value) => PopupMenuItem(
-                                value: value, child: Text('$value 项', style: const TextStyle(fontSize: 14))))
+                                value: value,
+                                child: Text('$value 项',
+                                    style: const TextStyle(fontSize: 14))))
                             .toList(),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Text('${_maxChoices.clamp(2, _optionControllers.length)} 项', style: const TextStyle(fontSize: 14)),
+                          Text(
+                              '${_maxChoices.clamp(2, _optionControllers.length)} 项',
+                              style: const TextStyle(fontSize: 14)),
                           const SizedBox(width: 4),
-                          const Icon(Icons.chevron_right, size: 20, color: CampusTheme.subText),
+                          const Icon(Icons.chevron_right,
+                              size: 20, color: CampusTheme.subText),
                         ]),
                       ),
                     ),
                   PollSettingRow(
                     icon: Icons.schedule,
                     title: '截止时间',
-                    subtitle:
-                        _durationHours == null ? _formatDate(_customEndsAt!) : null,
+                    subtitle: _durationHours == null
+                        ? _formatDate(_customEndsAt!)
+                        : null,
                     trailing: PopupMenuButton<int>(
                       enabled: !_rulesLocked,
                       color: Colors.white,
                       elevation: 3,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       position: PopupMenuPosition.under,
                       onSelected: (value) {
                         if (value == -1) {
@@ -521,41 +559,22 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                         PopupMenuItem(value: -1, child: Text('自定义')),
                       ],
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text(_durationLabel(), style: const TextStyle(fontSize: 14)),
+                        Text(_durationLabel(),
+                            style: const TextStyle(fontSize: 14)),
                         const SizedBox(width: 4),
-                        const Icon(Icons.chevron_right, size: 20, color: CampusTheme.subText),
+                        const Icon(Icons.chevron_right,
+                            size: 20, color: CampusTheme.subText),
                       ]),
                     ),
                   ),
-                  PollSettingRow(
-                    icon: Icons.visibility,
-                    title: '结果可见',
-                    trailing: PopupMenuButton<String>(
-                      initialValue: _resultsVisibility,
-                      enabled: !_rulesLocked,
-                      color: Colors.white,
-                      elevation: 3,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      position: PopupMenuPosition.under,
-                      onSelected: (value) => setState(() => _resultsVisibility = value),
-                      itemBuilder: (_) => _visibilityNames.entries
-                          .map((entry) => PopupMenuItem(
-                              value: entry.key, child: Text(entry.value, style: const TextStyle(fontSize: 14))))
-                          .toList(),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text(_visibilityNames[_resultsVisibility]!, style: const TextStyle(fontSize: 14)),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.chevron_right, size: 20, color: CampusTheme.subText),
-                      ]),
-                    ),
-                  ),
+                  _buildVisibilitySelector(isDark),
                   PollSettingRow(
                     icon: Icons.lock_outline,
                     title: '允许修改选择',
                     showDivider: false,
                     trailing: Switch(
                       value: _allowChange,
-                      activeColor: Colors.white,
+                      activeThumbColor: Colors.white,
                       activeTrackColor: CampusTheme.primary,
                       onChanged: _rulesLocked
                           ? null
@@ -595,7 +614,8 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.near_me_outlined, size: 18),
-            label: Text(_isEditing ? '保存修改' : '发布投票', style: const TextStyle(fontSize: 15)),
+            label: Text(_isEditing ? '保存修改' : '发布投票',
+                style: const TextStyle(fontSize: 15)),
           ),
         ),
       ),
@@ -638,6 +658,88 @@ class _PollComposerScreenState extends State<PollComposerScreen> {
           _buildSegment('multiple', '多选', false),
         ],
       ),
+    );
+  }
+
+  Widget _buildVisibilitySelector(bool isDark) {
+    final legacyLocked = _rulesLocked && _resultsVisibility == 'after_vote';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.visibility_outlined,
+                size: 19,
+                color: CampusTheme.primary,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '结果展示',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? Colors.white : const Color(0xFF1F2328),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (legacyLocked)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(46, 4, 14, 12),
+            child: Text(
+              '该历史投票为“投票后可见”，已有参与记录，规则不可修改。',
+              style: TextStyle(fontSize: 12, color: CampusTheme.subText),
+            ),
+          )
+        else
+          RadioGroup<String>(
+            groupValue: _resultsVisibility,
+            onChanged: _rulesLocked
+                ? (_) {}
+                : (value) {
+                    if (value == null) return;
+                    setState(() => _resultsVisibility = value);
+                  },
+            child: Column(
+              children: [
+                for (final option in PollVisibility.createOptions)
+                  RadioListTile<String>(
+                    value: option.value,
+                    enabled: !_rulesLocked,
+                    activeColor: CampusTheme.primary,
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    contentPadding: const EdgeInsets.only(left: 34, right: 12),
+                    title: Text(
+                      option.title,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        color: isDark ? Colors.white : const Color(0xFF1F2328),
+                      ),
+                    ),
+                    subtitle: Text(
+                      option.description,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: CampusTheme.subText,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        const Padding(
+          padding: EdgeInsets.only(left: 47),
+          child: Divider(
+            height: 1,
+            thickness: 0.5,
+            color: Color(0xFFE2EFEA),
+          ),
+        ),
+      ],
     );
   }
 

@@ -87,6 +87,9 @@ class PostImage {
   final int fileId;
   final int sortOrder;
   final FileItem? file;
+  final String thumbUrl;
+  final String mediumUrl;
+  final String originUrl;
 
   PostImage({
     required this.id,
@@ -94,19 +97,35 @@ class PostImage {
     required this.fileId,
     this.sortOrder = 0,
     this.file,
+    this.thumbUrl = '',
+    this.mediumUrl = '',
+    this.originUrl = '',
   });
 
   factory PostImage.fromJson(Map<String, dynamic> json) {
+    final fileJson = json['file'];
     return PostImage(
       id: json['id'] ?? 0,
       postId: json['post_id'] ?? 0,
       fileId: json['file_id'] ?? 0,
       sortOrder: json['sort_order'] ?? 0,
-      file: json['file'] != null ? FileItem.fromJson(json['file']) : null,
+      file: fileJson != null ? FileItem.fromJson(fileJson) : null,
+      thumbUrl: json['thumb_url']?.toString() ??
+          (fileJson is Map ? fileJson['thumb_url']?.toString() : null) ??
+          '',
+      mediumUrl: json['medium_url']?.toString() ??
+          (fileJson is Map ? fileJson['medium_url']?.toString() : null) ??
+          '',
+      originUrl: json['origin_url']?.toString() ??
+          (fileJson is Map ? fileJson['origin_url']?.toString() : null) ??
+          '',
     );
   }
 
   String get url => file?.url ?? '';
+  String get resolvedThumbUrl => thumbUrl.isNotEmpty ? thumbUrl : url;
+  String get resolvedMediumUrl => mediumUrl.isNotEmpty ? mediumUrl : url;
+  String get resolvedOriginUrl => originUrl.isNotEmpty ? originUrl : url;
 }
 
 // 文件模型

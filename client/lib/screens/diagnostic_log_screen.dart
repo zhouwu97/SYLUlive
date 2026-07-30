@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+
 import '../models/diagnostic_log_entry.dart';
 import '../services/diagnostic_log_service.dart';
 
@@ -12,9 +15,11 @@ class DiagnosticLogScreen extends StatefulWidget {
 }
 
 class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
-  List<DiagnosticLogEntry> _logs = [];
+  List<DiagnosticLogEntry> _logs = const [];
+  DiagnosticRuntimeStatus? _runtimeStatus;
   bool _isLoading = true;
-  String _filter = 'all'; // all, warning, error
+  String _level = 'all';
+  String _category = 'all';
 
   @override
   void initState() {
@@ -23,447 +28,513 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
   }
 
   Future<void> _loadLogs() async {
-    if (mounted) {
-      setState(() => _isLoading = true);
-    }
-
+    if (mounted) setState(() => _isLoading = true);
     try {
       final logs = await DiagnosticLogService.instance.getLogs();
+      final runtimeStatus =
+          await DiagnosticLogService.instance.getRuntimeStatus();
       if (!mounted) return;
       setState(() {
         _logs = logs;
+        _runtimeStatus = runtimeStatus;
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (error) {
       if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _logs = [];
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('日志读取失败: $e\n点击重试')));
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('日志读取失败：$error')),
+      );
     }
   }
 
   Future<void> _clearLogs() async {
-    final confirm = await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('清空日志'),
-        content: const Text('确定要清空所有诊断日志吗？此操作无法恢复。'),
+      builder: (context) => AlertDialog(
+        title: const Text('清空诊断记录'),
+        content: const Text('确定清空所有诊断记录吗？此操作无法恢复。'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('取消'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清空', style: TextStyle(color: Colors.red)),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('清空'),
           ),
         ],
       ),
     );
-
-    if (confirm == true) {
-      try {
-        await DiagnosticLogService.instance.clearLogs();
-        if (!mounted) return;
-        await _loadLogs();
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('日志清理失败: $e')));
-      }
-    }
+    if (confirmed != true) return;
+    await DiagnosticLogService.instance.clearLogs();
+    await _loadLogs();
   }
 
-  void _copyAll() {
-    if (_logs.isEmpty) return;
-
-    // 正序输出，便于从前往后分析
-    final sortedLogs = List<DiagnosticLogEntry>.from(_logs)
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-    final sb = StringBuffer();
-    for (var log in sortedLogs) {
-      final timeStr = DateFormat(
-        'yyyy-MM-dd HH:mm:ss',
-      ).format(DateTime.fromMillisecondsSinceEpoch(log.timestamp));
-      sb.writeln(
-        '[$timeStr] [${log.level.toUpperCase()}] [${log.source}] ${log.type}',
-      );
-      sb.writeln('Summary: ${log.summary}');
-      sb.writeln(
-        'App: ${log.appVersion} | '
-        'Device: ${log.manufacturer} ${log.model} | '
-        'SDK: ${log.sdkInt}',
-      );
-      sb.writeln(
-        'Session: ${log.sessionId} | PID: ${log.pid} | '
-        'Elapsed: ${log.elapsedRealtime}',
-      );
-      String formatTime(int ms) {
-        return DateFormat(
-          'MM-dd HH:mm:ss',
-        ).format(DateTime.fromMillisecondsSinceEpoch(ms));
-      }
-
-      sb.writeln(
-        'FirstSeen: ${formatTime(log.firstSeenAt)} | '
-        'LastSeen: ${formatTime(log.lastSeenAt)} | '
-        'Repeat: ${log.repeatCount}',
-      );
-      if (log.detail.isNotEmpty) {
-        sb.writeln('Detail: \n${log.detail}');
-      }
-      sb.writeln('-' * 40);
-    }
-
-    Clipboard.setData(ClipboardData(text: sb.toString()));
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已复制全部日志到剪贴板')));
-  }
+  List<DiagnosticLogEntry> get _filteredLogs => _logs.where((entry) {
+        final levelMatches = switch (_level) {
+          'error' => entry.isError,
+          'warning' => entry.isWarning,
+          'info' => entry.isInfo,
+          _ => true,
+        };
+        return levelMatches &&
+            (_category == 'all' || entry.category == _category);
+      }).toList();
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final filteredLogs = _logs.where((log) {
-      if (_filter == 'warning') return log.isWarning || log.isError;
-      if (_filter == 'error') return log.isError;
-      return true;
-    }).toList();
-
-    String timeRange = '';
-    if (_logs.isNotEmpty) {
-      final earliest = DateTime.fromMillisecondsSinceEpoch(
-        _logs.last.timestamp,
-      );
-      final latest = DateTime.fromMillisecondsSinceEpoch(_logs.first.timestamp);
-      final fmt = DateFormat('MM-dd HH:mm');
-      timeRange = '最早 ${fmt.format(earliest)} · 最近 ${fmt.format(latest)}';
-    }
-
+    final colors = Theme.of(context).colorScheme;
+    final groups = _DiagnosticGroup.fromEntries(_filteredLogs);
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF111318) : const Color(0xFFF5F6F8),
       appBar: AppBar(
-        title: const Text('诊断日志'),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
+        title: const Text('诊断中心'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.copy_all),
             tooltip: '复制全部',
-            onPressed: _copyAll,
+            onPressed: _logs.isEmpty ? null : () => _copyEntries(_logs),
+            icon: const Icon(Icons.copy_all_outlined),
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
             tooltip: '刷新',
             onPressed: _loadLogs,
+            icon: const Icon(Icons.refresh),
           ),
           IconButton(
-            icon: const Icon(Icons.delete_sweep),
-            tooltip: '清空日志',
-            onPressed: _clearLogs,
+            tooltip: '清空',
+            onPressed: _logs.isEmpty ? null : _clearLogs,
+            icon: const Icon(Icons.delete_sweep_outlined),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadLogs,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  _OverviewBand(logs: _logs, runtimeStatus: _runtimeStatus),
+                  const SizedBox(height: 12),
+                  _buildFilters(colors),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text(
+                      '事件时间线 · ${groups.length}',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                  if (groups.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 64),
+                      child: Center(child: Text('当前筛选下没有诊断事件')),
+                    )
+                  else
+                    ...groups
+                        .map((group) => _DiagnosticTimelineItem(group: group)),
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    );
+  }
+
+  Widget _buildFilters(ColorScheme colors) {
+    const categories = <(String, String)>[
+      ('all', '全部模块'),
+      ('app', '应用'),
+      ('network', '网络'),
+      ('auth', '账号'),
+      ('edu', '教务'),
+      ('message', '消息'),
+      ('storage', '存储'),
+      ('navigation', '导航'),
+      ('background', '后台'),
+      ('device', '设备工具'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'all', label: Text('全部')),
+              ButtonSegment(value: 'error', label: Text('错误')),
+              ButtonSegment(value: 'warning', label: Text('警告')),
+              ButtonSegment(value: 'info', label: Text('信息')),
+            ],
+            selected: {_level},
+            showSelectedIcon: false,
+            onSelectionChanged: (values) =>
+                setState(() => _level = values.first),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: categories.map((item) {
+              final selected = _category == item.$1;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: FilterChip(
+                  selected: selected,
+                  label: Text(item.$2),
+                  onSelected: (_) => setState(() => _category = item.$1),
+                  side: BorderSide(
+                    color: selected ? colors.primary : colors.outlineVariant,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _copyEntries(List<DiagnosticLogEntry> entries) {
+    final text =
+        entries.map(_formatEntry).toList().reversed.join('\n${'-' * 48}\n');
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('诊断内容已复制')),
+    );
+  }
+}
+
+class _OverviewBand extends StatelessWidget {
+  const _OverviewBand({required this.logs, required this.runtimeStatus});
+
+  final List<DiagnosticLogEntry> logs;
+  final DiagnosticRuntimeStatus? runtimeStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final cutoff = DateTime.now()
+        .subtract(const Duration(hours: 24))
+        .millisecondsSinceEpoch;
+    final recent = logs.where((entry) => entry.lastSeenAt >= cutoff).toList();
+    final errors = recent.where((entry) => entry.isError).fold(
+          0,
+          (total, entry) => total + entry.repeatCount,
+        );
+    final warnings = recent.where((entry) => entry.isWarning).fold(
+          0,
+          (total, entry) => total + entry.repeatCount,
+        );
+    final modules = recent
+        .where((entry) => entry.isError || entry.isWarning)
+        .map((entry) => entry.category)
+        .toSet()
+        .length;
+    final issues = _IssueSummary.fromEntries(recent);
+    final attentionCount = issues.length;
+
+    return ColoredBox(
+      color: colors.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Text(
-                  '共 ${_logs.length} 条${timeRange.isNotEmpty ? ' · $timeRange' : ''}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                Icon(
+                  attentionCount == 0
+                      ? Icons.check_circle_outline
+                      : Icons.error_outline,
+                  color: attentionCount == 0 ? colors.primary : colors.error,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    attentionCount == 0
+                        ? '当前状态：未发现需关注问题'
+                        : '当前状态：存在 $attentionCount 项需关注',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
               ],
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Row(
+            const SizedBox(height: 16),
+            Text('过去 24 小时', style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 8),
+            Row(
               children: [
-                _buildFilterChip('全部', 'all'),
-                const SizedBox(width: 8),
-                _buildFilterChip('需关注', 'warning'),
-                const SizedBox(width: 8),
-                _buildFilterChip('崩溃错误', 'error'),
+                _Metric(label: '错误', value: errors, color: colors.error),
+                _Metric(label: '警告', value: warnings, color: colors.tertiary),
+                _Metric(label: '异常模块', value: modules, color: colors.primary),
               ],
             ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : filteredLogs.isEmpty
-                    ? const Center(child: Text('暂无日志记录'))
-                    : ListView.builder(
-                        itemCount: filteredLogs.length,
-                        itemBuilder: (context, index) {
-                          return _LogEntryCard(entry: filteredLogs[index]);
-                        },
+            if (runtimeStatus != null) ...[
+              const SizedBox(height: 16),
+              _RuntimeStatusGrid(status: runtimeStatus!),
+            ],
+            if (issues.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              Text('需要处理的问题', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 4),
+              ...issues.take(3).map(
+                    (issue) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      child: Row(
+                        children: [
+                          Icon(
+                            issue.isError
+                                ? Icons.cancel_outlined
+                                : Icons.warning_amber_outlined,
+                            size: 18,
+                            color:
+                                issue.isError ? colors.error : colors.tertiary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              issue.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text('×${issue.count}'),
+                        ],
                       ),
+                    ),
+                  ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RuntimeStatusGrid extends StatelessWidget {
+  const _RuntimeStatusGrid({required this.status});
+
+  final DiagnosticRuntimeStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final keepAliveAttention =
+        status.keepAliveEnabled == true && status.keepAliveRunning != true;
+    final keepAliveValue = status.keepAliveEnabled != true
+        ? '未开启'
+        : status.keepAliveRunning == true
+            ? '运行中'
+            : '需检查';
+    final pushAttention = status.pushEnabled == true &&
+        (status.pushConnected != true ||
+            status.notificationsEnabled != true ||
+            status.privateMessageChannelBlocked == true ||
+            status.aliasState == 'pending_delete');
+    final pushValue = status.pushEnabled != true
+        ? '未开启'
+        : pushAttention
+            ? '需检查'
+            : '正常';
+    return Wrap(
+      spacing: 18,
+      runSpacing: 10,
+      children: [
+        _RuntimeState(
+          label: '后台服务',
+          value: keepAliveValue,
+          attention: keepAliveAttention,
+        ),
+        _RuntimeState(
+          label: '远程推送',
+          value: pushValue,
+          attention: pushAttention,
+        ),
+        _RuntimeState(
+          label: '最近任务',
+          value: status.hideRecentsEnabled == true ? '已隐藏' : '显示',
+        ),
+      ],
+    );
+  }
+}
+
+class _RuntimeState extends StatelessWidget {
+  const _RuntimeState({
+    required this.label,
+    required this.value,
+    this.attention = false,
+  });
+
+  final String label;
+  final String value;
+  final bool attention;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 142,
+      child: Row(
+        children: [
+          Icon(
+            attention ? Icons.error_outline : Icons.circle,
+            size: attention ? 16 : 8,
+            color: attention ? colors.error : colors.primary,
+          ),
+          const SizedBox(width: 7),
+          Expanded(child: Text(label)),
+          Text(
+            value,
+            style: TextStyle(
+              color: attention ? colors.error : colors.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
     );
   }
-
-  Widget _buildFilterChip(String label, String value) {
-    final isSelected = _filter == value;
-    return ChoiceChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        if (selected) {
-          setState(() => _filter = value);
-        }
-      },
-    );
-  }
 }
 
-class _LogEntryCard extends StatefulWidget {
-  final DiagnosticLogEntry entry;
+class _Metric extends StatelessWidget {
+  const _Metric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
-  const _LogEntryCard({required this.entry});
+  final String label;
+  final int value;
+  final Color color;
 
   @override
-  State<_LogEntryCard> createState() => _LogEntryCardState();
+  Widget build(BuildContext context) => Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$value',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+      );
 }
 
-class _LogEntryCardState extends State<_LogEntryCard> {
+class _DiagnosticTimelineItem extends StatefulWidget {
+  const _DiagnosticTimelineItem({required this.group});
+
+  final _DiagnosticGroup group;
+
+  @override
+  State<_DiagnosticTimelineItem> createState() =>
+      _DiagnosticTimelineItemState();
+}
+
+class _DiagnosticTimelineItemState extends State<_DiagnosticTimelineItem> {
   bool _expanded = false;
-
-  Color _getLevelColor() {
-    if (widget.entry.isError) return Colors.red;
-    if (widget.entry.isWarning) return Colors.orange;
-    return Colors.blue;
-  }
-
-  String _getLevelText() {
-    if (widget.entry.isError) return '🔴 错误';
-    if (widget.entry.isWarning) return '🟠 警告';
-    return '🔵 信息';
-  }
-
-  void _copyDetail() {
-    final log = widget.entry;
-    final timeStr = DateFormat(
-      'yyyy-MM-dd HH:mm:ss',
-    ).format(DateTime.fromMillisecondsSinceEpoch(log.timestamp));
-    final sb = StringBuffer();
-    sb.writeln(
-      '[$timeStr] [${log.level.toUpperCase()}] [${log.source}] ${log.type}',
-    );
-    sb.writeln('Summary: ${log.summary}');
-    sb.writeln(
-      'App: ${log.appVersion} | '
-      'Device: ${log.manufacturer} ${log.model} | '
-      'SDK: ${log.sdkInt}',
-    );
-    sb.writeln(
-      'Session: ${log.sessionId} | PID: ${log.pid} | '
-      'Elapsed: ${log.elapsedRealtime}',
-    );
-    String formatTime(int ms) {
-      return DateFormat(
-        'MM-dd HH:mm:ss',
-      ).format(DateTime.fromMillisecondsSinceEpoch(ms));
-    }
-
-    sb.writeln(
-      'FirstSeen: ${formatTime(log.firstSeenAt)} | '
-      'LastSeen: ${formatTime(log.lastSeenAt)} | '
-      'Repeat: ${log.repeatCount}',
-    );
-    if (log.detail.isNotEmpty) {
-      sb.writeln('Detail: \n${log.detail}');
-    }
-
-    Clipboard.setData(ClipboardData(text: sb.toString()));
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已复制日志详情')));
-  }
 
   @override
   Widget build(BuildContext context) {
-    final entry = widget.entry;
-    final timeFormat = DateFormat('HH:mm:ss');
-    final timeStr = timeFormat.format(
-      DateTime.fromMillisecondsSinceEpoch(entry.timestamp),
-    );
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = isDark ? const Color(0xFF1E2025) : Colors.white;
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-      color: cardColor,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: isDark ? Colors.white10 : Colors.black12),
+    final group = widget.group;
+    final colors = Theme.of(context).colorScheme;
+    final emphasized = group.isError || group.isWarning;
+    final accent = group.isError
+        ? colors.error
+        : group.isWarning
+            ? colors.tertiary
+            : colors.primary;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: emphasized ? accent.withValues(alpha: 0.06) : Colors.transparent,
+        border: Border(
+          left: BorderSide(color: accent, width: 2),
+          bottom: BorderSide(color: colors.outlineVariant),
+        ),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: () => setState(() => _expanded = !_expanded),
         child: Padding(
-          padding: const EdgeInsets.all(12.0),
+          padding: const EdgeInsets.fromLTRB(12, 11, 8, 11),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Text(
-                    _getLevelText(),
-                    style: TextStyle(
-                      color: _getLevelColor(),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                    DateFormat('HH:mm:ss').format(
+                      DateTime.fromMillisecondsSinceEpoch(group.lastSeenAt),
                     ),
+                    style: Theme.of(context).textTheme.labelMedium,
                   ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white12 : Colors.black12,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      entry.source,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      entry.type,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
+                      group.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                   Text(
-                    timeStr,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    _categoryLabel(group.category),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: accent,
+                        ),
+                  ),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              if (!_expanded) ...[
+              const SizedBox(height: 5),
+              Text(
+                group.summary,
+                maxLines: _expanded ? null : 2,
+                overflow: _expanded ? null : TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              if (group.phaseCount > 1 || group.repeatCount > 1) ...[
+                const SizedBox(height: 5),
                 Text(
-                  entry.summary,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13),
+                  [
+                    if (group.phaseCount > 1) '包含 ${group.phaseCount} 个阶段',
+                    if (group.repeatCount > 1) '累计 ${group.repeatCount} 次',
+                    if (group.durationMs != null) '用时 ${group.durationMs}ms',
+                  ].join(' · '),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                if (entry.repeatCount > 1)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4.0),
-                    child: Text(
-                      '重复 ${entry.repeatCount} 次',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange,
-                      ),
+              ],
+              if (_expanded) ...[
+                const SizedBox(height: 12),
+                if (group.phaseCount > 1)
+                  ...group.entries.map(
+                    (entry) => _PhaseRow(entry: entry, accent: accent),
+                  ),
+                _StructuredDetails(entry: group.primary),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => _showDetails(context, group.entries),
+                      icon: const Icon(Icons.article_outlined, size: 18),
+                      label: const Text('查看详情'),
                     ),
-                  ),
-              ] else ...[
-                Text(
-                  entry.summary,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.black26
-                        : Colors.black.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SelectableText(
-                        'SessionId: ${entry.sessionId} | PID: ${entry.pid}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontFamily: 'monospace',
-                          color: Colors.grey,
-                        ),
-                      ),
-                      if (entry.repeatCount > 1)
-                        SelectableText(
-                          '重复: ${entry.repeatCount} 次\n首次: ${DateFormat('MM-dd HH:mm:ss').format(DateTime.fromMillisecondsSinceEpoch(entry.firstSeenAt))}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                            color: Colors.orange,
-                          ),
-                        ),
-                      const SizedBox(height: 4),
-                      if (entry.source == '界面' && entry.type == '布局溢出') ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(10),
-                          margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: Colors.orange.withValues(alpha: 0.18),
-                            ),
-                          ),
-                          child: const Text(
-                            '这是界面布局溢出：一般是固定高度太小、padding 太大、文字或图标挤不下。'
-                            '优先检查日志里给出的文件和行号，不是服务器错误。',
-                            style: TextStyle(fontSize: 12.5, height: 1.35),
-                          ),
-                        ),
-                      ],
-                      SelectableText(
-                        entry.detail.isEmpty ? '无详细信息' : entry.detail,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: _copyDetail,
-                    icon: const Icon(Icons.copy, size: 16),
-                    label: const Text('复制详情'),
-                  ),
+                    TextButton.icon(
+                      onPressed: () => _copyIssue(context, group.entries),
+                      icon: const Icon(Icons.copy_outlined, size: 18),
+                      label: const Text('复制此问题'),
+                    ),
+                  ],
                 ),
               ],
             ],
@@ -472,4 +543,229 @@ class _LogEntryCardState extends State<_LogEntryCard> {
       ),
     );
   }
+}
+
+class _PhaseRow extends StatelessWidget {
+  const _PhaseRow({required this.entry, required this.accent});
+
+  final DiagnosticLogEntry entry;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Icon(Icons.circle, size: 8, color: accent),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(entry.type,
+                      style: Theme.of(context).textTheme.labelLarge),
+                  Text(entry.summary,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _StructuredDetails extends StatelessWidget {
+  const _StructuredDetails({required this.entry});
+
+  final DiagnosticLogEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = <String>[
+      if (entry.operation.isNotEmpty) '阶段：${entry.operation}',
+      if (entry.httpStatus != null) 'HTTP：${entry.httpStatus}',
+      if (entry.durationMs != null) '耗时：${entry.durationMs}ms',
+      if (entry.retryCount > 0) '重试：${entry.retryCount} 次',
+      if (entry.route.isNotEmpty) '路由：${entry.route}',
+    ];
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(values.join(' · '),
+          style: Theme.of(context).textTheme.bodySmall),
+    );
+  }
+}
+
+class _DiagnosticGroup {
+  const _DiagnosticGroup(this.entries);
+
+  final List<DiagnosticLogEntry> entries;
+
+  DiagnosticLogEntry get primary => entries.firstWhere(
+        (entry) => entry.isError,
+        orElse: () => entries.firstWhere(
+          (entry) => entry.isWarning,
+          orElse: () => entries.last,
+        ),
+      );
+  bool get isError => entries.any((entry) => entry.isError);
+  bool get isWarning => !isError && entries.any((entry) => entry.isWarning);
+  int get phaseCount => entries.length;
+  int get repeatCount =>
+      entries.fold(0, (total, entry) => total + entry.repeatCount);
+  int get lastSeenAt =>
+      entries.map((entry) => entry.lastSeenAt).reduce((a, b) => a > b ? a : b);
+  int? get durationMs {
+    final values = entries.map((entry) => entry.durationMs).whereType<int>();
+    return values.isEmpty ? null : values.reduce((a, b) => a > b ? a : b);
+  }
+
+  String get category => primary.category;
+  String get title =>
+      phaseCount > 1 && category == 'background' ? '后台服务启动' : primary.type;
+  String get summary =>
+      phaseCount > 1 ? '${primary.summary}，包含完整阶段记录' : primary.summary;
+
+  static List<_DiagnosticGroup> fromEntries(
+    List<DiagnosticLogEntry> entries,
+  ) {
+    final grouped = <String, List<DiagnosticLogEntry>>{};
+    for (final entry in entries) {
+      final key = entry.traceId.isEmpty ? entry.id : 'trace:${entry.traceId}';
+      grouped.putIfAbsent(key, () => []).add(entry);
+    }
+    final groups = grouped.values.map((items) {
+      items.sort((a, b) => a.firstSeenAt.compareTo(b.firstSeenAt));
+      return _DiagnosticGroup(items);
+    }).toList();
+    groups.sort((a, b) => b.lastSeenAt.compareTo(a.lastSeenAt));
+    return groups;
+  }
+}
+
+class _IssueSummary {
+  const _IssueSummary({
+    required this.title,
+    required this.count,
+    required this.isError,
+    required this.lastSeenAt,
+  });
+
+  final String title;
+  final int count;
+  final bool isError;
+  final int lastSeenAt;
+
+  static List<_IssueSummary> fromEntries(List<DiagnosticLogEntry> entries) {
+    final groups = <String, List<DiagnosticLogEntry>>{};
+    for (final entry in entries.where(
+      (entry) => entry.isError || entry.isWarning,
+    )) {
+      final key = entry.eventCode.isNotEmpty
+          ? '${entry.eventCode}|${entry.operation}|${entry.httpStatus}'
+          : '${entry.category}|${entry.type}';
+      groups.putIfAbsent(key, () => []).add(entry);
+    }
+    final issues = groups.values.map((items) {
+      items.sort((a, b) => b.lastSeenAt.compareTo(a.lastSeenAt));
+      return _IssueSummary(
+        title: items.first.type,
+        count: items.fold(0, (total, entry) => total + entry.repeatCount),
+        isError: items.any((entry) => entry.isError),
+        lastSeenAt: items.first.lastSeenAt,
+      );
+    }).toList();
+    issues.sort((a, b) {
+      final severity = (b.isError ? 1 : 0).compareTo(a.isError ? 1 : 0);
+      return severity != 0 ? severity : b.lastSeenAt.compareTo(a.lastSeenAt);
+    });
+    return issues;
+  }
+}
+
+String _categoryLabel(String category) => switch (category) {
+      'network' => '网络',
+      'auth' => '账号',
+      'edu' => '教务',
+      'message' => '消息',
+      'storage' => '存储',
+      'navigation' => '导航',
+      'background' => '后台',
+      'device' => '设备工具',
+      _ => '应用',
+    };
+
+String _formatEntry(DiagnosticLogEntry entry) {
+  final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(
+    DateTime.fromMillisecondsSinceEpoch(entry.lastSeenAt),
+  );
+  return [
+    '[$timestamp] [${entry.level.toUpperCase()}] '
+        '[${_categoryLabel(entry.category)}] ${entry.type}',
+    entry.summary,
+    if (entry.eventCode.isNotEmpty) 'eventCode=${entry.eventCode}',
+    if (entry.operation.isNotEmpty) 'operation=${entry.operation}',
+    if (entry.result.isNotEmpty) 'result=${entry.result}',
+    if (entry.traceId.isNotEmpty) 'traceId=${entry.traceId}',
+    if (entry.httpStatus != null) 'httpStatus=${entry.httpStatus}',
+    if (entry.durationMs != null) 'durationMs=${entry.durationMs}',
+    if (entry.retryCount > 0) 'retryCount=${entry.retryCount}',
+    if (entry.route.isNotEmpty) 'route=${entry.route}',
+    if (entry.taskId != null) 'taskId=${entry.taskId}',
+    'repeatCount=${entry.repeatCount}',
+    if (entry.metadata.isNotEmpty) 'metadata=${jsonEncode(entry.metadata)}',
+    if (entry.detail.isNotEmpty) entry.detail,
+  ].join('\n');
+}
+
+void _copyIssue(BuildContext context, List<DiagnosticLogEntry> entries) {
+  Clipboard.setData(
+    ClipboardData(text: entries.map(_formatEntry).join('\n${'-' * 32}\n')),
+  );
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('问题详情已复制')),
+  );
+}
+
+Future<void> _showDetails(
+  BuildContext context,
+  List<DiagnosticLogEntry> entries,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (context) => SafeArea(
+      child: FractionallySizedBox(
+        heightFactor: 0.8,
+        child: Column(
+          children: [
+            ListTile(
+              title: const Text('诊断详情'),
+              trailing: IconButton(
+                tooltip: '复制',
+                onPressed: () => _copyIssue(context, entries),
+                icon: const Icon(Icons.copy_outlined),
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: SelectableText(
+                  entries.map(_formatEntry).join('\n${'-' * 32}\n'),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

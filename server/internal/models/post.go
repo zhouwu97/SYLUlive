@@ -2,6 +2,8 @@ package models
 
 import (
 	"encoding/json"
+	"path"
+	"strings"
 	"time"
 )
 
@@ -135,6 +137,38 @@ type PostImage struct {
 	FileID    uint `gorm:"not null" json:"file_id"`
 	SortOrder int  `gorm:"default:0" json:"sort_order"`
 	File      File `gorm:"foreignKey:FileID" json:"file"`
+}
+
+// MarshalJSON 为客户端提供统一的三档图片地址契约。
+func (image PostImage) MarshalJSON() ([]byte, error) {
+	type postImageJSON struct {
+		ID        uint   `json:"id"`
+		PostID    uint   `json:"post_id"`
+		FileID    uint   `json:"file_id"`
+		SortOrder int    `json:"sort_order"`
+		File      File   `json:"file"`
+		ThumbURL  string `json:"thumb_url,omitempty"`
+		MediumURL string `json:"medium_url,omitempty"`
+		OriginURL string `json:"origin_url,omitempty"`
+	}
+	return json.Marshal(postImageJSON{
+		ID: image.ID, PostID: image.PostID, FileID: image.FileID,
+		SortOrder: image.SortOrder, File: image.File,
+		ThumbURL:  postImageVariantURL(image.File, "thumb"),
+		MediumURL: postImageVariantURL(image.File, "medium"),
+		OriginURL: image.File.Path,
+	})
+}
+
+func postImageVariantURL(file File, variant string) string {
+	if file.Path == "" || file.MimeType == "image/gif" {
+		return file.Path
+	}
+	extension := path.Ext(file.Path)
+	if extension == "" {
+		return file.Path
+	}
+	return strings.TrimSuffix(file.Path, extension) + "_" + variant + extension
 }
 
 type FeaturedApplication struct {

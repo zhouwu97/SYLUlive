@@ -14,6 +14,8 @@ import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/app_update_coordinator.dart';
+import '../services/diagnostic_log_service.dart';
+import '../services/root_page_state_service.dart';
 import '../utils/app_motion.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
@@ -33,7 +35,6 @@ import 'publish/publish_type_sheet.dart';
 import 'image_viewer_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
-
 /// 首页首屏请求结束后再检查更新，避免更新状态覆盖开屏与帖子加载过程。
 Future<void> loadInitialFeedBeforeUpdateCheck({
   required Future<void> Function() loadInitialFeed,
@@ -46,8 +47,6 @@ Future<void> loadInitialFeedBeforeUpdateCheck({
   }
   await initializeUpdateCheck();
 }
-
-
 
 class HomeScreen extends StatefulWidget {
   final int initialTab;
@@ -103,6 +102,7 @@ class _HomeScreenState extends State<HomeScreen>
   final Set<int> _dismissedAnnouncementIds = {};
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
+  late final bool _hasWidgetTabOverride;
 
   // Unread badge state
   int _unreadBadgeCount = 0;
@@ -163,7 +163,8 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    _currentIndex = consumeWidgetTabSwitch() ? 2 : widget.initialTab;
+    _hasWidgetTabOverride = consumeWidgetTabSwitch();
+    _currentIndex = _hasWidgetTabOverride ? 2 : widget.initialTab;
     _mainVisualIndex = _currentIndex.toDouble();
     _visitedTabs = {_currentIndex};
     _mainTabController = AnimationController(
@@ -177,11 +178,58 @@ class _HomeScreenState extends State<HomeScreen>
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _bootstrapHome();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!_hasWidgetTabOverride) {
+        await _restoreRootTab();
       }
+      if (mounted) _bootstrapHome();
     });
+  }
+
+  Future<void> _restoreRootTab() async {
+    try {
+      final restored = await RootPageStateStore.instance.readRootTab();
+      if (!mounted || restored == null || restored == _currentIndex) return;
+      setState(() {
+        _currentIndex = restored;
+        _mainVisualIndex = restored.toDouble();
+        _mainAnimationStartVisualIndex = _mainVisualIndex;
+        _mainAnimationEndVisualIndex = _mainVisualIndex;
+        _visitedTabs.add(restored);
+        _getOrCreateTabPage(restored);
+      });
+      _updateBackgroundForTab(restored);
+    } catch (error) {
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '存储',
+        type: '页面状态恢复失败',
+        summary: '无法恢复上次首页位置',
+        detail: error.toString(),
+        eventCode: 'navigation_root_state_restore_failed',
+        category: 'navigation',
+        operation: 'restore',
+        result: 'failure',
+      );
+    }
+  }
+
+  Future<void> _persistRootTab(int index) async {
+    try {
+      await RootPageStateStore.instance.saveRootTab(index);
+    } catch (error) {
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '存储',
+        type: '页面状态保存失败',
+        summary: '无法保存当前首页位置',
+        detail: error.toString(),
+        eventCode: 'navigation_root_state_save_failed',
+        category: 'navigation',
+        operation: 'save',
+        result: 'failure',
+      );
+    }
   }
 
   void _bootstrapHome() {
@@ -819,9 +867,9 @@ class _HomeScreenState extends State<HomeScreen>
                           if (link == null || link.isEmpty) return;
                           final uri = Uri.tryParse(link);
                           if (uri == null) return;
-                          final opened = await ExternalNavigator.current().open(uri);
-                          if (!opened && mounted) {
-                          }
+                          final opened =
+                              await ExternalNavigator.current().open(uri);
+                          if (!opened && mounted) {}
                         },
                         styleSheet: MarkdownStyleSheet(
                           p: TextStyle(
@@ -1201,9 +1249,9 @@ class _HomeScreenState extends State<HomeScreen>
                               if (link == null || link.isEmpty) return;
                               final uri = Uri.tryParse(link);
                               if (uri == null) return;
-                             final opened = await ExternalNavigator.current().open(uri);
-                            if (!opened && mounted) {
-                            }
+                              final opened =
+                                  await ExternalNavigator.current().open(uri);
+                              if (!opened && mounted) {}
                             },
                             styleSheet: MarkdownStyleSheet(
                               p: TextStyle(
@@ -1416,6 +1464,7 @@ class _HomeScreenState extends State<HomeScreen>
       });
     }
     _updateBackgroundForTab(index);
+    unawaited(_persistRootTab(index));
   }
 
   void _onTabTapped(int index) {
@@ -1626,6 +1675,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (commit) {
       _updateBackgroundForTab(targetIndex);
+      unawaited(_persistRootTab(targetIndex));
     }
 
     if (commit) {

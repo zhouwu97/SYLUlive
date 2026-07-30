@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/utils/screen_swipe.dart';
+import 'package:shenliyuan/widgets/swipe_to_exit.dart';
 
 void main() {
   test('bottom third is reserved for main navigation swipes', () {
@@ -68,6 +69,103 @@ void main() {
       ),
       0,
     );
+  });
+
+  group('left page exit swipe', () {
+    test('accepts a deliberate left swipe over thirty percent of the screen',
+        () {
+      expect(
+        isLeftPageExitSwipe(
+          start: const Offset(360, 420),
+          end: const Offset(180, 426),
+          screenWidth: 400,
+        ),
+        isTrue,
+      );
+    });
+
+    test('ignores shorter left swipes', () {
+      expect(
+        isLeftPageExitSwipe(
+          start: const Offset(360, 420),
+          end: const Offset(245, 420),
+          screenWidth: 400,
+        ),
+        isFalse,
+      );
+    });
+
+    test('ignores rightward and strongly diagonal swipes', () {
+      expect(
+        isLeftPageExitSwipe(
+          start: const Offset(40, 420),
+          end: const Offset(240, 420),
+          screenWidth: 400,
+        ),
+        isFalse,
+      );
+      expect(
+        isLeftPageExitSwipe(
+          start: const Offset(360, 300),
+          end: const Offset(180, 460),
+          screenWidth: 400,
+        ),
+        isFalse,
+      );
+    });
+
+    test('accepts a naturally diagonal left swipe', () {
+      expect(
+        isLeftPageExitSwipe(
+          start: const Offset(340, 300),
+          end: const Offset(190, 390),
+          screenWidth: 400,
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  testWidgets('page exits only after a deliberate left swipe', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SwipeToExit(
+                      child: Scaffold(body: Text('私信')),
+                    ),
+                  ),
+                );
+              },
+              child: const Text('进入私信'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('进入私信'));
+    await tester.pumpAndSettle();
+    final swipeWidget = find.byType(SwipeToExit);
+    final pageWidth = tester.getSize(swipeWidget).width;
+    final mediaWidth = MediaQuery.sizeOf(tester.element(swipeWidget)).width;
+    final swipeStart = Offset(pageWidth - 40, 400);
+
+    await tester.dragFrom(swipeStart, Offset(-mediaWidth * 0.29, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('私信'), findsOneWidget);
+
+    await tester.dragFrom(swipeStart, Offset(-mediaWidth * 0.31, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('进入私信'), findsOneWidget);
+    expect(find.text('私信'), findsNothing);
   });
 
   testWidgets('upper and lower swipe zones do not trigger each other',

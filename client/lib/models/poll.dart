@@ -104,7 +104,8 @@ class PollMeta {
       participantCount: (json['participant_count'] as num?)?.toInt() ?? 0,
       choiceCount: (json['choice_count'] as num?)?.toInt(),
       hasVoted: json['has_voted'] == true,
-      resultsVisible: json['results_visible'] == true,
+      resultsVisible:
+          json['can_view_result'] == true || json['results_visible'] == true,
       canVote: json['can_vote'] == true,
       canChange: json['can_change'] == true,
       isOwner: json['is_owner'] == true,

@@ -22,6 +22,7 @@ import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/water_section_provider.dart';
+import '../services/root_page_state_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/home_tab_reveal.dart';
@@ -113,6 +114,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _feedSwipeAccepted = false;
   int _feedRevealSerial = 0;
   bool _feedRevealActive = false;
+  double? _pendingRestoredScrollOffset;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _autoRefreshTimer;
@@ -174,9 +176,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       vsync: this,
       duration: _feedSettleDuration,
     )..addListener(_handleFeedSettleTick);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _restoreCommunityState();
+      if (!mounted) return;
       final postProvider = context.read<PostProvider>();
-      postProvider.loadPosts(boardId: 1, sort: 'all');
+      final initialSort = _currentRemoteSort;
+      if (initialSort != null && _canLoadFeedMode(_feedMode)) {
+        postProvider.loadPosts(boardId: 1, sort: initialSort);
+      }
       _startAutoRefresh();
       _ensureCheckinStatusLoaded();
 
@@ -202,8 +209,46 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       unawaited(_ensureCheckinStatusLoaded(force: true));
       _startAutoRefresh();
     } else if (state == AppLifecycleState.paused) {
+      unawaited(_persistCommunityState());
       _stopAutoRefresh();
     }
+  }
+
+  Future<void> _restoreCommunityState() async {
+    final validModes = kFeedModes.map((mode) => mode.key).toSet();
+    final state = await RootPageStateStore.instance.readCommunityFeedState(
+      validModes: validModes,
+    );
+    if (!mounted || state == null || !_canLoadFeedMode(state.mode)) return;
+    setState(() {
+      _feedMode = state.mode;
+      _pendingRestoredScrollOffset = state.scrollOffset;
+    });
+    _scheduleRestoredScroll();
+  }
+
+  Future<void> _persistCommunityState({String? mode}) async {
+    final currentMode = mode ?? _feedMode;
+    final controller = _feedScrollControllers[currentMode];
+    final offset = controller?.hasClients == true ? controller!.offset : 0.0;
+    await RootPageStateStore.instance.saveCommunityFeedState(
+      mode: currentMode,
+      scrollOffset: offset.isFinite && offset >= 0 ? offset : 0,
+    );
+  }
+
+  void _scheduleRestoredScroll() {
+    final offset = _pendingRestoredScrollOffset;
+    if (offset == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _pendingRestoredScrollOffset == null) return;
+      final controller = _feedScrollControllers[_feedMode];
+      if (controller?.hasClients != true) return;
+      final position = controller!.position;
+      if (offset > 0 && position.maxScrollExtent <= 0) return;
+      controller.jumpTo(offset.clamp(0, position.maxScrollExtent).toDouble());
+      _pendingRestoredScrollOffset = null;
+    });
   }
 
   void _startAutoRefresh() {
@@ -226,6 +271,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopAutoRefresh();
+    unawaited(_persistCommunityState());
 
     for (final controller in _feedScrollControllers.values) {
       controller.dispose();
@@ -354,6 +400,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (newIndex < 0) return;
     final oldIndex =
         _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+    unawaited(_persistCommunityState());
 
     _refreshFeedMode(mode);
     _feedSwitchController.stop();
@@ -382,6 +429,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _feedTargetIndex = null;
       _feedDragProgress = 0;
     });
+    unawaited(_persistCommunityState());
   }
 
   void _refreshFeedMode(String mode) {
@@ -573,6 +621,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     if (commit) {
+      unawaited(_persistCommunityState());
       _refreshFeedMode(kFeedModes[targetIndex].key);
     }
 
@@ -602,6 +651,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _feedTargetIndex = null;
       _feedDragProgress = 0;
     });
+    if (commit) {
+      unawaited(_persistCommunityState());
+    }
   }
 
   void _openMessages() {
@@ -1531,6 +1583,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildFeedModePage(bool isDark, String mode) {
+    _scheduleRestoredScroll();
     final config = kFeedModes.firstWhere((m) => m.key == mode);
     final sort = config.remoteSort ?? 'all';
 

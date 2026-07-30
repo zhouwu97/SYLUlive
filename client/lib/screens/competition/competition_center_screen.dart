@@ -393,7 +393,6 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       'major_match',
       'college_match',
       'general_match',
-      'needs_confirmation',
     ];
     final byKey = <String, CompetitionCandidateGroup>{
       for (final group in current) group.key: group,

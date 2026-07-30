@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,10 +27,45 @@ func newCompetitionServiceTestDB(t *testing.T) *gorm.DB {
 		&models.User{}, &models.UserCompetitionPreference{}, &models.UserCompetitionAward{},
 		&models.CompetitionCategory{}, &models.CompetitionCatalogPackage{},
 		&models.CompetitionEvent{}, &models.CompetitionCatalogAuditLog{},
+		&models.CompetitionCatalogLegacyMapping{}, &models.CompetitionCatalogActivationSnapshot{},
 	); err != nil {
 		t.Fatal(err)
 	}
 	return db
+}
+
+func TestCompetitionCandidateEngineReadsOnlyActivePackage(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	user := readyCompetitionUser(t, db)
+	active := models.CompetitionCatalogPackage{
+		SchemaVersion: "sylulive-competition-catalog/2.2", DatasetVersion: "active-v1",
+		Revision: 1, PackageHash: strings.Repeat("a", 64), LifecycleStatus: "active",
+		PublishStatus: "published", ProductionLoadAllowed: true, ItemCount: 1,
+		ValidationStatus: "passed", ValidationResult: datatypes.JSON(`{}`), Payload: datatypes.JSON(`{}`),
+		ImportedBy: 1, ImportedAt: time.Now(), IsActive: true,
+	}
+	if err := db.Create(&active).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacy := candidateEvent("LEGACY-1", "旧赛事", 100, 1, nil, nil)
+	governed := candidateEvent("NAT-001", "活动包赛事", 10, 2, nil, nil)
+	governed.DatasetVersion = active.DatasetVersion
+	governed.CatalogPackageID = &active.ID
+	if err := db.Select("*").Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Select("*").Create(&governed).Error; err != nil {
+		t.Fatal(err)
+	}
+	result, err := NewCompetitionCandidateEngine(db).BuildCandidates(
+		context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 1 || result.Groups[0].Items[0].CompetitionID != governed.CompetitionID {
+		t.Fatalf("活动包作用域混入旧数据: %+v", result.Groups)
+	}
 }
 
 func competitionJSON(values ...string) datatypes.JSON {
@@ -58,7 +94,7 @@ func candidateEvent(
 ) models.CompetitionEvent {
 	eventStart := time.Now().AddDate(0, 1, 0)
 	return models.CompetitionEvent{
-		CompetitionID: id, DatasetVersion: "test-v1", RecordHash: fmt.Sprintf("%064d", order+1),
+		CompetitionID: id, DatasetVersion: "legacy", RecordHash: fmt.Sprintf("%064d", order+1),
 		CatalogOrder: order, Title: title, Summary: title, Status: "published",
 		ImportanceScore: importance, EligibleEntryYears: competitionJSON(),
 		EligibleMajors: competitionJSON(majors...), EligibleColleges: competitionJSON(colleges...),
@@ -138,6 +174,34 @@ func TestCompetitionCandidateEnginePreferenceCannotReorderClosedCatalog(t *testi
 		t.Fatal("目录未授权时不能声明允许个性化排序")
 	}
 }
+
+func TestCompetitionCandidateEngineUsesCatalogOrderWithoutImportanceOrDeadlinePriority(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	user := readyCompetitionUser(t, db)
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	first := candidateEvent("NAT-030", "目录第一项", 1, 1, nil, nil)
+	first.RegistrationEnd = ptrTime(now.AddDate(0, 2, 0))
+	second := candidateEvent("NAT-031", "高重要度且临近截止", 100, 2, nil, nil)
+	second.RegistrationEnd = ptrTime(now.AddDate(0, 0, 1))
+	if err := db.Select("*").Create(&first).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Select("*").Create(&second).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := NewCompetitionCandidateEngineWithClock(db, func() time.Time { return now }).
+		BuildCandidates(context.Background(), user.ID, CandidateFilter{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := result.Groups[0].Items
+	if len(items) != 2 || items[0].CompetitionID != first.CompetitionID {
+		t.Fatalf("重要度或临近截止改变了目录顺序: %+v", items)
+	}
+}
+
+func ptrTime(value time.Time) *time.Time { return &value }
 
 func TestCompetitionCandidateEngineReturnsProfileNotReadyWithoutCandidates(t *testing.T) {
 	db := newCompetitionServiceTestDB(t)

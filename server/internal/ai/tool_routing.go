@@ -91,6 +91,10 @@ func hy3RouteTargets(message string) (map[string]struct{}, string) {
 	explicitHy3Academic := strings.Contains(normalized, "hy3") && hasAcademicTopic
 	comprehensiveAcademic := containsAny(normalized, "综合分析", "学业分析", "分析学业", "学业评估") ||
 		(strings.Contains(normalized, "gpa") && strings.Contains(normalized, "学分"))
+	// 校园首页使用“分析我的学业情况，找出主要风险并给出改进建议”等自然语言，
+	// 不一定出现连续的“学业分析”，但仍然明确要求基于个人学业数据做判断。
+	comprehensiveAcademic = comprehensiveAcademic ||
+		(hasAcademicTopic && containsAny(normalized, "分析", "风险", "改进建议"))
 	if explicitHy3Academic || comprehensiveAcademic {
 		return map[string]struct{}{modelToolHy3Academic: {}}, modelToolHy3Academic
 	}

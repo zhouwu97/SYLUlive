@@ -26,6 +26,11 @@ func TestRouteModelToolsPrefersHy3ForDecisionIntents(t *testing.T) {
 			expected: []string{"hy3_decision_analyze_academic"},
 		},
 		{
+			name:     "校园首页学业分析入口",
+			message:  "分析我的学业情况，找出主要风险并给出改进建议",
+			expected: []string{"hy3_decision_analyze_academic"},
+		},
+		{
 			name:     "GPA 和学分综合分析",
 			message:  "计算我的 GPA 和学分情况",
 			expected: []string{"hy3_decision_analyze_academic"},

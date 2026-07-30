@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/competitionscope"
 	"shenliyuan/internal/models"
 )
 
@@ -184,7 +186,8 @@ func (h *CompetitionHandler) InternalMCPCompetitionVerifyRecords(c *gin.Context)
 	results := make([]gin.H, 0, len(input.Records))
 	for _, record := range input.Records {
 		var event models.CompetitionEvent
-		err := h.db.Where("competition_id = ?", strings.TrimSpace(record.CompetitionID)).First(&event).Error
+		err := h.internalPublishedCompetitionQuery().
+			Where("competition_events.competition_id = ?", strings.TrimSpace(record.CompetitionID)).First(&event).Error
 		valid := err == nil && event.Status == "published" && event.SearchDisplayAllowed &&
 			event.CandidatePoolAllowed && event.RecordHash == strings.TrimSpace(record.RecordHash)
 		reason := ""
@@ -210,8 +213,13 @@ func (h *CompetitionHandler) InternalMCPCompetitionVerifyRecords(c *gin.Context)
 }
 
 func (h *CompetitionHandler) internalPublishedCompetitionQuery() *gorm.DB {
-	return h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory").
-		Where("status = ? AND search_display_allowed = ?", "published", true)
+	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory")
+	scope, err := competitionscope.Resolve(context.Background(), h.db)
+	if err != nil {
+		query.AddError(err)
+		return query
+	}
+	return scope.ApplyMCPFact(query)
 }
 
 func (h *CompetitionHandler) loadInternalCompetitionEvents(

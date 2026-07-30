@@ -278,6 +278,8 @@ func main() {
 		&models.CompetitionCategory{},
 		&models.CompetitionCatalogPackage{},
 		&models.CompetitionCatalogAuditLog{},
+		&models.CompetitionCatalogLegacyMapping{},
+		&models.CompetitionCatalogActivationSnapshot{},
 		&models.CompetitionEvent{},
 		&models.CompetitionEventAttachment{},
 		&models.UserCompetitionCalendar{},
@@ -1600,11 +1602,13 @@ func main() {
 		admin.POST("/competitions/import-json/preview", competitionHandler.AdminImportJSONPreview)
 		admin.POST("/competitions/import-json/commit", competitionHandler.AdminImportJSONCommit)
 		if cfg.CompetitionCatalogV2Enabled {
+			admin.POST("/competition-catalog/baseline/export", competitionHandler.AdminExportCompetitionCatalogBaseline)
 			admin.POST("/competition-catalog/packages/validate", competitionHandler.AdminValidateCompetitionCatalog)
 			admin.POST("/competition-catalog/packages/import", competitionHandler.AdminImportCompetitionCatalog)
 			admin.GET("/competition-catalog/packages", competitionHandler.AdminListCompetitionCatalogPackages)
 			admin.GET("/competition-catalog/packages/:id", competitionHandler.AdminGetCompetitionCatalogPackage)
 			admin.GET("/competition-catalog/packages/:id/diff", competitionHandler.AdminDiffCompetitionCatalogPackage)
+			admin.POST("/competition-catalog/packages/:id/preflight", competitionHandler.AdminPreflightCompetitionCatalog)
 			admin.POST("/competition-catalog/packages/:id/activate", competitionHandler.AdminActivateCompetitionCatalog)
 			admin.POST("/competition-catalog/packages/:id/rollback", competitionHandler.AdminRollbackCompetitionCatalog)
 		}

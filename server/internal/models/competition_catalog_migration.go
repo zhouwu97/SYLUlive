@@ -18,6 +18,9 @@ func PrepareCompetitionCatalogMigration(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("database is nil")
 	}
+	if err := prepareCompetitionCatalogPackageRevisionMigration(db); err != nil {
+		return err
+	}
 	if !db.Migrator().HasTable(&CompetitionEvent{}) {
 		return nil
 	}
@@ -82,6 +85,40 @@ func PrepareCompetitionCatalogMigration(db *gorm.DB) error {
 		})
 	default:
 		return fmt.Errorf("unsupported database dialect for competition catalog migration: %s", db.Dialector.Name())
+	}
+}
+
+func prepareCompetitionCatalogPackageRevisionMigration(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&CompetitionCatalogPackage{}) {
+		return nil
+	}
+	switch strings.ToLower(db.Dialector.Name()) {
+	case "postgres":
+		return db.Transaction(func(tx *gorm.DB) error {
+			statements := []string{
+				"ALTER TABLE competition_catalog_packages ADD COLUMN IF NOT EXISTS revision bigint",
+				"UPDATE competition_catalog_packages SET revision = 1 WHERE revision IS NULL OR revision < 1",
+				"ALTER TABLE competition_catalog_packages ALTER COLUMN revision SET NOT NULL",
+				"ALTER TABLE competition_catalog_packages ADD COLUMN IF NOT EXISTS lifecycle_status varchar(20)",
+				"UPDATE competition_catalog_packages SET lifecycle_status = CASE WHEN is_active THEN 'active' ELSE 'staged' END WHERE lifecycle_status IS NULL OR lifecycle_status = ''",
+				"ALTER TABLE competition_catalog_packages ALTER COLUMN lifecycle_status SET DEFAULT 'staged'",
+				"ALTER TABLE competition_catalog_packages ALTER COLUMN lifecycle_status SET NOT NULL",
+				"DROP INDEX IF EXISTS idx_competition_catalog_packages_dataset_version",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	case "sqlite":
+		if db.Migrator().HasIndex(&CompetitionCatalogPackage{}, "idx_competition_catalog_packages_dataset_version") {
+			return db.Migrator().DropIndex(&CompetitionCatalogPackage{}, "idx_competition_catalog_packages_dataset_version")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported database dialect for competition catalog package migration: %s", db.Dialector.Name())
 	}
 }
 

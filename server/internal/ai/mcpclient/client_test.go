@@ -357,7 +357,8 @@ func TestRealStdioContractIntegration(t *testing.T) {
 	definitions, err := client.ListTools(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []string{
-		"analyze_academic_snapshot", "compare_competitions", "plan_student_week",
+		"analyze_academic_snapshot", "compare_competitions", "compare_selected_competitions",
+		"explain_competition_candidates", "plan_student_week",
 	}, remoteToolNames(definitions))
 	result, err := client.CallTool(context.Background(), "analyze_academic_snapshot", map[string]interface{}{
 		"snapshot_path": "academic/safe_snapshot.json",

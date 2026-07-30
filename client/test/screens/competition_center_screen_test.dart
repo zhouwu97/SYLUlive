@@ -30,11 +30,14 @@ class _CompetitionAdapter implements HttpClientAdapter {
 }
 
 class _TestAuthProvider extends AuthProvider {
-  _TestAuthProvider(super.dio) : super(loadStoredAuth: false);
+  _TestAuthProvider(super.dio, {this.loggedIn = false})
+      : super(loadStoredAuth: false);
 
-  // 竞赛目录是公开数据，未登录也能浏览；保持未登录可以避开 /user 相关请求。
+  final bool loggedIn;
+
+  // 公开目录用例保持未登录，候选链路用例显式模拟登录状态。
   @override
-  bool get isLoggedIn => false;
+  bool get isLoggedIn => loggedIn;
 }
 
 ResponseBody _json(Object data, [int status = 200]) {
@@ -60,6 +63,32 @@ Map<String, dynamic> _event(int id) {
   };
 }
 
+Map<String, dynamic> _candidateEvent(int id) {
+  return {
+    ..._event(id),
+    'competition_id': 'COMP-$id',
+    'competition_rating': 'A',
+    'personalized_score': 98,
+    'fit_reasons': ['旧版偏好理由'],
+    'group_key': 'major_match',
+    'rule_order': 1,
+    'core_reason': '参赛资格与专业方向符合公开目录',
+    'cautions': ['报名时间仍需确认'],
+    'dataset_version': 'catalog-2026-07',
+    'match_dimensions': {
+      'eligibility': 'matched',
+      'major': 'matched',
+    },
+    'gates': {
+      'candidate_pool_allowed': true,
+      'personalized_ranking_allowed': false,
+      'strong_recommendation_eligible': false,
+      'recommendation_permission_level': 'candidate_only',
+      'ai_mode': 'candidate_explanation',
+    },
+  };
+}
+
 Dio _dio(_CompetitionAdapter adapter) {
   final dio = Dio(BaseOptions(baseUrl: 'http://competition.test/api'));
   dio.httpClientAdapter = adapter;
@@ -71,10 +100,11 @@ Future<void> _pump(
   Dio dio,
   Widget home, {
   Brightness brightness = Brightness.light,
+  bool loggedIn = false,
 }) async {
   await tester.pumpWidget(
     ChangeNotifierProvider<AuthProvider>(
-      create: (_) => _TestAuthProvider(dio),
+      create: (_) => _TestAuthProvider(dio, loggedIn: loggedIn),
       child: MaterialApp(
         theme: ThemeData(brightness: brightness),
         home: home,
@@ -246,6 +276,138 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(pages, [1, 2]);
+    });
+
+    testWidgets('适合我调用统一候选接口并按服务端分组展示', (tester) async {
+      final adapter = _CompetitionAdapter((options) {
+        switch (options.path) {
+          case '/competitions/events':
+            return _json({
+              'items': [_event(1)],
+              'total': 1,
+            });
+          case '/user/competitions/state':
+            return _json({
+              'joined_event_ids': const [],
+              'calendar_count': 0,
+              'profile_ready': true,
+            });
+          case '/user/competitions/dashboard':
+            return _json({
+              'preference_configured': true,
+              'capability_ready': true,
+            });
+          case '/user/competitions/candidates':
+            return _json({
+              'total': 1,
+              'profile_ready': true,
+              'catalog': {
+                'dataset_version': 'catalog-2026-07',
+                'mode': 'candidate_explanation',
+                'personalized_ranking_allowed': false,
+              },
+              'groups': [
+                {
+                  'key': 'major_match',
+                  'label': '专业匹配',
+                  'count': 1,
+                  'items': [_candidateEvent(8)],
+                },
+              ],
+            });
+          default:
+            return _catalogStub(options);
+        }
+      });
+
+      await _pump(
+        tester,
+        _dio(adapter),
+        const CompetitionCenterScreen(),
+        loggedIn: true,
+      );
+
+      await tester.tap(find.text('适合我'));
+      await tester.pumpAndSettle();
+
+      expect(
+        adapter.requests.any(
+          (request) => request.path == '/user/competitions/candidates',
+        ),
+        isTrue,
+      );
+      expect(find.text('根据专业、资格和目标筛出 1 项候选'), findsOneWidget);
+      expect(find.text('当前为候选解释，不代表获奖概率'), findsOneWidget);
+      expect(find.text('专业匹配 · 1项'), findsOneWidget);
+      expect(find.text('参赛资格与专业方向符合公开目录'), findsOneWidget);
+      expect(find.textContaining('偏好匹配'), findsNothing);
+      expect(find.text('旧版偏好理由'), findsNothing);
+      expect(find.text('推荐'), findsNothing);
+    });
+
+    testWidgets('候选加载失败时不混入旧目录结果并可重试', (tester) async {
+      var candidateAttempts = 0;
+      final adapter = _CompetitionAdapter((options) {
+        switch (options.path) {
+          case '/competitions/events':
+            return _json({
+              'items': [_event(1)],
+              'total': 1,
+            });
+          case '/user/competitions/state':
+            return _json({
+              'joined_event_ids': const [],
+              'calendar_count': 0,
+              'profile_ready': true,
+            });
+          case '/user/competitions/dashboard':
+            return _json({
+              'preference_configured': true,
+              'capability_ready': true,
+            });
+          case '/user/competitions/candidates':
+            candidateAttempts++;
+            if (candidateAttempts == 1) {
+              return _json({'error': '候选服务暂不可用'}, 500);
+            }
+            return _json({
+              'total': 1,
+              'profile_ready': true,
+              'catalog': const {'dataset_version': 'catalog-2026-07'},
+              'groups': [
+                {
+                  'key': 'major_match',
+                  'label': '专业匹配',
+                  'count': 1,
+                  'items': [_candidateEvent(9)],
+                },
+              ],
+            });
+          default:
+            return _catalogStub(options);
+        }
+      });
+
+      await _pump(
+        tester,
+        _dio(adapter),
+        const CompetitionCenterScreen(),
+        loggedIn: true,
+      );
+
+      await tester.tap(find.text('适合我'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('比赛 1'), findsNothing);
+      expect(find.text('比赛加载失败'), findsOneWidget);
+      await tester.ensureVisible(find.text('重试'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('重试'));
+      await tester.pumpAndSettle();
+
+      expect(candidateAttempts, 2);
+      expect(find.text('比赛 9'), findsOneWidget);
+      expect(find.text('专业匹配 · 1项'), findsOneWidget);
     });
   });
 }

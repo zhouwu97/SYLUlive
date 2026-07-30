@@ -80,6 +80,11 @@ type Config struct {
 	AppReleaseUseAccelRedirect  bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
 	AppReleaseAccelPrefix       string // X-Accel-Redirect 路径前缀
 	LegalConsentEnforcement     string // 法律协议门禁模式：off、soft、hard
+
+	CompetitionCatalogV2Enabled         bool   // 是否开放 Catalog 2.2 管理链路
+	CompetitionCandidateEngineV2Enabled bool   // 是否开放统一候选接口
+	CompetitionAIExplanationEnabled     bool   // 是否允许调用外部模型解释候选
+	SyluliveMCPGrant                    string // 纯 MCP 调用 Go 只读事实网关的固定 Grant
 }
 
 const (
@@ -335,6 +340,10 @@ func Load() *Config {
 	aiExternalMCPSshUser := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_USER"))
 	aiExternalMCPSshKeyPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_KEY_PATH"))
 	aiExternalMCPKnownHostsPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH"))
+	competitionCatalogV2Enabled := envBool("COMPETITION_CATALOG_V2_ENABLED", false)
+	competitionCandidateEngineV2Enabled := envBool("COMPETITION_CANDIDATE_ENGINE_V2_ENABLED", false)
+	competitionAIExplanationEnabled := envBool("COMPETITION_AI_EXPLANATION_ENABLED", false)
+	syluliveMCPGrant := strings.TrimSpace(os.Getenv("SYLULIVE_MCP_GRANT"))
 	if err := validateAIConfig(
 		aiEnabled, aiProvider, deepSeekAPIKey,
 		deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled,
@@ -412,13 +421,17 @@ func Load() *Config {
 		JWCSyncEnabled:         jwcSyncEnabled,
 		JWCSyncIntervalMinutes: jwcSyncIntervalMinutes,
 
-		AppReleaseDir:               appReleaseDir,
-		AppReleaseMaxSize:           int64(appReleaseMaxSizeMB) * 1024 * 1024,
-		AppUpdateEnforcementEnabled: appUpdateEnforcementEnabled,
-		AllowMissingVersionHeaders:  allowMissingVersionHeaders,
-		AppReleaseUseAccelRedirect:  appReleaseUseAccelRedirect,
-		AppReleaseAccelPrefix:       appReleaseAccelPrefix,
-		LegalConsentEnforcement:     legalConsentEnforcement,
+		AppReleaseDir:                       appReleaseDir,
+		AppReleaseMaxSize:                   int64(appReleaseMaxSizeMB) * 1024 * 1024,
+		AppUpdateEnforcementEnabled:         appUpdateEnforcementEnabled,
+		AllowMissingVersionHeaders:          allowMissingVersionHeaders,
+		AppReleaseUseAccelRedirect:          appReleaseUseAccelRedirect,
+		AppReleaseAccelPrefix:               appReleaseAccelPrefix,
+		LegalConsentEnforcement:             legalConsentEnforcement,
+		CompetitionCatalogV2Enabled:         competitionCatalogV2Enabled,
+		CompetitionCandidateEngineV2Enabled: competitionCandidateEngineV2Enabled,
+		CompetitionAIExplanationEnabled:     competitionAIExplanationEnabled,
+		SyluliveMCPGrant:                    syluliveMCPGrant,
 	}
 }
 

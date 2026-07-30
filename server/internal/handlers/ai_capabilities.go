@@ -13,12 +13,14 @@ const (
 	aiWindowSeconds   = 60 * 60
 	aiMaxMessageChars = 200
 
+	AIToolHy3CompetitionExplain = "hy3_competition_explain"
 	AIToolHy3CompetitionCompare = "hy3_competition_compare"
 	AIToolHy3AcademicAnalysis   = "hy3_academic_analysis"
 	AIToolHy3WeekPlan           = "hy3_week_plan"
 )
 
 var publicAIToolCapabilities = map[string]struct{}{
+	AIToolHy3CompetitionExplain: {},
 	AIToolHy3CompetitionCompare: {},
 	AIToolHy3AcademicAnalysis:   {},
 	AIToolHy3WeekPlan:           {},
@@ -114,6 +116,7 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 		"features": gin.H{
 			"policy_rag":                accessAllowed && h.policyRAGEnabled,
 			"schedule_windows":          false,
+			AIToolHy3CompetitionExplain: hasTool(AIToolHy3CompetitionExplain),
 			AIToolHy3CompetitionCompare: hasTool(AIToolHy3CompetitionCompare),
 			AIToolHy3AcademicAnalysis:   hasTool(AIToolHy3AcademicAnalysis),
 			AIToolHy3WeekPlan:           hasTool(AIToolHy3WeekPlan),

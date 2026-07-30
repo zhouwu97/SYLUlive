@@ -367,8 +367,11 @@ func parseAIActionDraftID(c *gin.Context) (uint, bool) {
 
 func competitionPlanDraftPayloadHash(snapshot models.CompetitionRecommendationSnapshot, event CompetitionEventDTO) string {
 	return hashCompetitionSnapshotValue([]interface{}{
-		snapshot.EventID, snapshot.EventVersion, snapshot.EventTitle, snapshot.PersonalizedScore,
-		snapshot.RecommendationTier, snapshot.FitReasons, event.CompetitionRating,
+		snapshot.EventID, snapshot.EventVersion, snapshot.EventTitle,
+		snapshot.CompetitionID, snapshot.DatasetVersion, snapshot.RecordHash,
+		snapshot.Mode, snapshot.GroupKey, snapshot.MatchDimensions,
+		snapshot.AIExplanationHash, snapshot.CapabilityHash, snapshot.FitReasons,
+		event.CompetitionRating,
 		event.ManualRating, event.SchoolRecognitionStatus, event.SchoolRecognitionGrade,
 		event.TimeStatus, event.RegistrationTimeText,
 	})

@@ -10,7 +10,9 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/competitioncontext"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 const competitionRecommendationSnapshotTTL = 30 * time.Minute
@@ -45,19 +47,6 @@ func (h *CompetitionHandler) buildCompetitionRecommendationSnapshot(
 	eventID uint,
 	now time.Time,
 ) (models.CompetitionRecommendationSnapshot, CompetitionEventDTO, error) {
-	var user models.User
-	if err := tx.First(&user, userID).Error; err != nil {
-		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, errCompetitionProfileUnavailable
-	}
-	profile, ready := profileFromUser(user, now)
-	if !ready {
-		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, errCompetitionProfileUnavailable
-	}
-
-	var event models.CompetitionEvent
-	if err := tx.Preload("PrimaryCategory").Where("id = ? AND status = ?", eventID, "published").First(&event).Error; err != nil {
-		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, errCompetitionEventUnavailable
-	}
 	var existing int64
 	if err := tx.Model(&models.UserCompetitionCalendarItem{}).
 		Where("user_id = ? AND source_type = ? AND source_event_id = ?", userID, "official", eventID).
@@ -68,40 +57,65 @@ func (h *CompetitionHandler) buildCompetitionRecommendationSnapshot(
 		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, errCompetitionAlreadyPlanned
 	}
 
-	matched, level, reasons := matchCompetitionForProfile(event, profile)
-	if !matched {
+	ctx := tx.Statement.Context
+	candidateResult, err := services.NewCompetitionCandidateEngineWithClock(
+		tx,
+		func() time.Time { return now },
+	).BuildCandidates(ctx, userID, services.CandidateFilter{
+		Page: 1, PageSize: 1, EventID: eventID,
+	})
+	if err != nil {
+		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, err
+	}
+	if !candidateResult.ProfileReady {
+		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, errCompetitionProfileUnavailable
+	}
+	if candidateResult.Total == 0 ||
+		len(candidateResult.Groups) == 0 ||
+		len(candidateResult.Groups[0].Items) == 0 {
 		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, errCompetitionNotMatched
 	}
-	event.FitLevel = level
-	event.FitReasons = append([]string{}, reasons...)
+	candidate := candidateResult.Groups[0].Items[0]
 
+	var event models.CompetitionEvent
+	if err := tx.Preload("PrimaryCategory").
+		Where("id = ? AND status = ?", eventID, "published").
+		First(&event).Error; err != nil {
+		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, errCompetitionEventUnavailable
+	}
 	preference, configured, err := loadCompetitionPreferenceTx(tx, userID)
 	if err != nil {
 		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, err
 	}
 	var preferenceUpdatedAt *time.Time
 	if configured {
-		preferenceMatch := matchCompetitionPreference(event, level, preference)
-		event.PersonalizedScore = &preferenceMatch.Score
-		event.RecommendationTier = preferenceMatch.Tier
-		event.FitReasons = append(event.FitReasons, preferenceMatch.Reasons...)
-		if preferenceMatch.PreferencePoints+preferenceMatch.TimePoints > 0 {
-			event.FitLevel = "preference"
-		}
 		updatedAt := preference.UpdatedAt
 		preferenceUpdatedAt = &updatedAt
 	}
 
-	capabilityProfile, err := h.loadCompetitionCapabilityProfileWithDB(tx, userID)
+	userContext, err := competitioncontext.NewBuilder(tx).
+		BuildCompetitionUserContext(ctx, userID)
 	if err != nil {
 		return models.CompetitionRecommendationSnapshot{}, CompetitionEventDTO{}, err
 	}
+	event.FitLevel = candidate.GroupKey
+	event.FitReasons = []string{candidate.CoreReason}
+	event.PersonalizedScore = nil
+	event.RecommendationTier = ""
 	fitReasons, _ := json.Marshal(event.FitReasons)
+	matchDimensions, _ := json.Marshal(candidate.MatchDimensions)
+	mode := candidate.Gates.AIMode
+	if mode == "" {
+		mode = candidateResult.Catalog.Mode
+	}
 	snapshot := models.CompetitionRecommendationSnapshot{
 		UserID: userID, EventID: event.ID, EventVersion: event.Version, EventTitle: event.Title,
-		PersonalizedScore: event.PersonalizedScore, RecommendationTier: event.RecommendationTier,
+		CompetitionID: candidate.CompetitionID, DatasetVersion: candidate.DatasetVersion,
+		RecordHash: candidate.RecordHash, Mode: mode, GroupKey: candidate.GroupKey,
+		MatchDimensions:   datatypes.JSON(matchDimensions),
+		PersonalizedScore: nil, RecommendationTier: "",
 		FitReasons: datatypes.JSON(fitReasons), PreferenceUpdatedAt: preferenceUpdatedAt,
-		CapabilityHash:    hashCompetitionSnapshotValue(capabilityProfile),
+		CapabilityHash:    userContext.ProfileVersion,
 		EventCriticalHash: competitionEventCriticalHash(event),
 		CreatedAt:         now, ExpiresAt: now.Add(competitionRecommendationSnapshotTTL),
 	}
@@ -123,6 +137,9 @@ func competitionEventCriticalHash(event models.CompetitionEvent) string {
 	return hashCompetitionSnapshotValue([]interface{}{
 		event.Status, event.EligibleEntryYears, event.EligibleColleges, event.EligibleMajors,
 		event.RegistrationEnd, event.EventStart, event.EventEnd, event.TimeStatus,
+		event.CompetitionID, event.DatasetVersion, event.RecordHash,
+		event.CandidatePoolAllowed, event.PersonalizedRankingAllowed,
+		event.StrongRecommendationEligible, event.AIMode,
 	})
 }
 

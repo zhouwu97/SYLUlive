@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/competitioncontext"
 	"shenliyuan/internal/models"
 )
 
@@ -100,7 +101,8 @@ func (h *CompetitionHandler) GetAICompetitionCapabilityProfile(c *gin.Context) {
 		})
 		return
 	}
-	profile, err := h.loadCompetitionCapabilityProfile(userID)
+	profile, err := competitioncontext.NewBuilder(h.db).
+		BuildCompetitionUserContext(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛能力画像失败"})
 		return

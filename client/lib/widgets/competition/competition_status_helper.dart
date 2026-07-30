@@ -10,7 +10,9 @@ class CompetitionStatusView {
 }
 
 CompetitionStatusView resolveCompetitionStatus(
-    CompetitionEvent event, bool isDark) {
+  CompetitionEvent event,
+  bool isDark,
+) {
   final now = DateTime.now();
 
   // 1. Check registration end
@@ -18,17 +20,23 @@ CompetitionStatusView resolveCompetitionStatus(
     final regEnd = event.registrationEnd!;
     if (now.isAfter(regEnd)) {
       return CompetitionStatusView(
-          '已结束', CompetitionUiTokens.archivedColor(isDark));
+        '已结束',
+        CompetitionUiTokens.archivedColor(isDark),
+      );
     }
 
     final daysLeft = regEnd.difference(now).inDays;
     if (daysLeft <= 3 && daysLeft >= 0) {
       return CompetitionStatusView(
-          '即将截止', CompetitionUiTokens.upcomingColor(isDark));
+        '即将截止',
+        CompetitionUiTokens.upcomingColor(isDark),
+      );
     }
 
     return CompetitionStatusView(
-        '报名中', CompetitionUiTokens.warningColor(isDark));
+      '报名中',
+      CompetitionUiTokens.warningColor(isDark),
+    );
   }
 
   // 2. Check event end (we only have eventStart in model, so we check if eventStart is passed)
@@ -36,20 +44,28 @@ CompetitionStatusView resolveCompetitionStatus(
     final evStart = event.eventStart!;
     if (now.isAfter(evStart)) {
       return CompetitionStatusView(
-          '已结束', CompetitionUiTokens.archivedColor(isDark));
+        '已结束',
+        CompetitionUiTokens.archivedColor(isDark),
+      );
     }
     return CompetitionStatusView(
-        '比赛中', CompetitionUiTokens.warningColor(isDark));
+      '比赛中',
+      CompetitionUiTokens.warningColor(isDark),
+    );
   }
 
   // 3. Fallbacks
   if (event.timeStatus == 'pending' || event.timeStatus == 'unknown') {
     return CompetitionStatusView(
-        '时间待公布', CompetitionUiTokens.pendingColor(isDark));
+      '时间待公布',
+      CompetitionUiTokens.pendingColor(isDark),
+    );
   }
 
   return CompetitionStatusView(
-      '时间待确认', CompetitionUiTokens.pendingColor(isDark));
+    '时间待确认',
+    CompetitionUiTokens.pendingColor(isDark),
+  );
 }
 
 String? getCompetitionCriticalTime(CompetitionEvent event) {
@@ -108,7 +124,7 @@ String competitionRecognitionLabel(String value) {
 
 String competitionManualRatingShort(String level) {
   final value = level.trim();
-  return value.isEmpty ? '' : '人工 $value';
+  return value.isEmpty ? '' : '价值 $value';
 }
 
 String competitionManualRatingLabel(String level) {
@@ -143,9 +159,7 @@ String competitionSchoolRecognitionLabel({
 }) {
   switch (status.trim()) {
     case 'recognized':
-      return grade.trim().isEmpty
-          ? '学校已认定'
-          : '学校认定等级 ${grade.trim()}';
+      return grade.trim().isEmpty ? '学校已认定' : '学校认定等级 ${grade.trim()}';
     case 'pending':
       return '学校认定待确认';
     case 'not_recognized':

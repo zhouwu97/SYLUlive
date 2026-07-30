@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/competitionscope"
 	"shenliyuan/internal/dto"
 	"shenliyuan/internal/models"
 )
@@ -71,13 +72,15 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	if !userContext.ProfileReady {
 		return result, nil
 	}
-	e.loadCatalogSummary(ctx, &result.Catalog)
+	scope, err := competitionscope.Resolve(ctx, e.db)
+	if err != nil {
+		return result, err
+	}
+	e.loadCatalogSummary(ctx, scope, &result.Catalog)
 
-	query := e.db.WithContext(ctx).Model(&models.CompetitionEvent{}).
-		Preload("PrimaryCategory").
-		Where("status = ?", "published").
-		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true).
-		Where("(candidate_pool_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true)
+	query := scope.ApplyCandidate(
+		e.db.WithContext(ctx).Model(&models.CompetitionEvent{}).Preload("PrimaryCategory"),
+	)
 	if filter.EventID > 0 {
 		query = query.Where("competition_events.id = ?", filter.EventID)
 	}
@@ -105,7 +108,7 @@ func (e *competitionCandidateEngine) BuildCandidates(
 		return result, err
 	}
 	grouped := map[string][]dto.CompetitionCandidateDTO{
-		"major_match": {}, "college_match": {}, "general_match": {}, "needs_confirmation": {},
+		"major_match": {}, "college_match": {}, "general_match": {},
 	}
 	for _, event := range events {
 		candidate, ok := buildCompetitionCandidate(event, userContext, e.now())
@@ -119,11 +122,11 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	}
 	for key := range grouped {
 		sort.SliceStable(grouped[key], func(i, j int) bool {
-			return competitionCandidateLess(grouped[key][i], grouped[key][j], e.now())
+			return competitionCandidateLess(grouped[key][i], grouped[key][j])
 		})
 	}
 
-	orderedKeys := []string{"major_match", "college_match", "general_match", "needs_confirmation"}
+	orderedKeys := []string{"major_match", "college_match", "general_match"}
 	all := make([]dto.CompetitionCandidateDTO, 0)
 	for _, key := range orderedKeys {
 		all = append(all, grouped[key]...)
@@ -143,7 +146,7 @@ func (e *competitionCandidateEngine) BuildCandidates(
 	pageItems := all[start:end]
 	labels := map[string]string{
 		"major_match": "专业直接相关", "college_match": "学院范围相关",
-		"general_match": "通用候选", "needs_confirmation": "信息待确认",
+		"general_match": "通用候选",
 	}
 	for _, key := range orderedKeys {
 		items := make([]dto.CompetitionCandidateDTO, 0)
@@ -173,14 +176,15 @@ func normalizeCandidateFilter(filter CandidateFilter) CandidateFilter {
 
 func (e *competitionCandidateEngine) loadCatalogSummary(
 	ctx context.Context,
+	scope competitionscope.Scope,
 	summary *dto.CompetitionCatalogSummaryDTO,
 ) {
-	if !e.db.Migrator().HasTable(&models.CompetitionCatalogPackage{}) {
+	if scope.LegacyFallback || scope.ActivePackageID == nil {
 		summary.DatasetVersion = "legacy"
 		return
 	}
 	var catalog models.CompetitionCatalogPackage
-	if err := e.db.WithContext(ctx).Where("is_active = ?", true).First(&catalog).Error; err != nil {
+	if err := e.db.WithContext(ctx).First(&catalog, *scope.ActivePackageID).Error; err != nil {
 		summary.DatasetVersion = "legacy"
 		return
 	}
@@ -318,15 +322,7 @@ func publicCompetitionDTO(event models.CompetitionEvent) dto.CompetitionPublicDT
 	}
 }
 
-func competitionCandidateLess(left, right dto.CompetitionCandidateDTO, now time.Time) bool {
-	leftSoon := candidateDeadlineSoon(left.RegistrationEnd, now)
-	rightSoon := candidateDeadlineSoon(right.RegistrationEnd, now)
-	if leftSoon != rightSoon {
-		return leftSoon
-	}
-	if left.ImportanceScore != right.ImportanceScore {
-		return left.ImportanceScore > right.ImportanceScore
-	}
+func competitionCandidateLess(left, right dto.CompetitionCandidateDTO) bool {
 	if left.CatalogOrder != right.CatalogOrder {
 		return left.CatalogOrder < right.CatalogOrder
 	}
@@ -334,10 +330,6 @@ func competitionCandidateLess(left, right dto.CompetitionCandidateDTO, now time.
 		return left.CompetitionID < right.CompetitionID
 	}
 	return left.ID < right.ID
-}
-
-func candidateDeadlineSoon(deadline *time.Time, now time.Time) bool {
-	return deadline != nil && !deadline.Before(now) && deadline.Before(now.AddDate(0, 0, 14))
 }
 
 func containsCandidateValue(values []string, expected string) bool {
@@ -359,16 +351,16 @@ func PublicCompetitionRisks(values []string) []string {
 		"time_unconfirmed":                "当届时间待确认",
 		"eligibility_unconfirmed":         "参赛资格需复核",
 		"high_weekly_hours":               "每周投入较高",
-		"high_time_cost":                   "备赛时间成本较高",
+		"high_time_cost":                  "备赛时间成本较高",
 		"template_or_material_dependency": "模板和材料依赖较强",
 		"mentor_or_resource_dependency":   "导师或平台资源影响较大",
 		"contribution_ambiguity":          "团队成员贡献可能难以界定",
 		"plagiarism_or_paid_material":     "需特别注意成果原创性",
-		"subjective_judging":               "评审存在一定主观性",
-		"equipment_dependency":             "对设备或实验条件有依赖",
-		"rule_or_track_variation":          "赛道规则可能随届次调整",
-		"online_fairness":                  "线上赛公平性需关注",
-		"user_feedback_unverified":         "学生反馈尚未核验",
+		"subjective_judging":              "评审存在一定主观性",
+		"equipment_dependency":            "对设备或实验条件有依赖",
+		"rule_or_track_variation":         "赛道规则可能随届次调整",
+		"online_fairness":                 "线上赛公平性需关注",
+		"user_feedback_unverified":        "学生反馈尚未核验",
 	}
 	result := make([]string, 0, len(values))
 	unknownFound := false

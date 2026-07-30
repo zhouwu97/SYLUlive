@@ -56,6 +56,94 @@ func TestCompetitionCatalogHashMatchesOfflineTool(t *testing.T) {
 	}
 }
 
+func TestCompetitionCatalogImportSupportsRevisionsAndPackageHashIdempotency(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	importer := NewCompetitionCatalogImporter(db)
+	firstDocument := validCatalogDocument(t, "2026.07-v-revision")
+	first, _, err := importer.Import(context.Background(), firstDocument, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondDocument := firstDocument
+	secondDocument.PublishStatus = "draft"
+	secondDocument.ProductionLoadAllowed = false
+	refreshCatalogHashes(t, &secondDocument)
+	second, _, err := importer.Import(context.Background(), secondDocument, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate, _, err := importer.Import(context.Background(), secondDocument, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Revision != 1 || second.Revision != 2 || duplicate.ID != second.ID {
+		t.Fatalf("修订或幂等结果错误: first=%+v second=%+v duplicate=%+v", first, second, duplicate)
+	}
+}
+
+func TestCompetitionCatalogActivationPersistsParentRelationship(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	requireCatalogCategory(t, db)
+	document := validCatalogDocument(t, "2026.07-v-parent")
+	child := document.Items[0]
+	child.CompetitionID = "NAT-006-TRACK"
+	child.Title = "程序设计竞赛赛道"
+	child.ParentCompetitionID = "NAT-006"
+	document.Items = append(document.Items, child)
+	document.ItemCount = len(document.Items)
+	refreshCatalogHashes(t, &document)
+	importer := NewCompetitionCatalogImporter(db)
+	catalog, _, err := importer.Import(context.Background(), document, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := importer.Activate(context.Background(), catalog.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	var parent, persisted models.CompetitionEvent
+	if err := db.Where("competition_id = ?", "NAT-006").First(&parent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("competition_id = ?", child.CompetitionID).First(&persisted).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ParentCompetitionID != parent.CompetitionID || persisted.ParentEventID == nil || *persisted.ParentEventID != parent.ID {
+		t.Fatalf("父子赛事关系未完整落库: parent=%+v child=%+v", parent, persisted)
+	}
+}
+
+func TestCompetitionCatalogConfirmedLegacyMappingReusesEventID(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	requireCatalogCategory(t, db)
+	legacy := candidateEvent("LEGACY-77", "旧赛事", 10, 1, nil, nil)
+	if err := db.Select("*").Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	importer := NewCompetitionCatalogImporter(db)
+	document := validCatalogDocument(t, "2026.07-v-mapping")
+	catalog, _, err := importer.Import(context.Background(), document, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapping := models.CompetitionCatalogLegacyMapping{
+		PackageID: catalog.ID, CompetitionID: document.Items[0].CompetitionID,
+		LegacyEventID: legacy.ID, MatchType: "manual", Confidence: 1, ReviewStatus: "confirmed",
+	}
+	if err := db.Create(&mapping).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := importer.Activate(context.Background(), catalog.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	var activated models.CompetitionEvent
+	if err := db.Where("competition_id = ?", document.Items[0].CompetitionID).First(&activated).Error; err != nil {
+		t.Fatal(err)
+	}
+	if activated.ID != legacy.ID {
+		t.Fatalf("确认映射没有复用旧 ID: got=%d want=%d", activated.ID, legacy.ID)
+	}
+}
+
 func TestCompetitionCatalogValidatorRejectsHashDuplicateParentAndPermissionErrors(t *testing.T) {
 	document := validCatalogDocument(t, "2026.07-v1")
 	duplicate := document.Items[0]

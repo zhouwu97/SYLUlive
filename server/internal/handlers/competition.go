@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -22,8 +23,16 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"shenliyuan/internal/competitionscope"
 	"shenliyuan/internal/models"
 )
+
+func competitionRequestContext(c *gin.Context) context.Context {
+	if c != nil && c.Request != nil {
+		return c.Request.Context()
+	}
+	return context.Background()
+}
 
 type CompetitionHandler struct {
 	db                       *gorm.DB
@@ -418,34 +427,35 @@ func (h *CompetitionHandler) GetCategories(c *gin.Context) {
 
 func (h *CompetitionHandler) GetOverview(c *gin.Context) {
 	start, end := competitionOverviewBounds(time.Now())
-	base := h.db.Model(&models.CompetitionEvent{}).
-		Where("status = ?", "published").
-		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true)
+	ctx := competitionRequestContext(c)
+	scope, err := competitionscope.Resolve(ctx, h.db)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛目录范围失败"})
+		return
+	}
+	baseQuery := func() *gorm.DB {
+		return scope.ApplyPublic(h.db.WithContext(ctx).Model(&models.CompetitionEvent{}))
+	}
 	var publishedTotal, deadlineSoonCount, timePendingCount, recognizedCount int64
-	if err := base.Count(&publishedTotal).Error; err != nil {
+	if err := baseQuery().Count(&publishedTotal).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
 		return
 	}
-	if err := h.db.Model(&models.CompetitionEvent{}).
-		Where("status = ?", "published").
-		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true).
+	if err := baseQuery().
 		Where("registration_end >= ? AND registration_end < ?", start, end).
 		Count(&deadlineSoonCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
 		return
 	}
-	if err := h.db.Model(&models.CompetitionEvent{}).
-		Where("status = ?", "published").
-		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true).
+	if err := baseQuery().
 		Where("registration_end IS NULL").
 		Where("time_status IN ?", []string{"pending", "historical", "estimated"}).
 		Count(&timePendingCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
 		return
 	}
-	if err := h.db.Model(&models.CompetitionEvent{}).
-		Where("status = ? AND school_recognition_status = ?", "published", "recognized").
-		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true).
+	if err := baseQuery().
+		Where("school_recognition_status = ?", "recognized").
 		Count(&recognizedCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
 		return
@@ -542,9 +552,15 @@ func (h *CompetitionHandler) ListEvents(c *gin.Context) {
 	if pageSize < 1 || pageSize > 50 {
 		pageSize = 20
 	}
-	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory").
-		Where("status = ?", "published").
-		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true)
+	ctx := competitionRequestContext(c)
+	scope, err := competitionscope.Resolve(ctx, h.db)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛目录范围失败"})
+		return
+	}
+	query := scope.ApplyPublic(
+		h.db.WithContext(ctx).Model(&models.CompetitionEvent{}).Preload("PrimaryCategory"),
+	)
 	query = h.applyEventFilters(c, query)
 
 	var total int64
@@ -607,8 +623,15 @@ func (h *CompetitionHandler) GetEvent(c *gin.Context) {
 	if !ok {
 		return
 	}
+	ctx := competitionRequestContext(c)
+	scope, err := competitionscope.Resolve(ctx, h.db)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛目录范围失败"})
+		return
+	}
 	var event models.CompetitionEvent
-	if err := h.db.Preload("PrimaryCategory").First(&event, "id = ? AND status = ?", id, "published").Error; err != nil {
+	query := scope.ApplyPublic(h.db.WithContext(ctx).Preload("PrimaryCategory").Model(&models.CompetitionEvent{}))
+	if err := query.First(&event, "competition_events.id = ?", id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "比赛不存在"})
 		return
 	}

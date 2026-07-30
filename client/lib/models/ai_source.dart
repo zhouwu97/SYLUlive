@@ -1,4 +1,4 @@
-enum AiSourceType { policy, schedule }
+enum AiSourceType { policy, schedule, competitionCatalog, competitionEvidence }
 
 class AiSource {
   final AiSourceType type;
@@ -14,6 +14,13 @@ class AiSource {
   final DateTime? effectiveFrom;
   final DateTime? effectiveTo;
   final DateTime? publishedAt;
+  final String competitionId;
+  final String datasetVersion;
+  final String schoolRecognition;
+  final String competitionRating;
+  final String evidenceSubgrade;
+  final String aiMode;
+  final DateTime? lastUpdated;
 
   const AiSource({
     required this.type,
@@ -29,15 +36,22 @@ class AiSource {
     this.effectiveFrom,
     this.effectiveTo,
     this.publishedAt,
+    this.competitionId = '',
+    this.datasetVersion = '',
+    this.schoolRecognition = '',
+    this.competitionRating = '',
+    this.evidenceSubgrade = '',
+    this.aiMode = '',
+    this.lastUpdated,
   });
 
   factory AiSource.fromJson(Map<String, dynamic> json) {
     return AiSource(
-      type: json['type'] == 'schedule'
-          ? AiSourceType.schedule
-          : AiSourceType.policy,
-      chunkId: int.tryParse(
-              '${json['primary_chunk_id'] ?? json['chunk_id'] ?? ''}') ??
+      type: _sourceType(json['type']),
+      chunkId:
+          int.tryParse(
+            '${json['primary_chunk_id'] ?? json['chunk_id'] ?? ''}',
+          ) ??
           0,
       documentId: int.tryParse('${json['document_id'] ?? ''}') ?? 0,
       title: json['title']?.toString() ?? '',
@@ -51,14 +65,43 @@ class AiSource {
       effectiveFrom: _policyDate(json['effective_from']),
       effectiveTo: _policyDate(json['effective_to']),
       publishedAt: _dateTime(json['published_at']),
+      competitionId: json['competition_id']?.toString() ?? '',
+      datasetVersion: json['dataset_version']?.toString() ?? '',
+      schoolRecognition:
+          json['school_recognition']?.toString() ??
+          json['school_recognition_grade']?.toString() ??
+          '',
+      competitionRating: json['competition_rating']?.toString() ?? '',
+      evidenceSubgrade: json['evidence_subgrade']?.toString() ?? '',
+      aiMode: json['ai_mode']?.toString() ?? '',
+      lastUpdated: _dateTime(json['last_updated'] ?? json['updated_at']),
     );
   }
 
-  String get typeLabel => type == AiSourceType.schedule ? '课表缓存' : '校园政策';
+  String get typeLabel {
+    switch (type) {
+      case AiSourceType.schedule:
+        return '课表缓存';
+      case AiSourceType.competitionCatalog:
+        return '竞赛目录';
+      case AiSourceType.competitionEvidence:
+        return '竞赛证据';
+      case AiSourceType.policy:
+        return '校园政策';
+    }
+  }
 
-  String get reliabilityNote => type == AiSourceType.schedule
-      ? '来自本机已同步课表缓存，并非实时教务数据。'
-      : '请以来源文件当前有效版本为准。';
+  String get reliabilityNote {
+    switch (type) {
+      case AiSourceType.schedule:
+        return '来自本机已同步课表缓存，并非实时教务数据。';
+      case AiSourceType.competitionCatalog:
+      case AiSourceType.competitionEvidence:
+        return '仅展示公开目录事实；候选解释不代表获奖概率。';
+      case AiSourceType.policy:
+        return '请以来源文件当前有效版本为准。';
+    }
+  }
 
   String get citationLabel =>
       citationNumbers.map((number) => '[$number]').join();
@@ -91,6 +134,19 @@ class AiSource {
   }
 
   String get locatorLabel => locators.isEmpty ? '未标注' : locators.join(' · ');
+}
+
+AiSourceType _sourceType(dynamic value) {
+  switch (value?.toString()) {
+    case 'schedule':
+      return AiSourceType.schedule;
+    case 'competition_catalog':
+      return AiSourceType.competitionCatalog;
+    case 'competition_evidence':
+      return AiSourceType.competitionEvidence;
+    default:
+      return AiSourceType.policy;
+  }
 }
 
 class AiSourceContent {

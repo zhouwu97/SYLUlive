@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../../config/beta_release_policy.dart';
 import '../../models/competition_capability_profile.dart';
 import '../../models/competition_dashboard_summary.dart';
 import '../../models/competition_preference.dart';
@@ -34,6 +35,9 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
   bool _profileLoading = true;
   bool _accessLoading = true;
   bool _savingAccess = false;
+  bool _candidateLoading = true;
+  int? _candidateCount;
+  String? _candidateError;
   String? _dashboardError;
   String? _profileError;
   String? _accessError;
@@ -54,12 +58,47 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
       _dashboard = null;
       _profile = null;
       _aiAccess = null;
+      _candidateCount = null;
+      _candidateError = null;
       _loadAll();
     }
   }
 
   Future<void> _loadAll() async {
-    await Future.wait([_loadDashboard(), _loadProfile(), _loadAIAccess()]);
+    await Future.wait([
+      _loadDashboard(),
+      _loadProfile(),
+      _loadAIAccess(),
+      if (BetaReleasePolicy.competitionCandidateMatching) _loadCandidateCount(),
+    ]);
+  }
+
+  Future<void> _loadCandidateCount() async {
+    final account = widget.accountKey;
+    setState(() {
+      _candidateLoading = true;
+      _candidateError = null;
+    });
+    try {
+      final response = await widget.dio.get(
+        '/user/competitions/candidates',
+        queryParameters: const {'page': 1, 'page_size': 1},
+      );
+      if (!mounted || account != widget.accountKey) return;
+      final data = Map<String, dynamic>.from(response.data as Map);
+      setState(() {
+        _candidateCount = (data['total'] as num?)?.toInt() ?? 0;
+        _candidateLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || account != widget.accountKey) return;
+      setState(() {
+        _candidateLoading = false;
+        _candidateError = error is DioException
+            ? AppFeedback.dioErrorMessage(error, fallback: '匹配候选加载失败')
+            : '匹配候选解析失败';
+      });
+    }
   }
 
   Future<void> _loadDashboard() async {
@@ -95,8 +134,9 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
       _profileError = null;
     });
     try {
-      final response =
-          await widget.dio.get('/user/competition-capability-profile');
+      final response = await widget.dio.get(
+        '/user/competition-capability-profile',
+      );
       if (!mounted || account != widget.accountKey) return;
       setState(() {
         _profile = CompetitionCapabilityProfile.fromJson(
@@ -122,8 +162,9 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
       _accessError = null;
     });
     try {
-      final response = await widget.dio
-          .get('/user/competition-capability-profile/ai-access');
+      final response = await widget.dio.get(
+        '/user/competition-capability-profile/ai-access',
+      );
       if (!mounted || account != widget.accountKey) return;
       setState(() {
         _aiAccess = CompetitionCapabilityAIAccess.fromJson(
@@ -159,7 +200,7 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
       });
       AppFeedback.showSnackBar(
         context,
-        enabled ? '已允许 AI 使用竞赛画像' : '已关闭 AI 竞赛画像授权',
+        enabled ? '已允许 AI 解释竞赛匹配' : '已关闭 AI 竞赛匹配解释',
       );
     } catch (error) {
       if (!mounted) return;
@@ -273,6 +314,20 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
         subtitle: _profileSubtitle(profile),
         onTap: _openProfile,
       ),
+      if (BetaReleasePolicy.competitionCandidateMatching)
+        CompetitionProfileHubItem(
+          icon: Icons.filter_alt_outlined,
+          title: '匹配候选',
+          status: _candidateLoading && _candidateCount == null
+              ? '读取中'
+              : _candidateError != null && _candidateCount == null
+                  ? '重试'
+                  : '${_candidateCount ?? 0}项',
+          subtitle: _candidateError ?? '根据专业、资格和目标筛选',
+          onTap: _candidateError != null && _candidateCount == null
+              ? _loadCandidateCount
+              : () => Navigator.of(context).pop('fit'),
+        ),
     ];
   }
 
@@ -337,10 +392,13 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
               value: _aiAccess?.enabled ?? false,
               onChanged: _accessLoading || _savingAccess ? null : _setAIAccess,
               title: const Text(
-                '允许 AI 使用竞赛画像',
+                '允许 AI 解释竞赛匹配',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
-              subtitle: const Text('只使用目标与结构化汇总，不读取证明材料'),
+              subtitle: const Text(
+                '会使用年级、专业、目标、投入时间及技能与角色汇总；'
+                '不会使用姓名、学号、证明材料、经历原文或教务凭据。关闭后规则候选仍可使用。',
+              ),
             ),
     );
   }
@@ -357,11 +415,7 @@ class _CompetitionMyHubScreenState extends State<CompetitionMyHubScreen> {
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              message,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(message, maxLines: 2, overflow: TextOverflow.ellipsis),
           ),
           IconButton(
             tooltip: '重试',

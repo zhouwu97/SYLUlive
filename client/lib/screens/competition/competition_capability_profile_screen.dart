@@ -74,8 +74,9 @@ class _CompetitionCapabilityProfileScreenState
       });
     }
     try {
-      final response =
-          await widget.dio.get('/user/competition-capability-profile');
+      final response = await widget.dio.get(
+        '/user/competition-capability-profile',
+      );
       if (!mounted || serial != _loadSerial) return;
       setState(() {
         _profile = CompetitionCapabilityProfile.fromJson(
@@ -101,8 +102,9 @@ class _CompetitionCapabilityProfileScreenState
       _accessError = null;
     });
     try {
-      final response = await widget.dio
-          .get('/user/competition-capability-profile/ai-access');
+      final response = await widget.dio.get(
+        '/user/competition-capability-profile/ai-access',
+      );
       if (!mounted || account != widget.accountKey) return;
       setState(() {
         _aiAccess = CompetitionCapabilityAIAccess.fromJson(
@@ -137,7 +139,7 @@ class _CompetitionCapabilityProfileScreenState
       });
       AppFeedback.showSnackBar(
         context,
-        enabled ? '已允许 AI 使用能力画像' : '已关闭 AI 画像授权',
+        enabled ? '已允许 AI 解释竞赛匹配' : '已关闭 AI 竞赛匹配解释',
       );
     } catch (error) {
       if (!mounted) return;
@@ -156,10 +158,7 @@ class _CompetitionCapabilityProfileScreenState
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return CompetitionPageScaffold(
-      title: '我的能力画像',
-      body: _buildBody(isDark),
-    );
+    return CompetitionPageScaffold(title: '我的能力画像', body: _buildBody(isDark));
   }
 
   Widget _buildBody(bool isDark) {
@@ -177,10 +176,7 @@ class _CompetitionCapabilityProfileScreenState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _profileError ?? '能力画像暂不可用',
-                textAlign: TextAlign.center,
-              ),
+              Text(_profileError ?? '能力画像暂不可用', textAlign: TextAlign.center),
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: _loadProfile,
@@ -194,7 +190,8 @@ class _CompetitionCapabilityProfileScreenState
     }
 
     final profile = _profile!;
-    final ready = profile.preferenceConfigured ||
+    final ready =
+        profile.preferenceConfigured ||
         profile.verifiedAwardCount + profile.selfReportedAwardCount > 0;
     return RefreshIndicator(
       onRefresh: _load,
@@ -203,6 +200,8 @@ class _CompetitionCapabilityProfileScreenState
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
         children: ready
             ? [
+                _profileCompleteness(profile, isDark),
+                const SizedBox(height: 12),
                 _countBand(profile, isDark),
                 _sectionTitle('技能', isDark),
                 if (profile.skillSummary.isEmpty)
@@ -227,9 +226,7 @@ class _CompetitionCapabilityProfileScreenState
                 const SizedBox(height: 16),
                 _buildAIAccess(isDark),
               ]
-            : [
-                _emptyProfileCard(isDark),
-              ],
+            : [_emptyProfileCard(isDark)],
       ),
     );
   }
@@ -264,11 +261,78 @@ class _CompetitionCapabilityProfileScreenState
                   ? null
                   : _setAIAccess,
               title: const Text(
-                '允许 AI 使用此画像',
+                '允许 AI 解释竞赛匹配',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
-              subtitle: const Text('仅包含竞赛目标和本页汇总，不包含证明材料'),
+              subtitle: const Text(
+                '会使用年级、专业、目标、投入时间及技能与角色汇总；'
+                '不会使用姓名、学号、证明材料、经历原文或教务凭据。',
+              ),
             ),
+    );
+  }
+
+  Widget _profileCompleteness(
+    CompetitionCapabilityProfile profile,
+    bool isDark,
+  ) {
+    final items = <(String, bool)>[
+      ('年级、学院和专业', true),
+      ('参赛目标与方向', profile.preferenceConfigured),
+      ('每周投入时间', profile.weeklyHours > 0),
+      (
+        '技能与偏好角色',
+        profile.skillSummary.isNotEmpty || profile.preferredRoles.isNotEmpty,
+      ),
+    ];
+    final complete = items.where((item) => item.$2).length;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: CompetitionUiTokens.cardBg(isDark),
+        border: Border.all(color: CompetitionUiTokens.borderColor(isDark)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '画像完整度 $complete/4',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: CompetitionUiTokens.titleColor(isDark),
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final item in items)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                children: [
+                  Icon(
+                    item.$2
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    size: 17,
+                    color: item.$2
+                        ? CompetitionUiTokens.accent(isDark)
+                        : CompetitionUiTokens.subColor(isDark),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item.$1,
+                      style: TextStyle(
+                        color: CompetitionUiTokens.titleColor(isDark),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 

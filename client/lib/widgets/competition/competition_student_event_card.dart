@@ -9,6 +9,7 @@ class CompetitionStudentEventCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onAddPlan;
   final VoidCallback onJoinedTap;
+  final VoidCallback? onWhyTap;
   final bool joined;
   final bool isAdding;
   final bool showRecommendations;
@@ -19,6 +20,7 @@ class CompetitionStudentEventCard extends StatelessWidget {
     required this.onTap,
     required this.onAddPlan,
     required this.onJoinedTap,
+    this.onWhyTap,
     this.joined = false,
     this.isAdding = false,
     this.showRecommendations = true,
@@ -28,12 +30,10 @@ class CompetitionStudentEventCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final status = resolveCompetitionStatus(event, isDark);
-    final audience = _studentAudience(event);
+    final candidateMode = event.coreReason.trim().isNotEmpty;
     final reason =
-        showRecommendations ? _studentReason(event) : event.summary.trim();
-    final manualLabel = showRecommendations
-        ? competitionManualRatingShort(event.recommendationLevel)
-        : '';
+        candidateMode ? event.coreReason.trim() : event.summary.trim();
+    final manualLabel = competitionManualRatingShort(event.competitionRating);
     final schoolLabel = competitionSchoolRecognitionShort(
       status: event.schoolRecognitionStatus,
       grade: event.schoolRecognitionGrade,
@@ -94,56 +94,69 @@ class CompetitionStudentEventCard extends StatelessWidget {
                 _studentTimeText(event, status.label),
                 isDark,
               ),
-              if (audience.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                _infoLine(Icons.groups_2_outlined, '适合：$audience', isDark),
-              ],
               if (reason.isNotEmpty) ...[
                 const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (candidateMode) ...[
+                      Icon(
+                        Icons.rule_rounded,
+                        size: 16,
+                        color: CompetitionUiTokens.accent(isDark),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: Text(
+                        reason,
+                        maxLines: candidateMode ? 2 : 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.45,
+                          color: CompetitionUiTokens.titleColor(isDark),
+                          fontWeight:
+                              candidateMode ? FontWeight.w700 : FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (candidateMode && onWhyTap != null)
+                      TextButton(
+                        onPressed: onWhyTap,
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.only(left: 8),
+                          minimumSize: const Size(0, 28),
+                        ),
+                        child: const Text('为什么'),
+                      ),
+                  ],
+                ),
+              ],
+              if (candidateMode && event.cautions.isNotEmpty) ...[
+                const SizedBox(height: 8),
                 Text(
-                  reason,
+                  event.cautions.take(2).join(' · '),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 13,
-                    height: 1.45,
-                    color: CompetitionUiTokens.titleColor(isDark),
+                    fontSize: 12,
+                    height: 1.35,
+                    color: CompetitionUiTokens.warningColor(isDark),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
-              if (showRecommendations && event.fitReasons.isNotEmpty) ...[
+              if (candidateMode && event.hasPendingInformation) ...[
                 const SizedBox(height: 8),
                 Text(
-                  event.fitReasons.join(' · '),
+                  '信息待确认',
                   style: TextStyle(
                     fontSize: 12,
-                    height: 1.35,
-                    color: CompetitionUiTokens.accent(isDark),
+                    color: CompetitionUiTokens.warningColor(isDark),
                     fontWeight: FontWeight.w700,
                   ),
-                ),
-              ],
-              if (showRecommendations && event.personalizedScore != null) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.tune_rounded,
-                      size: 15,
-                      color: CompetitionUiTokens.accent(isDark),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '偏好匹配 ${event.personalizedScore}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.2,
-                        color: CompetitionUiTokens.accent(isDark),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
                 ),
               ],
               const SizedBox(height: 12),
@@ -157,9 +170,6 @@ class CompetitionStudentEventCard extends StatelessWidget {
                       children: [
                         if (event.participationType.isNotEmpty)
                           _outlinePill(event.participationType, isDark),
-                        ...event.tags
-                            .take(3)
-                            .map((tag) => _outlinePill(tag, isDark)),
                       ],
                     ),
                   ),
@@ -175,13 +185,17 @@ class CompetitionStudentEventCard extends StatelessWidget {
                             dimension: 14,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Icon(joined ? Icons.check_rounded : Icons.add_rounded,
-                            size: 17),
-                    label: Text(isAdding
-                        ? '加入中'
-                        : joined
-                            ? '已加入'
-                            : '加入计划'),
+                        : Icon(
+                            joined ? Icons.check_rounded : Icons.add_rounded,
+                            size: 17,
+                          ),
+                    label: Text(
+                      isAdding
+                          ? '加入中'
+                          : joined
+                              ? '已加入'
+                              : '加入计划',
+                    ),
                     style: FilledButton.styleFrom(
                       backgroundColor: CompetitionUiTokens.accent(isDark),
                       foregroundColor: Colors.white,
@@ -199,20 +213,6 @@ class CompetitionStudentEventCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _studentAudience(CompetitionEvent event) {
-    final targetAudience = event.targetAudience.trim();
-    if (targetAudience.isNotEmpty) return targetAudience;
-    final summary = event.summary.trim();
-    if (summary.isNotEmpty) return summary;
-    return event.description.trim();
-  }
-
-  String _studentReason(CompetitionEvent event) {
-    final reason = event.recommendationReason.trim();
-    if (reason.isNotEmpty) return reason;
-    return event.summary.trim();
   }
 }
 

@@ -237,4 +237,42 @@ void main() {
     expect(provider.error, '回答达到长度上限，未完整生成，请重试');
     expect(provider.messages.single.status.name, 'failed');
   });
+
+  test('校园 AI 错误提示包含可执行的下一步', () {
+    const cases = <String, String>{
+      'personal_context_unavailable': '暂时没有可核验的学业数据，请先刷新成绩和学分后重试',
+      'academic_snapshot_corrupted': '学业数据校验失败，请刷新教务数据后重试',
+      'tool_call_limit': '本次分析步骤过多，请一次只问一个问题后重试',
+      'external_mcp_timeout': '学业分析服务响应超时，请稍后重试',
+      'external_mcp_invalid_result': '学业分析结果校验失败，请稍后重试',
+      'provider_unavailable': '回答服务暂时不可用，请稍后重试',
+      'rate_limited': '当前请求较多，请稍后重试',
+    };
+
+    var seq = 0;
+    for (final entry in cases.entries) {
+      final provider = AiAssistantProvider(
+        AiAssistantService(Dio()),
+        initialCapabilities: const AiCapabilities(
+          enabled: true,
+          accessAllowed: true,
+          internalTestOnly: false,
+          chatEnabled: true,
+          phase: 'p2',
+          features: AiFeatures(policyRag: true, scheduleWindows: false),
+          quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
+          maxMessageChars: 20,
+        ),
+      );
+      addTearDown(provider.dispose);
+      provider.applyRunEvent(AiRunEvent(
+        runId: 'error-${seq++}',
+        seq: 1,
+        type: AiRunEventType.failed,
+        errorCode: entry.key,
+        retryable: true,
+      ));
+      expect(provider.error, entry.value, reason: entry.key);
+    }
+  });
 }

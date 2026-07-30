@@ -797,13 +797,37 @@ class AiAssistantProvider extends ChangeNotifier {
       case 'run_expired':
         return '本次回答已过期，请重新提问';
       case 'personal_context_unavailable':
-        return '当前没有可核验的个人学业数据，暂时无法完成分析';
+        return '暂时没有可核验的学业数据，请先刷新成绩和学分后重试';
       case 'tool_call_limit':
-        return '本次请求步骤过多，请缩小问题范围后重试';
+        return '本次分析步骤过多，请一次只问一个问题后重试';
       case 'tool_loop_limit':
         return '本次分析步骤达到上限，请缩小问题范围后重试';
       case 'academic_snapshot_corrupted':
-        return '个人学业数据校验失败，请刷新数据后重试';
+        return '学业数据校验失败，请刷新教务数据后重试';
+      case 'external_mcp_disabled':
+      case 'external_mcp_tool_missing':
+        return '学业分析服务正在更新，请稍后重试';
+      case 'external_mcp_unavailable':
+        return '学业分析服务暂时不可用，请稍后重试';
+      case 'external_mcp_timeout':
+        return '学业分析服务响应超时，请稍后重试';
+      case 'external_mcp_protocol_error':
+      case 'external_mcp_invalid_result':
+        return '学业分析结果校验失败，请稍后重试';
+      case 'external_mcp_constraint_violation':
+        return '当前数据不满足分析条件，请刷新数据或缩小问题范围后重试';
+      case 'rate_limited':
+        return '当前请求较多，请稍后重试';
+      case 'provider_timeout':
+        return '回答服务响应超时，请稍后重试';
+      case 'provider_unavailable':
+      case 'authentication_error':
+        return '回答服务暂时不可用，请稍后重试';
+      case 'content_rejected':
+        return '该问题暂时无法处理，请调整表述后重试';
+      case 'invalid_response':
+      case 'unknown_provider_error':
+        return '回答结果异常，请重新提问';
       default:
         return '回答生成失败，请稍后重试';
     }

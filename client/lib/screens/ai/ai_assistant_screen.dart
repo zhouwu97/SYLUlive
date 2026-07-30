@@ -987,13 +987,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                   quickPrompts: provider.quickPrompts,
                                   suggestedPrompts: [
                                     if (capabilities
-                                        .features.hy3CompetitionCompare)
-                                      const AiSuggestedPrompt(
-                                        title: '赛事对比',
-                                        subtitle: '比较适合你的竞赛与准备重点',
-                                        prompt: '帮我比较适合我的校园竞赛，并说明推荐理由和准备重点',
-                                      ),
-                                    if (capabilities
                                         .features.hy3AcademicAnalysis)
                                       const AiSuggestedPrompt(
                                         title: '学业分析',

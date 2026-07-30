@@ -143,6 +143,9 @@ func main() {
 	if err := models.NormalizeConversationPairs(db); err != nil {
 		log.Fatalf("failed to normalize legacy conversations: %v", err)
 	}
+	if err := models.PrepareCompetitionCatalogMigration(db); err != nil {
+		log.Fatal("竞赛目录预迁移失败:", err)
+	}
 
 	if err := db.AutoMigrate(
 

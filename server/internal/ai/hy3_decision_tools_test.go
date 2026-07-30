@@ -16,6 +16,7 @@ import (
 
 	"shenliyuan/internal/academic"
 	"shenliyuan/internal/ai/mcpclient"
+	"shenliyuan/internal/competitioncontext"
 	"shenliyuan/internal/models"
 )
 
@@ -269,6 +270,99 @@ func TestHy3AdapterRejectsUnexpectedPersonalPayloadBeforeAudit(t *testing.T) {
 	require.Zero(t, count)
 }
 
+func TestHy3CompetitionAdapterUsesSelectedComparisonAndUnifiedProfile(t *testing.T) {
+	db := newHy3DecisionTestDB(t)
+	require.NoError(t, db.AutoMigrate(
+		&models.User{},
+		&models.UserCompetitionPreference{},
+		&models.UserCompetitionAward{},
+		&models.CompetitionCategory{},
+		&models.CompetitionEvent{},
+	))
+	now := time.Now()
+	user := models.User{
+		ID: 7, StudentID: "hy3-competition", PasswordHash: "test", Nickname: "测试用户",
+		EduGrade: "本科三年级", EduCollege: "信息学院", EduMajor: "软件工程",
+		CompetitionProfileAIEnabled: true, CompetitionProfileAIEnabledAt: &now,
+	}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&models.UserCompetitionPreference{
+		UserID: 7, Goals: datatypes.JSON(`["能力提升"]`),
+		DirectionTags: datatypes.JSON(`["程序设计"]`), SkillTags: datatypes.JSON(`[]`),
+		PreferredRoles: datatypes.JSON(`["developer"]`), WeeklyHours: 7,
+		ExperienceLevel: "beginner",
+	}).Error)
+	require.NoError(t, db.Create(&models.UserCompetitionAward{
+		UserID: 7, CompetitionTitle: "既有经历", CompetitionYear: 2025,
+		AwardName: "参赛", CompetitionStage: "school", Role: "developer",
+		SkillTags: datatypes.JSON(`["Go"]`), EvidenceFileIDs: datatypes.JSON(`[]`),
+		VerificationStatus: "verified", Visibility: "private",
+	}).Error)
+	category := models.CompetitionCategory{Name: "计算机", Slug: "computer", IsActive: true}
+	require.NoError(t, db.Create(&category).Error)
+	events := []models.CompetitionEvent{
+		{
+			CompetitionID: "NAT-001", RecordHash: strings.Repeat("a", 64),
+			Title: "赛事一", PrimaryCategoryID: category.ID, Status: "published",
+			CandidatePoolAllowed: true, SearchDisplayAllowed: true,
+			RecommendationPermissionLevel: "low", AIMode: "candidate_explanation",
+			CompetitionRating: "A", RiskTags: datatypes.JSON(`["long_term_training"]`),
+		},
+		{
+			CompetitionID: "NAT-002", RecordHash: strings.Repeat("b", 64),
+			Title: "赛事二", PrimaryCategoryID: category.ID, Status: "published",
+			CandidatePoolAllowed: true, SearchDisplayAllowed: true,
+			RecommendationPermissionLevel: "low", AIMode: "candidate_explanation",
+			CompetitionRating: "B+", RiskTags: datatypes.JSON(`[]`),
+		},
+	}
+	require.NoError(t, db.Create(&events).Error)
+	remote := &recordingExternalMCPClient{response: hy3RemoteResponse(
+		map[string]interface{}{
+			"summary": "两项赛事的公开事实各有侧重。",
+			"items": []map[string]interface{}{
+				{
+					"competition_id": "NAT-001",
+					"observations": []map[string]interface{}{{
+						"text":          "赛事价值有公开目录依据",
+						"source_fields": []string{"competition_rating"},
+					}},
+					"cautions": []interface{}{}, "questions_to_confirm": []interface{}{},
+				},
+				{
+					"competition_id": "NAT-002",
+					"observations": []map[string]interface{}{{
+						"text":          "赛事价值有公开目录依据",
+						"source_fields": []string{"competition_rating"},
+					}},
+					"cautions": []interface{}{}, "questions_to_confirm": []interface{}{},
+				},
+			},
+		},
+		map[string]interface{}{"competition_ids": []string{"NAT-001", "NAT-002"}},
+	)}
+	decision := &hy3DecisionMCP{
+		db: db, remote: remote, competitionExplanationEnabled: true,
+		campus: &campusMCP{
+			db: db, now: time.Now, permissions: AllowAllPermissionReader{},
+		},
+	}
+	value, err := decision.compareCompetitions(
+		context.Background(), 7,
+		json.RawMessage(fmt.Sprintf(`{"event_ids":[%d,%d]}`, events[0].ID, events[1].ID)),
+	)
+	require.NoError(t, err)
+	result := value.(map[string]interface{})
+	require.Equal(t, "ok", result["status"])
+	require.Len(t, remote.calls, 1)
+	require.Equal(t, "compare_selected_competitions", remote.calls[0].name)
+	contextValue := remote.calls[0].arguments["user_context"].(competitioncontext.UserContext)
+	require.Equal(t, []string{"能力提升"}, contextValue.Goals)
+	require.Equal(t, 7, contextValue.WeeklyHours)
+	require.Equal(t, "Go", contextValue.Skills[0].Name)
+	assertNoSensitiveRemoteFields(t, remote.calls[0].arguments)
+}
+
 func TestHy3DecisionRejectsSecondExternalCallInSameRun(t *testing.T) {
 	db := newHy3DecisionTestDB(t)
 	require.NoError(t, db.Create(&models.AIToolCall{
@@ -441,7 +535,7 @@ func newHy3PlanDecision(db *gorm.DB, remote mcpclient.ExternalMCPClient, schedul
 		db:     db,
 		remote: remote,
 		campus: &campusMCP{
-			db: db,
+			db:          db,
 			permissions: AllowAllPermissionReader{},
 			snapshots: fixedHy3AcademicSnapshotReader{
 				generation: 1,

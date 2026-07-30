@@ -271,6 +271,8 @@ func main() {
 		&models.CampusArticle{},
 		&models.JWCSyncState{},
 		&models.CompetitionCategory{},
+		&models.CompetitionCatalogPackage{},
+		&models.CompetitionCatalogAuditLog{},
 		&models.CompetitionEvent{},
 		&models.CompetitionEventAttachment{},
 		&models.UserCompetitionCalendar{},
@@ -297,6 +299,9 @@ func main() {
 
 		log.Fatal("数据库迁移失败:", err)
 
+	}
+	if err := models.BackfillCompetitionCatalogMetadata(db); err != nil {
+		log.Fatal("竞赛目录兼容数据回填失败:", err)
 	}
 	accountRepair, err := models.RepairLegacyAccountIdentityState(db)
 	if err != nil {
@@ -756,6 +761,7 @@ func main() {
 						hy3Tools := ai.NewValidatedHy3DecisionTools(
 							db, academicSnapshotService, personalSnapshotService, externalMCPClient, definitions,
 							ai.WithHy3DecisionPersonalDataPermissionReader(aiUserPermissionService),
+							ai.WithHy3CompetitionExplanationEnabled(cfg.CompetitionAIExplanationEnabled),
 						)
 						if len(hy3Tools) == 0 {
 							log.Printf("[AI_EXTERNAL_MCP_NO_COMPATIBLE_TOOLS]")
@@ -1067,6 +1073,9 @@ func main() {
 		user.POST("/competition-awards/:id/cancel-verification", competitionHandler.CancelCompetitionAwardVerification)
 		user.GET("/competition-awards/:id/evidence/:file_id", competitionHandler.DownloadOwnCompetitionAwardEvidence)
 		user.GET("/competitions/fit", competitionHandler.ListFitEvents)
+		if cfg.CompetitionCandidateEngineV2Enabled {
+			user.GET("/competitions/candidates", competitionHandler.ListCompetitionCandidates)
+		}
 		user.GET("/ai-action-drafts/:id", competitionHandler.GetAIActionDraft)
 		user.POST("/ai-action-drafts/:id/confirm", competitionHandler.ConfirmAIActionDraft)
 		user.POST("/ai-action-drafts/:id/cancel", competitionHandler.CancelAIActionDraft)
@@ -1105,6 +1114,16 @@ func main() {
 		userOptional.GET("/:id/posts/count", userHandler.GetUserPostCount)
 		userOptional.GET("/:id/posts", userHandler.GetUserPosts)
 		userOptional.GET("/:id/market-posts", userHandler.GetUserMarketPosts)
+	}
+
+	internalMCP := r.Group("/internal/mcp")
+	internalMCP.Use(handlers.InternalMCPGrantMiddleware(cfg.SyluliveMCPGrant))
+	{
+		internalMCP.POST("/competition/search", competitionHandler.InternalMCPCompetitionSearch)
+		internalMCP.POST("/competition/details", competitionHandler.InternalMCPCompetitionDetails)
+		internalMCP.POST("/competition/compare", competitionHandler.InternalMCPCompetitionCompare)
+		internalMCP.POST("/competition/candidate-context", competitionHandler.InternalMCPCompetitionCandidateContext)
+		internalMCP.POST("/competition/verify-records", competitionHandler.InternalMCPCompetitionVerifyRecords)
 	}
 
 	r.GET("/api/notifications", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetNotifications)
@@ -1548,6 +1567,15 @@ func main() {
 		admin.POST("/competitions/events/:id/verify", competitionHandler.AdminVerifyEvent)
 		admin.POST("/competitions/import-json/preview", competitionHandler.AdminImportJSONPreview)
 		admin.POST("/competitions/import-json/commit", competitionHandler.AdminImportJSONCommit)
+		if cfg.CompetitionCatalogV2Enabled {
+			admin.POST("/competition-catalog/packages/validate", competitionHandler.AdminValidateCompetitionCatalog)
+			admin.POST("/competition-catalog/packages/import", competitionHandler.AdminImportCompetitionCatalog)
+			admin.GET("/competition-catalog/packages", competitionHandler.AdminListCompetitionCatalogPackages)
+			admin.GET("/competition-catalog/packages/:id", competitionHandler.AdminGetCompetitionCatalogPackage)
+			admin.GET("/competition-catalog/packages/:id/diff", competitionHandler.AdminDiffCompetitionCatalogPackage)
+			admin.POST("/competition-catalog/packages/:id/activate", competitionHandler.AdminActivateCompetitionCatalog)
+			admin.POST("/competition-catalog/packages/:id/rollback", competitionHandler.AdminRollbackCompetitionCatalog)
+		}
 		admin.GET("/competitions/import-batches", competitionHandler.AdminListImportBatches)
 		admin.GET("/competitions/import-batches/:batch_id", competitionHandler.AdminGetImportBatch)
 		admin.GET("/competitions/share-snapshots", competitionHandler.AdminListShareSnapshots)

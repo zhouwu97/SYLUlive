@@ -417,7 +417,9 @@ func (h *CompetitionHandler) GetCategories(c *gin.Context) {
 
 func (h *CompetitionHandler) GetOverview(c *gin.Context) {
 	start, end := competitionOverviewBounds(time.Now())
-	base := h.db.Model(&models.CompetitionEvent{}).Where("status = ?", "published")
+	base := h.db.Model(&models.CompetitionEvent{}).
+		Where("status = ?", "published").
+		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true)
 	var publishedTotal, deadlineSoonCount, timePendingCount, recognizedCount int64
 	if err := base.Count(&publishedTotal).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
@@ -425,6 +427,7 @@ func (h *CompetitionHandler) GetOverview(c *gin.Context) {
 	}
 	if err := h.db.Model(&models.CompetitionEvent{}).
 		Where("status = ?", "published").
+		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true).
 		Where("registration_end >= ? AND registration_end < ?", start, end).
 		Count(&deadlineSoonCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
@@ -432,6 +435,7 @@ func (h *CompetitionHandler) GetOverview(c *gin.Context) {
 	}
 	if err := h.db.Model(&models.CompetitionEvent{}).
 		Where("status = ?", "published").
+		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true).
 		Where("registration_end IS NULL").
 		Where("time_status IN ?", []string{"pending", "historical", "estimated"}).
 		Count(&timePendingCount).Error; err != nil {
@@ -440,6 +444,7 @@ func (h *CompetitionHandler) GetOverview(c *gin.Context) {
 	}
 	if err := h.db.Model(&models.CompetitionEvent{}).
 		Where("status = ? AND school_recognition_status = ?", "published", "recognized").
+		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true).
 		Count(&recognizedCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛统计失败"})
 		return
@@ -489,117 +494,7 @@ func (h *CompetitionHandler) GetUserCompetitionState(c *gin.Context) {
 }
 
 func (h *CompetitionHandler) ListFitEvents(c *gin.Context) {
-	userID, ok := currentUserID(c)
-	if !ok {
-		return
-	}
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-	profile, ready := profileFromUser(user, time.Now())
-	preference, preferenceConfigured, err := h.loadCompetitionPreference(userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取竞赛目标失败"})
-		return
-	}
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 50 {
-		pageSize = 20
-	}
-	if !ready {
-		c.JSON(http.StatusOK, gin.H{"profile_ready": false, "preference_configured": preferenceConfigured, "items": []CompetitionEventDTO{}, "total": 0, "page": page, "page_size": pageSize})
-		return
-	}
-	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory").Where("status = ?", "published")
-	query = h.applyEventFilters(c, query)
-	var candidates []models.CompetitionEvent
-	if err := query.Find(&candidates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取个性化比赛失败"})
-		return
-	}
-	type rankedFitEvent struct {
-		event            models.CompetitionEvent
-		profileRank      int
-		preferencePoints int
-		timePoints       int
-		valuePoints      int
-	}
-	matched := make([]rankedFitEvent, 0, len(candidates))
-	fitRank := map[string]int{"major": 3, "college": 2, "general": 1}
-	for _, event := range candidates {
-		isMatch, level, reasons := matchCompetitionForProfile(event, profile)
-		if !isMatch {
-			continue
-		}
-		event.FitLevel = level
-		event.FitReasons = reasons
-		ranked := rankedFitEvent{event: event, profileRank: fitRank[level]}
-		if preferenceConfigured {
-			preferenceMatch := matchCompetitionPreference(event, level, preference)
-			event.PersonalizedScore = &preferenceMatch.Score
-			event.RecommendationTier = preferenceMatch.Tier
-			event.FitReasons = append(event.FitReasons, preferenceMatch.Reasons...)
-			if preferenceMatch.PreferencePoints+preferenceMatch.TimePoints > 0 {
-				event.FitLevel = "preference"
-			}
-			ranked.event = event
-			ranked.preferencePoints = preferenceMatch.PreferencePoints
-			ranked.timePoints = preferenceMatch.TimePoints
-			ranked.valuePoints = preferenceMatch.ValuePoints
-		}
-		matched = append(matched, ranked)
-	}
-	sort.SliceStable(matched, func(i, j int) bool {
-		left, right := matched[i], matched[j]
-		if left.profileRank != right.profileRank {
-			return left.profileRank > right.profileRank
-		}
-		if preferenceConfigured && left.preferencePoints != right.preferencePoints {
-			return left.preferencePoints > right.preferencePoints
-		}
-		if preferenceConfigured && left.timePoints != right.timePoints {
-			return left.timePoints > right.timePoints
-		}
-		if preferenceConfigured && left.valuePoints != right.valuePoints {
-			return left.valuePoints > right.valuePoints
-		}
-		leftRating := effectiveCompetitionRating(left.event)
-		rightRating := effectiveCompetitionRating(right.event)
-		if recommendationRanks[leftRating] != recommendationRanks[rightRating] {
-			return recommendationRanks[leftRating] > recommendationRanks[rightRating]
-		}
-		if left.event.ImportanceScore != right.event.ImportanceScore {
-			return left.event.ImportanceScore > right.event.ImportanceScore
-		}
-		if left.event.SortDate == nil || right.event.SortDate == nil {
-			if left.event.SortDate != nil || right.event.SortDate != nil {
-				return left.event.SortDate != nil
-			}
-		} else if !left.event.SortDate.Equal(*right.event.SortDate) {
-			return left.event.SortDate.Before(*right.event.SortDate)
-		}
-		return left.event.ID < right.event.ID
-	})
-	total := len(matched)
-	start := (page - 1) * pageSize
-	if start > total {
-		start = total
-	}
-	finish := start + pageSize
-	if finish > total {
-		finish = total
-	}
-	pageEvents := make([]models.CompetitionEvent, 0, finish-start)
-	for _, ranked := range matched[start:finish] {
-		pageEvents = append(pageEvents, ranked.event)
-	}
-	c.JSON(http.StatusOK, gin.H{"profile_ready": true, "preference_configured": preferenceConfigured, "items": competitionEventDTOs(pageEvents), "total": total, "page": page, "page_size": pageSize})
+	h.listLegacyFitEvents(c)
 }
 
 func (h *CompetitionHandler) AdminCompetitionAudienceOptions(c *gin.Context) {
@@ -647,7 +542,8 @@ func (h *CompetitionHandler) ListEvents(c *gin.Context) {
 		pageSize = 20
 	}
 	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory").
-		Where("status = ?", "published")
+		Where("status = ?", "published").
+		Where("(search_display_allowed = ? OR dataset_version = '' OR dataset_version = 'legacy')", true)
 	query = h.applyEventFilters(c, query)
 
 	var total int64
@@ -1001,7 +897,19 @@ func (h *CompetitionHandler) eventFromInput(input competitionEventInput) (models
 	if regEnd != nil && strings.TrimSpace(input.TimeStatus) == "" {
 		timeStatus = "confirmed"
 	}
+	competitionID := randomCode("MANUAL", 8)
+	criticalHash, _ := json.Marshal(map[string]interface{}{
+		"competition_id": competitionID,
+		"title":          strings.TrimSpace(input.Title),
+		"registration":   regEnd,
+		"event_start":    eventStart,
+	})
 	return models.CompetitionEvent{
+		CompetitionID: competitionID, DatasetVersion: "legacy", RecordHash: hashJSON(criticalHash),
+		SearchDisplayAllowed: true, CandidatePoolAllowed: true,
+		PersonalizedRankingAllowed: false, StrongRecommendationEligible: false,
+		RecommendationPermissionLevel: "low", AIMode: "candidate_explanation",
+		RiskTags: jsonArray([]string{}), BlockerCodes: jsonArray([]string{}),
 		Title: input.Title, Subtitle: input.Subtitle, Summary: input.Summary, Description: input.Description,
 		PrimaryCategoryID: categoryID, Tags: jsonArray(input.Tags), CompetitionLevel: input.CompetitionLevel,
 		SchoolRecognitionStatus: input.SchoolRecognitionStatus, SchoolRecognitionGrade: input.SchoolRecognitionGrade,

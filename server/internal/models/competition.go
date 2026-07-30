@@ -24,6 +24,12 @@ func (CompetitionCategory) TableName() string { return "competition_categories" 
 type CompetitionEvent struct {
 	ID uint `gorm:"primaryKey" json:"id"`
 
+	CompetitionID    string `gorm:"size:64;index" json:"competition_id"`
+	CatalogPackageID *uint  `gorm:"index" json:"catalog_package_id,omitempty"`
+	DatasetVersion   string `gorm:"size:100;index" json:"dataset_version"`
+	RecordHash       string `gorm:"size:64;index" json:"record_hash"`
+	CatalogOrder     int    `gorm:"default:0;index" json:"catalog_order"`
+
 	Title       string `gorm:"size:200;not null;index" json:"title"`
 	Subtitle    string `gorm:"size:300" json:"subtitle"`
 	Summary     string `gorm:"size:1000" json:"summary"`
@@ -79,6 +85,20 @@ type CompetitionEvent struct {
 	SourceNote      string `gorm:"size:1000" json:"source_note"`
 	SourceArticleID string `gorm:"size:80;index" json:"source_article_id"`
 
+	ManualRatingReasonPublic string         `gorm:"size:1000" json:"manual_rating_reason_public"`
+	MajorFitSummaryPublic    string         `gorm:"size:1000" json:"major_fit_summary_public"`
+	EvidenceSummaryPublic    string         `gorm:"size:1000" json:"evidence_summary_public"`
+	EvidenceSubgrade         string         `gorm:"size:20;index" json:"evidence_subgrade"`
+	RiskTags                 datatypes.JSON `json:"risk_tags"`
+
+	SearchDisplayAllowed          bool           `gorm:"not null;index" json:"search_display_allowed"`
+	CandidatePoolAllowed          bool           `gorm:"not null;index" json:"candidate_pool_allowed"`
+	PersonalizedRankingAllowed    bool           `gorm:"not null;default:false" json:"personalized_ranking_allowed"`
+	StrongRecommendationEligible  bool           `gorm:"not null;default:false" json:"strong_recommendation_eligible"`
+	RecommendationPermissionLevel string         `gorm:"size:20;not null;default:'low'" json:"recommendation_permission_level"`
+	AIMode                        string         `gorm:"size:40;not null;default:'candidate_explanation';index" json:"ai_mode"`
+	BlockerCodes                  datatypes.JSON `json:"-"`
+
 	Status     string         `gorm:"size:20;default:'active';index" json:"status"`
 	Version    int            `gorm:"default:1" json:"version"`
 	VerifiedBy uint           `gorm:"index" json:"verified_by"`
@@ -127,9 +147,16 @@ type CompetitionRecommendationSnapshot struct {
 	ID     uint `gorm:"primaryKey" json:"id"`
 	UserID uint `gorm:"not null;index" json:"-"`
 
-	EventID      uint   `gorm:"not null;index" json:"event_id"`
-	EventVersion int    `gorm:"not null" json:"event_version"`
-	EventTitle   string `gorm:"size:200;not null" json:"event_title"`
+	EventID           uint           `gorm:"not null;index" json:"event_id"`
+	EventVersion      int            `gorm:"not null" json:"event_version"`
+	EventTitle        string         `gorm:"size:200;not null" json:"event_title"`
+	CompetitionID     string         `gorm:"size:64;index" json:"competition_id"`
+	DatasetVersion    string         `gorm:"size:100;index" json:"dataset_version"`
+	RecordHash        string         `gorm:"size:64;index" json:"record_hash"`
+	Mode              string         `gorm:"size:40;index" json:"mode"`
+	GroupKey          string         `gorm:"size:40;index" json:"group_key"`
+	MatchDimensions   datatypes.JSON `json:"match_dimensions"`
+	AIExplanationHash string         `gorm:"size:64;index" json:"-"`
 
 	PersonalizedScore  *int           `json:"personalized_score"`
 	RecommendationTier string         `gorm:"size:24" json:"recommendation_tier"`

@@ -21,8 +21,79 @@ class CompetitionCategory {
   }
 }
 
+class CompetitionMatchDimensions {
+  final String eligibility;
+  final String major;
+  final String college;
+  final String grade;
+  final String goal;
+  final String direction;
+  final String skill;
+  final String role;
+  final String time;
+  final String training;
+
+  const CompetitionMatchDimensions({
+    this.eligibility = 'unknown',
+    this.major = 'unknown',
+    this.college = 'unknown',
+    this.grade = 'unknown',
+    this.goal = 'unknown',
+    this.direction = 'unknown',
+    this.skill = 'unknown',
+    this.role = 'unknown',
+    this.time = 'unknown',
+    this.training = 'unknown',
+  });
+
+  factory CompetitionMatchDimensions.fromJson(Map<String, dynamic>? json) {
+    final value = json ?? const <String, dynamic>{};
+    return CompetitionMatchDimensions(
+      eligibility: '${value['eligibility'] ?? 'unknown'}',
+      major: '${value['major'] ?? 'unknown'}',
+      college: '${value['college'] ?? 'unknown'}',
+      grade: '${value['grade'] ?? 'unknown'}',
+      goal: '${value['goal'] ?? 'unknown'}',
+      direction: '${value['direction'] ?? 'unknown'}',
+      skill: '${value['skill'] ?? 'unknown'}',
+      role: '${value['role'] ?? 'unknown'}',
+      time: '${value['time'] ?? 'unknown'}',
+      training: '${value['training'] ?? 'unknown'}',
+    );
+  }
+}
+
+class CompetitionRecommendationGates {
+  final bool candidatePoolAllowed;
+  final bool personalizedRankingAllowed;
+  final bool strongRecommendationEligible;
+  final String permissionLevel;
+  final String aiMode;
+
+  const CompetitionRecommendationGates({
+    this.candidatePoolAllowed = false,
+    this.personalizedRankingAllowed = false,
+    this.strongRecommendationEligible = false,
+    this.permissionLevel = 'low',
+    this.aiMode = 'disabled',
+  });
+
+  factory CompetitionRecommendationGates.fromJson(Map<String, dynamic>? json) {
+    final value = json ?? const <String, dynamic>{};
+    return CompetitionRecommendationGates(
+      candidatePoolAllowed: value['candidate_pool_allowed'] == true,
+      personalizedRankingAllowed: value['personalized_ranking_allowed'] == true,
+      strongRecommendationEligible:
+          value['strong_recommendation_eligible'] == true,
+      permissionLevel: '${value['recommendation_permission_level'] ?? 'low'}',
+      aiMode: '${value['ai_mode'] ?? 'disabled'}',
+    );
+  }
+}
+
 class CompetitionEvent {
   final int id;
+  final String competitionId;
   final String title;
   final String summary;
   final CompetitionCategory? primaryCategory;
@@ -71,10 +142,21 @@ class CompetitionEvent {
   final String description;
   final String status;
   final DateTime? updatedAt;
+  final String groupKey;
+  final int ruleOrder;
+  final CompetitionMatchDimensions matchDimensions;
+  final String coreReason;
+  final List<String> cautions;
+  final List<String> questionsToConfirm;
+  final String evidenceSubgrade;
+  final String datasetVersion;
+  final String recordHash;
+  final CompetitionRecommendationGates gates;
 
   CompetitionEvent({
     required this.id,
     required this.title,
+    this.competitionId = '',
     this.summary = '',
     this.primaryCategory,
     this.tags = const [],
@@ -122,6 +204,16 @@ class CompetitionEvent {
     this.description = '',
     this.status = 'published',
     this.updatedAt,
+    this.groupKey = '',
+    this.ruleOrder = 0,
+    this.matchDimensions = const CompetitionMatchDimensions(),
+    this.coreReason = '',
+    this.cautions = const [],
+    this.questionsToConfirm = const [],
+    this.evidenceSubgrade = '',
+    this.datasetVersion = '',
+    this.recordHash = '',
+    this.gates = const CompetitionRecommendationGates(),
   });
 
   factory CompetitionEvent.fromJson(Map<String, dynamic> json) {
@@ -137,6 +229,7 @@ class CompetitionEvent {
         : rawCompetitionRating;
     return CompetitionEvent(
       id: json['id'] ?? 0,
+      competitionId: json['competition_id'] ?? '',
       title: json['title'] ?? '',
       summary: json['summary'] ?? '',
       primaryCategory: json['primary_category'] != null
@@ -188,6 +281,24 @@ class CompetitionEvent {
       description: json['description'] ?? '',
       status: json['status'] ?? 'published',
       updatedAt: DateTime.tryParse(json['updated_at'] ?? ''),
+      groupKey: json['group_key'] ?? '',
+      ruleOrder: (json['rule_order'] as num?)?.toInt() ?? 0,
+      matchDimensions: CompetitionMatchDimensions.fromJson(
+        json['match_dimensions'] is Map
+            ? Map<String, dynamic>.from(json['match_dimensions'] as Map)
+            : null,
+      ),
+      coreReason: json['core_reason'] ?? '',
+      cautions: _stringList(json['cautions']),
+      questionsToConfirm: _stringList(json['questions_to_confirm']),
+      evidenceSubgrade: json['evidence_subgrade'] ?? '',
+      datasetVersion: json['dataset_version'] ?? '',
+      recordHash: json['record_hash'] ?? '',
+      gates: CompetitionRecommendationGates.fromJson(
+        json['gates'] is Map
+            ? Map<String, dynamic>.from(json['gates'] as Map)
+            : null,
+      ),
     );
   }
 
@@ -247,6 +358,7 @@ class CompetitionEvent {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      if (competitionId.isNotEmpty) 'competition_id': competitionId,
       'title': title,
       'summary': summary,
       if (primaryCategory != null)
@@ -303,7 +415,88 @@ class CompetitionEvent {
       'source_note': sourceNote,
       'status': status,
       if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
+      if (groupKey.isNotEmpty) 'group_key': groupKey,
+      if (ruleOrder > 0) 'rule_order': ruleOrder,
+      'match_dimensions': {
+        'eligibility': matchDimensions.eligibility,
+        'major': matchDimensions.major,
+        'college': matchDimensions.college,
+        'grade': matchDimensions.grade,
+        'goal': matchDimensions.goal,
+        'direction': matchDimensions.direction,
+        'skill': matchDimensions.skill,
+        'role': matchDimensions.role,
+        'time': matchDimensions.time,
+        'training': matchDimensions.training,
+      },
+      if (coreReason.isNotEmpty) 'core_reason': coreReason,
+      if (cautions.isNotEmpty) 'cautions': cautions,
+      if (questionsToConfirm.isNotEmpty)
+        'questions_to_confirm': questionsToConfirm,
+      if (evidenceSubgrade.isNotEmpty) 'evidence_subgrade': evidenceSubgrade,
+      if (datasetVersion.isNotEmpty) 'dataset_version': datasetVersion,
+      if (recordHash.isNotEmpty) 'record_hash': recordHash,
+      'gates': {
+        'candidate_pool_allowed': gates.candidatePoolAllowed,
+        'personalized_ranking_allowed': gates.personalizedRankingAllowed,
+        'strong_recommendation_eligible': gates.strongRecommendationEligible,
+        'recommendation_permission_level': gates.permissionLevel,
+        'ai_mode': gates.aiMode,
+      },
     };
+  }
+}
+
+class CompetitionCandidateGroup {
+  final String key;
+  final String label;
+  final int count;
+  final List<CompetitionEvent> items;
+
+  const CompetitionCandidateGroup({
+    required this.key,
+    required this.label,
+    required this.count,
+    required this.items,
+  });
+
+  factory CompetitionCandidateGroup.fromJson(Map<String, dynamic> json) {
+    return CompetitionCandidateGroup(
+      key: '${json['key'] ?? ''}',
+      label: '${json['label'] ?? ''}',
+      count: (json['count'] as num?)?.toInt() ?? 0,
+      items: ((json['items'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(
+            (item) =>
+                CompetitionEvent.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class CompetitionCatalogSummary {
+  final String datasetVersion;
+  final String packageHash;
+  final String mode;
+  final bool personalizedRankingAllowed;
+
+  const CompetitionCatalogSummary({
+    this.datasetVersion = 'legacy',
+    this.packageHash = '',
+    this.mode = 'candidate_explanation',
+    this.personalizedRankingAllowed = false,
+  });
+
+  factory CompetitionCatalogSummary.fromJson(Map<String, dynamic>? json) {
+    final value = json ?? const <String, dynamic>{};
+    return CompetitionCatalogSummary(
+      datasetVersion: '${value['dataset_version'] ?? 'legacy'}',
+      packageHash: '${value['package_hash'] ?? ''}',
+      mode: '${value['mode'] ?? 'candidate_explanation'}',
+      personalizedRankingAllowed: value['personalized_ranking_allowed'] == true,
+    );
   }
 }
 

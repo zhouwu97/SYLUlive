@@ -21,11 +21,13 @@ void main() {
     expect(event.fitReasons, hasLength(2));
   });
 
-  testWidgets('joined card shows state and server fit reasons', (tester) async {
+  testWidgets('joined card shows state and one candidate reason',
+      (tester) async {
     final event = CompetitionEvent(
       id: 1,
       title: '测试比赛',
       fitReasons: const ['符合2023级', '专业匹配：计算机科学与技术'],
+      coreReason: '参赛资格和专业方向符合',
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -41,6 +43,7 @@ void main() {
       ),
     );
     expect(find.text('已加入'), findsOneWidget);
-    expect(find.text('符合2023级 · 专业匹配：计算机科学与技术'), findsOneWidget);
+    expect(find.text('参赛资格和专业方向符合'), findsOneWidget);
+    expect(find.textContaining('符合2023级'), findsNothing);
   });
 }

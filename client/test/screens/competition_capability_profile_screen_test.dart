@@ -110,6 +110,15 @@ Future<void> _pumpLoaded(WidgetTester tester, Widget app) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _scrollToAIAccess(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.byKey(const Key('competition-capability-ai-access')),
+    300,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('展示核验与自报分栏及偏好摘要', (tester) async {
     final adapter = _loadedAdapter();
@@ -123,6 +132,7 @@ void main() {
     expect(find.text('开发'), findsAtLeastNWidgets(1));
     expect(find.text('程序设计、数据分析'), findsOneWidget);
     expect(find.text('7 小时'), findsOneWidget);
+    await _scrollToAIAccess(tester);
     expect(
       tester
           .widget<SwitchListTile>(
@@ -137,6 +147,7 @@ void main() {
     final adapter = _loadedAdapter();
     await _pumpLoaded(tester, _app(_dio(adapter)));
 
+    await _scrollToAIAccess(tester);
     await tester.tap(find.byKey(const Key('competition-capability-ai-access')));
     await tester.pumpAndSettle();
 
@@ -150,7 +161,7 @@ void main() {
           .value,
       isTrue,
     );
-    expect(find.text('已允许 AI 使用能力画像'), findsOneWidget);
+    expect(find.text('已允许 AI 解释竞赛匹配'), findsOneWidget);
   });
 
   testWidgets('授权保存失败保留原状态', (tester) async {
@@ -165,6 +176,7 @@ void main() {
     });
     await _pumpLoaded(tester, _app(_dio(adapter)));
 
+    await _scrollToAIAccess(tester);
     await tester.tap(find.byKey(const Key('competition-capability-ai-access')));
     await tester.pumpAndSettle();
 
@@ -243,6 +255,11 @@ void main() {
 
     expect(find.text('Python'), findsOneWidget);
     expect(find.text('已核验经历'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('AI 授权状态读取失败'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('AI 授权状态读取失败'), findsOneWidget);
     expect(find.byIcon(Icons.refresh_rounded), findsOneWidget);
   });

@@ -14,6 +14,7 @@ const (
 	PollResultsAlways    = "always"
 	PollResultsAfterVote = "after_vote"
 	PollResultsAfterEnd  = "after_end"
+	PollResultsPrivate   = "private"
 
 	PollStatusActive  = "active"
 	PollStatusClosed  = "closed"
@@ -99,6 +100,7 @@ type PollSummaryDTO struct {
 	ChoiceCount       *int            `json:"choice_count,omitempty"`
 	HasVoted          bool            `json:"has_voted"`
 	ResultsVisible    bool            `json:"results_visible"`
+	CanViewResult     bool            `json:"can_view_result"`
 	CanVote           bool            `json:"can_vote"`
 	CanChange         bool            `json:"can_change"`
 	IsOwner           bool            `json:"is_owner"`

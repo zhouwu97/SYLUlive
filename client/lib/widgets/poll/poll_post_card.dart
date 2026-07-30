@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +6,7 @@ import '../../models/poll.dart';
 import '../../models/post.dart';
 import '../../providers/poll_provider.dart';
 import '../cached_avatar.dart';
+import '../post_media/post_media_view.dart';
 import 'poll_option_tile.dart';
 
 enum PollCardVariant { homeCompact, centerFull, profileCompact }
@@ -184,18 +184,15 @@ class _PollPostCardState extends State<PollPostCard> {
                         height: 1.35,
                         color: isDark ? Colors.white70 : Colors.black54)),
               ],
-              if (widget.post.images.isNotEmpty &&
-                  widget.post.images.first.url.isNotEmpty) ...[
+              if (widget.post.images.any(
+                (image) => image.resolvedOriginUrl.isNotEmpty,
+              )) ...[
                 const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: CachedNetworkImage(
-                    imageUrl:
-                        ApiConstants.fullUrl(widget.post.images.first.url),
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
+                PostMediaView(
+                  images: widget.post.images,
+                  variant: widget.variant == PollCardVariant.centerFull
+                      ? PostMediaVariant.detail
+                      : PostMediaVariant.feed,
                 ),
               ],
               const SizedBox(height: 10),
@@ -228,7 +225,7 @@ class _PollPostCardState extends State<PollPostCard> {
                       style: TextStyle(
                           fontSize: 12, color: Theme.of(context).hintColor)),
                 ),
-              if (poll.hasVoted && !poll.resultsVisible)
+              if (!poll.resultsVisible)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
@@ -236,9 +233,12 @@ class _PollPostCardState extends State<PollPostCard> {
                     color: const Color(0xFF7C3AED).withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Text('已提交选择 · 结果将在满足公开条件后显示',
+                  child: Text(_visibilityHint(poll),
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: Color(0xFF6D28D9))),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF6D28D9),
+                      )),
                 ),
               const SizedBox(height: 3),
               SizedBox(
@@ -273,13 +273,22 @@ class _PollPostCardState extends State<PollPostCard> {
                   Text(_remainingText(poll.remainingSeconds, poll.isClosed),
                       style: TextStyle(
                           fontSize: 12, color: Theme.of(context).hintColor)),
-                  const SizedBox(width: 12),
-                  Icon(Icons.chat_bubble_outline,
-                      size: 15, color: Theme.of(context).hintColor),
-                  const SizedBox(width: 3),
-                  Text('${widget.post.replyCount}',
+                  if (widget.variant != PollCardVariant.centerFull) ...[
+                    const SizedBox(width: 12),
+                    Icon(
+                      Icons.chat_bubble_outline,
+                      size: 15,
+                      color: Theme.of(context).hintColor,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      '${widget.post.replyCount}',
                       style: TextStyle(
-                          fontSize: 12, color: Theme.of(context).hintColor)),
+                        fontSize: 12,
+                        color: Theme.of(context).hintColor,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ],
@@ -300,6 +309,19 @@ class _PollPostCardState extends State<PollPostCard> {
     if (poll.hasVoted && !hasChanges) return '已提交选择';
     if (selected.isEmpty) return poll.isMultiple ? '选择后提交' : '选择一项后投票';
     return poll.hasVoted ? '确认修改' : '提交选择';
+  }
+
+  String _visibilityHint(PollMeta poll) {
+    switch (poll.resultsVisibility) {
+      case 'after_end':
+        return poll.isClosed ? '投票已结束，结果即将公开' : '结果将在投票结束后公开';
+      case 'private':
+        return poll.hasVoted ? '已参与 · 结果仅创建者可见' : '结果仅创建者可见';
+      case 'after_vote':
+        return poll.hasVoted ? '已参与' : '投票后可查看结果';
+      default:
+        return '结果将在满足公开条件后显示';
+    }
   }
 
   String _relativeTime(DateTime value) {

@@ -8,6 +8,7 @@ import 'package:shenliyuan/providers/poll_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
 import 'package:shenliyuan/services/poll_service.dart';
 import 'package:shenliyuan/screens/poll/poll_detail_screen.dart';
+import 'package:shenliyuan/widgets/post_reply/post_reply_list.dart';
 
 Map<String, dynamic> _pollJson() => {
       'id': 1,
@@ -37,32 +38,61 @@ Map<String, dynamic> _pollJson() => {
         'can_change': false,
         'is_owner': false,
         'options': [
-          {'id': 10, 'text': '选项一', 'sort_order': 0, 'vote_count': 0, 'ratio': 0}
+          {
+            'id': 10,
+            'text': '选项一',
+            'sort_order': 0,
+            'vote_count': 0,
+            'ratio': 0
+          }
         ],
       },
     };
+
+Map<String, dynamic> _replyJson() => {
+      'id': 21,
+      'post_id': 1,
+      'author_id': 7,
+      'content': '这是统一后的评论',
+      'created_at': DateTime.now()
+          .subtract(const Duration(minutes: 3))
+          .toUtc()
+          .toIso8601String(),
+      'author': {
+        'id': 7,
+        'nickname': '测试同学',
+        'avatar': '',
+        'exp': 2500,
+      },
+    };
+
+Widget _buildScreen(Dio dio, {Post? initialPost}) {
+  final auth = AuthProvider(dio, loadStoredAuth: false);
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider.value(value: auth),
+      ChangeNotifierProvider(create: (_) => PollProvider(PollService(dio))),
+      ChangeNotifierProvider(create: (_) => PostProvider(dio)),
+    ],
+    child: MaterialApp(
+      home: PollDetailScreen(pollId: 1, initialPost: initialPost),
+    ),
+  );
+}
 
 void main() {
   testWidgets('评论接口失败时投票主体仍然显示', (tester) async {
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       if (options.path == '/polls/1') {
-        handler.resolve(Response(requestOptions: options, statusCode: 200, data: _pollJson()));
+        handler.resolve(Response(
+            requestOptions: options, statusCode: 200, data: _pollJson()));
       } else {
-        handler.reject(DioException(requestOptions: options, type: DioExceptionType.connectionError));
+        handler.reject(DioException(
+            requestOptions: options, type: DioExceptionType.connectionError));
       }
     }));
-    final auth = AuthProvider(dio, loadStoredAuth: false);
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider.value(value: auth),
-          ChangeNotifierProvider(create: (_) => PollProvider(PollService(dio))),
-          ChangeNotifierProvider(create: (_) => PostProvider(dio)),
-        ],
-        child: const MaterialApp(home: PollDetailScreen(pollId: 1)),
-      ),
-    );
+    await tester.pumpWidget(_buildScreen(dio));
     await tester.pumpAndSettle();
     expect(find.text('评论失败也应显示投票'), findsOneWidget);
     expect(find.text('投票不存在或已删除'), findsNothing);
@@ -72,7 +102,8 @@ void main() {
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       if (options.path == '/posts/1/replies') {
-        handler.resolve(Response(requestOptions: options, statusCode: 200, data: const []));
+        handler.resolve(
+            Response(requestOptions: options, statusCode: 200, data: const []));
         return;
       }
       handler.reject(DioException(
@@ -84,17 +115,7 @@ void main() {
         ),
       ));
     }));
-    final auth = AuthProvider(dio, loadStoredAuth: false);
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider.value(value: auth),
-          ChangeNotifierProvider(create: (_) => PollProvider(PollService(dio))),
-          ChangeNotifierProvider(create: (_) => PostProvider(dio)),
-        ],
-        child: const MaterialApp(home: PollDetailScreen(pollId: 1)),
-      ),
-    );
+    await tester.pumpWidget(_buildScreen(dio));
     await tester.pumpAndSettle();
     expect(find.text('服务暂时不可用'), findsOneWidget);
     expect(find.text('投票不存在或已删除'), findsNothing);
@@ -105,7 +126,8 @@ void main() {
     final dio = Dio();
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       if (options.path == '/posts/1/replies') {
-        handler.resolve(Response(requestOptions: options, statusCode: 200, data: const []));
+        handler.resolve(
+            Response(requestOptions: options, statusCode: 200, data: const []));
         return;
       }
       handler.reject(DioException(
@@ -117,19 +139,85 @@ void main() {
         ),
       ));
     }));
-    final auth = AuthProvider(dio, loadStoredAuth: false);
     await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider.value(value: auth),
-          ChangeNotifierProvider(create: (_) => PollProvider(PollService(dio))),
-          ChangeNotifierProvider(create: (_) => PostProvider(dio)),
-        ],
-        child: MaterialApp(home: PollDetailScreen(pollId: 1, initialPost: Post.fromJson(_pollJson()))),
-      ),
+      _buildScreen(dio, initialPost: Post.fromJson(_pollJson())),
     );
     await tester.pumpAndSettle();
     expect(find.text('评论失败也应显示投票'), findsOneWidget);
     expect(find.text('服务端暂时不可用'), findsOneWidget);
+  });
+
+  testWidgets('已有投票数据时优先加载评论再刷新详情', (tester) async {
+    final dio = Dio();
+    final requestOrder = <String>[];
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      requestOrder.add(options.path);
+      if (options.path == '/posts/1/replies') {
+        handler.resolve(
+          Response(requestOptions: options, statusCode: 200, data: const []),
+        );
+        return;
+      }
+      if (options.path == '/polls/1') {
+        handler.resolve(
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: _pollJson(),
+          ),
+        );
+        return;
+      }
+      handler.reject(DioException(requestOptions: options));
+    }));
+
+    await tester.pumpWidget(
+      _buildScreen(dio, initialPost: Post.fromJson(_pollJson())),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      requestOrder.take(2),
+      orderedEquals(['/posts/1/replies', '/polls/1']),
+    );
+  });
+
+  testWidgets('投票评论使用普通帖子公共评论项', (tester) async {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      if (options.path == '/polls/1') {
+        handler.resolve(
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: _pollJson(),
+          ),
+        );
+        return;
+      }
+      if (options.path == '/posts/1/replies') {
+        handler.resolve(
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: [_replyJson()],
+          ),
+        );
+        return;
+      }
+      handler.reject(DioException(requestOptions: options));
+    }));
+
+    await tester.pumpWidget(
+      _buildScreen(dio, initialPost: Post.fromJson(_pollJson())),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PostReplyItem), findsOneWidget);
+    expect(find.text('测试同学'), findsOneWidget);
+    expect(find.text('Lv.6'), findsOneWidget);
+    expect(find.text('这是统一后的评论'), findsOneWidget);
+    expect(find.text('回复'), findsOneWidget);
+    expect(find.text('3分钟前'), findsOneWidget);
   });
 }

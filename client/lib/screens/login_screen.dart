@@ -723,8 +723,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               controller: _isEmailRegister
                                   ? _emailController
                                   : _studentIdController,
-                              maxLength: _isEmailRegister ? 254 : 20,
-                              keyboardType: _isEmailRegister
+                              maxLength: (!_isRegister || _isEmailRegister)
+                                  ? 254
+                                  : 20,
+                              keyboardType: (!_isRegister || _isEmailRegister)
                                   ? TextInputType.emailAddress
                                   : TextInputType.text,
                               decoration: _inputDecoration(

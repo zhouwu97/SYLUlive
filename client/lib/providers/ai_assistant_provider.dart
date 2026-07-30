@@ -796,6 +796,14 @@ class AiAssistantProvider extends ChangeNotifier {
         return '本次回答已取消';
       case 'run_expired':
         return '本次回答已过期，请重新提问';
+      case 'personal_context_unavailable':
+        return '当前没有可核验的个人学业数据，暂时无法完成分析';
+      case 'tool_call_limit':
+        return '本次请求步骤过多，请缩小问题范围后重试';
+      case 'tool_loop_limit':
+        return '本次分析步骤达到上限，请缩小问题范围后重试';
+      case 'academic_snapshot_corrupted':
+        return '个人学业数据校验失败，请刷新数据后重试';
       default:
         return '回答生成失败，请稍后重试';
     }

@@ -24,11 +24,13 @@ func (CompetitionCategory) TableName() string { return "competition_categories" 
 type CompetitionEvent struct {
 	ID uint `gorm:"primaryKey" json:"id"`
 
-	CompetitionID    string `gorm:"size:64;index" json:"competition_id"`
-	CatalogPackageID *uint  `gorm:"index" json:"catalog_package_id,omitempty"`
-	DatasetVersion   string `gorm:"size:100;index" json:"dataset_version"`
-	RecordHash       string `gorm:"size:64;index" json:"record_hash"`
-	CatalogOrder     int    `gorm:"default:0;index" json:"catalog_order"`
+	CompetitionID       string `gorm:"size:64;index" json:"competition_id"`
+	CatalogPackageID    *uint  `gorm:"index" json:"catalog_package_id,omitempty"`
+	DatasetVersion      string `gorm:"size:100;index" json:"dataset_version"`
+	RecordHash          string `gorm:"size:64;index" json:"record_hash"`
+	CatalogOrder        int    `gorm:"default:0;index" json:"catalog_order"`
+	ParentCompetitionID string `gorm:"size:64;index" json:"parent_competition_id,omitempty"`
+	ParentEventID       *uint  `gorm:"index" json:"parent_event_id,omitempty"`
 
 	Title       string `gorm:"size:200;not null;index" json:"title"`
 	Subtitle    string `gorm:"size:300" json:"subtitle"`

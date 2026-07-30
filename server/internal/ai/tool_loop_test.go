@@ -128,6 +128,40 @@ func TestRuntimeToolLoopSynthesizesFinalAnswerAfterConfiguredMaxToolSteps(t *tes
 	require.Empty(t, requests[1].Tools, "达到工具轮数上限后必须禁用工具，只允许模型组织最终回答")
 }
 
+func TestRuntimeDoesNotSynthesizeAcademicAnalysisWhenHy3ContextUnavailable(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "hy3_unavailable", ToolName: "hy3_decision_analyze_academic"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "hy3_unavailable", ToolName: "hy3_decision_analyze_academic", ArgumentsDelta: `{}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "这是没有个人数据依据的通用分析。"},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	tool := namedOverviewTool{
+		name: "hy3_decision.analyze_academic",
+		overviewTool: overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+			return map[string]interface{}{
+				"status": "unavailable", "error_code": "personal_context_unavailable",
+				"warnings": []string{"学业快照不可用"},
+			}, nil
+		}},
+	}
+	runtime := newToolRuntime(t, db, provider, tool)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "分析我的学业情况",
+	})
+	require.NoError(t, err)
+	failed := waitRunState(t, db, run.ID, models.AIRunStateFailed)
+	require.Equal(t, "personal_context_unavailable", failed.ErrorCode)
+	require.Empty(t, failed.AnswerCheckpoint)
+	require.Len(t, provider.Requests(), 1, "Hy3 不可用后不得让模型伪造个人分析")
+}
+
 func TestRuntimeUsesVerifiedRAGWithoutPublicToolsForKnownPolicyIntent(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	seedPublishedKnowledgeSource(t, db, 1, 1)

@@ -14,6 +14,7 @@ import (
 
 	"shenliyuan/internal/academic"
 	"shenliyuan/internal/ai/mcpclient"
+	"shenliyuan/internal/competitionscope"
 	"shenliyuan/internal/dto"
 	"shenliyuan/internal/models"
 )
@@ -439,11 +440,14 @@ func (decision *hy3DecisionMCP) compareCompetitions(ctx context.Context, userID 
 	}
 
 	var events []models.CompetitionEvent
-	if err := decision.db.WithContext(ctx).Preload("PrimaryCategory").
-		Where(
-			"id IN ? AND status IN ? AND candidate_pool_allowed = ?",
-			input.EventIDs, []string{"active", "published"}, true,
-		).Find(&events).Error; err != nil {
+	scope, err := competitionscope.Resolve(ctx, decision.db)
+	if err != nil {
+		return nil, err
+	}
+	query := scope.ApplyCandidate(
+		decision.db.WithContext(ctx).Model(&models.CompetitionEvent{}).Preload("PrimaryCategory"),
+	)
+	if err := query.Where("competition_events.id IN ?", input.EventIDs).Find(&events).Error; err != nil {
 		return nil, err
 	}
 	byID := make(map[uint]models.CompetitionEvent, len(events))

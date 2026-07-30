@@ -3,14 +3,11 @@ import 'package:flutter/services.dart';
 
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
-import '../models/ai_capabilities.dart';
-import '../services/ai_assistant_service.dart';
 import '../services/campus_article_service.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/campus_asset_preloader.dart';
 
 import '../widgets/campus/campus_theme.dart';
-import '../widgets/campus/campus_ai_entry_card.dart';
 import '../widgets/campus/campus_header.dart';
 import '../widgets/campus/campus_feature_notice_card.dart';
 import '../widgets/campus/campus_service_grid.dart';
@@ -18,7 +15,6 @@ import '../widgets/campus/campus_news_section_header.dart';
 import '../widgets/campus/campus_news_card.dart';
 
 import 'campus_article_detail_screen.dart';
-import 'ai/ai_assistant_screen.dart';
 import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
 import 'campus_map_tab_page.dart';
@@ -30,9 +26,8 @@ import 'team/team_recruitment_center_screen.dart';
 class CampusScreen extends StatefulWidget {
   /// 可选依赖仅用于测试；生产环境继续复用全局 Dio 与鉴权头。
   final CampusArticleService? articleService;
-  final AiAssistantService? aiService;
 
-  const CampusScreen({super.key, this.articleService, this.aiService});
+  const CampusScreen({super.key, this.articleService});
 
   @override
   State<CampusScreen> createState() => _CampusScreenState();
@@ -44,8 +39,6 @@ class _CampusScreenState extends State<CampusScreen>
   bool get wantKeepAlive => true;
 
   late CampusArticleService _articleService;
-  late AiAssistantService _aiService;
-  AiCapabilities? _aiCapabilities;
 
   // 最新文章
   CampusArticleSummary? _latestArticle;
@@ -66,7 +59,6 @@ class _CampusScreenState extends State<CampusScreen>
     super.initState();
     final dio = getSharedDio();
     _articleService = widget.articleService ?? CampusArticleService(dio);
-    _aiService = widget.aiService ?? AiAssistantService(dio);
     _loadAll();
   }
 
@@ -88,30 +80,12 @@ class _CampusScreenState extends State<CampusScreen>
     _loadFuture = Future.wait([
       _loadLatest(generation),
       _loadRecent(generation),
-      _loadAiCapabilities(generation),
     ]).whenComplete(() {
       if (_loadGeneration == generation) {
         _loadFuture = null;
       }
     });
     return _loadFuture!;
-  }
-
-  Future<void> _loadAiCapabilities(int generation) async {
-    try {
-      final capabilities = await _aiService.getCapabilities();
-      if (mounted && _loadGeneration == generation) {
-        setState(() {
-          _aiCapabilities = capabilities.isVisible ? capabilities : null;
-        });
-      }
-    } catch (_) {
-      if (mounted && _loadGeneration == generation) {
-        if (_aiCapabilities == null) {
-          setState(() => _aiCapabilities = null);
-        }
-      }
-    }
   }
 
   Future<void> _loadLatest(int generation) async {
@@ -212,19 +186,6 @@ class _CampusScreenState extends State<CampusScreen>
     ).push(MaterialPageRoute<void>(builder: (_) => page));
   }
 
-  Future<void> _openAiAssistant({String? initialPrompt}) async {
-    final capabilities = _aiCapabilities;
-    if (capabilities == null) return;
-    await _openPage(
-      AiAssistantScreen(
-        capabilities: capabilities,
-        service: _aiService,
-        dio: getSharedDio(),
-        initialPrompt: initialPrompt,
-      ),
-    );
-  }
-
   void _openArticleDetail(CampusArticleSummary article) {
     HapticFeedback.selectionClick();
     Navigator.of(context).push(
@@ -281,29 +242,9 @@ class _CampusScreenState extends State<CampusScreen>
                       index: 1,
                       child: _buildLatestCard(isDark),
                     ),
-                    if (_aiCapabilities != null) ...[
-                      const SizedBox(height: 12),
-                      HomeTabRevealItem(
-                        index: 2,
-                        child: CampusAiEntryCard(
-                          capabilities: _aiCapabilities!,
-                          isDark: isDark,
-                          onTap: _openAiAssistant,
-                          onCompetitionCompareTap: () => _openAiAssistant(
-                            initialPrompt: '帮我比较适合我的校园竞赛，并说明推荐理由和准备重点',
-                          ),
-                          onAcademicAnalysisTap: () => _openAiAssistant(
-                            initialPrompt: '分析我的学业情况，找出主要风险并给出改进建议',
-                          ),
-                          onWeekPlanTap: () => _openAiAssistant(
-                            initialPrompt: '结合我的课表和目标，帮我制定本周学习计划',
-                          ),
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 2 : 3,
+                      index: 2,
                       child: CampusServiceGrid(
                         isDark: isDark,
                         onEduTap: () => _openPage(const EduScreen()),
@@ -317,7 +258,7 @@ class _CampusScreenState extends State<CampusScreen>
                     ),
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 3 : 4,
+                      index: 3,
                       child: CampusNewsSectionHeader(
                         isDark: isDark,
                         onCompetitionTap: () =>
@@ -332,7 +273,7 @@ class _CampusScreenState extends State<CampusScreen>
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 126),
                 sliver: SliverToBoxAdapter(
                   child: HomeTabRevealItem(
-                    index: _aiCapabilities == null ? 4 : 5,
+                    index: 4,
                     child: _buildRecentList(isDark),
                   ),
                 ),

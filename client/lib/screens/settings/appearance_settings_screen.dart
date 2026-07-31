@@ -13,7 +13,7 @@ import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'widgets/background_picker_sheet.dart';
 
-/// 外观与显示设置二级页 (仅对“实时预览卡片”做精准紧凑微调，其他项保持舒展标准大尺寸)
+/// 外观与显示设置二级页 (实时预览卡片比例修正版)
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -55,7 +55,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
     }
   }
 
-  /// 仅对“实时预览卡片”进行精简与等比例显示优化（完全对齐设计图二）
+  /// 比例与比例完全舒展对齐的实时预览卡片
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -94,10 +94,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
         : themeProvider.componentOpacity;
 
     return Container(
-      height: 145,
-      margin: const EdgeInsets.only(bottom: 14),
+      height: 175,
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.1)
@@ -105,7 +105,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -114,6 +114,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -123,7 +124,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: (isDark ? CampusTheme.darkCard : Colors.white)
                           .withValues(alpha: cardOpacity),
-                      borderRadius: BorderRadius.circular(9),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       '实时预览',
@@ -134,7 +135,6 @@ class AppearanceSettingsScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const Spacer(),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
@@ -144,31 +144,31 @@ class AppearanceSettingsScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: (isDark ? CampusTheme.darkCard : Colors.white)
                           .withValues(alpha: cardOpacity),
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.03),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
                         ),
                       ],
                     ),
                     child: Row(
                       children: [
                         Container(
-                          width: 40,
-                          height: 40,
+                          width: 38,
+                          height: 38,
                           decoration: BoxDecoration(
                             color: primaryColor,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(11),
                           ),
                           child: const Icon(
                             Icons.auto_awesome_rounded,
-                            size: 22,
+                            size: 20,
                             color: Colors.white,
                           ),
                         ),
-                        const SizedBox(width: 14),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,29 +176,29 @@ class AppearanceSettingsScreen extends StatelessWidget {
                             children: [
                               Container(
                                 width: double.infinity,
-                                height: 7.5,
+                                height: 7,
                                 decoration: BoxDecoration(
                                   color: isDark
                                       ? Colors.white.withValues(alpha: 0.7)
                                       : const Color(0xFF627370),
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: BorderRadius.circular(3.5),
                                 ),
                               ),
-                              const SizedBox(height: 7),
+                              const SizedBox(height: 6),
                               Container(
-                                width: 90,
-                                height: 5.5,
+                                width: 84,
+                                height: 5,
                                 decoration: BoxDecoration(
                                   color: isDark
                                       ? Colors.white30
                                       : const Color(0xFFB4C4C0),
-                                  borderRadius: BorderRadius.circular(3),
+                                  borderRadius: BorderRadius.circular(2.5),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 14),
+                        const SizedBox(width: 12),
                         const IgnorePointer(
                           child: SettingsSwitch(value: true),
                         ),

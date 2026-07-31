@@ -105,6 +105,49 @@ func (h *CompetitionHandler) AdminExportCompetitionCatalogBaseline(c *gin.Contex
 	c.JSON(http.StatusOK, document)
 }
 
+func (h *CompetitionHandler) AdminExportCompetitionCatalogIdentityBaseline(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	document, validation, err := services.NewCompetitionCatalogBaselineExporter(h.db).
+		ExportIdentity(c.Request.Context())
+	if err != nil {
+		result := "failed"
+		status := http.StatusInternalServerError
+		message := "导出旧赛事身份基线失败"
+		switch {
+		case errors.Is(err, services.ErrCatalogBaselineAlreadyExists):
+			status = http.StatusConflict
+			message = "已有活动目录包，不能重复建立首次身份基线"
+		case errors.Is(err, services.ErrCatalogBaselineEmpty):
+			status = http.StatusConflict
+			message = "没有经过重复归并审计的 canonical 旧赛事"
+		case errors.Is(err, services.ErrCatalogValidationFailed):
+			status = http.StatusUnprocessableEntity
+			message = "旧赛事身份基线未通过服务端校验"
+			result = "rejected"
+		}
+		_ = h.db.Create(&models.CompetitionCatalogAuditLog{
+			ActorUserID: userID, Action: "catalog_identity_baseline_export",
+			Result: result, Detail: message,
+		}).Error
+		if errors.Is(err, services.ErrCatalogValidationFailed) {
+			c.JSON(status, gin.H{"error": message, "validation": validation})
+			return
+		}
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+	_ = h.db.Create(&models.CompetitionCatalogAuditLog{
+		ActorUserID: userID, Action: "catalog_identity_baseline_export",
+		Result: "success", Detail: document.DatasetVersion,
+	}).Error
+	c.Header("Content-Disposition", "attachment; filename=legacy-identity-baseline-20260731.json")
+	c.Header("X-Catalog-Package-Hash", document.PackageHash)
+	c.JSON(http.StatusOK, document)
+}
+
 func (h *CompetitionHandler) AdminListCompetitionCatalogPackages(c *gin.Context) {
 	var packages []models.CompetitionCatalogPackage
 	if err := h.db.Order("id DESC").Find(&packages).Error; err != nil {

@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	LegacyCompetitionBaselineDataset  = "legacy-production-baseline"
-	legacyCompetitionBaselineFilename = "legacy-production-baseline.json"
+	LegacyCompetitionBaselineDataset          = "legacy-production-baseline"
+	LegacyCompetitionIdentityBaselineDataset  = "legacy-identity-baseline-20260731"
+	legacyCompetitionBaselineFilename         = "legacy-production-baseline.json"
+	legacyCompetitionIdentityBaselineFilename = "legacy-identity-baseline-20260731.json"
 )
 
 var (
@@ -65,11 +67,58 @@ func (e *CompetitionCatalogBaselineExporter) Export(
 			ErrCatalogBaselineEmpty
 	}
 
+	return e.buildDocument(events, LegacyCompetitionBaselineDataset, legacyCompetitionBaselineFilename, false)
+}
+
+// ExportIdentity 导出经重复归并审计确认的 canonical 身份，不开放任何展示或推荐权限。
+func (e *CompetitionCatalogBaselineExporter) ExportIdentity(
+	ctx context.Context,
+) (dto.CompetitionCatalogDocument, dto.CompetitionCatalogValidationResult, error) {
+	var activeCount int64
+	if err := e.db.WithContext(ctx).Model(&models.CompetitionCatalogPackage{}).
+		Where("is_active = ?", true).Count(&activeCount).Error; err != nil {
+		return dto.CompetitionCatalogDocument{}, dto.CompetitionCatalogValidationResult{}, err
+	}
+	if activeCount > 0 {
+		return dto.CompetitionCatalogDocument{}, dto.CompetitionCatalogValidationResult{},
+			ErrCatalogBaselineAlreadyExists
+	}
+	if !e.db.Migrator().HasTable(&models.CompetitionLegacyDuplicateResolution{}) {
+		return dto.CompetitionCatalogDocument{}, dto.CompetitionCatalogValidationResult{},
+			ErrCatalogBaselineEmpty
+	}
+	canonicalIDs := e.db.WithContext(ctx).Model(&models.CompetitionLegacyDuplicateResolution{}).
+		Distinct("canonical_event_id").Select("canonical_event_id")
+	var events []models.CompetitionEvent
+	if err := e.db.WithContext(ctx).Unscoped().Preload("PrimaryCategory").
+		Where("competition_events.id IN (?)", canonicalIDs).
+		Where("competition_events.catalog_package_id IS NULL").
+		Where("competition_events.dataset_version = '' OR competition_events.dataset_version = 'legacy'").
+		Order("competition_events.id ASC").Find(&events).Error; err != nil {
+		return dto.CompetitionCatalogDocument{}, dto.CompetitionCatalogValidationResult{}, err
+	}
+	if len(events) == 0 {
+		return dto.CompetitionCatalogDocument{}, dto.CompetitionCatalogValidationResult{},
+			ErrCatalogBaselineEmpty
+	}
+	return e.buildDocument(
+		events,
+		LegacyCompetitionIdentityBaselineDataset,
+		legacyCompetitionIdentityBaselineFilename,
+		true,
+	)
+}
+
+func (e *CompetitionCatalogBaselineExporter) buildDocument(
+	events []models.CompetitionEvent,
+	datasetVersion string,
+	sourceFilename string,
+	identityOnly bool,
+) (dto.CompetitionCatalogDocument, dto.CompetitionCatalogValidationResult, error) {
 	document := dto.CompetitionCatalogDocument{
-		SchemaVersion:  dto.CompetitionCatalogSchemaVersion,
-		DatasetVersion: LegacyCompetitionBaselineDataset,
-		PublishStatus:  "published", ProductionLoadAllowed: true,
-		ItemCount: len(events), SourceFilename: legacyCompetitionBaselineFilename,
+		SchemaVersion: dto.CompetitionCatalogSchemaVersion, DatasetVersion: datasetVersion,
+		PublishStatus: "published", ProductionLoadAllowed: true,
+		ItemCount: len(events), SourceFilename: sourceFilename,
 		Items: make([]dto.CompetitionCatalogRecord, 0, len(events)),
 	}
 	hashes := make(map[string]string, len(events))
@@ -77,6 +126,15 @@ func (e *CompetitionCatalogBaselineExporter) Export(
 		record, err := legacyEventToCatalogRecord(events[index], index+1)
 		if err != nil {
 			return dto.CompetitionCatalogDocument{}, dto.CompetitionCatalogValidationResult{}, err
+		}
+		if identityOnly {
+			record.Status = events[index].Status
+			record.SearchDisplayAllowed = false
+			record.CandidatePoolAllowed = false
+			record.PersonalizedRankingAllowed = false
+			record.StrongRecommendationEligible = false
+			record.RecommendationPermissionLevel = "blocked"
+			record.AIMode = "disabled"
 		}
 		recordHash, err := ComputeCompetitionRecordHash(record)
 		if err != nil {

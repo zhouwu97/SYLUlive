@@ -279,6 +279,7 @@ func main() {
 		&models.CompetitionCatalogPackage{},
 		&models.CompetitionCatalogAuditLog{},
 		&models.CompetitionCatalogLegacyMapping{},
+		&models.CompetitionLegacyDuplicateResolution{},
 		&models.CompetitionCatalogActivationSnapshot{},
 		&models.CompetitionEvent{},
 		&models.CompetitionEventAttachment{},
@@ -1603,6 +1604,7 @@ func main() {
 		admin.POST("/competitions/import-json/commit", competitionHandler.AdminImportJSONCommit)
 		if cfg.CompetitionCatalogV2Enabled {
 			admin.POST("/competition-catalog/baseline/export", competitionHandler.AdminExportCompetitionCatalogBaseline)
+			admin.POST("/competition-catalog/baseline/export-identity", competitionHandler.AdminExportCompetitionCatalogIdentityBaseline)
 			admin.POST("/competition-catalog/packages/validate", competitionHandler.AdminValidateCompetitionCatalog)
 			admin.POST("/competition-catalog/packages/import", competitionHandler.AdminImportCompetitionCatalog)
 			admin.GET("/competition-catalog/packages", competitionHandler.AdminListCompetitionCatalogPackages)

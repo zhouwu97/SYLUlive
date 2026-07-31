@@ -3,9 +3,22 @@ import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 import 'ai_quick_action_card.dart';
 
+class AiSuggestedPrompt {
+  const AiSuggestedPrompt({
+    required this.title,
+    required this.subtitle,
+    required this.prompt,
+  });
+
+  final String title;
+  final String subtitle;
+  final String prompt;
+}
+
 class AiPublicEmptyState extends StatelessWidget {
   final bool chatEnabled;
   final List<String> quickPrompts;
+  final List<AiSuggestedPrompt> suggestedPrompts;
   final ValueChanged<String>? onPromptSelected;
   final VoidCallback? onRefreshPrompts;
 
@@ -13,12 +26,23 @@ class AiPublicEmptyState extends StatelessWidget {
     super.key,
     required this.chatEnabled,
     required this.quickPrompts,
+    this.suggestedPrompts = const <AiSuggestedPrompt>[],
     this.onPromptSelected,
     this.onRefreshPrompts,
   });
 
   @override
   Widget build(BuildContext context) {
+    final promptCards = <AiSuggestedPrompt>[
+      ...suggestedPrompts,
+      for (var index = 0; index < quickPrompts.length; index++)
+        AiSuggestedPrompt(
+          title: const ['学业考试', '教学管理', '奖助评优', '校园日程'][index % 4],
+          subtitle: quickPrompts[index],
+          prompt: quickPrompts[index],
+        ),
+    ].take(4).toList(growable: false);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
       child: Column(
@@ -55,7 +79,9 @@ class AiPublicEmptyState extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  chatEnabled ? '可查询已开放的校园政策\n与本机课表缓存' : '当前仅验证入口、权限与配额展示，\n暂不发送真实问题。',
+                  chatEnabled
+                      ? '可查询已开放的校园政策\n与本机课表缓存'
+                      : '当前仅验证入口、权限与配额展示，\n暂不发送真实问题。',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Color(0xFF7B8388),
@@ -66,7 +92,7 @@ class AiPublicEmptyState extends StatelessWidget {
               ],
             ),
           ),
-          if (quickPrompts.isNotEmpty) ...[
+          if (promptCards.isNotEmpty) ...[
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -102,15 +128,13 @@ class AiPublicEmptyState extends StatelessWidget {
                 crossAxisSpacing: 10,
                 mainAxisExtent: 72,
               ),
-              itemCount: quickPrompts.length > 4 ? 4 : quickPrompts.length,
+              itemCount: promptCards.length,
               itemBuilder: (context, index) {
-                final prompt = quickPrompts[index];
-                final categories = ['学业考试', '教学管理', '奖助评优', '校园日程'];
-                final category = categories[index % categories.length];
+                final card = promptCards[index];
                 return AiPromptCard(
-                  category: category,
-                  prompt: prompt,
-                  onTap: () => onPromptSelected?.call(prompt),
+                  category: card.title,
+                  prompt: card.subtitle,
+                  onTap: () => onPromptSelected?.call(card.prompt),
                 );
               },
             ),

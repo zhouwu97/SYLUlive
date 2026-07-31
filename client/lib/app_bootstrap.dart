@@ -49,6 +49,8 @@ import 'utils/private_message_notification.dart';
 import 'utils/team_share_link.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
+import 'services/diagnostic_dio_interceptor.dart';
+import 'services/root_page_state_service.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
 import 'services/poll_service.dart';
@@ -167,23 +169,31 @@ void _safeRecord({
     _dedupTimes.removeWhere((_, time) => now - time > 60 * 60 * 1000);
   }
 
-  if (level == 'warning') {
-    DiagnosticLogService.instance.record(
-      level: 'warning',
-      source: source,
-      type: type,
-      summary: summary,
-      detail: detail,
-    );
-  } else {
-    DiagnosticLogService.instance.recordError(
-      source: source,
-      type: type,
-      summary: summary,
-      detail: detail,
-    );
-  }
+  DiagnosticLogService.instance.record(
+    level: level,
+    source: source,
+    type: type,
+    summary: summary,
+    detail: detail,
+    eventCode: level == 'warning' ? 'app_warning' : 'uncaught_app_error',
+    category: _diagnosticCategoryFor(source),
+    operation: 'handle_error',
+    result: 'failure',
+    metadata: <String, Object?>{'exceptionType': type},
+  );
 }
+
+String _diagnosticCategoryFor(String source) => switch (source) {
+      '图片' || '网络' => 'network',
+      '存储' || '缓存' => 'storage',
+      '导航' || '深链' => 'navigation',
+      '账号' => 'auth',
+      '设备工具' => 'device',
+      '教务' => 'edu',
+      '消息' => 'message',
+      '保活' || '后台' => 'background',
+      _ => 'app',
+    };
 
 Future<void> appBootstrap() async {
   await runZonedGuarded<Future<void>>(
@@ -263,7 +273,21 @@ Future<void> appBootstrap() async {
         ),
       );
 
-      await Hive.initFlutter();
+      try {
+        await Hive.initFlutter();
+      } catch (error, stackTrace) {
+        await DiagnosticLogService.instance.recordError(
+          source: '存储',
+          type: 'Hive 初始化失败',
+          summary: '本地数据库初始化失败',
+          detail: '$error\n\n$stackTrace',
+          eventCode: 'storage_hive_init_failed',
+          category: 'storage',
+          operation: 'initialize',
+          result: 'failure',
+        );
+        rethrow;
+      }
 
       PushSettingsService.configureRemoteRegistration(setupPush);
 
@@ -275,6 +299,17 @@ Future<void> appBootstrap() async {
       } catch (e, stackTrace) {
         debugPrint('清理旧帖子缓存失败: $e');
         debugPrintStack(stackTrace: stackTrace);
+        DiagnosticLogService.instance.record(
+          level: 'warning',
+          source: '存储',
+          type: '缓存清理失败',
+          summary: '旧版帖子缓存清理失败',
+          detail: '$e\n\n$stackTrace',
+          eventCode: 'storage_cache_cleanup_failed',
+          category: 'storage',
+          operation: 'cleanup',
+          result: 'failure',
+        );
       }
 
       runApp(const MyApp());
@@ -972,6 +1007,7 @@ Dio getSharedDio() {
         },
       ),
     );
+    dio.interceptors.add(DiagnosticDioInterceptor());
 
     if (kDebugMode) {
       dio.interceptors.add(SafeLogInterceptor());
@@ -1104,13 +1140,39 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       await _consumeDeepLink(uri);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '导航',
+        type: '深链读取失败',
+        summary: '无法读取待处理的应用链接',
+        detail: e.toString(),
+        eventCode: 'navigation_deep_link_read_failed',
+        category: 'navigation',
+        operation: 'read',
+        result: 'failure',
+      );
     }
   }
 
   Future<void> _consumeDeepLink(String? uri) async {
     if (uri == null || !mounted) return;
     final handled = await _handleDeepLinkUri(uri);
-    if (!handled) return;
+    if (!handled) {
+      final parsed = Uri.tryParse(uri);
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '导航',
+        type: '深链无法处理',
+        summary: '应用链接格式无效或目标暂不可用',
+        detail: 'scheme=${parsed?.scheme}\nhost=${parsed?.host}',
+        eventCode: 'navigation_deep_link_unhandled',
+        category: 'navigation',
+        operation: 'open',
+        result: 'failure',
+        route: _safeDeepLinkRoute(parsed),
+      );
+      return;
+    }
     try {
       await _channel.invokeMethod<void>('ackPendingDeepLink', {'link': uri});
     } catch (error) {
@@ -1120,6 +1182,21 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
 
   Future<bool> _handleDeepLinkUri(String? uri) async {
     if (uri == null || !mounted) return false;
+    if (appNavigatorKey.currentState == null) {
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '导航',
+        type: 'Navigator 未就绪',
+        summary: '应用链接将在导航器就绪后重试',
+        detail: '',
+        eventCode: 'navigation_not_ready',
+        category: 'navigation',
+        operation: 'open',
+        result: 'retry',
+        route: _safeDeepLinkRoute(Uri.tryParse(uri)),
+      );
+      return false;
+    }
     if (uri == 'widget_timetable' || uri == 'campus://timetable') {
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       widgetTabSwitch.value++;
@@ -1175,6 +1252,12 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+String _safeDeepLinkRoute(Uri? uri) {
+  if (uri == null) return '';
+  final authority = uri.host.isEmpty ? '' : '//${uri.host}';
+  return '${uri.scheme}:$authority${uri.path}';
 }
 
 /// 抽离 MaterialApp 构建，避免 Consumer 嵌套层级过深
@@ -1412,6 +1495,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
   bool _jpushSettingUp = false;
   bool _legalConsentDialogVisible = false;
+  int? _conversationRestoreScheduledForUserId;
   final HomeInitialTabResolver _homeInitialTabResolver =
       HomeInitialTabResolver();
 
@@ -1488,6 +1572,84 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
+  void _scheduleConversationRestore(AuthProvider authProvider) {
+    final userId = authProvider.user?.id;
+    if (userId == null ||
+        userId <= 0 ||
+        _conversationRestoreScheduledForUserId == userId) {
+      return;
+    }
+    _conversationRestoreScheduledForUserId = userId;
+    unawaited(_restoreLastConversation(userId));
+  }
+
+  Future<void> _restoreLastConversation(int userId) async {
+    // 给原生通知、JPush 回调和小组件深链留出优先处理窗口。
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted || context.read<AuthProvider>().user?.id != userId) return;
+
+    try {
+      final state = await RootPageStateStore.instance.readConversation(
+        accountId: userId,
+      );
+      if (!mounted || state == null) return;
+
+      final navigator = appNavigatorKey.currentState;
+      final externalTargetPending = _pendingPrivateMessageOpen.target != null ||
+          _pendingNotificationOpen.target != null ||
+          widgetTabSwitch.value > 0;
+      if (navigator == null || navigator.canPop() || externalTargetPending) {
+        await RootPageStateStore.instance.clearConversation();
+        return;
+      }
+
+      navigator.push(
+        MaterialPageRoute<void>(
+          settings: RouteSettings(
+            name: '/messages/conversations/${state.conversationId}',
+          ),
+          builder: (_) => ChatDetailScreen(
+            conversationId: state.conversationId,
+            targetUser: User(
+              id: state.targetUserId,
+              studentId: '',
+              nickname: state.targetNickname,
+              avatar: state.targetAvatar,
+              createdAt: DateTime.now(),
+            ),
+          ),
+        ),
+      );
+      DiagnosticLogService.instance.record(
+        level: 'info',
+        source: '导航',
+        type: '私信会话已恢复',
+        summary: '已恢复上次打开的私信会话并重新拉取消息',
+        detail: '',
+        eventCode: 'navigation_conversation_restored',
+        category: 'navigation',
+        operation: 'restore',
+        result: 'success',
+        route: '/messages/conversations/:id',
+        metadata: <String, Object?>{
+          'conversationId': state.conversationId,
+        },
+      );
+    } catch (error) {
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '存储',
+        type: '私信页面状态恢复失败',
+        summary: '无法恢复上次打开的私信会话',
+        detail: error.toString(),
+        eventCode: 'navigation_conversation_state_restore_failed',
+        category: 'navigation',
+        operation: 'restore',
+        result: 'failure',
+      );
+    }
+  }
+
   void _presentRequiredLegalConsentDialog(AuthProvider authProvider) {
     if (_legalConsentDialogVisible) return;
     final user = authProvider.user;
@@ -1550,6 +1712,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
             if (PlatformCapabilities.current.supportsJPush) {
               _checkNativePrivateMessage();
             }
+            _scheduleConversationRestore(authProvider);
           });
         }
 

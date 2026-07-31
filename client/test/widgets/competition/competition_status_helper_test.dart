@@ -12,8 +12,8 @@ void main() {
     });
 
     test('competitionManualRatingShort', () {
-      expect(competitionManualRatingShort('A'), '人工 A');
-      expect(competitionManualRatingShort(' B+ '), '人工 B+');
+      expect(competitionManualRatingShort('A'), '价值 A');
+      expect(competitionManualRatingShort(' B+ '), '价值 B+');
       expect(competitionManualRatingShort('  '), '');
       expect(competitionManualRatingShort(''), '');
     });

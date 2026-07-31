@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,12 +14,15 @@ import (
 
 	"shenliyuan/internal/academic"
 	"shenliyuan/internal/ai/mcpclient"
+	"shenliyuan/internal/competitionscope"
+	"shenliyuan/internal/dto"
 	"shenliyuan/internal/models"
 )
 
 const hy3DecisionToolVersion = "2026-07-25"
 
 var hy3DecisionToolNames = []string{
+	"hy3_decision.explain_competition_candidates",
 	"hy3_decision.compare_competitions",
 	"hy3_decision.analyze_academic",
 	"hy3_decision.plan_student_week",
@@ -51,10 +55,19 @@ func (tool hy3DecisionTool) ValidateToolArguments(arguments json.RawMessage) err
 // hy3DecisionMCP 保留本地快照读取和远端 MCP 调用之间的安全边界。
 // 任何传入远端的数据都由该类型重新构造，绝不复用模型原始参数中的个人数据。
 type hy3DecisionMCP struct {
-	db     *gorm.DB
-	remote mcpclient.ExternalMCPClient
-	campus *campusMCP
+	db                            *gorm.DB
+	remote                        mcpclient.ExternalMCPClient
+	campus                        *campusMCP
+	competitionCandidates         Hy3CompetitionCandidateBuilder
+	competitionExplanationEnabled bool
 }
+
+// Hy3CompetitionCandidateBuilder 从统一候选引擎读取当前用户仍可见的候选。
+type Hy3CompetitionCandidateBuilder func(
+	context.Context,
+	uint,
+	[]uint,
+) ([]dto.CompetitionCandidateDTO, error)
 
 // Hy3DecisionToolOption 仅用于注入已存在的校园数据访问策略，避免适配器依赖具体服务实现。
 type Hy3DecisionToolOption func(*hy3DecisionMCP)
@@ -68,7 +81,25 @@ func WithHy3DecisionPersonalDataPermissionReader(reader PersonalDataPermissionRe
 	}
 }
 
-// NewHy3DecisionTools 创建三个受控的 Hy3 决策包装工具。
+// WithHy3CompetitionExplanationEnabled 控制竞赛画像是否允许离开 Go 进程。
+func WithHy3CompetitionExplanationEnabled(enabled bool) Hy3DecisionToolOption {
+	return func(decision *hy3DecisionMCP) {
+		if decision != nil {
+			decision.competitionExplanationEnabled = enabled
+		}
+	}
+}
+
+// WithHy3CompetitionCandidateBuilder 注入统一候选引擎，避免 Hy3 适配器自行实现资格和排序规则。
+func WithHy3CompetitionCandidateBuilder(builder Hy3CompetitionCandidateBuilder) Hy3DecisionToolOption {
+	return func(decision *hy3DecisionMCP) {
+		if decision != nil {
+			decision.competitionCandidates = builder
+		}
+	}
+}
+
+// NewHy3DecisionTools 创建受控的 Hy3 决策包装工具。
 // 该兼容入口假定调用方已完成远端能力校验；生产装配应使用
 // NewValidatedHy3DecisionTools，仅注册当前 Session 实际兼容的能力。
 func NewHy3DecisionTools(db *gorm.DB, snapshots AcademicSnapshotReader, personalSnapshots PersonalSnapshotReader, remote mcpclient.ExternalMCPClient, options ...Hy3DecisionToolOption) []PureReadTool {
@@ -90,9 +121,9 @@ func newHy3DecisionTools(db *gorm.DB, snapshots AcademicSnapshotReader, personal
 		return nil
 	}
 	decision := &hy3DecisionMCP{
-		db:     db,
-		remote: remote,
-		campus: &campusMCP{db: db, snapshots: snapshots, personalSnapshots: personalSnapshots, now: time.Now},
+		db: db, remote: remote,
+		campus:                        &campusMCP{db: db, snapshots: snapshots, personalSnapshots: personalSnapshots, now: time.Now},
+		competitionExplanationEnabled: true,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -100,10 +131,22 @@ func newHy3DecisionTools(db *gorm.DB, snapshots AcademicSnapshotReader, personal
 		}
 	}
 	tools := make([]PureReadTool, 0, len(hy3DecisionToolNames))
-	if hy3RemoteToolAvailable(available, "compare_competitions") {
+	if decision.competitionExplanationEnabled &&
+		decision.competitionCandidates != nil &&
+		hy3RemoteToolAvailable(available, "explain_competition_candidates") {
+		tools = append(tools, hy3DecisionTool{
+			name:        "hy3_decision.explain_competition_candidates",
+			description: "解释当前用户已通过规则筛选的赛事候选；不新增赛事、不评分、不重排。",
+			parameters:  hy3CandidateExplanationSchema(),
+			validate:    validateHy3CandidateExplanationArguments,
+			execute:     decision.explainCompetitionCandidates,
+		})
+	}
+	if decision.competitionExplanationEnabled &&
+		hy3RemoteToolAvailable(available, "compare_selected_competitions") {
 		tools = append(tools, hy3DecisionTool{
 			name:        "hy3_decision.compare_competitions",
-			description: "基于已发布赛事目录和最小学生画像进行 Hy3 辅助比较。",
+			description: "比较用户明确选择的已发布赛事；Hy3 只解释公开事实，不评分、不重排。",
 			parameters:  hy3CompetitionSchema(),
 			validate:    validateHy3CompetitionArguments,
 			execute:     decision.compareCompetitions,
@@ -177,7 +220,16 @@ func hy3PermissionUnavailable(scope models.AIUserPermissionScope) map[string]int
 func hy3CompetitionSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object", "properties": map[string]interface{}{
-			"event_ids": map[string]interface{}{"type": "array", "minItems": 2, "maxItems": 5, "items": map[string]interface{}{"type": "integer", "minimum": 1}},
+			"event_ids": map[string]interface{}{"type": "array", "minItems": 2, "maxItems": 4, "items": map[string]interface{}{"type": "integer", "minimum": 1}},
+			"question":  map[string]interface{}{"type": "string", "maxLength": 500},
+		}, "required": []string{"event_ids"}, "additionalProperties": false,
+	}
+}
+
+func hy3CandidateExplanationSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "properties": map[string]interface{}{
+			"event_ids": map[string]interface{}{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]interface{}{"type": "integer", "minimum": 1}},
 			"question":  map[string]interface{}{"type": "string", "maxLength": 500},
 		}, "required": []string{"event_ids"}, "additionalProperties": false,
 	}
@@ -218,9 +270,148 @@ type hy3CompetitionInput struct {
 	Question string `json:"question"`
 }
 
+type hy3CandidateExplanationInput struct {
+	EventIDs []uint `json:"event_ids"`
+	Question string `json:"question"`
+}
+
+func validateHy3CandidateExplanationArguments(arguments json.RawMessage) error {
+	var input hy3CandidateExplanationInput
+	if err := decodeToolArguments(arguments, &input); err != nil {
+		return err
+	}
+	if len(input.EventIDs) < 1 || len(input.EventIDs) > 20 ||
+		!uniquePositiveIDs(input.EventIDs) ||
+		len([]rune(strings.TrimSpace(input.Question))) > 500 {
+		return errors.New("invalid_tool_arguments")
+	}
+	return nil
+}
+
 func validateHy3CompetitionArguments(arguments json.RawMessage) error {
 	var input hy3CompetitionInput
 	return decodeToolArguments(arguments, &input)
+}
+
+func (decision *hy3DecisionMCP) explainCompetitionCandidates(
+	ctx context.Context,
+	userID uint,
+	arguments json.RawMessage,
+) (interface{}, error) {
+	var input hy3CandidateExplanationInput
+	if err := validateHy3CandidateExplanationArguments(arguments); err != nil {
+		return nil, err
+	}
+	if err := decodeToolArguments(arguments, &input); err != nil {
+		return nil, errors.New("invalid_tool_arguments")
+	}
+	if decision.db == nil || decision.campus == nil || decision.competitionCandidates == nil {
+		return hy3Unavailable(mcpclient.ErrorUnavailable, "竞赛候选解释服务暂时不可用。"), nil
+	}
+	wait, deniedScope, permissionErr := decision.requireHy3Permissions(
+		ctx, userID, "hy3_competition_candidate_explanation", false,
+	)
+	if permissionErr != nil {
+		return nil, permissionErr
+	}
+	if wait != nil {
+		return *wait, nil
+	}
+	if deniedScope != "" {
+		return hy3PermissionUnavailable(deniedScope), nil
+	}
+
+	candidates, err := decision.competitionCandidates(ctx, userID, input.EventIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) != len(input.EventIDs) {
+		return hy3Unavailable(
+			mcpclient.ErrorConstraint,
+			"请求的赛事已不在当前候选集合中，请刷新候选后重试。",
+		), nil
+	}
+	profile, err := BuildHy3CompetitionUserContext(ctx, decision.db, userID)
+	if err != nil {
+		if errors.Is(err, ErrCompetitionAIExplanationDisabled) {
+			return hy3PersonalUnavailable("你未允许 AI 解释竞赛匹配。"), nil
+		}
+		return nil, err
+	}
+
+	remoteCandidates := make([]map[string]interface{}, 0, len(candidates))
+	competitionIDs := make([]string, 0, len(candidates))
+	ruleOrder := make([]int, 0, len(candidates))
+	for _, candidate := range candidates {
+		if !validHy3RecordHash(candidate.RecordHash) ||
+			strings.TrimSpace(candidate.CompetitionID) == "" ||
+			!candidate.Gates.CandidatePoolAllowed ||
+			candidate.Gates.AIMode != "candidate_explanation" {
+			return hy3Unavailable(
+				mcpclient.ErrorConstraint,
+				"候选目录记录缺少可信摘要或未开放解释权限。",
+			), nil
+		}
+		remoteCandidates = append(remoteCandidates, hy3CandidatePayload(candidate))
+		competitionIDs = append(competitionIDs, candidate.CompetitionID)
+		ruleOrder = append(ruleOrder, candidate.RuleOrder)
+	}
+	if unavailable := decision.reserveExternalCall(ctx); unavailable != nil {
+		return unavailable, nil
+	}
+	envelope, unavailable := decision.callRemote(ctx, "explain_competition_candidates", map[string]interface{}{
+		"mode":         "candidate_explanation",
+		"question":     nullableHy3Text(input.Question, 500),
+		"user_context": profile,
+		"candidates":   remoteCandidates,
+	})
+	if unavailable != nil {
+		return unavailable, nil
+	}
+	return map[string]interface{}{
+		"status":   "ok",
+		"analysis": envelope.Result,
+		"deterministic_findings": map[string]interface{}{
+			"competition_ids": competitionIDs,
+			"rule_order":      ruleOrder,
+		},
+		"warnings": envelope.Warnings,
+	}, nil
+}
+
+func hy3CandidatePayload(candidate dto.CompetitionCandidateDTO) map[string]interface{} {
+	return map[string]interface{}{
+		"competition_id": candidate.CompetitionID,
+		"record_hash":    candidate.RecordHash,
+		"group_key":      candidate.GroupKey,
+		"rule_order":     candidate.RuleOrder,
+		"facts": map[string]interface{}{
+			"title":                       candidate.Title,
+			"competition_level":           candidate.CompetitionLevel,
+			"school_recognition_status":   candidate.SchoolRecognitionStatus,
+			"school_recognition_grade":    candidate.SchoolRecognitionGrade,
+			"competition_rating":          candidate.CompetitionRating,
+			"participation_type":          candidate.ParticipationType,
+			"team_size_min":               candidate.TeamSizeMin,
+			"team_size_max":               candidate.TeamSizeMax,
+			"registration_time_text":      candidate.RegistrationTimeText,
+			"event_time_text":             candidate.EventTimeText,
+			"time_status":                 candidate.TimeStatus,
+			"manual_rating_reason_public": candidate.ManualRatingReason,
+			"major_fit_summary_public":    candidate.MajorFitSummary,
+			"evidence_summary_public":     candidate.EvidenceSummary,
+			"evidence_subgrade":           candidate.EvidenceSubgrade,
+			"risk_tags":                   candidate.RiskTags,
+		},
+		"match_dimensions": candidate.MatchDimensions,
+		"gates": map[string]interface{}{
+			"candidate_pool_allowed":          candidate.Gates.CandidatePoolAllowed,
+			"personalized_ranking_allowed":    candidate.Gates.PersonalizedRankingAllowed,
+			"strong_recommendation_eligible":  candidate.Gates.StrongRecommendationEligible,
+			"recommendation_permission_level": candidate.Gates.PermissionLevel,
+			"ai_mode":                         candidate.Gates.AIMode,
+		},
+	}
 }
 
 func (decision *hy3DecisionMCP) compareCompetitions(ctx context.Context, userID uint, arguments json.RawMessage) (interface{}, error) {
@@ -231,7 +422,7 @@ func (decision *hy3DecisionMCP) compareCompetitions(ctx context.Context, userID 
 	if strings.TrimSpace(input.Question) != "" && len([]rune(input.Question)) > 500 {
 		return nil, errors.New("invalid_tool_arguments")
 	}
-	if !uniquePositiveIDs(input.EventIDs) {
+	if !uniquePositiveIDs(input.EventIDs) || len(input.EventIDs) > 4 {
 		return nil, errors.New("invalid_tool_arguments")
 	}
 	if decision.db == nil || decision.campus == nil {
@@ -249,8 +440,14 @@ func (decision *hy3DecisionMCP) compareCompetitions(ctx context.Context, userID 
 	}
 
 	var events []models.CompetitionEvent
-	if err := decision.db.WithContext(ctx).Preload("PrimaryCategory").
-		Where("id IN ? AND status IN ?", input.EventIDs, []string{"active", "published"}).Find(&events).Error; err != nil {
+	scope, err := competitionscope.Resolve(ctx, decision.db)
+	if err != nil {
+		return nil, err
+	}
+	query := scope.ApplyCandidate(
+		decision.db.WithContext(ctx).Model(&models.CompetitionEvent{}).Preload("PrimaryCategory"),
+	)
+	if err := query.Where("competition_events.id IN ?", input.EventIDs).Find(&events).Error; err != nil {
 		return nil, err
 	}
 	byID := make(map[uint]models.CompetitionEvent, len(events))
@@ -261,24 +458,45 @@ func (decision *hy3DecisionMCP) compareCompetitions(ctx context.Context, userID 
 		return hy3Unavailable(mcpclient.ErrorConstraint, "请求的赛事不存在或尚未公开，无法生成可信比较。"), nil
 	}
 
-	profile, err := decision.loadCompetitionProfile(ctx, userID)
+	profile, err := BuildHy3CompetitionUserContext(ctx, decision.db, userID)
 	if err != nil {
+		if errors.Is(err, ErrCompetitionAIExplanationDisabled) {
+			return hy3PersonalUnavailable("你未允许 AI 解释竞赛匹配。"), nil
+		}
 		return nil, err
 	}
 	candidates := make([]map[string]interface{}, 0, len(input.EventIDs))
 	localComparison := make([]map[string]interface{}, 0, len(input.EventIDs))
-	for _, id := range input.EventIDs {
+	for index, id := range input.EventIDs {
 		event := byID[id]
+		if !validHy3RecordHash(event.RecordHash) || strings.TrimSpace(event.CompetitionID) == "" {
+			return hy3Unavailable(
+				mcpclient.ErrorConstraint,
+				"赛事目录记录缺少稳定标识或摘要，无法进行可信比较。",
+			), nil
+		}
 		category := ""
 		if event.PrimaryCategory != nil {
 			category = strings.TrimSpace(event.PrimaryCategory.Name)
 		}
 		candidates = append(candidates, map[string]interface{}{
-			"name":                     truncateHy3Text(event.Title, 200),
-			"category":                 nullableHy3Text(category, 80),
-			"recognition_note":         nullableHy3Text(composeRecognitionNote(event), 500),
-			"difficulty":               nullableHy3Text(competitionDifficulty(event), 16),
-			"recommended_weekly_hours": nil,
+			"competition_id": event.CompetitionID,
+			"record_hash":    event.RecordHash,
+			"group_key":      "general_match",
+			"rule_order":     index + 1,
+			"facts":          hy3SelectedCompetitionFacts(event),
+			"match_dimensions": map[string]interface{}{
+				"eligibility": "unknown", "major": "unknown", "college": "unknown",
+				"grade": "unknown", "goal": "unknown", "direction": "unknown",
+				"skill": "unknown", "role": "unknown", "time": "unknown", "training": "unknown",
+			},
+			"gates": map[string]interface{}{
+				"candidate_pool_allowed":          event.CandidatePoolAllowed,
+				"personalized_ranking_allowed":    event.PersonalizedRankingAllowed,
+				"strong_recommendation_eligible":  event.StrongRecommendationEligible,
+				"recommendation_permission_level": defaultHy3Text(event.RecommendationPermissionLevel, "low"),
+				"ai_mode":                         defaultHy3Text(event.AIMode, "candidate_explanation"),
+			},
 		})
 		localComparison = append(localComparison, localCompetitionFacts(event, category, profile.WeeklyHours))
 	}
@@ -286,9 +504,11 @@ func (decision *hy3DecisionMCP) compareCompetitions(ctx context.Context, userID 
 	if unavailable := decision.reserveExternalCall(ctx); unavailable != nil {
 		return unavailable, nil
 	}
-	envelope, unavailable := decision.callRemote(ctx, "compare_competitions", map[string]interface{}{
-		"competitions":    candidates,
-		"student_profile": profile.asRemote(),
+	envelope, unavailable := decision.callRemote(ctx, "compare_selected_competitions", map[string]interface{}{
+		"mode":         "selected_comparison",
+		"question":     nullableHy3Text(input.Question, 500),
+		"user_context": profile,
+		"competitions": candidates,
 	})
 	if unavailable != nil {
 		return unavailable, nil
@@ -301,48 +521,45 @@ func (decision *hy3DecisionMCP) compareCompetitions(ctx context.Context, userID 
 	}, nil
 }
 
-type hy3StudentProfile struct {
-	Major       string
-	Grade       string
-	WeeklyHours int
+func validHy3RecordHash(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 64 {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == 32
 }
 
-func (profile hy3StudentProfile) asRemote() map[string]interface{} {
+func defaultHy3Text(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func hy3SelectedCompetitionFacts(event models.CompetitionEvent) map[string]interface{} {
+	riskTags := make([]string, 0)
+	if len(event.RiskTags) > 0 {
+		_ = json.Unmarshal(event.RiskTags, &riskTags)
+	}
 	return map[string]interface{}{
-		"major":        profile.Major,
-		"grade":        profile.Grade,
-		"weekly_hours": profile.WeeklyHours,
+		"competition_level":           event.CompetitionLevel,
+		"school_recognition_status":   event.SchoolRecognitionStatus,
+		"school_recognition_grade":    event.SchoolRecognitionGrade,
+		"competition_rating":          event.CompetitionRating,
+		"participation_type":          event.ParticipationType,
+		"team_size_min":               event.TeamSizeMin,
+		"team_size_max":               event.TeamSizeMax,
+		"registration_time_text":      event.RegistrationTimeText,
+		"event_time_text":             event.EventTimeText,
+		"time_status":                 event.TimeStatus,
+		"manual_rating_reason_public": event.ManualRatingReasonPublic,
+		"major_fit_summary_public":    event.MajorFitSummaryPublic,
+		"evidence_summary_public":     event.EvidenceSummaryPublic,
+		"evidence_subgrade":           event.EvidenceSubgrade,
+		"risk_tags":                   riskTags,
 	}
-}
-
-func (decision *hy3DecisionMCP) loadCompetitionProfile(ctx context.Context, userID uint) (hy3StudentProfile, error) {
-	var user models.User
-	if err := decision.db.WithContext(ctx).
-		Select("id", "edu_grade", "edu_major", "competition_profile_ai_enabled").First(&user, userID).Error; err != nil {
-		return hy3StudentProfile{}, err
-	}
-	profile := hy3StudentProfile{
-		Major: strings.TrimSpace(user.EduMajor),
-		Grade: strings.TrimSpace(user.EduGrade),
-	}
-	if profile.Major == "" {
-		profile.Major = "未提供"
-	}
-	if profile.Grade == "" {
-		profile.Grade = "未提供"
-	}
-	if !user.CompetitionProfileAIEnabled {
-		return profile, nil
-	}
-	var preference models.UserCompetitionPreference
-	err := decision.db.WithContext(ctx).Where("user_id = ?", userID).First(&preference).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return hy3StudentProfile{}, err
-	}
-	if err == nil && preference.WeeklyHours >= 0 && preference.WeeklyHours <= 80 {
-		profile.WeeklyHours = preference.WeeklyHours
-	}
-	return profile, nil
 }
 
 func uniquePositiveIDs(values []uint) bool {
@@ -1196,12 +1413,73 @@ func (decision *hy3DecisionMCP) callRemote(ctx context.Context, name string, arg
 	if err != nil {
 		return hy3RemoteEnvelope{}, hy3Unavailable(mcpclient.ErrorInvalidResult, "Hy3 决策服务返回格式无效，请依据已取得的确定性数据回答。")
 	}
+	if name == "explain_competition_candidates" {
+		result, err := sanitizeHy3CandidateExplanationResult(arguments, envelope.Result)
+		if err != nil {
+			return hy3RemoteEnvelope{}, hy3Unavailable(
+				mcpclient.ErrorInvalidResult,
+				"Hy3 候选解释未通过本地 ID、顺序、来源或措辞校验，已丢弃该结果。",
+			)
+		}
+		envelope.Result = result
+		return envelope, nil
+	}
+	if name == "compare_selected_competitions" {
+		result, err := sanitizeHy3SelectedComparisonResult(arguments, envelope.Result)
+		if err != nil {
+			return hy3RemoteEnvelope{}, hy3Unavailable(
+				mcpclient.ErrorInvalidResult,
+				"Hy3 比较结果未通过本地 ID、顺序、来源或措辞校验，已丢弃该结果。",
+			)
+		}
+		envelope.Result = result
+		return envelope, nil
+	}
 	result, err := sanitizeHy3NarrativeResult(name, envelope.Result)
 	if err != nil {
 		return hy3RemoteEnvelope{}, hy3Unavailable(mcpclient.ErrorInvalidResult, "Hy3 决策服务返回格式无效，请依据已取得的确定性数据回答。")
 	}
 	envelope.Result = result
 	return envelope, nil
+}
+
+func sanitizeHy3CandidateExplanationResult(
+	arguments map[string]interface{},
+	input map[string]interface{},
+) (map[string]interface{}, error) {
+	candidates, ok := arguments["candidates"].([]map[string]interface{})
+	if !ok || len(candidates) < 1 || len(candidates) > 20 {
+		return nil, errors.New("candidate_arguments_invalid")
+	}
+	expected := make([]dto.CompetitionCandidateDTO, 0, len(candidates))
+	for _, candidate := range candidates {
+		competitionID, _ := candidate["competition_id"].(string)
+		expected = append(expected, dto.CompetitionCandidateDTO{
+			CompetitionPublicDTO: dto.CompetitionPublicDTO{CompetitionID: competitionID},
+		})
+	}
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(encoded)))
+	decoder.DisallowUnknownFields()
+	var output Hy3CompetitionExplanation
+	if err := decoder.Decode(&output); err != nil {
+		return nil, err
+	}
+	if err := ValidateHy3CompetitionExplanation(expected, output); err != nil {
+		return nil, err
+	}
+	sanitized, err := json.Marshal(output)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(sanitized, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func decodeHy3RemoteEnvelope(payload json.RawMessage) (hy3RemoteEnvelope, error) {
@@ -1230,6 +1508,44 @@ func decodeHy3RemoteEnvelope(payload json.RawMessage) (hy3RemoteEnvelope, error)
 		}
 	}
 	return hy3RemoteEnvelope{Result: result, DeterministicFindings: findings, Warnings: warnings}, nil
+}
+
+func sanitizeHy3SelectedComparisonResult(
+	arguments map[string]interface{},
+	input map[string]interface{},
+) (map[string]interface{}, error) {
+	competitions, ok := arguments["competitions"].([]map[string]interface{})
+	if !ok || len(competitions) < 2 || len(competitions) > 4 {
+		return nil, errors.New("selected_competitions_invalid")
+	}
+	expectedIDs := make([]string, 0, len(competitions))
+	for _, competition := range competitions {
+		competitionID, ok := competition["competition_id"].(string)
+		if !ok || strings.TrimSpace(competitionID) == "" {
+			return nil, errors.New("selected_competition_id_invalid")
+		}
+		expectedIDs = append(expectedIDs, competitionID)
+	}
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	var output Hy3SelectedCompetitionComparison
+	if err := decodeToolArguments(encoded, &output); err != nil {
+		return nil, err
+	}
+	if err := ValidateHy3SelectedCompetitionComparison(expectedIDs, output); err != nil {
+		return nil, err
+	}
+	clean, err := json.Marshal(output)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(clean, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 type hy3NarrativeContract struct {

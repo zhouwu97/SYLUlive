@@ -14,10 +14,6 @@ import '../services/grade_reminder_service.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
-import '../widgets/edu_grade/grade_gpa_hero_card.dart';
-import '../widgets/edu_grade/academic_course_item.dart';
-import '../widgets/edu_grade/academic_course_status_state.dart';
-import '../widgets/edu_grade/academic_credit_overview.dart';
 import '../widgets/edu_grade/academic_privacy_notice.dart';
 import '../widgets/edu_grade/grade_center_section_tabs.dart';
 import '../widgets/edu_grade/academic_requirement_overview.dart';
@@ -371,6 +367,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _isInitialLoading = false;
         _isRefreshing = true;
       });
+      _prefetchGradeDetails(cache.grades);
     } else {
       // Cache miss: full loading state
       setState(() {
@@ -402,6 +399,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
       _syncBaselineAndCancelNotification(
           _selectedYear, _selectedSemester, result.data!);
+      _prefetchGradeDetails(result.data!);
     } else {
       final errorMsg = result.errorMessage ?? '成绩加载失败';
       if (_grades.isNotEmpty) {
@@ -450,6 +448,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
       _syncBaselineAndCancelNotification(
           _selectedYear, _selectedSemester, result.data!);
+      _prefetchGradeDetails(result.data!);
       if (mounted && !silent) _showSnackBar('成绩已更新');
       return result.data;
     }
@@ -529,6 +528,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
 
       _saveSelectedSemester(year, semester);
+      _prefetchGradeDetails(cache.grades, year: year, semester: semester);
 
       // Background refresh
       _refreshSelectedSemesterInBackground(year, semester, generation);
@@ -554,6 +554,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
     _syncBaselineAndCancelNotification(year, semester, result.data!);
     _saveSelectedSemester(year, semester);
+    _prefetchGradeDetails(result.data!, year: year, semester: semester);
     return true;
   }
 
@@ -614,7 +615,24 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             _grades.isEmpty ? GradePageState.empty : GradePageState.content;
       });
       _syncBaselineAndCancelNotification(year, semester, result.data!);
+      _prefetchGradeDetails(result.data!, year: year, semester: semester);
     }
+  }
+
+  void _prefetchGradeDetails(
+    List<EduGrade> grades, {
+    String? year,
+    int? semester,
+  }) {
+    final provider = _eduProvider;
+    if (provider == null || grades.isEmpty) return;
+    unawaited(
+      provider.prefetchGradeDetails(
+        grades,
+        year ?? _selectedYear,
+        semester ?? _selectedSemester,
+      ),
+    );
   }
 
   void _showSnackBar(String message) {
@@ -755,55 +773,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   }
 
   List<Widget> _buildAcademicContent() {
-    // 学业情况和官方学分要求独立加载，任一来源失败均不遮蔽另一份数据。
-    final situation = _academicError == null ? _academicSituation : null;
     return [
-      SliverToBoxAdapter(
-        child: GradeGpaHeroCard(
-          situation: situation,
-          isLoading: _isAcademicLoading,
-          errorMessage: _academicError,
-          onRetry: _refreshAcademicSituation,
-        ),
-      ),
-      if (situation != null)
-        SliverToBoxAdapter(
-          child: AcademicCreditOverview(situation: situation),
-        ),
-      if (situation != null && situation.courses.isNotEmpty) ...[
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Text(
-              '课程明细',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white
-                    : const Color(0xFF1F2328),
-              ),
-            ),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => AcademicCourseItem(
-                course: situation.courses[index],
-              ),
-              childCount: situation.courses.length,
-            ),
-          ),
-        ),
-      ] else if (situation != null && !_isAcademicLoading)
-        SliverToBoxAdapter(
-          child: AcademicCourseStatusState(
-            status: situation.coursesStatus,
-          ),
-        ),
-
       // 学分要求模块
       SliverToBoxAdapter(
         child: AcademicRequirementOverview(

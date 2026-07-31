@@ -16,12 +16,12 @@ const (
 // Reply 回复模型（支持一层嵌套）
 type Reply struct {
 	ID            uint        `gorm:"primaryKey" json:"id"`
-	PostID        uint        `gorm:"not null" json:"post_id"`
+	PostID        uint        `gorm:"not null;index:idx_replies_post_status_created,priority:1" json:"post_id"`
 	ParentReplyID *uint       `gorm:"index" json:"parent_reply_id"` // 空表示顶级回复
 	AuthorID      uint        `gorm:"not null" json:"author_id"`
 	Content       string      `gorm:"type:text" json:"content"`
 	StickerID     *string     `gorm:"size:64;index" json:"sticker_id,omitempty"`
-	Status        ReplyStatus `gorm:"default:normal" json:"status"`
+	Status        ReplyStatus `gorm:"default:normal;index:idx_replies_post_status_created,priority:2" json:"status"`
 	LikeCount     int         `gorm:"default:0" json:"like_count"`
 	IsLiked       bool        `gorm:"-" json:"is_liked"`
 	// 统一经验返回字段
@@ -30,7 +30,7 @@ type Reply struct {
 	ExpAwards []ExpAward   `gorm:"-" json:"exp_awards,omitempty"`
 	Images    []ReplyImage `gorm:"foreignKey:ReplyID" json:"images"`
 	Author    User         `gorm:"foreignKey:AuthorID" json:"author"`
-	CreatedAt time.Time    `json:"created_at"`
+	CreatedAt time.Time    `gorm:"index:idx_replies_post_status_created,priority:3" json:"created_at"`
 	UpdatedAt time.Time    `json:"updated_at"`
 }
 

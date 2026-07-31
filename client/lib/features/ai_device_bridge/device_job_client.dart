@@ -1,6 +1,11 @@
 import 'package:dio/dio.dart';
 
+import '../../services/diagnostic_log_service.dart';
 import 'device_job_models.dart';
+
+typedef DeviceJobDiagnosticWriter = Future<void> Function(
+  DeviceJobApiException error,
+);
 
 abstract interface class DeviceJobApi {
   Future<void> register({
@@ -38,9 +43,13 @@ abstract interface class DeviceJobApi {
 
 /// Device Job API 只传 installation_id 和最小化结果，不持久化或记录个人快照。
 class DioDeviceJobClient implements DeviceJobApi {
-  DioDeviceJobClient(this._dio);
+  DioDeviceJobClient(
+    this._dio, {
+    DeviceJobDiagnosticWriter? diagnosticWriter,
+  }) : _diagnosticWriter = diagnosticWriter ?? _writeDiagnosticError;
 
   final Dio _dio;
+  final DeviceJobDiagnosticWriter _diagnosticWriter;
 
   @override
   Future<void> register({
@@ -50,6 +59,7 @@ class DioDeviceJobClient implements DeviceJobApi {
     required String clientVersion,
     String pushToken = '',
   }) async {
+    final stopwatch = Stopwatch()..start();
     try {
       await _dio.put(
         '/device/registration',
@@ -62,12 +72,19 @@ class DioDeviceJobClient implements DeviceJobApi {
         },
       );
     } on DioException catch (error) {
-      throw _apiError(error);
+      throw await _handleDioError(
+        error,
+        operation: 'register',
+        route: '/device/registration',
+        method: 'PUT',
+        durationMs: stopwatch.elapsedMilliseconds,
+      );
     }
   }
 
   @override
   Future<List<DeviceToolJob>> pending(String installationId) async {
+    final stopwatch = Stopwatch()..start();
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '/device/jobs/pending',
@@ -82,17 +99,27 @@ class DioDeviceJobClient implements DeviceJobApi {
         }),
       );
     } on DioException catch (error) {
-      throw _apiError(error);
+      throw await _handleDioError(
+        error,
+        operation: 'pending',
+        route: '/device/jobs/pending',
+        method: 'GET',
+        durationMs: stopwatch.elapsedMilliseconds,
+      );
     }
   }
 
   @override
   Future<DeviceToolJob> get(String installationId, String jobId) {
+    final route = '/device/jobs/${_requiredJobId(jobId)}';
     return _jobRequest(
       () => _dio.get<Map<String, dynamic>>(
-        '/device/jobs/${_requiredJobId(jobId)}',
+        route,
         options: _options(installationId),
       ),
+      operation: 'get',
+      route: '/device/jobs/:jobId',
+      method: 'GET',
     );
   }
 
@@ -102,12 +129,16 @@ class DioDeviceJobClient implements DeviceJobApi {
     String jobId,
     int stateVersion,
   ) {
+    final route = '/device/jobs/${_requiredJobId(jobId)}/claim';
     return _jobRequest(
       () => _dio.post<Map<String, dynamic>>(
-        '/device/jobs/${_requiredJobId(jobId)}/claim',
+        route,
         data: <String, dynamic>{'state_version': stateVersion},
         options: _options(installationId),
       ),
+      operation: 'claim',
+      route: '/device/jobs/:jobId/claim',
+      method: 'POST',
     );
   }
 
@@ -118,15 +149,19 @@ class DioDeviceJobClient implements DeviceJobApi {
     int stateVersion,
     Map<String, dynamic> result,
   ) {
+    final route = '/device/jobs/${_requiredJobId(jobId)}/complete';
     return _jobRequest(
       () => _dio.post<Map<String, dynamic>>(
-        '/device/jobs/${_requiredJobId(jobId)}/complete',
+        route,
         data: <String, dynamic>{
           'state_version': stateVersion,
           'result': result,
         },
         options: _options(installationId),
       ),
+      operation: 'complete',
+      route: '/device/jobs/:jobId/complete',
+      method: 'POST',
     );
   }
 
@@ -137,28 +172,42 @@ class DioDeviceJobClient implements DeviceJobApi {
     int stateVersion,
     String errorCode,
   ) {
+    final route = '/device/jobs/${_requiredJobId(jobId)}/fail';
     return _jobRequest(
       () => _dio.post<Map<String, dynamic>>(
-        '/device/jobs/${_requiredJobId(jobId)}/fail',
+        route,
         data: <String, dynamic>{
           'state_version': stateVersion,
           'error_code': errorCode,
         },
         options: _options(installationId),
       ),
+      operation: 'fail',
+      route: '/device/jobs/:jobId/fail',
+      method: 'POST',
     );
   }
 
   Future<DeviceToolJob> _jobRequest(
-    Future<Response<Map<String, dynamic>>> Function() request,
-  ) async {
+    Future<Response<Map<String, dynamic>>> Function() request, {
+    required String operation,
+    required String route,
+    required String method,
+  }) async {
+    final stopwatch = Stopwatch()..start();
     try {
       final response = await request();
       final job = _responseMap(response.data)['job'];
       if (job is! Map) throw const FormatException('设备任务响应格式无效');
       return DeviceToolJob.fromJson(Map<String, dynamic>.from(job));
     } on DioException catch (error) {
-      throw _apiError(error);
+      throw await _handleDioError(
+        error,
+        operation: operation,
+        route: route,
+        method: method,
+        durationMs: stopwatch.elapsedMilliseconds,
+      );
     }
   }
 
@@ -189,11 +238,81 @@ class DioDeviceJobClient implements DeviceJobApi {
     return result;
   }
 
-  static DeviceJobApiException _apiError(DioException error) {
+  Future<DeviceJobApiException> _handleDioError(
+    DioException error, {
+    required String operation,
+    required String route,
+    required String method,
+    required int durationMs,
+  }) async {
     final data = error.response?.data;
     final code = data is Map && data['code'] is String
         ? data['code'] as String
         : 'device_job_request_failed';
-    return DeviceJobApiException(code, statusCode: error.response?.statusCode);
+    final statusCode = error.response?.statusCode;
+    final exception = DeviceJobApiException(
+      code,
+      statusCode: statusCode,
+      operation: operation,
+      dioType: error.type.name,
+      retryable: _isRetryable(error.type, statusCode),
+      route: route,
+      method: method,
+      durationMs: durationMs,
+    );
+    await _diagnosticWriter(exception);
+    return exception;
   }
 }
+
+bool _isRetryable(DioExceptionType type, int? statusCode) {
+  if (statusCode == 429 || (statusCode != null && statusCode >= 500)) {
+    return true;
+  }
+  return switch (type) {
+    DioExceptionType.connectionTimeout ||
+    DioExceptionType.sendTimeout ||
+    DioExceptionType.receiveTimeout ||
+    DioExceptionType.connectionError ||
+    DioExceptionType.unknown =>
+      true,
+    _ => false,
+  };
+}
+
+Future<void> _writeDiagnosticError(DeviceJobApiException error) {
+  return DiagnosticLogService.instance.recordError(
+    source: '设备工具',
+    type: '设备任务请求失败',
+    summary: '${_operationLabel(error.operation)}时服务器请求失败',
+    detail: [
+      '阶段: ${error.operation}',
+      'HTTP: ${error.statusCode ?? "无响应"}',
+      '网络类型: ${error.dioType}',
+      '是否可重试: ${error.retryable ? "是" : "否"}',
+    ].join('\n'),
+    eventCode: 'device_job_request_failed',
+    category: 'device',
+    operation: error.operation,
+    result: 'failure',
+    durationMs: error.durationMs,
+    httpStatus: error.statusCode,
+    route: error.route,
+    metadata: <String, Object?>{
+      'method': error.method,
+      'dioType': error.dioType,
+      'retryable': error.retryable,
+      'errorCode': error.code,
+    },
+  );
+}
+
+String _operationLabel(String operation) => switch (operation) {
+      'register' => '注册设备',
+      'pending' => '拉取待处理任务',
+      'get' => '读取任务',
+      'claim' => '领取任务',
+      'complete' => '提交任务结果',
+      'fail' => '上报任务失败',
+      _ => '执行设备任务请求',
+    };

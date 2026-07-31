@@ -600,7 +600,12 @@ func (s *PollService) validateInput(input CreatePollInput, now time.Time) (Creat
 	if !validCategories[input.Category] {
 		return input, newPollError(PollCodeInvalidInput, "投票分类无效")
 	}
-	validVisibility := map[string]bool{models.PollResultsAlways: true, models.PollResultsAfterVote: true, models.PollResultsAfterEnd: true}
+	validVisibility := map[string]bool{
+		models.PollResultsAlways:    true,
+		models.PollResultsAfterVote: true, // 兼容历史投票，新客户端不再提供此选项。
+		models.PollResultsAfterEnd:  true,
+		models.PollResultsPrivate:   true,
+	}
 	if !validVisibility[input.ResultsVisibility] {
 		return input, newPollError(PollCodeInvalidInput, "结果可见方式无效")
 	}
@@ -652,7 +657,8 @@ func buildPollSummary(poll models.Poll, post models.Post, viewerID uint, hasVote
 	status := effectivePollStatus(poll, post.Status, now)
 	resultsVisible := poll.ResultsVisibility == models.PollResultsAlways ||
 		(poll.ResultsVisibility == models.PollResultsAfterVote && hasVoted) ||
-		(poll.ResultsVisibility == models.PollResultsAfterEnd && status == models.PollStatusClosed)
+		(poll.ResultsVisibility == models.PollResultsAfterEnd && status == models.PollStatusClosed) ||
+		(poll.ResultsVisibility == models.PollResultsPrivate && viewerID != 0 && viewerID == post.AuthorID)
 	remaining := int64(poll.EndsAt.Sub(now).Seconds())
 	if remaining < 0 {
 		remaining = 0
@@ -662,10 +668,11 @@ func buildPollSummary(poll models.Poll, post models.Post, viewerID uint, hasVote
 		MaxChoices: poll.MaxChoices, ResultsVisibility: poll.ResultsVisibility, AllowChange: poll.AllowChange,
 		Status: poll.Status, EffectiveStatus: status, EndsAt: poll.EndsAt, RemainingSeconds: remaining,
 		ParticipantCount: poll.ParticipantCount, HasVoted: hasVoted, ResultsVisible: resultsVisible,
-		CanVote:   viewerID != 0 && status == models.PollStatusActive && (!hasVoted || poll.AllowChange),
-		CanChange: viewerID != 0 && hasVoted && poll.AllowChange && status == models.PollStatusActive,
-		IsOwner:   viewerID != 0 && viewerID == post.AuthorID,
-		Options:   make([]models.PollOptionDTO, 0, len(poll.Options)),
+		CanViewResult: resultsVisible,
+		CanVote:       viewerID != 0 && status == models.PollStatusActive && (!hasVoted || poll.AllowChange),
+		CanChange:     viewerID != 0 && hasVoted && poll.AllowChange && status == models.PollStatusActive,
+		IsOwner:       viewerID != 0 && viewerID == post.AuthorID,
+		Options:       make([]models.PollOptionDTO, 0, len(poll.Options)),
 	}
 	if resultsVisible {
 		choiceCount := poll.ChoiceCount

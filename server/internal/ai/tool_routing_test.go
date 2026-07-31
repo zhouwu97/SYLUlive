@@ -26,6 +26,11 @@ func TestRouteModelToolsPrefersHy3ForDecisionIntents(t *testing.T) {
 			expected: []string{"hy3_decision_analyze_academic"},
 		},
 		{
+			name:     "校园首页学业分析入口",
+			message:  "分析我的学业情况，找出主要风险并给出改进建议",
+			expected: []string{"hy3_decision_analyze_academic"},
+		},
+		{
 			name:     "GPA 和学分综合分析",
 			message:  "计算我的 GPA 和学分情况",
 			expected: []string{"hy3_decision_analyze_academic"},
@@ -63,12 +68,13 @@ func TestRouteModelToolsKeepsPublicQuestionsAwayFromPersonalDataTools(t *testing
 	}
 
 	publicOnly := []ToolDefinition{{Name: "campus_search_policy"}}
+	academicOnly := []ToolDefinition{{Name: "academic_get_grade_summary"}}
 	require.Equal(t, publicOnly, routeModelTools("补考成绩怎么算", definitions))
 	require.Equal(t, publicOnly, routeModelTools("GPA", definitions))
-	require.Equal(t, definitions, routeModelTools("查看我的成绩", definitions))
-	require.Equal(t, definitions, routeModelTools("分析成绩", definitions))
+	require.Equal(t, academicOnly, routeModelTools("查看我的成绩", definitions))
+	require.Equal(t, academicOnly, routeModelTools("分析成绩", definitions))
 	// Hy3 不可用时，个人分析仍可降级到内置学业工具。
-	require.Equal(t, definitions, routeModelTools("计算我的 GPA 和学分情况", definitions))
+	require.Equal(t, academicOnly, routeModelTools("计算我的 GPA 和学分情况", definitions))
 }
 
 func TestRouteModelToolsForMessagesKeepsHy3RouteAfterConsentResume(t *testing.T) {

@@ -16,6 +16,8 @@ import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../services/keep_alive_service.dart';
 import '../services/grade_reminder_service.dart';
+import '../services/diagnostic_log_service.dart';
+import '../services/diagnostic_dio_interceptor.dart';
 import '../widgets/auth_expired_overlay.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
@@ -354,6 +356,22 @@ class AuthProvider extends ChangeNotifier {
             }
 
             debugPrint('检测到 App 401，自动登出');
+            DiagnosticLogService.instance.record(
+              level: 'warning',
+              source: '账号',
+              type: '登录状态已过期',
+              summary: '服务器拒绝当前登录凭据，应用将退出登录',
+              detail: 'HTTP 401\ncode=${errorCode ?? "unknown"}',
+              eventCode: 'auth_token_expired',
+              category: 'auth',
+              operation: 'expire',
+              result: 'failure',
+              httpStatus: 401,
+              route: normalizeDiagnosticRoute(error.requestOptions.uri.path),
+              metadata: <String, Object?>{
+                'errorCode': errorCode?.toString() ?? 'unknown',
+              },
+            );
             // 统一走 _clearLocalSession，与手动退出相同路径
             // 不 await — 拦截器内部不能阻塞
             _clearLocalSession(clearPushAlias: true);
@@ -409,6 +427,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _loadStoredAuth() async {
+    final stopwatch = Stopwatch()..start();
     _setAuthState(AuthState.loading);
     try {
       AppPreferencesStore? prefs;
@@ -441,6 +460,18 @@ class AuthProvider extends ChangeNotifier {
           }
           _commitAuthSession(candidate);
           _setAuthState(AuthState.authenticated);
+          DiagnosticLogService.instance.record(
+            level: 'info',
+            source: '账号',
+            type: '登录恢复成功',
+            summary: '已从本地安全存储恢复登录状态',
+            detail: '',
+            eventCode: 'auth_session_restored',
+            category: 'auth',
+            operation: 'restore',
+            result: 'success',
+            durationMs: stopwatch.elapsedMilliseconds,
+          );
           if (candidate.user.legalConsentsActive) {
             _onAuthenticated();
           } else {
@@ -451,7 +482,33 @@ class AuthProvider extends ChangeNotifier {
           final recoveryState = await _recoverUserWithToken(stored.token!);
           _setAuthState(recoveryState);
           if (recoveryState == AuthState.expired) {
+            DiagnosticLogService.instance.record(
+              level: 'warning',
+              source: '账号',
+              type: '本地 Token 已过期',
+              summary: '启动恢复登录时服务器拒绝了本地凭据',
+              detail: '',
+              eventCode: 'auth_restore_expired',
+              category: 'auth',
+              operation: 'restore',
+              result: 'failure',
+              durationMs: stopwatch.elapsedMilliseconds,
+              httpStatus: 401,
+            );
             await _clearStoredAuth();
+          } else if (recoveryState == AuthState.recoveryFailed) {
+            DiagnosticLogService.instance.record(
+              level: 'warning',
+              source: '账号',
+              type: '登录恢复失败',
+              summary: '暂时无法向服务器确认本地登录状态',
+              detail: '',
+              eventCode: 'auth_restore_failed',
+              category: 'auth',
+              operation: 'restore',
+              result: 'retry',
+              durationMs: stopwatch.elapsedMilliseconds,
+            );
           }
         } else {
           if (stored.userJson != null) {
@@ -462,6 +519,17 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('解析本地认证信息失败: $e');
+      DiagnosticLogService.instance.recordError(
+        source: '账号',
+        type: '认证缓存读取失败',
+        summary: '本地登录信息损坏或无法读取',
+        detail: e.toString(),
+        eventCode: 'auth_cache_read_failed',
+        category: 'auth',
+        operation: 'restore',
+        result: 'failure',
+        durationMs: stopwatch.elapsedMilliseconds,
+      );
       _setAuthState(AuthState.guest);
     }
     _initialized = true;

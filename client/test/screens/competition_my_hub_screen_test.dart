@@ -35,6 +35,13 @@ class _HubAdapter implements HttpClientAdapter {
         'capability_ready': true,
       });
     }
+    if (options.path.endsWith('/user/competitions/candidates')) {
+      return _json({
+        'total': 6,
+        'groups': const [],
+        'catalog': const {'dataset_version': 'catalog-2026-07'},
+      });
+    }
     return _json({
       'preference_configured': true,
       'verified_award_count': 1,
@@ -62,7 +69,7 @@ ResponseBody _json(Object data) => ResponseBody.fromString(
     );
 
 void main() {
-  testWidgets('汇总页用一个三行卡片展示目标、经历和画像', (tester) async {
+  testWidgets('汇总页用一个四行卡片展示目标、经历、画像和候选', (tester) async {
     final adapter = _HubAdapter();
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'))
       ..httpClientAdapter = adapter;
@@ -77,8 +84,11 @@ void main() {
     expect(find.text('竞赛目标'), findsOneWidget);
     expect(find.text('竞赛经历'), findsOneWidget);
     expect(find.text('能力画像'), findsOneWidget);
+    expect(find.text('匹配候选'), findsOneWidget);
     expect(find.text('3段'), findsOneWidget);
+    expect(find.text('6项'), findsOneWidget);
     expect(find.text('1项技能 · 主要角色：开发'), findsOneWidget);
+    expect(find.text('允许 AI 解释竞赛匹配'), findsOneWidget);
     expect(find.byType(SwitchListTile), findsOneWidget);
     expect(adapter.paths, isNot(contains('/user/competition-awards')));
   });

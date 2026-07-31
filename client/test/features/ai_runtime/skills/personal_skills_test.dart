@@ -565,25 +565,24 @@ void main() {
     );
   });
 
-  test('竞赛解释严格保留服务端顺序、分数和匹配理由', () async {
+  test('竞赛解释严格保留服务端规则顺序和匹配依据', () async {
     final first = CompetitionMatchExplanationItem.fromEvent(
       CompetitionEvent(
         id: 2,
-        title: '服务端第一名',
-        personalizedScore: 71,
-        recommendationTier: 'recommended',
-        fitReasons: const <String>['方向匹配'],
+        title: '服务端第一项',
+        groupKey: 'major_match',
+        ruleOrder: 1,
+        coreReason: '专业直接相关',
         competitionRating: 'A',
-        manualRating: 4.5,
       ),
     );
     final second = CompetitionMatchExplanationItem.fromEvent(
       CompetitionEvent(
         id: 1,
-        title: '服务端第二名',
-        personalizedScore: 99,
-        recommendationTier: 'strong',
-        fitReasons: const <String>['时间匹配'],
+        title: '服务端第二项',
+        groupKey: 'general_match',
+        ruleOrder: 2,
+        coreReason: '符合参赛资格',
       ),
     );
     final result = await ExplainCompetitionMatchesSkill(
@@ -605,9 +604,9 @@ void main() {
 
     expect(result.status, SkillStatus.success);
     expect(result.value?.items.map((item) => item.id), <int>[2, 1]);
-    expect(result.value?.items.first.personalizedScore, 71);
-    expect(result.value?.items.first.fitReasons, <String>['方向匹配']);
-    expect(result.warnings.first, contains('不重新评分'));
+    expect(result.value?.items.first.ruleOrder, 1);
+    expect(result.value?.items.first.coreReason, '专业直接相关');
+    expect(result.warnings.first, contains('不能新增赛事或调整顺序'));
     expect(result.warnings.last, contains('正式文件'));
     expect(gateway.totalReads, 0);
   });
@@ -635,12 +634,12 @@ void main() {
     expect(result.warnings, contains(contains('基础画像尚未就绪')));
   });
 
-  test('竞赛解释数据源只读取现有适合我接口并保留响应顺序', () async {
+  test('竞赛解释数据源只读取候选接口并保留分组顺序', () async {
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
-          expect(options.path, '/user/competitions/fit');
+          expect(options.path, '/user/competitions/candidates');
           expect(options.queryParameters,
               const <String, dynamic>{'page': 1, 'page_size': 20});
           handler.resolve(
@@ -651,21 +650,37 @@ void main() {
                 'profile_ready': true,
                 'preference_configured': true,
                 'total': 2,
-                'items': <Map<String, dynamic>>[
+                'catalog': <String, dynamic>{
+                  'dataset_version': 'catalog-v2',
+                  'mode': 'candidate_explanation',
+                  'personalized_ranking_allowed': false,
+                },
+                'groups': <Map<String, dynamic>>[
                   <String, dynamic>{
-                    'id': 8,
-                    'title': '第一项',
-                    'personalized_score': 63,
-                    'recommendation_tier': 'recommended',
-                    'fit_reasons': <String>['专业匹配'],
-                    'competition_rating': 'B',
-                    'manual_rating': 3.5,
-                    'school_recognition_status': 'recognized',
-                    'school_recognition_grade': '省级',
-                    'time_status': 'confirmed',
-                    'registration_time_text': '2026-09',
+                    'key': 'major_match',
+                    'label': '专业直接相关',
+                    'count': 2,
+                    'items': <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'id': 8,
+                        'title': '第一项',
+                        'group_key': 'major_match',
+                        'rule_order': 1,
+                        'core_reason': '专业匹配',
+                        'competition_rating': 'B',
+                        'school_recognition_status': 'recognized',
+                        'school_recognition_grade': '省级',
+                        'time_status': 'confirmed',
+                        'registration_time_text': '2026-09',
+                      },
+                      <String, dynamic>{
+                        'id': 3,
+                        'title': '第二项',
+                        'group_key': 'major_match',
+                        'rule_order': 2,
+                      },
+                    ],
                   },
-                  <String, dynamic>{'id': 3, 'title': '第二项'},
                 ],
               },
             ),
@@ -680,9 +695,11 @@ void main() {
     ).load();
 
     expect(page.items.map((item) => item.id), <int>[8, 3]);
-    expect(page.items.first.personalizedScore, 63);
+    expect(page.items.first.ruleOrder, 1);
+    expect(page.items.first.coreReason, '专业匹配');
     expect(page.items.first.competitionRating, 'B');
     expect(page.items.first.registrationTimeText, '2026-09');
+    expect(page.catalog.datasetVersion, 'catalog-v2');
   });
 }
 

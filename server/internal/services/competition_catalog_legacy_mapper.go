@@ -61,6 +61,16 @@ type CompetitionCatalogLegacyMappingBatchConfirmRequest struct {
 	MappingIDs []uint `json:"mapping_ids"`
 }
 
+type CompetitionCatalogLegacyMappingInheritRequest struct {
+	FromPackageID uint `json:"from_package_id"`
+}
+
+type CompetitionCatalogLegacyMappingInheritResult struct {
+	Inherited int `json:"inherited"`
+	Skipped   int `json:"skipped"`
+	Conflicts int `json:"conflicts"`
+}
+
 func NewCompetitionCatalogLegacyMapper(db *gorm.DB) *CompetitionCatalogLegacyMapper {
 	return &CompetitionCatalogLegacyMapper{db: db, now: time.Now}
 }
@@ -342,6 +352,109 @@ func (m *CompetitionCatalogLegacyMapper) BatchConfirm(
 		return 0, err
 	}
 	return len(request.MappingIDs), nil
+}
+
+func (m *CompetitionCatalogLegacyMapper) Inherit(
+	ctx context.Context,
+	packageID uint,
+	actorUserID uint,
+	request CompetitionCatalogLegacyMappingInheritRequest,
+) (CompetitionCatalogLegacyMappingInheritResult, error) {
+	result := CompetitionCatalogLegacyMappingInheritResult{}
+	if request.FromPackageID == 0 || request.FromPackageID == packageID {
+		return result, ErrCatalogLegacyMappingInvalid
+	}
+	err := m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		targetDocument, err := loadCatalogDocument(tx, packageID)
+		if err != nil {
+			return err
+		}
+		sourceDocument, err := loadCatalogDocument(tx, request.FromPackageID)
+		if err != nil {
+			return err
+		}
+		sourceRecords := make(map[string]dto.CompetitionCatalogRecord, len(sourceDocument.Items))
+		for _, record := range sourceDocument.Items {
+			sourceRecords[record.CompetitionID] = record
+		}
+		targetRecords := make(map[string]dto.CompetitionCatalogRecord, len(targetDocument.Items))
+		for _, record := range targetDocument.Items {
+			targetRecords[record.CompetitionID] = record
+		}
+
+		var sourceMappings []models.CompetitionCatalogLegacyMapping
+		if err := tx.Where("package_id = ? AND review_status = ?", request.FromPackageID, "confirmed").
+			Order("competition_id ASC").Find(&sourceMappings).Error; err != nil {
+			return err
+		}
+		var targetMappings []models.CompetitionCatalogLegacyMapping
+		if err := tx.Where("package_id = ?", packageID).Find(&targetMappings).Error; err != nil {
+			return err
+		}
+		targetByCompetition := make(map[string]models.CompetitionCatalogLegacyMapping, len(targetMappings))
+		legacyOwners := make(map[uint]string, len(targetMappings))
+		for _, mapping := range targetMappings {
+			targetByCompetition[mapping.CompetitionID] = mapping
+			legacyOwners[mapping.LegacyEventID] = mapping.CompetitionID
+		}
+
+		now := m.now()
+		for _, sourceMapping := range sourceMappings {
+			sourceRecord, sourceExists := sourceRecords[sourceMapping.CompetitionID]
+			targetRecord, targetExists := targetRecords[sourceMapping.CompetitionID]
+			if !sourceExists || !targetExists || !sameCatalogMappingIdentity(sourceRecord, targetRecord) {
+				result.Skipped++
+				continue
+			}
+			if existing, exists := targetByCompetition[sourceMapping.CompetitionID]; exists {
+				if existing.LegacyEventID == sourceMapping.LegacyEventID && existing.ReviewStatus == "confirmed" {
+					result.Skipped++
+				} else {
+					result.Conflicts++
+				}
+				continue
+			}
+			if owner := legacyOwners[sourceMapping.LegacyEventID]; owner != "" && owner != sourceMapping.CompetitionID {
+				result.Conflicts++
+				continue
+			}
+			mapping := models.CompetitionCatalogLegacyMapping{
+				PackageID: packageID, CompetitionID: sourceMapping.CompetitionID,
+				LegacyEventID: sourceMapping.LegacyEventID, MatchType: "inherited",
+				Confidence: sourceMapping.Confidence, ReviewStatus: "confirmed",
+				ReviewedBy: &actorUserID, ReviewedAt: &now,
+			}
+			if err := validateConfirmedLegacyMapping(tx, mapping); err != nil {
+				if errors.Is(err, ErrCatalogLegacyMappingInvalid) ||
+					errors.Is(err, ErrCatalogLegacyMappingConflict) {
+					result.Conflicts++
+					continue
+				}
+				return err
+			}
+			if err := tx.Create(&mapping).Error; err != nil {
+				return err
+			}
+			targetByCompetition[mapping.CompetitionID] = mapping
+			legacyOwners[mapping.LegacyEventID] = mapping.CompetitionID
+			result.Inherited++
+		}
+		if result.Inherited > 0 {
+			return supersedeCatalogPreflights(tx, packageID)
+		}
+		return nil
+	})
+	return result, err
+}
+
+func sameCatalogMappingIdentity(left, right dto.CompetitionCatalogRecord) bool {
+	return strings.TrimSpace(left.CompetitionID) == strings.TrimSpace(right.CompetitionID) &&
+		strings.TrimSpace(left.Title) == strings.TrimSpace(right.Title) &&
+		strings.TrimSpace(left.ParentCompetitionID) == strings.TrimSpace(right.ParentCompetitionID) &&
+		strings.TrimSpace(left.CompetitionLevel) == strings.TrimSpace(right.CompetitionLevel) &&
+		strings.TrimSpace(left.Organizer) == strings.TrimSpace(right.Organizer) &&
+		strings.TrimSpace(left.SchoolRecognitionStatus) == strings.TrimSpace(right.SchoolRecognitionStatus) &&
+		strings.TrimSpace(left.SchoolRecognitionGrade) == strings.TrimSpace(right.SchoolRecognitionGrade)
 }
 
 func loadCatalogDocument(tx *gorm.DB, packageID uint) (dto.CompetitionCatalogDocument, error) {

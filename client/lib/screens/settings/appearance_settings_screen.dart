@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -120,6 +121,29 @@ class AppearanceSettingsScreen extends StatelessWidget {
         alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
         errorBuilder: (_, __, ___) => Container(color: pageBgColor),
       );
+
+      // 微缩预览按实际显示比例缩小模糊值，避免小预览糊成一整块。
+      final customBackgroundActive =
+          themeProvider.isCustomBackgroundMode && bgPath.isNotEmpty;
+
+      if (customBackgroundActive &&
+          themeProvider.backgroundBlur > 0.01) {
+        final previewBlur =
+            (themeProvider.backgroundBlur * 0.3).clamp(0.0, 9.0);
+
+        backgroundWidget = ClipRect(
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(
+              sigmaX: previewBlur,
+              sigmaY: previewBlur,
+            ),
+            child: Transform.scale(
+              scale: 1.0 + previewBlur / 100.0,
+              child: backgroundWidget,
+            ),
+          ),
+        );
+      }
     } else {
       backgroundWidget = Container(color: pageBgColor);
     }
@@ -289,6 +313,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
     final isLandscapeScreen =
         MediaQuery.of(context).orientation == Orientation.landscape;
 
+    final customBackgroundActive =
+        themeProvider.isCustomBackgroundMode &&
+        themeProvider.hasAnyBackground;
+
     return SettingsPageScaffold(
       title: '外观与显示',
       children: [
@@ -337,47 +365,51 @@ class AppearanceSettingsScreen extends StatelessWidget {
         ),
 
         // 自定义背景设置
-        if (themeProvider.isCustomBackgroundMode) ...[
-          SettingsSection(
-            title: '自定义背景偏好',
-            children: [
-              SettingsTile(
-                icon: Icons.image_outlined,
-                title: '选择背景图片',
-                subtitle: themeProvider.hasAnyBackground
-                    ? '已配置自定义壁纸，点击重选或调整'
-                    : '尚未选择背景图，点击打开壁纸库',
-                onTap: () {
-                  BackgroundPickerSheet.show(
-                    context,
-                    isLandscape: isLandscapeScreen,
-                  );
-                },
-              ),
-              if (themeProvider.hasAnyBackground) ...[
-                SettingsSliderTile(
-                  icon: Icons.blur_on_rounded,
-                  title: '背景高斯模糊',
-                  value: themeProvider.backgroundBlur,
-                  min: 0,
-                  max: 30,
-                  valueLabel: '${themeProvider.backgroundBlur.toInt()}px',
-                  onChanged: (val) => themeProvider.setBackgroundBlur(val),
-                ),
-                SettingsSliderTile(
-                  icon: Icons.opacity_rounded,
-                  title: '组件卡片不透明度',
-                  value: themeProvider.componentOpacity,
-                  min: 0.1,
-                  max: 1.0,
-                  valueLabel:
-                      '${(themeProvider.componentOpacity * 100).toInt()}%',
-                  onChanged: (val) => themeProvider.setComponentOpacity(val),
-                ),
-              ],
-            ],
-          ),
-        ],
+        SettingsSection(
+          title: '自定义背景偏好',
+          children: [
+            SettingsTile(
+              icon: Icons.image_outlined,
+              title: '选择背景图片',
+              subtitle: themeProvider.hasAnyBackground
+                  ? '已配置自定义壁纸，点击重选或调整'
+                  : '尚未选择背景图，点击打开壁纸库',
+              onTap: () {
+                BackgroundPickerSheet.show(
+                  context,
+                  isLandscape: isLandscapeScreen,
+                );
+              },
+            ),
+            SettingsSliderTile(
+              icon: Icons.blur_on_rounded,
+              title: '背景高斯模糊',
+              subtitle: customBackgroundActive
+                  ? '仅模糊自定义背景图片，不影响文字、卡片和按钮'
+                  : '仅在“自定义背景”模式下生效，请先选择背景图片',
+              value: themeProvider.backgroundBlur,
+              min: 0,
+              max: 30,
+              valueLabel: '${themeProvider.backgroundBlur.toInt()}px',
+              enabled: customBackgroundActive,
+              onChanged: (val) => themeProvider.setBackgroundBlur(val),
+            ),
+            SettingsSliderTile(
+              icon: Icons.opacity_rounded,
+              title: '组件卡片不透明度',
+              subtitle: customBackgroundActive
+                  ? '调整自定义背景上方卡片的透明程度'
+                  : '仅在“自定义背景”模式下生效',
+              value: themeProvider.componentOpacity,
+              min: 0.1,
+              max: 1.0,
+              valueLabel:
+                  '${(themeProvider.componentOpacity * 100).toInt()}%',
+              enabled: customBackgroundActive,
+              onChanged: (val) => themeProvider.setComponentOpacity(val),
+            ),
+          ],
+        ),
 
         // 视觉特效高级配置
         SettingsSection(

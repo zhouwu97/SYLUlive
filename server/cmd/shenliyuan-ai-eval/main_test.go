@@ -35,7 +35,7 @@ func TestRunLiveModeReportsMissingDependencies(t *testing.T) {
 	code := run([]string{"--mode", "live", "--data", dataDirectory}, func(string) string { return "" }, &stdout, &stderr)
 	require.Equal(t, 2, code)
 	require.Empty(t, stdout.String())
-	for _, name := range []string{"DATABASE_DSN", "RAG_SERVICE_URL", "RAG_SERVICE_TOKEN", "DEEPSEEK_API_KEY"} {
+	for _, name := range []string{"DATABASE_DSN", "RAG_SERVICE_URL", "RAG_SERVICE_TOKEN", "AI_API_KEY"} {
 		require.Contains(t, stderr.String(), name)
 	}
 }

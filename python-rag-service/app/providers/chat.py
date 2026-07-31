@@ -101,11 +101,11 @@ class FakePolicyChatModel(BaseChatModel):
 
 def build_policy_chat_provider() -> PolicyChatProvider:
     provider_name = os.environ.get("RAG_CHAT_PROVIDER", "openai-compatible").strip()
-    model_name = os.environ.get("RAG_CHAT_MODEL", "").strip()
+    model_name = os.environ.get("RAG_CHAT_MODEL", "gpt-5.4-mini").strip()
     api_key = os.environ.get("RAG_PROVIDER_API_KEY", "").strip()
-    base_url_value = os.environ.get("RAG_PROVIDER_BASE_URL", "https://api.deepseek.com").strip()
+    base_url_value = os.environ.get("RAG_PROVIDER_BASE_URL", "https://api.openai.com/v1").strip()
     allowed_values = os.environ.get(
-        "RAG_PROVIDER_ALLOWED_BASE_URLS", "https://api.deepseek.com"
+        "RAG_PROVIDER_ALLOWED_BASE_URLS", "https://api.openai.com/v1"
     ).split(",")
     try:
         base_url = _normalized_base_url(base_url_value)
@@ -114,7 +114,12 @@ def build_policy_chat_provider() -> PolicyChatProvider:
         return PolicyChatProvider(
             UnavailablePolicyChatModel(), provider_name or "unavailable", model_name or "unconfigured", False
         )
-    if provider_name != "openai-compatible" or not model_name or not api_key or base_url not in allowed:
+    if (
+        provider_name != "openai-compatible"
+        or model_name != "gpt-5.4-mini"
+        or not api_key
+        or base_url not in allowed
+    ):
         return PolicyChatProvider(
             UnavailablePolicyChatModel(), provider_name or "unavailable", model_name or "unconfigured", False
         )

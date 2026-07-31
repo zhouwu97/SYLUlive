@@ -695,7 +695,7 @@ func main() {
 		var provider ai.AIProvider
 		var retriever ai.PolicyRetriever
 		runtimeOptions := make([]ai.RuntimeOption, 0, 1)
-		providerName, modelName := cfg.AIProvider, cfg.DeepSeekChatModel
+		providerName, modelName := cfg.AIProvider, cfg.AIChatModel
 		if cfg.AILangChainRAGEnabled {
 			providerName, modelName = "rag-rollout", "policy-rag"
 			runtimeOptions = append(runtimeOptions, ai.WithLangChainRAG(ragClient))
@@ -707,7 +707,7 @@ func main() {
 				provider = &ai.MockProvider{Response: ai.ChatResponse{Content: "当前是 Mock Provider 回答。", InputTokens: 1, OutputTokens: 1}}
 			} else {
 				providerHTTPClient := &http.Client{Timeout: time.Duration(cfg.AIRequestTimeoutSeconds) * time.Second}
-				provider, ragErr = ai.NewDeepSeekProvider(cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekChatModel, providerHTTPClient)
+				provider, ragErr = ai.NewOpenAICompatibleProvider(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AIChatModel, providerHTTPClient)
 				if ragErr != nil {
 					log.Fatalf("AI Provider 初始化失败: %v", ragErr)
 				}

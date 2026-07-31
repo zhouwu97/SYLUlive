@@ -4,14 +4,16 @@ import 'package:provider/provider.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../widgets/campus/campus_theme.dart';
+import '../../widgets/settings/campus_segmented_control.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
 import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_slider_tile.dart';
 import '../../widgets/settings/settings_status_badge.dart';
+import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'widgets/background_picker_sheet.dart';
 
-/// 外观与显示设置二级页 (与设计效果图 100% 完全对齐)
+/// 外观与显示设置二级页 (100% 像素级对齐效果图)
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -53,9 +55,11 @@ class AppearanceSettingsScreen extends StatelessWidget {
     }
   }
 
+  /// 100% 还原效果图中的实时预览卡片
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = isDark ? const Color(0xFF7ED6C5) : CampusTheme.primary;
     final bgPath = themeProvider.shouldShowCustomBackground
         ? themeProvider.getCustomBackgroundImageFor(context)
         : null;
@@ -76,12 +80,12 @@ class AppearanceSettingsScreen extends StatelessWidget {
         fit: BoxFit.cover,
         alignment: Alignment.center,
         errorBuilder: (_, __, ___) => Container(
-          color: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+          color: isDark ? const Color(0xFF1E2322) : const Color(0xFFE5EEE9),
         ),
       );
     } else {
       backgroundWidget = Container(
-        color: isDark ? CampusTheme.darkBg : CampusTheme.bg,
+        color: isDark ? const Color(0xFF1E2322) : const Color(0xFFE5EEE9),
       );
     }
 
@@ -93,145 +97,116 @@ class AppearanceSettingsScreen extends StatelessWidget {
       height: 180,
       margin: const EdgeInsets.only(bottom: 18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.1)
               : CampusTheme.softBorder,
         ),
-        boxShadow: isDark
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.025),
-                  blurRadius: 12,
-                  offset: const Offset(0, 5),
-                ),
-              ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: Stack(
           fit: StackFit.expand,
           children: [
             backgroundWidget,
-            Container(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.25)
-                  : Colors.white.withValues(alpha: 0.15),
-            ),
             Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(16),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: (isDark ? CampusTheme.darkCard : Colors.white)
-                              .withValues(alpha: cardOpacity),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          '实时预览',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: CampusTheme.primary,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      if (themeProvider.liquidGlass)
-                        const SettingsStatusBadge(
-                          label: '液态玻璃',
-                          type: SettingsStatusBadgeType.info,
-                        ),
-                    ],
-                  ),
-                  const Spacer(),
+                  // 顶部绿字标签
                   Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: (isDark ? CampusTheme.darkCard : Colors.white)
                           .withValues(alpha: cardOpacity),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.1)
-                            : CampusTheme.softBorder,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '实时预览',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: primaryColor,
                       ),
+                    ),
+                  ),
+                  const Spacer(),
+                  // 效果图专属中间卡片（大图标 + 双线 + 绿 Switch）
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: (isDark ? CampusTheme.darkCard : Colors.white)
+                          .withValues(alpha: cardOpacity),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
                     ),
                     child: Row(
                       children: [
+                        // 左侧图标块
                         Container(
-                          width: 28,
-                          height: 28,
+                          width: 44,
+                          height: 44,
                           decoration: BoxDecoration(
-                            color: CampusTheme.primaryLight,
-                            borderRadius: BorderRadius.circular(8),
+                            color: primaryColor,
+                            borderRadius: BorderRadius.circular(13),
                           ),
                           child: const Icon(
                             Icons.auto_awesome_rounded,
-                            size: 16,
-                            color: CampusTheme.primary,
+                            size: 24,
+                            color: Colors.white,
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 14),
+                        // 中间两条占位线条
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                '沈理校园 效果预览',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color:
-                                      isDark ? Colors.white : CampusTheme.text,
+                              Container(
+                                width: double.infinity,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.7)
+                                      : const Color(0xFF627370),
+                                  borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
-                              Text(
-                                themeProvider.isCleanBackgroundMode
-                                    ? '当前为暖白纯色简洁背景'
-                                    : '当前不透明度 ${(cardOpacity * 100).round()}%',
-                                style: TextStyle(
-                                  fontSize: 11,
+                              const SizedBox(height: 8),
+                              Container(
+                                width: 100,
+                                height: 6,
+                                decoration: BoxDecoration(
                                   color: isDark
-                                      ? Colors.white60
-                                      : CampusTheme.subText,
+                                      ? Colors.white30
+                                      : const Color(0xFFB4C4C0),
+                                  borderRadius: BorderRadius.circular(3),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    height: 26,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: (isDark ? CampusTheme.darkCard : Colors.white)
-                          .withValues(alpha: cardOpacity),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        Icon(Icons.home_rounded,
-                            size: 14, color: CampusTheme.primary),
-                        Icon(Icons.calendar_month_rounded,
-                            size: 14, color: CampusTheme.subText),
-                        Icon(Icons.chat_bubble_outline_rounded,
-                            size: 14, color: CampusTheme.subText),
+                        const SizedBox(width: 14),
+                        // 右侧 Switch 示例
+                        const IgnorePointer(
+                          child: SettingsSwitch(value: true),
+                        ),
                       ],
                     ),
                   ),
@@ -251,11 +226,11 @@ class AppearanceSettingsScreen extends StatelessWidget {
 
     if (bgPath == null || bgPath.isEmpty) {
       return Container(
-        width: 32,
-        height: 20,
+        width: 36,
+        height: 22,
         decoration: BoxDecoration(
-          color: isDark ? Colors.white12 : Colors.grey[300],
-          borderRadius: BorderRadius.circular(10),
+          color: isDark ? const Color(0xFF383C42) : const Color(0xFFE2EEDD),
+          borderRadius: BorderRadius.circular(11),
         ),
       );
     }
@@ -270,10 +245,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
             : NetworkImage(bgPath) as ImageProvider;
 
     return Container(
-      width: 32,
-      height: 20,
+      width: 36,
+      height: 22,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(11),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.2)
@@ -310,26 +285,25 @@ class AppearanceSettingsScreen extends StatelessWidget {
       children: [
         _buildLivePreviewCard(context, themeProvider),
 
-        // 背景模式 (与效果图 100% 对齐)
+        // 背景模式 (使用专属平滑胶囊分段选择器，100% 对齐效果图)
         SettingsSection(
           title: '背景模式',
           children: [
             Padding(
-              padding: const EdgeInsets.all(14),
-              child: SegmentedButton<AppBackgroundMode>(
-                segments: const [
-                  ButtonSegment<AppBackgroundMode>(
+              padding: const EdgeInsets.all(12),
+              child: CampusSegmentedControl<AppBackgroundMode>(
+                items: const [
+                  CampusSegmentItem(
                     value: AppBackgroundMode.clean,
-                    label: Text('简洁模式'),
+                    label: '简洁模式',
                   ),
-                  ButtonSegment<AppBackgroundMode>(
+                  CampusSegmentItem(
                     value: AppBackgroundMode.custom,
-                    label: Text('自定义背景'),
+                    label: '自定义背景',
                   ),
                 ],
-                selected: {themeProvider.backgroundMode},
-                onSelectionChanged: (selected) async {
-                  final mode = selected.first;
+                selectedValue: themeProvider.backgroundMode,
+                onSelectionChanged: (mode) async {
                   if (mode == AppBackgroundMode.clean) {
                     await themeProvider.setCleanBackgroundMode();
                   } else {
@@ -345,7 +319,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 显示 (与效果图 100% 对齐)
+        // 显示 (100% 对齐效果图)
         SettingsSection(
           title: '显示',
           children: [
@@ -353,10 +327,9 @@ class AppearanceSettingsScreen extends StatelessWidget {
               icon: Icons.dark_mode_outlined,
               title: '夜间模式',
               subtitle: '使用深色页面与卡片配色',
-              trailing: Switch(
+              trailing: SettingsSwitch(
                 value: themeProvider.isDarkMode,
                 onChanged: (v) => themeProvider.setDarkMode(v),
-                activeThumbColor: CampusTheme.primary,
               ),
             ),
             SettingsTile(
@@ -382,7 +355,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 组件样式 (与效果图 100% 对齐)
+        // 组件样式 (100% 对齐效果图)
         SettingsSection(
           title: '组件样式',
           children: [
@@ -398,20 +371,18 @@ class AppearanceSettingsScreen extends StatelessWidget {
               icon: Icons.widgets_outlined,
               title: '悬浮底部导航栏',
               subtitle: '使用圆角悬浮式底部入口',
-              trailing: Switch(
+              trailing: SettingsSwitch(
                 value: themeProvider.floatingNavBar,
                 onChanged: (v) => themeProvider.setFloatingNavBar(v),
-                activeThumbColor: CampusTheme.primary,
               ),
             ),
             SettingsTile(
               icon: Icons.undo_rounded,
               title: '预测性返回手势',
               subtitle: '侧滑时预览上一页',
-              trailing: Switch(
+              trailing: SettingsSwitch(
                 value: themeProvider.predictiveBack,
                 onChanged: (v) => themeProvider.setPredictiveBack(v),
-                activeThumbColor: CampusTheme.primary,
               ),
             ),
             SettingsTile(
@@ -426,14 +397,13 @@ class AppearanceSettingsScreen extends StatelessWidget {
                     type: SettingsStatusBadgeType.warning,
                   ),
                   const SizedBox(width: 8),
-                  Switch(
+                  SettingsSwitch(
                     value: themeProvider.liquidGlass,
                     onChanged: (v) => _handleLiquidGlassToggle(
                       context,
                       themeProvider,
                       v,
                     ),
-                    activeThumbColor: CampusTheme.primary,
                   ),
                 ],
               ),

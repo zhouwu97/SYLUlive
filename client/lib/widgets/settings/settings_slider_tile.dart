@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 
-/// 专用的全宽 Slider 设置项组件 (恢复 38x38 图标与大方拉条布局)
+/// 专用的全宽 Slider 设置项组件 (支持 valueText / valueLabel 兼容)
 class SettingsSliderTile extends StatelessWidget {
   final IconData? icon;
   final Color? iconColor;
@@ -12,7 +12,8 @@ class SettingsSliderTile extends StatelessWidget {
   final double min;
   final double max;
   final ValueChanged<double> onChanged;
-  final String valueText;
+  final String? valueText;
+  final String? valueLabel;
 
   const SettingsSliderTile({
     super.key,
@@ -25,8 +26,11 @@ class SettingsSliderTile extends StatelessWidget {
     this.min = 0.0,
     this.max = 1.0,
     required this.onChanged,
-    required this.valueText,
+    this.valueText,
+    this.valueLabel,
   });
+
+  String get _displayValueText => valueText ?? valueLabel ?? '';
 
   @override
   Widget build(BuildContext context) {
@@ -63,57 +67,61 @@ class SettingsSliderTile extends StatelessWidget {
                 const SizedBox(width: 14),
               ],
               Expanded(
-                child: Text(
-                  title,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : CampusTheme.text,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: isDark ? Colors.white60 : CampusTheme.subText,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (_displayValueText.isNotEmpty)
+                Text(
+                  _displayValueText,
                   style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : CampusTheme.text,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: primaryColor,
                   ),
                 ),
-              ),
-              Text(
-                valueText,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: effectiveIconColor,
-                ),
-              ),
             ],
           ),
-          if (subtitle != null && subtitle!.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Padding(
-              padding: EdgeInsets.only(left: icon != null ? 52 : 0),
-              child: Text(
-                subtitle!,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  height: 1.28,
-                  color: isDark ? Colors.white60 : CampusTheme.subText,
-                ),
+          const SizedBox(height: 6),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              activeTrackColor: primaryColor,
+              inactiveTrackColor: isDark
+                  ? Colors.white.withValues(alpha: 0.15)
+                  : const Color(0xFFE5E0D8),
+              thumbColor: primaryColor,
+              overlayColor: primaryColor.withValues(alpha: 0.12),
+              thumbShape: const RoundSliderThumbShape(
+                enabledThumbRadius: 9,
+                elevation: 2,
               ),
             ),
-          ],
-          const SizedBox(height: 6),
-          Padding(
-            padding: EdgeInsets.only(left: icon != null ? 40 : 0),
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 4,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-              ),
-              child: Slider(
-                value: value,
-                min: min,
-                max: max,
-                onChanged: onChanged,
-                activeColor: effectiveIconColor,
-                inactiveColor: isDark
-                    ? Colors.white.withValues(alpha: 0.12)
-                    : CampusTheme.softBorder,
-              ),
+            child: Slider(
+              value: value,
+              min: min,
+              max: max,
+              onChanged: onChanged,
             ),
           ),
         ],

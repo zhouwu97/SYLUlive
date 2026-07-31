@@ -81,33 +81,25 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
     }
   }
 
+  /// 纯创建保存新壁纸，由 ThemeProvider 统筹旧文件异步销毁
   Future<String> _saveBackgroundFile(
     String sourcePath, {
     required bool isLandscape,
-    required ThemeProvider themeProvider,
   }) async {
     final appDir = await getApplicationDocumentsDirectory();
+    final customDir = Directory(path.join(appDir.path, 'wallpapers', 'custom'));
+    if (!await customDir.exists()) {
+      await customDir.create(recursive: true);
+    }
     final ext = path.extension(sourcePath).isEmpty
         ? '.jpg'
         : path.extension(sourcePath);
     final fileName =
         '${isLandscape ? 'landscape_background' : 'background'}_${DateTime.now().millisecondsSinceEpoch}$ext';
-    final savedPath = path.join(appDir.path, fileName);
+    final savedPath = path.join(customDir.path, fileName);
 
     final bytes = await File(sourcePath).readAsBytes();
     await File(savedPath).writeAsBytes(bytes, flush: true);
-
-    final oldPath = isLandscape
-        ? themeProvider.landscapeBackgroundImage
-        : themeProvider.backgroundImage;
-    if (oldPath != null && ThemeProvider.isLocalFileBackground(oldPath)) {
-      try {
-        final oldFile = File(oldPath);
-        if (await oldFile.exists()) {
-          await oldFile.delete();
-        }
-      } catch (_) {}
-    }
 
     return savedPath;
   }
@@ -230,7 +222,6 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
       final savedPath = await _saveBackgroundFile(
         cropped.path,
         isLandscape: isLandscape,
-        themeProvider: themeProvider,
       );
 
       await _setBackground(
@@ -418,10 +409,11 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                     itemBuilder: (context, index) {
                       final assetName = presets[index];
                       final previewAsset = _backgroundPreviewAsset(assetName);
+                      final currentName = path.basename(currentBg ?? '');
                       final isSelected = currentBg == assetName ||
                           currentBg == _remoteWallpaperUrl(assetName) ||
-                          (currentBg != null &&
-                              path.basename(currentBg) == assetName);
+                          currentName == assetName ||
+                          currentName == 'remote_$assetName';
 
                       return GestureDetector(
                         onTap: () async {

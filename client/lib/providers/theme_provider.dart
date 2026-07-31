@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 enum AppBackgroundMode {
@@ -99,14 +100,23 @@ class ThemeProvider extends ChangeNotifier {
     return 'assets/images/$assetName';
   }
 
-  /// 安全性辅助方法：仅在 Provider 状态更新成功后，清理存储在应用文档目录下的本地背景旧孤儿文件
+  /// 安全性辅助方法：仅在 Provider 状态与 Preferences Store 更新成功后，异步清理存放在应用受管壁纸目录下的旧本地孤儿壁纸
   static Future<void> _tryDeleteLocalManagedFile(String? filePath) async {
     if (filePath == null || !isLocalFileBackground(filePath)) return;
     try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final customDir = path.join(appDir.path, 'wallpapers', 'custom');
+      final normalizedFile = path.normalize(filePath);
+      final normalizedRoot = path.normalize(customDir);
+
       final file = File(filePath);
       final fileName = path.basename(filePath);
-      if (fileName.startsWith('background_') ||
-          fileName.startsWith('landscape_background_')) {
+
+      final isManagedName = fileName.startsWith('background_') ||
+          fileName.startsWith('landscape_background_');
+      final isManagedPath = path.isWithin(normalizedRoot, normalizedFile);
+
+      if (isManagedName || isManagedPath) {
         if (await file.exists()) {
           await file.delete();
         }

@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,21 +9,46 @@ import '../../widgets/settings/campus_segmented_control.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
 import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_slider_tile.dart';
-import '../../widgets/settings/settings_status_badge.dart';
 import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'widgets/background_picker_sheet.dart';
 
-/// 外观与显示设置二级页 (简洁模式与自定义背景精准还原版)
+/// 外观与显示二级设置页
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
+
+  Future<void> _handleBackgroundModeChange(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    AppBackgroundMode mode,
+  ) async {
+    if (mode == AppBackgroundMode.clean) {
+      await themeProvider.setCleanBackgroundMode();
+      return;
+    }
+
+    if (themeProvider.hasAnyBackground) {
+      await themeProvider.trySetCustomBackgroundMode();
+      return;
+    }
+
+    final isLandscapeScreen =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
+    if (context.mounted) {
+      await BackgroundPickerSheet.show(
+        context,
+        isLandscape: isLandscapeScreen,
+      );
+    }
+  }
 
   Future<void> _handleLiquidGlassToggle(
     BuildContext context,
     ThemeProvider themeProvider,
-    bool enable,
+    bool value,
   ) async {
-    if (!enable) {
+    if (!value) {
       await themeProvider.setLiquidGlass(false);
       return;
     }
@@ -30,9 +56,9 @@ class AppearanceSettingsScreen extends StatelessWidget {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('液态玻璃效果'),
+        title: const Text('启用液态玻璃 2.0'),
         content: const Text(
-          '液态玻璃效果可能增加 GPU 负担，部分设备可能出现掉帧或发热。',
+          '液态玻璃效果使用高阶层叠加与高斯模糊渲染。在部分低配置设备上可能增加渲染开销，确定要开启吗？',
         ),
         actions: [
           TextButton(
@@ -41,10 +67,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: CampusTheme.orange,
-            ),
-            child: const Text('仍然开启'),
+            child: const Text('开启'),
           ),
         ],
       ),
@@ -55,17 +78,17 @@ class AppearanceSettingsScreen extends StatelessWidget {
     }
   }
 
-  /// 智能自适应微缩预览模型 (真实还原简洁模式暖白底色与自定义背景)
+  /// 智能自适应微缩预览模型 (引用全局 CampusTheme 标准规范 Token)
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = isDark ? const Color(0xFF7ED6C5) : CampusTheme.primary;
 
-    // 简洁模式下的真实页面底层背景色 (#FAF8F5) 与展示底色
-    final pageBgColor =
-        isDark ? const Color(0xFF181C1B) : const Color(0xFFFAF8F5);
-    final outerContainerBg =
-        isDark ? const Color(0xFF141716) : const Color(0xFFF3EFE7);
+    // 统一引用全局主题规范 Token
+    final pageBgColor = isDark ? CampusTheme.darkBg : CampusTheme.bg;
+    final outerContainerBg = isDark
+        ? CampusTheme.darkCard.withValues(alpha: 0.5)
+        : kCleanWarmCardBorderLight.withValues(alpha: 0.4);
 
     final isLandscapeScreen =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -164,7 +187,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
                           border: Border.all(
                             color: isDark
                                 ? Colors.white10
-                                : const Color(0xFFEFECE6),
+                                : kCleanWarmCardBorderLight,
                             width: 0.8,
                           ),
                         ),
@@ -190,7 +213,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
                           border: Border.all(
                             color: isDark
                                 ? Colors.white10
-                                : const Color(0xFFEFECE6),
+                                : kCleanWarmCardBorderLight,
                             width: 0.8,
                           ),
                           boxShadow: [
@@ -204,53 +227,46 @@ class AppearanceSettingsScreen extends StatelessWidget {
                         child: Row(
                           children: [
                             Container(
-                              width: 18,
-                              height: 18,
+                              width: 14,
+                              height: 14,
                               decoration: BoxDecoration(
-                                color: primaryColor,
-                                borderRadius: BorderRadius.circular(5),
+                                color: primaryColor.withValues(alpha: 0.2),
+                                shape: BoxShape.circle,
                               ),
-                              child: const Icon(
-                                Icons.auto_awesome_rounded,
+                              child: Icon(
+                                Icons.person_rounded,
                                 size: 10,
-                                color: Colors.white,
+                                color: primaryColor,
                               ),
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 6),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Container(
-                                    width: double.infinity,
-                                    height: 3.5,
+                                    height: 5,
+                                    width: 45,
                                     decoration: BoxDecoration(
                                       color: isDark
-                                          ? Colors.white.withValues(alpha: 0.7)
-                                          : const Color(0xFF627370),
-                                      borderRadius: BorderRadius.circular(2),
+                                          ? Colors.white70
+                                          : CampusTheme.text,
+                                      borderRadius: BorderRadius.circular(2.5),
                                     ),
                                   ),
                                   const SizedBox(height: 3),
                                   Container(
-                                    width: 24,
-                                    height: 2.5,
+                                    height: 3.5,
+                                    width: 65,
                                     decoration: BoxDecoration(
                                       color: isDark
                                           ? Colors.white30
-                                          : const Color(0xFFB4C4C0),
-                                      borderRadius: BorderRadius.circular(1.5),
+                                          : CampusTheme.subText,
+                                      borderRadius: BorderRadius.circular(2),
                                     ),
                                   ),
                                 ],
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Transform.scale(
-                              scale: 0.45,
-                              child: const IgnorePointer(
-                                child: SettingsSwitch(value: true),
                               ),
                             ),
                           ],
@@ -267,82 +283,24 @@ class AppearanceSettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBackgroundThumbnailPill(
-      BuildContext context, ThemeProvider themeProvider) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgPath = themeProvider.getCustomBackgroundImageFor(context);
-
-    if (bgPath == null ||
-        bgPath.isEmpty ||
-        themeProvider.isCleanBackgroundMode) {
-      return Container(
-        width: 34,
-        height: 22,
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF383C42) : const Color(0xFFE2EEDD),
-          borderRadius: BorderRadius.circular(11),
-        ),
-      );
-    }
-
-    final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
-    final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
-    final imageProvider = isAsset
-        ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
-            as ImageProvider
-        : isLocalFile
-            ? FileImage(File(bgPath)) as ImageProvider
-            : NetworkImage(bgPath) as ImageProvider;
-
-    return Container(
-      width: 34,
-      height: 22,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.2)
-              : CampusTheme.softBorder,
-        ),
-        image: DecorationImage(
-          image: imageProvider,
-          fit: BoxFit.cover,
-          alignment: Alignment.topCenter,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final hasPortrait = themeProvider.hasBackground;
-    final hasLandscape = themeProvider.hasLandscapeBackground;
-
-    String bgStatusText;
-    if (hasPortrait && hasLandscape) {
-      bgStatusText = '竖屏已设置 · 横屏已设置';
-    } else if (hasPortrait) {
-      bgStatusText = '竖屏已设置 · 横屏未设置';
-    } else if (hasLandscape) {
-      bgStatusText = '竖屏未设置 · 横屏已设置';
-    } else {
-      bgStatusText = '未设置自定义背景图片';
-    }
+    final isLandscapeScreen =
+        MediaQuery.of(context).orientation == Orientation.landscape;
 
     return SettingsPageScaffold(
       title: '外观与显示',
       children: [
+        // 智能实时自适应微缩预览卡片
         _buildLivePreviewCard(context, themeProvider),
 
-        // 背景模式
+        // 主题模式段落
         SettingsSection(
-          title: '背景模式',
+          title: '界面主题模式',
           children: [
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.only(bottom: 12),
               child: CampusSegmentedControl<AppBackgroundMode>(
                 items: const [
                   CampusSegmentItem(
@@ -355,137 +313,93 @@ class AppearanceSettingsScreen extends StatelessWidget {
                   ),
                 ],
                 selectedValue: themeProvider.backgroundMode,
-                onSelectionChanged: (mode) async {
-                  if (mode == AppBackgroundMode.clean) {
-                    await themeProvider.setCleanBackgroundMode();
-                  } else {
-                    final switched =
-                        await themeProvider.trySetCustomBackgroundMode();
-                    if (!switched && context.mounted) {
-                      await BackgroundPickerSheet.show(context);
-                    }
-                  }
-                },
+                onSelectionChanged: (mode) =>
+                    _handleBackgroundModeChange(context, themeProvider, mode),
               ),
             ),
           ],
         ),
 
-        // 显示
+        // 暗色模式与全屏渲染
         SettingsSection(
-          title: '显示',
+          title: '配色与暗色模式',
           children: [
             SettingsTile(
               icon: Icons.dark_mode_outlined,
-              iconBgColor:
-                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
-              iconColor:
-                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
-              title: '夜间模式',
-              subtitle: '使用深色页面与卡片配色',
+              title: '深色模式',
+              subtitle: '针对夜间环境优化，降低屏幕明亮度',
               trailing: SettingsSwitch(
                 value: themeProvider.isDarkMode,
-                onChanged: (v) => themeProvider.setDarkMode(v),
-              ),
-            ),
-            SettingsTile(
-              icon: Icons.photo_library_outlined,
-              iconBgColor:
-                  isDark ? const Color(0xFF1B382B) : const Color(0xFFE6F5EE),
-              iconColor:
-                  isDark ? const Color(0xFF81C784) : const Color(0xFF1E8256),
-              title: '背景图片',
-              subtitle: bgStatusText,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildBackgroundThumbnailPill(context, themeProvider),
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.3)
-                        : CampusTheme.subText.withValues(alpha: 0.5),
-                  ),
-                ],
-              ),
-              onTap: () => BackgroundPickerSheet.show(
-                context,
-                isLandscape: themeProvider.hasLandscapeBackground &&
-                    !themeProvider.hasBackground,
+                onChanged: (val) => themeProvider.setDarkMode(val),
               ),
             ),
           ],
         ),
 
-        // 组件样式
+        // 自定义背景设置
+        if (themeProvider.isCustomBackgroundMode) ...[
+          SettingsSection(
+            title: '自定义背景偏好',
+            children: [
+              SettingsTile(
+                icon: Icons.image_outlined,
+                title: '选择背景图片',
+                subtitle: themeProvider.hasAnyBackground
+                    ? '已配置自定义壁纸，点击重选或调整'
+                    : '尚未选择背景图，点击打开壁纸库',
+                onTap: () {
+                  BackgroundPickerSheet.show(
+                    context,
+                    isLandscape: isLandscapeScreen,
+                  );
+                },
+              ),
+              if (themeProvider.hasAnyBackground) ...[
+                SettingsSliderTile(
+                  icon: Icons.blur_on_rounded,
+                  title: '背景高斯模糊',
+                  value: themeProvider.backgroundBlur,
+                  min: 0,
+                  max: 30,
+                  valueLabel: '${themeProvider.backgroundBlur.toInt()}px',
+                  onChanged: (val) => themeProvider.setBackgroundBlur(val),
+                ),
+                SettingsSliderTile(
+                  icon: Icons.opacity_rounded,
+                  title: '组件卡片不透明度',
+                  value: themeProvider.componentOpacity,
+                  min: 0.1,
+                  max: 1.0,
+                  valueLabel:
+                      '${(themeProvider.componentOpacity * 100).toInt()}%',
+                  onChanged: (val) => themeProvider.setComponentOpacity(val),
+                ),
+              ],
+            ],
+          ),
+        ],
+
+        // 视觉特效高级配置
         SettingsSection(
-          title: '组件样式',
+          title: '高级视觉特效',
           children: [
-            SettingsSliderTile(
-              icon: Icons.opacity_rounded,
-              iconBgColor:
-                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
-              iconColor:
-                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
-              title: '组件不透明度',
-              subtitle: '仅在自定义背景模式下明显生效',
-              value: themeProvider.componentOpacity,
-              valueText: '${(themeProvider.componentOpacity * 100).round()}%',
-              onChanged: (v) => themeProvider.setComponentOpacity(v),
-            ),
-            SettingsTile(
-              icon: Icons.widgets_outlined,
-              iconBgColor:
-                  isDark ? const Color(0xFF1B382B) : const Color(0xFFE6F5EE),
-              iconColor:
-                  isDark ? const Color(0xFF81C784) : const Color(0xFF1E8256),
-              title: '悬浮底部导航栏',
-              subtitle: '使用圆角悬浮式底部入口',
-              trailing: SettingsSwitch(
-                value: themeProvider.floatingNavBar,
-                onChanged: (v) => themeProvider.setFloatingNavBar(v),
-              ),
-            ),
-            SettingsTile(
-              icon: Icons.undo_rounded,
-              iconBgColor:
-                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
-              iconColor:
-                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
-              title: '预测性返回手势',
-              subtitle: '侧滑时预览上一页',
-              trailing: SettingsSwitch(
-                value: themeProvider.predictiveBack,
-                onChanged: (v) => themeProvider.setPredictiveBack(v),
-              ),
-            ),
             SettingsTile(
               icon: Icons.auto_awesome_outlined,
-              iconBgColor:
-                  isDark ? const Color(0xFF3D2A1A) : const Color(0xFFFDF0E6),
-              iconColor:
-                  isDark ? const Color(0xFFFFB74D) : const Color(0xFFE07A2B),
-              title: '液态玻璃效果',
-              subtitle: '增强背景层次，部分设备可能出现卡顿',
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SettingsStatusBadge(
-                    label: '性能影响',
-                    type: SettingsStatusBadgeType.warning,
-                  ),
-                  const SizedBox(width: 8),
-                  SettingsSwitch(
-                    value: themeProvider.liquidGlass,
-                    onChanged: (v) => _handleLiquidGlassToggle(
-                      context,
-                      themeProvider,
-                      v,
-                    ),
-                  ),
-                ],
+              title: '液态玻璃 2.0 效果',
+              subtitle: '启用高阶高斯模糊与多层折射质感',
+              trailing: SettingsSwitch(
+                value: themeProvider.liquidGlass,
+                onChanged: (val) =>
+                    _handleLiquidGlassToggle(context, themeProvider, val),
+              ),
+            ),
+            SettingsTile(
+              icon: Icons.navigation_outlined,
+              title: '悬浮式底栏导航',
+              subtitle: '底部导航栏独立胶囊化悬浮显示',
+              trailing: SettingsSwitch(
+                value: themeProvider.floatingNavBar,
+                onChanged: (val) => themeProvider.setFloatingNavBar(val),
               ),
             ),
           ],

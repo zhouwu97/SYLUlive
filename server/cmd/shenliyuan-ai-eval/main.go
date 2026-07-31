@@ -89,16 +89,18 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 }
 
 func buildLiveRunner(ctx context.Context, k int, getenv func(string) string) (*ai.EvaluationRunner, func(), error) {
+	apiKey := firstConfiguredValue(getenv, "AI_API_KEY", "DEEPSEEK_API_KEY")
+	baseURL := firstConfiguredValue(getenv, "AI_BASE_URL", "DEEPSEEK_BASE_URL")
 	required := map[string]string{
-		"DATABASE_DSN":        strings.TrimSpace(getenv("DATABASE_DSN")),
-		"RAG_SERVICE_URL":     strings.TrimSpace(getenv("RAG_SERVICE_URL")),
-		"RAG_SERVICE_TOKEN":   strings.TrimSpace(getenv("RAG_SERVICE_TOKEN")),
-		"DEEPSEEK_API_KEY":    strings.TrimSpace(getenv("DEEPSEEK_API_KEY")),
-		"DEEPSEEK_BASE_URL":   strings.TrimSpace(getenv("DEEPSEEK_BASE_URL")),
-		"DEEPSEEK_CHAT_MODEL": strings.TrimSpace(getenv("DEEPSEEK_CHAT_MODEL")),
+		"DATABASE_DSN":      strings.TrimSpace(getenv("DATABASE_DSN")),
+		"RAG_SERVICE_URL":   strings.TrimSpace(getenv("RAG_SERVICE_URL")),
+		"RAG_SERVICE_TOKEN": strings.TrimSpace(getenv("RAG_SERVICE_TOKEN")),
+		"AI_API_KEY":        apiKey,
+		"AI_BASE_URL":       baseURL,
+		"AI_CHAT_MODEL":     "gpt-5.4-mini",
 	}
 	missing := make([]string, 0)
-	for _, name := range []string{"DATABASE_DSN", "RAG_SERVICE_URL", "RAG_SERVICE_TOKEN", "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "DEEPSEEK_CHAT_MODEL"} {
+	for _, name := range []string{"DATABASE_DSN", "RAG_SERVICE_URL", "RAG_SERVICE_TOKEN", "AI_API_KEY", "AI_BASE_URL"} {
 		if required[name] == "" {
 			missing = append(missing, name)
 		}
@@ -131,7 +133,7 @@ func buildLiveRunner(ctx context.Context, k int, getenv func(string) string) (*a
 		closeLive()
 		return nil, func() {}, fmt.Errorf("RAG 健康检查失败：%w", err)
 	}
-	provider, err := ai.NewDeepSeekProvider(required["DEEPSEEK_BASE_URL"], required["DEEPSEEK_API_KEY"], required["DEEPSEEK_CHAT_MODEL"], httpClient)
+	provider, err := ai.NewOpenAICompatibleProvider(required["AI_BASE_URL"], required["AI_API_KEY"], required["AI_CHAT_MODEL"], httpClient)
 	if err != nil {
 		closeLive()
 		return nil, func() {}, fmt.Errorf("Provider 配置无效：%w", err)
@@ -146,4 +148,13 @@ func buildLiveRunner(ctx context.Context, k int, getenv func(string) string) (*a
 		return nil, func() {}, err
 	}
 	return ai.NewEvaluationRunner("live", k, backend), closeLive, nil
+}
+
+func firstConfiguredValue(getenv func(string) string, names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(getenv(name)); value != "" {
+			return value
+		}
+	}
+	return ""
 }

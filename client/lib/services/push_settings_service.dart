@@ -83,7 +83,7 @@ typedef RemotePushRegistration = Future<RemotePushEnableResult> Function(
   AuthProvider auth,
 );
 
-/// 远程推送主动选择状态。默认关闭，避免旧 Token 被误认为新授权。
+/// 远程推送主动选择状态与原生通知通道交互服务。
 class PushSettingsService {
   PushSettingsService._();
 
@@ -138,8 +138,32 @@ class PushSettingsService {
     );
   }
 
+  /// 打开系统应用通知总设置
+  static Future<bool> openAppNotificationSettings() async {
+    if (!PlatformCapabilities.current.supportsJPush) return false;
+    try {
+      final ok = await _aliasChannel.invokeMethod<bool>(
+        'openAppNotificationSettings',
+      );
+      if (ok == true) return true;
+    } catch (_) {}
+    return await requestSystemNotificationPermission();
+  }
+
+  /// 打开系统特定通知渠道（如 private_message 私信渠道）设置
+  static Future<bool> openNotificationChannelSettings(String channelId) async {
+    if (!PlatformCapabilities.current.supportsJPush) return false;
+    try {
+      final ok = await _aliasChannel.invokeMethod<bool>(
+        'openNotificationChannelSettings',
+        {'channelId': channelId},
+      );
+      if (ok == true) return true;
+    } catch (_) {}
+    return await openAppNotificationSettings();
+  }
+
   /// 同一账号的注册请求共享 Future，避免设置页和生命周期恢复重复初始化 JPush。
-  /// 注册失败时清理 Future，保留后续重试能力。
   static Future<RemotePushEnableResult> registerOnce(AuthProvider auth) {
     final userId = auth.user?.id.toString();
     final existing = _registrationFuture;

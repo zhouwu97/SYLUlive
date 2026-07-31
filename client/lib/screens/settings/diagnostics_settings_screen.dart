@@ -7,7 +7,6 @@ import '../../models/diagnostic_log_entry.dart';
 import '../../platform/platform_capabilities.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/diagnostic_log_service.dart';
-import '../../services/keep_alive_service.dart';
 import '../../services/push_settings_service.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
@@ -197,6 +196,9 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
     if (!info.supportsJPush || !info.optedIn) {
       return <String>[];
     }
+    if (info.error != null && info.error!.contains('原生诊断读取失败')) {
+      return <String>['暂时无法读取原生推送状态'];
+    }
 
     final issues = <String>[];
     if (info.registrationId == null || info.registrationId!.isEmpty) {
@@ -215,7 +217,7 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
         info.storedAliasState == 'pending_bind') {
       issues.add('设备 Alias 处于待绑定或失败状态');
     }
-    if (info.error != null) {
+    if (info.error != null && !info.error!.contains('原生诊断读取失败')) {
       issues.add('诊断过程出现异常');
     }
     return issues;
@@ -385,8 +387,18 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                   SettingsTile(
                     icon: Icons.settings_applications_outlined,
                     title: '前往系统通知设置',
-                    subtitle: '开启通知权限或解除私信渠道屏蔽',
-                    onTap: () => KeepAliveService.instance.openSettings(),
+                    subtitle: info.privateMessageChannelBlocked
+                        ? '调整私信通知渠道的独立开关与重要度'
+                        : '开启应用通知权限或解除私信渠道屏蔽',
+                    onTap: () {
+                      if (info.privateMessageChannelBlocked) {
+                        PushSettingsService.openNotificationChannelSettings(
+                          'private_message',
+                        );
+                      } else {
+                        PushSettingsService.openAppNotificationSettings();
+                      }
+                    },
                   ),
                 if (!isLoggedIn && info.optedIn)
                   SettingsTile(

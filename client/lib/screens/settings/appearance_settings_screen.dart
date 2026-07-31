@@ -13,7 +13,7 @@ import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'widgets/background_picker_sheet.dart';
 
-/// 外观与显示设置二级页 (实时预览顶部壁纸等比例对齐 topCenter 版)
+/// 外观与显示设置二级页 (9:16 竖屏微缩手机模型等比例完整展示版)
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -55,7 +55,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
     }
   }
 
-  /// 顶部壁纸以 topCenter 居顶定位等比例缩放完整展示主体头部
+  /// 9:16 比例微缩手机预览模型（完整等比例展示竖屏壁纸人物全身，无任何裁剪）
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -94,9 +94,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
         : themeProvider.componentOpacity;
 
     return Container(
-      height: 175,
+      height: 240,
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1B1E1D) : const Color(0xFFE5EEE9),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
@@ -104,111 +105,134 @@ class AppearanceSettingsScreen extends StatelessWidget {
               : CampusTheme.softBorder,
         ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            backgroundWidget,
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: (isDark ? CampusTheme.darkCard : Colors.white)
-                          .withValues(alpha: cardOpacity),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '实时预览',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
-                        color: primaryColor,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: (isDark ? CampusTheme.darkCard : Colors.white)
-                          .withValues(alpha: cardOpacity),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: primaryColor,
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          child: const Icon(
-                            Icons.auto_awesome_rounded,
-                            size: 20,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: double.infinity,
-                                height: 7,
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.white.withValues(alpha: 0.7)
-                                      : const Color(0xFF627370),
-                                  borderRadius: BorderRadius.circular(3.5),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Container(
-                                width: 84,
-                                height: 5,
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.white30
-                                      : const Color(0xFFB4C4C0),
-                                  borderRadius: BorderRadius.circular(2.5),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const IgnorePointer(
-                          child: SettingsSwitch(value: true),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+      child: Center(
+        child: Container(
+          width: 126,
+          height: 220,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isDark ? Colors.white30 : Colors.white,
+              width: 3,
             ),
-          ],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(15),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                backgroundWidget,
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: (isDark ? CampusTheme.darkCard : Colors.white)
+                              .withValues(alpha: cardOpacity),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '实时预览',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: primaryColor,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: (isDark ? CampusTheme.darkCard : Colors.white)
+                              .withValues(alpha: cardOpacity),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 18,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: primaryColor,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Icon(
+                                Icons.auto_awesome_rounded,
+                                size: 10,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: double.infinity,
+                                    height: 3.5,
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? Colors.white.withValues(alpha: 0.7)
+                                          : const Color(0xFF627370),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Container(
+                                    width: 24,
+                                    height: 2.5,
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? Colors.white30
+                                          : const Color(0xFFB4C4C0),
+                                      borderRadius: BorderRadius.circular(1.5),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Transform.scale(
+                              scale: 0.45,
+                              child: const IgnorePointer(
+                                child: SettingsSwitch(value: true),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

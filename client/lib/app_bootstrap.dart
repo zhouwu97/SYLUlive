@@ -1424,8 +1424,10 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     required bool fillScreen,
     required double blur,
   }) {
+    Widget imageLayer;
+
     if (fillScreen) {
-      return Image(
+      imageLayer = Image(
         image: imageProvider,
         fit: BoxFit.cover,
         alignment: alignment,
@@ -1434,35 +1436,53 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
           color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
         ),
       );
-    }
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Transform.scale(
-          scale: 1.06,
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-            child: Image(
-              image: imageProvider,
-              fit: BoxFit.cover,
-              alignment: alignment,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) => Container(
-                color:
-                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-              ),
+    } else {
+      imageLayer = Stack(
+        fit: StackFit.expand,
+        children: [
+          // 补齐屏幕空白区域
+          Image(
+            image: imageProvider,
+            fit: BoxFit.cover,
+            alignment: alignment,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => Container(
+              color:
+                  isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
             ),
           ),
+          // 保留完整背景主体
+          Image(
+            image: imageProvider,
+            fit: BoxFit.contain,
+            alignment: alignment,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+        ],
+      );
+    }
+
+    final effectiveBlur = blur.clamp(0.0, 30.0);
+
+    if (effectiveBlur <= 0.01) {
+      return imageLayer;
+    }
+
+    // 模糊会从图片边缘采样，略微放大，避免四周出现透明边或暗边。
+    final scale = 1.0 + effectiveBlur / 300.0;
+
+    return ClipRect(
+      child: ImageFiltered(
+        imageFilter: ImageFilter.blur(
+          sigmaX: effectiveBlur,
+          sigmaY: effectiveBlur,
         ),
-        Image(
-          image: imageProvider,
-          fit: BoxFit.contain,
-          alignment: alignment,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        child: Transform.scale(
+          scale: scale,
+          child: imageLayer,
         ),
-      ],
+      ),
     );
   }
 

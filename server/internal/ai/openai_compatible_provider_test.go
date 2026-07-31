@@ -8,18 +8,21 @@ import (
 	"testing"
 )
 
-func TestDeepSeekProviderContract(t *testing.T) {
+func TestOpenAICompatibleProviderContract(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer server-secret" {
-			t.Fatalf("DeepSeek 请求不符合契约: %s", r.URL.Path)
+			t.Fatalf("OpenAI 兼容请求不符合契约: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"回答"}}],"usage":{"prompt_tokens":12,"completion_tokens":3}}`))
 	}))
 	defer server.Close()
-	provider, err := NewDeepSeekProvider(server.URL, "server-secret", "deepseek-chat", server.Client())
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if provider.Name() != "openai-compatible" {
+		t.Fatalf("Provider 名称错误: %s", provider.Name())
 	}
 	response, err := provider.Chat(context.Background(), ChatRequest{Messages: []Message{{Role: "user", Content: "问题"}}})
 	if err != nil {
@@ -30,13 +33,13 @@ func TestDeepSeekProviderContract(t *testing.T) {
 	}
 }
 
-func TestDeepSeekProviderErrorDoesNotExposeResponseBody(t *testing.T) {
+func TestOpenAICompatibleProviderErrorDoesNotExposeResponseBody(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"secret":"remote-sensitive-detail"}`))
 	}))
 	defer server.Close()
-	provider, err := NewDeepSeekProvider(server.URL, "server-secret", "deepseek-chat", server.Client())
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +49,7 @@ func TestDeepSeekProviderErrorDoesNotExposeResponseBody(t *testing.T) {
 	}
 }
 
-func TestDeepSeekProviderStreamingContract(t *testing.T) {
+func TestOpenAICompatibleProviderStreamingContract(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
@@ -57,7 +60,7 @@ func TestDeepSeekProviderStreamingContract(t *testing.T) {
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
 	defer server.Close()
-	provider, err := NewDeepSeekProvider(server.URL, "server-secret", "deepseek-chat", server.Client())
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +86,7 @@ func TestDeepSeekProviderStreamingContract(t *testing.T) {
 	}
 }
 
-func TestDeepSeekProviderPreservesLengthFinishReason(t *testing.T) {
+func TestOpenAICompatibleProviderPreservesLengthFinishReason(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"未完成回答\"}}]}\n\n"))
@@ -93,7 +96,7 @@ func TestDeepSeekProviderPreservesLengthFinishReason(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider, err := NewDeepSeekProvider(server.URL, "server-secret", "deepseek-chat", server.Client())
+	provider, err := NewOpenAICompatibleProvider(server.URL, "server-secret", "gpt-5.4-mini", server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}

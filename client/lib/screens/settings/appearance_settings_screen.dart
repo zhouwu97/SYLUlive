@@ -13,7 +13,7 @@ import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'widgets/background_picker_sheet.dart';
 
-/// 外观与显示设置二级页 (100% 像素级对齐效果图)
+/// 外观与显示设置二级页 (多彩图标 + 等比例紧凑布局)
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -55,7 +55,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
     }
   }
 
-  /// 100% 还原效果图中的实时预览卡片
+  /// 等比例收紧高度的实时预览卡片
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -94,10 +94,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
         : themeProvider.componentOpacity;
 
     return Container(
-      height: 180,
-      margin: const EdgeInsets.only(bottom: 18),
+      height: 135,
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.1)
@@ -105,74 +105,70 @@ class AppearanceSettingsScreen extends StatelessWidget {
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: Stack(
           fit: StackFit.expand,
           children: [
             backgroundWidget,
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 顶部绿字标签
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
+                      horizontal: 8,
+                      vertical: 3,
                     ),
                     decoration: BoxDecoration(
                       color: (isDark ? CampusTheme.darkCard : Colors.white)
                           .withValues(alpha: cardOpacity),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       '实时预览',
                       style: TextStyle(
-                        fontSize: 11.5,
+                        fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: primaryColor,
                       ),
                     ),
                   ),
                   const Spacer(),
-                  // 效果图专属中间卡片（大图标 + 双线 + 绿 Switch）
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
+                      horizontal: 12,
+                      vertical: 10,
                     ),
                     decoration: BoxDecoration(
                       color: (isDark ? CampusTheme.darkCard : Colors.white)
                           .withValues(alpha: cardOpacity),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.03),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
                         ),
                       ],
                     ),
                     child: Row(
                       children: [
-                        // 左侧图标块
                         Container(
-                          width: 44,
-                          height: 44,
+                          width: 36,
+                          height: 36,
                           decoration: BoxDecoration(
                             color: primaryColor,
-                            borderRadius: BorderRadius.circular(13),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           child: const Icon(
                             Icons.auto_awesome_rounded,
-                            size: 24,
+                            size: 20,
                             color: Colors.white,
                           ),
                         ),
-                        const SizedBox(width: 14),
-                        // 中间两条占位线条
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,30 +176,29 @@ class AppearanceSettingsScreen extends StatelessWidget {
                             children: [
                               Container(
                                 width: double.infinity,
-                                height: 8,
+                                height: 7,
                                 decoration: BoxDecoration(
                                   color: isDark
                                       ? Colors.white.withValues(alpha: 0.7)
                                       : const Color(0xFF627370),
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: BorderRadius.circular(3.5),
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 6),
                               Container(
-                                width: 100,
-                                height: 6,
+                                width: 80,
+                                height: 5,
                                 decoration: BoxDecoration(
                                   color: isDark
                                       ? Colors.white30
                                       : const Color(0xFFB4C4C0),
-                                  borderRadius: BorderRadius.circular(3),
+                                  borderRadius: BorderRadius.circular(2.5),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 14),
-                        // 右侧 Switch 示例
+                        const SizedBox(width: 12),
                         const IgnorePointer(
                           child: SettingsSwitch(value: true),
                         ),
@@ -226,11 +221,11 @@ class AppearanceSettingsScreen extends StatelessWidget {
 
     if (bgPath == null || bgPath.isEmpty) {
       return Container(
-        width: 36,
-        height: 22,
+        width: 32,
+        height: 20,
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF383C42) : const Color(0xFFE2EEDD),
-          borderRadius: BorderRadius.circular(11),
+          borderRadius: BorderRadius.circular(10),
         ),
       );
     }
@@ -245,10 +240,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
             : NetworkImage(bgPath) as ImageProvider;
 
     return Container(
-      width: 36,
-      height: 22,
+      width: 32,
+      height: 20,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.2)
@@ -265,6 +260,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final hasPortrait = themeProvider.hasBackground;
     final hasLandscape = themeProvider.hasLandscapeBackground;
@@ -285,12 +281,12 @@ class AppearanceSettingsScreen extends StatelessWidget {
       children: [
         _buildLivePreviewCard(context, themeProvider),
 
-        // 背景模式 (使用专属平滑胶囊分段选择器，100% 对齐效果图)
+        // 背景模式 (使用平滑胶囊分段选择器)
         SettingsSection(
           title: '背景模式',
           children: [
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               child: CampusSegmentedControl<AppBackgroundMode>(
                 items: const [
                   CampusSegmentItem(
@@ -319,12 +315,16 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 显示 (100% 对齐效果图)
+        // 显示 (多彩图标与效果图对齐)
         SettingsSection(
           title: '显示',
           children: [
             SettingsTile(
               icon: Icons.dark_mode_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
+              iconColor:
+                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
               title: '夜间模式',
               subtitle: '使用深色页面与卡片配色',
               trailing: SettingsSwitch(
@@ -334,6 +334,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
             ),
             SettingsTile(
               icon: Icons.photo_library_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B382B) : const Color(0xFFE6F5EE),
+              iconColor:
+                  isDark ? const Color(0xFF81C784) : const Color(0xFF1E8256),
               title: '背景图片',
               subtitle: bgStatusText,
               trailing: Row(
@@ -344,7 +348,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
                   Icon(
                     Icons.chevron_right_rounded,
                     size: 20,
-                    color: Theme.of(context).brightness == Brightness.dark
+                    color: isDark
                         ? Colors.white.withValues(alpha: 0.3)
                         : CampusTheme.subText.withValues(alpha: 0.5),
                   ),
@@ -355,12 +359,16 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 组件样式 (100% 对齐效果图)
+        // 组件样式 (多彩图标与效果图对齐)
         SettingsSection(
           title: '组件样式',
           children: [
             SettingsSliderTile(
               icon: Icons.opacity_rounded,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
+              iconColor:
+                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
               title: '组件不透明度',
               subtitle: '仅在自定义背景模式下明显生效',
               value: themeProvider.componentOpacity,
@@ -369,6 +377,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
             ),
             SettingsTile(
               icon: Icons.widgets_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B382B) : const Color(0xFFE6F5EE),
+              iconColor:
+                  isDark ? const Color(0xFF81C784) : const Color(0xFF1E8256),
               title: '悬浮底部导航栏',
               subtitle: '使用圆角悬浮式底部入口',
               trailing: SettingsSwitch(
@@ -378,6 +390,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
             ),
             SettingsTile(
               icon: Icons.undo_rounded,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
+              iconColor:
+                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
               title: '预测性返回手势',
               subtitle: '侧滑时预览上一页',
               trailing: SettingsSwitch(
@@ -387,6 +403,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
             ),
             SettingsTile(
               icon: Icons.auto_awesome_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF3D2A1A) : const Color(0xFFFDF0E6),
+              iconColor:
+                  isDark ? const Color(0xFFFFB74D) : const Color(0xFFE07A2B),
               title: '液态玻璃效果',
               subtitle: '增强背景层次，部分设备可能出现卡顿',
               trailing: Row(

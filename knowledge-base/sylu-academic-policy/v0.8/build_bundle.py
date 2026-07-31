@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent
 DOCUMENTS = ROOT / "documents"
 CONTRACT = ROOT / "policy_query_contract_v0.8.json"
 IMPORT_OUTPUT = ROOT / "SYLUlive_AI学生资助政策拆分导入包_v0.8.jsonl"
+RELEASE_OUTPUT = ROOT / "SYLUlive_AI学生资助政策完整导入包_v0.8.jsonl"
 BUNDLE_OUTPUT = ROOT / "sylulive-policy-bundle-v0.8.jsonl"
 MANIFEST_OUTPUT = ROOT / "policy-bundle-manifest.json"
 UNDERGRADUATE = ROOT.parent / "v0.7" / "documents" / "sylu-undergraduate-scholarships-policy-2022.md"
@@ -48,8 +49,10 @@ def main() -> None:
     split_records = [parse_document(path) for path in sorted(DOCUMENTS.glob("*.md"))]
     bundle_records = [parse_document(UNDERGRADUATE), *split_records]
     import_bytes = b"".join((json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n").encode() for item in split_records)
+    release_bytes = b"".join((json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n").encode() for item in bundle_records)
     bundle_bytes = b"".join((json.dumps({**item, "category": "policy", "source_id": f"sylulive-v0.8-{item['document_type']}"}, ensure_ascii=False, separators=(",", ":")) + "\n").encode() for item in bundle_records)
     IMPORT_OUTPUT.write_bytes(import_bytes)
+    RELEASE_OUTPUT.write_bytes(release_bytes)
     BUNDLE_OUTPUT.write_bytes(bundle_bytes)
     try:
         source_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
@@ -65,7 +68,10 @@ def main() -> None:
         "unresolved_source_conflicts": ["school_work_study_policy:failed_course_count_exactly_two"],
     }
     MANIFEST_OUTPUT.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"生成导入文档 {len(split_records)} 条，Bundle 文档 {len(bundle_records)} 条")
+    print(
+        f"生成增量导入文档 {len(split_records)} 条，"
+        f"完整发布和 Bundle 文档各 {len(bundle_records)} 条"
+    )
 
 
 if __name__ == "__main__":

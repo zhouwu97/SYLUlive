@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/ai_quick_prompt.dart';
 import '../campus/campus_theme.dart';
 import 'ai_quick_action_card.dart';
 
@@ -17,7 +18,7 @@ class AiSuggestedPrompt {
 
 class AiPublicEmptyState extends StatelessWidget {
   final bool chatEnabled;
-  final List<String> quickPrompts;
+  final List<AiQuickPrompt> quickPrompts;
   final List<AiSuggestedPrompt> suggestedPrompts;
   final ValueChanged<String>? onPromptSelected;
   final VoidCallback? onRefreshPrompts;
@@ -33,15 +34,20 @@ class AiPublicEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final promptCards = <AiSuggestedPrompt>[
-      ...suggestedPrompts,
-      for (var index = 0; index < quickPrompts.length; index++)
-        AiSuggestedPrompt(
-          title: const ['学业考试', '教学管理', '奖助评优', '校园日程'][index % 4],
-          subtitle: quickPrompts[index],
-          prompt: quickPrompts[index],
-        ),
-    ].take(4).toList(growable: false);
+    final promptCards = <AiSuggestedPrompt>[...suggestedPrompts];
+    final visibleQuestions = promptCards.map((card) => card.subtitle).toSet();
+    for (final quickPrompt in quickPrompts) {
+      if (visibleQuestions.add(quickPrompt.question)) {
+        promptCards.add(
+          AiSuggestedPrompt(
+            title: quickPrompt.category,
+            subtitle: quickPrompt.question,
+            prompt: quickPrompt.question,
+          ),
+        );
+      }
+    }
+    final visiblePromptCards = promptCards.take(4).toList(growable: false);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
@@ -92,7 +98,7 @@ class AiPublicEmptyState extends StatelessWidget {
               ],
             ),
           ),
-          if (promptCards.isNotEmpty) ...[
+          if (visiblePromptCards.isNotEmpty) ...[
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -128,9 +134,9 @@ class AiPublicEmptyState extends StatelessWidget {
                 crossAxisSpacing: 10,
                 mainAxisExtent: 72,
               ),
-              itemCount: promptCards.length,
+              itemCount: visiblePromptCards.length,
               itemBuilder: (context, index) {
-                final card = promptCards[index];
+                final card = visiblePromptCards[index];
                 return AiPromptCard(
                   category: card.title,
                   prompt: card.subtitle,

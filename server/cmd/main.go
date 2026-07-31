@@ -41,6 +41,44 @@ import (
 	"shenliyuan/internal/tasks"
 )
 
+type externalMCPHealthReader interface {
+	Healthy() bool
+	HealthStatus() mcpclient.ExternalMCPHealthStatus
+}
+
+type externalMCPHealthResponse struct {
+	Configured      bool   `json:"configured"`
+	Healthy         bool   `json:"healthy"`
+	ContractVersion string `json:"contract_version,omitempty"`
+	Mode            string `json:"mode,omitempty"`
+	AvailableTools  int    `json:"available_tools"`
+}
+
+func externalMCPHealthPayload(configured bool, client externalMCPHealthReader, registry *ai.ToolRegistry) externalMCPHealthResponse {
+	result := externalMCPHealthResponse{Configured: configured}
+	if !configured || client == nil || !client.Healthy() {
+		return result
+	}
+	status := client.HealthStatus()
+	if !status.Healthy {
+		return result
+	}
+	result.Healthy = true
+	result.ContractVersion = status.ContractVersion
+	result.Mode = status.Mode
+	for _, name := range []string{
+		"hy3_decision.explain_competition_candidates",
+		"hy3_decision.compare_competitions",
+		"hy3_decision.analyze_academic",
+		"hy3_decision.plan_student_week",
+	} {
+		if registry.HasTool(name) {
+			result.AvailableTools++
+		}
+	}
+	return result
+}
+
 const examPaperStorageJobAttemptTimeout = 15 * time.Second
 
 type examPaperStorageJobAttemptProcessor interface {
@@ -682,7 +720,8 @@ func main() {
 
 	var ragClient *ai.RAGClient
 	var aiRuntime *ai.Runtime
-	var registeredAIToolCapabilities []string
+	var externalMCPClient *mcpclient.Client
+	var toolRegistry *ai.ToolRegistry
 	if cfg.AIEnabled && cfg.AIPolicyRAGEnabled {
 		if schemaErr := models.ValidateAIRuntimeSchema(db); schemaErr != nil {
 			log.Fatalf("AI Runtime Schema 未就绪，请依次执行 AI SQL 迁移（含 20260727_ai_langchain_ingestion.sql 与 20260727_ai_langchain_retrieval.sql）: %v", schemaErr)
@@ -733,7 +772,8 @@ func main() {
 			ai.WithCampusPersonalDataPermissionReader(aiUserPermissionService),
 		)
 		if cfg.AIExternalMCPEnabled {
-			externalMCPClient, externalMCPErr := mcpclient.New(mcpclient.Config{
+			var externalMCPErr error
+			externalMCPClient, externalMCPErr = mcpclient.New(mcpclient.Config{
 				Enabled:           true,
 				Transport:         cfg.AIExternalMCPTransport,
 				Command:           cfg.AIExternalMCPCommand,
@@ -797,16 +837,8 @@ func main() {
 						} else {
 							tools = append(tools, hy3Tools...)
 							for _, tool := range hy3Tools {
-								switch tool.Name() {
-								case "hy3_decision.explain_competition_candidates":
+								if tool.Name() == "hy3_decision.explain_competition_candidates" {
 									competitionHandler.SetCompetitionCandidateExplanationTool(tool)
-									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3CompetitionExplain)
-								case "hy3_decision.compare_competitions":
-									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3CompetitionCompare)
-								case "hy3_decision.analyze_academic":
-									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3AcademicAnalysis)
-								case "hy3_decision.plan_student_week":
-									registeredAIToolCapabilities = append(registeredAIToolCapabilities, handlers.AIToolHy3WeekPlan)
 								}
 							}
 						}
@@ -814,7 +846,8 @@ func main() {
 				}
 			}
 		}
-		toolRegistry, registryErr := ai.NewToolRegistry(db, tools...)
+		var registryErr error
+		toolRegistry, registryErr = ai.NewToolRegistry(db, tools...)
 		if registryErr != nil {
 			log.Fatalf("校园 MCP 工具注册失败: %v", registryErr)
 		}
@@ -870,10 +903,12 @@ func main() {
 		cfg.AIEnabled,
 		handlers.AICapabilitiesOptions{
 			Runtime: aiRuntime, PolicyRAGEnabled: cfg.AIPolicyRAGEnabled && aiRuntime != nil,
-			HourlyLimit:        cfg.AIHourlyMessageLimit,
-			MaxMessageChars:    cfg.AIMaxMessageChars,
-			QuotaExemptUserIDs: cfg.AIQuotaExemptUserIDs,
-			ToolCapabilities:   registeredAIToolCapabilities,
+			HourlyLimit:           cfg.AIHourlyMessageLimit,
+			MaxMessageChars:       cfg.AIMaxMessageChars,
+			QuotaExemptUserIDs:    cfg.AIQuotaExemptUserIDs,
+			ExternalMCPConfigured: cfg.AIExternalMCPEnabled,
+			ExternalMCPHealth:     externalMCPClient,
+			ToolRegistry:          toolRegistry,
 		},
 	)
 	var aiRuntimeHandler *handlers.AIRuntimeHandler
@@ -938,6 +973,7 @@ func main() {
 			"ai": gin.H{
 				"enabled":         cfg.AIEnabled,
 				"runtime_enabled": aiRuntime != nil,
+				"external_mcp":    externalMCPHealthPayload(cfg.AIExternalMCPEnabled, externalMCPClient, toolRegistry),
 				"policy_rag": gin.H{
 					"enabled": cfg.AIPolicyRAGEnabled, "langchain_enabled": cfg.AILangChainRAGEnabled,
 					"langchain_rollout_percent": cfg.AILangChainRAGRolloutPercent,

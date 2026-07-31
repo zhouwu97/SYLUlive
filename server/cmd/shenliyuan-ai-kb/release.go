@@ -42,7 +42,7 @@ type releaseRecord struct {
 func runRelease(args []string, getenv environment, stdout, stderr io.Writer, client *http.Client) int {
 	flags := flag.NewFlagSet("release", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	bundle := flags.String("bundle", defaultKnowledgePath("SYLUlive_AI官方全文导入包_v0.6.jsonl"), "JSONL 导入包")
+	bundle := flags.String("bundle", defaultKnowledgePath(defaultKnowledgeBundle), "JSONL 导入包")
 	manifestPath := flags.String("manifest", defaultManifestPath(), "版本清单")
 	baseURL := flags.String("base-url", envOrDefault(getenv, "SHENLIYUAN_API_BASE_URL", "http://127.0.0.1:8080"), "服务端 API 地址")
 	ragBaseURL := flags.String("rag-base-url", envOrDefault(getenv, "RAG_SERVICE_URL", "http://127.0.0.1:18001"), "Python RAG 服务地址")

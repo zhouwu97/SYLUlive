@@ -76,6 +76,8 @@ flowchart LR
 
 - 两端共享 `policy_query_contract_v0.8.json`，保证粗略口语、精确问题和复合意图使用一致的路由规则。
 - MCP 协议版本为 `sylulive-hy3/1`；Go 客户端同时校验 `tools/list`、状态工具声明和本地固定 Schema SHA-256。
+- 当前生产兼容基线为 SYLUlive `53d8ed5f875e9d7174335b2965def05f377e1bf3`，配套
+  `SYLUlive_MCP` 标签 `sylulive-mcp-prod-20260728`（实现 `765a5b634f18aaa616b3c424462572651c54b034`）。
 - 政策 Bundle 使用 `newline-lf-v1` 规范化摘要，避免 Windows CRLF 与 Linux LF 导致部署校验漂移。
 - 主服务只向 MCP 发送工具所需的结构化最小数据，不发送教务密码、Cookie、JWT 或其他身份凭据。
 - 独立 MCP 不连接 SYLUlive 生产数据库，不修改用户账号和业务数据。

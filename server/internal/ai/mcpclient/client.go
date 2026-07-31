@@ -47,6 +47,7 @@ type Client struct {
 	sessionMu         sync.Mutex
 	session           remoteSession
 	healthy           bool
+	healthStatus      ExternalMCPHealthStatus
 	tools             map[string]RemoteToolDefinition
 	lastProtocolError error
 }
@@ -156,6 +157,19 @@ func (client *Client) Healthy() bool {
 	return client.healthy && client.session != nil
 }
 
+// HealthStatus 返回当前已验证 Session 的安全状态，不包含传输或 Provider 配置。
+func (client *Client) HealthStatus() ExternalMCPHealthStatus {
+	if client == nil {
+		return ExternalMCPHealthStatus{}
+	}
+	client.sessionMu.Lock()
+	defer client.sessionMu.Unlock()
+	if !client.healthy || client.session == nil {
+		return ExternalMCPHealthStatus{}
+	}
+	return client.healthStatus
+}
+
 // Close 关闭 Session 和关联的 stdio 子进程；它可被多次安全调用。
 func (client *Client) Close() error {
 	if client == nil {
@@ -212,6 +226,10 @@ func (client *Client) ensureSession(ctx context.Context) error {
 	client.session = session
 	client.tools = validated
 	client.healthy = true
+	client.healthStatus = ExternalMCPHealthStatus{
+		Healthy: true, Mode: status.Mode, ContractVersion: status.ContractVersion,
+		AvailableTools: len(validated),
+	}
 	client.lastProtocolError = nil
 	client.sessionMu.Unlock()
 	return nil
@@ -226,6 +244,7 @@ func (client *Client) closeSession() error {
 	session := client.session
 	client.session = nil
 	client.healthy = false
+	client.healthStatus = ExternalMCPHealthStatus{}
 	client.tools = make(map[string]RemoteToolDefinition)
 	client.sessionMu.Unlock()
 	if session == nil {

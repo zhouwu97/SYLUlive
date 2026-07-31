@@ -28,21 +28,24 @@ var (
 )
 
 type CompetitionCatalogPreflightReport struct {
-	PackageID               uint     `json:"package_id"`
-	PackageHash             string   `json:"package_hash"`
-	ExpectedActivePackageID *uint    `json:"expected_active_package_id"`
-	DatasetVersion          string   `json:"dataset_version"`
-	ItemCount               int      `json:"item_count"`
-	PublicItemCount         int      `json:"public_item_count"`
-	CandidateItemCount      int      `json:"candidate_item_count"`
-	MissingCategories       []string `json:"missing_categories"`
-	MappingConflictCount    int      `json:"mapping_conflict_count"`
-	MissingLegacyEventCount int      `json:"missing_legacy_event_count"`
-	CalendarReferenceCount  int64    `json:"calendar_reference_count"`
-	AwardReferenceCount     int64    `json:"award_reference_count"`
-	DependencyHash          string   `json:"dependency_hash"`
-	BlockingIssues          []string `json:"blocking_issues"`
-	CanActivate             bool     `json:"can_activate"`
+	PackageID                          uint     `json:"package_id"`
+	PackageHash                        string   `json:"package_hash"`
+	ExpectedActivePackageID            *uint    `json:"expected_active_package_id"`
+	DatasetVersion                     string   `json:"dataset_version"`
+	ItemCount                          int      `json:"item_count"`
+	PublicItemCount                    int      `json:"public_item_count"`
+	CandidateItemCount                 int      `json:"candidate_item_count"`
+	MissingCategories                  []string `json:"missing_categories"`
+	MappingConflictCount               int      `json:"mapping_conflict_count"`
+	MissingLegacyEventCount            int      `json:"missing_legacy_event_count"`
+	CalendarReferenceCount             int64    `json:"calendar_reference_count"`
+	AwardReferenceCount                int64    `json:"award_reference_count"`
+	UnmappedReferencedLegacyEventCount int64    `json:"unmapped_referenced_legacy_event_count"`
+	UnmappedCalendarReferenceCount     int64    `json:"unmapped_calendar_reference_count"`
+	UnmappedAwardReferenceCount        int64    `json:"unmapped_award_reference_count"`
+	DependencyHash                     string   `json:"dependency_hash"`
+	BlockingIssues                     []string `json:"blocking_issues"`
+	CanActivate                        bool     `json:"can_activate"`
 }
 
 type CompetitionCatalogPreflightResult struct {
@@ -196,6 +199,7 @@ func (i *CompetitionCatalogImporter) buildPreflightReport(
 		}
 	}
 
+	confirmedMappedEventIDs := make(map[uint]struct{})
 	if tx.Migrator().HasTable(&models.CompetitionCatalogLegacyMapping{}) {
 		type conflictRow struct {
 			LegacyEventID uint
@@ -220,6 +224,7 @@ func (i *CompetitionCatalogImporter) buildPreflightReport(
 		mappedEventIDs := make([]uint, 0, len(mappings))
 		for _, mapping := range mappings {
 			mappedEventIDs = append(mappedEventIDs, mapping.LegacyEventID)
+			confirmedMappedEventIDs[mapping.LegacyEventID] = struct{}{}
 		}
 		if len(mappedEventIDs) > 0 {
 			var existingEventIDs []uint
@@ -257,6 +262,49 @@ func (i *CompetitionCatalogImporter) buildPreflightReport(
 					return report, err
 				}
 			}
+		}
+	}
+	if report.ExpectedActivePackageID != nil && *report.ExpectedActivePackageID != catalog.ID {
+		var activeEventIDs []uint
+		if err := tx.Model(&models.CompetitionEvent{}).
+			Where("catalog_package_id = ?", *report.ExpectedActivePackageID).
+			Order("id ASC").Pluck("id", &activeEventIDs).Error; err != nil {
+			return report, err
+		}
+		unmappedEventIDs := make([]uint, 0, len(activeEventIDs))
+		for _, eventID := range activeEventIDs {
+			if _, mapped := confirmedMappedEventIDs[eventID]; !mapped {
+				unmappedEventIDs = append(unmappedEventIDs, eventID)
+			}
+		}
+		calendarCounts := make(map[uint]int64)
+		awardCounts := make(map[uint]int64)
+		if len(unmappedEventIDs) > 0 && tx.Migrator().HasTable(&models.UserCompetitionCalendarItem{}) {
+			if err := scanReferenceCounts(tx, (&models.UserCompetitionCalendarItem{}).TableName(),
+				"source_event_id", unmappedEventIDs, calendarCounts); err != nil {
+				return report, err
+			}
+		}
+		if len(unmappedEventIDs) > 0 && tx.Migrator().HasTable(&models.UserCompetitionAward{}) {
+			if err := scanReferenceCounts(tx, (&models.UserCompetitionAward{}).TableName(),
+				"competition_event_id", unmappedEventIDs, awardCounts); err != nil {
+				return report, err
+			}
+		}
+		for _, eventID := range unmappedEventIDs {
+			calendarCount := calendarCounts[eventID]
+			awardCount := awardCounts[eventID]
+			report.UnmappedCalendarReferenceCount += calendarCount
+			report.UnmappedAwardReferenceCount += awardCount
+			if calendarCount > 0 || awardCount > 0 {
+				report.UnmappedReferencedLegacyEventCount++
+			}
+			dependencyParts = append(dependencyParts, fmt.Sprintf(
+				"unmapped-reference:%d:%d:%d", eventID, calendarCount, awardCount,
+			))
+		}
+		if report.UnmappedReferencedLegacyEventCount > 0 {
+			addBlocker("unmapped_referenced_legacy_events")
 		}
 	}
 	if report.ExpectedActivePackageID == nil && catalog.DatasetVersion == LegacyCompetitionBaselineDataset {

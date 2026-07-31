@@ -48,7 +48,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('诊断与反馈'), findsOneWidget);
-    expect(find.text('运行日志'), findsOneWidget);
-    expect(find.text('功能建议与问题反馈'), findsOneWidget);
+    expect(find.text('运行诊断日志'), findsOneWidget);
+    expect(find.text('问题与建议反馈'), findsOneWidget);
   });
 }

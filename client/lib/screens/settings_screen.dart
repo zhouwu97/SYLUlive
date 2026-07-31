@@ -9,7 +9,6 @@ import '../providers/theme_provider.dart';
 import '../services/grade_reminder_service.dart';
 import '../services/keep_alive_service.dart';
 import '../services/push_settings_service.dart';
-import '../widgets/about_app_sheet.dart';
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/settings/settings_account_header.dart';
 import '../widgets/settings/settings_page_scaffold.dart';
@@ -19,11 +18,13 @@ import '../widgets/settings/settings_tile.dart';
 import 'account_security_screen.dart';
 import 'login_screen.dart';
 import 'privacy_center_screen.dart';
+
 import 'settings/appearance_settings_screen.dart';
 import 'settings/diagnostics_settings_screen.dart';
 import 'settings/notification_background_settings_screen.dart';
+import '../widgets/about_app_sheet.dart';
 
-/// 沈理校园 设置中心 主入口页面 (多彩图标 + 等比例紧凑布局，100% 不翻页展示)
+/// 简化后的重构版设置首页
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -44,7 +45,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSummaryStates() async {
     final status = await KeepAliveService.instance.status();
-    final snapshot = await PushSettingsService.getPushSnapshot();
+    RemotePushSnapshot? snapshot;
+    if (PlatformCapabilities.current.supportsJPush) {
+      snapshot = await PushSettingsService.getPushSnapshot();
+    }
+
     if (mounted) {
       setState(() {
         _keepAliveStatus = status;
@@ -67,8 +72,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return '当前平台不支持远程推送';
     }
     final snapshot = _pushSnapshot;
-    final pushOptedIn = snapshot?.optedIn == true;
-    final pushText = pushOptedIn ? '远程推送已开启' : '远程推送关闭';
+    String pushText;
+    if (snapshot == null) {
+      pushText = '正在读取推送状态';
+    } else {
+      final status = resolveRemotePushStatus(snapshot);
+      switch (status) {
+        case ResolvedPushStatus.ready:
+          pushText = '远程推送已开启';
+          break;
+        case ResolvedPushStatus.configuring:
+          pushText = '远程推送配置中';
+          break;
+        case ResolvedPushStatus.permissionDenied:
+          pushText = '系统通知权限受限';
+          break;
+        case ResolvedPushStatus.registrationFailed:
+          pushText = '设备注册失败';
+          break;
+        case ResolvedPushStatus.channelUnavailable:
+          pushText = '私信通道待建立';
+          break;
+        case ResolvedPushStatus.channelBlocked:
+          pushText = '私信通道已被关';
+          break;
+        case ResolvedPushStatus.disabled:
+          pushText = '远程推送关闭';
+          break;
+        case ResolvedPushStatus.diagnosticsUnavailable:
+          pushText = '暂时无法读取推送状态';
+          break;
+      }
+    }
 
     String keepAliveText;
     if (!_keepAliveStatus.supported) {
@@ -89,10 +124,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return 0;
     }
     int issues = 0;
+    if (!snapshot.diagnosticsAvailable) {
+      issues++;
+    }
     if (!snapshot.notificationsEnabled) {
       issues++;
     }
     if (snapshot.registrationId == null || snapshot.registrationId!.isEmpty) {
+      issues++;
+    }
+    if (!snapshot.privateChannelExists) {
       issues++;
     }
     if (snapshot.privateChannelBlocked) {
@@ -162,10 +203,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: '设置',
       onRefresh: _loadSummaryStates,
       children: [
-        // 账号摘要卡片
+        // 1. 顶部账号摘要
         const SettingsAccountHeader(),
 
-        // 常用设置 (多彩图标 + 效果图精准配色)
+        // 常用设置 (多彩图标 + 效果图开源配色)
         SettingsSection(
           title: '常用设置',
           children: [
@@ -177,17 +218,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
               title: '外观与显示',
               subtitle: _getAppearanceSummary(themeProvider),
-              trailing: SettingsStatusBadge(
-                label: themeProvider.isCleanBackgroundMode ? '简洁' : '自定义',
-                type: SettingsStatusBadgeType.success,
-              ),
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => const AppearanceSettingsScreen(),
                   ),
-                ).then((_) => _loadSummaryStates());
+                );
               },
             ),
             SettingsTile(
@@ -217,7 +254,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
 
-        // 账号与隐私 (多彩图标 + 效果图精准配色)
+        // 账号与隐私 (多彩图标 + 效果图开源配色)
         SettingsSection(
           title: '账号与隐私',
           children: [
@@ -267,7 +304,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
 
-        // 支持与其他 (多彩图标 + 效果图精准配色)
+        // 支持与其他 (多彩图标 + 效果图开源配色)
         SettingsSection(
           title: '支持与其他',
           children: [
@@ -295,7 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               iconColor:
                   isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4),
               title: '关于沈理校园',
-              subtitle: '版本 1.5.22 · 检查更新与开源信息',
+              subtitle: '版本、检查更新与开源信息',
               onTap: () {
                 showModalBottomSheet(
                   context: context,
@@ -324,13 +361,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: InkWell(
                 borderRadius: BorderRadius.circular(14),
                 onTap: () => _handleLogout(context, authProvider),
-                child: const SizedBox(
-                  height: 44,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
                   child: Center(
                     child: Text(
                       '退出登录',
                       style: TextStyle(
-                        fontSize: 14.5,
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: CampusTheme.red,
                       ),

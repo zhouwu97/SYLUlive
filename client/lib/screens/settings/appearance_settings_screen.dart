@@ -13,7 +13,7 @@ import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'widgets/background_picker_sheet.dart';
 
-/// 外观与显示设置二级页 (多彩图标 + 等比例紧凑布局)
+/// 外观与显示设置二级页 (仅对“实时预览卡片”做精准紧凑微调，其他项保持舒展标准大尺寸)
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -55,7 +55,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
     }
   }
 
-  /// 等比例收紧高度的实时预览卡片
+  /// 仅对“实时预览卡片”进行精简与等比例显示优化（完全对齐设计图二）
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -94,10 +94,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
         : themeProvider.componentOpacity;
 
     return Container(
-      height: 135,
-      margin: const EdgeInsets.only(bottom: 12),
+      height: 145,
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.1)
@@ -105,30 +105,30 @@ class AppearanceSettingsScreen extends StatelessWidget {
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         child: Stack(
           fit: StackFit.expand,
           children: [
             backgroundWidget,
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
+                      horizontal: 10,
+                      vertical: 4,
                     ),
                     decoration: BoxDecoration(
                       color: (isDark ? CampusTheme.darkCard : Colors.white)
                           .withValues(alpha: cardOpacity),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(9),
                     ),
                     child: Text(
                       '实时预览',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.bold,
                         color: primaryColor,
                       ),
@@ -138,8 +138,8 @@ class AppearanceSettingsScreen extends StatelessWidget {
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
+                      horizontal: 14,
+                      vertical: 12,
                     ),
                     decoration: BoxDecoration(
                       color: (isDark ? CampusTheme.darkCard : Colors.white)
@@ -156,19 +156,19 @@ class AppearanceSettingsScreen extends StatelessWidget {
                     child: Row(
                       children: [
                         Container(
-                          width: 36,
-                          height: 36,
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
                             color: primaryColor,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Icon(
                             Icons.auto_awesome_rounded,
-                            size: 20,
+                            size: 22,
                             color: Colors.white,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,29 +176,29 @@ class AppearanceSettingsScreen extends StatelessWidget {
                             children: [
                               Container(
                                 width: double.infinity,
-                                height: 7,
+                                height: 7.5,
                                 decoration: BoxDecoration(
                                   color: isDark
                                       ? Colors.white.withValues(alpha: 0.7)
                                       : const Color(0xFF627370),
-                                  borderRadius: BorderRadius.circular(3.5),
+                                  borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 7),
                               Container(
-                                width: 80,
-                                height: 5,
+                                width: 90,
+                                height: 5.5,
                                 decoration: BoxDecoration(
                                   color: isDark
                                       ? Colors.white30
                                       : const Color(0xFFB4C4C0),
-                                  borderRadius: BorderRadius.circular(2.5),
+                                  borderRadius: BorderRadius.circular(3),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 14),
                         const IgnorePointer(
                           child: SettingsSwitch(value: true),
                         ),
@@ -221,11 +221,11 @@ class AppearanceSettingsScreen extends StatelessWidget {
 
     if (bgPath == null || bgPath.isEmpty) {
       return Container(
-        width: 32,
-        height: 20,
+        width: 34,
+        height: 22,
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF383C42) : const Color(0xFFE2EEDD),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(11),
         ),
       );
     }
@@ -240,10 +240,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
             : NetworkImage(bgPath) as ImageProvider;
 
     return Container(
-      width: 32,
-      height: 20,
+      width: 34,
+      height: 22,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(11),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.2)
@@ -281,12 +281,12 @@ class AppearanceSettingsScreen extends StatelessWidget {
       children: [
         _buildLivePreviewCard(context, themeProvider),
 
-        // 背景模式 (使用平滑胶囊分段选择器)
+        // 背景模式
         SettingsSection(
           title: '背景模式',
           children: [
             Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               child: CampusSegmentedControl<AppBackgroundMode>(
                 items: const [
                   CampusSegmentItem(
@@ -315,7 +315,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 显示 (多彩图标与效果图对齐)
+        // 显示
         SettingsSection(
           title: '显示',
           children: [
@@ -359,7 +359,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
           ],
         ),
 
-        // 组件样式 (多彩图标与效果图对齐)
+        // 组件样式
         SettingsSection(
           title: '组件样式',
           children: [

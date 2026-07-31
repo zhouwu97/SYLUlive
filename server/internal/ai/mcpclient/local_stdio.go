@@ -22,7 +22,7 @@ var mcpBaseEnv = []string{
 // localCommand 只启动一个已校验的绝对路径启动包装器，永不解释命令行字符串。
 //
 // 必须显式设置 Env：exec 默认让子进程继承父进程的全部环境变量，而 Go 服务
-// 进程里同时装载了 JWT_SECRET、数据库 DSN、DEEPSEEK_API_KEY、SMTP 口令、
+// 进程里同时装载了 JWT_SECRET、数据库 DSN、AI_API_KEY、SMTP 口令、
 // 推送密钥和 RAG Token。不清空环境时，“独立 MCP 隔离”在 local_stdio 下并不成立。
 func localCommand(config Config) *exec.Cmd {
 	cmd := exec.Command(config.Command)

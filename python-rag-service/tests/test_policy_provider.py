@@ -9,7 +9,7 @@ def test_openai_compatible_provider_enforces_allowlist_and_output_limit(monkeypa
         return object()
 
     monkeypatch.setenv("RAG_CHAT_PROVIDER", "openai-compatible")
-    monkeypatch.setenv("RAG_CHAT_MODEL", "approved-model")
+    monkeypatch.setenv("RAG_CHAT_MODEL", "gpt-5.4-mini")
     monkeypatch.setenv("RAG_PROVIDER_API_KEY", "test-secret")
     monkeypatch.setenv("RAG_PROVIDER_BASE_URL", "https://api.example.test/v1/")
     monkeypatch.setenv("RAG_PROVIDER_ALLOWED_BASE_URLS", "https://api.example.test/v1")
@@ -20,7 +20,7 @@ def test_openai_compatible_provider_enforces_allowlist_and_output_limit(monkeypa
     provider = chat.build_policy_chat_provider()
 
     assert provider.ready is True
-    assert captured["model"] == "approved-model"
+    assert captured["model"] == "gpt-5.4-mini"
     assert captured["base_url"] == "https://api.example.test/v1"
     assert captured["timeout"] == 120
     assert captured["max_retries"] == 1
@@ -30,7 +30,7 @@ def test_openai_compatible_provider_enforces_allowlist_and_output_limit(monkeypa
 
 def test_provider_rejects_request_target_outside_allowlist(monkeypatch):
     monkeypatch.setenv("RAG_CHAT_PROVIDER", "openai-compatible")
-    monkeypatch.setenv("RAG_CHAT_MODEL", "approved-model")
+    monkeypatch.setenv("RAG_CHAT_MODEL", "gpt-5.4-mini")
     monkeypatch.setenv("RAG_PROVIDER_API_KEY", "test-secret")
     monkeypatch.setenv("RAG_PROVIDER_BASE_URL", "https://untrusted.example.test/v1")
     monkeypatch.setenv("RAG_PROVIDER_ALLOWED_BASE_URLS", "https://api.example.test/v1")

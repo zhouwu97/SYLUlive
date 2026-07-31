@@ -19,6 +19,9 @@ enum RemotePushUiStatus {
   permissionDenied,
   registrationFailed,
   configuring,
+  channelUnavailable,
+  channelBlocked,
+  diagnosticsUnavailable,
 }
 
 /// 通知与后台设置二级页
@@ -73,6 +76,15 @@ class _NotificationBackgroundSettingsScreenState
       case ResolvedPushStatus.configuring:
         status = RemotePushUiStatus.configuring;
         break;
+      case ResolvedPushStatus.channelUnavailable:
+        status = RemotePushUiStatus.channelUnavailable;
+        break;
+      case ResolvedPushStatus.channelBlocked:
+        status = RemotePushUiStatus.channelBlocked;
+        break;
+      case ResolvedPushStatus.diagnosticsUnavailable:
+        status = RemotePushUiStatus.diagnosticsUnavailable;
+        break;
       case ResolvedPushStatus.ready:
         status = RemotePushUiStatus.ready;
         break;
@@ -99,22 +111,8 @@ class _NotificationBackgroundSettingsScreenState
     if (enabled) {
       final result = await PushSettingsService.enableAndRegister(auth);
       if (!mounted) return;
-
-      if (result.registrationSucceeded && result.permissionGranted) {
-        setState(() => _pushStatus = RemotePushUiStatus.ready);
-        messenger.showSnackBar(SnackBar(content: Text(result.message)));
-      } else if (result.registrationSucceeded && !result.permissionGranted) {
-        setState(() => _pushStatus = RemotePushUiStatus.permissionDenied);
-        messenger.showSnackBar(
-          const SnackBar(content: Text('已注册极光推送，但系统通知权限已被禁用')),
-        );
-      } else {
-        setState(() {
-          _pushStatus = RemotePushUiStatus.registrationFailed;
-          _pushErrorMessage = result.message;
-        });
-        messenger.showSnackBar(SnackBar(content: Text(result.message)));
-      }
+      messenger.showSnackBar(SnackBar(content: Text(result.message)));
+      await _loadPushState();
       return;
     }
 
@@ -129,10 +127,10 @@ class _NotificationBackgroundSettingsScreenState
       return;
     }
 
-    setState(() => _pushStatus = RemotePushUiStatus.disabled);
     messenger.showSnackBar(
       const SnackBar(content: Text('已关闭远程推送，课程和考试提醒不受影响')),
     );
+    await _loadPushState();
   }
 
   Future<void> _loadKeepAliveStatus() async {
@@ -157,35 +155,9 @@ class _NotificationBackgroundSettingsScreenState
 
   Future<void> _setHideRecentsEnabled(bool enabled) async {
     if (_hideRecentsBusy) return;
-
-    if (enabled) {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('隐藏最近任务（实验功能）'),
-          content: const Text(
-            '开启后仅从系统最近任务列表中隐藏，并不等同于后台保活。\n'
-            '部分设备重新打开应用时可能需要重新加载界面。',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('理解并开启'),
-            ),
-          ],
-        ),
-      );
-      if (confirm != true) return;
-    }
-
     setState(() => _hideRecentsBusy = true);
-    final status = await KeepAliveService.instance.setHideRecentsEnabled(
-      enabled,
-    );
+    final status =
+        await KeepAliveService.instance.setHideRecentsEnabled(enabled);
     if (!mounted) return;
     setState(() {
       _keepAliveStatus = status;
@@ -194,113 +166,127 @@ class _NotificationBackgroundSettingsScreenState
   }
 
   Future<void> _showKeepAliveGuideDialog() async {
-    if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('后台保活提示'),
-        content: const Text(
-          '请在接下来的系统页面里开启以下权限或设置：\n\n'
-          '• 电池使用：无限制\n'
-          '• 允许应用自启动\n'
-          '• 允许后台活动\n'
-          '• 最近任务中锁定应用\n\n'
-          '保活状态请看常驻通知或快捷设置开关。',
+      builder: (ctx) => AlertDialog(
+        title: const Text('后台保活推荐设置'),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '为了保证私信接收和后台通知即时送达，建议在系统设置中完成以下配置：',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 12),
+              Text('1. 电池优化：设置为“不限制”或“无限制”；'),
+              SizedBox(height: 6),
+              Text('2. 自启动管理：开启“允许自启动”；'),
+              SizedBox(height: 6),
+              Text('3. 最近任务锁定：在多任务界面给本应用加锁。'),
+            ],
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('稍后'),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('稍后再说'),
           ),
           FilledButton(
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              await KeepAliveService.instance.openSettings();
+            onPressed: () {
+              Navigator.pop(ctx);
+              KeepAliveService.instance.openSettings();
             },
-            child: const Text('去设置'),
+            child: const Text('前往系统设置'),
           ),
         ],
       ),
     );
   }
 
-  String _keepAliveSubtitle() {
-    if (!_keepAliveStatus.supported) return '当前平台不支持后台服务';
-    if (!_keepAliveStatus.enabled) return '开启后按提示加入后台白名单，提升提醒稳定性';
-    if (_keepAliveStatus.serviceRunning) {
-      return _keepAliveStatus.isIgnoringBatteryOptimizations
-          ? '运行中，后台提醒更稳定'
-          : '运行中，请允许自启动和后台无限制';
+  Widget _buildPushStatusBadge() {
+    switch (_pushStatus) {
+      case RemotePushUiStatus.loading:
+        return const SettingsStatusBadge(
+          label: '检查中',
+          type: SettingsStatusBadgeType.neutral,
+        );
+      case RemotePushUiStatus.ready:
+        return const SettingsStatusBadge(
+          label: '已开启',
+          type: SettingsStatusBadgeType.success,
+        );
+      case RemotePushUiStatus.permissionDenied:
+        return const SettingsStatusBadge(
+          label: '权限受限',
+          type: SettingsStatusBadgeType.warning,
+        );
+      case RemotePushUiStatus.registrationFailed:
+        return const SettingsStatusBadge(
+          label: '注册失败',
+          type: SettingsStatusBadgeType.warning,
+        );
+      case RemotePushUiStatus.configuring:
+        return const SettingsStatusBadge(
+          label: '待绑定',
+          type: SettingsStatusBadgeType.warning,
+        );
+      case RemotePushUiStatus.channelUnavailable:
+        return const SettingsStatusBadge(
+          label: '渠道待建立',
+          type: SettingsStatusBadgeType.warning,
+        );
+      case RemotePushUiStatus.channelBlocked:
+        return const SettingsStatusBadge(
+          label: '渠道已屏蔽',
+          type: SettingsStatusBadgeType.warning,
+        );
+      case RemotePushUiStatus.diagnosticsUnavailable:
+        return const SettingsStatusBadge(
+          label: '诊断受阻',
+          type: SettingsStatusBadgeType.warning,
+        );
+      case RemotePushUiStatus.disabled:
+        return const SettingsStatusBadge(
+          label: '未开启',
+          type: SettingsStatusBadgeType.neutral,
+        );
     }
-    return '已开启，等待系统启动保活服务';
+  }
+
+  String _buildPushSubtitle() {
+    switch (_pushStatus) {
+      case RemotePushUiStatus.loading:
+        return '正在读取极光推送与通道注册状态...';
+      case RemotePushUiStatus.ready:
+        return '已建立极光注册与私信推送通道';
+      case RemotePushUiStatus.permissionDenied:
+        return '极光推送已开启，但系统通知权限已被禁用';
+      case RemotePushUiStatus.registrationFailed:
+        return _pushErrorMessage ?? '向极光服务端注册设备失败，请稍后重试';
+      case RemotePushUiStatus.configuring:
+        return '设备已注册，当前 Alias 处于待绑定状态';
+      case RemotePushUiStatus.channelUnavailable:
+        return '设备已注册，私信通知渠道尚未建立';
+      case RemotePushUiStatus.channelBlocked:
+        return '设备已注册，但私信通知渠道已被系统设置单独屏蔽';
+      case RemotePushUiStatus.diagnosticsUnavailable:
+        return '暂时无法读取原生推送状态，请刷新重试';
+      case RemotePushUiStatus.disabled:
+        return '仅接收本地提醒；远程私信通知已暂停';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final supportsJPush = PlatformCapabilities.current.supportsJPush;
-
-    SettingsStatusBadge pushBadge;
-    switch (_pushStatus) {
-      case RemotePushUiStatus.ready:
-        pushBadge = const SettingsStatusBadge(
-          label: '远程推送已开启',
-          type: SettingsStatusBadgeType.success,
-        );
-        break;
-      case RemotePushUiStatus.configuring:
-        pushBadge = const SettingsStatusBadge(
-          label: '配置中',
-          type: SettingsStatusBadgeType.info,
-        );
-        break;
-      case RemotePushUiStatus.permissionDenied:
-        pushBadge = const SettingsStatusBadge(
-          label: '权限受限',
-          type: SettingsStatusBadgeType.warning,
-        );
-        break;
-      case RemotePushUiStatus.registrationFailed:
-        pushBadge = const SettingsStatusBadge(
-          label: '需要重试',
-          type: SettingsStatusBadgeType.danger,
-        );
-        break;
-      case RemotePushUiStatus.loading:
-        pushBadge = const SettingsStatusBadge(
-          label: '加载中...',
-          type: SettingsStatusBadgeType.neutral,
-        );
-        break;
-      case RemotePushUiStatus.disabled:
-        pushBadge = const SettingsStatusBadge(
-          label: '推送未开启',
-          type: SettingsStatusBadgeType.neutral,
-        );
-        break;
-    }
-
-    SettingsStatusBadge keepAliveBadge;
-    if (!_keepAliveStatus.supported) {
-      keepAliveBadge = const SettingsStatusBadge(
-        label: '不支持',
-        type: SettingsStatusBadgeType.neutral,
-      );
-    } else if (_keepAliveStatus.serviceRunning) {
-      keepAliveBadge = const SettingsStatusBadge(
-        label: '运行中',
-        type: SettingsStatusBadgeType.success,
-      );
-    } else if (_keepAliveStatus.enabled) {
-      keepAliveBadge = const SettingsStatusBadge(
-        label: '已开启待启动',
-        type: SettingsStatusBadgeType.info,
-      );
-    } else {
-      keepAliveBadge = const SettingsStatusBadge(
-        label: '未开启',
-        type: SettingsStatusBadgeType.neutral,
-      );
-    }
+    final isPushActive = _pushStatus == RemotePushUiStatus.ready ||
+        _pushStatus == RemotePushUiStatus.permissionDenied ||
+        _pushStatus == RemotePushUiStatus.registrationFailed ||
+        _pushStatus == RemotePushUiStatus.configuring ||
+        _pushStatus == RemotePushUiStatus.channelUnavailable ||
+        _pushStatus == RemotePushUiStatus.channelBlocked;
 
     return SettingsPageScaffold(
       title: '通知与后台',
@@ -309,57 +295,36 @@ class _NotificationBackgroundSettingsScreenState
         await _loadPushState();
       },
       children: [
-        // 状态概览
+        // 远程推送
         SettingsSection(
-          title: '状态概览',
+          title: '远程消息推送',
           children: [
-            SettingsTile(
-              icon: Icons.notifications_active_outlined,
-              title: '远程消息推送',
-              subtitle: supportsJPush ? '接收校内重要推文与关注通知' : '当前平台不支持极光推送',
-              trailing: pushBadge,
-            ),
-            SettingsTile(
-              icon: Icons.run_circle_outlined,
-              title: '后台保活服务',
-              subtitle: _keepAliveSubtitle(),
-              trailing: keepAliveBadge,
-            ),
-          ],
-        ),
-
-        // 远程消息
-        if (supportsJPush)
-          SettingsSection(
-            title: '远程消息',
-            children: [
+            if (!supportsJPush)
+              const SettingsTile(
+                icon: Icons.notifications_off_outlined,
+                iconColor: CampusTheme.subText,
+                title: '远程推送',
+                subtitle: '当前平台不支持极光远程推送（仅移动端 App 支持）',
+                trailing: SettingsStatusBadge(
+                  label: '不支持',
+                  type: SettingsStatusBadgeType.neutral,
+                ),
+                showChevron: false,
+              )
+            else
               SettingsTile(
-                icon: Icons.notifications_none_rounded,
-                title: '接收远程消息推送',
-                subtitle: _pushStatus == RemotePushUiStatus.registrationFailed
-                    ? (_pushErrorMessage ?? '注册失败，请检查网络后重试')
-                    : '包含推文更新、活动发布与私信推送',
+                icon: Icons.notifications_outlined,
+                iconColor:
+                    isPushActive ? CampusTheme.primary : CampusTheme.subText,
+                title: '远程消息推送',
+                subtitle: _buildPushSubtitle(),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_pushStatus ==
-                        RemotePushUiStatus.registrationFailed) ...[
-                      TextButton(
-                        onPressed: () => _handlePushToggle(true),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          foregroundColor: CampusTheme.orange,
-                        ),
-                        child: const Text('重试'),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
+                    _buildPushStatusBadge(),
+                    const SizedBox(width: 8),
                     SettingsSwitch(
-                      value: _pushStatus == RemotePushUiStatus.ready ||
-                          _pushStatus == RemotePushUiStatus.permissionDenied ||
-                          _pushStatus ==
-                              RemotePushUiStatus.registrationFailed ||
-                          _pushStatus == RemotePushUiStatus.configuring,
+                      value: isPushActive,
                       onChanged: _pushStatus == RemotePushUiStatus.loading
                           ? null
                           : _handlePushToggle,
@@ -367,63 +332,62 @@ class _NotificationBackgroundSettingsScreenState
                   ],
                 ),
               ),
-            ],
-          ),
+          ],
+        ),
 
-        // 本地提醒说明
+        // 智能课表与成绩提醒
         const SettingsSection(
-          title: '本地提醒',
+          title: '本地消息提醒',
           children: [
             SettingsTile(
-              icon: Icons.alarm_outlined,
-              title: '课程与考试提醒说明',
-              subtitle: '课程提醒与考试提醒主要由本机定时任务提供，不依赖远程消息推送，可在课表和考试页面分别设置。',
+              icon: Icons.event_available_outlined,
+              iconColor: CampusTheme.green,
+              title: '本地课程与考试提醒',
+              subtitle: '基于应用本地常驻任务生成，不受远程推送开关影响',
+              trailing: SettingsStatusBadge(
+                label: '始终有效',
+                type: SettingsStatusBadgeType.success,
+              ),
               showChevron: false,
             ),
           ],
         ),
 
-        // 后台运行
-        SettingsSection(
-          title: '后台运行',
-          children: [
-            SettingsTile(
-              icon: Icons.power_settings_new_rounded,
-              title: '后台保活',
-              subtitle: _keepAliveSubtitle(),
-              trailing: SettingsSwitch(
-                value: _keepAliveStatus.supported && _keepAliveStatus.enabled,
-                onChanged: !_keepAliveStatus.supported || _keepAliveBusy
-                    ? null
-                    : _setKeepAliveEnabled,
-              ),
-            ),
-            if (_keepAliveStatus.supported)
-              SettingsTile(
-                icon: Icons.tune_rounded,
-                title: '系统后台权限设置',
-                subtitle: '电池无限制、允许自启动和后台活动白名单',
-                onTap: () => KeepAliveService.instance.openSettings(),
-              ),
-          ],
-        ),
-
-        // 实验性功能
+        // 后台保活服务 (Android 专用)
         if (_keepAliveStatus.supported)
           SettingsSection(
-            title: '实验性功能',
+            title: '后台保活服务 (Android)',
             children: [
               SettingsTile(
-                icon: Icons.layers_clear_outlined,
-                title: '从最近任务中隐藏',
-                subtitle: '只隐藏系统最近任务卡片，不等于后台保活；部分设备重新打开应用时可能重新加载页面。',
+                icon: Icons.bolt_outlined,
+                iconColor: _keepAliveStatus.enabled
+                    ? CampusTheme.primary
+                    : CampusTheme.subText,
+                title: '开启前台保活服务',
+                subtitle: _keepAliveStatus.serviceRunning
+                    ? '前台服务正在运行中'
+                    : (_keepAliveStatus.enabled
+                        ? '服务已开启，等待系统拉起'
+                        : '关闭后可能导致私信推送延迟'),
                 trailing: SettingsSwitch(
-                  value: _keepAliveStatus.supported &&
-                      _keepAliveStatus.hideRecentsEnabled,
-                  onChanged: !_keepAliveStatus.supported || _hideRecentsBusy
-                      ? null
-                      : _setHideRecentsEnabled,
+                  value: _keepAliveStatus.enabled,
+                  onChanged: _keepAliveBusy ? null : _setKeepAliveEnabled,
                 ),
+              ),
+              SettingsTile(
+                icon: Icons.visibility_off_outlined,
+                title: '从最近任务隐藏',
+                subtitle: '在多任务截图中隐藏本应用卡片',
+                trailing: SettingsSwitch(
+                  value: _keepAliveStatus.hideRecentsEnabled,
+                  onChanged: _hideRecentsBusy ? null : _setHideRecentsEnabled,
+                ),
+              ),
+              SettingsTile(
+                icon: Icons.settings_applications_outlined,
+                title: '系统保活指南',
+                subtitle: '包含电池无限制设置、允许自启动等提示',
+                onTap: _showKeepAliveGuideDialog,
               ),
             ],
           ),

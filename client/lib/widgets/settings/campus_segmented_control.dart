@@ -11,7 +11,7 @@ class CampusSegmentItem<T> {
   });
 }
 
-/// 匹配设计稿 100% 的平滑胶囊分段选择器
+/// 匹配设计稿 100% 的平滑胶囊分段选择器 (支持完整的无障碍语义与交互)
 class CampusSegmentedControl<T> extends StatelessWidget {
   final List<CampusSegmentItem<T>> items;
   final T selectedValue;
@@ -39,39 +39,46 @@ class CampusSegmentedControl<T> extends StatelessWidget {
         children: items.map((item) {
           final isSelected = item.value == selectedValue;
           return Expanded(
-            child: GestureDetector(
-              onTap: () => onSelectionChanged(item.value),
-              behavior: HitTestBehavior.opaque,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeInOut,
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? (isDark ? const Color(0xFF383C42) : Colors.white)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Center(
-                  child: Text(
-                    item.label,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.w500,
-                      color: isSelected
-                          ? (isDark
-                              ? const Color(0xFF7ED6C5)
-                              : CampusTheme.primary)
-                          : (isDark ? Colors.white60 : const Color(0xFF6E7278)),
+            child: Semantics(
+              button: true,
+              selected: isSelected,
+              label: item.label,
+              child: GestureDetector(
+                onTap: () => onSelectionChanged(item.value),
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeInOut,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? (isDark ? const Color(0xFF383C42) : Colors.white)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Center(
+                    child: Text(
+                      item.label,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isSelected
+                            ? (isDark
+                                ? const Color(0xFF7ED6C5)
+                                : CampusTheme.primary)
+                            : (isDark
+                                ? Colors.white60
+                                : const Color(0xFF6E7278)),
+                      ),
                     ),
                   ),
                 ),

@@ -48,10 +48,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('通知与后台'), findsOneWidget);
-    expect(find.text('状态概览'), findsOneWidget);
-    expect(find.text('远程消息推送'), findsOneWidget);
-    expect(find.text('后台保活服务'), findsOneWidget);
-    expect(find.text('课程与考试提醒说明'), findsOneWidget);
-    expect(find.text('后台保活'), findsOneWidget);
+    expect(find.text('远程消息推送'), findsAtLeastNWidgets(1));
+    expect(find.text('本地消息提醒'), findsOneWidget);
+    expect(find.text('本地课程与考试提醒'), findsOneWidget);
   });
 }

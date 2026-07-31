@@ -1,11 +1,11 @@
 import 'dart:math';
 
 import 'package:flutter/services.dart';
-import '../platform/contracts/push_client.dart';
+import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
+import '../platform/contracts/push_client.dart';
 import '../platform/platform_capabilities.dart';
 import '../providers/auth_provider.dart';
-import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 class RemotePushEnableResult {
   final bool permissionGranted;
@@ -27,6 +27,8 @@ class RemotePushSnapshot {
   final String? aliasState;
   final bool privateChannelExists;
   final bool privateChannelBlocked;
+  final bool diagnosticsAvailable;
+  final String? diagnosticsError;
 
   const RemotePushSnapshot({
     required this.supported,
@@ -36,20 +38,28 @@ class RemotePushSnapshot {
     this.aliasState,
     required this.privateChannelExists,
     required this.privateChannelBlocked,
+    this.diagnosticsAvailable = true,
+    this.diagnosticsError,
   });
 }
 
 enum ResolvedPushStatus {
   disabled,
+  diagnosticsUnavailable,
   permissionDenied,
   registrationFailed,
   configuring,
+  channelUnavailable,
+  channelBlocked,
   ready,
 }
 
 ResolvedPushStatus resolveRemotePushStatus(RemotePushSnapshot snapshot) {
   if (!snapshot.supported || !snapshot.optedIn) {
     return ResolvedPushStatus.disabled;
+  }
+  if (!snapshot.diagnosticsAvailable) {
+    return ResolvedPushStatus.diagnosticsUnavailable;
   }
   if (!snapshot.notificationsEnabled) {
     return ResolvedPushStatus.permissionDenied;
@@ -59,6 +69,12 @@ ResolvedPushStatus resolveRemotePushStatus(RemotePushSnapshot snapshot) {
   }
   if (snapshot.aliasState == 'pending_bind') {
     return ResolvedPushStatus.configuring;
+  }
+  if (!snapshot.privateChannelExists) {
+    return ResolvedPushStatus.channelUnavailable;
+  }
+  if (snapshot.privateChannelBlocked) {
+    return ResolvedPushStatus.channelBlocked;
   }
   return ResolvedPushStatus.ready;
 }
@@ -223,15 +239,21 @@ class PushSettingsService {
         notificationsEnabled: false,
         privateChannelExists: false,
         privateChannelBlocked: false,
+        diagnosticsAvailable: true,
       );
     }
     final optedIn = await isEnabled();
     Map<String, dynamic> native = {};
+    bool diagnosticsAvailable = true;
+    String? diagnosticsError;
     try {
       final result = await _aliasChannel
           .invokeMapMethod<String, dynamic>('getPushDiagnostics');
       native = result ?? {};
-    } catch (_) {}
+    } catch (e) {
+      diagnosticsAvailable = false;
+      diagnosticsError = e.toString();
+    }
 
     return RemotePushSnapshot(
       supported: true,
@@ -241,6 +263,8 @@ class PushSettingsService {
       aliasState: native['storedAliasState']?.toString(),
       privateChannelExists: native['privateMessageChannelExists'] == true,
       privateChannelBlocked: native['privateMessageChannelBlocked'] == true,
+      diagnosticsAvailable: diagnosticsAvailable,
+      diagnosticsError: diagnosticsError,
     );
   }
 

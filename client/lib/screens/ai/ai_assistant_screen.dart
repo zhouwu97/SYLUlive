@@ -990,16 +990,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                         .features.hy3AcademicAnalysis)
                                       const AiSuggestedPrompt(
                                         title: '学业分析',
-                                        subtitle: '识别风险并整理改进建议',
+                                        subtitle: '分析我的学业情况',
                                         prompt: '分析我的学业情况，找出主要风险并给出改进建议',
                                       ),
                                     if (capabilities.features.hy3WeekPlan)
                                       const AiSuggestedPrompt(
                                         title: '本周计划',
-                                        subtitle: '结合课表与目标安排一周',
+                                        subtitle: '制定本周学习计划',
                                         prompt: '结合我的课表和目标，帮我制定本周学习计划',
                                       ),
                                   ],
+                                  onRefreshPrompts:
+                                      provider.refreshQuickPrompts,
                                   onPromptSelected: (prompt) {
                                     _inputController.text = prompt;
                                     _inputController.selection =

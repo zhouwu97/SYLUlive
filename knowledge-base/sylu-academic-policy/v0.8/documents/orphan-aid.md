@@ -1,7 +1,7 @@
 ---
 title: "沈阳理工大学孤儿学生资助政策"
 source_type: "official_transcript"
-source_uri: "user-provided-campus-article-published-2024-11-05"
+source_uri: ""
 source_file_name: "孤儿学生学费住宿费减免细则"
 document_type: "school_orphan_aid_policy"
 department: "沈阳理工大学学生处"

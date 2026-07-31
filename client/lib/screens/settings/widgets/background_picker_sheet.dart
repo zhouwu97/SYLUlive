@@ -30,7 +30,7 @@ const List<String> landscapePresetWallpaperAssets = [
   'tablet_landscape_08.png',
 ];
 
-/// 背景选择底部面板
+/// 精美极简风格壁纸选择底部面板
 class BackgroundPickerSheet extends StatefulWidget {
   final bool initialIsLandscape;
 
@@ -112,7 +112,6 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
     final bytes = await File(sourcePath).readAsBytes();
     await File(savedPath).writeAsBytes(bytes, flush: true);
 
-    // 清理旧的本地自定义背景文件
     final oldPath = isLandscape
         ? themeProvider.landscapeBackgroundImage
         : themeProvider.backgroundImage;
@@ -350,7 +349,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
+        maxHeight: MediaQuery.of(context).size.height * 0.82,
       ),
       decoration: BoxDecoration(
         color: isDark ? CampusTheme.darkBg : CampusTheme.bg,
@@ -359,7 +358,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
-        top: 16,
+        top: 14,
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       child: Column(
@@ -396,8 +395,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          // 采用平滑胶囊分段选择器 (100% 对齐外观页分段按钮)
+          const SizedBox(height: 12),
           CampusSegmentedControl<bool>(
             items: const [
               CampusSegmentItem(
@@ -416,7 +414,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
               });
             },
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Flexible(
             child: SingleChildScrollView(
               child: Column(
@@ -427,8 +425,8 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: crossAxisCount,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
                       childAspectRatio: childAspectRatio,
                     ),
                     itemCount: presets.length,
@@ -447,87 +445,184 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                           );
                           if (context.mounted) Navigator.pop(context);
                         },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Image.asset(
-                                previewAsset,
-                                fit: _isLandscape
-                                    ? BoxFit.cover
-                                    : BoxFit.contain,
-                                errorBuilder: (_, __, ___) => Container(
-                                  color: isDark
-                                      ? CampusTheme.darkCard
-                                      : Colors.grey[200],
-                                  child: const Icon(Icons.image_not_supported),
-                                ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? CampusTheme.primary
+                                  : (isDark
+                                      ? Colors.white.withValues(alpha: 0.1)
+                                      : CampusTheme.softBorder),
+                              width: isSelected ? 2 : 1,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
                               ),
-                              if (isSelected)
-                                Positioned(
-                                  top: 6,
-                                  right: 6,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: const BoxDecoration(
-                                      color: CampusTheme.primary,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.check_rounded,
-                                      size: 14,
-                                      color: Colors.white,
-                                    ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.asset(
+                                  previewAsset,
+                                  fit: _isLandscape
+                                      ? BoxFit.cover
+                                      : BoxFit.contain,
+                                  alignment: Alignment.topCenter,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: isDark
+                                        ? CampusTheme.darkCard
+                                        : Colors.grey[200],
+                                    child:
+                                        const Icon(Icons.image_not_supported),
                                   ),
                                 ),
-                            ],
+                                if (isSelected)
+                                  Positioned(
+                                    top: 6,
+                                    right: 6,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: CampusTheme.primary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.check_rounded,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                       );
                     },
                   ),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: () => _pickGalleryBackground(
-                      themeProvider,
-                      _isLandscape,
-                    ),
-                    icon: const Icon(Icons.photo_library_outlined, size: 20),
-                    label: const Text('从相册选择图片'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      side: BorderSide(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.15)
-                            : CampusTheme.softBorder,
+                  const SizedBox(height: 18),
+                  // 美化版“从相册选择图片”主按钮
+                  Material(
+                    color: isDark
+                        ? CampusTheme.primary.withValues(alpha: 0.15)
+                        : CampusTheme.primaryLight,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => _pickGalleryBackground(
+                        themeProvider,
+                        _isLandscape,
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        alignment: Alignment.center,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.add_photo_alternate_rounded,
+                              size: 20,
+                              color: isDark
+                                  ? const Color(0xFF7ED6C5)
+                                  : CampusTheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '从相册选择图片',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: isDark
+                                    ? const Color(0xFF7ED6C5)
+                                    : CampusTheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                   if (hasCurrentBg) ...[
-                    const SizedBox(height: 10),
-                    TextButton.icon(
-                      onPressed: () =>
-                          _confirmClearCurrentDirection(themeProvider),
-                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                      label: Text('删除当前${_isLandscape ? "横屏" : "竖屏"}背景'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: CampusTheme.red,
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: CampusTheme.red.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () =>
+                              _confirmClearCurrentDirection(themeProvider),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 18,
+                                  color: CampusTheme.red,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '删除当前${_isLandscape ? "横屏" : "竖屏"}背景',
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: CampusTheme.red,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ],
                   if (themeProvider.hasAnyBackground) ...[
-                    const SizedBox(height: 4),
-                    TextButton.icon(
-                      onPressed: () => _confirmClearAll(themeProvider),
-                      icon:
-                          const Icon(Icons.cleaning_services_rounded, size: 18),
-                      label: const Text('删除全部背景并恢复简洁模式'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: CampusTheme.red,
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: CampusTheme.red.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => _confirmClearAll(themeProvider),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 10),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.cleaning_services_rounded,
+                                  size: 18,
+                                  color: CampusTheme.red,
+                                ),
+                                SizedBox(width: 6),
+                                Text(
+                                  '删除全部背景并恢复简洁模式',
+                                  style: TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: CampusTheme.red,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ],

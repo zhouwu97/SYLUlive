@@ -23,7 +23,7 @@ import 'settings/appearance_settings_screen.dart';
 import 'settings/diagnostics_settings_screen.dart';
 import 'settings/notification_background_settings_screen.dart';
 
-/// 沈理校园 设置中心 主入口页面 (完全对齐设计效果图)
+/// 沈理校园 设置中心 主入口页面 (多彩图标 + 等比例紧凑布局，100% 不翻页展示)
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -162,15 +162,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: '设置',
       onRefresh: _loadSummaryStates,
       children: [
-        // 账号摘要卡片 (完美对齐效果图)
+        // 账号摘要卡片
         const SettingsAccountHeader(),
 
-        // 常用设置 (与效果图 100% 对齐)
+        // 常用设置 (多彩图标 + 效果图精准配色)
         SettingsSection(
           title: '常用设置',
           children: [
             SettingsTile(
               icon: Icons.wb_sunny_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
+              iconColor:
+                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
               title: '外观与显示',
               subtitle: _getAppearanceSummary(themeProvider),
               trailing: SettingsStatusBadge(
@@ -188,6 +192,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             SettingsTile(
               icon: Icons.notifications_none_rounded,
+              iconBgColor:
+                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA),
+              iconColor:
+                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4),
               title: '通知与后台',
               subtitle: _getNotificationSummary(),
               trailing: pendingIssues > 0
@@ -209,12 +217,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
 
-        // 账号与隐私 (与效果图 100% 对齐)
+        // 账号与隐私 (多彩图标 + 效果图精准配色)
         SettingsSection(
           title: '账号与隐私',
           children: [
             SettingsTile(
               icon: Icons.shield_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B382B) : const Color(0xFFE6F5EE),
+              iconColor:
+                  isDark ? const Color(0xFF81C784) : const Color(0xFF1E8256),
               title: '账号与安全',
               subtitle: '学号、邮箱、密码和教务授权',
               onTap: () {
@@ -237,6 +249,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             SettingsTile(
               icon: Icons.lock_outline_rounded,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
+              iconColor:
+                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF0D7B74),
               title: '隐私与数据',
               subtitle: '授权管理、查阅导出与账号注销',
               onTap: () {
@@ -251,12 +267,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
 
-        // 支持与其他 (与效果图 100% 对齐)
+        // 支持与其他 (多彩图标 + 效果图精准配色)
         SettingsSection(
           title: '支持与其他',
           children: [
             SettingsTile(
               icon: Icons.build_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF3D2A1A) : const Color(0xFFFDF0E6),
+              iconColor:
+                  isDark ? const Color(0xFFFFB74D) : const Color(0xFFE07A2B),
               title: '诊断与反馈',
               subtitle: '通知诊断、运行日志和问题反馈',
               onTap: () {
@@ -270,6 +290,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             SettingsTile(
               icon: Icons.info_outline_rounded,
+              iconBgColor:
+                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA),
+              iconColor:
+                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4),
               title: '关于沈理校园',
               subtitle: '版本 1.5.22 · 检查更新与开源信息',
               onTap: () {
@@ -284,13 +308,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
 
-        // 退出登录按钮卡片 (与效果图 100% 对齐)
+        // 退出登录按钮卡片
         if (isLoggedIn) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Container(
             decoration: BoxDecoration(
               color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: CampusTheme.red.withValues(alpha: 0.3),
               ),
@@ -298,15 +322,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
                 onTap: () => _handleLogout(context, authProvider),
                 child: const SizedBox(
-                  height: 50,
+                  height: 44,
                   child: Center(
                     child: Text(
                       '退出登录',
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 14.5,
                         fontWeight: FontWeight.bold,
                         color: CampusTheme.red,
                       ),

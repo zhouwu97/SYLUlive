@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 
-/// 统一的设置中心页面脚手架
+/// 统一的设置中心页面脚手架 (等比例微调间距)
 class SettingsPageScaffold extends StatelessWidget {
   final String title;
   final List<Widget> children;
@@ -29,10 +29,10 @@ class SettingsPageScaffold extends StatelessWidget {
             parent: BouncingScrollPhysics(),
           ),
           padding: const EdgeInsets.only(
-            left: 18,
-            right: 18,
-            top: 12,
-            bottom: 30,
+            left: 16,
+            right: 16,
+            top: 4,
+            bottom: 16,
           ),
           children: children,
         ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 
-/// 设置页分组卡片组件
+/// 设置页分组卡片组件 (等比例精简间距)
 class SettingsSection extends StatelessWidget {
   final String? title;
   final List<Widget> children;
@@ -28,8 +28,8 @@ class SettingsSection extends StatelessWidget {
           Divider(
             height: 1,
             thickness: 1,
-            indent: 62,
-            endIndent: 16,
+            indent: 58,
+            endIndent: 14,
             color: dividerColor,
           ),
         );
@@ -37,17 +37,17 @@ class SettingsSection extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 18),
+      margin: const EdgeInsets.only(bottom: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (title != null && title!.trim().isNotEmpty) ...[
             Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 8),
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
               child: Text(
                 title!,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                   color: isDark ? Colors.white70 : CampusTheme.subText,
                 ),
@@ -57,7 +57,7 @@ class SettingsSection extends StatelessWidget {
           Container(
             decoration: BoxDecoration(
               color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.08)
@@ -67,14 +67,14 @@ class SettingsSection extends StatelessWidget {
                   ? null
                   : [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.025),
-                        blurRadius: 12,
-                        offset: const Offset(0, 5),
+                        color: Colors.black.withValues(alpha: 0.02),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
                       ),
                     ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(16),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: cardItems,

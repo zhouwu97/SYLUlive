@@ -9,7 +9,7 @@ import '../campus/campus_theme.dart';
 import '../cached_avatar.dart';
 import 'settings_status_badge.dart';
 
-/// 设置页账号摘要卡片组件 (与设计稿 100% 完全对齐)
+/// 设置页账号摘要卡片组件 (与设计稿 100% 完全对齐，等比例精简尺寸)
 class SettingsAccountHeader extends StatelessWidget {
   const SettingsAccountHeader({super.key});
 
@@ -57,10 +57,10 @@ class SettingsAccountHeader extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 18),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.08)
@@ -70,14 +70,14 @@ class SettingsAccountHeader extends StatelessWidget {
             ? null
             : [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.025),
-                  blurRadius: 12,
-                  offset: const Offset(0, 5),
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
                 ),
               ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -99,18 +99,18 @@ class SettingsAccountHeader extends StatelessWidget {
               }
             },
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(12),
               child: Row(
                 children: [
                   SizedBox(
-                    width: 56,
-                    height: 56,
+                    width: 48,
+                    height: 48,
                     child: CachedAvatar(
                       imageUrl: avatarUrl,
-                      radius: 28,
+                      radius: 24,
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,24 +120,24 @@ class SettingsAccountHeader extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: isDark ? Colors.white : CampusTheme.text,
                           ),
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 2),
                         Text(
                           subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: 12,
                             color:
                                 isDark ? Colors.white60 : CampusTheme.subText,
                           ),
                         ),
                         if (isLoggedIn) ...[
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 5),
                           Row(
                             children: [
                               SettingsStatusBadge(
@@ -159,10 +159,10 @@ class SettingsAccountHeader extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Icon(
                     Icons.chevron_right_rounded,
-                    size: 22,
+                    size: 20,
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.3)
                         : CampusTheme.subText.withValues(alpha: 0.5),

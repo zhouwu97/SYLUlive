@@ -9,6 +9,7 @@ import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
 import '../../widgets/settings/settings_section.dart';
 import '../../widgets/settings/settings_status_badge.dart';
+import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 
 enum RemotePushUiStatus {
@@ -353,7 +354,7 @@ class _NotificationBackgroundSettingsScreenState
                       ),
                       const SizedBox(width: 4),
                     ],
-                    Switch(
+                    SettingsSwitch(
                       value: _pushStatus == RemotePushUiStatus.ready ||
                           _pushStatus == RemotePushUiStatus.permissionDenied ||
                           _pushStatus ==
@@ -362,7 +363,6 @@ class _NotificationBackgroundSettingsScreenState
                       onChanged: _pushStatus == RemotePushUiStatus.loading
                           ? null
                           : _handlePushToggle,
-                      activeThumbColor: CampusTheme.primary,
                     ),
                   ],
                 ),
@@ -391,12 +391,11 @@ class _NotificationBackgroundSettingsScreenState
               icon: Icons.power_settings_new_rounded,
               title: '后台保活',
               subtitle: _keepAliveSubtitle(),
-              trailing: Switch(
+              trailing: SettingsSwitch(
                 value: _keepAliveStatus.supported && _keepAliveStatus.enabled,
                 onChanged: !_keepAliveStatus.supported || _keepAliveBusy
                     ? null
                     : _setKeepAliveEnabled,
-                activeThumbColor: CampusTheme.primary,
               ),
             ),
             if (_keepAliveStatus.supported)
@@ -418,13 +417,12 @@ class _NotificationBackgroundSettingsScreenState
                 icon: Icons.layers_clear_outlined,
                 title: '从最近任务中隐藏',
                 subtitle: '只隐藏系统最近任务卡片，不等于后台保活；部分设备重新打开应用时可能重新加载页面。',
-                trailing: Switch(
+                trailing: SettingsSwitch(
                   value: _keepAliveStatus.supported &&
                       _keepAliveStatus.hideRecentsEnabled,
                   onChanged: !_keepAliveStatus.supported || _hideRecentsBusy
                       ? null
                       : _setHideRecentsEnabled,
-                  activeThumbColor: CampusTheme.primary,
                 ),
               ),
             ],

@@ -400,8 +400,9 @@ func (r *Runtime) Execute(runID, message string) {
 	now := time.Now()
 	_ = r.db.Model(&models.AIRun{}).Where("id = ? AND started_at IS NULL", runID).Update("started_at", now).Error
 	_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
-	validateCitations := !outcome.toolUsed && len(retrieval.Chunks) > 0 &&
-		(queryPlan.IsPolicyIntent() || strings.Contains(outcome.answer, "[chunk:"))
+	validateCitations := len(retrieval.Chunks) > 0 &&
+		((!outcome.toolUsed && queryPlan.IsPolicyIntent()) ||
+			strings.Contains(outcome.answer, "[chunk:"))
 	r.completeRun(runID, outcome.answer, retrieval.Chunks, outcome.usage, time.Since(startedAt), validateCitations)
 }
 

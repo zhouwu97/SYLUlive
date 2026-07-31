@@ -3,6 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
+import '../widgets/campus/campus_theme.dart';
+import '../widgets/settings/settings_page_scaffold.dart';
+import '../widgets/settings/settings_section.dart';
+import '../widgets/settings/settings_status_badge.dart';
+import '../widgets/settings/settings_tile.dart';
 
 /// 账号身份、邮箱与教务连接的私有设置页。
 class AccountSecurityScreen extends StatefulWidget {
@@ -187,6 +192,9 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
               child: const Text('取消')),
           FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: CampusTheme.red,
+              ),
               child: const Text('解除')),
         ],
       ),
@@ -411,116 +419,169 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
     }
   }
 
-  Widget _section(BuildContext context, String title, List<Widget> children) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 6),
-          ...children,
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const SettingsPageScaffold(
+        title: '账号与安全',
+        children: [
+          Center(
+            child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        ],
+      );
     }
+
     final edu = context.read<EduProvider>();
-    return Scaffold(
-      appBar: AppBar(title: const Text('账号与安全')),
-      body: RefreshIndicator(
-        onRefresh: _reload,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+    final loginMethods = (_security?['login_methods'] as List? ?? const [])
+        .map((method) => method == 'student_id' ? '学号' : '邮箱')
+        .join('、');
+
+    return SettingsPageScaffold(
+      title: '账号与安全',
+      onRefresh: _reload,
+      children: [
+        // 顶部状态卡
+        SettingsSection(
+          title: '状态卡',
           children: [
-            _section(context, '账号身份', [
-              ListTile(
-                leading: const Icon(Icons.badge_outlined),
-                title: Text(_studentVerified ? '主账号：$_studentId' : '尚未认证学生'),
-                subtitle:
-                    Text(_studentVerified ? '学生身份已认证' : '完成教务绑定后，学号将成为主账号'),
+            SettingsTile(
+              icon: Icons.verified_user_outlined,
+              title: '学生身份认证',
+              subtitle: _studentVerified ? '学号 $_studentId' : '未完成认证',
+              trailing: SettingsStatusBadge(
+                label: _studentVerified ? '已认证' : '未认证',
+                type: _studentVerified
+                    ? SettingsStatusBadgeType.success
+                    : SettingsStatusBadgeType.neutral,
               ),
-              ListTile(
-                leading: const Icon(Icons.email_outlined),
-                title: Text(_emailBound ? '邮箱：$_emailLabel' : '邮箱未绑定'),
-                trailing: IconButton(
-                  tooltip: _emailBound ? '修改邮箱' : '绑定邮箱',
-                  onPressed: _showEmailEditor,
-                  icon: const Icon(Icons.edit_outlined),
-                ),
+              showChevron: false,
+            ),
+            SettingsTile(
+              icon: Icons.mark_email_read_outlined,
+              title: '安全邮箱状态',
+              subtitle: _emailBound ? _emailLabel : '绑定后用于重置密码与通知',
+              trailing: SettingsStatusBadge(
+                label: _emailBound ? '已绑定' : '未绑定',
+                type: _emailBound
+                    ? SettingsStatusBadgeType.success
+                    : SettingsStatusBadgeType.neutral,
               ),
-              if (_emailBound)
-                ListTile(
-                  leading: const Icon(Icons.link_off_outlined),
-                  title: const Text('解除邮箱'),
-                  subtitle: const Text('学生认证账号可解除辅助邮箱'),
-                  onTap: _removeEmail,
-                ),
-            ]),
-            _section(context, '登录与找回', [
-              ListTile(
-                leading: const Icon(Icons.key_outlined),
-                title: const Text('APP 密码'),
-                subtitle: Text(
-                    (_security?['login_methods'] as List? ?? const [])
-                        .map((method) => method == 'student_id' ? '学号' : '邮箱')
-                        .join('、')),
+              showChevron: false,
+            ),
+            SettingsTile(
+              icon: Icons.school_outlined,
+              title: '教务系统状态',
+              subtitle: '授权：${_eduAuthorized ? "已授权" : "已撤销"}',
+              trailing: SettingsStatusBadge(
+                label: _sessionLabel(_sessionState),
+                type: _sessionState == 'active'
+                    ? SettingsStatusBadgeType.success
+                    : SettingsStatusBadgeType.neutral,
               ),
-              ListTile(
-                leading: const Icon(Icons.password_outlined),
-                title: const Text('修改 APP 密码'),
-                onTap: _showChangePasswordDialog,
-              ),
-            ]),
-            _section(context, '教务连接', [
-              ListTile(
-                leading: const Icon(Icons.school_outlined),
-                title: Text(_eduAuthorized ? '教务授权：已授权' : '教务授权：已撤销'),
-                subtitle: Text('教务会话：${_sessionLabel(_sessionState)}'),
-              ),
-              if (!_studentVerified)
-                ListTile(
-                  leading: const Icon(Icons.verified_user_outlined),
-                  title: const Text('完成学生认证'),
-                  subtitle: const Text('验证学号并授权连接教务系统'),
-                  onTap: _showEduBindDialog,
-                ),
-              if (_studentVerified && !_eduAuthorized)
-                ListTile(
-                  leading: const Icon(Icons.link_outlined),
-                  title: const Text('重新授权教务'),
-                  subtitle: const Text('重新连接教务服务以恢复相关功能'),
-                  onTap: _showEduBindDialog,
-                ),
-              if (_eduAuthorized && _sessionState != 'active')
-                ListTile(
-                  leading: const Icon(Icons.login_outlined),
-                  title: const Text('重新登录教务'),
-                  onTap: () => _runEduAction(edu.resumeSession),
-                ),
-              if (_eduAuthorized && _sessionState == 'active')
-                ListTile(
-                  leading: const Icon(Icons.logout_outlined),
-                  title: const Text('退出教务登录'),
-                  subtitle: const Text('保留授权和学生身份，不会自动恢复'),
-                  onTap: () => _runEduAction(edu.logoutSession),
-                ),
-              if (_eduAuthorized)
-                ListTile(
-                  leading: const Icon(Icons.delete_outline),
-                  title: const Text('撤销教务授权'),
-                  subtitle: const Text('删除教务凭据和会话，保留学号与学生身份'),
-                  onTap: () => _runEduAction(edu.revokeAuthorization),
-                ),
-            ]),
+              showChevron: false,
+            ),
           ],
         ),
-      ),
+
+        // 账号身份
+        SettingsSection(
+          title: '账号身份',
+          children: [
+            SettingsTile(
+              icon: Icons.badge_outlined,
+              title: _studentVerified ? '主账号：$_studentId' : '尚未认证学生',
+              subtitle: _studentVerified ? '学生身份已认证' : '完成教务绑定后，学号将成为主账号',
+              showChevron: false,
+            ),
+            SettingsTile(
+              icon: Icons.email_outlined,
+              title: _emailBound ? '邮箱：$_emailLabel' : '邮箱未绑定',
+              subtitle: _emailBound ? '支持找回密码与安全通知' : '点击进行安全邮箱绑定',
+              onTap: _showEmailEditor,
+            ),
+            if (_emailBound)
+              SettingsTile(
+                icon: Icons.link_off_outlined,
+                title: '解除邮箱',
+                subtitle: '学生认证账号可解除辅助邮箱',
+                onTap: _removeEmail,
+                danger: true,
+              ),
+          ],
+        ),
+
+        // 登录与找回
+        SettingsSection(
+          title: '登录与找回',
+          children: [
+            SettingsTile(
+              icon: Icons.key_outlined,
+              title: 'APP 登录方式',
+              subtitle: loginMethods.isNotEmpty ? loginMethods : '学号 / 邮箱',
+              showChevron: false,
+            ),
+            SettingsTile(
+              icon: Icons.password_outlined,
+              title: '修改 APP 密码',
+              subtitle: '更改登录沈理校园 APP 的本地账号密码',
+              onTap: _showChangePasswordDialog,
+            ),
+          ],
+        ),
+
+        // 教务连接
+        SettingsSection(
+          title: '教务连接',
+          children: [
+            SettingsTile(
+              icon: Icons.hub_outlined,
+              title: _eduAuthorized ? '教务授权：已授权' : '教务授权：已撤销',
+              subtitle: '教务会话：${_sessionLabel(_sessionState)}',
+              showChevron: false,
+            ),
+            if (!_studentVerified)
+              SettingsTile(
+                icon: Icons.verified_user_outlined,
+                title: '完成学生认证',
+                subtitle: '验证学号并授权连接教务系统',
+                onTap: _showEduBindDialog,
+              ),
+            if (_studentVerified && !_eduAuthorized)
+              SettingsTile(
+                icon: Icons.link_outlined,
+                title: '重新授权教务',
+                subtitle: '重新连接教务服务以恢复相关功能',
+                onTap: _showEduBindDialog,
+              ),
+            if (_eduAuthorized && _sessionState != 'active')
+              SettingsTile(
+                icon: Icons.login_outlined,
+                title: '重新登录教务',
+                subtitle: '尝试刷新教务 Session 会话状态',
+                onTap: () => _runEduAction(edu.resumeSession),
+              ),
+            if (_eduAuthorized && _sessionState == 'active')
+              SettingsTile(
+                icon: Icons.logout_outlined,
+                title: '退出教务登录',
+                subtitle: '保留授权和学生身份，不会自动恢复',
+                onTap: () => _runEduAction(edu.logoutSession),
+              ),
+            if (_eduAuthorized)
+              SettingsTile(
+                icon: Icons.delete_outline,
+                title: '撤销教务授权',
+                subtitle: '删除教务凭据和会话，保留学号与学生身份',
+                onTap: () => _runEduAction(edu.revokeAuthorization),
+                danger: true,
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

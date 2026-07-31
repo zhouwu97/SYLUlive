@@ -3,11 +3,9 @@ import 'dart:math';
 import 'package:flutter/services.dart';
 import '../platform/contracts/push_client.dart';
 
-import '../platform/app_platform.dart';
 import '../platform/platform_capabilities.dart';
 import '../providers/auth_provider.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
-
 
 class RemotePushEnableResult {
   final bool permissionGranted;
@@ -19,6 +17,50 @@ class RemotePushEnableResult {
     required this.registrationSucceeded,
     required this.message,
   });
+}
+
+class RemotePushSnapshot {
+  final bool supported;
+  final bool optedIn;
+  final bool notificationsEnabled;
+  final String? registrationId;
+  final String? aliasState;
+  final bool privateChannelExists;
+  final bool privateChannelBlocked;
+
+  const RemotePushSnapshot({
+    required this.supported,
+    required this.optedIn,
+    required this.notificationsEnabled,
+    this.registrationId,
+    this.aliasState,
+    required this.privateChannelExists,
+    required this.privateChannelBlocked,
+  });
+}
+
+enum ResolvedPushStatus {
+  disabled,
+  permissionDenied,
+  registrationFailed,
+  configuring,
+  ready,
+}
+
+ResolvedPushStatus resolveRemotePushStatus(RemotePushSnapshot snapshot) {
+  if (!snapshot.supported || !snapshot.optedIn) {
+    return ResolvedPushStatus.disabled;
+  }
+  if (!snapshot.notificationsEnabled) {
+    return ResolvedPushStatus.permissionDenied;
+  }
+  if (snapshot.registrationId == null || snapshot.registrationId!.isEmpty) {
+    return ResolvedPushStatus.registrationFailed;
+  }
+  if (snapshot.aliasState == 'pending_bind') {
+    return ResolvedPushStatus.configuring;
+  }
+  return ResolvedPushStatus.ready;
 }
 
 typedef RemotePushRegistration = Future<RemotePushEnableResult> Function(
@@ -40,7 +82,8 @@ class PushSettingsService {
   static Future<RemotePushEnableResult>? _registrationFuture;
   static String? _registrationUserId;
 
-  static Future<AppPreferencesStore> _prefs() => AppPreferencesStore.getInstance();
+  static Future<AppPreferencesStore> _prefs() =>
+      AppPreferencesStore.getInstance();
 
   static Future<bool> isEnabled() async {
     if (!PlatformCapabilities.current.supportsJPush) return false;
@@ -169,6 +212,36 @@ class PushSettingsService {
       // 服务端已完成原子关闭；原生链路会在下次启动读取本地状态后停止恢复。
     }
     return result;
+  }
+
+  static Future<RemotePushSnapshot> getPushSnapshot() async {
+    final supported = PlatformCapabilities.current.supportsJPush;
+    if (!supported) {
+      return const RemotePushSnapshot(
+        supported: false,
+        optedIn: false,
+        notificationsEnabled: false,
+        privateChannelExists: false,
+        privateChannelBlocked: false,
+      );
+    }
+    final optedIn = await isEnabled();
+    Map<String, dynamic> native = {};
+    try {
+      final result = await _aliasChannel
+          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
+      native = result ?? {};
+    } catch (_) {}
+
+    return RemotePushSnapshot(
+      supported: true,
+      optedIn: optedIn,
+      notificationsEnabled: native['notificationsEnabled'] == true,
+      registrationId: native['registrationId']?.toString(),
+      aliasState: native['storedAliasState']?.toString(),
+      privateChannelExists: native['privateMessageChannelExists'] == true,
+      privateChannelBlocked: native['privateMessageChannelBlocked'] == true,
+    );
   }
 
   static Future<void> clearLocal() async {

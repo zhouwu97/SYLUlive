@@ -17,6 +17,7 @@ enum RemotePushUiStatus {
   ready,
   permissionDenied,
   registrationFailed,
+  configuring,
 }
 
 /// 通知与后台设置二级页
@@ -54,17 +55,38 @@ class _NotificationBackgroundSettingsScreenState
       return;
     }
 
-    final enabled = await PushSettingsService.isEnabled();
+    final snapshot = await PushSettingsService.getPushSnapshot();
+    final resolved = resolveRemotePushStatus(snapshot);
+
+    RemotePushUiStatus status;
+    switch (resolved) {
+      case ResolvedPushStatus.disabled:
+        status = RemotePushUiStatus.disabled;
+        break;
+      case ResolvedPushStatus.permissionDenied:
+        status = RemotePushUiStatus.permissionDenied;
+        break;
+      case ResolvedPushStatus.registrationFailed:
+        status = RemotePushUiStatus.registrationFailed;
+        break;
+      case ResolvedPushStatus.configuring:
+        status = RemotePushUiStatus.configuring;
+        break;
+      case ResolvedPushStatus.ready:
+        status = RemotePushUiStatus.ready;
+        break;
+    }
+
     if (!mounted) return;
     setState(() {
-      _pushStatus =
-          enabled ? RemotePushUiStatus.ready : RemotePushUiStatus.disabled;
+      _pushStatus = status;
     });
   }
 
   Future<void> _handlePushToggle(bool enabled) async {
     if (_pushStatus == RemotePushUiStatus.loading) return;
 
+    final previousStatus = _pushStatus;
     setState(() {
       _pushStatus = RemotePushUiStatus.loading;
       _pushErrorMessage = null;
@@ -99,7 +121,7 @@ class _NotificationBackgroundSettingsScreenState
     if (!mounted) return;
 
     if (!result.success) {
-      setState(() => _pushStatus = RemotePushUiStatus.ready);
+      setState(() => _pushStatus = previousStatus);
       messenger.showSnackBar(
         SnackBar(content: Text(result.errorMessage ?? '关闭远程推送失败')),
       );
@@ -224,6 +246,12 @@ class _NotificationBackgroundSettingsScreenState
           type: SettingsStatusBadgeType.success,
         );
         break;
+      case RemotePushUiStatus.configuring:
+        pushBadge = const SettingsStatusBadge(
+          label: '配置中',
+          type: SettingsStatusBadgeType.info,
+        );
+        break;
       case RemotePushUiStatus.permissionDenied:
         pushBadge = const SettingsStatusBadge(
           label: '权限受限',
@@ -328,7 +356,9 @@ class _NotificationBackgroundSettingsScreenState
                     Switch(
                       value: _pushStatus == RemotePushUiStatus.ready ||
                           _pushStatus == RemotePushUiStatus.permissionDenied ||
-                          _pushStatus == RemotePushUiStatus.registrationFailed,
+                          _pushStatus ==
+                              RemotePushUiStatus.registrationFailed ||
+                          _pushStatus == RemotePushUiStatus.configuring,
                       onChanged: _pushStatus == RemotePushUiStatus.loading
                           ? null
                           : _handlePushToggle,

@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../../providers/auth_provider.dart';
@@ -91,6 +93,38 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
     } else {
       await themeProvider.setBackgroundImage(imagePath, fillScreen: fillScreen);
     }
+  }
+
+  Future<String> _saveBackgroundFile(
+    String sourcePath, {
+    required bool isLandscape,
+    required ThemeProvider themeProvider,
+  }) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final ext = path.extension(sourcePath).isEmpty
+        ? '.jpg'
+        : path.extension(sourcePath);
+    final fileName =
+        '${isLandscape ? 'landscape_background' : 'background'}_${DateTime.now().millisecondsSinceEpoch}$ext';
+    final savedPath = path.join(appDir.path, fileName);
+
+    final bytes = await File(sourcePath).readAsBytes();
+    await File(savedPath).writeAsBytes(bytes, flush: true);
+
+    // 清理旧的本地自定义背景文件
+    final oldPath = isLandscape
+        ? themeProvider.landscapeBackgroundImage
+        : themeProvider.backgroundImage;
+    if (oldPath != null && ThemeProvider.isLocalFileBackground(oldPath)) {
+      try {
+        final oldFile = File(oldPath);
+        if (await oldFile.exists()) {
+          await oldFile.delete();
+        }
+      } catch (_) {}
+    }
+
+    return savedPath;
   }
 
   Future<void> _useBundledBackground(
@@ -208,10 +242,16 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
 
       if (cropped == null) return;
 
+      final savedPath = await _saveBackgroundFile(
+        cropped.path,
+        isLandscape: isLandscape,
+        themeProvider: themeProvider,
+      );
+
       await _setBackground(
         themeProvider,
         isLandscape,
-        cropped.path,
+        savedPath,
         fillScreen: true,
       );
       if (mounted) Navigator.pop(context);
@@ -285,6 +325,87 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
     }
   }
 
+  Widget _buildCurrentPreviewCard(
+      BuildContext context, ThemeProvider themeProvider) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentBg = _isLandscape
+        ? themeProvider.landscapeBackgroundImage
+        : themeProvider.backgroundImage;
+
+    Widget imageWidget;
+    if (currentBg != null && currentBg.isNotEmpty) {
+      final isAsset = ThemeProvider.isBundledAssetBackground(currentBg);
+      final isLocalFile = ThemeProvider.isLocalFileBackground(currentBg);
+      final imageProvider = isAsset
+          ? AssetImage(ThemeProvider.resolveBundledAssetPath(currentBg))
+              as ImageProvider
+          : isLocalFile
+              ? FileImage(File(currentBg)) as ImageProvider
+              : NetworkImage(currentBg) as ImageProvider;
+
+      imageWidget = Image(
+        image: imageProvider,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        errorBuilder: (_, __, ___) => Container(
+          color: isDark ? CampusTheme.darkCard : Colors.grey[200],
+          child: const Center(child: Icon(Icons.broken_image_outlined)),
+        ),
+      );
+    } else {
+      imageWidget = Container(
+        color: isDark ? CampusTheme.darkCard : Colors.grey[200],
+        child: const Center(
+          child: Text(
+            '未设置背景图片',
+            style: TextStyle(color: CampusTheme.subText, fontSize: 13),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 120,
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.1)
+              : CampusTheme.softBorder,
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            imageWidget,
+            Positioned(
+              top: 10,
+              left: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _isLandscape ? '当前横屏背景预览' : '当前竖屏背景预览',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -292,6 +413,10 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
     final presets = _isLandscape
         ? landscapePresetWallpaperAssets
         : phonePresetWallpaperAssets;
+
+    final currentBg = _isLandscape
+        ? themeProvider.landscapeBackgroundImage
+        : themeProvider.backgroundImage;
 
     final mediaWidth = MediaQuery.of(context).size.width;
     final crossAxisCount = _isLandscape
@@ -378,6 +503,7 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  _buildCurrentPreviewCard(context, themeProvider),
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -391,6 +517,9 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                     itemBuilder: (context, index) {
                       final assetName = presets[index];
                       final previewAsset = _backgroundPreviewAsset(assetName);
+                      final isSelected = currentBg == assetName ||
+                          currentBg == _remoteWallpaperUrl(assetName);
+
                       return GestureDetector(
                         onTap: () async {
                           await _useBundledBackground(
@@ -417,6 +546,23 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                                   child: const Icon(Icons.image_not_supported),
                                 ),
                               ),
+                              if (isSelected)
+                                Positioned(
+                                  top: 6,
+                                  right: 6,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: const BoxDecoration(
+                                      color: CampusTheme.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.check_rounded,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),

@@ -14,6 +14,7 @@ import '../widgets/campus/campus_theme.dart';
 import '../widgets/settings/settings_account_header.dart';
 import '../widgets/settings/settings_page_scaffold.dart';
 import '../widgets/settings/settings_section.dart';
+import '../widgets/settings/settings_status_badge.dart';
 import '../widgets/settings/settings_tile.dart';
 import 'account_security_screen.dart';
 import 'login_screen.dart';
@@ -22,7 +23,7 @@ import 'settings/appearance_settings_screen.dart';
 import 'settings/diagnostics_settings_screen.dart';
 import 'settings/notification_background_settings_screen.dart';
 
-/// 沈理校园 设置中心 主入口页面
+/// 沈理校园 设置中心 主入口页面 (完全对齐设计效果图)
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -32,7 +33,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   KeepAliveStatus _keepAliveStatus = const KeepAliveStatus.unsupported();
-  bool _pushEnabled = false;
+  RemotePushSnapshot? _pushSnapshot;
+  bool _loadingState = true;
 
   @override
   void initState() {
@@ -42,11 +44,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSummaryStates() async {
     final status = await KeepAliveService.instance.status();
-    final pushEnabled = await PushSettingsService.isEnabled();
+    final snapshot = await PushSettingsService.getPushSnapshot();
     if (mounted) {
       setState(() {
         _keepAliveStatus = status;
-        _pushEnabled = pushEnabled;
+        _pushSnapshot = snapshot;
+        _loadingState = false;
       });
     }
   }
@@ -59,21 +62,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _getNotificationSummary() {
+    if (_loadingState) return '正在读取通知与后台状态...';
     if (!PlatformCapabilities.current.supportsJPush) {
       return '当前平台不支持远程推送';
     }
-    final pushText = _pushEnabled ? '推送已开启' : '推送未开启';
+    final snapshot = _pushSnapshot;
+    final pushOptedIn = snapshot?.optedIn == true;
+    final pushText = pushOptedIn ? '远程推送已开启' : '远程推送关闭';
+
     String keepAliveText;
     if (!_keepAliveStatus.supported) {
-      keepAliveText = '后台未配置';
+      keepAliveText = '后台服务未开启';
     } else if (_keepAliveStatus.serviceRunning) {
-      keepAliveText = '后台运行中';
+      keepAliveText = '后台服务运行中';
     } else if (_keepAliveStatus.enabled) {
-      keepAliveText = '后台已开启待启动';
+      keepAliveText = '后台待启动';
     } else {
-      keepAliveText = '后台未开启';
+      keepAliveText = '后台服务未开启';
     }
     return '$pushText · $keepAliveText';
+  }
+
+  int _calculatePendingIssues() {
+    final snapshot = _pushSnapshot;
+    if (snapshot == null || !snapshot.supported || !snapshot.optedIn) {
+      return 0;
+    }
+    int issues = 0;
+    if (!snapshot.notificationsEnabled) {
+      issues++;
+    }
+    if (snapshot.registrationId == null || snapshot.registrationId!.isEmpty) {
+      issues++;
+    }
+    if (snapshot.privateChannelBlocked) {
+      issues++;
+    }
+    if (snapshot.aliasState == 'pending_bind') {
+      issues++;
+    }
+    return issues;
   }
 
   Future<void> _handleLogout(
@@ -128,21 +156,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLoggedIn = authProvider.isLoggedIn && authProvider.user != null;
 
+    final pendingIssues = _calculatePendingIssues();
+
     return SettingsPageScaffold(
       title: '设置',
       onRefresh: _loadSummaryStates,
       children: [
-        // 账号摘要卡片
+        // 账号摘要卡片 (完美对齐效果图)
         const SettingsAccountHeader(),
 
-        // 常用设置
+        // 常用设置 (与效果图 100% 对齐)
         SettingsSection(
           title: '常用设置',
           children: [
             SettingsTile(
-              icon: Icons.palette_outlined,
+              icon: Icons.wb_sunny_outlined,
               title: '外观与显示',
               subtitle: _getAppearanceSummary(themeProvider),
+              trailing: SettingsStatusBadge(
+                label: themeProvider.isCleanBackgroundMode ? '简洁' : '自定义',
+                type: SettingsStatusBadgeType.success,
+              ),
               onTap: () {
                 Navigator.push(
                   context,
@@ -156,6 +190,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.notifications_none_rounded,
               title: '通知与后台',
               subtitle: _getNotificationSummary(),
+              trailing: pendingIssues > 0
+                  ? SettingsStatusBadge(
+                      label: '$pendingIssues项待处理',
+                      type: SettingsStatusBadgeType.warning,
+                    )
+                  : null,
               onTap: () {
                 Navigator.push(
                   context,
@@ -169,14 +209,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
 
-        // 账号与隐私
+        // 账号与隐私 (与效果图 100% 对齐)
         SettingsSection(
           title: '账号与隐私',
           children: [
             SettingsTile(
               icon: Icons.shield_outlined,
               title: '账号与安全',
-              subtitle: '学号、邮箱、密码与教务授权',
+              subtitle: '学号、邮箱、密码和教务授权',
               onTap: () {
                 if (isLoggedIn) {
                   Navigator.push(
@@ -197,8 +237,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             SettingsTile(
               icon: Icons.lock_outline_rounded,
-              title: '隐私与数据权利',
-              subtitle: '协议、授权、数据导出与账号注销',
+              title: '隐私与数据',
+              subtitle: '授权管理、查阅导出与账号注销',
               onTap: () {
                 Navigator.push(
                   context,
@@ -211,14 +251,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
 
-        // 支持与其他
+        // 支持与其他 (与效果图 100% 对齐)
         SettingsSection(
           title: '支持与其他',
           children: [
             SettingsTile(
-              icon: Icons.medical_services_outlined,
+              icon: Icons.build_outlined,
               title: '诊断与反馈',
-              subtitle: '通知诊断、运行日志与问题反馈',
+              subtitle: '通知诊断、运行日志和问题反馈',
               onTap: () {
                 Navigator.push(
                   context,
@@ -231,7 +271,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SettingsTile(
               icon: Icons.info_outline_rounded,
               title: '关于沈理校园',
-              subtitle: '版本、更新与开源信息',
+              subtitle: '版本 1.5.22 · 检查更新与开源信息',
               onTap: () {
                 showModalBottomSheet(
                   context: context,
@@ -244,7 +284,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
 
-        // 退出登录按钮卡片
+        // 退出登录按钮卡片 (与效果图 100% 对齐)
         if (isLoggedIn) ...[
           const SizedBox(height: 8),
           Container(

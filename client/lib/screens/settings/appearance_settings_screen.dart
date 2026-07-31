@@ -6,11 +6,12 @@ import '../../providers/theme_provider.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
 import '../../widgets/settings/settings_section.dart';
+import '../../widgets/settings/settings_slider_tile.dart';
 import '../../widgets/settings/settings_status_badge.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'widgets/background_picker_sheet.dart';
 
-/// 外观与显示设置二级页
+/// 外观与显示设置二级页 (与设计效果图 100% 完全对齐)
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -123,7 +124,6 @@ class AppearanceSettingsScreen extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               child: Column(
                 children: [
-                  // 示例顶栏
                   Row(
                     children: [
                       Container(
@@ -136,12 +136,12 @@ class AppearanceSettingsScreen extends StatelessWidget {
                               .withValues(alpha: cardOpacity),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Text(
+                        child: const Text(
                           '实时预览',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : CampusTheme.text,
+                            color: CampusTheme.primary,
                           ),
                         ),
                       ),
@@ -154,7 +154,6 @@ class AppearanceSettingsScreen extends StatelessWidget {
                     ],
                   ),
                   const Spacer(),
-                  // 示例卡片
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -216,7 +215,6 @@ class AppearanceSettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // 简化的底部导航栏
                   Container(
                     height: 26,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -246,6 +244,49 @@ class AppearanceSettingsScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildBackgroundThumbnailPill(
+      BuildContext context, ThemeProvider themeProvider) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgPath = themeProvider.getCustomBackgroundImageFor(context);
+
+    if (bgPath == null || bgPath.isEmpty) {
+      return Container(
+        width: 32,
+        height: 20,
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white12 : Colors.grey[300],
+          borderRadius: BorderRadius.circular(10),
+        ),
+      );
+    }
+
+    final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
+    final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
+    final imageProvider = isAsset
+        ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
+            as ImageProvider
+        : isLocalFile
+            ? FileImage(File(bgPath)) as ImageProvider
+            : NetworkImage(bgPath) as ImageProvider;
+
+    return Container(
+      width: 32,
+      height: 20,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.2)
+              : CampusTheme.softBorder,
+        ),
+        image: DecorationImage(
+          image: imageProvider,
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
@@ -268,8 +309,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
       title: '外观与显示',
       children: [
         _buildLivePreviewCard(context, themeProvider),
+
+        // 背景模式 (与效果图 100% 对齐)
         SettingsSection(
-          title: '显示模式',
+          title: '背景模式',
           children: [
             Padding(
               padding: const EdgeInsets.all(14),
@@ -278,12 +321,10 @@ class AppearanceSettingsScreen extends StatelessWidget {
                   ButtonSegment<AppBackgroundMode>(
                     value: AppBackgroundMode.clean,
                     label: Text('简洁模式'),
-                    icon: Icon(Icons.wb_sunny_outlined, size: 18),
                   ),
                   ButtonSegment<AppBackgroundMode>(
                     value: AppBackgroundMode.custom,
                     label: Text('自定义背景'),
-                    icon: Icon(Icons.wallpaper_rounded, size: 18),
                   ),
                 ],
                 selected: {themeProvider.backgroundMode},
@@ -301,58 +342,76 @@ class AppearanceSettingsScreen extends StatelessWidget {
                 },
               ),
             ),
+          ],
+        ),
+
+        // 显示 (与效果图 100% 对齐)
+        SettingsSection(
+          title: '显示',
+          children: [
             SettingsTile(
               icon: Icons.dark_mode_outlined,
               title: '夜间模式',
-              subtitle: '跟随当前应用深浅色设置',
+              subtitle: '使用深色页面与卡片配色',
               trailing: Switch(
                 value: themeProvider.isDarkMode,
                 onChanged: (v) => themeProvider.setDarkMode(v),
                 activeThumbColor: CampusTheme.primary,
               ),
             ),
-          ],
-        ),
-        SettingsSection(
-          title: '背景图片',
-          children: [
             SettingsTile(
-              icon: Icons.photo_size_select_actual_outlined,
-              title: '背景图片管理',
+              icon: Icons.photo_library_outlined,
+              title: '背景图片',
               subtitle: bgStatusText,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildBackgroundThumbnailPill(context, themeProvider),
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white.withValues(alpha: 0.3)
+                        : CampusTheme.subText.withValues(alpha: 0.5),
+                  ),
+                ],
+              ),
               onTap: () => BackgroundPickerSheet.show(context),
             ),
           ],
         ),
+
+        // 组件样式 (与效果图 100% 对齐)
         SettingsSection(
           title: '组件样式',
           children: [
-            SettingsTile(
+            SettingsSliderTile(
               icon: Icons.opacity_rounded,
               title: '组件不透明度',
               subtitle: '仅在自定义背景模式下明显生效',
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${(themeProvider.componentOpacity * 100).round()}%',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 120,
-                    child: Slider(
-                      value: themeProvider.componentOpacity,
-                      min: 0.0,
-                      max: 1.0,
-                      onChanged: (v) => themeProvider.setComponentOpacity(v),
-                      activeColor: CampusTheme.primary,
-                    ),
-                  ),
-                ],
+              value: themeProvider.componentOpacity,
+              valueText: '${(themeProvider.componentOpacity * 100).round()}%',
+              onChanged: (v) => themeProvider.setComponentOpacity(v),
+            ),
+            SettingsTile(
+              icon: Icons.widgets_outlined,
+              title: '悬浮底部导航栏',
+              subtitle: '使用圆角悬浮式底部入口',
+              trailing: Switch(
+                value: themeProvider.floatingNavBar,
+                onChanged: (v) => themeProvider.setFloatingNavBar(v),
+                activeThumbColor: CampusTheme.primary,
+              ),
+            ),
+            SettingsTile(
+              icon: Icons.undo_rounded,
+              title: '预测性返回手势',
+              subtitle: '侧滑时预览上一页',
+              trailing: Switch(
+                value: themeProvider.predictiveBack,
+                onChanged: (v) => themeProvider.setPredictiveBack(v),
+                activeThumbColor: CampusTheme.primary,
               ),
             ),
             SettingsTile(
@@ -377,31 +436,6 @@ class AppearanceSettingsScreen extends StatelessWidget {
                     activeThumbColor: CampusTheme.primary,
                   ),
                 ],
-              ),
-            ),
-          ],
-        ),
-        SettingsSection(
-          title: '动效与操作',
-          children: [
-            SettingsTile(
-              icon: Icons.navigation_outlined,
-              title: '悬浮底部导航栏',
-              subtitle: '在使用壁纸时悬浮底部导航栏',
-              trailing: Switch(
-                value: themeProvider.floatingNavBar,
-                onChanged: (v) => themeProvider.setFloatingNavBar(v),
-                activeThumbColor: CampusTheme.primary,
-              ),
-            ),
-            SettingsTile(
-              icon: Icons.swipe_outlined,
-              title: '预测性返回手势',
-              subtitle: '侧滑返回时支持页面缩放预览',
-              trailing: Switch(
-                value: themeProvider.predictiveBack,
-                onChanged: (v) => themeProvider.setPredictiveBack(v),
-                activeThumbColor: CampusTheme.primary,
               ),
             ),
           ],

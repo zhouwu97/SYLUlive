@@ -13,7 +13,7 @@ import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'widgets/background_picker_sheet.dart';
 
-/// 外观与显示设置二级页 (实时预览卡片比例修正版)
+/// 外观与显示设置二级页 (实时预览顶部壁纸等比例对齐 topCenter 版)
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -55,7 +55,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
     }
   }
 
-  /// 比例与比例完全舒展对齐的实时预览卡片
+  /// 顶部壁纸以 topCenter 居顶定位等比例缩放完整展示主体头部
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -78,7 +78,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
       backgroundWidget = Image(
         image: imageProvider,
         fit: BoxFit.cover,
-        alignment: Alignment.center,
+        alignment: Alignment.topCenter,
         errorBuilder: (_, __, ___) => Container(
           color: isDark ? const Color(0xFF1E2322) : const Color(0xFFE5EEE9),
         ),
@@ -252,6 +252,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
         image: DecorationImage(
           image: imageProvider,
           fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
         ),
       ),
     );

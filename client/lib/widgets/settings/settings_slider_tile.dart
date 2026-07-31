@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 
-/// 专用的全宽 Slider 设置项组件 (支持多彩图标与紧凑布局)
+/// 专用的全宽 Slider 设置项组件 (恢复 38x38 图标与大方拉条布局)
 class SettingsSliderTile extends StatelessWidget {
   final IconData? icon;
   final Color? iconColor;
@@ -40,7 +40,7 @@ class SettingsSliderTile extends StatelessWidget {
             : CampusTheme.primaryLight);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -48,25 +48,25 @@ class SettingsSliderTile extends StatelessWidget {
             children: [
               if (icon != null) ...[
                 Container(
-                  width: 36,
-                  height: 36,
+                  width: 38,
+                  height: 38,
                   decoration: BoxDecoration(
                     color: effectiveIconBgColor,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(11),
                   ),
                   child: Icon(
                     icon,
-                    size: 20,
+                    size: 22,
                     color: effectiveIconColor,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
               ],
               Expanded(
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 14.5,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: isDark ? Colors.white : CampusTheme.text,
                   ),
@@ -75,7 +75,7 @@ class SettingsSliderTile extends StatelessWidget {
               Text(
                 valueText,
                 style: TextStyle(
-                  fontSize: 13.5,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: effectiveIconColor,
                 ),
@@ -83,26 +83,26 @@ class SettingsSliderTile extends StatelessWidget {
             ],
           ),
           if (subtitle != null && subtitle!.isNotEmpty) ...[
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Padding(
-              padding: EdgeInsets.only(left: icon != null ? 48 : 0),
+              padding: EdgeInsets.only(left: icon != null ? 52 : 0),
               child: Text(
                 subtitle!,
                 style: TextStyle(
-                  fontSize: 12,
-                  height: 1.25,
+                  fontSize: 12.5,
+                  height: 1.28,
                   color: isDark ? Colors.white60 : CampusTheme.subText,
                 ),
               ),
             ),
           ],
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Padding(
-            padding: EdgeInsets.only(left: icon != null ? 36 : 0),
+            padding: EdgeInsets.only(left: icon != null ? 40 : 0),
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(
-                trackHeight: 3.5,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                trackHeight: 4,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
               ),
               child: Slider(
                 value: value,

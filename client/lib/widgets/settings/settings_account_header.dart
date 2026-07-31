@@ -9,7 +9,7 @@ import '../campus/campus_theme.dart';
 import '../cached_avatar.dart';
 import 'settings_status_badge.dart';
 
-/// 设置页账号摘要卡片组件 (与设计稿 100% 完全对齐，等比例精简尺寸)
+/// 设置页账号摘要卡片组件 (恢复大气舒展样式)
 class SettingsAccountHeader extends StatelessWidget {
   const SettingsAccountHeader({super.key});
 
@@ -57,10 +57,10 @@ class SettingsAccountHeader extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.08)
@@ -70,14 +70,14 @@ class SettingsAccountHeader extends StatelessWidget {
             ? null
             : [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.02),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
+                  color: Colors.black.withValues(alpha: 0.025),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
               ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -99,18 +99,18 @@ class SettingsAccountHeader extends StatelessWidget {
               }
             },
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
                   SizedBox(
-                    width: 48,
-                    height: 48,
+                    width: 54,
+                    height: 54,
                     child: CachedAvatar(
                       imageUrl: avatarUrl,
-                      radius: 24,
+                      radius: 27,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,24 +120,24 @@ class SettingsAccountHeader extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 17,
                             fontWeight: FontWeight.bold,
                             color: isDark ? Colors.white : CampusTheme.text,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Text(
                           subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 12.5,
                             color:
                                 isDark ? Colors.white60 : CampusTheme.subText,
                           ),
                         ),
                         if (isLoggedIn) ...[
-                          const SizedBox(height: 5),
+                          const SizedBox(height: 6),
                           Row(
                             children: [
                               SettingsStatusBadge(
@@ -162,7 +162,7 @@ class SettingsAccountHeader extends StatelessWidget {
                   const SizedBox(width: 6),
                   Icon(
                     Icons.chevron_right_rounded,
-                    size: 20,
+                    size: 22,
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.3)
                         : CampusTheme.subText.withValues(alpha: 0.5),

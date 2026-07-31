@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../campus/campus_theme.dart';
 
-/// 标准设置列表项组件（支持多彩图标主题与紧凑屏等比例布局）
+/// 标准设置列表项组件 (恢复舒适高档间距与图标尺寸)
 class SettingsTile extends StatelessWidget {
   final IconData? icon;
   final Widget? customIcon;
@@ -58,15 +58,15 @@ class SettingsTile extends StatelessWidget {
       leadingWidget = customIcon;
     } else if (icon != null) {
       leadingWidget = Container(
-        width: 36,
-        height: 36,
+        width: 38,
+        height: 38,
         decoration: BoxDecoration(
           color: effectiveIconBgColor,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(11),
         ),
         child: Icon(
           icon,
-          size: 20,
+          size: 22,
           color: effectiveIconColor,
         ),
       );
@@ -84,13 +84,13 @@ class SettingsTile extends StatelessWidget {
     }
 
     final tileContent = Container(
-      constraints: const BoxConstraints(minHeight: 52),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      constraints: const BoxConstraints(minHeight: 62),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
       child: Row(
         children: [
           if (leadingWidget != null) ...[
             leadingWidget,
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
           ],
           Expanded(
             child: Column(
@@ -100,20 +100,20 @@ class SettingsTile extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 14.5,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: titleColor,
                   ),
                 ),
                 if (subtitle != null && subtitle!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 2.5),
                   Text(
                     subtitle!,
                     maxLines: maxSubtitleLines,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 12,
-                      height: 1.25,
+                      fontSize: 12.5,
+                      height: 1.28,
                       color: subtitleColor,
                     ),
                   ),

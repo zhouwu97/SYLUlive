@@ -13,7 +13,7 @@ import '../../widgets/settings/settings_switch.dart';
 import '../../widgets/settings/settings_tile.dart';
 import 'widgets/background_picker_sheet.dart';
 
-/// 外观与显示设置二级页 (9:16 竖屏微缩手机模型等比例完整展示版)
+/// 外观与显示设置二级页 (简洁模式与自定义背景精准还原版)
 class AppearanceSettingsScreen extends StatelessWidget {
   const AppearanceSettingsScreen({super.key});
 
@@ -55,17 +55,33 @@ class AppearanceSettingsScreen extends StatelessWidget {
     }
   }
 
-  /// 9:16 比例微缩手机预览模型（完整等比例展示竖屏壁纸人物全身，无任何裁剪）
+  /// 智能自适应微缩预览模型 (真实还原简洁模式暖白底色与自定义背景)
   Widget _buildLivePreviewCard(
       BuildContext context, ThemeProvider themeProvider) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = isDark ? const Color(0xFF7ED6C5) : CampusTheme.primary;
+
+    // 简洁模式下的真实页面底层背景色 (#FAF8F5) 与展示底色
+    final pageBgColor =
+        isDark ? const Color(0xFF181C1B) : const Color(0xFFFAF8F5);
+    final outerContainerBg =
+        isDark ? const Color(0xFF141716) : const Color(0xFFF3EFE7);
+
+    final isLandscapeScreen =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     final bgPath = themeProvider.shouldShowCustomBackground
         ? themeProvider.getCustomBackgroundImageFor(context)
         : null;
 
+    final isLandscapeBg = isLandscapeScreen ||
+        (bgPath != null &&
+            themeProvider.landscapeBackgroundImage != null &&
+            bgPath == themeProvider.landscapeBackgroundImage);
+
     Widget backgroundWidget;
-    if (bgPath != null && bgPath.isNotEmpty) {
+    if (bgPath != null &&
+        bgPath.isNotEmpty &&
+        !themeProvider.isCleanBackgroundMode) {
       final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
       final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
       final imageProvider = isAsset
@@ -78,26 +94,25 @@ class AppearanceSettingsScreen extends StatelessWidget {
       backgroundWidget = Image(
         image: imageProvider,
         fit: BoxFit.cover,
-        alignment: Alignment.topCenter,
-        errorBuilder: (_, __, ___) => Container(
-          color: isDark ? const Color(0xFF1E2322) : const Color(0xFFE5EEE9),
-        ),
+        alignment: isLandscapeBg ? Alignment.center : Alignment.topCenter,
+        errorBuilder: (_, __, ___) => Container(color: pageBgColor),
       );
     } else {
-      backgroundWidget = Container(
-        color: isDark ? const Color(0xFF1E2322) : const Color(0xFFE5EEE9),
-      );
+      backgroundWidget = Container(color: pageBgColor);
     }
 
     final cardOpacity = themeProvider.isCleanBackgroundMode
         ? 1.0
         : themeProvider.componentOpacity;
 
+    final frameWidth = isLandscapeBg ? 230.0 : 122.0;
+    final frameHeight = isLandscapeBg ? 130.0 : 216.0;
+
     return Container(
       height: 240,
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E1D) : const Color(0xFFE5EEE9),
+        color: outerContainerBg,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
@@ -106,9 +121,11 @@ class AppearanceSettingsScreen extends StatelessWidget {
         ),
       ),
       child: Center(
-        child: Container(
-          width: 126,
-          height: 220,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          width: frameWidth,
+          height: frameHeight,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
@@ -117,7 +134,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
+                color: Colors.black.withValues(alpha: 0.12),
                 blurRadius: 14,
                 offset: const Offset(0, 5),
               ),
@@ -144,6 +161,12 @@ class AppearanceSettingsScreen extends StatelessWidget {
                           color: (isDark ? CampusTheme.darkCard : Colors.white)
                               .withValues(alpha: cardOpacity),
                           borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white10
+                                : const Color(0xFFEFECE6),
+                            width: 0.8,
+                          ),
                         ),
                         child: Text(
                           '实时预览',
@@ -164,9 +187,15 @@ class AppearanceSettingsScreen extends StatelessWidget {
                           color: (isDark ? CampusTheme.darkCard : Colors.white)
                               .withValues(alpha: cardOpacity),
                           borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white10
+                                : const Color(0xFFEFECE6),
+                            width: 0.8,
+                          ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
+                              color: Colors.black.withValues(alpha: 0.03),
                               blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
@@ -243,7 +272,9 @@ class AppearanceSettingsScreen extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgPath = themeProvider.getCustomBackgroundImageFor(context);
 
-    if (bgPath == null || bgPath.isEmpty) {
+    if (bgPath == null ||
+        bgPath.isEmpty ||
+        themeProvider.isCleanBackgroundMode) {
       return Container(
         width: 34,
         height: 22,
@@ -379,7 +410,11 @@ class AppearanceSettingsScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              onTap: () => BackgroundPickerSheet.show(context),
+              onTap: () => BackgroundPickerSheet.show(
+                context,
+                isLandscape: themeProvider.hasLandscapeBackground &&
+                    !themeProvider.hasBackground,
+              ),
             ),
           ],
         ),

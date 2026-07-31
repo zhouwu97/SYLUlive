@@ -46,6 +46,67 @@ func TestCompetitionCatalogPreflightRejectsMissingCategory(t *testing.T) {
 	}
 }
 
+func TestCompetitionCatalogPreflightRejectsUnmappedReferencedActiveEvent(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	if err := db.AutoMigrate(&models.UserCompetitionCalendarItem{}); err != nil {
+		t.Fatal(err)
+	}
+	requireCatalogCategory(t, db)
+	active := seedActiveCatalogPackage(t, db, "a")
+	legacy := candidateEvent("LEGACY-REFERENCED", "程序设计竞赛", 80, 1, nil, nil)
+	legacy.CatalogPackageID = &active.ID
+	if err := db.Select("*").Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	calendarItem := models.UserCompetitionCalendarItem{
+		CalendarID: 1, UserID: 1, Title: legacy.Title,
+		SourceType: "official", SourceEventID: &legacy.ID,
+	}
+	if err := db.Create(&calendarItem).Error; err != nil {
+		t.Fatal(err)
+	}
+	award := models.UserCompetitionAward{
+		UserID: 1, CompetitionEventID: &legacy.ID, CompetitionTitle: legacy.Title,
+		CompetitionYear: 2026, AwardName: "一等奖", CompetitionStage: "national",
+		Role: "member", SkillTags: datatypes.JSON(`[]`), EvidenceFileIDs: datatypes.JSON(`[]`),
+	}
+	if err := db.Create(&award).Error; err != nil {
+		t.Fatal(err)
+	}
+	importer := NewCompetitionCatalogImporter(db)
+	target, _, err := importer.Import(context.Background(), validCatalogDocument(t, "referenced-target"), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := importer.Preflight(context.Background(), target.ID, 1)
+	if !errors.Is(err, ErrCatalogPreflightFailed) ||
+		!containsCatalogBlocker(result.Report.BlockingIssues, "unmapped_referenced_legacy_events") {
+		t.Fatalf("未映射引用没有被阻断: err=%v report=%+v", err, result.Report)
+	}
+	if result.Report.UnmappedReferencedLegacyEventCount != 1 ||
+		result.Report.UnmappedCalendarReferenceCount != 1 ||
+		result.Report.UnmappedAwardReferenceCount != 1 {
+		t.Fatalf("未映射引用统计错误: %+v", result.Report)
+	}
+
+	mapping := models.CompetitionCatalogLegacyMapping{
+		PackageID: target.ID, CompetitionID: "NAT-006", LegacyEventID: legacy.ID,
+		MatchType: "manual", Confidence: 1, ReviewStatus: "confirmed",
+	}
+	if err := db.Create(&mapping).Error; err != nil {
+		t.Fatal(err)
+	}
+	result, err = importer.Preflight(context.Background(), target.ID, 1)
+	if err != nil {
+		t.Fatalf("确认映射后仍被阻断: err=%v report=%+v", err, result.Report)
+	}
+	if result.Report.UnmappedReferencedLegacyEventCount != 0 ||
+		result.Report.CalendarReferenceCount != 1 || result.Report.AwardReferenceCount != 1 {
+		t.Fatalf("确认映射后的引用统计错误: %+v", result.Report)
+	}
+}
+
 func TestCompetitionCatalogActivationRejectsStaleOrUnauthorizedPreflight(t *testing.T) {
 	for _, testCase := range []struct {
 		name   string

@@ -127,6 +127,114 @@ func (h *CompetitionHandler) AdminGetCompetitionCatalogPackage(c *gin.Context) {
 	c.JSON(http.StatusOK, catalog)
 }
 
+func (h *CompetitionHandler) AdminSuggestCompetitionCatalogLegacyMappings(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	packageID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	result, err := services.NewCompetitionCatalogLegacyMapper(h.db).
+		Suggest(c.Request.Context(), packageID)
+	if err != nil {
+		h.respondCompetitionCatalogMappingError(c, err)
+		return
+	}
+	h.writeCompetitionCatalogMappingAudit(packageID, userID, "catalog_mapping_suggest", "success")
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *CompetitionHandler) AdminListCompetitionCatalogLegacyMappings(c *gin.Context) {
+	packageID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	items, err := services.NewCompetitionCatalogLegacyMapper(h.db).
+		List(c.Request.Context(), packageID)
+	if err != nil {
+		h.respondCompetitionCatalogMappingError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h *CompetitionHandler) AdminReviewCompetitionCatalogLegacyMapping(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	packageID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	mappingID, ok := parseUintParam(c, "mapping_id")
+	if !ok {
+		return
+	}
+	var request services.CompetitionCatalogLegacyMappingReviewRequest
+	if !decodeStrictJSONRequest(c, &request) {
+		return
+	}
+	mapping, err := services.NewCompetitionCatalogLegacyMapper(h.db).
+		Review(c.Request.Context(), packageID, mappingID, userID, request)
+	if err != nil {
+		h.respondCompetitionCatalogMappingError(c, err)
+		return
+	}
+	h.writeCompetitionCatalogMappingAudit(packageID, userID, "catalog_mapping_review", request.ReviewStatus)
+	c.JSON(http.StatusOK, mapping)
+}
+
+func (h *CompetitionHandler) AdminBatchConfirmCompetitionCatalogLegacyMappings(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	packageID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	var request services.CompetitionCatalogLegacyMappingBatchConfirmRequest
+	if !decodeStrictJSONRequest(c, &request) {
+		return
+	}
+	confirmed, err := services.NewCompetitionCatalogLegacyMapper(h.db).
+		BatchConfirm(c.Request.Context(), packageID, userID, request)
+	if err != nil {
+		h.respondCompetitionCatalogMappingError(c, err)
+		return
+	}
+	h.writeCompetitionCatalogMappingAudit(packageID, userID, "catalog_mapping_batch_confirm", "success")
+	c.JSON(http.StatusOK, gin.H{"confirmed": confirmed})
+}
+
+func (h *CompetitionHandler) respondCompetitionCatalogMappingError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "目录包、映射或旧赛事不存在"})
+	case errors.Is(err, services.ErrCatalogLegacyMappingInvalid):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, services.ErrCatalogActivePackageRequired),
+		errors.Is(err, services.ErrCatalogLegacyMappingConflict):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "旧赛事映射操作失败"})
+	}
+}
+
+func (h *CompetitionHandler) writeCompetitionCatalogMappingAudit(
+	packageID uint,
+	userID uint,
+	action string,
+	result string,
+) {
+	_ = h.db.Create(&models.CompetitionCatalogAuditLog{
+		PackageID: &packageID, ActorUserID: userID, Action: action, Result: result,
+	}).Error
+}
+
 func (h *CompetitionHandler) AdminDiffCompetitionCatalogPackage(c *gin.Context) {
 	id, ok := parseUintParam(c, "id")
 	if !ok {

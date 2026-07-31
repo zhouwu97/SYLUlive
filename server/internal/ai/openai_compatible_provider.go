@@ -14,40 +14,40 @@ import (
 
 const maxProviderResponseBytes = 2 << 20
 
-type DeepSeekProvider struct {
+type OpenAICompatibleProvider struct {
 	endpoint   string
 	apiKey     string
 	model      string
 	httpClient *http.Client
 }
 
-func (p *DeepSeekProvider) Name() string { return "deepseek" }
+func (p *OpenAICompatibleProvider) Name() string { return "openai-compatible" }
 
-func (p *DeepSeekProvider) Capabilities() ProviderCapabilities {
+func (p *OpenAICompatibleProvider) Capabilities() ProviderCapabilities {
 	return ProviderCapabilities{
 		Streaming: true, ToolCalls: true, JSONSchema: true, ReasoningContent: true,
 		PromptCache: true, UsageInStream: true,
 	}
 }
 
-func NewDeepSeekProvider(baseURL, apiKey, model string, client *http.Client) (*DeepSeekProvider, error) {
+func NewOpenAICompatibleProvider(baseURL, apiKey, model string, client *http.Client) (*OpenAICompatibleProvider, error) {
 	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
-		return nil, fmt.Errorf("DeepSeek base URL must be HTTPS")
+		return nil, fmt.Errorf("OpenAI-compatible base URL must be HTTPS")
 	}
 	if strings.TrimSpace(apiKey) == "" || strings.TrimSpace(model) == "" {
-		return nil, fmt.Errorf("DeepSeek API key and model are required")
+		return nil, fmt.Errorf("OpenAI-compatible API key and model are required")
 	}
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &DeepSeekProvider{
+	return &OpenAICompatibleProvider{
 		endpoint: parsed.String() + "/chat/completions", apiKey: strings.TrimSpace(apiKey),
 		model: strings.TrimSpace(model), httpClient: client,
 	}, nil
 }
 
-func (p *DeepSeekProvider) Chat(ctx context.Context, request ChatRequest) (ChatResponse, error) {
+func (p *OpenAICompatibleProvider) Chat(ctx context.Context, request ChatRequest) (ChatResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return ChatResponse{}, err
 	}
@@ -77,10 +77,10 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, request ChatRequest) (ChatR
 		return ChatResponse{}, err
 	}
 	if len(responseBody) > maxProviderResponseBytes {
-		return ChatResponse{}, fmt.Errorf("DeepSeek response exceeds limit")
+		return ChatResponse{}, fmt.Errorf("provider response exceeds limit")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return ChatResponse{}, fmt.Errorf("DeepSeek returned HTTP %d", response.StatusCode)
+		return ChatResponse{}, fmt.Errorf("provider returned HTTP %d", response.StatusCode)
 	}
 	var decoded struct {
 		Choices []struct {
@@ -92,10 +92,10 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, request ChatRequest) (ChatR
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(responseBody, &decoded); err != nil {
-		return ChatResponse{}, fmt.Errorf("decode DeepSeek response: %w", err)
+		return ChatResponse{}, fmt.Errorf("decode provider response: %w", err)
 	}
 	if len(decoded.Choices) == 0 {
-		return ChatResponse{}, fmt.Errorf("DeepSeek returned no choices")
+		return ChatResponse{}, fmt.Errorf("provider returned no choices")
 	}
 	return ChatResponse{
 		Content:     decoded.Choices[0].Message.Content,
@@ -103,27 +103,27 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, request ChatRequest) (ChatR
 	}, nil
 }
 
-// Start 建立 DeepSeek SSE 流。reasoning_content 会被解析但主动丢弃，绝不进入客户端或数据库。
-func (p *DeepSeekProvider) Start(ctx context.Context, request ProviderRequest) (ProviderStream, error) {
+// Start 建立 OpenAI 兼容 SSE 流。reasoning_content 会被解析但主动丢弃，绝不进入客户端或数据库。
+func (p *OpenAICompatibleProvider) Start(ctx context.Context, request ProviderRequest) (ProviderStream, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, &ProviderError{Class: ProviderErrorCancelled, Err: err}
 	}
-	type deepSeekTool struct {
+	type openAICompatibleTool struct {
 		Type     string         `json:"type"`
 		Function ToolDefinition `json:"function"`
 	}
-	tools := make([]deepSeekTool, 0, len(request.Tools))
+	tools := make([]openAICompatibleTool, 0, len(request.Tools))
 	for _, tool := range request.Tools {
-		tools = append(tools, deepSeekTool{Type: "function", Function: tool})
+		tools = append(tools, openAICompatibleTool{Type: "function", Function: tool})
 	}
 	payload := struct {
-		Model         string          `json:"model"`
-		Messages      []Message       `json:"messages"`
-		Temperature   float64         `json:"temperature,omitempty"`
-		MaxTokens     int             `json:"max_tokens,omitempty"`
-		Stream        bool            `json:"stream"`
-		StreamOptions map[string]bool `json:"stream_options"`
-		Tools         []deepSeekTool  `json:"tools,omitempty"`
+		Model         string                 `json:"model"`
+		Messages      []Message              `json:"messages"`
+		Temperature   float64                `json:"temperature,omitempty"`
+		MaxTokens     int                    `json:"max_tokens,omitempty"`
+		Stream        bool                   `json:"stream"`
+		StreamOptions map[string]bool        `json:"stream_options"`
+		Tools         []openAICompatibleTool `json:"tools,omitempty"`
 	}{
 		Model: p.model, Messages: request.Messages, Temperature: request.Temperature,
 		MaxTokens: request.MaxTokens, Stream: true,
@@ -149,10 +149,10 @@ func (p *DeepSeekProvider) Start(ctx context.Context, request ProviderRequest) (
 		_ = response.Body.Close()
 		return nil, providerHTTPError(response.StatusCode)
 	}
-	return &deepSeekStream{body: response.Body, scanner: newProviderScanner(response.Body), toolCalls: make(map[int]streamToolCall)}, nil
+	return &openAICompatibleStream{body: response.Body, scanner: newProviderScanner(response.Body), toolCalls: make(map[int]streamToolCall)}, nil
 }
 
-type deepSeekStream struct {
+type openAICompatibleStream struct {
 	body         io.ReadCloser
 	scanner      *bufio.Scanner
 	pending      []ProviderEvent
@@ -173,7 +173,7 @@ func newProviderScanner(reader io.Reader) *bufio.Scanner {
 	return scanner
 }
 
-func (s *deepSeekStream) Next(ctx context.Context) (ProviderEvent, error) {
+func (s *openAICompatibleStream) Next(ctx context.Context) (ProviderEvent, error) {
 	if err := ctx.Err(); err != nil {
 		return ProviderEvent{}, &ProviderError{Class: ProviderErrorCancelled, Err: err}
 	}
@@ -256,7 +256,7 @@ func (s *deepSeekStream) Next(ctx context.Context) (ProviderEvent, error) {
 	return ProviderEvent{}, &ProviderError{Class: ProviderErrorInvalid, Err: io.ErrUnexpectedEOF}
 }
 
-func (s *deepSeekStream) Close() error {
+func (s *openAICompatibleStream) Close() error {
 	if s.closed {
 		return nil
 	}

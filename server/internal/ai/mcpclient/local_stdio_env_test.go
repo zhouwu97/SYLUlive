@@ -11,6 +11,7 @@ func TestMinimalMCPEnvDropsMainServiceSecrets(t *testing.T) {
 	parent := []string{
 		"JWT_SECRET=super-secret",
 		"DATABASE_DSN=postgres://user:password@host/db",
+		"AI_API_KEY=sk-model-gateway",
 		"DEEPSEEK_API_KEY=sk-deepseek",
 		"SMTP_PASSWORD=mail-secret",
 		"RAG_SERVICE_TOKEN=rag-secret",
@@ -30,6 +31,7 @@ func TestMinimalMCPEnvDropsMainServiceSecrets(t *testing.T) {
 	for _, leaked := range []string{
 		"JWT_SECRET=super-secret",
 		"DATABASE_DSN=postgres://user:password@host/db",
+		"AI_API_KEY=sk-model-gateway",
 		"DEEPSEEK_API_KEY=sk-deepseek",
 		"SMTP_PASSWORD=mail-secret",
 		"RAG_SERVICE_TOKEN=rag-secret",

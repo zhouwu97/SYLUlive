@@ -8,27 +8,12 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../../../config/wallpaper_catalog.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/theme_provider.dart';
 import '../../../services/wallpaper_prefetch_service.dart';
 import '../../../widgets/campus/campus_theme.dart';
 import '../../../widgets/settings/campus_segmented_control.dart';
-
-const List<String> phonePresetWallpaperAssets = [
-  'morenbeijing.jpeg',
-  'wallpaper_custom_01.png',
-];
-
-const List<String> landscapePresetWallpaperAssets = [
-  'tablet_default_landscape.png',
-  'tablet_landscape_01.png',
-  'tablet_landscape_02.png',
-  'tablet_landscape_03.png',
-  'tablet_landscape_04.png',
-  'tablet_landscape_05.png',
-  'tablet_landscape_06.png',
-  'tablet_landscape_08.png',
-];
 
 /// 精美极简风格壁纸选择底部面板
 class BackgroundPickerSheet extends StatefulWidget {
@@ -434,7 +419,9 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
                       final assetName = presets[index];
                       final previewAsset = _backgroundPreviewAsset(assetName);
                       final isSelected = currentBg == assetName ||
-                          currentBg == _remoteWallpaperUrl(assetName);
+                          currentBg == _remoteWallpaperUrl(assetName) ||
+                          (currentBg != null &&
+                              path.basename(currentBg) == assetName);
 
                       return GestureDetector(
                         onTap: () async {

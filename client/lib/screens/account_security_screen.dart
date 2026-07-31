@@ -527,7 +527,7 @@ class _AccountSecurityScreenState extends State<AccountSecurityScreen> {
             SettingsTile(
               icon: Icons.password_outlined,
               title: '修改 APP 密码',
-              subtitle: '更改登录沈理校园 APP 的本地账号密码',
+              subtitle: '更改沈理校园账号的登录密码',
               onTap: _showChangePasswordDialog,
             ),
           ],

@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path;
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 enum AppBackgroundMode {
@@ -37,22 +39,28 @@ class ThemeProvider extends ChangeNotifier {
   );
   static const String _defaultPhoneWallpaper = 'morenbeijing.jpeg';
 
+  bool _isLoaded = false;
   bool _isDarkMode = false;
+  AppBackgroundMode _backgroundMode = AppBackgroundMode.clean;
   String? _backgroundImage;
   String? _landscapeBackgroundImage;
   bool _backgroundFillScreen = false;
   bool _landscapeBackgroundFillScreen = false;
   double _backgroundBlur = 10;
-  double _componentOpacity = 0.7; // 组件不透明度：越大越实，越小越透
+  double _componentOpacity = 0.7;
   bool _liquidGlass = false;
   bool _floatingNavBar = false;
   bool _predictiveBack = true;
   bool _startOnTimetable = false;
   bool _marketIsListView = false;
-  bool _isLoaded = false;
-  AppBackgroundMode _backgroundMode = AppBackgroundMode.clean;
 
+  bool get isLoaded => _isLoaded;
   bool get isDarkMode => _isDarkMode;
+  AppBackgroundMode get backgroundMode => _backgroundMode;
+  bool get isCleanBackgroundMode =>
+      _backgroundMode == AppBackgroundMode.clean;
+  bool get isCustomBackgroundMode =>
+      _backgroundMode == AppBackgroundMode.custom;
   String? get backgroundImage => _backgroundImage;
   String? get landscapeBackgroundImage => _landscapeBackgroundImage;
   bool get backgroundFillScreen => _backgroundFillScreen;
@@ -64,18 +72,6 @@ class ThemeProvider extends ChangeNotifier {
   bool get predictiveBack => _predictiveBack;
   bool get startOnTimetable => _startOnTimetable;
   bool get marketIsListView => _marketIsListView;
-  bool get isLoaded => _isLoaded;
-  AppBackgroundMode get backgroundMode => _backgroundMode;
-  bool get isCleanBackgroundMode => _backgroundMode == AppBackgroundMode.clean;
-
-  /// 简洁模式下页面底色。亮色返回暖白 [kCleanWarmBackgroundLight]，
-  /// 暗色保持原深色 [kCleanWarmBackgroundDark]，不改变暗色逻辑。
-  Color cleanModePageBackground(Brightness brightness) {
-    if (brightness == Brightness.dark) {
-      return kCleanWarmBackgroundDark;
-    }
-    return kCleanWarmBackgroundLight;
-  }
 
   bool get hasBackground =>
       _backgroundImage != null && _backgroundImage!.isNotEmpty;
@@ -84,69 +80,38 @@ class ThemeProvider extends ChangeNotifier {
       _landscapeBackgroundImage!.isNotEmpty;
   bool get hasAnyBackground => hasBackground || hasLandscapeBackground;
 
-  /// 是否显示用户选择的背景。简洁模式下即使保留了背景图也不显示。
   bool get shouldShowCustomBackground =>
-      _backgroundMode == AppBackgroundMode.custom && hasAnyBackground;
+      isCustomBackgroundMode && hasAnyBackground;
 
-  /// 兼容旧调用，语义已收敛为“当前是否应该显示自定义背景”。
-  bool get isBackgroundVisible => shouldShowCustomBackground;
-
-  static bool isNetworkBackground(String imagePath) {
-    return imagePath.startsWith('http://') || imagePath.startsWith('https://');
+  static bool isBundledAssetBackground(String imagePath) {
+    return !imagePath.startsWith('/') &&
+        !imagePath.startsWith('file://') &&
+        !imagePath.startsWith('http://') &&
+        !imagePath.startsWith('https://');
   }
 
   static bool isLocalFileBackground(String imagePath) {
-    return imagePath.startsWith('/') ||
-        imagePath.startsWith(r'\\') ||
-        RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(imagePath);
+    return imagePath.startsWith('/') || imagePath.startsWith('file://');
   }
 
-  static bool isBundledAssetBackground(String imagePath) {
-    return !isNetworkBackground(imagePath) && !isLocalFileBackground(imagePath);
+  static String resolveBundledAssetPath(String assetName) {
+    if (assetName.startsWith('assets/')) return assetName;
+    return 'assets/images/$assetName';
   }
 
-  static String resolveBundledAssetPath(String imagePath) {
-    return imagePath.startsWith('assets/')
-        ? imagePath
-        : 'assets/images/$imagePath';
-  }
-
-  static AppBackgroundMode _backgroundModeFromString(String? value) {
-    switch (value) {
-      case 'custom':
-        return AppBackgroundMode.custom;
-      case 'clean':
-      default:
-        return AppBackgroundMode.clean;
-    }
-  }
-
-  static String _backgroundModeToString(AppBackgroundMode mode) {
-    switch (mode) {
-      case AppBackgroundMode.custom:
-        return 'custom';
-      case AppBackgroundMode.clean:
-        return 'clean';
-    }
-  }
-
-  /// 获取当前环境适用的背景图片
-  String? getBackgroundImageFor(BuildContext context) {
-    final isWide =
-        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    if (isWide && hasLandscapeBackground) {
-      return _landscapeBackgroundImage;
-    }
-    return _backgroundImage;
-  }
-
-  bool getBackgroundFillScreenFor(BuildContext context) {
-    final isWide =
-        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    if (isWide && hasLandscapeBackground) {
-      return _landscapeBackgroundFillScreen;
-    }
-    return _backgroundFillScreen;
+  /// 安全性辅助方法：仅在 Provider 状态更新成功后，清理存储在应用文档目录下的本地背景旧孤儿文件
+  static Future<void> _tryDeleteLocalManagedFile(String? filePath) async {
+    if (filePath == null || !isLocalFileBackground(filePath)) return;
+    try {
+      final file = File(filePath);
+      final fileName = path.basename(filePath);
+      if (fileName.startsWith('background_') ||
+          fileName.startsWith('landscape_background_')) {
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+    } catch (_) {}
   }
 
   /// 获取自定义模式下当前环境适用的背景图；当前方向缺失时使用另一方向兜底。
@@ -212,7 +177,6 @@ class ThemeProvider extends ChangeNotifier {
         await prefs.setBool(_backgroundFillScreenKey, false);
       }
     } catch (error) {
-      // 本地存储插件尚未接入的平台使用内存默认主题，不能阻断登录首屏。
       debugPrint('读取主题本地配置失败，使用默认主题: $error');
     } finally {
       _isLoaded = true;
@@ -255,6 +219,7 @@ class ThemeProvider extends ChangeNotifier {
     String? imageUrl, {
     bool fillScreen = false,
   }) async {
+    final oldPath = _backgroundImage;
     _backgroundImage = imageUrl;
     _backgroundFillScreen =
         imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
@@ -272,12 +237,17 @@ class ThemeProvider extends ChangeNotifier {
       await prefs.remove(_backgroundFillScreenKey);
     }
     notifyListeners();
+
+    if (oldPath != imageUrl) {
+      await _tryDeleteLocalManagedFile(oldPath);
+    }
   }
 
   Future<void> setLandscapeBackgroundImage(
     String? imageUrl, {
     bool fillScreen = false,
   }) async {
+    final oldPath = _landscapeBackgroundImage;
     _landscapeBackgroundImage = imageUrl;
     _landscapeBackgroundFillScreen =
         imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
@@ -298,6 +268,10 @@ class ThemeProvider extends ChangeNotifier {
       await prefs.remove(_landscapeBackgroundFillScreenKey);
     }
     notifyListeners();
+
+    if (oldPath != imageUrl) {
+      await _tryDeleteLocalManagedFile(oldPath);
+    }
   }
 
   Future<void> setBackgroundBlur(double blur) async {
@@ -336,11 +310,15 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<void> clearBackground() async {
+    final oldPortrait = _backgroundImage;
+    final oldLandscape = _landscapeBackgroundImage;
+
     _backgroundImage = null;
     _landscapeBackgroundImage = null;
     _backgroundFillScreen = false;
     _landscapeBackgroundFillScreen = false;
     _backgroundMode = AppBackgroundMode.clean;
+
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.remove(_backgroundImageKey);
     await prefs.remove(_landscapeBackgroundImageKey);
@@ -351,6 +329,9 @@ class ThemeProvider extends ChangeNotifier {
       _backgroundModeToString(_backgroundMode),
     );
     notifyListeners();
+
+    await _tryDeleteLocalManagedFile(oldPortrait);
+    await _tryDeleteLocalManagedFile(oldLandscape);
   }
 
   Future<void> setStartOnTimetable(bool v) async {
@@ -365,5 +346,14 @@ class ThemeProvider extends ChangeNotifier {
     final prefs = await AppPreferencesStore.getInstance();
     await prefs.setBool(_marketIsListViewKey, v);
     notifyListeners();
+  }
+
+  static AppBackgroundMode _backgroundModeFromString(String? value) {
+    if (value == 'custom') return AppBackgroundMode.custom;
+    return AppBackgroundMode.clean;
+  }
+
+  static String _backgroundModeToString(AppBackgroundMode mode) {
+    return mode == AppBackgroundMode.custom ? 'custom' : 'clean';
   }
 }

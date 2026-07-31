@@ -16,6 +16,7 @@ import '../../widgets/settings/settings_status_badge.dart';
 import '../../widgets/settings/settings_tile.dart';
 import '../diagnostic_log_screen.dart';
 import '../feedback_screen.dart';
+import '../login_screen.dart';
 import 'notification_background_settings_screen.dart';
 
 class _PushDiagnosticInfo {
@@ -75,14 +76,14 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
   }
 
   Future<void> _loadDiagnostics() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     final info = await _gatherPushDiagnostics();
-    if (mounted) {
-      setState(() {
-        _info = info;
-        _loading = false;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _info = info;
+      _loading = false;
+    });
   }
 
   Future<_PushDiagnosticInfo> _gatherPushDiagnostics() async {
@@ -193,7 +194,6 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
   }
 
   List<String> _calculateIssues(_PushDiagnosticInfo info) {
-    // 如果用户主动关闭或者平台不支持，不误报为故障
     if (!info.supportsJPush || !info.optedIn) {
       return <String>[];
     }
@@ -258,9 +258,15 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
 
   Future<void> _handleRepairPush() async {
     if (_repairingPush) return;
-    setState(() => _repairingPush = true);
-
     final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录账号，再进行远程推送修复')),
+      );
+      return;
+    }
+
+    setState(() => _repairingPush = true);
     final messenger = ScaffoldMessenger.of(context);
 
     try {
@@ -281,8 +287,11 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final auth = context.watch<AuthProvider>();
+    final isLoggedIn = auth.isLoggedIn && auth.user != null;
     final info = _info;
     final issues = info != null ? _calculateIssues(info) : <String>[];
+    final isUnsupported = info != null && !info.supportsJPush;
     final isOptedOut = info != null && info.supportsJPush && !info.optedIn;
 
     return SettingsPageScaffold(
@@ -305,7 +314,19 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
           SettingsSection(
             title: '诊断结论',
             children: [
-              if (isOptedOut)
+              if (isUnsupported)
+                const SettingsTile(
+                  icon: Icons.info_outline_rounded,
+                  iconColor: CampusTheme.subText,
+                  title: '当前平台不支持远程推送',
+                  subtitle: '课程和考试本地提醒仍可正常使用。仅 Android / iOS 移动端支持远程推送。',
+                  trailing: SettingsStatusBadge(
+                    label: '不支持',
+                    type: SettingsStatusBadgeType.neutral,
+                  ),
+                  showChevron: false,
+                )
+              else if (isOptedOut)
                 const SettingsTile(
                   icon: Icons.notifications_off_outlined,
                   iconColor: CampusTheme.subText,
@@ -367,7 +388,21 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                     subtitle: '开启通知权限或解除私信渠道屏蔽',
                     onTap: () => KeepAliveService.instance.openSettings(),
                   ),
-                if (info.optedIn && issues.isNotEmpty)
+                if (!isLoggedIn && info.optedIn)
+                  SettingsTile(
+                    icon: Icons.account_circle_outlined,
+                    title: '登录账号以同步推送状态',
+                    subtitle: '未登录状态下无法绑定极光 Alias 设备别名',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LoginScreen(),
+                        ),
+                      ).then((_) => _loadDiagnostics());
+                    },
+                  ),
+                if (isLoggedIn && info.optedIn && issues.isNotEmpty)
                   SettingsTile(
                     icon: Icons.refresh_rounded,
                     title: _repairingPush ? '正在重新注册...' : '重新注册与重新绑定',
@@ -398,96 +433,73 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                     height: 38,
                     decoration: BoxDecoration(
                       color: isDark
-                          ? const Color(0xFF7ED6C5).withValues(alpha: 0.15)
-                          : CampusTheme.primaryLight,
+                          ? const Color(0xFF1B3B36)
+                          : const Color(0xFFE4F4F0),
                       borderRadius: BorderRadius.circular(11),
                     ),
                     child: const Icon(
-                      Icons.code_rounded,
+                      Icons.bug_report_outlined,
                       size: 22,
                       color: CampusTheme.primary,
                     ),
                   ),
-                  title: Text(
-                    '查看详细诊断信息',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : CampusTheme.text,
-                    ),
+                  title: const Text(
+                    '极光推送技术诊断参数',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
-                  subtitle: Text(
-                    '包含 RegistrationID、渠道重要性与绑定日志（已掩码）',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: isDark ? Colors.white60 : CampusTheme.subText,
-                    ),
+                  subtitle: const Text(
+                    '查看 RegistrationID、Alias 绑定日志与通道状态',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                  childrenPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
                   ),
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildDetailRow(
-                            '平台支持极光推送',
-                            info.supportsJPush ? '支持' : '不支持',
-                            isDark,
-                          ),
-                          _buildDetailRow(
-                            '用户主动选择开启',
-                            info.optedIn ? '开启' : '关闭',
-                            isDark,
-                          ),
-                          _buildDetailRow(
-                            'RegistrationID',
-                            _maskValue(info.registrationId, 6),
-                            isDark,
-                          ),
-                          _buildDetailRow(
-                            '系统通知权限',
-                            info.notificationsEnabled ? '已开启' : '已关闭',
-                            isDark,
-                            isOk: info.notificationsEnabled,
-                          ),
-                          _buildDetailRow(
-                            '私信通知渠道存在',
-                            info.privateMessageChannelExists ? '是' : '否',
-                            isDark,
-                            isOk: info.privateMessageChannelExists,
-                          ),
-                          _buildDetailRow(
-                            '私信通知渠道屏蔽',
-                            info.privateMessageChannelBlocked ? '已被屏蔽' : '正常开启',
-                            isDark,
-                            isOk: !info.privateMessageChannelBlocked,
-                          ),
-                          _buildDetailRow(
-                            '渠道重要性',
-                            _importanceLabel(
-                                info.privateMessageChannelImportance),
-                            isDark,
-                          ),
-                          _buildDetailRow(
-                            '本地 Alias',
-                            _maskValue(info.storedAlias, 4),
-                            isDark,
-                          ),
-                          _buildDetailRow(
-                            'Alias 最近状态',
-                            '${info.aliasLastStatus ?? "无记录"}${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
-                            isDark,
-                          ),
-                          if (info.error != null)
-                            _buildDetailRow(
-                              '异常记录',
-                              info.error!,
-                              isDark,
-                              isOk: false,
-                            ),
-                        ],
-                      ),
+                    _buildTechRow('平台支持极光推送', info.supportsJPush ? '是' : '否'),
+                    _buildTechRow('用户主动开启', info.optedIn ? '是' : '否'),
+                    _buildTechRow(
+                      'RegistrationID',
+                      _maskValue(info.registrationId, 6),
                     ),
+                    _buildTechRow(
+                      '通知总权限',
+                      info.notificationsEnabled ? '已开启' : '已关闭 (建议前往设置开启)',
+                    ),
+                    _buildTechRow(
+                      '私信通知渠道',
+                      info.privateMessageChannelExists
+                          ? (info.privateMessageChannelBlocked
+                              ? '已被单独屏蔽'
+                              : '正常')
+                          : '未建立',
+                    ),
+                    _buildTechRow(
+                      '渠道重要性',
+                      _importanceLabel(info.privateMessageChannelImportance),
+                    ),
+                    _buildTechRow(
+                      info.storedAliasState == 'pending_bind'
+                          ? '待绑定 Alias'
+                          : '已绑定 Alias',
+                      _maskValue(info.storedAlias, 4),
+                    ),
+                    _buildTechRow(
+                      'Alias 最近记录',
+                      '${info.aliasLastStatus ?? "无记录"}'
+                          '${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
+                    ),
+                    if (info.aliasLastDetail != null)
+                      _buildTechRow('Alias 绑定详情', info.aliasLastDetail!),
+                    if (info.error != null)
+                      _buildTechRow('诊断异常', info.error!, isWarning: true),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => _copyPushDiagnostics(info),
+                      icon: const Icon(Icons.copy_rounded, size: 18),
+                      label: const Text('复制推送诊断文本'),
+                    ),
+                    const SizedBox(height: 8),
                   ],
                 ),
               ),
@@ -495,14 +507,18 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
           ),
         ],
 
-        // 反馈与日志
+        // 日志与反馈入口
         SettingsSection(
-          title: '反馈与日志',
+          title: '日志与反馈',
           children: [
             SettingsTile(
-              icon: Icons.receipt_long_outlined,
-              title: '运行日志',
-              subtitle: '查看保活、推送和异常详细记录',
+              icon: Icons.history_rounded,
+              iconBgColor:
+                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA),
+              iconColor:
+                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4),
+              title: '运行诊断日志',
+              subtitle: '查看网络请求、推送事件与异常抓取记录',
               onTap: () {
                 Navigator.push(
                   context,
@@ -514,8 +530,12 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
             ),
             SettingsTile(
               icon: Icons.feedback_outlined,
-              title: '功能建议与问题反馈',
-              subtitle: '提交使用问题或改进建议',
+              iconBgColor:
+                  isDark ? const Color(0xFF3D2A1A) : const Color(0xFFFDF0E6),
+              iconColor:
+                  isDark ? const Color(0xFFFFB74D) : const Color(0xFFE07A2B),
+              title: '问题与建议反馈',
+              subtitle: '在线提交页面异常、功能建议或改进想法',
               onTap: () {
                 Navigator.push(
                   context,
@@ -525,41 +545,26 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                 );
               },
             ),
-            if (info != null)
-              SettingsTile(
-                icon: Icons.copy_rounded,
-                title: '复制诊断信息',
-                subtitle: '复制已掩码的技术诊断文本',
-                onTap: () => _copyPushDiagnostics(info),
-              ),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildDetailRow(
-    String label,
-    String value,
-    bool isDark, {
-    bool? isOk,
-  }) {
-    Color valueColor = isDark ? Colors.white70 : CampusTheme.text;
-    if (isOk == true) valueColor = CampusTheme.green;
-    if (isOk == false) valueColor = CampusTheme.red;
-
+  Widget _buildTechRow(String label, String value, {bool isWarning = false}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 140,
+            width: 130,
             child: Text(
               label,
               style: TextStyle(
                 fontSize: 12.5,
-                color: isDark ? Colors.white54 : CampusTheme.subText,
+                color: isDark ? Colors.white60 : CampusTheme.subText,
               ),
             ),
           ),
@@ -568,8 +573,10 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
               value,
               style: TextStyle(
                 fontSize: 12.5,
-                fontWeight: FontWeight.w500,
-                color: valueColor,
+                fontWeight: FontWeight.w600,
+                color: isWarning
+                    ? CampusTheme.red
+                    : (isDark ? Colors.white : CampusTheme.text),
               ),
             ),
           ),

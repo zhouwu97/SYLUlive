@@ -154,7 +154,7 @@ func (i *CompetitionCatalogImporter) buildPreflightReport(
 	if validation.Status != "passed" || validation.ComputedPackageHash != catalog.PackageHash {
 		addBlocker("package_hash_or_validation_changed")
 	}
-	if report.ExpectedActivePackageID == nil && catalog.DatasetVersion != LegacyCompetitionBaselineDataset {
+	if report.ExpectedActivePackageID == nil && !isLegacyCompetitionBaseline(catalog.DatasetVersion) {
 		addBlocker("legacy_baseline_required_before_first_activation")
 	}
 
@@ -307,7 +307,7 @@ func (i *CompetitionCatalogImporter) buildPreflightReport(
 			addBlocker("unmapped_referenced_legacy_events")
 		}
 	}
-	if report.ExpectedActivePackageID == nil && catalog.DatasetVersion == LegacyCompetitionBaselineDataset {
+	if report.ExpectedActivePackageID == nil && isLegacyCompetitionBaseline(catalog.DatasetVersion) {
 		matches, fingerprint, err := legacyBaselineMatchesCurrent(tx, document)
 		if err != nil {
 			return report, err
@@ -391,11 +391,18 @@ func legacyBaselineMatchesCurrent(
 	document dto.CompetitionCatalogDocument,
 ) (bool, string, error) {
 	var events []models.CompetitionEvent
-	if err := tx.Preload("PrimaryCategory").
+	query := tx.Preload("PrimaryCategory").
 		Where("competition_events.catalog_package_id IS NULL").
-		Where("competition_events.dataset_version = '' OR competition_events.dataset_version = 'legacy'").
-		Where("competition_events.status = ?", "published").
-		Order("competition_events.id ASC").Find(&events).Error; err != nil {
+		Where("competition_events.dataset_version = '' OR competition_events.dataset_version = 'legacy'")
+	identityBaseline := document.DatasetVersion == LegacyCompetitionIdentityBaselineDataset
+	if identityBaseline {
+		canonicalIDs := tx.Model(&models.CompetitionLegacyDuplicateResolution{}).
+			Distinct("canonical_event_id").Select("canonical_event_id")
+		query = query.Unscoped().Where("competition_events.id IN (?)", canonicalIDs)
+	} else {
+		query = query.Where("competition_events.status = ?", "published")
+	}
+	if err := query.Order("competition_events.id ASC").Find(&events).Error; err != nil {
 		return false, "", err
 	}
 	expected := make(map[string]string, len(document.Items))
@@ -409,6 +416,15 @@ func legacyBaselineMatchesCurrent(
 		if err != nil {
 			return false, "", err
 		}
+		if identityBaseline {
+			record.Status = events[index].Status
+			record.SearchDisplayAllowed = false
+			record.CandidatePoolAllowed = false
+			record.PersonalizedRankingAllowed = false
+			record.StrongRecommendationEligible = false
+			record.RecommendationPermissionLevel = "blocked"
+			record.AIMode = "disabled"
+		}
 		recordHash, err := ComputeCompetitionRecordHash(record)
 		if err != nil {
 			return false, "", err
@@ -421,6 +437,11 @@ func legacyBaselineMatchesCurrent(
 	sort.Strings(parts)
 	digest := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	return matches, hex.EncodeToString(digest[:]), nil
+}
+
+func isLegacyCompetitionBaseline(datasetVersion string) bool {
+	return datasetVersion == LegacyCompetitionBaselineDataset ||
+		datasetVersion == LegacyCompetitionIdentityBaselineDataset
 }
 
 func lockedActiveCatalogPackageID(tx *gorm.DB) (*uint, error) {

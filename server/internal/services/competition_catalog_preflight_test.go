@@ -28,6 +28,66 @@ func TestCompetitionCatalogPreflightRequiresLegacyBaselineFirst(t *testing.T) {
 	}
 }
 
+func TestCompetitionCatalogIdentityBaselineCanBeFirstActivePackageWithZeroVisibility(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	if err := db.AutoMigrate(&models.CompetitionLegacyDuplicateResolution{}); err != nil {
+		t.Fatal(err)
+	}
+	seedLegacyCompetitionUpload(t, db, "A", "B")
+	seedLegacyCompetitionUpload(t, db, "A", "B")
+	latest := seedLegacyCompetitionUpload(t, db, "A", "")
+	if err := db.Delete(&latest[1]).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewLegacyCompetitionReconciler(db).Reconcile(context.Background(),
+		LegacyCompetitionReconciliationOptions{
+			Apply: true, BackupConfirmed: true,
+			ExpectedTotal: 6, ExpectedGroups: 2, ExpectedCopies: 3,
+			CanonicalMinID: latest[0].ID, CanonicalMaxID: latest[1].ID,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, _, err := NewCompetitionCatalogBaselineExporter(db).ExportIdentity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	importer := NewCompetitionCatalogImporter(db)
+	catalog, _, err := importer.Import(context.Background(), document, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := importer.Preflight(context.Background(), catalog.ID, 7)
+	if err != nil {
+		t.Fatalf("身份基线首次预检失败: %v report=%+v", err, preflight.Report)
+	}
+	if preflight.Report.PublicItemCount != 0 || preflight.Report.CandidateItemCount != 0 ||
+		!preflight.Report.CanActivate || preflight.Report.ExpectedActivePackageID != nil {
+		t.Fatalf("身份基线预检报告错误: %+v", preflight.Report)
+	}
+	if err := importer.ActivateWithPreflight(context.Background(), catalog.ID, 7,
+		CompetitionCatalogActivationRequest{
+			PreflightToken: preflight.Token, ExpectedPackageHash: catalog.PackageHash,
+		}); err != nil {
+		t.Fatal(err)
+	}
+	var publicCount, candidateCount int64
+	if err := db.Model(&models.CompetitionEvent{}).
+		Where("catalog_package_id = ? AND status = ? AND search_display_allowed = ?", catalog.ID, "published", true).
+		Count(&publicCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.CompetitionEvent{}).
+		Where("catalog_package_id = ? AND candidate_pool_allowed = ?", catalog.ID, true).
+		Count(&candidateCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if publicCount != 0 || candidateCount != 0 {
+		t.Fatalf("身份基线激活后权限泄漏: public=%d candidate=%d", publicCount, candidateCount)
+	}
+}
+
 func TestCompetitionCatalogPreflightRejectsMissingCategory(t *testing.T) {
 	db := newCompetitionServiceTestDB(t)
 	seedActiveCatalogPackage(t, db, "a")

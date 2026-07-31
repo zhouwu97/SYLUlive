@@ -93,3 +93,52 @@ func TestCompetitionCatalogBaselineExportRequiresFirstActivationState(t *testing
 		t.Fatalf("已有活动包应拒绝基线导出: %v", err)
 	}
 }
+
+func TestCompetitionCatalogIdentityBaselineExportsOnlyCanonicalEventsWithClosedPermissions(t *testing.T) {
+	db := newCompetitionServiceTestDB(t)
+	if err := db.AutoMigrate(&models.CompetitionLegacyDuplicateResolution{}); err != nil {
+		t.Fatal(err)
+	}
+	seedLegacyCompetitionUpload(t, db, "A", "B")
+	seedLegacyCompetitionUpload(t, db, "A", "B")
+	latest := seedLegacyCompetitionUpload(t, db, "A", "")
+	latest[1].Status = "archived"
+	if err := db.Model(&models.CompetitionEvent{}).Where("id = ?", latest[1].ID).
+		Update("status", "archived").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(&latest[1]).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewLegacyCompetitionReconciler(db).Reconcile(context.Background(),
+		LegacyCompetitionReconciliationOptions{
+			Apply: true, BackupConfirmed: true,
+			ExpectedTotal: 6, ExpectedGroups: 2, ExpectedCopies: 3,
+			CanonicalMinID: latest[0].ID, CanonicalMaxID: latest[1].ID,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	document, validation, err := NewCompetitionCatalogBaselineExporter(db).
+		ExportIdentity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validation.Status != "passed" ||
+		document.DatasetVersion != LegacyCompetitionIdentityBaselineDataset ||
+		document.ItemCount != 2 || len(document.Items) != 2 {
+		t.Fatalf("身份基线元数据错误: document=%+v validation=%+v", document, validation)
+	}
+	if document.Items[0].Status != "draft" || document.Items[1].Status != "archived" {
+		t.Fatalf("身份基线未保留记录状态: %+v", document.Items)
+	}
+	for _, item := range document.Items {
+		if item.SearchDisplayAllowed || item.CandidatePoolAllowed ||
+			item.PersonalizedRankingAllowed || item.StrongRecommendationEligible ||
+			item.RecommendationPermissionLevel != "blocked" || item.AIMode != "disabled" {
+			t.Fatalf("身份基线权限未关闭: %+v", item)
+		}
+	}
+}

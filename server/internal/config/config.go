@@ -36,9 +36,9 @@ type Config struct {
 
 	AIEnabled                              bool     // AI 总开关
 	AIProvider                             string   // AI Provider 名称
-	DeepSeekAPIKey                         string   // 仅从服务端环境变量读取的 DeepSeek 密钥
-	DeepSeekBaseURL                        string   // DeepSeek API 地址
-	DeepSeekChatModel                      string   // DeepSeek 对话模型
+	AIAPIKey                               string   // 仅从服务端环境变量读取的模型网关密钥
+	AIBaseURL                              string   // OpenAI 兼容模型网关地址
+	AIChatModel                            string   // 对话模型
 	AIRequestTimeoutSeconds                int      // 单次运行硬超时
 	AILegacyMaxOutputTokens                int      // 旧 Go RAG 单次生成的最大输出 token
 	AIMaxToolSteps                         int      // 单次运行最大工具步数
@@ -80,6 +80,11 @@ type Config struct {
 	AppReleaseUseAccelRedirect  bool   // 是否使用 Nginx X-Accel-Redirect 投递大文件
 	AppReleaseAccelPrefix       string // X-Accel-Redirect 路径前缀
 	LegalConsentEnforcement     string // 法律协议门禁模式：off、soft、hard
+
+	CompetitionCatalogV2Enabled         bool   // 是否开放 Catalog 2.2 管理链路
+	CompetitionCandidateEngineV2Enabled bool   // 是否开放统一候选接口
+	CompetitionAIExplanationEnabled     bool   // 是否允许调用外部模型解释候选
+	SyluliveMCPGrant                    string // 纯 MCP 调用 Go 只读事实网关的固定 Grant
 }
 
 const (
@@ -274,17 +279,17 @@ func Load() *Config {
 
 	aiEnabled := envBool("AI_ENABLED", false)
 	aiProvider := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
-	if aiProvider == "" {
-		aiProvider = "deepseek"
+	if aiProvider == "" || aiProvider == "deepseek" {
+		aiProvider = "openai-compatible"
 	}
-	deepSeekAPIKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
-	deepSeekBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("DEEPSEEK_BASE_URL")), "/")
-	if deepSeekBaseURL == "" {
-		deepSeekBaseURL = "https://api.deepseek.com"
+	aiAPIKey := firstNonEmptyEnv("AI_API_KEY", "DEEPSEEK_API_KEY")
+	aiBaseURL := strings.TrimRight(firstNonEmptyEnv("AI_BASE_URL", "DEEPSEEK_BASE_URL"), "/")
+	if aiBaseURL == "" {
+		aiBaseURL = "https://api.openai.com/v1"
 	}
-	deepSeekChatModel := strings.TrimSpace(os.Getenv("DEEPSEEK_CHAT_MODEL"))
-	if deepSeekChatModel == "" {
-		deepSeekChatModel = "deepseek-v4-flash"
+	aiChatModel := firstNonEmptyEnv("AI_CHAT_MODEL", "DEEPSEEK_CHAT_MODEL")
+	if aiChatModel == "" {
+		aiChatModel = "gpt-5.4-mini"
 	}
 	aiRequestTimeoutSeconds := envIntInRange("AI_REQUEST_TIMEOUT_SECONDS", 60, 5, 120)
 	aiLegacyMaxOutputTokens := envIntInRange("AI_LEGACY_MAX_OUTPUT_TOKENS", 4096, 256, 8192)
@@ -335,9 +340,13 @@ func Load() *Config {
 	aiExternalMCPSshUser := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_USER"))
 	aiExternalMCPSshKeyPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_SSH_KEY_PATH"))
 	aiExternalMCPKnownHostsPath := strings.TrimSpace(os.Getenv("AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH"))
+	competitionCatalogV2Enabled := envBool("COMPETITION_CATALOG_V2_ENABLED", false)
+	competitionCandidateEngineV2Enabled := envBool("COMPETITION_CANDIDATE_ENGINE_V2_ENABLED", false)
+	competitionAIExplanationEnabled := envBool("COMPETITION_AI_EXPLANATION_ENABLED", false)
+	syluliveMCPGrant := strings.TrimSpace(os.Getenv("SYLULIVE_MCP_GRANT"))
 	if err := validateAIConfig(
-		aiEnabled, aiProvider, deepSeekAPIKey,
-		deepSeekBaseURL, deepSeekChatModel, aiPolicyRAGEnabled,
+		aiEnabled, aiProvider, aiAPIKey,
+		aiBaseURL, aiChatModel, aiPolicyRAGEnabled,
 		aiLangChainRAGEnabled, aiLegacyRAGEnabled, aiLangChainRAGRolloutPercent,
 		ragServiceURL, ragServiceToken,
 	); err != nil {
@@ -376,9 +385,9 @@ func Load() *Config {
 
 		AIEnabled:                              aiEnabled,
 		AIProvider:                             aiProvider,
-		DeepSeekAPIKey:                         deepSeekAPIKey,
-		DeepSeekBaseURL:                        deepSeekBaseURL,
-		DeepSeekChatModel:                      deepSeekChatModel,
+		AIAPIKey:                               aiAPIKey,
+		AIBaseURL:                              aiBaseURL,
+		AIChatModel:                            aiChatModel,
 		AIRequestTimeoutSeconds:                aiRequestTimeoutSeconds,
 		AILegacyMaxOutputTokens:                aiLegacyMaxOutputTokens,
 		AIMaxToolSteps:                         aiMaxToolSteps,
@@ -412,13 +421,17 @@ func Load() *Config {
 		JWCSyncEnabled:         jwcSyncEnabled,
 		JWCSyncIntervalMinutes: jwcSyncIntervalMinutes,
 
-		AppReleaseDir:               appReleaseDir,
-		AppReleaseMaxSize:           int64(appReleaseMaxSizeMB) * 1024 * 1024,
-		AppUpdateEnforcementEnabled: appUpdateEnforcementEnabled,
-		AllowMissingVersionHeaders:  allowMissingVersionHeaders,
-		AppReleaseUseAccelRedirect:  appReleaseUseAccelRedirect,
-		AppReleaseAccelPrefix:       appReleaseAccelPrefix,
-		LegalConsentEnforcement:     legalConsentEnforcement,
+		AppReleaseDir:                       appReleaseDir,
+		AppReleaseMaxSize:                   int64(appReleaseMaxSizeMB) * 1024 * 1024,
+		AppUpdateEnforcementEnabled:         appUpdateEnforcementEnabled,
+		AllowMissingVersionHeaders:          allowMissingVersionHeaders,
+		AppReleaseUseAccelRedirect:          appReleaseUseAccelRedirect,
+		AppReleaseAccelPrefix:               appReleaseAccelPrefix,
+		LegalConsentEnforcement:             legalConsentEnforcement,
+		CompetitionCatalogV2Enabled:         competitionCatalogV2Enabled,
+		CompetitionCandidateEngineV2Enabled: competitionCandidateEngineV2Enabled,
+		CompetitionAIExplanationEnabled:     competitionAIExplanationEnabled,
+		SyluliveMCPGrant:                    syluliveMCPGrant,
 	}
 }
 
@@ -432,6 +445,15 @@ func envBool(name string, fallback bool) bool {
 		panic(fmt.Errorf("%s 必须为 true 或 false", name))
 	}
 	return parsed
+}
+
+func firstNonEmptyEnv(names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func envIntInRange(name string, fallback, minimum, maximum int) int {
@@ -496,21 +518,24 @@ func validateAIConfig(
 	langChainRolloutPercent int,
 	ragServiceURL, ragServiceToken string,
 ) error {
-	if provider != "deepseek" && provider != "mock" {
-		return fmt.Errorf("AI_PROVIDER 只能是 deepseek 或 mock")
+	if provider != "openai-compatible" && provider != "mock" {
+		return fmt.Errorf("AI_PROVIDER 只能是 openai-compatible 或 mock")
 	}
 	if !enabled {
 		return nil
 	}
-	if provider == "deepseek" && apiKey == "" && legacyRAGEnabled {
-		return fmt.Errorf("AI_ENABLED=true 且 AI_PROVIDER=deepseek 时必须设置 DEEPSEEK_API_KEY")
+	if provider == "openai-compatible" && apiKey == "" && legacyRAGEnabled {
+		return fmt.Errorf("AI_ENABLED=true 且 AI_PROVIDER=openai-compatible 时必须设置 AI_API_KEY")
 	}
 	if strings.TrimSpace(model) == "" {
 		return fmt.Errorf("AI_ENABLED=true 时模型名称不能为空")
 	}
+	if model != "gpt-5.4-mini" {
+		return fmt.Errorf("AI_CHAT_MODEL 必须是 gpt-5.4-mini")
+	}
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
-		return fmt.Errorf("DEEPSEEK_BASE_URL 必须是无用户信息的 HTTPS 地址")
+		return fmt.Errorf("AI_BASE_URL 必须是无用户信息的 HTTPS 地址")
 	}
 	if policyRAGEnabled {
 		ragURL, err := url.Parse(ragServiceURL)

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shenliyuan/models/edu_grade.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
 import 'package:shenliyuan/features/campus_data/storage/account_scoped_snapshot_store.dart';
 import 'package:shenliyuan/features/campus_data/storage/academic_cache_store.dart';
@@ -728,6 +729,164 @@ void main() {
       expect(p.isBound, false);
       expect(p.studentId, isEmpty);
       expect(p.isStatusLoaded, false);
+    });
+
+    test('成绩列表可在后台预取全部构成且已缓存课程不会重复请求', () async {
+      final detailRequests = <String>[];
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: const <String, dynamic>{
+                    'edu_authorized': true,
+                    'edu_student_id': '2403130233',
+                  },
+                ),
+              );
+              return;
+            }
+            if (options.path == '/edu/grades/detail') {
+              final data = Map<String, dynamic>.from(options.data as Map);
+              final classId = data['class_id'] as String;
+              detailRequests.add(classId);
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: <String, dynamic>{
+                    'success': true,
+                    'course_name': data['course_name'],
+                    'total_grade': '88',
+                    'components': const <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'name': '平时成绩',
+                        'weight': '40%',
+                        'score': '90',
+                      },
+                    ],
+                  },
+                ),
+              );
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+      final value = EduProvider(dio, createSnapshotStore);
+      await setBoundUser(value, 'user_prefetch');
+      final grades = <EduGrade>[
+        const EduGrade(
+          name: '数据结构',
+          classId: 'class-a',
+          displayGrade: '88',
+          credits: 3,
+          gpa: 3.7,
+          isDegree: true,
+        ),
+        const EduGrade(
+          name: '计算机网络',
+          classId: 'class-b',
+          displayGrade: '85',
+          credits: 3,
+          gpa: 3.5,
+          isDegree: true,
+        ),
+      ];
+
+      await value.prefetchGradeDetails(
+        grades,
+        '2025',
+        12,
+        initialDelay: Duration.zero,
+      );
+
+      expect(detailRequests, <String>['class-a', 'class-b']);
+      expect(value.getCachedGradeDetail(grades[0], '2025', 12), isNotNull);
+      expect(value.getCachedGradeDetail(grades[1], '2025', 12), isNotNull);
+
+      await value.prefetchGradeDetails(
+        grades,
+        '2025',
+        12,
+        initialDelay: Duration.zero,
+      );
+      expect(detailRequests, hasLength(2));
+    });
+
+    test('同时打开同一课程详情时复用进行中的请求', () async {
+      final detailCompleter = Completer<void>();
+      var detailRequestCount = 0;
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: const <String, dynamic>{
+                    'edu_authorized': true,
+                    'edu_student_id': '2403130233',
+                  },
+                ),
+              );
+              return;
+            }
+            if (options.path == '/edu/grades/detail') {
+              detailRequestCount++;
+              detailCompleter.future.then((_) {
+                handler.resolve(
+                  Response(
+                    requestOptions: options,
+                    statusCode: 200,
+                    data: const <String, dynamic>{
+                      'success': true,
+                      'course_name': '数据结构',
+                      'total_grade': '88',
+                      'components': <Map<String, dynamic>>[
+                        <String, dynamic>{
+                          'name': '期末成绩',
+                          'weight': '60%',
+                          'score': '86',
+                        },
+                      ],
+                    },
+                  ),
+                );
+              });
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+      final value = EduProvider(dio, createSnapshotStore);
+      await setBoundUser(value, 'user_deduplicate');
+      const grade = EduGrade(
+        name: '数据结构',
+        classId: 'class-a',
+        displayGrade: '88',
+        credits: 3,
+        gpa: 3.7,
+        isDegree: true,
+      );
+
+      final first = value.fetchGradeDetail(grade, '2025', 12);
+      final second = value.fetchGradeDetail(grade, '2025', 12);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(detailRequestCount, 1);
+
+      detailCompleter.complete();
+      final results = await Future.wait([first, second]);
+      expect(results.every((result) => result.success), isTrue);
+      expect(detailRequestCount, 1);
     });
   });
 }

@@ -1,10 +1,25 @@
 import 'dart:convert';
 
 class DeviceJobApiException implements Exception {
-  const DeviceJobApiException(this.code, {this.statusCode});
+  const DeviceJobApiException(
+    this.code, {
+    this.statusCode,
+    this.operation = '',
+    this.dioType = '',
+    this.retryable = false,
+    this.route = '',
+    this.method = '',
+    this.durationMs,
+  });
 
   final String code;
   final int? statusCode;
+  final String operation;
+  final String dioType;
+  final bool retryable;
+  final String route;
+  final String method;
+  final int? durationMs;
 
   @override
   String toString() => 'DeviceJobApiException($code)';

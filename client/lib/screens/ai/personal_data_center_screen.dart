@@ -15,6 +15,7 @@ import '../../features/personal_data_sync/personal_data_sync_result.dart';
 import '../../features/personal_data_sync/erke_snapshot_upload.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/webvpn_service.dart';
+import '../../widgets/erke_snapshot_upload_dialog.dart';
 import 'campus_personal_data_permission_screen.dart';
 
 class PersonalDataCenterScreen extends StatefulWidget {
@@ -202,45 +203,7 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
   }
 
   Future<ErkeSnapshotUploadPolicy?> _requestErkeSnapshotUploadPolicy() {
-    return showDialog<ErkeSnapshotUploadPolicy>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('上传二课摘要？'),
-        content: const Text(
-          '仅上传已解析的分数汇总、分类缺口和最近活动摘要，不包含密码、Cookie、会话或页面原文。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              ErkeSnapshotUploadPolicy.askEveryUpdate,
-            ),
-            child: const Text('下次再问'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              ErkeSnapshotUploadPolicy.neverUpload,
-            ),
-            child: const Text('永不上传'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              ErkeSnapshotUploadPolicy.autoUploadSummary,
-            ),
-            child: const Text('之后自动上传'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              ErkeSnapshotUploadPolicy.uploadThisTime,
-            ),
-            child: const Text('仅本次上传'),
-          ),
-        ],
-      ),
-    );
+    return showErkeSnapshotUploadDialog(context);
   }
 
   Future<void> _deleteUploadedErkeSnapshot() async {

@@ -106,10 +106,9 @@ class _CampusScreenState extends State<CampusScreen>
         });
       }
     } catch (_) {
-      if (mounted && _loadGeneration == generation) {
-        if (_aiCapabilities == null) {
-          setState(() => _aiCapabilities = null);
-        }
+      // AI 能力不可用时不影响校园资讯主体展示。
+      if (mounted && _loadGeneration == generation && _aiCapabilities != null) {
+        setState(() => _aiCapabilities = null);
       }
     }
   }
@@ -289,15 +288,6 @@ class _CampusScreenState extends State<CampusScreen>
                           capabilities: _aiCapabilities!,
                           isDark: isDark,
                           onTap: _openAiAssistant,
-                          onCompetitionCompareTap: () => _openAiAssistant(
-                            initialPrompt: '帮我比较适合我的校园竞赛，并说明推荐理由和准备重点',
-                          ),
-                          onAcademicAnalysisTap: () => _openAiAssistant(
-                            initialPrompt: '分析我的学业情况，找出主要风险并给出改进建议',
-                          ),
-                          onWeekPlanTap: () => _openAiAssistant(
-                            initialPrompt: '结合我的课表和目标，帮我制定本周学习计划',
-                          ),
                         ),
                       ),
                     ],

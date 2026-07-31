@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../config/api_constants.dart';
@@ -7,11 +6,10 @@ import '../models/post.dart';
 import '../models/water_section.dart';
 import '../models/user.dart';
 import '../providers/water_section_provider.dart';
-import '../screens/image_viewer_screen.dart';
 import '../screens/user_home_screen.dart';
-import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
+import 'post_media/post_media_view.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 
@@ -595,6 +593,8 @@ class _PostCardState extends State<PostCard>
   }
 
   Widget _buildImageGrid(BuildContext context, List<PostImage> images) {
+    return PostMediaView(images: images);
+    /*
     final validImages =
         images.where((image) => image.url.trim().isNotEmpty).toList();
     final count = validImages.length;
@@ -716,23 +716,7 @@ class _PostCardState extends State<PostCard>
         ),
       ),
     );
-  }
-
-  void _openImageViewer(
-    BuildContext context,
-    List<String> imageUrls,
-    int initialIndex,
-  ) {
-    if (imageUrls.isEmpty) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ImageViewerScreen(
-          imageUrls: imageUrls,
-          initialIndex: initialIndex,
-        ),
-      ),
-    );
+    */
   }
 
   void _openAuthor(BuildContext context) {

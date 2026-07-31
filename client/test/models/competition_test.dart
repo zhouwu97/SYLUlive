@@ -98,4 +98,50 @@ void main() {
       expect(event.toJson().containsKey('personalized_score'), isFalse);
     });
   });
+
+  group('CompetitionEvent candidate contract', () {
+    test('匹配维度、解释字段和权限门可往返序列化', () {
+      final source = <String, dynamic>{
+        'id': 14,
+        'competition_id': 'COMP-014',
+        'title': '候选赛事',
+        'group_key': 'major_match',
+        'rule_order': 2,
+        'match_dimensions': {
+          'eligibility': 'matched',
+          'major': 'matched',
+          'college': 'unknown',
+          'grade': 'partial',
+          'goal': 'matched',
+          'direction': 'matched',
+          'skill': 'partial',
+          'role': 'unknown',
+          'time': 'matched',
+          'training': 'unknown',
+        },
+        'core_reason': '资格与专业方向符合',
+        'cautions': ['报名时间待确认'],
+        'questions_to_confirm': ['是否接受长期训练'],
+        'evidence_subgrade': 'B1',
+        'dataset_version': 'catalog-2026-07',
+        'record_hash': 'hash-014',
+        'gates': {
+          'candidate_pool_allowed': true,
+          'personalized_ranking_allowed': false,
+          'strong_recommendation_eligible': false,
+          'recommendation_permission_level': 'candidate_only',
+          'ai_mode': 'candidate_explanation',
+        },
+      };
+
+      final event = CompetitionEvent.fromJson(source);
+      final serialized = event.toJson();
+
+      expect(serialized['competition_id'], 'COMP-014');
+      expect(serialized['group_key'], 'major_match');
+      expect(serialized['match_dimensions'], source['match_dimensions']);
+      expect(serialized['core_reason'], '资格与专业方向符合');
+      expect(serialized['gates'], source['gates']);
+    });
+  });
 }

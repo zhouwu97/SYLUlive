@@ -74,6 +74,9 @@ class EduProvider extends ChangeNotifier {
   String? _errorMessage;
   final Map<String, GradeCacheEntry> _gradeCache = {};
   final Map<String, EduGradeDetail> _gradeDetailCache = {};
+  final Map<String, Future<OperationResult<EduGradeDetail>>>
+      _gradeDetailRequests = {};
+  final Map<String, Future<void>> _gradeDetailPrefetchJobs = {};
   final Map<String, AcademicSituationCacheEntry> _academicSituationCache = {};
   final Map<String, CreditRequirementCacheEntry> _creditRequirementCache = {};
   int _statusGeneration = 0;
@@ -155,6 +158,9 @@ class EduProvider extends ChangeNotifier {
     final prefix = 'edu_grades_${userId}_';
     _gradeCache.removeWhere((key, _) => key.startsWith(prefix));
     _gradeDetailCache.removeWhere((key, _) => key.startsWith('$userId|'));
+    _gradeDetailRequests.removeWhere((key, _) => key.startsWith('$userId|'));
+    _gradeDetailPrefetchJobs
+        .removeWhere((key, _) => key.startsWith('$userId|'));
     _academicSituationCache.remove(_academicSituationCacheKey(userId));
     _creditRequirementCache.remove(_creditRequirementCacheKey(userId));
   }
@@ -274,6 +280,8 @@ class EduProvider extends ChangeNotifier {
     _errorMessage = null;
     _gradeCache.clear();
     _gradeDetailCache.clear();
+    _gradeDetailRequests.clear();
+    _gradeDetailPrefetchJobs.clear();
     _academicSituationCache.clear();
     _creditRequirementCache.clear();
     notifyListeners();
@@ -763,6 +771,9 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('缺少教学班信息，暂不能获取成绩构成');
     }
 
+    final pending = _gradeDetailRequests[cacheKey];
+    if (pending != null) return pending;
+
     Future<Response<dynamic>> request() {
       return _authDio.post(
         '/edu/grades/detail',
@@ -778,7 +789,8 @@ class EduProvider extends ChangeNotifier {
       );
     }
 
-    return _runEduRequest(() async {
+    late final Future<OperationResult<EduGradeDetail>> requestFuture;
+    requestFuture = _runEduRequest<OperationResult<EduGradeDetail>>(() async {
       try {
         final response = await request();
         if (_userId != requestUserId) {
@@ -801,7 +813,78 @@ class EduProvider extends ChangeNotifier {
         }
         return OperationResult.fail(errorMsg);
       }
+    }).whenComplete(() {
+      if (identical(_gradeDetailRequests[cacheKey], requestFuture)) {
+        _gradeDetailRequests.remove(cacheKey);
+      }
     });
+    _gradeDetailRequests[cacheKey] = requestFuture;
+    return requestFuture;
+  }
+
+  /// 在成绩列表稳定后按展示顺序预取构成明细，避免进入详情页时逐门等待。
+  ///
+  /// 预取串行执行并在课程间留出间隔，让用户主动发起的教务请求优先获得执行机会。
+  Future<void> prefetchGradeDetails(
+    List<EduGrade> grades,
+    String year,
+    int semester, {
+    Duration initialDelay = const Duration(milliseconds: 300),
+  }) {
+    final requestUserId = _userId;
+    if (requestUserId == null || grades.isEmpty) return Future<void>.value();
+
+    final pendingGrades = grades
+        .where(
+          (grade) =>
+              grade.classId.isNotEmpty &&
+              getCachedGradeDetail(grade, year, semester) == null,
+        )
+        .toList(growable: false);
+    if (pendingGrades.isEmpty) return Future<void>.value();
+
+    final jobKey = '$requestUserId|$year|$semester';
+    final activeJob = _gradeDetailPrefetchJobs[jobKey];
+    if (activeJob != null) return activeJob;
+
+    late final Future<void> job;
+    job = _runGradeDetailPrefetch(
+      requestUserId: requestUserId,
+      grades: pendingGrades,
+      year: year,
+      semester: semester,
+      initialDelay: initialDelay,
+    ).whenComplete(() {
+      if (identical(_gradeDetailPrefetchJobs[jobKey], job)) {
+        _gradeDetailPrefetchJobs.remove(jobKey);
+      }
+    });
+    _gradeDetailPrefetchJobs[jobKey] = job;
+    return job;
+  }
+
+  Future<void> _runGradeDetailPrefetch({
+    required String requestUserId,
+    required List<EduGrade> grades,
+    required String year,
+    required int semester,
+    required Duration initialDelay,
+  }) async {
+    if (initialDelay > Duration.zero) await Future<void>.delayed(initialDelay);
+
+    for (final grade in grades) {
+      if (_userId != requestUserId) return;
+      if (grade.classId.isEmpty ||
+          getCachedGradeDetail(grade, year, semester) != null) {
+        continue;
+      }
+
+      await fetchGradeDetail(grade, year, semester);
+      if (_userId != requestUserId) return;
+
+      // 给详情点击、刷新等前台请求留出抢占窗口。
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+    }
   }
 
   Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation() async {

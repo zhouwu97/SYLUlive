@@ -54,10 +54,8 @@ class DioCompetitionCapabilityProfileSource
 
 class CompetitionCapabilityProfileSkill
     implements
-        PersonalSkill<
-          EmptyCompetitionAdvisorInput,
-          CompetitionCapabilityProfile
-        > {
+        PersonalSkill<EmptyCompetitionAdvisorInput,
+            CompetitionCapabilityProfile> {
   CompetitionCapabilityProfileSkill(this._source);
 
   static const String skillId = 'get_competition_capability_profile';
@@ -72,8 +70,8 @@ class CompetitionCapabilityProfileSkill
 
   @override
   Set<PersonalDataType> get requiredDataTypes => const <PersonalDataType>{
-    PersonalDataType.studentProfile,
-  };
+        PersonalDataType.studentProfile,
+      };
 
   @override
   Future<SkillResult<CompetitionCapabilityProfile>> execute(
@@ -121,25 +119,37 @@ class CompetitionCapabilityProfileSkill
 
 class CompetitionMatchExplanationItem {
   CompetitionMatchExplanationItem.fromEvent(CompetitionEvent event)
-    : id = event.id,
-      title = event.title,
-      personalizedScore = event.personalizedScore,
-      recommendationTier = event.recommendationTier,
-      fitReasons = List<String>.unmodifiable(event.fitReasons),
-      competitionRating = event.competitionRating,
-      manualRating = event.manualRating,
-      schoolRecognitionStatus = event.schoolRecognitionStatus,
-      schoolRecognitionGrade = event.schoolRecognitionGrade,
-      timeStatus = event.timeStatus,
-      registrationTimeText = event.registrationTimeText;
+      : id = event.id,
+        title = event.title,
+        groupKey = event.groupKey,
+        ruleOrder = event.ruleOrder,
+        hasPendingInformation = event.hasPendingInformation,
+        matchDimensions = event.matchDimensions,
+        coreReason = event.coreReason,
+        cautions = List<String>.unmodifiable(event.cautions),
+        questionsToConfirm = List<String>.unmodifiable(
+          event.questionsToConfirm,
+        ),
+        evidenceSubgrade = event.evidenceSubgrade,
+        datasetVersion = event.datasetVersion,
+        competitionRating = event.competitionRating,
+        schoolRecognitionStatus = event.schoolRecognitionStatus,
+        schoolRecognitionGrade = event.schoolRecognitionGrade,
+        timeStatus = event.timeStatus,
+        registrationTimeText = event.registrationTimeText;
 
   final int id;
   final String title;
-  final int? personalizedScore;
-  final String recommendationTier;
-  final List<String> fitReasons;
+  final String groupKey;
+  final int ruleOrder;
+  final bool hasPendingInformation;
+  final CompetitionMatchDimensions matchDimensions;
+  final String coreReason;
+  final List<String> cautions;
+  final List<String> questionsToConfirm;
+  final String evidenceSubgrade;
+  final String datasetVersion;
   final String competitionRating;
-  final double? manualRating;
   final String schoolRecognitionStatus;
   final String schoolRecognitionGrade;
   final String timeStatus;
@@ -150,6 +160,7 @@ class CompetitionMatchExplanationPage {
   CompetitionMatchExplanationPage({
     required this.profileReady,
     required this.preferenceConfigured,
+    this.catalog = const CompetitionCatalogSummary(),
     required List<CompetitionMatchExplanationItem> items,
     required this.total,
     required this.fetchedAt,
@@ -157,6 +168,7 @@ class CompetitionMatchExplanationPage {
 
   final bool profileReady;
   final bool preferenceConfigured;
+  final CompetitionCatalogSummary catalog;
   final List<CompetitionMatchExplanationItem> items;
   final int total;
   final DateTime fetchedAt;
@@ -169,7 +181,7 @@ abstract interface class CompetitionMatchExplanationSource {
 class DioCompetitionMatchExplanationSource
     implements CompetitionMatchExplanationSource {
   DioCompetitionMatchExplanationSource(this._dio, {DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now;
+      : _clock = clock ?? DateTime.now;
 
   final Dio _dio;
   final DateTime Function() _clock;
@@ -177,29 +189,34 @@ class DioCompetitionMatchExplanationSource
   @override
   Future<CompetitionMatchExplanationPage> load() async {
     final response = await _dio.get<dynamic>(
-      '/user/competitions/fit',
+      '/user/competitions/candidates',
       queryParameters: const <String, dynamic>{'page': 1, 'page_size': 20},
     );
     if (response.data is! Map) {
-      throw const FormatException('个性化竞赛响应格式错误');
+      throw const FormatException('竞赛候选响应格式错误');
     }
     final data = Map<String, dynamic>.from(response.data as Map);
-    final rawItems = data['items'];
-    if (rawItems is! List) {
-      throw const FormatException('个性化竞赛列表格式错误');
+    final rawGroups = data['groups'];
+    if (rawGroups is! List) {
+      throw const FormatException('竞赛候选分组格式错误');
     }
-    final items = rawItems
+    final items = rawGroups
         .whereType<Map>()
-        .map(
-          (item) => CompetitionMatchExplanationItem.fromEvent(
-            CompetitionEvent.fromJson(Map<String, dynamic>.from(item)),
-          ),
-        )
+        .expand((group) => (group['items'] as List?) ?? const <dynamic>[])
+        .whereType<Map>()
+        .map((item) => CompetitionMatchExplanationItem.fromEvent(
+              CompetitionEvent.fromJson(Map<String, dynamic>.from(item)),
+            ))
         .take(20)
         .toList(growable: false);
     return CompetitionMatchExplanationPage(
       profileReady: data['profile_ready'] == true,
       preferenceConfigured: data['preference_configured'] == true,
+      catalog: CompetitionCatalogSummary.fromJson(
+        data['catalog'] is Map
+            ? Map<String, dynamic>.from(data['catalog'] as Map)
+            : null,
+      ),
       items: items,
       total: (data['total'] as num?)?.toInt() ?? items.length,
       fetchedAt: _clock().toUtc(),
@@ -209,10 +226,8 @@ class DioCompetitionMatchExplanationSource
 
 class ExplainCompetitionMatchesSkill
     implements
-        PersonalSkill<
-          EmptyCompetitionAdvisorInput,
-          CompetitionMatchExplanationPage
-        > {
+        PersonalSkill<EmptyCompetitionAdvisorInput,
+            CompetitionMatchExplanationPage> {
   ExplainCompetitionMatchesSkill(this._source);
 
   static const String skillId = 'explain_competition_matches';
@@ -227,8 +242,8 @@ class ExplainCompetitionMatchesSkill
 
   @override
   Set<PersonalDataType> get requiredDataTypes => const <PersonalDataType>{
-    PersonalDataType.studentProfile,
-  };
+        PersonalDataType.studentProfile,
+      };
 
   @override
   Future<SkillResult<CompetitionMatchExplanationPage>> execute(
@@ -238,19 +253,19 @@ class ExplainCompetitionMatchesSkill
     try {
       final page = await _source.load();
       final warnings = <String>[
-        '结果沿用平台确定性排序，AI 只负责解释，不重新评分或调整顺序',
+        '结果来自平台规则候选，AI 只能追加解释，不能新增赛事或调整顺序',
         '赛事认定、报名资格及政策收益须以学校和主办方最新正式文件为准',
-        if (!page.profileReady) '基础画像尚未就绪，当前无法生成个性化赛事结果',
+        if (!page.profileReady) '基础画像尚未就绪，当前无法生成竞赛候选',
         if (page.profileReady && !page.preferenceConfigured)
-          '尚未设置竞赛偏好，当前结果不包含目标和投入时间的个性化权重',
+          '尚未设置竞赛偏好，目标、方向和投入时间将保持待确认',
       ];
       return SkillResult<CompetitionMatchExplanationPage>(
         value: page,
         status: page.profileReady ? SkillStatus.success : SkillStatus.partial,
         evidence: <SkillEvidence>[
           SkillEvidence(
-            source: '神理校园确定性竞赛推荐',
-            scope: '服务端现有适合我排序及其评分、理由、认定和报名时间状态',
+            source: '神理校园规则候选',
+            scope: '服务端候选分组、离散匹配维度、公开风险和报名时间状态',
             dataType: PersonalDataType.studentProfile,
             fetchedAt: page.fetchedAt,
           ),
@@ -270,7 +285,7 @@ class ExplainCompetitionMatchesSkill
   SkillResult<CompetitionMatchExplanationPage> _unavailable() =>
       SkillResult<CompetitionMatchExplanationPage>(
         status: SkillStatus.unavailable,
-        warnings: const <String>['个性化竞赛结果服务暂不可用'],
+        warnings: const <String>['竞赛候选服务暂不可用'],
         containsPersonalData: false,
       );
 }

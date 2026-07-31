@@ -112,6 +112,47 @@ func TestPollServiceCreateAndResultVisibility(t *testing.T) {
 	}
 }
 
+func TestPollServicePrivateResultsOnlyVisibleToOwner(t *testing.T) {
+	db := newPollServiceTestDB(t)
+	now := time.Date(2026, 7, 18, 12, 0, 0, 0, time.Local)
+	owner := seedPollUser(t, db, "private-owner")
+	voter := seedPollUser(t, db, "private-voter")
+	service := NewPollService(db)
+	service.SetNowForTest(func() time.Time { return now })
+
+	input := pollInput(now)
+	input.ResultsVisibility = models.PollResultsPrivate
+	created, err := service.Create(owner.ID, string(owner.Role), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.PollMeta.ResultsVisible || !created.PollMeta.CanViewResult {
+		t.Fatal("private 投票的作者应能查看结果")
+	}
+
+	publicView, err := service.Get(created.PollMeta.ID, voter.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if publicView.PollMeta.ResultsVisible ||
+		publicView.PollMeta.CanViewResult ||
+		publicView.PollMeta.Options[0].VoteCount != nil {
+		t.Fatal("private 投票向普通用户泄露了结果")
+	}
+
+	voted, err := service.PutBallot(
+		created.PollMeta.ID,
+		voter.ID,
+		[]uint{created.PollMeta.Options[0].ID},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if voted.PollMeta.ResultsVisible || voted.PollMeta.Options[0].VoteCount != nil {
+		t.Fatal("private 投票在用户参与后泄露了结果")
+	}
+}
+
 func TestPollServiceValidationAndRulesLock(t *testing.T) {
 	db := newPollServiceTestDB(t)
 	now := time.Date(2026, 7, 18, 12, 0, 0, 0, time.Local)

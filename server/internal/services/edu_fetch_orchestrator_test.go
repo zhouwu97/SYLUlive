@@ -111,6 +111,80 @@ func TestEduFetchUsesFreshSnapshotBeforeRemoteFetch(t *testing.T) {
 	_ = db
 }
 
+func TestAcademicSnapshotIntegrityUsesCanonicalJSON(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	db, snapshots, _ := newEduFetchTestFixture(t, &fakeEduContextFetcher{}, now)
+	original := json.RawMessage(`{"success":true,"meta":{"b":2,"a":1},"grades":[]}`)
+	if err := snapshots.StoreRemote(context.Background(), AcademicSnapshotInput{
+		UserID: 1, Dataset: academic.DatasetGrades, ScopeKey: "2025-2026:3", SchemaVersion: 1,
+		Source: academic.DataSourceRemoteEduFetch, Payload: original,
+		FetchedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour), CredentialGeneration: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// PostgreSQL jsonb 会规范化空白和对象键顺序；语义未变化时不能误报快照损坏。
+	normalized := json.RawMessage(`{"grades": [], "meta": {"a": 1, "b": 2}, "success": true}`)
+	if err := db.Model(&models.AcademicSnapshot{}).
+		Where("user_id = ? AND dataset_type = ?", 1, academic.DatasetGrades).
+		Update("payload_json", normalized).Error; err != nil {
+		t.Fatal(err)
+	}
+	lookup, err := snapshots.Lookup(
+		context.Background(), 1, academic.DatasetGrades, "2025-2026:3", 1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lookup.Found || lookup.Corrupted || lookup.Result.Status != academic.DataStatusAvailable {
+		t.Fatalf("语义相同的 jsonb 被误判损坏: %+v", lookup)
+	}
+}
+
+func TestBackfillAcademicSnapshotHashesRequiresApplyToWrite(t *testing.T) {
+	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	db, snapshots, _ := newEduFetchTestFixture(t, &fakeEduContextFetcher{}, now)
+	if err := snapshots.StoreRemote(context.Background(), AcademicSnapshotInput{
+		UserID: 1, Dataset: academic.DatasetGrades, ScopeKey: "2025-2026:3", SchemaVersion: 1,
+		Source: academic.DataSourceRemoteEduFetch, Payload: json.RawMessage(`{"success":true,"grades":[]}`),
+		FetchedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour), CredentialGeneration: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.AcademicSnapshot{}).Where("user_id = ?", 1).
+		Update("payload_hash", "legacy-raw-json-hash").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	dryRun, err := BackfillAcademicSnapshotHashes(context.Background(), db, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dryRun.Updated != 1 {
+		t.Fatalf("dry-run 应发现一条不匹配快照: %+v", dryRun)
+	}
+	var stored models.AcademicSnapshot
+	if err := db.First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.PayloadHash != "legacy-raw-json-hash" {
+		t.Fatal("dry-run 不得修改数据库")
+	}
+
+	applied, err := BackfillAcademicSnapshotHashes(context.Background(), db, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.Updated != 1 {
+		t.Fatalf("apply 应更新一条快照: %+v", applied)
+	}
+	if err := db.First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.PayloadHash == "legacy-raw-json-hash" {
+		t.Fatal("apply 未更新快照哈希")
+	}
+}
+
 func TestEduFetchDeduplicatesConcurrentRefreshes(t *testing.T) {
 	now := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
 	fetcher := &fakeEduContextFetcher{started: make(chan struct{}, 1), release: make(chan struct{})}

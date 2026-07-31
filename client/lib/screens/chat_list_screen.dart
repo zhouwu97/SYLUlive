@@ -14,6 +14,7 @@ import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_time.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/swipe_to_exit.dart';
 import 'chat_detail_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
@@ -73,7 +74,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     final auth = context.watch<AuthProvider>();
     if (!auth.isLoggedIn) {
       _refreshTimer?.cancel();
-      return _buildLoginRequiredScaffold();
+      return SwipeToExit(child: _buildLoginRequiredScaffold());
     }
 
     final currentUserId = auth.user?.id ?? 0;
@@ -82,22 +83,24 @@ class _ChatListScreenState extends State<ChatListScreen>
 
     if (isWide) {
       _syncWideSelection(provider, currentUserId);
-      return _buildWideLayout(provider, currentUserId);
+      return SwipeToExit(child: _buildWideLayout(provider, currentUserId));
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-      appBar: AppBar(
-        title: const Text('私信'),
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-      ),
-      body: RefreshIndicator(
-        onRefresh: () => provider.loadConversations(),
-        child: _buildConversationList(provider, currentUserId),
+    return SwipeToExit(
+      child: Scaffold(
+        backgroundColor:
+            isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+        appBar: AppBar(
+          title: const Text('私信'),
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+        ),
+        body: RefreshIndicator(
+          onRefresh: () => provider.loadConversations(),
+          child: _buildConversationList(provider, currentUserId),
+        ),
       ),
     );
   }

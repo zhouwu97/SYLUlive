@@ -13,13 +13,17 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import cn.jpush.android.api.JPushInterface
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 
 class KeepAliveForegroundService : Service() {
     private val handler = Handler(Looper.getMainLooper())
+    private var lifecycleTraceId = ""
+    private var lifecycleStartedAt = 0L
     private val heartbeatRunnable = Runnable {
         performHeartbeat()
         scheduleHeartbeat(immediate = false)
@@ -27,18 +31,29 @@ class KeepAliveForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        lifecycleTraceId = pendingStartTraceId ?: UUID.randomUUID().toString()
+        lifecycleStartedAt = SystemClock.elapsedRealtime()
         DiagnosticLogStore.info(
             this,
             source = "保活",
             type = "服务创建",
             summary = "后台保活服务进程已创建",
-            detail = "pid=${android.os.Process.myPid()}"
+            detail = "pid=${android.os.Process.myPid()}",
+            event = serviceEvent(
+                eventCode = "keep_alive_service_created",
+                operation = "create",
+                result = "success",
+            ),
         )
         ensureChannel(this)
         restoreJPush()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra(EXTRA_TRACE_ID)?.takeIf { it.isNotBlank() }?.let {
+            lifecycleTraceId = it
+            pendingStartTraceId = null
+        }
         if (intent?.action == ACTION_STOP) {
             prefs(this).edit().putBoolean(KEY_ENABLED, false).apply()
             stopSelf()
@@ -51,7 +66,21 @@ class KeepAliveForegroundService : Service() {
             source = "保活",
             type = if (systemRestart) "系统无 Intent 重建" else "服务启动",
             summary = if (systemRestart) "系统通过 START_STICKY 重新拉起保活服务" else "收到保活服务启动请求",
-            detail = "action=${intent?.action ?: "null"}\nflags=$flags\nstartId=$startId\nenabled=${isEnabled(this)}\npid=${android.os.Process.myPid()}\nbatteryOptimized=${!isIgnoringBatteryOptimizations(this)}"
+            detail = "action=${intent?.action ?: "null"}\nflags=$flags\nstartId=$startId\nenabled=${isEnabled(this)}\npid=${android.os.Process.myPid()}\nbatteryOptimized=${!isIgnoringBatteryOptimizations(this)}",
+            event = serviceEvent(
+                eventCode = if (systemRestart) {
+                    "keep_alive_service_system_restart"
+                } else {
+                    "keep_alive_service_started"
+                },
+                operation = "start",
+                result = "success",
+                metadata = mapOf(
+                    "systemRestart" to systemRestart,
+                    "flags" to flags,
+                    "startId" to startId,
+                ),
+            ),
         )
 
         if (!isEnabled(this)) {
@@ -83,6 +112,12 @@ class KeepAliveForegroundService : Service() {
                 source = "保活",
                 type = "前台运行",
                 summary = "前台保活通知已建立",
+                event = serviceEvent(
+                    eventCode = "keep_alive_foreground_started",
+                    operation = "start_foreground",
+                    result = "success",
+                    durationMs = SystemClock.elapsedRealtime() - lifecycleStartedAt,
+                ),
             )
             isRunning = true
         } catch (e: Exception) {
@@ -93,6 +128,12 @@ class KeepAliveForegroundService : Service() {
                 type = e.javaClass.simpleName,
                 summary = "前台保活通知建立失败",
                 detail = Log.getStackTraceString(e),
+                event = serviceEvent(
+                    eventCode = "keep_alive_foreground_failed",
+                    operation = "start_foreground",
+                    result = "failure",
+                    durationMs = SystemClock.elapsedRealtime() - lifecycleStartedAt,
+                ),
             )
             throw e
         }
@@ -108,7 +149,12 @@ class KeepAliveForegroundService : Service() {
             source = "保活",
             type = "后台任务移除",
             summary = "应用最近任务卡片已被划掉",
-            detail = "enabled=${isEnabled(this)}\nserviceRunning=$isRunning\npid=${android.os.Process.myPid()}"
+            detail = "enabled=${isEnabled(this)}\nserviceRunning=$isRunning\npid=${android.os.Process.myPid()}",
+            event = serviceEvent(
+                eventCode = "keep_alive_task_removed",
+                operation = "task_removed",
+                result = "warning",
+            ),
         )
         super.onTaskRemoved(rootIntent)
     }
@@ -120,7 +166,13 @@ class KeepAliveForegroundService : Service() {
             source = "保活",
             type = "服务销毁",
             summary = "后台保活服务生命周期结束",
-            detail = "enabled=${isEnabled(this)}\nserviceRunning=$isRunning\npid=${android.os.Process.myPid()}"
+            detail = "enabled=${isEnabled(this)}\nserviceRunning=$isRunning\npid=${android.os.Process.myPid()}",
+            event = serviceEvent(
+                eventCode = "keep_alive_service_destroyed",
+                operation = "destroy",
+                result = "warning",
+                durationMs = SystemClock.elapsedRealtime() - lifecycleStartedAt,
+            ),
         )
         serviceDestroyed = true
         handler.removeCallbacks(heartbeatRunnable)
@@ -130,6 +182,23 @@ class KeepAliveForegroundService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun serviceEvent(
+        eventCode: String,
+        operation: String,
+        result: String,
+        durationMs: Long? = null,
+        metadata: Map<String, Any?> = emptyMap(),
+    ) = DiagnosticLogStore.EventContext(
+        eventCode = eventCode,
+        category = "background",
+        operation = operation,
+        result = result,
+        traceId = lifecycleTraceId,
+        durationMs = durationMs,
+        isForeground = false,
+        metadata = metadata,
+    )
 
     /**
      * 系统通过 START_STICKY 重新拉起保活服务时，Flutter 进程可能已被杀死，
@@ -365,6 +434,7 @@ class KeepAliveForegroundService : Service() {
             "com.example.shenliyuan.action.START_KEEP_ALIVE"
         private const val ACTION_STOP =
             "com.example.shenliyuan.action.STOP_KEEP_ALIVE"
+        private const val EXTRA_TRACE_ID = "diagnostic_trace_id"
         private const val HEARTBEAT_URL =
             "https://sylulive.online/api/user/notifications/unread_count"
         private const val INITIAL_HEARTBEAT_DELAY_MS = 5_000L
@@ -372,6 +442,8 @@ class KeepAliveForegroundService : Service() {
 
         @Volatile
         private var isRunning = false
+        @Volatile
+        private var pendingStartTraceId: String? = null
 
         fun setEnabled(context: Context, enabled: Boolean): Map<String, Any> {
             val appContext = context.applicationContext
@@ -669,8 +741,11 @@ class KeepAliveForegroundService : Service() {
         }
 
         private fun start(context: Context) {
+            val traceId = UUID.randomUUID().toString()
+            pendingStartTraceId = traceId
             val intent = Intent(context, KeepAliveForegroundService::class.java).apply {
                 action = ACTION_START
+                putExtra(EXTRA_TRACE_ID, traceId)
             }
             
             DiagnosticLogStore.info(
@@ -678,6 +753,14 @@ class KeepAliveForegroundService : Service() {
                 source = "保活",
                 type = "启动请求",
                 summary = "准备启动后台保活服务",
+                event = DiagnosticLogStore.EventContext(
+                    eventCode = "keep_alive_start_requested",
+                    category = "background",
+                    operation = "request_start",
+                    result = "success",
+                    traceId = traceId,
+                    isForeground = false,
+                ),
             )
             
             try {
@@ -687,6 +770,9 @@ class KeepAliveForegroundService : Service() {
                     context.startService(intent)
                 }
             } catch (e: Exception) {
+                if (pendingStartTraceId == traceId) {
+                    pendingStartTraceId = null
+                }
                 DiagnosticLogStore.critical(
                     context,
                     level = "error",
@@ -694,6 +780,14 @@ class KeepAliveForegroundService : Service() {
                     type = e.javaClass.simpleName,
                     summary = "请求启动前台服务被系统拒绝",
                     detail = Log.getStackTraceString(e),
+                    event = DiagnosticLogStore.EventContext(
+                        eventCode = "keep_alive_start_rejected",
+                        category = "background",
+                        operation = "request_start",
+                        result = "failure",
+                        traceId = traceId,
+                        isForeground = false,
+                    ),
                 )
             }
         }

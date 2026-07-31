@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shenliyuan/screens/post_detail_screen.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
@@ -18,6 +17,7 @@ import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/emoji_favorite_service.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
+import 'package:shenliyuan/widgets/post_media/post_media_view.dart';
 
 final List<int> transparentImage = [
   0x89,
@@ -556,7 +556,7 @@ void main() {
     expect(clearedDecoration.color, Colors.transparent);
   });
 
-  testWidgets('PostDetailScreen renders post images as a three-column grid',
+  testWidgets('PostDetailScreen renders three images with shared media view',
       (WidgetTester tester) async {
     final fakePost = _postWithImages(
       id: 101,
@@ -573,25 +573,8 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Three images'), findsOneWidget);
-    expect(
-      find.byWidgetPredicate((widget) {
-        if (widget is! GridView) return false;
-        final delegate = widget.gridDelegate;
-        return delegate is SliverGridDelegateWithFixedCrossAxisCount &&
-            delegate.crossAxisCount == 3 &&
-            delegate.childAspectRatio == 1;
-      }),
-      findsOneWidget,
-    );
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is CachedNetworkImage &&
-            widget.imageUrl.startsWith('http://example.com/') &&
-            widget.imageUrl.endsWith('.png'),
-      ),
-      findsNWidgets(3),
-    );
+    expect(find.byType(PostMediaView), findsOneWidget);
+    expect(find.byType(AspectRatio), findsOneWidget);
   });
 
   testWidgets('PostDetailScreen renders one image with single-image treatment',
@@ -607,18 +590,9 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Single image'), findsOneWidget);
+    expect(find.byType(PostMediaView), findsOneWidget);
     expect(find.byType(GridView), findsNothing);
     expect(find.byType(ImageFiltered), findsNothing);
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is CachedNetworkImage &&
-            widget.imageUrl == 'http://example.com/one.png' &&
-            widget.fit == BoxFit.fitWidth &&
-            widget.width == double.infinity,
-      ),
-      findsOneWidget,
-    );
   });
 
   testWidgets('PostDetailScreen renders two images side by side',
@@ -637,22 +611,13 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Two images'), findsOneWidget);
+    expect(find.byType(PostMediaView), findsOneWidget);
     expect(find.byType(GridView), findsNothing);
     expect(
       find.byWidgetPredicate(
-        (widget) => widget is AspectRatio && widget.aspectRatio == 1,
+        (widget) => widget is AspectRatio && widget.aspectRatio == 2,
       ),
-      findsNWidgets(2),
-    );
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is CachedNetworkImage &&
-            widget.imageUrl.startsWith('http://example.com/') &&
-            widget.imageUrl.endsWith('.png') &&
-            widget.fit == BoxFit.cover,
-      ),
-      findsNWidgets(2),
+      findsOneWidget,
     );
   });
 

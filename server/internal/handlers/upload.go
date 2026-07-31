@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"image"
 	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"os"
@@ -18,6 +18,7 @@ import (
 	"shenliyuan/internal/models"
 
 	"github.com/gin-gonic/gin"
+	xdraw "golang.org/x/image/draw"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -78,12 +79,42 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 	}
 	path := "/uploads/" + relative
 	var file models.File
-	if err := h.db.Where("path = ?", path).First(&file).Error; err != nil {
-		c.Status(http.StatusNotFound)
-		c.Writer.WriteHeaderNow()
-		return
+	variant, originalRelative := imageVariantRequest(relative)
+	if variant == "" {
+		if err := h.db.Where("path = ?", path).First(&file).Error; err != nil {
+			c.Status(http.StatusNotFound)
+			c.Writer.WriteHeaderNow()
+			return
+		}
+	} else {
+		originalPath := "/uploads/" + originalRelative
+		if err := h.db.Where("path = ?", originalPath).First(&file).Error; err != nil {
+			c.Status(http.StatusNotFound)
+			c.Writer.WriteHeaderNow()
+			return
+		}
 	}
 	fullPath := filepath.Join(h.uploadDir, filepath.FromSlash(relative))
+	if variant != "" {
+		originalFullPath := filepath.Join(
+			h.uploadDir,
+			filepath.FromSlash(originalRelative),
+		)
+		maxDimension := 480
+		if variant == "medium" {
+			maxDimension = 1280
+		}
+		if err := ensureImageVariant(
+			originalFullPath,
+			fullPath,
+			file.MimeType,
+			maxDimension,
+		); err != nil {
+			c.Status(http.StatusNotFound)
+			c.Writer.WriteHeaderNow()
+			return
+		}
+	}
 	if _, err := os.Stat(fullPath); err != nil {
 		c.Status(http.StatusNotFound)
 		c.Writer.WriteHeaderNow()
@@ -92,6 +123,91 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 	c.Header("Content-Type", file.MimeType)
 	c.Header("Cache-Control", "public, max-age=31536000, immutable")
 	c.File(fullPath)
+}
+
+func imageVariantRequest(relative string) (variant string, original string) {
+	extension := filepath.Ext(relative)
+	base := strings.TrimSuffix(relative, extension)
+	for _, candidate := range []string{"thumb", "medium"} {
+		suffix := "_" + candidate
+		if strings.HasSuffix(base, suffix) {
+			return candidate, strings.TrimSuffix(base, suffix) + extension
+		}
+	}
+	return "", relative
+}
+
+func ensureImageVariant(
+	originalPath string,
+	variantPath string,
+	mimeType string,
+	maxDimension int,
+) error {
+	if _, err := os.Stat(variantPath); err == nil {
+		return nil
+	}
+	if mimeType == "image/gif" {
+		return os.ErrNotExist
+	}
+
+	source, err := os.Open(originalPath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	decoded, _, err := image.Decode(source)
+	if err != nil {
+		return err
+	}
+	bounds := decoded.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("图片尺寸无效")
+	}
+	targetWidth, targetHeight := width, height
+	if width > maxDimension || height > maxDimension {
+		scale := float64(maxDimension) / float64(max(width, height))
+		targetWidth = max(1, int(float64(width)*scale))
+		targetHeight = max(1, int(float64(height)*scale))
+	}
+	resized := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
+	xdraw.CatmullRom.Scale(
+		resized,
+		resized.Bounds(),
+		decoded,
+		bounds,
+		xdraw.Over,
+		nil,
+	)
+
+	if err := os.MkdirAll(filepath.Dir(variantPath), 0755); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(variantPath), ".image-variant-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+
+	switch mimeType {
+	case "image/jpeg":
+		err = jpeg.Encode(temp, resized, &jpeg.Options{Quality: 82})
+	case "image/png":
+		err = png.Encode(temp, resized)
+	default:
+		err = fmt.Errorf("不支持生成缩略图的格式: %s", mimeType)
+	}
+	if closeErr := temp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if _, statErr := os.Stat(variantPath); statErr == nil {
+		return nil
+	}
+	return os.Rename(tempPath, variantPath)
 }
 
 // Upload 上传文件

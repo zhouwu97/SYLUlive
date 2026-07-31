@@ -141,6 +141,10 @@ func (r *Runtime) executeToolLoop(ctx context.Context, run *models.AIRun, messag
 				pendingWaits = append(pendingWaits, pendingToolWait{CallID: call.id, Name: call.name, Wait: *execution.Wait})
 				continue
 			}
+			if failureCode := fatalToolResultCode(call.name, execution.Result); failureCode != "" {
+				outcome.failureCode = failureCode
+				return outcome
+			}
 			toolResultMessages = append(toolResultMessages, Message{Role: "tool", ToolCallID: call.id, Content: string(execution.Result)})
 			_, _ = r.appendEvent(ctx, run.ID, "tool.completed", map[string]interface{}{
 				"call_id": call.id, "tool_name": call.name, "success": success, "cached": cached,
@@ -325,4 +329,23 @@ func toolExecutionFailure(err error) json.RawMessage {
 		code = err.Error()
 	}
 	return json.RawMessage(`{"status":"failed","error_code":"` + code + `"}`)
+}
+
+// fatalToolResultCode 阻止模型在个人数据工具明确不可用时继续生成无依据的分析。
+// Hy3 的成功信封状态为 ok；其余 unavailable/failed 结果都必须由 Run 层显式失败。
+func fatalToolResultCode(toolName string, result json.RawMessage) string {
+	if !strings.HasPrefix(toolName, "hy3_decision_") || !json.Valid(result) {
+		return ""
+	}
+	var envelope struct {
+		Status    string `json:"status"`
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(result, &envelope); err != nil || envelope.Status == "" || envelope.Status == "ok" {
+		return ""
+	}
+	if envelope.ErrorCode != "" {
+		return envelope.ErrorCode
+	}
+	return "personal_context_unavailable"
 }

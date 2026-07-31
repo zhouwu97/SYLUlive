@@ -11,6 +11,7 @@ import '../features/personal_data_sync/personal_data_sync_models.dart';
 import '../features/personal_data_sync/personal_data_sync_result.dart';
 import '../providers/edu_provider.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/erke_snapshot_upload_dialog.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
 class ErkeScoreScreen extends StatefulWidget {
@@ -238,45 +239,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   Future<ErkeSnapshotUploadPolicy?> _requestErkeSnapshotUploadPolicy() {
-    return showDialog<ErkeSnapshotUploadPolicy>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('上传二课摘要？'),
-        content: const Text(
-          '校园 Agent 只会读取分数汇总、分类缺口和最近活动摘要；密码、Cookie、会话和页面原文不会上传。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              ErkeSnapshotUploadPolicy.askEveryUpdate,
-            ),
-            child: const Text('下次再问'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              ErkeSnapshotUploadPolicy.neverUpload,
-            ),
-            child: const Text('永不上传'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              ErkeSnapshotUploadPolicy.autoUploadSummary,
-            ),
-            child: const Text('之后自动上传'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              ErkeSnapshotUploadPolicy.uploadThisTime,
-            ),
-            child: const Text('仅本次上传'),
-          ),
-        ],
-      ),
-    );
+    return showErkeSnapshotUploadDialog(context);
   }
 
   Future<void> _deleteUploadedErkeSnapshot() async {
@@ -728,7 +691,6 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildGraduationProgressCard(ErkeGraduationSummary grad, bool isDark) {
     final percentage = grad.percentage;
-    final isComplete = grad.graduationGap <= 0;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1007,7 +969,6 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildYearlyProgressCard(ErkeYearlySummary yr, bool isDark) {
     final percentage = yr.percentage;
-    final isComplete = yr.minimumGap <= 0;
 
     return Container(
       padding: const EdgeInsets.all(20),

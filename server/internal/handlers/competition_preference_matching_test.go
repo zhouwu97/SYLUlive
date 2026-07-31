@@ -44,7 +44,7 @@ func createFitUser(t *testing.T, studentID string) (*CompetitionHandler, models.
 	return NewCompetitionHandler(db), user
 }
 
-func TestCompetitionPreferenceMatchingRanksWithinProfileLevel(t *testing.T) {
+func TestCompetitionPreferenceMatchingDoesNotChangeCandidateOrder(t *testing.T) {
 	handler, user := createFitUser(t, "fit-rank-user")
 	preference := models.UserCompetitionPreference{
 		UserID: user.ID, Goals: jsonArray([]string{"ability"}),
@@ -72,15 +72,23 @@ func TestCompetitionPreferenceMatchingRanksWithinProfileLevel(t *testing.T) {
 		t.Fatalf("items=%v", items)
 	}
 	first := items[0].(map[string]interface{})
-	if first["title"] != "Python 程序设计挑战赛" || first["fit_level"] != "preference" {
+	if first["title"] != "普通综合竞赛" {
 		t.Fatalf("unexpected first item: %v", first)
 	}
-	if first["personalized_score"] == nil || first["recommendation_tier"] == nil {
-		t.Fatalf("missing preference response fields: %v", first)
+	second := items[1].(map[string]interface{})
+	if second["title"] != "Python 程序设计挑战赛" {
+		t.Fatalf("preference changed deterministic order: %v", items)
 	}
-	reasons := first["fit_reasons"].([]interface{})
-	if len(reasons) < 3 {
-		t.Fatalf("fit reasons=%v", reasons)
+	for _, item := range []map[string]interface{}{first, second} {
+		if _, exists := item["personalized_score"]; exists {
+			t.Fatalf("response exposed personalized score: %v", item)
+		}
+		if _, exists := item["recommendation_tier"]; exists {
+			t.Fatalf("response exposed recommendation tier: %v", item)
+		}
+	}
+	if response["deprecated"] != true {
+		t.Fatalf("legacy adapter is not marked deprecated: %v", response)
 	}
 }
 
@@ -132,7 +140,7 @@ func TestCompetitionPreferenceMatchingExplainsTimeAndTraining(t *testing.T) {
 	}
 }
 
-func TestFitEventsWithoutPreferenceKeepsLegacyOrderAndShape(t *testing.T) {
+func TestFitEventsWithoutPreferenceUsesDeterministicOrderAndSafeShape(t *testing.T) {
 	handler, user := createFitUser(t, "fit-legacy-user")
 	events := []models.CompetitionEvent{
 		{Title: "B 级赛事", Status: "published", EligibleMajors: jsonArray([]string{"计算机科学与技术"}), CompetitionRating: "B", ImportanceScore: 90},
@@ -147,14 +155,23 @@ func TestFitEventsWithoutPreferenceKeepsLegacyOrderAndShape(t *testing.T) {
 	}
 	items := response["items"].([]interface{})
 	first := items[0].(map[string]interface{})
-	if first["title"] != "A 级赛事" {
-		t.Fatalf("legacy order changed: %v", items)
+	if first["title"] != "B 级赛事" {
+		t.Fatalf("deterministic order changed: %v", items)
 	}
 	if _, exists := first["personalized_score"]; exists {
 		t.Fatalf("legacy response exposed personalized score: %v", first)
 	}
 	if _, exists := first["recommendation_tier"]; exists {
 		t.Fatalf("legacy response exposed recommendation tier: %v", first)
+	}
+	gates := first["gates"].(map[string]interface{})
+	if gates["candidate_pool_allowed"] != true ||
+		gates["personalized_ranking_allowed"] != false ||
+		gates["strong_recommendation_eligible"] != false {
+		t.Fatalf("legacy gates are inconsistent: %v", gates)
+	}
+	if response["deprecated"] != true {
+		t.Fatalf("legacy adapter is not marked deprecated: %v", response)
 	}
 }
 

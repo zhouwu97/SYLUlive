@@ -5,10 +5,12 @@ import android.app.NotificationManager
 import android.app.ActivityManager
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import cn.jpush.android.api.JPushInterface
@@ -35,6 +37,9 @@ class MainActivity : FlutterActivity() {
 
         const val EXTRA_PRIVATE_MESSAGE_JSON =
             "private_message_json"
+
+        private val activityInstanceLock = Any()
+        private var liveActivityCount = 0
     }
 
     private var pendingDeepLink: String? = null
@@ -45,6 +50,8 @@ class MainActivity : FlutterActivity() {
     private val keepAliveHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private var keepAliveVerifyPending = false
+    private var activityInstanceRegistered = false
+    private var appInForeground = false
 
     private val keepAliveVerifyRunnable = Runnable {
         if (!keepAliveVerifyPending) return@Runnable
@@ -121,8 +128,16 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val hadLiveInstance = synchronized(activityInstanceLock) {
+            val existed = liveActivityCount > 0
+            liveActivityCount += 1
+            activityInstanceRegistered = true
+            existed
+        }
+        recordActivityCreated(savedInstanceState, hadLiveInstance)
         
         handlePrivateMessageIntent(intent)
         handleDeepLink(intent)
@@ -133,11 +148,15 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        appInForeground = true
         PrivateMessageNotificationState.setAppForeground(this, true)
+        recordActivityTransition("resume", "应用进入前台")
     }
 
     override fun onPause() {
+        appInForeground = false
         PrivateMessageNotificationState.setAppForeground(this, false)
+        recordActivityTransition("pause", "应用离开前台")
         super.onPause()
     }
 
@@ -158,15 +177,114 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         keepAliveHandler.removeCallbacksAndMessages(null)
+        val remainingInstances = synchronized(activityInstanceLock) {
+            if (activityInstanceRegistered) {
+                liveActivityCount = (liveActivityCount - 1).coerceAtLeast(0)
+                activityInstanceRegistered = false
+            }
+            liveActivityCount
+        }
+        DiagnosticLogStore.info(
+            this,
+            source = "应用",
+            type = "Activity 销毁",
+            summary = "应用界面生命周期结束",
+            detail = "changingConfigurations=$isChangingConfigurations",
+            event = DiagnosticLogStore.EventContext(
+                eventCode = "activity_destroyed",
+                category = "app",
+                operation = "destroy",
+                result = "success",
+                taskId = taskId,
+                isForeground = appInForeground,
+                metadata = mapOf(
+                    "isTaskRoot" to isTaskRoot,
+                    "changingConfigurations" to isChangingConfigurations,
+                    "remainingInstances" to remainingInstances,
+                ),
+            ),
+        )
         super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+
+        DiagnosticLogStore.info(
+            this,
+            source = "应用",
+            type = "任务复用",
+            summary = "现有应用任务收到新的启动请求",
+            detail = "action=${intent.action}\nflags=${intent.flags}",
+            event = DiagnosticLogStore.EventContext(
+                eventCode = "activity_new_intent",
+                category = "app",
+                operation = "reuse",
+                result = "success",
+                taskId = taskId,
+                isForeground = appInForeground,
+                metadata = mapOf(
+                    "action" to intent.action,
+                    "flags" to intent.flags,
+                    "isTaskRoot" to isTaskRoot,
+                ),
+            ),
+        )
         
         handlePrivateMessageIntent(intent)
         if (handleDeepLink(intent)) dispatchPendingDeepLink()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        val uiHidden = level == ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+        val event = DiagnosticLogStore.EventContext(
+            eventCode = if (uiHidden) "app_ui_hidden" else "app_trim_memory",
+            category = "app",
+            operation = "trim_memory",
+            result = if (uiHidden) "success" else "warning",
+            taskId = taskId,
+            isForeground = appInForeground,
+            metadata = mapOf("level" to level),
+        )
+        if (uiHidden) {
+            DiagnosticLogStore.info(
+                this,
+                source = "应用",
+                type = "界面进入后台",
+                summary = "系统通知应用界面已不可见",
+                detail = "level=$level",
+                event = event,
+            )
+        } else {
+            DiagnosticLogStore.warning(
+                this,
+                source = "应用",
+                type = "系统内存回收提示",
+                summary = "系统要求应用释放内存",
+                detail = "level=$level",
+                event = event,
+            )
+        }
+        super.onTrimMemory(level)
+    }
+
+    override fun onLowMemory() {
+        DiagnosticLogStore.warning(
+            this,
+            source = "应用",
+            type = "系统内存不足",
+            summary = "系统报告设备内存紧张",
+            event = DiagnosticLogStore.EventContext(
+                eventCode = "app_low_memory",
+                category = "app",
+                operation = "low_memory",
+                result = "warning",
+                taskId = taskId,
+                isForeground = appInForeground,
+            ),
+        )
+        super.onLowMemory()
     }
 
     /** Flutter 通道就绪后转发链接；由 Dart 明确确认后再清除队列。 */
@@ -529,8 +647,12 @@ class MainActivity : FlutterActivity() {
                         val type = call.argument<String>("type") ?: "日志"
                         val summary = call.argument<String>("summary") ?: ""
                         val detail = call.argument<String>("detail") ?: ""
-                        
-                        val safeLevel = if (level in listOf("info", "warning", "error")) level else "info"
+                        val metadata =
+                            (call.argument<Map<*, *>>("metadata") ?: emptyMap<Any, Any>())
+                                .entries
+                                .associate { (key, value) -> key.toString() to value }
+                        val safeLevel =
+                            if (level in listOf("info", "warning", "error")) level else "info"
                         
                         DiagnosticLogStore.writeFromFlutter(
                             this,
@@ -538,7 +660,24 @@ class MainActivity : FlutterActivity() {
                             source,
                             type,
                             summary,
-                            detail
+                            detail,
+                            DiagnosticLogStore.EventContext(
+                                eventCode = call.argument<String>("eventCode").orEmpty(),
+                                category = call.argument<String>("category") ?: "app",
+                                operation = call.argument<String>("operation").orEmpty(),
+                                result = call.argument<String>("result").orEmpty(),
+                                traceId = call.argument<String>("traceId").orEmpty(),
+                                durationMs =
+                                    call.argument<Number>("durationMs")?.toLong(),
+                                httpStatus =
+                                    call.argument<Number>("httpStatus")?.toInt(),
+                                retryCount =
+                                    call.argument<Number>("retryCount")?.toInt() ?: 0,
+                                route = call.argument<String>("route").orEmpty(),
+                                taskId = call.argument<Number>("taskId")?.toInt(),
+                                isForeground = call.argument<Boolean>("isForeground"),
+                                metadata = metadata,
+                            ),
                         )
                         result.success(true)
                     }
@@ -655,12 +794,127 @@ class MainActivity : FlutterActivity() {
         WidgetUpdateWorker.enqueue(this)
     }
 
-    private fun applyExcludeFromRecents(enabled: Boolean) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
-        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        activityManager?.appTasks?.forEach { task ->
-            task.setExcludeFromRecents(enabled)
+    private fun recordActivityCreated(
+        savedInstanceState: Bundle?,
+        hadLiveInstance: Boolean,
+    ) {
+        val launchType = when {
+            hadLiveInstance -> "duplicate_instance"
+            savedInstanceState != null -> "activity_recreated"
+            else -> "cold_start"
         }
+        val title = when (launchType) {
+            "duplicate_instance" -> "疑似重复 Activity"
+            "activity_recreated" -> "Activity 重建"
+            else -> "应用冷启动"
+        }
+        val summary = when (launchType) {
+            "duplicate_instance" -> "同一进程中旧界面仍存活时创建了新界面"
+            "activity_recreated" -> "系统使用已保存状态重新创建应用界面"
+            else -> "应用进程创建了新的主界面"
+        }
+        val event = DiagnosticLogStore.EventContext(
+            eventCode = "activity_created",
+            category = "app",
+            operation = "create",
+            result = if (hadLiveInstance) "warning" else "success",
+            taskId = taskId,
+            isForeground = false,
+            metadata = mapOf(
+                "launchType" to launchType,
+                "savedInstanceState" to (savedInstanceState != null),
+                "intentAction" to intent?.action,
+                "intentFlags" to (intent?.flags ?: 0),
+                "isTaskRoot" to isTaskRoot,
+                "activityInstance" to System.identityHashCode(this),
+                "liveActivityCount" to synchronized(activityInstanceLock) {
+                    liveActivityCount
+                },
+            ),
+        )
+        if (hadLiveInstance) {
+            DiagnosticLogStore.warning(
+                this,
+                source = "应用",
+                type = title,
+                summary = summary,
+                detail = "action=${intent?.action}\nflags=${intent?.flags ?: 0}",
+                event = event,
+            )
+        } else {
+            DiagnosticLogStore.info(
+                this,
+                source = "应用",
+                type = title,
+                summary = summary,
+                detail = "action=${intent?.action}\nflags=${intent?.flags ?: 0}",
+                event = event,
+            )
+        }
+    }
+
+    private fun recordActivityTransition(operation: String, summary: String) {
+        DiagnosticLogStore.info(
+            this,
+            source = "应用",
+            type = if (operation == "resume") "进入前台" else "进入后台",
+            summary = summary,
+            event = DiagnosticLogStore.EventContext(
+                eventCode = "app_foreground_changed",
+                category = "app",
+                operation = operation,
+                result = "success",
+                taskId = taskId,
+                isForeground = operation == "resume",
+                metadata = mapOf("isTaskRoot" to isTaskRoot),
+            ),
+        )
+    }
+
+    private fun applyExcludeFromRecents(enabled: Boolean): Boolean {
+        val result = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            false
+        } else {
+            val activityManager =
+                getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val currentTask = activityManager?.appTasks?.firstOrNull { appTask ->
+                appTask.taskInfo.taskId == taskId
+            }
+            currentTask?.setExcludeFromRecents(enabled)
+            currentTask != null
+        }
+
+        val event = DiagnosticLogStore.EventContext(
+            eventCode = "task_recents_visibility_changed",
+            category = "app",
+            operation = if (enabled) "hide" else "show",
+            result = if (result) "success" else "failure",
+            taskId = taskId,
+            isForeground = appInForeground,
+            metadata = mapOf(
+                "enabled" to enabled,
+                "isTaskRoot" to isTaskRoot,
+            ),
+        )
+        if (result) {
+            DiagnosticLogStore.info(
+                this,
+                source = "应用",
+                type = "最近任务可见性变更",
+                summary = if (enabled) "当前任务已从最近任务中隐藏" else "当前任务已恢复到最近任务",
+                event = event,
+            )
+        } else {
+            DiagnosticLogStore.warning(
+                this,
+                source = "应用",
+                type = "最近任务可见性变更失败",
+                summary = "未找到当前 Android 任务，设置没有生效",
+                detail = "taskId=$taskId\nenabled=$enabled",
+                event = event,
+            )
+        }
+        return result
     }
 
     /** 立即刷新所有桌面 widget 实例 */
@@ -815,7 +1069,9 @@ class MainActivity : FlutterActivity() {
         val info = mutableMapOf<String, Any?>()
 
         // 未主动启用推送时不读取 RegistrationID。
-        val rid = if (KeepAliveForegroundService.isPushEnabled(this)) {
+        val pushEnabled = KeepAliveForegroundService.isPushEnabled(this)
+        info["pushEnabled"] = pushEnabled
+        val rid = if (pushEnabled) {
             JPushInterface.getRegistrationID(this)
         } else {
             ""

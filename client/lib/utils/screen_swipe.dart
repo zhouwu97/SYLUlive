@@ -1,6 +1,8 @@
 import 'dart:ui';
 
 const double bottomNavigationSwipeFraction = 1 / 3;
+const double pageExitSwipeFraction = 0.3;
+const double pageExitSwipeDirectionRatio = 1.2;
 
 bool isBottomNavigationSwipeStart(double startY, double screenHeight) {
   if (screenHeight <= 0) return false;
@@ -25,4 +27,16 @@ int horizontalSwipeDirection({
     return 0;
   }
   return dx > 0 ? -1 : 1;
+}
+
+bool isLeftPageExitSwipe({
+  required Offset start,
+  required Offset end,
+  required double screenWidth,
+}) {
+  if (screenWidth <= 0) return false;
+  final delta = end - start;
+  final requiredDistance = screenWidth * pageExitSwipeFraction;
+  return delta.dx <= -requiredDistance &&
+      delta.dx.abs() > delta.dy.abs() * pageExitSwipeDirectionRatio;
 }

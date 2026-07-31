@@ -7,7 +7,12 @@ abstract final class BetaReleasePolicy {
 
   static const bool graduationWarningResults = false;
   static const bool aiGraduationAssistant = false;
-  static const bool aiCompetitionFit = false;
+  static const bool competitionCandidateMatching = true;
+  static const bool competitionAIExplanation = false;
+  static const bool competitionCatalogV2 = false;
+
+  // 旧名称只兼容原 AI 解释能力，不能借规则候选开关绕过 AI 灰度门。
+  static const bool aiCompetitionFit = competitionAIExplanation;
   static const bool aiTeamMatching = false;
   static const bool competitionRecommendations = false;
   static const bool awardArchive = false;

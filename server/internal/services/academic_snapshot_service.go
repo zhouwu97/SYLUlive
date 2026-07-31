@@ -1,12 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -207,7 +209,10 @@ func (service *AcademicSnapshotService) StoreRemote(ctx context.Context, input A
 	if err := validateAcademicSnapshotInput(input); err != nil {
 		return err
 	}
-	payload := append(json.RawMessage(nil), input.Payload...)
+	payload, err := canonicalAcademicPayload(input.Payload)
+	if err != nil {
+		return errors.New("学业快照载荷无效")
+	}
 	payloadHash := academicPayloadHash(payload)
 	return service.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user models.User
@@ -257,7 +262,31 @@ func validateAcademicSnapshotInput(input AcademicSnapshotInput) error {
 	return nil
 }
 
+// canonicalAcademicPayload 将 JSON 解析为语义值后重新编码。
+// PostgreSQL jsonb 会丢弃空白并排序对象键，哈希必须基于同一语义表示，
+// 否则写入前计算的原始字节哈希会在读取时把正常快照误判为损坏。
+func canonicalAcademicPayload(payload []byte) ([]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var value interface{}
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	var extra interface{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return nil, errors.New("学业快照包含多个 JSON 值")
+		}
+		return nil, err
+	}
+	return json.Marshal(value)
+}
+
 func academicPayloadHash(payload []byte) string {
-	digest := sha256.Sum256(payload)
+	canonical, err := canonicalAcademicPayload(payload)
+	if err != nil {
+		canonical = payload
+	}
+	digest := sha256.Sum256(canonical)
 	return hex.EncodeToString(digest[:])
 }

@@ -10,11 +10,14 @@ const (
 )
 
 // routeModelTools 根据用户意图缩小模型可见工具集合。
-// Hy3 能力缺失时保留完整工具集，由普通校园工具提供降级回答。
+// Hy3 能力缺失时只暴露同领域的普通校园工具，避免模型跨领域乱选工具。
 func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinition {
 	targets, requiredHy3 := hy3RouteTargets(message)
 	if len(targets) == 0 {
 		if isPersonalToolIntent(message) {
+			if containsAny(strings.ToLower(message), "学业", "成绩", "gpa", "绩点", "学分", "挂科") {
+				return academicToolDefinitions(definitions)
+			}
 			return definitions
 		}
 		return publicToolDefinitions(definitions)
@@ -24,6 +27,9 @@ func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinit
 		available[definition.Name] = struct{}{}
 	}
 	if _, found := available[requiredHy3]; !found {
+		if containsAny(strings.ToLower(message), "学业", "成绩", "gpa", "绩点", "学分", "挂科") {
+			return academicToolDefinitions(definitions)
+		}
 		return definitions
 	}
 	selected := make([]ToolDefinition, 0, len(targets))
@@ -31,6 +37,19 @@ func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinit
 		if _, include := targets[definition.Name]; include {
 			selected = append(selected, definition)
 		}
+	}
+	return selected
+}
+
+func academicToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
+	selected := make([]ToolDefinition, 0, len(definitions))
+	for _, definition := range definitions {
+		if strings.HasPrefix(definition.Name, "academic_") || strings.HasPrefix(definition.Name, "schedule_") {
+			selected = append(selected, definition)
+		}
+	}
+	if len(selected) == 0 {
+		return definitions
 	}
 	return selected
 }
@@ -91,6 +110,10 @@ func hy3RouteTargets(message string) (map[string]struct{}, string) {
 	explicitHy3Academic := strings.Contains(normalized, "hy3") && hasAcademicTopic
 	comprehensiveAcademic := containsAny(normalized, "综合分析", "学业分析", "分析学业", "学业评估") ||
 		(strings.Contains(normalized, "gpa") && strings.Contains(normalized, "学分"))
+	// 校园首页使用“分析我的学业情况，找出主要风险并给出改进建议”等自然语言，
+	// 不一定出现连续的“学业分析”，但仍然明确要求基于个人学业数据做判断。
+	comprehensiveAcademic = comprehensiveAcademic ||
+		(hasAcademicTopic && containsAny(normalized, "分析", "风险", "改进建议"))
 	if explicitHy3Academic || comprehensiveAcademic {
 		return map[string]struct{}{modelToolHy3Academic: {}}, modelToolHy3Academic
 	}

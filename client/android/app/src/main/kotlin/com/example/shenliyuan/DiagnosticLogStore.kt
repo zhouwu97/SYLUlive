@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.AtomicFile
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileNotFoundException
@@ -14,26 +15,60 @@ import java.util.concurrent.TimeUnit
 
 object DiagnosticLogStore {
     private const val TAG = "DiagnosticLogStore"
-    private const val MAX_ENTRIES = 200
-    private const val MAX_FILE_SIZE = 2 * 1024 * 1024L // 2MB
-    private const val RETENTION_MS = 7L * 24 * 60 * 60 * 1000L // 7 days
-    private const val REPEAT_WINDOW_MS = 10 * 60 * 1000L // 10 minutes
+    private const val MAX_ENTRIES = 500
+    private const val MAX_FILE_SIZE = 4 * 1024 * 1024L
 
     private val executor = Executors.newSingleThreadExecutor()
     private val sessionId = UUID.randomUUID().toString().substring(0, 8)
     private val processStartedAt = System.currentTimeMillis()
     private val processPid = android.os.Process.myPid()
 
-    fun info(context: Context, source: String, type: String, summary: String, detail: String = "") {
-        record(context, "info", source, type, summary, detail)
+    data class EventContext(
+        val eventCode: String = "",
+        val category: String = "app",
+        val operation: String = "",
+        val result: String = "",
+        val traceId: String = "",
+        val durationMs: Long? = null,
+        val httpStatus: Int? = null,
+        val retryCount: Int = 0,
+        val route: String = "",
+        val taskId: Int? = null,
+        val isForeground: Boolean? = null,
+        val metadata: Map<String, Any?> = emptyMap(),
+    )
+
+    fun info(
+        context: Context,
+        source: String,
+        type: String,
+        summary: String,
+        detail: String = "",
+        event: EventContext = EventContext(),
+    ) {
+        record(context, "info", source, type, summary, detail, event)
     }
 
-    fun warning(context: Context, source: String, type: String, summary: String, detail: String = "") {
-        record(context, "warning", source, type, summary, detail)
+    fun warning(
+        context: Context,
+        source: String,
+        type: String,
+        summary: String,
+        detail: String = "",
+        event: EventContext = EventContext(),
+    ) {
+        record(context, "warning", source, type, summary, detail, event)
     }
 
-    fun error(context: Context, source: String, type: String, summary: String, detail: String = "") {
-        record(context, "error", source, type, summary, detail)
+    fun error(
+        context: Context,
+        source: String,
+        type: String,
+        summary: String,
+        detail: String = "",
+        event: EventContext = EventContext(),
+    ) {
+        record(context, "error", source, type, summary, detail, event)
     }
 
     fun critical(
@@ -42,10 +77,11 @@ object DiagnosticLogStore {
         source: String,
         type: String,
         summary: String,
-        detail: String = ""
+        detail: String = "",
+        event: EventContext = EventContext(),
     ) {
         val task = executor.submit {
-            recordInternal(context, level, source, type, summary, detail)
+            recordInternal(context, level, source, type, summary, detail, event)
         }
         runCatching {
             task.get(500, TimeUnit.MILLISECONDS)
@@ -78,10 +114,11 @@ object DiagnosticLogStore {
         source: String,
         type: String,
         summary: String,
-        detail: String
+        detail: String,
+        event: EventContext,
     ) {
         executor.execute {
-            recordInternal(context, level, source, type, summary, detail)
+            recordInternal(context, level, source, type, summary, detail, event)
         }
     }
 
@@ -91,7 +128,8 @@ object DiagnosticLogStore {
         source: String,
         type: String,
         summary: String,
-        detail: String
+        detail: String,
+        event: EventContext,
     ) {
         val appContext = context.applicationContext
         val timestamp = System.currentTimeMillis()
@@ -101,43 +139,59 @@ object DiagnosticLogStore {
         val safeType = sanitize(type).take(80)
         val safeSummary = sanitize(summary).take(500)
         val safeDetail = truncateDetail(sanitize(detail))
+        val safeEventCode = sanitize(event.eventCode).take(80)
+        val safeCategory = sanitize(event.category).take(32).ifBlank { "app" }
+        val safeOperation = sanitize(event.operation).take(64)
+        val safeResult = sanitize(event.result).take(24)
+        val safeTraceId = sanitize(event.traceId).take(80)
+        val safeRoute = sanitize(event.route).take(160)
+        val safeMetadata = sanitizeMetadata(event.metadata)
 
         try {
-                val file = File(appContext.filesDir, "diagnostic_logs.jsonl")
-                val atomicFile = AtomicFile(file)
+            val file = File(appContext.filesDir, "diagnostic_logs.jsonl")
+            val atomicFile = AtomicFile(file)
+            val entries = applyRetentionPolicy(
+                readEntriesAtomically(atomicFile),
+                timestamp,
+                MAX_ENTRIES,
+            )
 
-                val entries = readEntriesAtomically(atomicFile)
+            val signature = signatureFor(
+                level = level,
+                source = safeSource,
+                type = safeType,
+                summary = safeSummary,
+                detail = safeDetail,
+                eventCode = safeEventCode,
+                category = safeCategory,
+                operation = safeOperation,
+                result = safeResult,
+                httpStatus = event.httpStatus,
+                route = safeRoute,
+            )
+            val mergeIndex = DiagnosticLogPolicy.findMergeIndex(
+                policyEntries(entries),
+                signature,
+                timestamp,
+            )
 
-                // Filter out old logs
-                val cutoff = timestamp - RETENTION_MS
-                entries.removeAll { it.optLong("timestamp", 0) < cutoff }
-
-                // Check for deduplication
-                val signature = "$level|$safeSource|$safeType|$safeSummary|$safeDetail"
-                var merged = false
-
-                if (entries.isNotEmpty()) {
-                    val lastEntry = entries.last()
-                    val lastLevel = lastEntry.optString("level")
-                    val lastSource = lastEntry.optString("source")
-                    val lastType = lastEntry.optString("type")
-                    val lastSummary = lastEntry.optString("summary")
-                    val lastDetail = lastEntry.optString("detail")
-                    val lastSignature = "$lastLevel|$lastSource|$lastType|$lastSummary|$lastDetail"
-
-                    if (signature == lastSignature) {
-                        val lastSeenAt = lastEntry.optLong("lastSeenAt", lastEntry.optLong("timestamp"))
-                        if (timestamp - lastSeenAt < REPEAT_WINDOW_MS) {
-                            val repeatCount = lastEntry.optInt("repeatCount", 1) + 1
-                            lastEntry.put("repeatCount", repeatCount)
-                            lastEntry.put("lastSeenAt", timestamp)
-                            merged = true
-                        }
-                    }
+            if (mergeIndex != null) {
+                val matchedEntry = entries.removeAt(mergeIndex)
+                matchedEntry.put(
+                    "repeatCount",
+                    matchedEntry.optInt("repeatCount", 1) + 1,
+                )
+                matchedEntry.put("lastSeenAt", timestamp)
+                matchedEntry.put("timestamp", timestamp)
+                event.durationMs?.let { matchedEntry.put("durationMs", it.coerceAtLeast(0)) }
+                matchedEntry.put("retryCount", event.retryCount.coerceAtLeast(0))
+                if (safeMetadata.length() > 0) {
+                    matchedEntry.put("metadata", safeMetadata)
                 }
-
-                if (!merged) {
-                    val entry = JSONObject().apply {
+                entries.add(matchedEntry)
+            } else {
+                entries.add(
+                    JSONObject().apply {
                         put("id", UUID.randomUUID().toString())
                         put("timestamp", timestamp)
                         put("elapsedRealtime", elapsedRealtime)
@@ -155,31 +209,148 @@ object DiagnosticLogStore {
                         put("repeatCount", 1)
                         put("firstSeenAt", timestamp)
                         put("lastSeenAt", timestamp)
-                    }
-                    entries.add(entry)
-                }
+                        put("eventCode", safeEventCode)
+                        put("category", safeCategory)
+                        put("operation", safeOperation)
+                        put("result", safeResult)
+                        put("traceId", safeTraceId)
+                        event.durationMs?.let { put("durationMs", it.coerceAtLeast(0)) }
+                        event.httpStatus?.let { put("httpStatus", it) }
+                        put("retryCount", event.retryCount.coerceAtLeast(0))
+                        put("route", safeRoute)
+                        event.taskId?.let { put("taskId", it) }
+                        event.isForeground?.let { put("isForeground", it) }
+                        if (safeMetadata.length() > 0) put("metadata", safeMetadata)
+                    },
+                )
+            }
 
-                // Enforce max entries
-                while (entries.size > MAX_ENTRIES) {
-                    entries.removeAt(0)
-                }
+            val limitedEntries = applyRetentionPolicy(entries, timestamp, MAX_ENTRIES)
+            writeEntriesAtomically(atomicFile, limitedEntries)
+            trimToFileSize(atomicFile, file, limitedEntries, timestamp)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update diagnostic logs", e)
+        }
+    }
 
-                // Write atomically
-                writeEntriesAtomically(atomicFile, entries)
+    private fun signatureFor(
+        level: String,
+        source: String,
+        type: String,
+        summary: String,
+        detail: String,
+        eventCode: String,
+        category: String,
+        operation: String,
+        result: String,
+        httpStatus: Int?,
+        route: String,
+    ): String =
+        if (eventCode.isNotBlank()) {
+            listOf(
+                level,
+                eventCode,
+                category,
+                operation,
+                result,
+                httpStatus?.toString().orEmpty(),
+                route,
+                summary,
+            ).joinToString("|")
+        } else {
+            "$level|$source|$type|$summary|$detail"
+        }
 
-                // Check size
-                if (file.length() > MAX_FILE_SIZE) {
-                    // Truncate to half
-                    while (entries.size > MAX_ENTRIES / 2) {
-                        entries.removeAt(0)
-                    }
-                    writeEntriesAtomically(atomicFile, entries)
-                }
+    private fun signatureFor(entry: JSONObject): String =
+        signatureFor(
+            level = entry.optString("level"),
+            source = entry.optString("source"),
+            type = entry.optString("type"),
+            summary = entry.optString("summary"),
+            detail = entry.optString("detail"),
+            eventCode = entry.optString("eventCode"),
+            category = entry.optString("category", "app"),
+            operation = entry.optString("operation"),
+            result = entry.optString("result"),
+            httpStatus = if (entry.has("httpStatus")) entry.optInt("httpStatus") else null,
+            route = entry.optString("route"),
+        )
 
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to update diagnostic logs", e)
+    private fun policyEntries(entries: List<JSONObject>): List<DiagnosticLogPolicy.Entry> =
+        entries.mapIndexed { index, entry ->
+            DiagnosticLogPolicy.Entry(
+                id = index.toString(),
+                level = entry.optString("level", "info"),
+                signature = signatureFor(entry),
+                timestamp = entry.optLong("timestamp", 0),
+                lastSeenAt = entry.optLong(
+                    "lastSeenAt",
+                    entry.optLong("timestamp", 0),
+                ),
+            )
+        }
+
+    private fun applyRetentionPolicy(
+        entries: List<JSONObject>,
+        now: Long,
+        maxEntries: Int,
+    ): MutableList<JSONObject> {
+        val policyEntries = policyEntries(entries).toMutableList()
+        DiagnosticLogPolicy.removeExpired(policyEntries, now)
+        DiagnosticLogPolicy.enforceEntryLimit(policyEntries, maxEntries)
+        val retainedIndices = policyEntries.mapTo(hashSetOf()) { it.id.toInt() }
+        return entries.filterIndexed { index, _ -> index in retainedIndices }.toMutableList()
+    }
+
+    private fun trimToFileSize(
+        atomicFile: AtomicFile,
+        file: File,
+        entries: MutableList<JSONObject>,
+        now: Long,
+    ) {
+        while (file.length() > MAX_FILE_SIZE && entries.size > 1) {
+            val trimmed = applyRetentionPolicy(entries, now, entries.size - 1)
+            entries.clear()
+            entries.addAll(trimmed)
+            writeEntriesAtomically(atomicFile, entries)
+        }
+    }
+
+    private fun sanitizeMetadata(metadata: Map<String, Any?>): JSONObject {
+        val result = JSONObject()
+        metadata.entries.take(32).forEach { (key, value) ->
+            val safeKey = sanitize(key).take(48)
+            if (safeKey.isNotBlank()) {
+                result.put(safeKey, sanitizeJsonValue(value, depth = 0))
             }
         }
+        return result
+    }
+
+    private fun sanitizeJsonValue(value: Any?, depth: Int): Any {
+        if (value == null) return JSONObject.NULL
+        if (depth >= 3) return sanitize(value.toString()).take(500)
+        return when (value) {
+            is String -> sanitize(value).take(1000)
+            is Number, is Boolean -> value
+            is Map<*, *> -> {
+                val result = JSONObject()
+                value.entries.take(24).forEach { (key, item) ->
+                    result.put(
+                        sanitize(key?.toString().orEmpty()).take(48),
+                        sanitizeJsonValue(item, depth + 1),
+                    )
+                }
+                result
+            }
+            is Iterable<*> -> {
+                val result = JSONArray()
+                value.take(24).forEach { result.put(sanitizeJsonValue(it, depth + 1)) }
+                result
+            }
+            else -> sanitize(value.toString()).take(1000)
+        }
+    }
 
     private fun readEntriesAtomically(atomicFile: AtomicFile): MutableList<JSONObject> {
         return try {
@@ -224,7 +395,7 @@ object DiagnosticLogStore {
                     val keys = json.keys()
                     while (keys.hasNext()) {
                         val key = keys.next()
-                        map[key] = json.get(key)
+                        map[key] = jsonToPlatformValue(json.get(key))
                     }
                     list.add(map)
                 }
@@ -250,7 +421,20 @@ object DiagnosticLogStore {
                     throw e
                 }
                 onSuccess()
-                recordInternal(appContext, "info", "系统", "清理记录", "日志已清空", "")
+                recordInternal(
+                    appContext,
+                    "info",
+                    "系统",
+                    "清理记录",
+                    "日志已清空",
+                    "",
+                    EventContext(
+                        eventCode = "diagnostic_logs_cleared",
+                        category = "app",
+                        operation = "clear",
+                        result = "success",
+                    ),
+                )
             } catch (e: Exception) {
                 onError(e)
             }
@@ -263,8 +447,27 @@ object DiagnosticLogStore {
         source: String,
         type: String,
         summary: String,
-        detail: String
+        detail: String,
+        event: EventContext = EventContext(),
     ) {
-        record(context, level, source, type, summary, detail)
+        record(context, level, source, type, summary, detail, event)
     }
+
+    private fun jsonToPlatformValue(value: Any?): Any? =
+        when (value) {
+            JSONObject.NULL -> null
+            is JSONObject -> {
+                val result = mutableMapOf<String, Any?>()
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    result[key] = jsonToPlatformValue(value.get(key))
+                }
+                result
+            }
+            is JSONArray -> List(value.length()) { index ->
+                jsonToPlatformValue(value.get(index))
+            }
+            else -> value
+        }
 }

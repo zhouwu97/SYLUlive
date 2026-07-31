@@ -406,12 +406,14 @@ func extractPayload(result *mcp.CallToolResult) (json.RawMessage, error) {
 	return nil, errors.New("MCP 工具结果缺少结构化 JSON")
 }
 
-const expectedRemoteContractVersion = "sylulive-hy3/1"
+const expectedRemoteContractVersion = "sylulive-hy3/2"
 
 var expectedRemoteToolContracts = map[string]string{
-	"compare_competitions":      "b72f014a42546f6ab348c42a28203f859ee2b131ed00fefea6bf9db71dfbdff4",
-	"analyze_academic_snapshot": "0784c8d703113093229e97a005f51e7e80d87a952e803286bcca7359ae2c5988",
-	"plan_student_week":         "d3e2930561ed3f7c23923ffd18ca74373d86dcffd1db78a953566684ab8535fb",
+	"compare_competitions":           "183668200d82156e6385342d747d229e5ab8fe49ba4351afaf8fccc9c896905c",
+	"explain_competition_candidates": "869bed351400771f7272b5c05b97d2c20875c7ddff0db65cb9d064b5c1f84721",
+	"compare_selected_competitions":  "b8e151f2e964f96dcbc5d533632da63f5adf9b7106f681d861edb7f05cc0b463",
+	"analyze_academic_snapshot":      "fc50ff6b196c409d59df53df777f49b265fd4bfa66e34969e5787527a38fad23",
+	"plan_student_week":              "0cb4a9c774ea6799b8f95945d89c21195c0cb228315ab73fd849259814cc7518",
 }
 
 var allowedAuxiliaryRemoteTools = map[string]struct{}{

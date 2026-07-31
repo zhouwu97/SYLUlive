@@ -501,7 +501,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: _buildSettingsTile(
             icon: Icons.layers_clear,
             iconColor: Colors.deepPurple,
-            title: '隐藏后台卡片',
+            title: '从最近任务中隐藏（实验）',
             subtitle: _hideRecentsSubtitle(),
             trailing: Transform.scale(
               scale: 0.8,
@@ -680,8 +680,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _hideRecentsSubtitle() {
     if (!_keepAliveStatus.supported) return '当前平台不可用';
     return _keepAliveStatus.hideRecentsEnabled
-        ? '已隐藏最近任务卡片，默认关闭，可随时关掉'
-        : '默认关闭，开启后应用不会显示在最近任务列表';
+        ? '已隐藏；部分手机重新点击图标时可能恢复或重启，后台提醒和远程推送不受此开关控制'
+        : '开启后不显示在系统最近任务中；后台提醒和远程消息推送不受此开关控制';
   }
 
   Future<void> _showKeepAliveGuideDialog() async {

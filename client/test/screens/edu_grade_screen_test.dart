@@ -178,11 +178,13 @@ void main() {
     await tester.tap(find.text('学业总览'));
     await tester.pumpAndSettle();
 
-    expect(find.text('3.52'), findsOneWidget);
-    expect(find.text('高等数学'), findsOneWidget);
-    expect(find.text('课程列表学分'), findsOneWidget);
-    expect(find.text('未知状态学分'), findsOneWidget);
-    expect(find.textContaining('不代表已获得学分'), findsOneWidget);
+    expect(find.text('学分要求'), findsOneWidget);
+    expect(find.text('3.52'), findsNothing);
+    expect(find.text('高等数学'), findsNothing);
+    expect(find.text('课程明细'), findsNothing);
+    expect(find.text('课程列表学分'), findsNothing);
+    expect(find.text('未知状态学分'), findsNothing);
+    expect(find.textContaining('不代表已获得学分'), findsNothing);
     expect(find.text('毕业预警'), findsNothing);
 
     providers.edu.finishPendingGrades();
@@ -239,7 +241,7 @@ void main() {
 
     await tester.tap(find.text('学业总览'));
     await tester.pumpAndSettle();
-    expect(find.text('高等数学'), findsOneWidget);
+    expect(find.text('高等数学'), findsNothing);
 
     auth.switchUser(_user(2));
     await tester.pumpAndSettle();
@@ -286,8 +288,9 @@ void main() {
     await tester.tap(find.text('学业总览'));
     await tester.pumpAndSettle();
 
-    expect(find.text('暂无可汇总的课程学分数据'), findsOneWidget);
-    expect(find.text('当前学业页面不提供课程明细'), findsOneWidget);
+    expect(find.text('学分概览'), findsNothing);
+    expect(find.text('暂无可汇总的课程学分数据'), findsNothing);
+    expect(find.text('当前学业页面不提供课程明细'), findsNothing);
     expect(find.text('官方 GPA 获取失败'), findsNothing);
   });
 
@@ -300,7 +303,7 @@ void main() {
   };
 
   for (final entry in courseStatusCases.entries) {
-    testWidgets('课程明细状态 ${entry.key} 展示准确内容', (tester) async {
+    testWidgets('学业总览隐藏课程明细状态 ${entry.key}', (tester) async {
       await _pumpGradeScreen(
         tester,
         edu: _FakeEduProvider(
@@ -310,16 +313,9 @@ void main() {
       await tester.tap(find.text('学业总览'));
       await tester.pumpAndSettle();
 
-      expect(find.text(entry.value), findsOneWidget);
-      if (entry.key == 'parse_failed') {
-        expect(
-          find.byKey(
-            const ValueKey('academic_course_status_parse_failed'),
-          ),
-          findsOneWidget,
-        );
-        expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
-      }
+      expect(find.text('学分要求'), findsOneWidget);
+      expect(find.text(entry.value), findsNothing);
+      expect(find.text('课程明细'), findsNothing);
     });
   }
 
@@ -331,8 +327,8 @@ void main() {
     await tester.tap(find.text('学业总览'));
     await tester.pumpAndSettle();
 
-    expect(find.text('官方 GPA 获取失败'), findsOneWidget);
-    expect(find.text('测试学业情况错误'), findsOneWidget);
+    expect(find.text('官方 GPA 获取失败'), findsNothing);
+    expect(find.text('测试学业情况错误'), findsNothing);
     expect(find.text('课程明细'), findsNothing);
     expect(find.text('暂无可展示的课程明细'), findsNothing);
   });
@@ -348,8 +344,8 @@ void main() {
     await tester.tap(find.text('学业总览'));
     await tester.pumpAndSettle();
 
-    expect(find.text('官方 GPA 获取失败'), findsOneWidget);
-    expect(find.text('学业情况页面结构发生变化'), findsOneWidget);
+    expect(find.text('官方 GPA 获取失败'), findsNothing);
+    expect(find.text('学业情况页面结构发生变化'), findsNothing);
     expect(find.text('计划'), findsNothing);
     expect(find.text('课程列表学分'), findsNothing);
     expect(find.text('暂无可展示的课程明细'), findsNothing);
@@ -391,7 +387,7 @@ void main() {
       await tester.tap(find.text('学业总览'));
       await tester.pumpAndSettle();
 
-      expect(find.text(message), findsOneWidget);
+      expect(find.text(message), findsNothing);
       expect(find.text('课程列表学分'), findsNothing);
       expect(find.text('0.00'), findsNothing);
     });

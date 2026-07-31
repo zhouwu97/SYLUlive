@@ -12,6 +12,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../providers/theme_provider.dart';
 import '../../../services/wallpaper_prefetch_service.dart';
 import '../../../widgets/campus/campus_theme.dart';
+import '../../../widgets/settings/campus_segmented_control.dart';
 
 const List<String> phonePresetWallpaperAssets = [
   'morenbeijing.jpeg',
@@ -325,87 +326,6 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
     }
   }
 
-  Widget _buildCurrentPreviewCard(
-      BuildContext context, ThemeProvider themeProvider) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final currentBg = _isLandscape
-        ? themeProvider.landscapeBackgroundImage
-        : themeProvider.backgroundImage;
-
-    Widget imageWidget;
-    if (currentBg != null && currentBg.isNotEmpty) {
-      final isAsset = ThemeProvider.isBundledAssetBackground(currentBg);
-      final isLocalFile = ThemeProvider.isLocalFileBackground(currentBg);
-      final imageProvider = isAsset
-          ? AssetImage(ThemeProvider.resolveBundledAssetPath(currentBg))
-              as ImageProvider
-          : isLocalFile
-              ? FileImage(File(currentBg)) as ImageProvider
-              : NetworkImage(currentBg) as ImageProvider;
-
-      imageWidget = Image(
-        image: imageProvider,
-        fit: BoxFit.cover,
-        alignment: Alignment.center,
-        errorBuilder: (_, __, ___) => Container(
-          color: isDark ? CampusTheme.darkCard : Colors.grey[200],
-          child: const Center(child: Icon(Icons.broken_image_outlined)),
-        ),
-      );
-    } else {
-      imageWidget = Container(
-        color: isDark ? CampusTheme.darkCard : Colors.grey[200],
-        child: const Center(
-          child: Text(
-            '未设置背景图片',
-            style: TextStyle(color: CampusTheme.subText, fontSize: 13),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      height: 120,
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : CampusTheme.softBorder,
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            imageWidget,
-            Positioned(
-              top: 10,
-              left: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  _isLandscape ? '当前横屏背景预览' : '当前竖屏背景预览',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -477,23 +397,22 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
             ],
           ),
           const SizedBox(height: 10),
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment<bool>(
+          // 采用平滑胶囊分段选择器 (100% 对齐外观页分段按钮)
+          CampusSegmentedControl<bool>(
+            items: const [
+              CampusSegmentItem(
                 value: false,
-                label: Text('竖屏背景'),
-                icon: Icon(Icons.smartphone_rounded, size: 18),
+                label: '竖屏背景',
               ),
-              ButtonSegment<bool>(
+              CampusSegmentItem(
                 value: true,
-                label: Text('横屏背景'),
-                icon: Icon(Icons.tablet_mac_rounded, size: 18),
+                label: '横屏背景',
               ),
             ],
-            selected: {_isLandscape},
+            selectedValue: _isLandscape,
             onSelectionChanged: (selected) {
               setState(() {
-                _isLandscape = selected.first;
+                _isLandscape = selected;
               });
             },
           ),
@@ -503,7 +422,6 @@ class _BackgroundPickerSheetState extends State<BackgroundPickerSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildCurrentPreviewCard(context, themeProvider),
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),

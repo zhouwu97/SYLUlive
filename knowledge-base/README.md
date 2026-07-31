@@ -8,7 +8,9 @@
 knowledge-base/
 └─ sylu-academic-policy/
    ├─ v0.5/
-   └─ v0.6/
+   ├─ v0.6/
+   ├─ v0.7/
+   └─ v0.8/
 ```
 
 `sylu-academic-policy` 用于管理沈阳理工大学官方学业政策知识库。每个候选版本使用独立目录保存，不直接覆盖历史版本。仓库版本状态不等于生产数据库状态；生产状态必须通过管理员 API 的只读清单确认。
@@ -17,10 +19,12 @@ knowledge-base/
 
 | 知识库 | 版本 | 状态 | 导入入口 |
 | --- | --- | --- | --- |
-| 沈阳理工大学官方学业政策 | v0.6 | 候选，未在本仓库确认生产发布 | `sylu-academic-policy/v0.6/SYLUlive_AI官方全文导入包_v0.6.jsonl` |
+| 沈阳理工大学校园政策 | v0.8 | 当前发布候选，包含校内奖学金与拆分后的奖助政策 | `sylu-academic-policy/v0.8/SYLUlive_AI学生资助政策完整导入包_v0.8.jsonl` |
+| 沈阳理工大学官方学业政策 | v0.6 | 学业政策基线，v0.8 增量发布时继续保留 | `sylu-academic-policy/v0.6/SYLUlive_AI官方全文导入包_v0.6.jsonl` |
+| 沈阳理工大学学生资助政策 | v0.7 | 过渡版本，待 v0.8 验证后退役混合文档 | `sylu-academic-policy/v0.7/` |
 | 沈阳理工大学官方学业政策 | v0.5 | 冻结历史基线，由 v0.6 候选替代 | `sylu-academic-policy/v0.5/` |
 
-v0.6 的机器清单位于 `sylu-academic-policy/v0.6/release-manifest.v0.6.json`。其中固定记录内容 hash、预期 `document_type`、分块器版本、embedding 模型版本与真实维度。
+当前管理端发布清单位于 `sylu-academic-policy/v0.8/release-manifest.v0.8.json`。其中固定记录内容 hash、预期 `document_type`、分块器版本、embedding 模型版本与真实维度；独立 MCP 的固定 SHA 清单位于同目录的 `policy-bundle-manifest.json`。
 
 ## 管理约定
 

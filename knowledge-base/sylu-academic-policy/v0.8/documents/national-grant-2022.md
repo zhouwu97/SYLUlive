@@ -1,7 +1,7 @@
 ---
 title: "沈阳理工大学国家助学金评审政策（2022）"
 source_type: "official_transcript"
-source_uri: "user-provided-campus-article-published-2024-11-05"
+source_uri: ""
 source_file_name: "2022 年国家助学金评审办法"
 document_type: "school_national_grant_policy"
 department: "沈阳理工大学学生处"

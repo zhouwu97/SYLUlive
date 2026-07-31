@@ -89,16 +89,27 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Docker Compose 必须提供根目录 .env.example，便于复制为 .env: %v", err)
 	}
-	composeEnvText := string(composeEnvExample)
+	composeEnvText := strings.ReplaceAll(string(composeEnvExample), "\r\n", "\n")
 	for _, key := range []string{
 		"DB_PASSWORD=",
 		"JWT_SECRET=",
 		"SUPER_ADMIN_ID=",
 		"SUPER_ADMIN_PASSWORD=",
+		"AI_EXTERNAL_MCP_ENABLED=",
+		"AI_EXTERNAL_MCP_TRANSPORT=",
+		"AI_EXTERNAL_MCP_COMMAND=",
+		"AI_EXTERNAL_MCP_TOOL_TIMEOUT_SECONDS=",
+		"AI_EXTERNAL_MCP_MAX_CALLS_PER_RUN=",
 	} {
 		if !strings.Contains(composeEnvText, key) {
 			t.Fatalf("根目录 .env.example 必须包含 Docker Compose 所需变量 %s", key)
 		}
+	}
+	if !strings.Contains("\n"+composeEnvText, "\nAI_UNLIMITED_STUDENT_IDS=\n") {
+		t.Fatal("根目录 .env.example 不得为任何账号预设不限额权限")
+	}
+	if !strings.Contains(composeText, "AI_UNLIMITED_STUDENT_IDS=${AI_UNLIMITED_STUDENT_IDS:-}") {
+		t.Fatal("Docker Compose 的不限额账号默认值必须为空")
 	}
 
 	dockerfile, err := os.ReadFile(filepath.Join(repoRoot, "server", "Dockerfile"))
@@ -111,6 +122,21 @@ func TestDeploymentAssetsSupportExamPaperUpload(t *testing.T) {
 	}
 	if !strings.Contains(dockerfileText, "chmod 0700 /app/private /app/private/exam-papers") {
 		t.Fatal("Dockerfile 必须同时收紧 /app/private 父目录和试卷私有目录权限")
+	}
+	for _, expected := range []string{
+		"AI_EXTERNAL_MCP_ENABLED=${AI_EXTERNAL_MCP_ENABLED:-false}",
+		"AI_EXTERNAL_MCP_TRANSPORT=${AI_EXTERNAL_MCP_TRANSPORT:-ssh_stdio}",
+		"AI_EXTERNAL_MCP_SSH_KEY_PATH=/run/secrets/mcp_ed25519",
+		"AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH=/run/secrets/mcp_known_hosts",
+		"source: mcp_ssh_key",
+		"source: mcp_known_hosts",
+	} {
+		if !strings.Contains(composeText, expected) {
+			t.Fatalf("Docker Compose 缺少外部 MCP ssh_stdio 部署项 %q", expected)
+		}
+	}
+	if !strings.Contains(dockerfileText, "openssh-client") {
+		t.Fatal("server 镜像启用 ssh_stdio 前必须安装 openssh-client")
 	}
 }
 

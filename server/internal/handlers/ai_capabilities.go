@@ -11,7 +11,7 @@ import (
 const (
 	aiHourlyLimit     = 3
 	aiWindowSeconds   = 60 * 60
-	aiMaxMessageChars = 200
+	aiMaxMessageChars = 500
 
 	AIToolHy3CompetitionExplain = "hy3_competition_explain"
 	AIToolHy3CompetitionCompare = "hy3_competition_compare"
@@ -19,32 +19,33 @@ const (
 	AIToolHy3WeekPlan           = "hy3_week_plan"
 )
 
-var publicAIToolCapabilities = map[string]struct{}{
-	AIToolHy3CompetitionExplain: {},
-	AIToolHy3CompetitionCompare: {},
-	AIToolHy3AcademicAnalysis:   {},
-	AIToolHy3WeekPlan:           {},
-}
-
 // AICapabilitiesHandler 返回当前账号可见的 AI 能力。
 // P0 仅开放入口与状态验证，不暴露 Provider 配置，也不提供真实对话能力。
 type AICapabilitiesHandler struct {
-	enabled            bool
-	runtime            *ai.Runtime
-	policyRAGEnabled   bool
-	hourlyLimit        int
-	maxMessageChars    int
-	quotaExemptUserIDs map[uint]struct{}
-	toolCapabilities   map[string]struct{}
+	enabled               bool
+	runtime               *ai.Runtime
+	policyRAGEnabled      bool
+	hourlyLimit           int
+	maxMessageChars       int
+	quotaExemptUserIDs    map[uint]struct{}
+	externalMCPConfigured bool
+	externalMCPHealth     externalMCPHealthReader
+	toolRegistry          *ai.ToolRegistry
+}
+
+type externalMCPHealthReader interface {
+	Healthy() bool
 }
 
 type AICapabilitiesOptions struct {
-	Runtime            *ai.Runtime
-	PolicyRAGEnabled   bool
-	HourlyLimit        int
-	MaxMessageChars    int
-	QuotaExemptUserIDs []uint
-	ToolCapabilities   []string
+	Runtime               *ai.Runtime
+	PolicyRAGEnabled      bool
+	HourlyLimit           int
+	MaxMessageChars       int
+	QuotaExemptUserIDs    []uint
+	ExternalMCPConfigured bool
+	ExternalMCPHealth     externalMCPHealthReader
+	ToolRegistry          *ai.ToolRegistry
 }
 
 func NewAICapabilitiesHandler(enabled bool, options ...AICapabilitiesOptions) *AICapabilitiesHandler {
@@ -68,12 +69,9 @@ func NewAICapabilitiesHandler(enabled bool, options ...AICapabilitiesOptions) *A
 				handler.quotaExemptUserIDs[userID] = struct{}{}
 			}
 		}
-		handler.toolCapabilities = make(map[string]struct{}, len(options[0].ToolCapabilities))
-		for _, capability := range options[0].ToolCapabilities {
-			if _, public := publicAIToolCapabilities[capability]; public {
-				handler.toolCapabilities[capability] = struct{}{}
-			}
-		}
+		handler.externalMCPConfigured = options[0].ExternalMCPConfigured
+		handler.externalMCPHealth = options[0].ExternalMCPHealth
+		handler.toolRegistry = options[0].ToolRegistry
 	}
 	return handler
 }
@@ -101,10 +99,10 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 	if h.policyRAGEnabled {
 		phase = "p2"
 	}
-	toolAvailable := accessAllowed && h.runtime != nil
-	hasTool := func(name string) bool {
-		_, registered := h.toolCapabilities[name]
-		return toolAvailable && registered
+	externalMCPAvailable := accessAllowed && h.externalMCPConfigured &&
+		h.externalMCPHealth != nil && h.externalMCPHealth.Healthy()
+	hasExternalTool := func(name string) bool {
+		return externalMCPAvailable && h.toolRegistry.HasTool(name)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -116,10 +114,10 @@ func (h *AICapabilitiesHandler) Get(c *gin.Context) {
 		"features": gin.H{
 			"policy_rag":                accessAllowed && h.policyRAGEnabled,
 			"schedule_windows":          false,
-			AIToolHy3CompetitionExplain: hasTool(AIToolHy3CompetitionExplain),
-			AIToolHy3CompetitionCompare: hasTool(AIToolHy3CompetitionCompare),
-			AIToolHy3AcademicAnalysis:   hasTool(AIToolHy3AcademicAnalysis),
-			AIToolHy3WeekPlan:           hasTool(AIToolHy3WeekPlan),
+			AIToolHy3CompetitionExplain: hasExternalTool("hy3_decision.explain_competition_candidates"),
+			AIToolHy3CompetitionCompare: hasExternalTool("hy3_decision.compare_competitions"),
+			AIToolHy3AcademicAnalysis:   hasExternalTool("hy3_decision.analyze_academic"),
+			AIToolHy3WeekPlan:           hasExternalTool("hy3_decision.plan_student_week"),
 		},
 		"quota": gin.H{
 			"limit":          h.hourlyLimit,

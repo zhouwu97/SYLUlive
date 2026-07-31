@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shenliyuan/models/ai_quick_prompt.dart';
 import 'package:shenliyuan/widgets/ai/ai_empty_state.dart';
 
 void main() {
@@ -10,10 +11,22 @@ void main() {
         home: Scaffold(
           body: AiPublicEmptyState(
             chatEnabled: true,
-            quickPrompts: const <String>[
-              '补考成绩怎么算',
-              '重修有什么规定',
-              '奖学金怎么评',
+            quickPrompts: const <AiQuickPrompt>[
+              AiQuickPrompt(
+                category: '学业考试',
+                question: '补考成绩怎么算',
+                feature: AiQuickPromptFeature.policy,
+              ),
+              AiQuickPrompt(
+                category: '教学管理',
+                question: '重修有什么规定',
+                feature: AiQuickPromptFeature.policy,
+              ),
+              AiQuickPrompt(
+                category: '奖助评优',
+                question: '奖学金怎么评',
+                feature: AiQuickPromptFeature.policy,
+              ),
             ],
             suggestedPrompts: const <AiSuggestedPrompt>[
               AiSuggestedPrompt(

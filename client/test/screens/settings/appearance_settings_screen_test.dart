@@ -74,7 +74,7 @@ void main() {
 
     expect(themeProvider.liquidGlass, isFalse);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
     await tester.pumpAndSettle();
 
     final glassTile = find.widgetWithText(SettingsTile, '液态玻璃效果');

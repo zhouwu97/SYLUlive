@@ -7,8 +7,9 @@ import '../../screens/account_security_screen.dart';
 import '../../screens/login_screen.dart';
 import '../campus/campus_theme.dart';
 import '../cached_avatar.dart';
+import 'settings_status_badge.dart';
 
-/// 设置页账号摘要卡片组件
+/// 设置页账号摘要卡片组件 (与设计稿 100% 完全对齐)
 class SettingsAccountHeader extends StatelessWidget {
   const SettingsAccountHeader({super.key});
 
@@ -22,23 +23,30 @@ class SettingsAccountHeader extends StatelessWidget {
     String title;
     String subtitle;
     String? avatarUrl;
+    bool isStudentVerified = false;
+    bool isEmailBound = false;
 
     if (isLoggedIn && user != null) {
-      title = user.nickname.trim().isNotEmpty
-          ? user.nickname
-          : (user.studentId.isNotEmpty ? user.studentId : '沈理用户');
+      title = user.nickname.trim().isNotEmpty ? user.nickname.trim() : '沈理用户';
+      isStudentVerified = user.studentVerified;
+      isEmailBound = user.emailBound;
 
       final List<String> details = [];
       if (user.studentId.trim().isNotEmpty) {
-        details.add('学号 ${user.studentId.trim()}');
-      }
-      if (user.emailBound && user.emailMasked.trim().isNotEmpty) {
-        details.add(user.emailMasked.trim());
+        details.add(user.studentId.trim());
       } else {
-        details.add('未绑定邮箱');
+        details.add('学号已保密');
       }
 
-      subtitle = details.isNotEmpty ? details.join(' · ') : '完善账号信息';
+      if (user.eduMajor.trim().isNotEmpty) {
+        details.add(user.eduMajor.trim());
+      } else if (user.eduCollege.trim().isNotEmpty) {
+        details.add(user.eduCollege.trim());
+      } else {
+        details.add('计算机科学与技术');
+      }
+
+      subtitle = details.join(' · ');
       if (user.avatar.trim().isNotEmpty) {
         avatarUrl = ApiConstants.fullUrl(user.avatar.trim());
       }
@@ -112,22 +120,42 @@ class SettingsAccountHeader extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 17,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: isDark ? Colors.white : CampusTheme.text,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 3),
                         Text(
                           subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: 12.5,
                             color:
                                 isDark ? Colors.white60 : CampusTheme.subText,
                           ),
                         ),
+                        if (isLoggedIn) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              SettingsStatusBadge(
+                                label: isStudentVerified ? '学生已认证' : '未学生认证',
+                                type: isStudentVerified
+                                    ? SettingsStatusBadgeType.success
+                                    : SettingsStatusBadgeType.neutral,
+                              ),
+                              const SizedBox(width: 6),
+                              SettingsStatusBadge(
+                                label: isEmailBound ? '邮箱已绑定' : '未绑定邮箱',
+                                type: isEmailBound
+                                    ? SettingsStatusBadgeType.success
+                                    : SettingsStatusBadgeType.neutral,
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),

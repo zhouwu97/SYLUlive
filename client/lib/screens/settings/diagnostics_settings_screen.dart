@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/diagnostic_log_entry.dart';
+import '../../platform/platform_capabilities.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/diagnostic_log_service.dart';
 import '../../services/keep_alive_service.dart';
@@ -15,8 +16,11 @@ import '../../widgets/settings/settings_status_badge.dart';
 import '../../widgets/settings/settings_tile.dart';
 import '../diagnostic_log_screen.dart';
 import '../feedback_screen.dart';
+import 'notification_background_settings_screen.dart';
 
 class _PushDiagnosticInfo {
+  final bool supportsJPush;
+  final bool optedIn;
   final String? registrationId;
   final bool notificationsEnabled;
   final bool privateMessageChannelExists;
@@ -30,6 +34,8 @@ class _PushDiagnosticInfo {
   final String? error;
 
   const _PushDiagnosticInfo({
+    required this.supportsJPush,
+    required this.optedIn,
     this.registrationId,
     required this.notificationsEnabled,
     required this.privateMessageChannelExists,
@@ -60,6 +66,7 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
 
   _PushDiagnosticInfo? _info;
   bool _loading = true;
+  bool _repairingPush = false;
 
   @override
   void initState() {
@@ -79,16 +86,21 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
   }
 
   Future<_PushDiagnosticInfo> _gatherPushDiagnostics() async {
+    final supportsJPush = PlatformCapabilities.current.supportsJPush;
+    final optedIn = await PushSettingsService.isEnabled();
+
     Map<String, dynamic> native = {};
     List<DiagnosticLogEntry> logs = [];
     final errors = <String>[];
 
-    try {
-      final result = await _pushDiagChannel
-          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
-      native = result ?? {};
-    } catch (e) {
-      errors.add('原生诊断读取失败: $e');
+    if (supportsJPush) {
+      try {
+        final result = await _pushDiagChannel
+            .invokeMapMethod<String, dynamic>('getPushDiagnostics');
+        native = result ?? {};
+      } catch (e) {
+        errors.add('原生诊断读取失败: $e');
+      }
     }
 
     try {
@@ -136,6 +148,8 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
     }
 
     return _PushDiagnosticInfo(
+      supportsJPush: supportsJPush,
+      optedIn: optedIn,
       registrationId: native['registrationId']?.toString(),
       notificationsEnabled: native['notificationsEnabled'] == true,
       privateMessageChannelExists:
@@ -179,6 +193,11 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
   }
 
   List<String> _calculateIssues(_PushDiagnosticInfo info) {
+    // 如果用户主动关闭或者平台不支持，不误报为故障
+    if (!info.supportsJPush || !info.optedIn) {
+      return <String>[];
+    }
+
     final issues = <String>[];
     if (info.registrationId == null || info.registrationId!.isEmpty) {
       issues.add('未获取到设备 RegistrationID');
@@ -205,6 +224,8 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
   void _copyPushDiagnostics(_PushDiagnosticInfo info) {
     final sb = StringBuffer();
     sb.writeln('═══ 推送诊断 ═══');
+    sb.writeln('平台支持极光推送: ${info.supportsJPush}');
+    sb.writeln('用户主动开启推送: ${info.optedIn}');
     sb.writeln('RegistrationID: ${_maskValue(info.registrationId, 6)}');
     sb.writeln('通知总权限: ${info.notificationsEnabled ? "已开启" : "已关闭"}');
     sb.writeln('私信通知渠道存在: ${info.privateMessageChannelExists}');
@@ -235,11 +256,34 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
     );
   }
 
+  Future<void> _handleRepairPush() async {
+    if (_repairingPush) return;
+    setState(() => _repairingPush = true);
+
+    final auth = context.read<AuthProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final result = await PushSettingsService.enableAndRegister(auth);
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(result.message)));
+        await _loadDiagnostics();
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('修复处理遇到异常: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _repairingPush = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final info = _info;
     final issues = info != null ? _calculateIssues(info) : <String>[];
+    final isOptedOut = info != null && info.supportsJPush && !info.optedIn;
 
     return SettingsPageScaffold(
       title: '诊断与反馈',
@@ -261,31 +305,60 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
           SettingsSection(
             title: '诊断结论',
             children: [
-              SettingsTile(
-                icon: issues.isEmpty
-                    ? Icons.check_circle_outline_rounded
-                    : Icons.warning_amber_rounded,
-                iconColor:
-                    issues.isEmpty ? CampusTheme.green : CampusTheme.orange,
-                title: issues.isEmpty ? '通知状态正常' : '发现 ${issues.length} 项需要处理',
-                subtitle:
-                    issues.isEmpty ? '系统通知权限正常，推送通道连接顺畅' : issues.join('；'),
-                trailing: SettingsStatusBadge(
-                  label: issues.isEmpty ? '正常' : '需处理 (${issues.length})',
-                  type: issues.isEmpty
-                      ? SettingsStatusBadgeType.success
-                      : SettingsStatusBadgeType.warning,
+              if (isOptedOut)
+                const SettingsTile(
+                  icon: Icons.notifications_off_outlined,
+                  iconColor: CampusTheme.subText,
+                  title: '远程推送未启用',
+                  subtitle: '你已主动关闭远程推送，这不是故障。可在通知与后台设置中开启。',
+                  trailing: SettingsStatusBadge(
+                    label: '未启用',
+                    type: SettingsStatusBadgeType.neutral,
+                  ),
+                  showChevron: false,
+                )
+              else
+                SettingsTile(
+                  icon: issues.isEmpty
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.warning_amber_rounded,
+                  iconColor:
+                      issues.isEmpty ? CampusTheme.green : CampusTheme.orange,
+                  title:
+                      issues.isEmpty ? '通知状态正常' : '发现 ${issues.length} 项需要处理',
+                  subtitle:
+                      issues.isEmpty ? '系统通知权限正常，推送通道连接顺畅' : issues.join('；'),
+                  trailing: SettingsStatusBadge(
+                    label: issues.isEmpty ? '正常' : '需处理 (${issues.length})',
+                    type: issues.isEmpty
+                        ? SettingsStatusBadgeType.success
+                        : SettingsStatusBadgeType.warning,
+                  ),
+                  showChevron: false,
                 ),
-                showChevron: false,
-              ),
             ],
           ),
 
           // 快捷处理
-          if (issues.isNotEmpty)
-            SettingsSection(
-              title: '快捷处理',
-              children: [
+          SettingsSection(
+            title: '快捷处理',
+            children: [
+              if (isOptedOut)
+                SettingsTile(
+                  icon: Icons.notifications_active_outlined,
+                  title: '前往通知与后台设置',
+                  subtitle: '开启远程消息推送与相关通知权限',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const NotificationBackgroundSettingsScreen(),
+                      ),
+                    ).then((_) => _loadDiagnostics());
+                  },
+                )
+              else ...[
                 if (!info.notificationsEnabled ||
                     info.privateMessageChannelBlocked)
                   SettingsTile(
@@ -294,23 +367,22 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                     subtitle: '开启通知权限或解除私信渠道屏蔽',
                     onTap: () => KeepAliveService.instance.openSettings(),
                   ),
-                SettingsTile(
-                  icon: Icons.refresh_rounded,
-                  title: '重新注册与重新绑定',
-                  subtitle: '再次向极光推送登记当前设备与 Alias',
-                  onTap: () async {
-                    final auth = context.read<AuthProvider>();
-                    await PushSettingsService.enableAndRegister(auth);
-                    await _loadDiagnostics();
-                  },
-                ),
-                SettingsTile(
-                  icon: Icons.autorenew_rounded,
-                  title: '刷新诊断数据',
-                  onTap: _loadDiagnostics,
-                ),
+                if (info.optedIn && issues.isNotEmpty)
+                  SettingsTile(
+                    icon: Icons.refresh_rounded,
+                    title: _repairingPush ? '正在重新注册...' : '重新注册与重新绑定',
+                    subtitle: '再次向极光推送登记当前设备与 Alias',
+                    enabled: !_repairingPush,
+                    onTap: _handleRepairPush,
+                  ),
               ],
-            ),
+              SettingsTile(
+                icon: Icons.autorenew_rounded,
+                title: '刷新诊断数据',
+                onTap: _loadDiagnostics,
+              ),
+            ],
+          ),
 
           // 详细技术信息 (ExpansionTile)
           SettingsSection(
@@ -357,6 +429,16 @@ class _DiagnosticsSettingsScreenState extends State<DiagnosticsSettingsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          _buildDetailRow(
+                            '平台支持极光推送',
+                            info.supportsJPush ? '支持' : '不支持',
+                            isDark,
+                          ),
+                          _buildDetailRow(
+                            '用户主动选择开启',
+                            info.optedIn ? '开启' : '关闭',
+                            isDark,
+                          ),
                           _buildDetailRow(
                             'RegistrationID',
                             _maskValue(info.registrationId, 6),

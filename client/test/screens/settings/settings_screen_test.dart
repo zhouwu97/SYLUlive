@@ -64,7 +64,7 @@ void main() {
     expect(find.text('外观与显示'), findsOneWidget);
     expect(find.text('通知与后台'), findsOneWidget);
     expect(find.text('账号与安全'), findsOneWidget);
-    expect(find.text('隐私与数据权利'), findsOneWidget);
+    expect(find.text('隐私与数据'), findsOneWidget);
     expect(find.text('诊断与反馈'), findsOneWidget);
     expect(find.text('关于沈理校园'), findsOneWidget);
 

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+# 沈理校园 MCP 后端安全部署脚本。
+# 只更新 MCP 分支，不执行数据库初始化、清理生产目录或强制 reset。
+set -Eeuo pipefail
+
+readonly SOURCE_DIR="/opt/shenliyuan-src"
+readonly RUN_DIR="/opt/shenliyuan"
+readonly SERVICE_NAME="shenliyuan"
+readonly DEPLOY_BRANCH="MCP"
+readonly CURRENT_BINARY="${RUN_DIR}/shenliyuan"
+readonly NEW_BINARY="${RUN_DIR}/shenliyuan.new"
+
+backup_binary=""
+binary_replaced=0
+deploy_succeeded=0
+
+rollback_on_failure() {
+	local exit_code=$?
+	if [[ "$deploy_succeeded" -eq 0 && "$binary_replaced" -eq 1 && -n "$backup_binary" && -s "$backup_binary" ]]; then
+		printf '[WARN] 部署失败，恢复上一版二进制: %s\n' "$backup_binary" >&2
+		cp -a "$backup_binary" "$CURRENT_BINARY"
+		chmod 0755 "$CURRENT_BINARY"
+		systemctl restart "$SERVICE_NAME" || true
+	fi
+	rm -f -- "$NEW_BINARY"
+	exit "$exit_code"
+}
+trap rollback_on_failure EXIT
+
+if [[ "$EUID" -ne 0 ]]; then
+	exec sudo -- "$0" "$@"
+fi
+
+if [[ ! -d "$SOURCE_DIR/.git" || ! -f "$SOURCE_DIR/server/go.mod" ]]; then
+	printf '[ERR] 源码目录不完整: %s\n' "$SOURCE_DIR" >&2
+	exit 1
+fi
+
+if [[ -n "$(git -C "$SOURCE_DIR" status --porcelain)" ]]; then
+	printf '[ERR] 源码目录存在未提交改动，拒绝部署。\n' >&2
+	exit 1
+fi
+
+printf '[INFO] 同步分支: %s\n' "$DEPLOY_BRANCH"
+git -C "$SOURCE_DIR" fetch origin "refs/heads/${DEPLOY_BRANCH}:refs/remotes/origin/${DEPLOY_BRANCH}"
+git -C "$SOURCE_DIR" checkout "$DEPLOY_BRANCH"
+git -C "$SOURCE_DIR" pull --ff-only origin "$DEPLOY_BRANCH"
+
+printf '[INFO] 编译 MCP 后端: %s\n' "$(git -C "$SOURCE_DIR" rev-parse --short HEAD)"
+cd "$SOURCE_DIR/server"
+go mod download
+rm -f -- "$NEW_BINARY"
+go build -o "$NEW_BINARY" ./cmd/main.go
+
+if [[ ! -s "$NEW_BINARY" ]]; then
+	printf '[ERR] 新二进制为空，拒绝替换。\n' >&2
+	exit 1
+fi
+chmod 0755 "$NEW_BINARY"
+
+backup_binary="${RUN_DIR}/shenliyuan.bak.$(date +%Y%m%d_%H%M%S)"
+cp -a "$CURRENT_BINARY" "$backup_binary"
+mv -f "$NEW_BINARY" "$CURRENT_BINARY"
+binary_replaced=1
+
+systemctl restart "$SERVICE_NAME"
+if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+	journalctl -u "$SERVICE_NAME" -n 30 --no-pager >&2 || true
+	exit 1
+fi
+
+deploy_succeeded=1
+printf '[OK] 部署完成: %s\n' "$(git -C "$SOURCE_DIR" rev-parse --short HEAD)"
+printf '[OK] 备份文件: %s\n' "$backup_binary"

@@ -701,30 +701,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       return !post.waterSectionPinned && !post.isActivePinned;
     }).toList();
 
-    if (_selectedFilterKey == 'mode:latest') {
-      normalPosts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    } else if (_selectedFilterKey == 'mode:recommend') {
-      final now = DateTime.now();
-      double scoreOf(Post p) {
-        final ageHours = now.difference(p.createdAt).inMinutes / 60.0;
-        double freshnessBonus = 0;
-        if (ageHours >= 0 && ageHours < 24) {
-          freshnessBonus = 120.0 * (1.0 - ageHours / 24.0);
-        } else if (ageHours >= 24 && ageHours < 72) {
-          freshnessBonus = 40.0 * (1.0 - (ageHours - 24) / 48.0);
-        }
-        final engagement =
-            (p.likeCount * 2) + (p.replyCount * 3) + (p.viewCount * 0.1);
-        final featuredBonus =
-            p.isFeatured || p.waterSectionFeatured ? 30.0 : 0.0;
-        return freshnessBonus + engagement + featuredBonus;
-      }
-
-      normalPosts.sort((a, b) => scoreOf(b).compareTo(scoreOf(a)));
-    } else {
-      normalPosts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    }
-
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         final offset = notification.metrics.pixels;

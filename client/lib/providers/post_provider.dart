@@ -102,8 +102,6 @@ bool usesHomeFeedV2(
         String? type,
         int? tagId}) =>
     boardId == 1 &&
-    (type == null || type.trim().isEmpty) &&
-    tagId == null &&
     (sort == 'all' || sort == 'time');
 
 class PostProvider extends ChangeNotifier {

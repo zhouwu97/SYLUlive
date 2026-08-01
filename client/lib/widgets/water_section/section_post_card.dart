@@ -11,6 +11,7 @@ import '../../screens/image_viewer_screen.dart';
 import '../../screens/user_home_screen.dart';
 import '../../utils/post_image_cache.dart';
 import '../cached_avatar.dart';
+import '../post_media/post_media_view.dart';
 
 /// 版块专用帖子卡片。
 ///
@@ -354,91 +355,7 @@ class SectionPostCard extends StatelessWidget {
   }
 
   Widget _buildImageGrid(BuildContext context, List<PostImage> images) {
-    final count = images.length;
-    final urls = images.map((img) => ApiConstants.fullUrl(img.url)).toList();
-
-    if (count == 1) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: GestureDetector(
-          onTap: () => _openImageViewer(context, urls, 0),
-          child: CachedNetworkImage(
-            cacheManager: PostImageCache.manager,
-            imageUrl: urls[0],
-            width: double.infinity,
-            height: 200,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
-              height: 200,
-              color: Colors.grey[300],
-            ),
-            errorWidget: (_, __, ___) => Container(
-              height: 200,
-              color: Colors.grey[300],
-              child: const Icon(Icons.image),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: count == 2 ? 2 : 3,
-          mainAxisSpacing: 4,
-          crossAxisSpacing: 4,
-          childAspectRatio: 1,
-        ),
-        itemCount: count > 3 ? 3 : count,
-        itemBuilder: (context, index) {
-          if (index == 2 && count > 3) {
-            return GestureDetector(
-              onTap: () => _openImageViewer(context, urls, index),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CachedNetworkImage(
-                    cacheManager: PostImageCache.manager,
-                    imageUrl: urls[index],
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: Colors.grey[300]),
-                    errorWidget: (_, __, ___) =>
-                        Container(color: Colors.grey[300]),
-                  ),
-                  Container(
-                    color: Colors.black54,
-                    alignment: Alignment.center,
-                    child: Text(
-                      '+${count - 2}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          return GestureDetector(
-            onTap: () => _openImageViewer(context, urls, index),
-            child: CachedNetworkImage(
-              cacheManager: PostImageCache.manager,
-              imageUrl: urls[index],
-              fit: BoxFit.cover,
-              placeholder: (_, __) => Container(color: Colors.grey[300]),
-              errorWidget: (_, __, ___) => Container(color: Colors.grey[300]),
-            ),
-          );
-        },
-      ),
-    );
+    return PostMediaView(images: images);
   }
 
   Widget _buildBottomActions(BuildContext context, bool isDark) {

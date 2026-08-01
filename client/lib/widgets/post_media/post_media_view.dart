@@ -48,13 +48,30 @@ class PostMediaView extends StatelessWidget {
         onTap: () => _openPreview(context, previewUrls, 0),
       );
     }
+
+    final Widget multiChild;
     if (displayUrls.length == 2) {
-      return _twoImages(context, displayUrls, previewUrls);
+      multiChild = _twoImages(context, displayUrls, previewUrls);
+    } else if (displayUrls.length == 3) {
+      multiChild = _threeImages(context, displayUrls, previewUrls);
+    } else {
+      multiChild = _imageGrid(context, displayUrls, previewUrls);
     }
-    if (displayUrls.length == 3) {
-      return _threeImages(context, displayUrls, previewUrls);
+
+    if (variant == PostMediaVariant.feed) {
+      final double maxWidth = displayUrls.length == 2
+          ? 280.0
+          : (displayUrls.length == 3 ? 280.0 : 290.0);
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: maxWidth,
+          child: multiChild,
+        ),
+      );
     }
-    return _imageGrid(context, displayUrls, previewUrls);
+
+    return multiChild;
   }
 
   Widget _twoImages(
@@ -204,13 +221,39 @@ Size calculateSinglePostImageSize({
   required PostMediaVariant variant,
 }) {
   final safeAspectRatio = aspectRatio > 0 ? aspectRatio : 4 / 3;
-  final isFeedPortrait =
-      variant == PostMediaVariant.feed && safeAspectRatio < 1;
 
-  if (isFeedPortrait) {
-    final widthLimit = math.min(availableWidth * 0.86, 300.0);
-    final imageWidth = math.min(widthLimit, 390.0 * safeAspectRatio);
-    return Size(imageWidth, imageWidth / safeAspectRatio);
+  if (variant == PostMediaVariant.feed) {
+    // 限制单图在信息流中的尺寸：居左对齐，大图清晰展示（约270x280上限），右侧保留舒适留白
+    final clampedRatio = safeAspectRatio.clamp(0.55, 1.8);
+    final maxWidth = math.min(availableWidth * 0.75, 270.0);
+    const maxHeight = 280.0;
+
+    double width;
+    double height;
+
+    if (clampedRatio >= 1.0) {
+      width = maxWidth;
+      height = width / clampedRatio;
+      if (height > maxHeight) {
+        height = maxHeight;
+        width = height * clampedRatio;
+      }
+    } else {
+      height = maxHeight;
+      width = height * clampedRatio;
+      if (width > maxWidth) {
+        width = maxWidth;
+        height = width / clampedRatio;
+      }
+    }
+
+    final finalWidth = math.min(width, maxWidth);
+    final finalHeight = math.min(height, maxHeight);
+
+    return Size(
+      finalWidth.clamp(90.0, maxWidth),
+      finalHeight.clamp(90.0, maxHeight),
+    );
   }
 
   final naturalHeight = availableWidth / safeAspectRatio;
@@ -300,7 +343,7 @@ class _SinglePostImageState extends State<_SinglePostImage> {
                   height: imageSize.height,
                   child: PostMediaView._networkImage(
                     widget.url,
-                    fit: BoxFit.contain,
+                    fit: BoxFit.cover,
                   ),
                 ),
               ),

@@ -399,6 +399,16 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		query = query.Where("water_tag_id = ?", tagID)
 	}
 
+	// 版块“推荐”使用独立快照算法；带标签、搜索或增量条件的请求继续走通用查询。
+	isSectionRecommend := requestedBoardID != nil &&
+		*requestedBoardID == models.BoardShuitie &&
+		postType != "" &&
+		waterSectionFeedID > 0 &&
+		!tagIDProvided &&
+		sort == "all" &&
+		searchQuery == "" &&
+		sinceStr == ""
+
 	if sinceStr != "" {
 		sinceTime, err := time.Parse(time.RFC3339, sinceStr)
 		if err == nil {
@@ -531,51 +541,61 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	if isSnapshotting {
 		var allIDs []uint
-		// 这里必须清除Preload等，单纯Pluck
-		snapshotQuery := h.db.Model(&models.Post{}).
-			Where("posts.status != ?", models.PostStatusDeleted).
-			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
-		if !supportsPoll {
-			snapshotQuery = snapshotQuery.Where("posts.content_kind <> ?", models.PostContentKindPoll)
-		}
-		if boardIDStr != "" {
-			boardID, err := strconv.Atoi(boardIDStr)
-			if err == nil {
-				snapshotQuery = snapshotQuery.Where("board_id = ?", boardID)
+		if isSectionRecommend {
+			sectionIDs, sectionErr := services.NewSectionFeedService(h.db, supportsPoll).BuildSnapshot(waterSectionFeedID, postType, now)
+			if sectionErr != nil {
+				log.Printf("[DB_ERROR] GetList section feed snapshot failed: %v", sectionErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "构建版块推荐失败"})
+				return
 			}
-		}
-		snapshotQuery = applyPostTypeFilter(snapshotQuery, requestedBoardID, postType)
-		if tagIDProvided {
-			snapshotQuery = snapshotQuery.Where("water_tag_id = ?", tagID)
-		}
-		if sort == "all" {
-			snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
-			snapshotQuery = applyPinnedOrder(snapshotQuery, now)
-
-			var isTeamTag bool
-			if tagIDProvided {
-				var tag models.WaterSectionTag
-				if h.db.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
-					isTeamTag = true
+			allIDs = sectionIDs
+		} else {
+			// 这里必须清除Preload等，单纯Pluck
+			snapshotQuery := h.db.Model(&models.Post{}).
+				Where("posts.status != ?", models.PostStatusDeleted).
+				Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)")
+			if !supportsPoll {
+				snapshotQuery = snapshotQuery.Where("posts.content_kind <> ?", models.PostContentKindPoll)
+			}
+			if boardIDStr != "" {
+				boardID, err := strconv.Atoi(boardIDStr)
+				if err == nil {
+					snapshotQuery = snapshotQuery.Where("board_id = ?", boardID)
 				}
 			}
-			if isTeamTag {
-				snapshotQuery = snapshotQuery.Joins("LEFT JOIN water_team_recruitments wtr ON wtr.post_id = posts.id")
-				snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: `CASE WHEN wtr.status = ? AND (wtr.deadline IS NULL OR wtr.deadline > ?) THEN 0 WHEN wtr.status = ? THEN 1 ELSE 2 END ASC`, Vars: []interface{}{models.RecruitmentStatusRecruiting, now, models.RecruitmentStatusFull}})
+			snapshotQuery = applyPostTypeFilter(snapshotQuery, requestedBoardID, postType)
+			if tagIDProvided {
+				snapshotQuery = snapshotQuery.Where("water_tag_id = ?", tagID)
 			}
+			if sort == "all" {
+				snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
+				snapshotQuery = applyPinnedOrder(snapshotQuery, now)
 
-			snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: "(10.0 + posts.like_count*5 + posts.reply_count*10 + posts.view_count*0.2) / POWER((EXTRACT(EPOCH FROM (? - posts.created_at))/3600.0 + 2), 2) DESC", Vars: []interface{}{now}})
-		} else if sort == "hot" {
-			snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
-			snapshotQuery = snapshotQuery.Order("(posts.view_count*1 + posts.like_count*20 + posts.reply_count*50) DESC")
-		}
-		if sort == "hot" {
-			snapshotQuery = snapshotQuery.Limit(500)
-		}
-		if err := snapshotQuery.Pluck("posts.id", &allIDs).Error; err != nil {
-			log.Printf("[DB_ERROR] GetList snapshot Pluck failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
-			return
+				var isTeamTag bool
+				if tagIDProvided {
+					var tag models.WaterSectionTag
+					if h.db.First(&tag, tagID).Error == nil && tag.ContentMode == models.WaterTagModeTeamRecruitment {
+						isTeamTag = true
+					}
+				}
+				if isTeamTag {
+					snapshotQuery = snapshotQuery.Joins("LEFT JOIN water_team_recruitments wtr ON wtr.post_id = posts.id")
+					snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: `CASE WHEN wtr.status = ? AND (wtr.deadline IS NULL OR wtr.deadline > ?) THEN 0 WHEN wtr.status = ? THEN 1 ELSE 2 END ASC`, Vars: []interface{}{models.RecruitmentStatusRecruiting, now, models.RecruitmentStatusFull}})
+				}
+
+				snapshotQuery = snapshotQuery.Order(clause.Expr{SQL: "(10.0 + posts.like_count*5 + posts.reply_count*10 + posts.view_count*0.2) / POWER((EXTRACT(EPOCH FROM (? - posts.created_at))/3600.0 + 2), 2) DESC", Vars: []interface{}{now}})
+			} else if sort == "hot" {
+				snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
+				snapshotQuery = snapshotQuery.Order("(posts.view_count*1 + posts.like_count*20 + posts.reply_count*50) DESC")
+			}
+			if sort == "hot" {
+				snapshotQuery = snapshotQuery.Limit(500)
+			}
+			if err := snapshotQuery.Pluck("posts.id", &allIDs).Error; err != nil {
+				log.Printf("[DB_ERROR] GetList snapshot Pluck failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+				return
+			}
 		}
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())

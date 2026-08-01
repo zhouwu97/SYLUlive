@@ -96,13 +96,18 @@ Map<String, dynamic> buildPostListParams({
 }
 
 @visibleForTesting
-bool usesHomeFeedV2(
-        {required int boardId,
-        required String sort,
-        String? type,
-        int? tagId}) =>
-    boardId == 1 &&
-    (sort == 'all' || sort == 'time');
+bool usesHomeFeedV2({
+  required int boardId,
+  required String sort,
+  String? type,
+  int? tagId,
+}) {
+  final normalizedType = type?.trim() ?? '';
+  return boardId == 1 &&
+      normalizedType.isEmpty &&
+      tagId == null &&
+      (sort == 'all' || sort == 'time');
+}
 
 class PostProvider extends ChangeNotifier {
   final Dio _dio;

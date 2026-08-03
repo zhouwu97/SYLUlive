@@ -37,6 +37,7 @@ void main() {
     await _pumpChat(tester, provider);
 
     expect(_sendButton(tester).onPressed, isNull);
+    expect(_sendButtonOpacity(tester).opacity, 0);
 
     await tester.enterText(find.byType(TextField), 'hello');
     await tester.pump();
@@ -45,7 +46,30 @@ void main() {
     expect(enabledSendButton.onPressed, isNotNull);
     expect(
       enabledSendButton.style?.backgroundColor?.resolve({}),
-      const Color(0xFF6B8EFF),
+      const Color(0xFF6366F1),
+    );
+    expect(_sendButtonOpacity(tester).opacity, 1);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('chat header exposes the profile affordance', (tester) async {
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    expect(find.byKey(const ValueKey('chat-header')), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-header-profile')), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-header-more')), findsOneWidget);
+    expect(find.text('点击头像查看主页'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppBar>(find.byType(AppBar))
+          .systemOverlayStyle
+          ?.statusBarIconBrightness,
+      Brightness.dark,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-header'))).height,
+      64,
     );
     await _disposeChat(tester, provider);
   });
@@ -575,6 +599,15 @@ Future<void> _pumpChat(
 IconButton _sendButton(WidgetTester tester) {
   return tester.widget<IconButton>(
     find.byKey(const ValueKey('chat-send-button')),
+  );
+}
+
+AnimatedOpacity _sendButtonOpacity(WidgetTester tester) {
+  return tester.widget<AnimatedOpacity>(
+    find.ancestor(
+      of: find.byKey(const ValueKey('chat-send-button')),
+      matching: find.byType(AnimatedOpacity),
+    ),
   );
 }
 

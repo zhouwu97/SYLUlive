@@ -12,6 +12,7 @@ import 'package:shenliyuan/screens/chat_detail_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 import 'package:shenliyuan/services/emoji_favorite_service.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
+import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
 
 class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
@@ -66,6 +67,153 @@ void main() {
     expect(imageCenter.dy, closeTo(inputCenter.dy, 0.01));
     expect(emojiCenter.dy, closeTo(inputCenter.dy, 0.01));
     expect(sendCenter.dy, closeTo(inputCenter.dy, 0.01));
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('keyboard and Emoji panel share the remembered viewport height',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 356);
+    await _pumpFrames(tester, count: 2);
+    final composerTopWithKeyboard =
+        tester.getTopLeft(find.byKey(const ValueKey('chat-composer'))).dy;
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      356,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      356,
+    );
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('chat-composer'))).dy,
+      closeTo(composerTopWithKeyboard, 1),
+    );
+
+    final stickerGroup = appStickerGroups.first;
+    await tester.tap(
+      find.byKey(ValueKey('sticker-pack-tab-${stickerGroup.id}')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(ValueKey('sticker-group-${stickerGroup.id}')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      356,
+    );
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('chat-composer'))).dy,
+      closeTo(composerTopWithKeyboard, 1),
+    );
+
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await _pumpFrames(tester, count: 2);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      356,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+    expect(find.byType(AppEmojiPanel), findsNothing);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('chat-composer'))).dy,
+      closeTo(composerTopWithKeyboard, 1),
+    );
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('Emoji panel keeps a 286 pixel keyboard height without clamping',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 286);
+    await _pumpFrames(tester, count: 2);
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      286,
+    );
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('text sending clears immediately and allows another pending send',
+      (tester) async {
+    final failureGate = Completer<void>();
+    final provider = MessageProvider(_chatDio(failureGate: failureGate));
+    await _pumpChat(tester, provider);
+
+    await tester.enterText(find.byKey(const ValueKey('chat-input')), '第一条');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pump();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('chat-input')))
+          .controller
+          ?.text,
+      isEmpty,
+    );
+    expect(provider.draftFor(3), isEmpty);
+
+    await tester.enterText(find.byKey(const ValueKey('chat-input')), '第二条');
+    await tester.pump();
+    expect(_sendButton(tester).onPressed, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pump();
+    expect(provider.messages, hasLength(2));
+    expect(provider.messages.every((message) => message.isPending), isTrue);
+
+    failureGate.complete();
+    await _pumpFrames(tester);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('stranger first contact blocks a second outgoing message locally',
+      (tester) async {
+    final failureGate = Completer<void>();
+    final provider = MessageProvider(
+      _chatDio(
+        failureGate: failureGate,
+        sendState: const {
+          'can_send': true,
+          'first_contact_used': false,
+          'target_follows_me': false,
+          'target_replied': false,
+        },
+      ),
+    );
+    await _pumpChat(tester, provider);
+
+    await tester.enterText(find.byKey(const ValueKey('chat-input')), '你好');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pump();
+
+    expect(provider.messages, hasLength(1));
+    expect(find.text('首条私信已提交。等待对方回复后可继续发送。'), findsOneWidget);
+    expect(_sendButton(tester).onPressed, isNull);
+
+    failureGate.complete();
+    await _pumpFrames(tester);
     await _disposeChat(tester, provider);
   });
 
@@ -327,6 +475,7 @@ Dio _chatDio({
   List<Map<String, dynamic>> otherMessages = const [],
   Completer<void>? failureGate,
   VoidCallback? onRead,
+  Map<String, dynamic> sendState = const {'can_send': true},
 }) {
   final dio = Dio();
   dio.interceptors.add(
@@ -360,7 +509,7 @@ Dio _chatDio({
             Response(
               requestOptions: options,
               statusCode: 200,
-              data: const {'can_send': true},
+              data: sendState,
             ),
           );
           return;

@@ -1,7 +1,19 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/utils/screen_swipe.dart';
 import 'package:shenliyuan/widgets/swipe_to_exit.dart';
+
+class _NavigatorObserver extends NavigatorObserver {
+  final List<Route<dynamic>> poppedRoutes = [];
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    poppedRoutes.add(route);
+    super.didPop(route, previousRoute);
+  }
+}
 
 void main() {
   test('bottom third is reserved for main navigation swipes', () {
@@ -165,6 +177,52 @@ void main() {
     await tester.dragFrom(swipeStart, Offset(-mediaWidth * 0.31, 0));
     await tester.pumpAndSettle();
     expect(find.text('进入私信'), findsOneWidget);
+    expect(find.text('私信'), findsNothing);
+  });
+
+  testWidgets('mouse drag can exit a page in the Android emulator',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final navigatorObserver = _NavigatorObserver();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: [navigatorObserver],
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SwipeToExit(
+                      child: Scaffold(body: Text('私信')),
+                    ),
+                  ),
+                );
+              },
+              child: const Text('进入私信'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('进入私信'));
+    await tester.pumpAndSettle();
+
+    final swipeWidget = find.byType(SwipeToExit);
+    final pageWidth = tester.getSize(swipeWidget).width;
+    final mediaWidth = MediaQuery.sizeOf(tester.element(swipeWidget)).width;
+    final gesture = await tester.startGesture(
+      Offset(pageWidth - 40, 400),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(Offset(-mediaWidth * 0.35, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(navigatorObserver.poppedRoutes, hasLength(1));
     expect(find.text('私信'), findsNothing);
   });
 

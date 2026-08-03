@@ -74,6 +74,74 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     provider.dispose();
   });
+
+  testWidgets('conversation list uses the private-message visual hierarchy',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final provider = MessageProvider(
+      _conversationDio([
+        _conversation(
+          id: 42,
+          otherId: 3,
+          nickname: '小林',
+          content: '明天下午见',
+          unreadCount: 2,
+        ),
+        _conversation(
+          id: 43,
+          otherId: 4,
+          nickname: '小周',
+          content: '算法竞赛资料',
+        ),
+      ]),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: _FakeAuthProvider(_user(8, '我')),
+          ),
+          ChangeNotifierProvider<MessageProvider>.value(value: provider),
+          ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ],
+        child: const MaterialApp(home: ChatListScreen()),
+      ),
+    );
+    await _pumpFrames(tester);
+
+    expect(find.text('最近消息'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppBar>(find.byType(AppBar))
+          .systemOverlayStyle
+          ?.statusBarIconBrightness,
+      Brightness.dark,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-conversation-search'))),
+      const Size(368, 48),
+    );
+    final unreadTile = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('chat-conversation-42')),
+    );
+    final unreadDecoration = unreadTile.decoration as BoxDecoration;
+    expect(unreadDecoration.color, Colors.white);
+    expect(unreadDecoration.border, isA<Border>());
+    expect(
+      (unreadDecoration.border! as Border).top.color,
+      const Color(0xFFE5E2FF),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-conversation-42'))),
+      const Size(368, 78),
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    provider.dispose();
+  });
 }
 
 Dio _conversationDio(List<Map<String, dynamic>> conversations) {
@@ -109,6 +177,7 @@ Map<String, dynamic> _conversation({
   required int otherId,
   required String nickname,
   required String content,
+  int unreadCount = 0,
 }) {
   return {
     'id': id,
@@ -117,6 +186,7 @@ Map<String, dynamic> _conversation({
     'last_message_at': '2026-06-14T08:31:00Z',
     'user1': _userJson(8, '我'),
     'user2': _userJson(otherId, nickname),
+    'unread_count': unreadCount,
     'last_message': {
       'id': id * 10,
       'conversation_id': id,

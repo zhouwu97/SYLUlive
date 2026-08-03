@@ -20,9 +20,11 @@ import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_feedback.dart';
+import '../utils/app_navigation.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_time.dart';
 import '../utils/text_editing_helper.dart';
+import '../theme/AppTheme.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
@@ -84,6 +86,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   static const MethodChannel _privateMessageNotificationsChannel =
       MethodChannel('shenliyuan/private_message_notifications');
   static const double _fallbackKeyboardHeight = 300;
+  static const double _chatHeaderHeight = 64;
 
   @override
   void initState() {
@@ -643,23 +646,28 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final height = _bottomViewportHeight;
     final showEmojiPanel =
         _bottomPanel == ChatBottomPanel.emoji && !_isComposerBlocked;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
       key: const ValueKey('chat-bottom-viewport'),
+      width: double.infinity,
       height: height,
-      child: showEmojiPanel
-          ? SafeArea(
-              top: false,
-              child: AppEmojiPanel(
-                key: const ValueKey('chat-emoji-panel'),
-                onEmojiSelected: _insertEmoji,
-                onStickerSelected: _selectSticker,
-                onFavoriteImageSelected: _sendFavoriteImage,
-                onBackspace: () => deletePreviousCharacter(_textController),
-                // 媒体上传不应冻结 Emoji 或 Sticker 的连续发送能力。
-                enabled: !_isComposerBlocked,
-              ),
-            )
-          : const SizedBox.expand(),
+      child: ColoredBox(
+        color: isDark ? const Color(0xFF1B202A) : Colors.white,
+        child: showEmojiPanel
+            ? SafeArea(
+                top: false,
+                child: AppEmojiPanel(
+                  key: const ValueKey('chat-emoji-panel'),
+                  onEmojiSelected: _insertEmoji,
+                  onStickerSelected: _selectSticker,
+                  onFavoriteImageSelected: _sendFavoriteImage,
+                  onBackspace: () => deletePreviousCharacter(_textController),
+                  // 媒体上传不应冻结 Emoji 或 Sticker 的连续发送能力。
+                  enabled: !_isComposerBlocked,
+                ),
+              )
+            : const SizedBox.expand(),
+      ),
     );
   }
 
@@ -971,7 +979,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           color: Colors.transparent,
           child: Column(
             children: [
-              _buildEmbeddedHeader(),
+              _buildChatHeader(showBackButton: false),
               Expanded(child: body),
             ],
           ),
@@ -980,26 +988,29 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
 
     return SwipeToExit(
-      child: PopScope(
-        canPop: _bottomPanel == ChatBottomPanel.none,
-        onPopInvokedWithResult: (didPop, result) {
-          if (!didPop && _bottomPanel != ChatBottomPanel.none) {
-            _dismissBottomPanel();
-          }
-        },
-        child: Scaffold(
-          resizeToAvoidBottomInset: false,
-          backgroundColor: Colors.transparent,
-          extendBodyBehindAppBar: true,
-          appBar: AppBar(
-            title: _buildTitle(),
-            backgroundColor:
-                isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-            foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
-            surfaceTintColor: Colors.transparent,
-            elevation: 0,
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: _chatSystemOverlayStyle(isDark),
+        child: PopScope(
+          canPop: _bottomPanel == ChatBottomPanel.none,
+          onPopInvokedWithResult: (didPop, result) {
+            if (!didPop && _bottomPanel != ChatBottomPanel.none) {
+              _dismissBottomPanel();
+            }
+          },
+          child: Scaffold(
+            resizeToAvoidBottomInset: false,
+            backgroundColor: Colors.transparent,
+            appBar: AppBar(
+              automaticallyImplyLeading: false,
+              toolbarHeight: _chatHeaderHeight,
+              backgroundColor: _chatSurfaceColor(),
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              systemOverlayStyle: _chatSystemOverlayStyle(isDark),
+              flexibleSpace: _buildChatHeader(showBackButton: true),
+            ),
+            body: body,
           ),
-          body: body,
         ),
       ),
     );
@@ -1035,48 +1046,151 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     );
   }
 
-  Widget _buildTitle() {
-    return Row(
-      children: [
-        CachedAvatar(
-          imageUrl: widget.targetUser.avatar.isEmpty
-              ? null
-              : ApiConstants.fullUrl(widget.targetUser.avatar),
-          radius: 17,
-          fallbackText: widget.targetUser.nickname,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            widget.targetUser.nickname.isEmpty
-                ? '用户${widget.targetUser.id}'
-                : widget.targetUser.nickname,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
+  Color _chatSurfaceColor() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight;
+  }
+
+  SystemUiOverlayStyle _chatSystemOverlayStyle(bool isDark) {
+    return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+        .copyWith(
+      statusBarColor: _chatSurfaceColor(),
+      systemNavigationBarColor: isDark ? const Color(0xFF1B202A) : Colors.white,
+      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+      systemNavigationBarIconBrightness:
+          isDark ? Brightness.light : Brightness.dark,
     );
   }
 
-  Widget _buildEmbeddedHeader() {
+  Widget _buildChatHeader({required bool showBackButton}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final divider = Colors.black.withValues(alpha: 0.08);
+    final foreground = isDark ? Colors.white : const Color(0xFF171719);
+    final muted = isDark ? Colors.white60 : const Color(0xFF9A9490);
+    final nickname = widget.targetUser.nickname.isEmpty
+        ? '用户${widget.targetUser.id}'
+        : widget.targetUser.nickname;
     return Container(
-      height: 58,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      key: const ValueKey('chat-header'),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-        border: Border(bottom: BorderSide(color: divider)),
+        color: _chatSurfaceColor(),
+        border: Border(
+          bottom: BorderSide(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : const Color(0xFFECE8E4),
+          ),
+        ),
       ),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: DefaultTextStyle.merge(
-          style:
-              TextStyle(color: isDark ? Colors.white : const Color(0xFF111827)),
-          child: _buildTitle(),
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: _chatHeaderHeight,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: showBackButton
+                    ? IconButton(
+                        key: const ValueKey('chat-header-back'),
+                        tooltip: '返回',
+                        onPressed: () {
+                          Navigator.maybePop(context);
+                        },
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                            size: 20),
+                      )
+                    : null,
+              ),
+              Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    key: const ValueKey('chat-header-profile'),
+                    onTap: _openTargetProfile,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CachedAvatar(
+                            imageUrl: widget.targetUser.avatar.isEmpty
+                                ? null
+                                : ApiConstants.fullUrl(
+                                    widget.targetUser.avatar,
+                                  ),
+                            radius: 20,
+                            fallbackText: nickname,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  nickname,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: foreground,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 1),
+                                Text(
+                                  '点击头像查看主页',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: muted,
+                                    fontSize: 11,
+                                    height: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: PopupMenuButton<String>(
+                  key: const ValueKey('chat-header-more'),
+                  tooltip: '更多',
+                  padding: EdgeInsets.zero,
+                  icon: Icon(
+                    Icons.more_horiz_rounded,
+                    color: foreground,
+                    size: 24,
+                  ),
+                  onSelected: (_) => _openTargetProfile(),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem<String>(
+                      value: 'profile',
+                      child: Text('查看主页'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void _openTargetProfile() {
+    _dismissBottomPanel();
+    AppNavigation.openUserHome(context, userId: widget.targetUser.id);
   }
 
   Widget _buildMessageArea(
@@ -1146,11 +1260,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       child: ListView.builder(
           controller: _scrollController,
           reverse: true,
-          padding: EdgeInsets.fromLTRB(
+          padding: const EdgeInsets.fromLTRB(
             12,
-            widget.embedded
-                ? 12
-                : MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
+            12,
             12,
             18,
           ),
@@ -1239,45 +1351,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildMessageBackdrop(Widget child) {
-    if (widget.embedded) {
-      return Stack(
-        children: [
-          Positioned.fill(
-            child: ColoredBox(color: Colors.white.withValues(alpha: 0.18)),
-          ),
-          child,
-        ],
-      );
-    }
-
     return Stack(
       children: [
-        Positioned.fill(child: _buildStandaloneMessageBackdrop()),
+        Positioned.fill(child: _buildChatBackground()),
         child,
       ],
     );
   }
 
   Widget _buildStandaloneMessageBackdrop() {
-    return Stack(
-      children: [
-        Positioned.fill(child: _buildChatBackground()),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white.withValues(alpha: 0.30),
-                  Colors.white.withValues(alpha: 0.46),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
+    return _buildChatBackground();
   }
 
   Widget _buildChatBackground() {
@@ -1299,9 +1382,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       children: [
         _buildChatBackgroundImage(
           imageProvider: imageProvider,
-          fillScreen: themeProvider.getCustomBackgroundFillScreenFor(context),
         ),
-        Container(color: Colors.white.withValues(alpha: 0.22)),
+        ColoredBox(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.16)
+              : Colors.white.withValues(alpha: 0.15),
+        ),
       ],
     );
   }
@@ -1318,28 +1404,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildChatBackgroundImage({
     required ImageProvider imageProvider,
-    required bool fillScreen,
   }) {
     const fallbackColor = kCleanWarmBackgroundLight;
-    if (fillScreen) {
-      return Image(
-        image: imageProvider,
-        fit: BoxFit.cover,
-        alignment: Alignment.center,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => const ColoredBox(color: fallbackColor),
-      );
-    }
-
-    return ColoredBox(
-      color: fallbackColor,
-      child: Image(
-        image: imageProvider,
-        fit: BoxFit.contain,
-        alignment: Alignment.center,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-      ),
+    // 私信消息区始终铺满可视区域，避免 contain 模式在两侧留下暖白空隙。
+    return Image(
+      image: imageProvider,
+      fit: BoxFit.cover,
+      alignment: Alignment.center,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) => const ColoredBox(color: fallbackColor),
     );
   }
 
@@ -1350,13 +1423,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         local.month == now.month &&
         local.day == now.day;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Text(
         DateFormat(sameDay ? 'HH:mm' : 'MM-dd HH:mm').format(local),
-        style: TextStyle(
+        style: const TextStyle(
           fontSize: 12,
-          color: Colors.grey.shade700,
-          shadows: const [Shadow(color: Colors.white, blurRadius: 6)],
+          color: Color(0xFF9A9490),
         ),
       ),
     );
@@ -1386,14 +1458,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         ? sender!.nickname
         : (isMine ? '我' : widget.targetUser.nickname);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colorScheme = Theme.of(context).colorScheme;
     final bubbleColor = isMine
-        ? colorScheme.primary
+        ? AppTheme.primaryColor
         : (isDark ? const Color(0xFF252B36) : Colors.white);
     final textColor = isMine
-        ? colorScheme.onPrimary
+        ? Colors.white
         : (isDark ? Colors.white : const Color(0xFF111827));
-    final groupGap = isGroupStart ? 7.0 : 2.0;
+    final groupGap = isGroupStart ? 10.0 : 4.0;
     final bubbleRadius = _messageBubbleRadius(
       isMine: isMine,
       isGroupStart: isGroupStart,
@@ -1431,8 +1502,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     padding: message.isStickerOnly || hasImage
                         ? const EdgeInsets.all(4)
                         : const EdgeInsets.symmetric(
-                            horizontal: 13,
-                            vertical: 9,
+                            horizontal: 14,
+                            vertical: 10,
                           ),
                     decoration: BoxDecoration(
                       color: message.isStickerOnly
@@ -1444,7 +1515,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                             ? Colors.transparent
                             : isMine
                                 ? Colors.transparent
-                                : Colors.black.withValues(alpha: 0.05),
+                                : (isDark
+                                    ? Colors.white.withValues(alpha: 0.10)
+                                    : const Color(0xFFECE8E4)),
                       ),
                     ),
                     child: Column(
@@ -1484,7 +1557,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                               message.content,
                               style: TextStyle(
                                 color: textColor,
-                                height: 1.35,
+                                fontSize: 15,
+                                height: 1.4,
                               ),
                             ),
                           ),
@@ -1510,9 +1584,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     required bool isGroupStart,
     required bool isGroupEnd,
   }) {
-    const outer = Radius.circular(16);
-    const grouped = Radius.circular(6);
-    const tail = Radius.circular(4);
+    const outer = Radius.circular(18);
+    const grouped = Radius.circular(8);
+    const tail = Radius.circular(8);
     if (isMine) {
       return BorderRadius.only(
         topLeft: outer,
@@ -1535,12 +1609,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     required String fallbackText,
   }) {
     return SizedBox(
-      width: 36,
-      height: 36,
+      width: 40,
+      height: 40,
       child: showAvatar
           ? CachedAvatar(
               imageUrl: imageUrl,
-              radius: 18,
+              radius: 20,
               fallbackText: fallbackText,
             )
           : null,
@@ -1750,8 +1824,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (composing.isValid && !composing.isCollapsed) {
       return KeyEventResult.ignored;
     }
-    if (_canStartOutgoingMessage &&
-        _textController.text.trim().isNotEmpty) {
+    if (_canStartOutgoingMessage && _textController.text.trim().isNotEmpty) {
       _sendMessage();
     }
     return KeyEventResult.handled;
@@ -1766,7 +1839,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         if (blocked) _buildPMLockedBanner(),
         Container(
           key: const ValueKey('chat-composer'),
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1B202A) : Colors.white,
             border: Border(
@@ -1778,7 +1851,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             ),
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               SizedBox(
                 key: const ValueKey('chat-image-button'),
@@ -1796,7 +1869,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.add_rounded),
+                      : const Icon(Icons.add_rounded, size: 25),
                 ),
               ),
               const SizedBox(width: 4),
@@ -1805,7 +1878,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                   onKeyEvent: _handleComposerKeyEvent,
                   child: Container(
                     key: const ValueKey('chat-input-container'),
-                    constraints: const BoxConstraints(minHeight: 44),
+                    constraints: const BoxConstraints(minHeight: 46),
                     child: TextField(
                       key: const ValueKey('chat-input'),
                       controller: _textController,
@@ -1816,17 +1889,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                       style: TextStyle(
                         color: blocked
                             ? (isDark ? Colors.white38 : Colors.black38)
-                            : (isDark
-                                ? Colors.white
-                                : const Color(0xFF111827)),
+                            : (isDark ? Colors.white : const Color(0xFF111827)),
                       ),
                       minLines: 1,
                       maxLines: 4,
                       textInputAction: TextInputAction.newline,
                       decoration: InputDecoration(
-                        hintText: blocked
-                            ? '等待对方回复后可继续发送'
-                            : '发送消息',
+                        hintText: blocked ? '等待对方回复后可继续发送' : '发送消息',
                         isDense: true,
                         filled: true,
                         fillColor: blocked
@@ -1835,7 +1904,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                                 : const Color(0xFFE5E7EB))
                             : (isDark
                                 ? const Color(0xFF292F3A)
-                                : const Color(0xFFF1F0F6)),
+                                : const Color(0xFFF4F2F4)),
                         hintStyle: TextStyle(
                           color: isDark
                               ? Colors.white38
@@ -1846,8 +1915,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                         suffixIconConstraints: const BoxConstraints(
                           minWidth: 44,
                           maxWidth: 44,
-                          minHeight: 44,
-                          maxHeight: 44,
+                          minHeight: 46,
+                          maxHeight: 46,
                         ),
                         suffixIcon: SizedBox(
                           key: const ValueKey('chat-emoji-button'),
@@ -1863,16 +1932,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                               _bottomPanel == ChatBottomPanel.emoji
                                   ? Icons.keyboard_alt_outlined
                                   : Icons.sentiment_satisfied_alt_outlined,
+                              size: 22,
                             ),
                           ),
                         ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(22),
+                          borderRadius: BorderRadius.circular(23),
                           borderSide: BorderSide.none,
                         ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
-                          vertical: 10,
+                          vertical: 11,
                         ),
                       ),
                     ),
@@ -1883,30 +1953,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _textController,
                 builder: (context, value, _) {
-                  final canSend =
-                      !blocked && value.text.trim().isNotEmpty;
+                  final canSend = !blocked && value.text.trim().isNotEmpty;
                   return SizedBox(
                     key: const ValueKey('chat-send-button-container'),
                     width: 44,
                     height: 44,
-                    child: IconButton.filled(
-                      key: const ValueKey('chat-send-button'),
-                      tooltip: '发送',
-                      onPressed: canSend ? _sendMessage : null,
-                      style: IconButton.styleFrom(
-                        fixedSize: const Size(44, 44),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        backgroundColor: isDark
-                            ? const Color(0xFF82A0FF)
-                            : const Color(0xFF6B8EFF),
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: isDark
-                            ? Colors.white.withValues(alpha: 0.10)
-                            : const Color(0xFFE5E7EB),
-                        disabledForegroundColor:
-                            isDark ? Colors.white30 : const Color(0xFF9CA3AF),
+                    child: AnimatedOpacity(
+                      opacity: canSend ? 1 : 0,
+                      duration: const Duration(milliseconds: 130),
+                      curve: Curves.easeOut,
+                      child: IgnorePointer(
+                        ignoring: !canSend,
+                        child: IconButton.filled(
+                          key: const ValueKey('chat-send-button'),
+                          tooltip: '发送',
+                          onPressed: canSend ? _sendMessage : null,
+                          style: IconButton.styleFrom(
+                            fixedSize: const Size(44, 44),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: AppTheme.primaryColor,
+                            disabledForegroundColor: Colors.white,
+                          ),
+                          icon: const Icon(Icons.send_rounded, size: 20),
+                        ),
                       ),
-                      icon: const Icon(Icons.send_rounded),
                     ),
                   );
                 },

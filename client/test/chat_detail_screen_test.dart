@@ -94,6 +94,27 @@ void main() {
     await _disposeChat(tester, provider);
   });
 
+  testWidgets('composer stays above the bottom system gesture inset',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewPadding = const FakeViewPadding(bottom: 24);
+    addTearDown(tester.view.reset);
+
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    expect(
+      tester.getRect(find.byKey(const ValueKey('chat-composer'))).bottom,
+      closeTo(876, 1),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
+      0,
+    );
+    await _disposeChat(tester, provider);
+  });
+
   testWidgets('keyboard and Emoji panel share the remembered viewport height',
       (tester) async {
     tester.view.physicalSize = const Size(400, 900);

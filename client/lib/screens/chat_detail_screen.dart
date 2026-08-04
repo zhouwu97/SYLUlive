@@ -634,7 +634,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   double get _bottomViewportHeight {
     switch (_bottomPanel) {
       case ChatBottomPanel.none:
-        return MediaQuery.paddingOf(context).bottom;
+        return 0;
       case ChatBottomPanel.keyboard:
         return _keyboardViewportHeight;
       case ChatBottomPanel.emoji:
@@ -1031,7 +1031,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             includeBackdrop: widget.embedded,
           ),
         ),
-        _buildInputBar(),
+        _buildComposerArea(),
         _buildBottomViewport(),
       ],
     );
@@ -1987,6 +1987,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildComposerArea() {
+    final inputBar = _buildInputBar();
+    if (_bottomPanel != ChatBottomPanel.none) return inputBar;
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // 空闲状态由 Composer 自身消费系统手势安全区，避免透明系统栏压住输入控件。
+    return ColoredBox(
+      color: isDark ? const Color(0xFF1B202A) : Colors.white,
+      child: SafeArea(
+        top: false,
+        maintainBottomViewPadding: true,
+        child: inputBar,
+      ),
     );
   }
 

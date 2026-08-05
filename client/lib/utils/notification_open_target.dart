@@ -1,4 +1,49 @@
+import 'dart:convert';
+
 import 'package:shenliyuan/utils/private_message_notification.dart';
+
+const nativeNotificationOpenIdKey = '_native_notification_open_id';
+
+class NativeNotificationOpen {
+  const NativeNotificationOpen({
+    required this.id,
+    required this.payload,
+    required this.openedAt,
+  });
+
+  final String id;
+  final Map<String, dynamic> payload;
+  final DateTime openedAt;
+
+  static NativeNotificationOpen? parse(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+
+      final id = decoded['id']?.toString().trim() ?? '';
+      final payloadValue = decoded['payload'];
+      final openedAtMillis = intFromNotificationExtra(decoded['opened_at']);
+      if (id.isEmpty || payloadValue is! Map || openedAtMillis == null) {
+        return null;
+      }
+
+      return NativeNotificationOpen(
+        id: id,
+        payload: payloadValue.map(
+          (key, value) => MapEntry(key.toString(), value),
+        ),
+        openedAt: DateTime.fromMillisecondsSinceEpoch(openedAtMillis),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic> payloadWithTrackingId() => {
+        ...payload,
+        nativeNotificationOpenIdKey: id,
+      };
+}
 
 enum NotificationOpenType {
   reply,
@@ -10,11 +55,13 @@ class NotificationOpenTarget {
     required this.createdAt,
     this.postId,
     this.replyId,
+    this.nativeOpenId,
   });
 
   final NotificationOpenType type;
   final int? postId;
   final int? replyId;
+  final String? nativeOpenId;
   final DateTime createdAt;
 
   bool isExpired(
@@ -52,6 +99,7 @@ class NotificationOpenTarget {
           type: NotificationOpenType.reply,
           postId: postId,
           replyId: replyId,
+          nativeOpenId: extras[nativeNotificationOpenIdKey]?.toString(),
           createdAt: now ?? DateTime.now(),
         );
 

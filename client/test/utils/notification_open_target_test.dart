@@ -1,7 +1,46 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/utils/notification_open_target.dart';
 
 void main() {
+  group('NativeNotificationOpen', () {
+    test('解析原生持久化事件并把追踪 ID 注入 payload', () {
+      final event = NativeNotificationOpen.parse(jsonEncode({
+        'id': 'open-123',
+        'opened_at': 1785859200000,
+        'payload': {
+          'type': 'reply',
+          'post_id': 12,
+          'reply_id': 34,
+        },
+      }));
+
+      expect(event, isNotNull);
+      expect(event!.id, 'open-123');
+      expect(event.payload['post_id'], 12);
+      expect(
+        event.payloadWithTrackingId()[nativeNotificationOpenIdKey],
+        'open-123',
+      );
+    });
+
+    test('拒绝缺少事件 ID 或 payload 的数据', () {
+      expect(
+        NativeNotificationOpen.parse(
+          jsonEncode({'opened_at': 1785859200000, 'payload': {}}),
+        ),
+        isNull,
+      );
+      expect(
+        NativeNotificationOpen.parse(
+          jsonEncode({'id': 'open-123', 'opened_at': 1785859200000}),
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('NotificationOpenTarget Parse', () {
     test('应该能解析 reply 类型的基本通知', () {
       final message = {
@@ -18,6 +57,16 @@ void main() {
       expect(target!.type, NotificationOpenType.reply);
       expect(target.postId, 123);
       expect(target.replyId, 456);
+    });
+
+    test('保留原生事件 ID 供导航成功后确认', () {
+      final target = NotificationOpenTarget.parse({
+        'type': 'reply',
+        'post_id': 123,
+        nativeNotificationOpenIdKey: 'open-456',
+      });
+
+      expect(target?.nativeOpenId, 'open-456');
     });
 
     test('忽略未知或缺少关键信息的通知', () {

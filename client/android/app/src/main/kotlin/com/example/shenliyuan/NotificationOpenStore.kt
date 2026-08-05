@@ -8,12 +8,13 @@ import java.util.UUID
 /**
  * 持久化系统通知点击，直到 Flutter 完成导航并显式确认。
  *
- * 队列用于保留用户连续点击的不同通知；限制长度可避免异常数据无限增长。
+ * 较新的点击完成后会淘汰更早的点击，避免恢复阶段连续执行过时导航。
  */
 object NotificationOpenStore {
     private const val PREFERENCES_NAME = "notification_open_store"
     private const val PENDING_EVENTS_KEY = "pending_events"
     private const val MAX_PENDING_EVENTS = 16
+    private const val MAX_EVENT_AGE_MILLIS = 24L * 60L * 60L * 1000L
     private val lock = Any()
 
     fun enqueue(context: Context, payload: JSONObject): String = synchronized(lock) {
@@ -39,32 +40,52 @@ object NotificationOpenStore {
 
     fun acknowledge(context: Context, eventId: String): Boolean = synchronized(lock) {
         val events = readEvents(context)
-        val remaining = JSONArray()
-        var removed = false
-
+        var acknowledgedIndex = -1
         for (index in 0 until events.length()) {
-            val event = events.optJSONObject(index) ?: continue
-            if (event.optString("id") == eventId) {
-                removed = true
-            } else {
-                remaining.put(event)
+            if (events.optJSONObject(index)?.optString("id") == eventId) {
+                acknowledgedIndex = index
+                break
             }
         }
+        if (acknowledgedIndex < 0) return@synchronized false
 
-        if (removed) {
-            writeEvents(context, remaining)
+        val remaining = JSONArray()
+        for (index in (acknowledgedIndex + 1) until events.length()) {
+            events.optJSONObject(index)?.let(remaining::put)
         }
-        removed
+        writeEvents(context, remaining)
+        true
     }
 
     private fun readEvents(context: Context): JSONArray {
         val raw = preferences(context).getString(PENDING_EVENTS_KEY, null)
             ?: return JSONArray()
         return try {
-            JSONArray(raw)
+            removeExpiredEvents(context, JSONArray(raw))
         } catch (_: Exception) {
             JSONArray()
         }
+    }
+
+    private fun removeExpiredEvents(context: Context, events: JSONArray): JSONArray {
+        val now = System.currentTimeMillis()
+        val active = JSONArray()
+        var changed = false
+
+        for (index in 0 until events.length()) {
+            val event = events.optJSONObject(index)
+            val openedAt = event?.optLong("opened_at", -1L) ?: -1L
+            if (event == null || openedAt <= 0L || now - openedAt > MAX_EVENT_AGE_MILLIS) {
+                changed = true
+            } else {
+                active.put(event)
+            }
+        }
+
+        if (changed) {
+            writeEvents(context, active)
+        }
+        return active
     }
 
     private fun writeEvents(context: Context, events: JSONArray) {

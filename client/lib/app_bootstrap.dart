@@ -416,6 +416,11 @@ Future<void> _handleNativeNotificationOpen(String raw) async {
     debugPrint('忽略格式无效的原生通知点击事件');
     return;
   }
+  if (event.isExpired(DateTime.now())) {
+    debugPrint('忽略已过期的原生通知点击: ${event.id}');
+    await _ackNativeNotificationOpen(event.id);
+    return;
+  }
 
   final payload = event.payloadWithTrackingId();
   final type = extractJPushExtras(payload)['type']?.toString();

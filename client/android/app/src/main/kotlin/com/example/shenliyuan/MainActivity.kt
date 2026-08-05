@@ -300,8 +300,8 @@ class MainActivity : FlutterActivity() {
     private fun handleNotificationOpenIntent(intent: Intent?) {
         when (intent?.action) {
             ACTION_OPEN_NOTIFICATION -> {
-                val event = NotificationOpenStore.peek(this)
-                    ?: intent.getStringExtra(EXTRA_NOTIFICATION_OPEN_JSON)
+                val event = intent.getStringExtra(EXTRA_NOTIFICATION_OPEN_JSON)
+                    ?: NotificationOpenStore.peek(this)
                 dispatchNotificationOpen(event)
             }
             ACTION_OPEN_PRIVATE_MESSAGE -> {

@@ -63,6 +63,7 @@ void main() {
       'sender_id': '11',
       'sender_name': 'Carol',
       'sender_avatar': '/uploads/carol.png',
+      '_native_notification_open_id': 'open-789',
     }));
 
     expect(target?.conversationId, 31);
@@ -70,6 +71,7 @@ void main() {
     expect(target?.senderId, 11);
     expect(target?.senderAvatar, '/uploads/carol.png');
     expect(target?.displayName, 'Carol');
+    expect(target?.nativeOpenId, 'open-789');
   });
 
   group('PendingPrivateMessageOpen', () {

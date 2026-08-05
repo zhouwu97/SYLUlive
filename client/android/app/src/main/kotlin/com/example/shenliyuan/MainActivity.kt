@@ -30,8 +30,17 @@ class MainActivity : FlutterActivity() {
         private const val GRADE_REMINDER_CHANNEL = "shenliyuan/grade_reminders"
         private const val PRIVATE_MESSAGE_NOTIFICATION_CHANNEL =
             "shenliyuan/private_message_notifications"
+        private const val NOTIFICATION_OPEN_CHANNEL =
+            "shenliyuan/notification_open"
         private const val APP_UPDATE_CHANNEL = "shenliyuan/app_update"
 
+        const val ACTION_OPEN_NOTIFICATION =
+            "com.example.shenliyuan.OPEN_NOTIFICATION"
+
+        const val EXTRA_NOTIFICATION_OPEN_JSON =
+            "notification_open_json"
+
+        // 兼容旧版本创建但尚未点击的私信通知 Intent。
         const val ACTION_OPEN_PRIVATE_MESSAGE =
             "com.example.shenliyuan.OPEN_PRIVATE_MESSAGE"
 
@@ -44,8 +53,7 @@ class MainActivity : FlutterActivity() {
 
     private var pendingDeepLink: String? = null
     
-    private val pendingLock = Any()
-    private var pendingPrivateMessageJson: String? = null
+    private var notificationOpenChannel: MethodChannel? = null
 
     private val keepAliveHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -121,13 +129,6 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun consumePendingPrivateMessage(): String? =
-        synchronized(pendingLock) {
-            pendingPrivateMessageJson.also {
-                pendingPrivateMessageJson = null
-            }
-        }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -139,7 +140,7 @@ class MainActivity : FlutterActivity() {
         }
         recordActivityCreated(savedInstanceState, hadLiveInstance)
         
-        handlePrivateMessageIntent(intent)
+        handleNotificationOpenIntent(intent)
         handleDeepLink(intent)
         
         createHighPriorityNotificationChannels()
@@ -232,7 +233,7 @@ class MainActivity : FlutterActivity() {
             ),
         )
         
-        handlePrivateMessageIntent(intent)
+        handleNotificationOpenIntent(intent)
         if (handleDeepLink(intent)) dispatchPendingDeepLink()
     }
 
@@ -296,19 +297,55 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun handlePrivateMessageIntent(intent: Intent?) {
-        if (intent?.action != ACTION_OPEN_PRIVATE_MESSAGE) {
-            return
+    private fun handleNotificationOpenIntent(intent: Intent?) {
+        when (intent?.action) {
+            ACTION_OPEN_NOTIFICATION -> {
+                val event = NotificationOpenStore.peek(this)
+                    ?: intent.getStringExtra(EXTRA_NOTIFICATION_OPEN_JSON)
+                dispatchNotificationOpen(event)
+            }
+            ACTION_OPEN_PRIVATE_MESSAGE -> {
+                val payload = intent.getStringExtra(EXTRA_PRIVATE_MESSAGE_JSON)
+                    ?: return
+                val event = try {
+                    NotificationOpenStore.enqueue(this, JSONObject(payload))
+                } catch (_: Exception) {
+                    return
+                }
+                dispatchNotificationOpen(event)
+            }
         }
+    }
 
-        synchronized(pendingLock) {
-            pendingPrivateMessageJson =
-                intent.getStringExtra(EXTRA_PRIVATE_MESSAGE_JSON)
-        }
+    private fun dispatchNotificationOpen(event: String?) {
+        if (event.isNullOrBlank()) return
+        notificationOpenChannel?.invokeMethod("onNotificationOpen", event)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        notificationOpenChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            NOTIFICATION_OPEN_CHANNEL,
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getPendingNotificationOpen" -> {
+                        result.success(NotificationOpenStore.peek(this))
+                    }
+                    "ackNotificationOpen" -> {
+                        val eventId = call.argument<String>("id")
+                        result.success(
+                            eventId != null &&
+                                NotificationOpenStore.acknowledge(this, eventId),
+                        )
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+        dispatchNotificationOpen(NotificationOpenStore.peek(this))
 
         // 安装器桥接只接受 cache/app_updates 下已校验的 APK，路径校验同时在
         // Flutter 与原生侧执行，避免任意本地文件被 FileProvider 暴露出去。
@@ -511,9 +548,6 @@ class MainActivity : FlutterActivity() {
             PRIVATE_MESSAGE_NOTIFICATION_CHANNEL
         ).setMethodCallHandler { call, result ->
             when (call.method) {
-                "getPendingPrivateMessage" -> {
-                    result.success(consumePendingPrivateMessage())
-                }
                 "clearConversationNotifications" -> {
                     val conversationId = call.argument<Number>("conversationId")?.toLong()
                     clearPrivateMessageNotifications(conversationId)

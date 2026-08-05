@@ -15,6 +15,13 @@ class NativeNotificationOpen {
   final Map<String, dynamic> payload;
   final DateTime openedAt;
 
+  bool isExpired(
+    DateTime now, {
+    Duration ttl = const Duration(hours: 24),
+  }) {
+    return now.difference(openedAt) > ttl;
+  }
+
   static NativeNotificationOpen? parse(String raw) {
     try {
       final decoded = jsonDecode(raw);

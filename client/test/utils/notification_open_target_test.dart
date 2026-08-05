@@ -23,6 +23,18 @@ void main() {
         event.payloadWithTrackingId()[nativeNotificationOpenIdKey],
         'open-123',
       );
+      expect(
+        event.isExpired(
+          event.openedAt.add(const Duration(hours: 23)),
+        ),
+        isFalse,
+      );
+      expect(
+        event.isExpired(
+          event.openedAt.add(const Duration(hours: 25)),
+        ),
+        isTrue,
+      );
     });
 
     test('拒绝缺少事件 ID 或 payload 的数据', () {

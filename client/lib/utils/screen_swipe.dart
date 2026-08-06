@@ -1,16 +1,44 @@
 import 'dart:ui';
 
-const double bottomNavigationSwipeFraction = 1 / 3;
+enum SwipeAxisIntent {
+  pending,
+  horizontal,
+  vertical,
+}
+
+const double mainNavigationGestureZoneHeight = 120.0;
 const double pageExitSwipeFraction = 0.3;
 const double pageExitSwipeDirectionRatio = 1.2;
 
-bool isBottomNavigationSwipeStart(double startY, double screenHeight) {
+bool isMainNavigationGestureZone({
+  required double startY,
+  required double screenHeight,
+  double bottomInset = 0.0,
+}) {
   if (screenHeight <= 0) return false;
-  return startY >= screenHeight * (1 - bottomNavigationSwipeFraction);
+  return startY >= screenHeight - mainNavigationGestureZoneHeight;
 }
 
-bool isUpperContentSwipeStart(double startY, double screenHeight) {
-  return !isBottomNavigationSwipeStart(startY, screenHeight);
+SwipeAxisIntent resolveSwipeAxisIntent({
+  required double dx,
+  required double dy,
+  double slop = 12.0,
+  double horizontalRatio = 1.5,
+  double verticalRatio = 1.15,
+}) {
+  final absDx = dx.abs();
+  final absDy = dy.abs();
+
+  if (absDx < slop && absDy < slop) {
+    return SwipeAxisIntent.pending;
+  }
+  if (absDx >= slop && absDx >= absDy * horizontalRatio) {
+    return SwipeAxisIntent.horizontal;
+  }
+  if (absDy >= slop && absDy >= absDx * verticalRatio) {
+    return SwipeAxisIntent.vertical;
+  }
+  return SwipeAxisIntent.pending;
 }
 
 /// Returns -1 for the previous tab, 1 for the next tab, and 0 when ignored.

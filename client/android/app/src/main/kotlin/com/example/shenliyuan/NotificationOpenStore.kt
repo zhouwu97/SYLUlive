@@ -35,7 +35,18 @@ object NotificationOpenStore {
 
     fun peek(context: Context): String? = synchronized(lock) {
         val events = readEvents(context)
-        if (events.length() == 0) null else events.optJSONObject(0)?.toString()
+        if (events.length() == 0) {
+            null
+        } else {
+            events.optJSONObject(events.length() - 1)?.toString()
+        }
+    }
+
+    fun clear(context: Context) = synchronized(lock) {
+        preferences(context)
+            .edit()
+            .remove(PENDING_EVENTS_KEY)
+            .commit()
     }
 
     fun acknowledge(context: Context, eventId: String): Boolean = synchronized(lock) {

@@ -244,17 +244,22 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 
 	go func() {
 		jpush := utils.NewJPushClient(jpushAppKey, jpushMasterSecret)
-		extras := map[string]interface{}{
-			"post_id":  postID,
-			"reply_id": replyID,
-			"type":     "reply",
-		}
+		extras := replyPushExtras(toUserID, replyID, postID)
 		title := "您有新的回复"
 		alert := fmt.Sprintf("%s: %s", fromUser.Nickname, contentPreview)
 		if err := jpush.SendNotification(user.DeviceToken, title, alert, extras); err != nil {
 			fmt.Printf("JPush send failed: %v\n", err)
 		}
 	}()
+}
+
+func replyPushExtras(toUserID, replyID, postID uint) map[string]interface{} {
+	return map[string]interface{}{
+		"post_id":           postID,
+		"reply_id":          replyID,
+		"type":              "reply",
+		"recipient_user_id": toUserID,
+	}
 }
 
 // CreateReplyNotificationFull 创建回复通知并触发极光推送

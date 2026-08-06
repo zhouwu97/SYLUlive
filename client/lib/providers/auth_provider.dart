@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/user.dart';
 import '../services/account_session_cleanup_coordinator.dart';
 import '../platform/contracts/secure_store.dart';
+import '../platform/contracts/system_notification_client.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -645,6 +646,7 @@ class AuthProvider extends ChangeNotifier {
     await _saveAuthCandidate(candidate);
     if (_user != null && _user!.id != candidate.user.id) {
       await _sessionCleanupCoordinator.closeCurrentSession();
+      await _clearAccountNotificationState();
     }
     _commitAuthSession(candidate);
     _setAuthState(AuthState.authenticated);
@@ -922,6 +924,7 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) {}
 
     // 认证凭据清除成功后再提交内存状态。
+    await _clearAccountNotificationState();
     _token = null;
     _user = null;
     if (_authState != AuthState.expired) {
@@ -964,6 +967,22 @@ class AuthProvider extends ChangeNotifier {
           .invokeMethod('clearAlias');
     } catch (e) {
       debugPrint('清除 JPush Alias 失败: ${e.runtimeType}');
+    }
+  }
+
+  Future<void> _clearAccountNotificationState() async {
+    if (!kIsWeb) {
+      try {
+        await const MethodChannel('shenliyuan/notification_open')
+            .invokeMethod('clearPendingNotificationOpen');
+      } catch (e) {
+        debugPrint('清除账号通知点击队列失败: ${e.runtimeType}');
+      }
+    }
+    try {
+      await SystemNotificationClient.current().cancelAll();
+    } catch (e) {
+      debugPrint('清除账号本地通知失败: ${e.runtimeType}');
     }
   }
 

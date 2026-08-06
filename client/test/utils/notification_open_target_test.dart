@@ -60,6 +60,7 @@ void main() {
           'type': 'reply',
           'post_id': 123,
           'reply_id': 456,
+          notificationRecipientUserIdKey: 7,
         }
       };
 
@@ -69,6 +70,7 @@ void main() {
       expect(target!.type, NotificationOpenType.reply);
       expect(target.postId, 123);
       expect(target.replyId, 456);
+      expect(target.recipientUserId, 7);
     });
 
     test('保留原生事件 ID 供导航成功后确认', () {
@@ -126,6 +128,46 @@ void main() {
 
       expect(t1.hasSameDestination(t2), isTrue);
       expect(t1.hasSameDestination(t3), isFalse);
+    });
+  });
+
+  group('notificationAccountDecision', () {
+    test('认证未完成时等待，不提前消费通知', () {
+      expect(
+        notificationAccountDecision(
+          authInitialized: false,
+          currentUserId: null,
+          recipientUserId: 7,
+        ),
+        NotificationAccountDecision.waitForAuthentication,
+      );
+    });
+
+    test('仅允许当前登录账号消费归属匹配的通知', () {
+      expect(
+        notificationAccountDecision(
+          authInitialized: true,
+          currentUserId: 7,
+          recipientUserId: 7,
+        ),
+        NotificationAccountDecision.allow,
+      );
+      expect(
+        notificationAccountDecision(
+          authInitialized: true,
+          currentUserId: 8,
+          recipientUserId: 7,
+        ),
+        NotificationAccountDecision.reject,
+      );
+      expect(
+        notificationAccountDecision(
+          authInitialized: true,
+          currentUserId: 7,
+          recipientUserId: null,
+        ),
+        NotificationAccountDecision.reject,
+      );
     });
   });
 }

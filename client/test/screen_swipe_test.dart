@@ -403,50 +403,10 @@ void main() {
   test(
       'tab priority rules restrict index 0, 1, 2 to bottom 120dp zone and allow index 3, 4 full-screen',
       () {
-    bool canStartMainNavigationSwipe(
-      int currentIndex,
-      Offset position,
-      double screenHeight,
-    ) {
-      if (currentIndex == 0 || currentIndex == 1 || currentIndex == 2) {
-        return isMainNavigationGestureZone(
-          startY: position.dy,
-          screenHeight: screenHeight,
-        );
-      }
-      return true;
-    }
-
-    const screenHeight = 900.0;
-    const contentOffset = Offset(200, 500);
-    const bottomNavOffset = Offset(200, 820);
-
-    // Index 0 (Shuitie): content area false, bottom nav area true
-    expect(
-        canStartMainNavigationSwipe(0, contentOffset, screenHeight), isFalse);
-    expect(
-        canStartMainNavigationSwipe(0, bottomNavOffset, screenHeight), isTrue);
-
-    // Index 1 (Market): content area false, bottom nav area true
-    expect(
-        canStartMainNavigationSwipe(1, contentOffset, screenHeight), isFalse);
-    expect(
-        canStartMainNavigationSwipe(1, bottomNavOffset, screenHeight), isTrue);
-
-    // Index 2 (CourseSchedule): content area false, bottom nav area true
-    expect(
-        canStartMainNavigationSwipe(2, contentOffset, screenHeight), isFalse);
-    expect(
-        canStartMainNavigationSwipe(2, bottomNavOffset, screenHeight), isTrue);
-
-    // Index 3 (Campus): full-screen candidate (content area true, bottom nav area true)
-    expect(canStartMainNavigationSwipe(3, contentOffset, screenHeight), isTrue);
-    expect(
-        canStartMainNavigationSwipe(3, bottomNavOffset, screenHeight), isTrue);
-
-    // Index 4 (Profile): full-screen candidate (content area true, bottom nav area true)
-    expect(canStartMainNavigationSwipe(4, contentOffset, screenHeight), isTrue);
-    expect(
-        canStartMainNavigationSwipe(4, bottomNavOffset, screenHeight), isTrue);
+    expect(mainNavigationRequiresBottomZone(0), isTrue);
+    expect(mainNavigationRequiresBottomZone(1), isTrue);
+    expect(mainNavigationRequiresBottomZone(2), isTrue);
+    expect(mainNavigationRequiresBottomZone(3), isFalse);
+    expect(mainNavigationRequiresBottomZone(4), isFalse);
   });
 }

@@ -287,7 +287,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _isCourseWeekSwipeArea(Offset globalPosition) {
     final height = MediaQuery.sizeOf(context).height;
     if (height <= 0) return false;
-    return isUpperContentSwipeStart(globalPosition.dy, height);
+    return !isMainNavigationGestureZone(
+      startY: globalPosition.dy,
+      screenHeight: height,
+    );
   }
 
   bool _canDragWeek() {

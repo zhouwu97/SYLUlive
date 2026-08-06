@@ -154,11 +154,12 @@ class _HomeScreenState extends State<HomeScreen>
   // Fallback polling interval (keep until JPush trigger is implemented)
   static const _announcementPollInterval = Duration(minutes: 15);
   static const _announcementRetryDelay = Duration(seconds: 15);
-  static const _mainSwitchDistanceThreshold = 0.30;
-  static const _mainSwitchVelocityThreshold = 620.0;
+  static const _mainSwitchDistanceThreshold = 0.24;
+  static const _mainSwitchVelocityThreshold = 700.0;
   Offset? _navigationSwipeStart;
   DateTime? _navigationSwipeStartTime;
   int? _navigationSwipePointer;
+  SwipeAxisIntent _navigationSwipeIntent = SwipeAxisIntent.pending;
 
   @override
   void initState() {
@@ -1525,22 +1526,27 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
+  bool _canStartMainNavigationSwipe(Offset position, double screenHeight) {
+    if (_currentIndex == 0 || _currentIndex == 2) {
+      return isMainNavigationGestureZone(
+        startY: position.dy,
+        screenHeight: screenHeight,
+      );
+    }
+    return true;
+  }
+
   void _startNavigationSwipe(PointerDownEvent event, double screenHeight) {
     if (_navigationSwipePointer != null ||
-        !isBottomNavigationSwipeStart(event.position.dy, screenHeight)) {
+        !_canStartMainNavigationSwipe(event.position, screenHeight)) {
       return;
     }
     _mainTabController.stop();
     _navigationSwipePointer = event.pointer;
     _navigationSwipeStart = event.position;
     _navigationSwipeStartTime = DateTime.now();
+    _navigationSwipeIntent = SwipeAxisIntent.pending;
     _mainSwipeDx = 0;
-    setState(() {
-      _mainTargetIndex = null;
-      _mainVisualIndex = _currentIndex.toDouble();
-      _mainAnimationStartVisualIndex = _mainVisualIndex;
-      _mainAnimationEndVisualIndex = _mainVisualIndex;
-    });
   }
 
   void _updateNavigationSwipe(PointerMoveEvent event) {
@@ -1549,22 +1555,44 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    _mainSwipeDx = event.position.dx - _navigationSwipeStart!.dx;
-    final targetIndex = _targetMainIndexForDx(_mainSwipeDx);
-    if (targetIndex == null) {
-      setState(() {
-        _mainTargetIndex = null;
-        _mainVisualIndex = _currentIndex.toDouble();
-      });
+    if (_navigationSwipeIntent == SwipeAxisIntent.vertical) {
       return;
     }
 
-    setState(() {
-      _visitedTabs.add(targetIndex);
-      _getOrCreateTabPage(targetIndex);
-      _mainTargetIndex = targetIndex;
-      // 拖动阶段只锁定目标页；底栏在页面切换完成后再补动画。
-    });
+    final totalDx = event.position.dx - _navigationSwipeStart!.dx;
+    final totalDy = event.position.dy - _navigationSwipeStart!.dy;
+
+    if (_navigationSwipeIntent == SwipeAxisIntent.pending) {
+      final intent = resolveSwipeAxisIntent(dx: totalDx, dy: totalDy);
+      if (intent == SwipeAxisIntent.pending) {
+        return;
+      }
+      _navigationSwipeIntent = intent;
+      if (_navigationSwipeIntent == SwipeAxisIntent.vertical) {
+        return;
+      }
+    }
+
+    _mainSwipeDx = totalDx;
+    final targetIndex = _targetMainIndexForDx(_mainSwipeDx);
+    if (targetIndex == null) {
+      if (_mainTargetIndex != null) {
+        setState(() {
+          _mainTargetIndex = null;
+          _mainVisualIndex = _currentIndex.toDouble();
+        });
+      }
+      return;
+    }
+
+    if (_mainTargetIndex != targetIndex) {
+      setState(() {
+        _visitedTabs.add(targetIndex);
+        _getOrCreateTabPage(targetIndex);
+        _mainTargetIndex = targetIndex;
+        // 拖动阶段只锁定目标页；底栏在页面切换完成后再补动画。
+      });
+    }
   }
 
   void _finishNavigationSwipe(PointerUpEvent event) {
@@ -1574,19 +1602,35 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    _mainSwipeDx = event.position.dx - _navigationSwipeStart!.dx;
-    final elapsed = DateTime.now().difference(_navigationSwipeStartTime!);
+    final intent = _navigationSwipeIntent;
+    final startPos = _navigationSwipeStart!;
+    final startTime = _navigationSwipeStartTime!;
+    final targetCandidate = _mainTargetIndex;
+    _resetNavigationSwipe();
+
+    if (intent != SwipeAxisIntent.horizontal) {
+      if (targetCandidate != null) {
+        unawaited(_settleMainTab(
+          targetIndex: null,
+          duration: AppMotion.nav,
+          commit: false,
+        ));
+      }
+      return;
+    }
+
+    final totalDx = event.position.dx - startPos.dx;
+    final elapsed = DateTime.now().difference(startTime);
     final seconds = elapsed.inMicroseconds / Duration.microsecondsPerSecond;
-    final velocity = seconds <= 0 ? 0.0 : _mainSwipeDx / seconds;
+    final velocity = seconds <= 0 ? 0.0 : totalDx / seconds;
     final targetIndex = _targetMainIndexForDx(
-      velocity.abs() >= _mainSwitchVelocityThreshold ? velocity : _mainSwipeDx,
+      velocity.abs() >= _mainSwitchVelocityThreshold ? velocity : totalDx,
     );
     final width = MediaQuery.sizeOf(context).width;
-    final progress = (_mainSwipeDx.abs() / width).clamp(0.0, 1.0);
+    final progress = (totalDx.abs() / width).clamp(0.0, 1.0);
     final shouldSwitch = targetIndex != null &&
         (progress >= _mainSwitchDistanceThreshold ||
             velocity.abs() >= _mainSwitchVelocityThreshold);
-    _resetNavigationSwipe();
 
     if (shouldSwitch) {
       unawaited(_settleMainTab(
@@ -1596,7 +1640,7 @@ class _HomeScreenState extends State<HomeScreen>
       ));
     } else {
       unawaited(_settleMainTab(
-        targetIndex: _mainTargetIndex,
+        targetIndex: targetCandidate,
         duration: AppMotion.nav,
         commit: false,
       ));
@@ -1605,9 +1649,10 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _cancelNavigationSwipe(PointerCancelEvent event) {
     if (event.pointer == _navigationSwipePointer) {
+      final targetCandidate = _mainTargetIndex;
       _resetNavigationSwipe();
       unawaited(_settleMainTab(
-        targetIndex: _mainTargetIndex,
+        targetIndex: targetCandidate,
         duration: AppMotion.nav,
         commit: false,
       ));
@@ -1618,6 +1663,7 @@ class _HomeScreenState extends State<HomeScreen>
     _navigationSwipePointer = null;
     _navigationSwipeStart = null;
     _navigationSwipeStartTime = null;
+    _navigationSwipeIntent = SwipeAxisIntent.pending;
     _mainSwipeDx = 0;
   }
 

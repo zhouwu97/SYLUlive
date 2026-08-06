@@ -223,10 +223,11 @@ Size calculateSinglePostImageSize({
   final safeAspectRatio = aspectRatio > 0 ? aspectRatio : 4 / 3;
 
   if (variant == PostMediaVariant.feed) {
-    // 限制单图在信息流中的尺寸：居左对齐，大图清晰展示（约270x280上限），右侧保留舒适留白
+    // 首页信息流限制单图尺寸，优先控制纵向占用：
+    // 最大约 250dp 宽 / 220dp 高，并保持原图宽高比例。
     final clampedRatio = safeAspectRatio.clamp(0.55, 1.8);
-    final maxWidth = math.min(availableWidth * 0.75, 270.0);
-    const maxHeight = 280.0;
+    final maxWidth = math.min(availableWidth * 0.70, 250.0);
+    const maxHeight = 220.0;
 
     double width;
     double height;
@@ -250,9 +251,12 @@ Size calculateSinglePostImageSize({
     final finalWidth = math.min(width, maxWidth);
     final finalHeight = math.min(height, maxHeight);
 
+    final minWidth = math.min(90.0, maxWidth);
+    final minHeight = math.min(90.0, finalHeight);
+
     return Size(
-      finalWidth.clamp(90.0, maxWidth),
-      finalHeight.clamp(90.0, maxHeight),
+      finalWidth.clamp(minWidth, maxWidth),
+      finalHeight.clamp(minHeight, maxHeight),
     );
   }
 

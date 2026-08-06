@@ -272,9 +272,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
       if (_bottomPanel == ChatBottomPanel.emoji) {
-        if (keyboardInset > 0) {
-          _scheduleStableKeyboardHeight(keyboardInset);
-        }
         return;
       }
 
@@ -296,13 +293,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   void _scheduleStableKeyboardHeight(double keyboardInset) {
     if (keyboardInset <= 0) return;
-    if (keyboardInset >= _stableKeyboardHeight || !_hasObservedKeyboardHeight) {
+    if (!_keyboardRequestPending &&
+        (keyboardInset >= _stableKeyboardHeight || !_hasObservedKeyboardHeight)) {
       _keyboardMetricsTimer?.cancel();
       setState(() {
         _stableKeyboardHeight = keyboardInset;
         _lastKeyboardHeight = keyboardInset;
         _hasObservedKeyboardHeight = true;
-        _keyboardRequestPending = false;
         if (_bottomPanel != ChatBottomPanel.emoji) {
           _bottomPanel = ChatBottomPanel.keyboard;
         }
@@ -1923,8 +1920,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                 width: 44,
                 height: 44,
                 child: IconButton(
-                  tooltip: _isSendingMedia ? '图片发送中' : '添加图片',
-                  onPressed: blocked || _isPickingImage || _isSendingMedia
+                  tooltip: _selectedSticker != null
+                      ? '已选择表情'
+                      : _isSendingMedia
+                          ? '图片发送中'
+                          : '添加图片',
+                  onPressed: blocked ||
+                          _selectedSticker != null ||
+                          _isPickingImage ||
+                          _isSendingMedia
                       ? null
                       : _pickAndSendImage,
                   padding: EdgeInsets.zero,

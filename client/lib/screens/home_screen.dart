@@ -1527,7 +1527,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   bool _canStartMainNavigationSwipe(Offset position, double screenHeight) {
-    if (_currentIndex == 0 || _currentIndex == 2) {
+    if (_currentIndex == 0 || _currentIndex == 1 || _currentIndex == 2) {
       return isMainNavigationGestureZone(
         startY: position.dy,
         screenHeight: screenHeight,

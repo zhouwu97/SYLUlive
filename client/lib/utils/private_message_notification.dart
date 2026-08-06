@@ -7,6 +7,7 @@ class PrivateMessageTarget {
   final String senderAvatar;
   final int? messageId;
   final String? nativeOpenId;
+  final int? recipientUserId;
 
   const PrivateMessageTarget({
     required this.conversationId,
@@ -15,6 +16,7 @@ class PrivateMessageTarget {
     this.senderAvatar = '',
     this.messageId,
     this.nativeOpenId,
+    this.recipientUserId,
   });
 
   String get displayName {
@@ -23,13 +25,16 @@ class PrivateMessageTarget {
   }
 
   bool sameConversation(PrivateMessageTarget other) {
-    return conversationId == other.conversationId && senderId == other.senderId;
+    return conversationId == other.conversationId &&
+        senderId == other.senderId &&
+        recipientUserId == other.recipientUserId;
   }
 
   PrivateMessageTarget copyWith({
     String? senderName,
     String? senderAvatar,
     String? nativeOpenId,
+    int? recipientUserId,
   }) {
     return PrivateMessageTarget(
       conversationId: conversationId,
@@ -38,6 +43,7 @@ class PrivateMessageTarget {
       senderAvatar: senderAvatar ?? this.senderAvatar,
       messageId: messageId,
       nativeOpenId: nativeOpenId ?? this.nativeOpenId,
+      recipientUserId: recipientUserId ?? this.recipientUserId,
     );
   }
 }
@@ -107,6 +113,7 @@ PrivateMessageTarget? privateMessageTargetFromJPushMessage(
     senderAvatar: senderAvatar,
     messageId: messageId,
     nativeOpenId: extras['_native_notification_open_id']?.toString(),
+    recipientUserId: intFromNotificationExtra(extras['recipient_user_id']),
   );
 }
 
@@ -134,6 +141,7 @@ PrivateMessageTarget? privateMessageTargetFromLocalPayload(String payload) {
     senderAvatar: senderAvatar,
     messageId: messageId,
     nativeOpenId: extras['_native_notification_open_id']?.toString(),
+    recipientUserId: intFromNotificationExtra(extras['recipient_user_id']),
   );
 }
 

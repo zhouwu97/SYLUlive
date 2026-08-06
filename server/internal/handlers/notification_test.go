@@ -13,6 +13,17 @@ import (
 	"shenliyuan/internal/models"
 )
 
+func TestReplyPushExtrasIncludesRecipient(t *testing.T) {
+	extras := replyPushExtras(7, 11, 13)
+
+	if extras["type"] != "reply" ||
+		extras["recipient_user_id"] != uint(7) ||
+		extras["reply_id"] != uint(11) ||
+		extras["post_id"] != uint(13) {
+		t.Fatalf("回复推送参数不完整: %#v", extras)
+	}
+}
+
 func TestNotificationHandlerExcludesRetiredMarketPostNotifications(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

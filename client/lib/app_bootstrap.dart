@@ -423,7 +423,21 @@ Future<void> _handleNativeNotificationOpen(String raw) async {
   }
 
   final payload = event.payloadWithTrackingId();
-  final type = extractJPushExtras(payload)['type']?.toString();
+  final extras = extractJPushExtras(payload);
+  final recipientUserId = intFromNotificationExtra(
+    extras[notificationRecipientUserIdKey],
+  );
+  final accountDecision = _notificationAccountDecision(recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint('丢弃账号归属不匹配的原生通知点击: recipient=$recipientUserId');
+    await _ackNativeNotificationOpen(event.id);
+    return;
+  }
+
+  final type = extras['type']?.toString();
 
   switch (type) {
     case 'private_message':
@@ -545,6 +559,19 @@ bool _isDuplicateNotificationOpen(
 }
 
 void _navigateToNotificationTarget(NotificationOpenTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingNotificationOpen.store(target);
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的延迟普通通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
     _pendingNotificationOpen.store(target);
@@ -592,6 +619,20 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
 }
 
 void _storeOrOpenNotificationTarget(NotificationOpenTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingNotificationOpen.store(target);
+    _schedulePendingNotificationProcessing();
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的普通通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
 
   if (navigator != null) {
@@ -601,6 +642,25 @@ void _storeOrOpenNotificationTarget(NotificationOpenTarget target) {
 
   _pendingNotificationOpen.store(target);
   _schedulePendingNotificationProcessing();
+}
+
+NotificationAccountDecision _notificationAccountDecision(
+  int? recipientUserId,
+) {
+  final context = appNavigatorKey.currentContext;
+  if (context == null) {
+    return NotificationAccountDecision.waitForAuthentication;
+  }
+  final authProvider = context.read<AuthProvider>();
+  if (authProvider.isLoggedIn &&
+      !(authProvider.user?.legalConsentsActive ?? false)) {
+    return NotificationAccountDecision.waitForAuthentication;
+  }
+  return notificationAccountDecision(
+    authInitialized: authProvider.isInitialized,
+    currentUserId: authProvider.isLoggedIn ? authProvider.user?.id : null,
+    recipientUserId: recipientUserId,
+  );
 }
 
 void _schedulePendingNotificationProcessing() {
@@ -784,6 +844,14 @@ Future<bool> _handlePrivateMessageNotification(
     return true;
   }
 
+  if (_notificationAccountDecision(target.recipientUserId) !=
+      NotificationAccountDecision.allow) {
+    debugPrint(
+      '跳过非当前账号的私信处理: recipient=${target.recipientUserId}',
+    );
+    return true;
+  }
+
   if (opened) {
     await _clearPrivateMessageNotifications(target.conversationId);
     _openPrivateMessage(target);
@@ -875,6 +943,7 @@ Future<void> _showPrivateMessageLocalNotification(
         'sender_name': target.displayName,
         'sender_avatar': target.senderAvatar,
         'message_id': target.messageId,
+        notificationRecipientUserIdKey: target.recipientUserId,
       },
     );
     debugPrint('✅ 本地私信通知已弹出: ${target.displayName}');
@@ -895,6 +964,19 @@ Future<void> _clearPrivateMessageNotifications(int conversationId) async {
 }
 
 void _openPrivateMessage(PrivateMessageTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingPrivateMessageOpen.store(target);
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的私信通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
     _pendingPrivateMessageOpen.store(target);
@@ -924,6 +1006,19 @@ bool _isDuplicatePrivateMessageOpen(
 }
 
 void _navigateToPrivateMessage(PrivateMessageTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingPrivateMessageOpen.store(target);
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的延迟私信通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
     debugPrint('❌ navigate: navigator is null');
@@ -1826,6 +1921,14 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
               _checkNativeNotificationOpen();
             }
             _scheduleConversationRestore(authProvider);
+          });
+        } else if (!authProvider.isLoggedIn) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _processPendingPrivateMessageOpen();
+            _schedulePendingNotificationProcessing();
+            if (PlatformCapabilities.current.supportsJPush) {
+              _checkNativeNotificationOpen();
+            }
           });
         }
 

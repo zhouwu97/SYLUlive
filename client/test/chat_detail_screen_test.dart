@@ -14,6 +14,7 @@ import 'package:shenliyuan/services/emoji_favorite_service.dart';
 import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:shenliyuan/widgets/emoji/app_emoji_panel.dart';
 import 'package:shenliyuan/widgets/emoji/sticker_catalog.dart';
+import 'package:shenliyuan/widgets/emoji/sticker_composer_preview.dart';
 
 class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   _FakeAuthProvider(this.currentUser);
@@ -288,7 +289,8 @@ void main() {
     await _disposeChat(tester, provider);
   });
 
-  testWidgets('tapping a sticker sends immediately and preserves text draft',
+  testWidgets(
+      'tapping a sticker shows preview and sends with text when send button is tapped',
       (tester) async {
     final failureGate = Completer<void>();
     final provider = MessageProvider(_chatDio(failureGate: failureGate));
@@ -310,31 +312,157 @@ void main() {
     await tester.tap(find.byKey(ValueKey('sticker-${sticker.id}')));
     await tester.pump();
 
-    expect(provider.messages, hasLength(1));
-    expect(provider.messages.single.stickerId, sticker.id);
-    expect(provider.messages.single.content, isEmpty);
-    expect(provider.messages.single.isPending, isTrue);
+    // 点击 sticker 后显示 StickerComposerPreview 预览，尚不直接发送
+    expect(find.byType(StickerComposerPreview), findsOneWidget);
+    expect(provider.messages, isEmpty);
+    expect(provider.draftStickerFor(3), sticker.id);
     expect(
       tester
           .widget<TextField>(find.byKey(const ValueKey('chat-input')))
           .controller
           ?.text,
       '晚安',
+    );
+
+    // 点击发送按钮后提交文字 + sticker
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pump();
+
+    expect(provider.messages, hasLength(1));
+    expect(provider.messages.single.stickerId, sticker.id);
+    expect(provider.messages.single.content, '晚安');
+    expect(provider.messages.single.isPending, isTrue);
+    expect(find.byType(StickerComposerPreview), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('chat-input')))
+          .controller
+          ?.text,
+      isEmpty,
     );
 
     failureGate.complete();
     await _pumpFrames(tester);
 
     expect(provider.messages.single.isFailed, isTrue);
+    expect(provider.draftFor(3), isEmpty);
+    expect(provider.draftStickerFor(3), isNull);
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets(
+      'sticker message with known local sticker ID uses local asset priority',
+      (tester) async {
+    final sticker = appStickerGroups.first.items.first;
+    final provider = MessageProvider(
+      _chatDio(messages: [
+        {
+          'id': 99,
+          'conversation_id': 42,
+          'sender_id': 3,
+          'content': '',
+          'sticker_id': sticker.id,
+          'file_id': 10,
+          'file': {
+            'id': 10,
+            'hash': 'sticker',
+            'path': '/stickers/mingfeng.png',
+            'size': 100,
+            'mime_type': 'image/png',
+          },
+          'created_at': '2026-06-14T08:31:00Z',
+        },
+      ]),
+    );
+    await _pumpChat(tester, provider);
+
+    expect(
+      find.byKey(ValueKey('message-sticker-asset-${sticker.id}')),
+      findsOneWidget,
+    );
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets(
+      'progressive IME inset transition frames do not shrink Emoji panel height',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    // 1. 打开键盘 356
+    tester.view.viewInsets = const FakeViewPadding(bottom: 356);
+    await _pumpFrames(tester, count: 2);
+    final composerTopWithKeyboard =
+        tester.getTopLeft(find.byKey(const ValueKey('chat-composer'))).dy;
     expect(
       tester
-          .widget<TextField>(find.byKey(const ValueKey('chat-input')))
-          .controller
-          ?.text,
-      '晚安',
+          .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
+          .height,
+      356,
     );
-    expect(provider.draftFor(3), '晚安');
-    expect(provider.draftStickerFor(3), isNull);
+
+    // 2. 点击 Emoji 按钮，切换到表情面板
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+
+    // 3. 模拟 Android 真机 IME 收起动画逐帧收缩：310 -> 260 -> 190 -> 100 -> 40 -> 0
+    final transitionFrames = [310.0, 260.0, 190.0, 100.0, 40.0, 0.0];
+    for (final inset in transitionFrames) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
+            .height,
+        356,
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('chat-composer'))).dy,
+        closeTo(composerTopWithKeyboard, 1),
+      );
+    }
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets(
+      'progressive IME transition frames from Emoji to keyboard do not jump',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    // 键盘曾为 356
+    tester.view.viewInsets = const FakeViewPadding(bottom: 356);
+    await _pumpFrames(tester, count: 2);
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await _pumpFrames(tester, count: 2);
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+
+    // 点击输入框切回键盘
+    await tester.tap(find.byKey(const ValueKey('chat-input')));
+    await tester.pump();
+
+    // 模拟 Android 真机 IME 逐帧弹起动画：0 -> 50 -> 150 -> 250 -> 356
+    final transitionFrames = [0.0, 50.0, 150.0, 250.0, 356.0];
+    for (final inset in transitionFrames) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
+            .height,
+        356,
+      );
+    }
     await _disposeChat(tester, provider);
   });
 

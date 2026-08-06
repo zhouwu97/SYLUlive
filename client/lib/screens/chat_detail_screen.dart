@@ -28,6 +28,7 @@ import '../theme/AppTheme.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
+import '../widgets/emoji/sticker_composer_preview.dart';
 import '../widgets/swipe_to_exit.dart';
 import 'image_viewer_screen.dart';
 
@@ -67,9 +68,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   int? _syncedPlatformConversationId;
   double _lastKeyboardInset = 0;
   double _lastKeyboardHeight = _fallbackKeyboardHeight;
+  double _stableKeyboardHeight = _fallbackKeyboardHeight;
+  Timer? _keyboardMetricsTimer;
   bool _hasObservedKeyboardHeight = false;
   bool _keyboardRequestPending = false;
   ChatBottomPanel _bottomPanel = ChatBottomPanel.none;
+  AppSticker? _selectedSticker;
   bool _isPickingImage = false;
   bool _isSendingMedia = false;
   bool _firstContactSendPending = false;
@@ -124,8 +128,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _initialPositionSettled = false;
     _initialLoadFinished = false;
     final draft = provider.draftFor(widget.targetUser.id);
-    // 新版私信表情点击即发送，清理旧版本遗留的“待发送表情”草稿。
-    provider.updateDraftSticker(widget.targetUser.id, null);
+    _selectedSticker = appStickerById(
+      provider.draftStickerFor(widget.targetUser.id),
+    );
     if (draft.isNotEmpty && _textController.text.isEmpty) {
       _textController.text = draft;
       _textController.selection = TextSelection.collapsed(offset: draft.length);
@@ -192,6 +197,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _initialMessageId = widget.initialMessageId;
       _initialPositionSettled = false;
       _initialLoadFinished = false;
+      _selectedSticker = appStickerById(
+        context.read<MessageProvider>().draftStickerFor(widget.targetUser.id),
+      );
       _bottomPanel = ChatBottomPanel.none;
       _keyboardRequestPending = false;
       _firstContactSendPending = false;
@@ -210,6 +218,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _positionRequestVersion++;
     _deactivateConversation();
     _refreshTimer?.cancel();
+    _keyboardMetricsTimer?.cancel();
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -261,22 +270,60 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-      if ((keyboardInset - _lastKeyboardInset).abs() < 0.5) return;
-      _lastKeyboardInset = keyboardInset;
-      if (keyboardInset > 0) {
+
+      if (_bottomPanel == ChatBottomPanel.emoji) {
+        if (keyboardInset > 0) {
+          _scheduleStableKeyboardHeight(keyboardInset);
+        }
+        return;
+      }
+
+      if (keyboardInset <= 0) {
+        _keyboardMetricsTimer?.cancel();
+        if (_bottomPanel == ChatBottomPanel.keyboard &&
+            !_keyboardRequestPending) {
+          setState(() => _bottomPanel = ChatBottomPanel.none);
+        }
+        return;
+      }
+
+      if ((keyboardInset - _lastKeyboardInset).abs() >= 0.5) {
+        _lastKeyboardInset = keyboardInset;
+        _scheduleStableKeyboardHeight(keyboardInset);
+      }
+    });
+  }
+
+  void _scheduleStableKeyboardHeight(double keyboardInset) {
+    if (keyboardInset <= 0) return;
+    if (keyboardInset >= _stableKeyboardHeight || !_hasObservedKeyboardHeight) {
+      _keyboardMetricsTimer?.cancel();
+      setState(() {
+        _stableKeyboardHeight = keyboardInset;
+        _lastKeyboardHeight = keyboardInset;
+        _hasObservedKeyboardHeight = true;
+        _keyboardRequestPending = false;
+        if (_bottomPanel != ChatBottomPanel.emoji) {
+          _bottomPanel = ChatBottomPanel.keyboard;
+        }
+      });
+      return;
+    }
+
+    _keyboardMetricsTimer?.cancel();
+    _keyboardMetricsTimer = Timer(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      final settledInset = MediaQuery.viewInsetsOf(context).bottom;
+      if (settledInset > 0) {
         setState(() {
-          // 记录真实 IME 高度，表情面板必须严格复用该高度。
-          _lastKeyboardHeight = keyboardInset;
+          _stableKeyboardHeight = settledInset;
+          _lastKeyboardHeight = settledInset;
           _hasObservedKeyboardHeight = true;
           _keyboardRequestPending = false;
           if (_bottomPanel != ChatBottomPanel.emoji) {
             _bottomPanel = ChatBottomPanel.keyboard;
           }
         });
-      } else if (_bottomPanel == ChatBottomPanel.keyboard &&
-          !_keyboardRequestPending) {
-        // Android 返回键关闭 IME 时，只收起底部区域，不退出聊天页。
-        setState(() => _bottomPanel = ChatBottomPanel.none);
       }
     });
   }
@@ -388,7 +435,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   void _sendMessage() {
     final content = _textController.text.trim();
-    if (!_canStartOutgoingMessage || content.isEmpty) return;
+    if (!_canStartOutgoingMessage) return;
+    if (content.isEmpty && _selectedSticker == null) return;
     if (content.runes.length > MessageProvider.maxMessageLength) {
       AppFeedback.showSnackBar(
         context,
@@ -399,13 +447,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
 
     final provider = context.read<MessageProvider>();
+    final stickerIdToSend = _selectedSticker?.id;
     _reserveFirstContactAllowanceIfNeeded();
-    // 文本发送已由 Provider 先插入本地 pending，不能等待网络回包再释放输入框。
+
     _textController.clear();
+    _removeSelectedSticker();
     provider.clearDraft(widget.targetUser.id);
     final sendFuture = provider.sendMessage(
       widget.targetUser.id,
       content,
+      stickerId: stickerIdToSend,
       senderId: context.read<AuthProvider>().user?.id,
     );
     _lastMessageActivity = DateTime.now();
@@ -524,7 +575,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _showKeyboard();
       return;
     }
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     setState(() {
+      if (keyboardInset > 0) {
+        _stableKeyboardHeight = keyboardInset;
+        _lastKeyboardHeight = keyboardInset;
+        _hasObservedKeyboardHeight = true;
+      }
       _bottomPanel = ChatBottomPanel.emoji;
       _keyboardRequestPending = false;
     });
@@ -560,17 +617,24 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   void _selectSticker(AppSticker sticker) {
-    if (!_canStartOutgoingMessage) return;
-    final provider = context.read<MessageProvider>();
-    _reserveFirstContactAllowanceIfNeeded();
-    final sendFuture = provider.sendStickerMessage(
-      widget.targetUser.id,
-      sticker.id,
-      senderId: context.read<AuthProvider>().user?.id,
-    );
-    _lastMessageActivity = DateTime.now();
-    unawaited(_scrollToLatestMessage(settle: true));
-    unawaited(_completeOutgoingSend(sendFuture));
+    if (_isComposerBlocked) return;
+    setState(() {
+      _selectedSticker = sticker;
+    });
+    context.read<MessageProvider>().updateDraftSticker(
+          widget.targetUser.id,
+          sticker.id,
+        );
+  }
+
+  void _removeSelectedSticker() {
+    setState(() {
+      _selectedSticker = null;
+    });
+    context.read<MessageProvider>().updateDraftSticker(
+          widget.targetUser.id,
+          null,
+        );
   }
 
   Future<void> _sendFavoriteImage(EmojiFavoriteItem favorite) async {
@@ -612,9 +676,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   double get _emojiPanelHeight {
-    return _hasObservedKeyboardHeight
-        ? _lastKeyboardHeight
-        : _fallbackKeyboardHeight;
+    return _stableKeyboardHeight;
   }
 
   bool get _isDesktopPlatform {
@@ -625,10 +687,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   double get _keyboardViewportHeight {
+    if (_keyboardRequestPending) {
+      return _stableKeyboardHeight;
+    }
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-    if (keyboardInset > 0) return keyboardInset;
-    // Emoji 切回键盘时先保留上一次真实高度，等待 IME 接管。
-    return _hasObservedKeyboardHeight ? _lastKeyboardHeight : 0;
+    return keyboardInset > 0 ? keyboardInset : _stableKeyboardHeight;
   }
 
   double get _bottomViewportHeight {
@@ -1662,30 +1725,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildStickerImage(String imageUrl, String? stickerId) {
     final localSticker = appStickerById(stickerId);
+    if (localSticker != null) {
+      return Image.asset(
+        localSticker.thumbnailAsset,
+        key: ValueKey('message-sticker-asset-${localSticker.id}'),
+        width: 156,
+        height: 156,
+        fit: BoxFit.contain,
+      );
+    }
     return CachedNetworkImage(
       key: ValueKey('message-sticker-$imageUrl'),
       imageUrl: imageUrl,
       width: 156,
       height: 156,
       fit: BoxFit.contain,
-      placeholder: (_, __) => localSticker == null
-          ? const SizedBox(
-              width: 156,
-              height: 156,
-              child: Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            )
-          : Image.asset(
-              localSticker.thumbnailAsset,
-              width: 156,
-              height: 156,
-              fit: BoxFit.contain,
-            ),
+      placeholder: (_, __) => const SizedBox(
+        width: 156,
+        height: 156,
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
       errorWidget: (_, __, ___) => _buildBrokenStickerImage(),
     );
   }
@@ -1953,7 +2018,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _textController,
                 builder: (context, value, _) {
-                  final canSend = !blocked && value.text.trim().isNotEmpty;
+                  final canSend = !blocked &&
+                      (value.text.trim().isNotEmpty || _selectedSticker != null);
                   return SizedBox(
                     key: const ValueKey('chat-send-button-container'),
                     width: 44,
@@ -1992,7 +2058,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildComposerArea() {
     final inputBar = _buildInputBar();
-    if (_bottomPanel != ChatBottomPanel.none) return inputBar;
+    final composerContent = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_selectedSticker != null)
+          StickerComposerPreview(
+            sticker: _selectedSticker!,
+            onRemove: _removeSelectedSticker,
+            enabled: !_isComposerBlocked,
+          ),
+        inputBar,
+      ],
+    );
+    if (_bottomPanel != ChatBottomPanel.none) return composerContent;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     // 空闲状态由 Composer 自身消费系统手势安全区，避免透明系统栏压住输入控件。
@@ -2001,7 +2079,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       child: SafeArea(
         top: false,
         maintainBottomViewPadding: true,
-        child: inputBar,
+        child: composerContent,
       ),
     );
   }

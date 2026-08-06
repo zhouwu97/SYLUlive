@@ -500,7 +500,7 @@ void main() {
         tester
             .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
             .height,
-        greaterThanOrEqualTo(300),
+        300,
       );
     }
     await _pumpFrames(tester, count: 3);

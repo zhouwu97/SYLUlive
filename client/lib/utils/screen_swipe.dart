@@ -13,7 +13,6 @@ const double pageExitSwipeDirectionRatio = 1.2;
 bool isMainNavigationGestureZone({
   required double startY,
   required double screenHeight,
-  double bottomInset = 0.0,
 }) {
   if (screenHeight <= 0) return false;
   return startY >= screenHeight - mainNavigationGestureZoneHeight;

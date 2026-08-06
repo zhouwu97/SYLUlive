@@ -466,6 +466,53 @@ void main() {
     await _disposeChat(tester, provider);
   });
 
+  testWidgets(
+      'fresh page with unobserved keyboard height switching from Emoji to keyboard maintains fallback height',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final provider = MessageProvider(_chatDio());
+    await _pumpChat(tester, provider);
+
+    // 从未弹起过键盘，直接点击 Emoji 按钮
+    await tester.tap(find.byKey(const ValueKey('chat-emoji-button')));
+    await _pumpFrames(tester, count: 2);
+    expect(find.byType(AppEmojiPanel), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
+          .height,
+      300,
+    );
+
+    // 点击输入框切回键盘 (keyboardRequestPending = true)
+    await tester.tap(find.byKey(const ValueKey('chat-input')));
+    await tester.pump();
+
+    // 模拟 Android 真机 IME 首次逐帧弹起动画：0 -> 40 -> 100 -> 180 -> 260 -> 356
+    final transitionFrames = [0.0, 40.0, 100.0, 180.0, 260.0, 356.0];
+    for (final inset in transitionFrames) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump(const Duration(milliseconds: 16));
+      // 高度不能从 300 坍塌到第一帧的 40 或 100
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
+            .height,
+        greaterThanOrEqualTo(300),
+      );
+    }
+    await _pumpFrames(tester, count: 3);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
+          .height,
+      356,
+    );
+    await _disposeChat(tester, provider);
+  });
+
   testWidgets('long pressing a message image can add it to favorites',
       (tester) async {
     AppPreferencesStore.setMockInitialValues({});

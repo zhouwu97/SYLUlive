@@ -341,6 +341,12 @@ class MainActivity : FlutterActivity() {
                                 NotificationOpenStore.acknowledge(this, eventId),
                         )
                     }
+                    "clearPendingNotificationOpen" -> {
+                        NotificationOpenStore.clear(this)
+                        JPushInterface.clearAllNotifications(this)
+                        clearPrivateMessageNotifications(null)
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -1057,7 +1063,8 @@ class MainActivity : FlutterActivity() {
     private fun isPrivateMessageNotification(notification: android.app.Notification): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             return notification.channelId == "private_messages" ||
-                notification.channelId == "private_message_push"
+                notification.channelId == "private_message_push" ||
+                notification.channelId == "private_message_channel"
         }
         return true
     }

@@ -12,6 +12,7 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/AppTheme.dart';
 import '../utils/app_time.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/swipe_to_exit.dart';
@@ -29,6 +30,8 @@ class _ChatListScreenState extends State<ChatListScreen>
   Timer? _refreshTimer;
   int? _selectedConversationId;
   User? _selectedTargetUser;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -47,6 +50,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -74,7 +78,13 @@ class _ChatListScreenState extends State<ChatListScreen>
     final auth = context.watch<AuthProvider>();
     if (!auth.isLoggedIn) {
       _refreshTimer?.cancel();
-      return SwipeToExit(child: _buildLoginRequiredScaffold());
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      return SwipeToExit(
+        child: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: _privateMessageSystemUiStyle(isDark),
+          child: _buildLoginRequiredScaffold(),
+        ),
+      );
     }
 
     final currentUserId = auth.user?.id ?? 0;
@@ -89,19 +99,40 @@ class _ChatListScreenState extends State<ChatListScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SwipeToExit(
-      child: Scaffold(
-        backgroundColor:
-            isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-        appBar: AppBar(
-          title: const Text('私信'),
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-        ),
-        body: RefreshIndicator(
-          onRefresh: () => provider.loadConversations(),
-          child: _buildConversationList(provider, currentUserId),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: _privateMessageSystemUiStyle(isDark),
+        child: Scaffold(
+          backgroundColor:
+              isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+          appBar: AppBar(
+            toolbarHeight: 64,
+            title: const Text(
+              '私信',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            systemOverlayStyle: _privateMessageSystemUiStyle(isDark),
+          ),
+          body: RefreshIndicator(
+            onRefresh: () => provider.loadConversations(),
+            child: _buildConversationList(provider, currentUserId),
+          ),
         ),
       ),
+    );
+  }
+
+  SystemUiOverlayStyle _privateMessageSystemUiStyle(bool isDark) {
+    return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+        .copyWith(
+      statusBarColor:
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      systemNavigationBarColor:
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+      systemNavigationBarIconBrightness:
+          isDark ? Brightness.light : Brightness.dark,
     );
   }
 
@@ -114,6 +145,7 @@ class _ChatListScreenState extends State<ChatListScreen>
         title: const Text('私信'),
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
+        systemOverlayStyle: _privateMessageSystemUiStyle(isDark),
       ),
       body: Center(
         child: Padding(
@@ -157,18 +189,15 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   Widget _buildWideLayout(MessageProvider provider, int currentUserId) {
     final width = MediaQuery.sizeOf(context).width >= 1000 ? 320.0 : 292.0;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark.copyWith(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-        systemNavigationBarIconBrightness: Brightness.dark,
-      ),
+      value: _privateMessageSystemUiStyle(isDark),
       child: Stack(
         fit: StackFit.expand,
         children: [
           _buildPrivateMessageBackground(),
           Scaffold(
+            resizeToAvoidBottomInset: false,
             backgroundColor: Colors.transparent,
             appBar: AppBar(
               title: const Text('私信'),
@@ -176,6 +205,7 @@ class _ChatListScreenState extends State<ChatListScreen>
               foregroundColor: const Color(0xFF111827),
               surfaceTintColor: Colors.transparent,
               elevation: 0,
+              systemOverlayStyle: _privateMessageSystemUiStyle(isDark),
             ),
             body: Row(
               children: [
@@ -221,16 +251,12 @@ class _ChatListScreenState extends State<ChatListScreen>
       );
     }
 
-    final fillScreen = themeProvider.getCustomBackgroundFillScreenFor(context);
     final imageProvider = _privateMessageBackgroundProvider(bgPath);
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        _buildPrivateMessageBackgroundImage(
-          imageProvider: imageProvider,
-          fillScreen: fillScreen,
-        ),
+        _buildPrivateMessageBackgroundImage(imageProvider: imageProvider),
         ColoredBox(color: Colors.white.withValues(alpha: 0.24)),
       ],
     );
@@ -248,28 +274,15 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   Widget _buildPrivateMessageBackgroundImage({
     required ImageProvider imageProvider,
-    required bool fillScreen,
   }) {
     const fallbackColor = kCleanWarmBackgroundLight;
-    if (fillScreen) {
-      return Image(
-        image: imageProvider,
-        fit: BoxFit.cover,
-        alignment: Alignment.center,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => const ColoredBox(color: fallbackColor),
-      );
-    }
-
-    return ColoredBox(
-      color: fallbackColor,
-      child: Image(
-        image: imageProvider,
-        fit: BoxFit.contain,
-        alignment: Alignment.center,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-      ),
+    // 私信双栏背景同样固定铺满，避免竖图在宽屏时留下整块空白。
+    return Image(
+      image: imageProvider,
+      fit: BoxFit.cover,
+      alignment: Alignment.center,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) => const ColoredBox(color: fallbackColor),
     );
   }
 
@@ -335,8 +348,130 @@ class _ChatListScreenState extends State<ChatListScreen>
     int currentUserId, {
     bool splitMode = false,
   }) {
+    final conversations = _filteredConversations(provider, currentUserId);
+    return Column(
+      children: [
+        _buildConversationSearchField(),
+        _buildRecentMessagesLabel(),
+        Expanded(
+          child: _buildConversationContent(
+            provider,
+            conversations,
+            currentUserId,
+            splitMode: splitMode,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConversationSearchField() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: SizedBox(
+        height: 48,
+        child: TextField(
+          key: const ValueKey('chat-conversation-search'),
+          controller: _searchController,
+          onChanged: (value) => setState(() => _searchQuery = value),
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: '搜索联系人或消息',
+            isDense: true,
+            filled: true,
+            fillColor:
+                isDark ? const Color(0xFF242A35) : const Color(0xFFF3F1EF),
+            prefixIcon: const Icon(Icons.search_rounded, size: 20),
+            suffixIcon: _searchQuery.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: '清除搜索',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                  ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentMessagesLabel() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          '最近消息',
+          style: TextStyle(
+            color: isDark ? Colors.white60 : const Color(0xFF817A75),
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Conversation> _filteredConversations(
+    MessageProvider provider,
+    int currentUserId,
+  ) {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return provider.conversations;
+    return provider.conversations.where((conversation) {
+      final targetUser = conversation.getOtherUser(currentUserId);
+      if (targetUser == null) return false;
+      final message = _latestConversationMessage(provider, conversation);
+      final content = message?.content.trim() ?? '';
+      final searchText = [
+        targetUser.nickname,
+        content,
+        if (message?.isSticker == true) '表情',
+        if (message?.file != null || message?.fileId != null) '图片',
+      ].join('\n').toLowerCase();
+      return searchText.contains(query);
+    }).toList(growable: false);
+  }
+
+  Message? _latestConversationMessage(
+    MessageProvider provider,
+    Conversation conversation,
+  ) {
+    final cachedMessage =
+        provider.latestCachedMessageForConversation(conversation.id);
+    final serverMessage = conversation.lastMessage;
+    if (cachedMessage == null) return serverMessage;
+    if (serverMessage == null ||
+        !cachedMessage.createdAt.isBefore(serverMessage.createdAt)) {
+      return cachedMessage;
+    }
+    return serverMessage;
+  }
+
+  Widget _buildConversationContent(
+    MessageProvider provider,
+    List<Conversation> conversations,
+    int currentUserId, {
+    required bool splitMode,
+  }) {
     if (provider.conversationLoading && provider.conversations.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: const [
+          SizedBox(height: 120),
+          Center(child: CircularProgressIndicator()),
+        ],
+      );
     }
 
     if (provider.conversationError != null && provider.conversations.isEmpty) {
@@ -358,26 +493,34 @@ class _ChatListScreenState extends State<ChatListScreen>
       );
     }
 
-    if (provider.conversations.isEmpty) {
+    if (provider.conversations.isEmpty || conversations.isEmpty) {
+      final hasQuery = _searchQuery.trim().isNotEmpty;
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           SizedBox(height: MediaQuery.sizeOf(context).height * 0.24),
-          Icon(Icons.forum_outlined, size: 72, color: Colors.grey.shade400),
+          Icon(
+            hasQuery ? Icons.search_off_rounded : Icons.forum_outlined,
+            size: 64,
+            color: Colors.grey.shade400,
+          ),
           const SizedBox(height: 16),
-          const Center(
-            child: Text('暂无私信\n可以从其他用户主页发起聊天', textAlign: TextAlign.center),
+          Center(
+            child: Text(
+              hasQuery ? '没有匹配的会话' : '暂无私信\n可以从其他用户主页发起聊天',
+              textAlign: TextAlign.center,
+            ),
           ),
         ],
       );
     }
 
-    return ListView.separated(
+    return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: provider.conversations.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, indent: 76),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      itemCount: conversations.length,
       itemBuilder: (context, index) {
-        final conversation = provider.conversations[index];
+        final conversation = conversations[index];
         final targetUser = conversation.getOtherUser(currentUserId);
         if (targetUser == null) {
           debugPrint(
@@ -422,77 +565,190 @@ class _ChatListScreenState extends State<ChatListScreen>
         : serverMessage;
     final draft = provider.draftFor(targetUser.id).trim();
     final draftStickerId = provider.draftStickerFor(targetUser.id);
-    final preview = _conversationPreview(
-      message: lastMessage,
-      draft: draft,
-      draftStickerId: draftStickerId,
-      currentUserId: currentUserId,
-    );
-    final previewIsAlert = draft.isNotEmpty ||
-        draftStickerId != null ||
-        lastMessage?.isFailed == true;
+    final hasDraft = draft.isNotEmpty || draftStickerId != null;
+    final draftBody = [
+      if (draft.isNotEmpty) draft,
+      if (draftStickerId != null) '[表情]',
+    ].join(' ');
+    final preview = hasDraft
+        ? draftBody
+        : _conversationPreview(
+            message: lastMessage,
+            draft: draft,
+            draftStickerId: draftStickerId,
+            currentUserId: currentUserId,
+          );
+    final previewIsAlert = !hasDraft && lastMessage?.isFailed == true;
     final selected = splitMode && _selectedConversationId == conversation.id;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final muted = isDark ? Colors.white60 : const Color(0xFF6B7280);
+    final emphasized = !splitMode && conversation.unreadCount > 0;
+    final tileColor = selected
+        ? AppTheme.primaryColor.withValues(alpha: isDark ? 0.22 : 0.10)
+        : emphasized
+            ? (isDark ? const Color(0xFF212936) : Colors.white)
+            : Colors.transparent;
+    final tileBorderColor = selected
+        ? AppTheme.primaryColor.withValues(alpha: 0.30)
+        : emphasized
+            ? (isDark
+                ? Colors.white.withValues(alpha: 0.12)
+                : const Color(0xFFE5E2FF))
+            : null;
+    final nickname = targetUser.nickname.isEmpty
+        ? '用户${targetUser.id}'
+        : targetUser.nickname;
 
-    return ListTile(
-      selected: selected,
-      selectedTileColor: Theme.of(
-        context,
-      ).colorScheme.primary.withValues(alpha: 0.10),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-      leading: CachedAvatar(
-        imageUrl: targetUser.avatar.isEmpty
-            ? null
-            : ApiConstants.fullUrl(targetUser.avatar),
-        radius: 25,
-        fallbackText: targetUser.nickname,
-      ),
-      title: Text(
-        targetUser.nickname.isEmpty
-            ? '用户${targetUser.id}'
-            : targetUser.nickname,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        preview,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: previewIsAlert ? Colors.red.shade600 : Colors.grey.shade600,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: DecoratedBox(
+        key: ValueKey('chat-conversation-${conversation.id}'),
+        decoration: BoxDecoration(
+          color: tileColor,
+          borderRadius: BorderRadius.circular(18),
+          border: tileBorderColor == null
+              ? null
+              : Border.all(color: tileBorderColor),
+          boxShadow: emphasized && !isDark
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.035),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _openConversation(conversation, targetUser, splitMode),
+            child: SizedBox(
+              height: 78,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    CachedAvatar(
+                      imageUrl: targetUser.avatar.isEmpty
+                          ? null
+                          : ApiConstants.fullUrl(targetUser.avatar),
+                      radius: 28,
+                      fallbackText: nickname,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            nickname,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (hasDraft)
+                            Text.rich(
+                              TextSpan(
+                                style: TextStyle(
+                                  color: muted,
+                                  fontSize: 14,
+                                  height: 1.25,
+                                ),
+                                children: [
+                                  TextSpan(
+                                    text: '草稿：',
+                                    style: TextStyle(
+                                      color: Colors.red.shade600,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: preview,
+                                  ),
+                                ],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            )
+                          else
+                            Text(
+                              preview,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: previewIsAlert
+                                    ? Colors.red.shade600
+                                    : muted,
+                                fontSize: 14,
+                                height: 1.25,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 58,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            _formatConversationTime(
+                              draft.isNotEmpty
+                                  ? conversation.lastMessageAt
+                                  : lastMessage?.createdAt ??
+                                      conversation.lastMessageAt,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: muted),
+                          ),
+                          const SizedBox(height: 6),
+                          if (conversation.unreadCount > 0)
+                            Container(
+                              constraints: const BoxConstraints(
+                                minWidth: 22,
+                                minHeight: 22,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryColor,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                conversation.unreadCount > 99
+                                    ? '99+'
+                                    : '${conversation.unreadCount}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.15,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            _formatConversationTime(
-              draft.isNotEmpty
-                  ? conversation.lastMessageAt
-                  : lastMessage?.createdAt ?? conversation.lastMessageAt,
-            ),
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-          ),
-          const SizedBox(height: 6),
-          if (conversation.unreadCount > 0)
-            Container(
-              constraints: const BoxConstraints(minWidth: 20),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.red.shade500,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                conversation.unreadCount > 99
-                    ? '99+'
-                    : '${conversation.unreadCount}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 11),
-              ),
-            ),
-        ],
-      ),
-      onTap: () => _openConversation(conversation, targetUser, splitMode),
     );
   }
 

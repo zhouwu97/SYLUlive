@@ -10,6 +10,9 @@ import '../../widgets/competition/competition_empty_state.dart';
 import '../../widgets/competition/competition_ui_tokens.dart';
 import 'competition_admin_import_screen.dart';
 import 'competition_award_verification_admin_screen.dart';
+import 'competition_catalog_admin_screen.dart';
+import 'competition_catalog_event_view_screen.dart';
+import 'competition_legacy_resolution_screen.dart';
 import 'competition_official_event_editor_screen.dart';
 
 import '../../widgets/competition/competition_batch_action_sheet.dart';
@@ -35,7 +38,17 @@ class _CompetitionAdminCenterScreenState
 
   List<CompetitionCategory> _categories = [];
   List<CompetitionEvent> _events = [];
+  List<CompetitionCatalogPackage> _catalogPackages = [];
+  CompetitionAdminCatalogSummary _catalogSummary =
+      const CompetitionAdminCatalogSummary();
   bool _loading = true;
+
+  CompetitionCatalogPackage? get _activePackage {
+    for (final package in _catalogPackages) {
+      if (package.isActive) return package;
+    }
+    return null;
+  }
 
   String _adminStatusFilter = 'all';
   String? _maintenanceFilter;
@@ -70,9 +83,31 @@ class _CompetitionAdminCenterScreenState
   }
 
   Future<void> _load() async {
-    _loadCategories();
-    _loadOverview();
+    await Future.wait([
+      _loadCategories(),
+      _loadOverview(),
+      _loadCatalogPackages(),
+    ]);
     await _loadEvents();
+  }
+
+  Future<void> _loadCatalogPackages() async {
+    try {
+      final res = await _dio.get('/admin/competition-catalog/packages');
+      if (!mounted) return;
+      final data = Map<String, dynamic>.from(res.data as Map);
+      setState(() {
+        _catalogPackages = ((data['items'] as List?) ?? const [])
+            .map(
+              (item) => CompetitionCatalogPackage.fromJson(
+                Map<String, dynamic>.from(item as Map),
+              ),
+            )
+            .toList();
+      });
+    } catch (_) {
+      // Catalog 功能关闭时保留旧管理模式。
+    }
   }
 
   Future<void> _loadCategories() async {
@@ -111,6 +146,11 @@ class _CompetitionAdminCenterScreenState
       final data = res.data as Map<String, dynamic>;
       setState(() {
         _filteredTotal = (data['total'] as num?)?.toInt() ?? 0;
+        _catalogSummary = CompetitionAdminCatalogSummary.fromJson(
+          data['summary'] is Map
+              ? Map<String, dynamic>.from(data['summary'] as Map)
+              : null,
+        );
         _events = ((data['items'] as List?) ?? [])
             .map((item) => CompetitionEvent.fromJson(item))
             .toList();
@@ -146,6 +186,7 @@ class _CompetitionAdminCenterScreenState
       if (_categorySlug != null) 'category_slug': _categorySlug,
       if (_recommendations.isNotEmpty)
         'recommendation_level': _recommendations.join(','),
+      if (_activePackage != null) 'scope': 'active',
     };
   }
 
@@ -185,7 +226,7 @@ class _CompetitionAdminCenterScreenState
         elevation: 0,
         centerTitle: true,
         title: const Text(
-          '竞赛库管理',
+          '竞赛数据管理',
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
         actions: [
@@ -224,6 +265,86 @@ class _CompetitionAdminCenterScreenState
   }
 
   Widget _buildStats(bool isDark) {
+    final active = _activePackage;
+    if (active != null) {
+      final items = [
+        ('当前目录', '${_catalogSummary.activeCatalog}'),
+        ('已发布', '${_catalogSummary.activePublished}'),
+        ('公开展示', '${_catalogSummary.displayEnabled}'),
+        ('候选池', '${_catalogSummary.candidateEnabled}'),
+      ];
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(
+          CompetitionUiTokens.pagePadding,
+          12,
+          CompetitionUiTokens.pagePadding,
+          14,
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: CompetitionUiTokens.cardDecoration(isDark),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                active.datasetVersion,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: CompetitionUiTokens.titleColor(isDark),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '活动包 ${active.id} · revision ${active.revision} · ${_catalogSummary.parentRelationships} 条父赛事关系',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: CompetitionUiTokens.subColor(isDark),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  for (var i = 0; i < items.length; i++) ...[
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Text(
+                            items[i].$2,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            items[i].$1,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: CompetitionUiTokens.subColor(isDark),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (i != items.length - 1)
+                      Container(
+                        width: 1,
+                        height: 30,
+                        color: CompetitionUiTokens.borderColor(isDark),
+                      ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final items = [
       ('草稿', '$_adminDraftCount', () => _selectStatus('draft')),
       ('缺时间', '$_timePendingCount', () => _selectMaintenance('time_pending')),
@@ -362,6 +483,43 @@ class _CompetitionAdminCenterScreenState
   }
 
   Widget _buildAdminActions(bool isDark) {
+    if (_activePackage != null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(
+          CompetitionUiTokens.pagePadding,
+          0,
+          CompetitionUiTokens.pagePadding,
+          12,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _openCatalogPackages,
+                icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                label: const Text('目录包'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _load,
+                icon: const Icon(Icons.list_alt_rounded, size: 18),
+                label: const Text('当前赛事'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _openLegacyResolutions,
+                icon: const Icon(Icons.history_rounded, size: 18),
+                label: const Text('历史归并'),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         CompetitionUiTokens.pagePadding,
@@ -528,7 +686,7 @@ class _CompetitionAdminCenterScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '维护列表',
+            _activePackage == null ? '维护列表' : '当前赛事',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w900,
@@ -558,6 +716,16 @@ class _CompetitionAdminCenterScreenState
       );
     }
     if (_events.isEmpty) {
+      if (_activePackage != null) {
+        return CompetitionEmptyState(
+          title: '活动目录没有赛事',
+          message: '请检查当前活动包和目录预检结果。',
+          primaryText: '查看目录包',
+          onPrimaryTap: _openCatalogPackages,
+          secondaryText: '历史归并',
+          onSecondaryTap: _openLegacyResolutions,
+        );
+      }
       return CompetitionEmptyState(
         title: '列表还没有内容',
         message: '可以 AI 导入或手动新建官方草稿。',
@@ -649,27 +817,35 @@ class _CompetitionAdminCenterScreenState
           _openAdminDetail(event);
         }
       },
-      onEdit: () => _openAdminDetail(event),
-      onPublish: () => _singleAction(
-        event.id,
-        '发布',
-        (id) => _dio.post('/admin/competitions/events/$id/publish'),
-      ),
-      onArchive: () => _singleAction(
-        event.id,
-        '归档',
-        (id) => _dio.post('/admin/competitions/events/$id/archive'),
-      ),
-      onRestore: () => _singleAction(
-        event.id,
-        '恢复草稿',
-        (id) => _dio.post('/admin/competitions/events/$id/restore'),
-      ),
-      onDelete: () => _singleAction(
-        event.id,
-        '删除',
-        (id) => _dio.delete('/admin/competitions/events/$id'),
-      ),
+      onEdit: event.mutable ? () => _openAdminDetail(event) : null,
+      onPublish: event.mutable
+          ? () => _singleAction(
+                event.id,
+                '发布',
+                (id) => _dio.post('/admin/competitions/events/$id/publish'),
+              )
+          : null,
+      onArchive: event.mutable
+          ? () => _singleAction(
+                event.id,
+                '归档',
+                (id) => _dio.post('/admin/competitions/events/$id/archive'),
+              )
+          : null,
+      onRestore: event.mutable
+          ? () => _singleAction(
+                event.id,
+                '恢复草稿',
+                (id) => _dio.post('/admin/competitions/events/$id/restore'),
+              )
+          : null,
+      onDelete: event.mutable
+          ? () => _singleAction(
+                event.id,
+                '删除',
+                (id) => _dio.delete('/admin/competitions/events/$id'),
+              )
+          : null,
     );
   }
 
@@ -949,6 +1125,15 @@ class _CompetitionAdminCenterScreenState
   }
 
   Future<void> _openAdminDetail(CompetitionEvent event) async {
+    if (!event.mutable) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CompetitionCatalogEventViewScreen(event: event),
+        ),
+      );
+      return;
+    }
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -958,6 +1143,25 @@ class _CompetitionAdminCenterScreenState
       ),
     );
     if (result == true) _load();
+  }
+
+  Future<void> _openCatalogPackages() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CompetitionCatalogAdminScreen(dio: _dio),
+      ),
+    );
+    _load();
+  }
+
+  Future<void> _openLegacyResolutions() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CompetitionLegacyResolutionScreen(dio: _dio),
+      ),
+    );
   }
 
   Future<void> _openAdminFilters() async {

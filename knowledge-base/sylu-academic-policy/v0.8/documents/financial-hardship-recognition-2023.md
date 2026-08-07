@@ -1,7 +1,7 @@
 ---
 title: "沈阳理工大学家庭经济困难学生认定政策（2023）"
 source_type: "official_transcript"
-source_uri: "user-provided-campus-article-published-2024-11-05"
+source_uri: ""
 source_file_name: "2023 年家庭经济困难学生认定办法"
 document_type: "school_financial_hardship_recognition_policy"
 department: "沈阳理工大学学生处"

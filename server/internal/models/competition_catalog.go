@@ -64,6 +64,24 @@ func (CompetitionCatalogLegacyMapping) TableName() string {
 	return "competition_catalog_legacy_mappings"
 }
 
+// CompetitionLegacyDuplicateResolution 逐条记录旧赛事副本归并关系，供审计和恢复使用。
+type CompetitionLegacyDuplicateResolution struct {
+	ID                      uint      `gorm:"primaryKey" json:"id"`
+	IdentityHash            string    `gorm:"size:64;not null;index" json:"identity_hash"`
+	CanonicalEventID        uint      `gorm:"not null;index" json:"canonical_event_id"`
+	DuplicateEventID        uint      `gorm:"not null;uniqueIndex" json:"duplicate_event_id"`
+	Reason                  string    `gorm:"size:100;not null" json:"reason"`
+	DuplicatePreviousStatus string    `gorm:"size:20;not null" json:"duplicate_previous_status"`
+	DuplicateWasDeleted     bool      `gorm:"not null" json:"duplicate_was_deleted"`
+	CanonicalWasDeleted     bool      `gorm:"not null" json:"canonical_was_deleted"`
+	ResolvedBy              uint      `gorm:"not null;index" json:"resolved_by"`
+	ResolvedAt              time.Time `gorm:"not null;index" json:"resolved_at"`
+}
+
+func (CompetitionLegacyDuplicateResolution) TableName() string {
+	return "competition_legacy_duplicate_resolutions"
+}
+
 // CompetitionCatalogActivationSnapshot 保存一次短期激活预检的不可变输入摘要。
 // 原始 token 不落库，激活成功后同一快照不可重复使用。
 type CompetitionCatalogActivationSnapshot struct {

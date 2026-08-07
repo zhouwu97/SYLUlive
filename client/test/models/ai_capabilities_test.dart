@@ -23,7 +23,7 @@ void main() {
         'window_seconds': 3600,
         'reset_at': '2026-07-19T12:30:00+08:00',
       },
-      'max_message_chars': 200,
+      'max_message_chars': 501,
     });
 
     expect(capabilities.isVisible, isTrue);
@@ -32,7 +32,7 @@ void main() {
     expect(capabilities.quota.remaining, 2);
     expect(capabilities.quota.unlimited, isTrue);
     expect(capabilities.quota.resetAt, isNotNull);
-    expect(capabilities.maxMessageChars, 200);
+    expect(capabilities.maxMessageChars, 500);
     expect(capabilities.features.hy3CompetitionCompare, isTrue);
     expect(capabilities.features.hy3AcademicAnalysis, isTrue);
     expect(capabilities.features.hy3WeekPlan, isTrue);
@@ -47,7 +47,9 @@ void main() {
     });
 
     expect(capabilities.isVisible, isFalse);
-    expect(capabilities.maxMessageChars, 200);
+    expect(capabilities.maxMessageChars, 500);
     expect(capabilities.features.hy3CompetitionCompare, isFalse);
+    expect(capabilities.features.hy3AcademicAnalysis, isFalse);
+    expect(capabilities.features.hy3WeekPlan, isFalse);
   });
 }

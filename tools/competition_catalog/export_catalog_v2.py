@@ -49,6 +49,24 @@ def read_worksheet(worksheet: Any, header_row: int) -> list[dict[str, Any]]:
     ]
 
 
+def read_parent_mapping(worksheet: Any, header_row: int) -> dict[str, str]:
+    rows = worksheet.iter_rows(values_only=True)
+    for _ in range(header_row - 1):
+        next(rows, None)
+    headers = [str(value).strip() if value is not None else "" for value in next(rows, ())]
+    try:
+        competition_id_index = headers.index("competition_id")
+        parent_id_index = headers.index("parent_competition_id")
+    except ValueError:
+        return {}
+    result: dict[str, str] = {}
+    for values in rows:
+        competition_id = str(values[competition_id_index] or "").strip()
+        if competition_id:
+            result[competition_id] = str(values[parent_id_index] or "").strip()
+    return result
+
+
 def read_governed_workbook(workbook: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     manifest_rows = read_worksheet(workbook["目录发布清单"], 4)
     if len(manifest_rows) != 1:
@@ -64,6 +82,10 @@ def read_governed_workbook(workbook: Any) -> tuple[list[dict[str, Any]], dict[st
     base_rows = read_worksheet(workbook["赛事基础导出"], 4)
     preview_rows = read_worksheet(workbook["AI预览视图"], 4)
     preview_by_id = {str(row.get("competition_id") or "").strip(): row for row in preview_rows}
+    source_parent_by_id: dict[str, str] = {}
+    source_sheet = str(manifest.get("source_sheet") or "").strip()
+    if source_sheet and source_sheet in workbook.sheetnames:
+        source_parent_by_id = read_parent_mapping(workbook[source_sheet], 1)
     if len(base_rows) != len(preview_rows) or len(preview_by_id) != len(preview_rows):
         raise ValueError("赛事基础导出与 AI 预览视图数量或主键不一致")
 
@@ -78,7 +100,12 @@ def read_governed_workbook(workbook: Any) -> tuple[list[dict[str, Any]], dict[st
         records.append(
             {
                 "competition_id": competition_id,
-                "parent_competition_id": "",
+                "parent_competition_id": str(
+                    base.get("parent_competition_id")
+                    or preview.get("parent_competition_id")
+                    or source_parent_by_id.get(competition_id)
+                    or ""
+                ).strip(),
                 "record_hash": "",
                 "catalog_order": order,
                 "title": preview.get("display_title") or base.get("title"),

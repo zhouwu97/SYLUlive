@@ -533,9 +533,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void _handleFeedSwipeStart(DragStartDetails details) {
     _feedSwitchController.stop();
     _feedSwipeDx = 0;
-    _feedSwipeAccepted = isUpperContentSwipeStart(
-      details.globalPosition.dy,
-      MediaQuery.sizeOf(context).height,
+    _feedSwipeAccepted = !isMainNavigationGestureZone(
+      startY: details.globalPosition.dy,
+      screenHeight: MediaQuery.sizeOf(context).height,
     );
     if (_feedSwipeAccepted) {
       setState(() {

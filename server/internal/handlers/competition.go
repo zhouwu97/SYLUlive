@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -39,6 +40,62 @@ type CompetitionHandler struct {
 	evidenceDir              string
 	maxEvidenceFileSize      int64
 	candidateExplanationTool CompetitionCandidateExplanationTool
+}
+
+var (
+	errCompetitionCatalogManagedReadOnly = errors.New("catalog managed competition event is read only")
+	errCompetitionSupersededReadOnly     = errors.New("superseded competition event is read only")
+	errCompetitionLegacyReadOnly         = errors.New("legacy competition event is read only")
+)
+
+// ensureCompetitionEventMutable 将旧 CRUD 限定为未进入目录治理的手工赛事。
+func ensureCompetitionEventMutable(db *gorm.DB, eventID uint) (models.CompetitionEvent, error) {
+	var event models.CompetitionEvent
+	if err := db.First(&event, eventID).Error; err != nil {
+		return event, err
+	}
+	if event.CatalogPackageID != nil {
+		return event, errCompetitionCatalogManagedReadOnly
+	}
+	if db.Migrator().HasTable(&models.CompetitionLegacyDuplicateResolution{}) {
+		var count int64
+		if err := db.Model(&models.CompetitionLegacyDuplicateResolution{}).
+			Where("duplicate_event_id = ?", eventID).Count(&count).Error; err != nil {
+			return event, err
+		}
+		if count > 0 {
+			return event, errCompetitionSupersededReadOnly
+		}
+	}
+	if !strings.HasPrefix(event.CompetitionID, "MANUAL-") {
+		return event, errCompetitionLegacyReadOnly
+	}
+	return event, nil
+}
+
+func respondCompetitionEventMutationError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "比赛不存在"})
+	case errors.Is(err, errCompetitionCatalogManagedReadOnly):
+		c.JSON(http.StatusConflict, gin.H{
+			"error_code": "catalog_managed_event_read_only",
+			"error":      "该赛事由活动目录包管理，请创建新的目录修订后发布",
+		})
+	case errors.Is(err, errCompetitionSupersededReadOnly):
+		c.JSON(http.StatusConflict, gin.H{
+			"error_code": "superseded_event_read_only",
+			"error":      "该赛事已被历史归并，不允许通过旧管理入口修改",
+		})
+	case errors.Is(err, errCompetitionLegacyReadOnly):
+		c.JSON(http.StatusConflict, gin.H{
+			"error_code": "legacy_event_read_only",
+			"error":      "只有未纳入目录治理的 MANUAL 赛事可通过旧管理入口修改",
+		})
+	default:
+		return false
+	}
+	return true
 }
 
 func NewCompetitionHandler(db *gorm.DB) *CompetitionHandler {
@@ -76,6 +133,39 @@ type CompetitionEventDTO struct {
 	CompetitionGovernanceDTO
 }
 
+type CompetitionCatalogStateDTO struct {
+	PackageID       uint   `json:"package_id"`
+	IsActive        bool   `json:"is_active"`
+	LifecycleStatus string `json:"lifecycle_status"`
+	DatasetVersion  string `json:"dataset_version"`
+}
+
+type CompetitionDuplicateStateDTO struct {
+	IsCanonical     bool  `json:"is_canonical"`
+	SupersededCount int64 `json:"superseded_count"`
+}
+
+type AdminCompetitionEventDTO struct {
+	CompetitionEventDTO
+	ManagementSource string                       `json:"management_source"`
+	Mutable          bool                         `json:"mutable"`
+	CatalogState     *CompetitionCatalogStateDTO  `json:"catalog_state,omitempty"`
+	DuplicateState   CompetitionDuplicateStateDTO `json:"duplicate_state"`
+}
+
+type adminCompetitionListSummary struct {
+	ActiveCatalog       int64 `json:"active_catalog"`
+	ActivePublished     int64 `json:"active_published"`
+	DisplayEnabled      int64 `json:"display_enabled"`
+	CandidateEnabled    int64 `json:"candidate_enabled"`
+	ParentRelationships int64 `json:"parent_relationships"`
+	Manual              int64 `json:"manual"`
+	Canonical           int64 `json:"canonical"`
+	Superseded          int64 `json:"superseded"`
+	ResolvedDuplicates  int64 `json:"resolved_duplicates"`
+	AllDatabaseRows     int64 `json:"all_database_rows"`
+}
+
 func competitionEventDTO(event models.CompetitionEvent) CompetitionEventDTO {
 	rating := effectiveCompetitionRating(event)
 	event.CompetitionRating = rating
@@ -102,6 +192,73 @@ func competitionEventDTOs(events []models.CompetitionEvent) []CompetitionEventDT
 		result[index] = competitionEventDTO(event)
 	}
 	return result
+}
+
+func adminCompetitionEventDTOs(
+	db *gorm.DB,
+	events []models.CompetitionEvent,
+	activePackageID *uint,
+) ([]AdminCompetitionEventDTO, error) {
+	packageIDs := make([]uint, 0)
+	eventIDs := make([]uint, 0, len(events))
+	for _, event := range events {
+		eventIDs = append(eventIDs, event.ID)
+		if event.CatalogPackageID != nil {
+			packageIDs = append(packageIDs, *event.CatalogPackageID)
+		}
+	}
+	packagesByID := make(map[uint]models.CompetitionCatalogPackage)
+	if len(packageIDs) > 0 {
+		var packages []models.CompetitionCatalogPackage
+		if err := db.Where("id IN ?", packageIDs).Find(&packages).Error; err != nil {
+			return nil, err
+		}
+		for _, catalog := range packages {
+			packagesByID[catalog.ID] = catalog
+		}
+	}
+
+	duplicateIDs := make(map[uint]bool)
+	supersededCounts := make(map[uint]int64)
+	if len(eventIDs) > 0 && db.Migrator().HasTable(&models.CompetitionLegacyDuplicateResolution{}) {
+		var resolutions []models.CompetitionLegacyDuplicateResolution
+		if err := db.Where("duplicate_event_id IN ? OR canonical_event_id IN ?", eventIDs, eventIDs).
+			Find(&resolutions).Error; err != nil {
+			return nil, err
+		}
+		for _, resolution := range resolutions {
+			duplicateIDs[resolution.DuplicateEventID] = true
+			supersededCounts[resolution.CanonicalEventID]++
+		}
+	}
+
+	result := make([]AdminCompetitionEventDTO, 0, len(events))
+	for _, event := range events {
+		managementSource := "legacy"
+		mutable := false
+		var catalogState *CompetitionCatalogStateDTO
+		if event.CatalogPackageID != nil {
+			managementSource = "catalog"
+			catalog := packagesByID[*event.CatalogPackageID]
+			catalogState = &CompetitionCatalogStateDTO{
+				PackageID: *event.CatalogPackageID, IsActive: activePackageID != nil && *activePackageID == *event.CatalogPackageID,
+				LifecycleStatus: catalog.LifecycleStatus, DatasetVersion: catalog.DatasetVersion,
+			}
+		} else if duplicateIDs[event.ID] {
+			managementSource = "superseded"
+		} else if strings.HasPrefix(event.CompetitionID, "MANUAL-") {
+			managementSource = "manual"
+			mutable = true
+		}
+		result = append(result, AdminCompetitionEventDTO{
+			CompetitionEventDTO: competitionEventDTO(event), ManagementSource: managementSource,
+			Mutable: mutable, CatalogState: catalogState,
+			DuplicateState: CompetitionDuplicateStateDTO{
+				IsCanonical: !duplicateIDs[event.ID], SupersededCount: supersededCounts[event.ID],
+			},
+		})
+	}
+	return result, nil
 }
 
 type competitionEventInput struct {
@@ -669,6 +826,21 @@ func (h *CompetitionHandler) AdminUpdateCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
+	var category models.CompetitionCategory
+	if err := h.db.First(&category, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "分类不存在"})
+		return
+	}
+	referenced, err := h.catalogReferencesCategory(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查分类目录引用失败"})
+		return
+	}
+	if referenced && ((strings.TrimSpace(input.Slug) != "" && strings.TrimSpace(input.Slug) != category.Slug) ||
+		(input.IsActive != nil && !*input.IsActive)) {
+		respondCatalogCategoryIdentityReadOnly(c)
+		return
+	}
 	updates := map[string]interface{}{}
 	if input.Name != "" {
 		updates["name"] = strings.TrimSpace(input.Name)
@@ -694,11 +866,35 @@ func (h *CompetitionHandler) AdminDeleteCategory(c *gin.Context) {
 	if !ok {
 		return
 	}
+	referenced, err := h.catalogReferencesCategory(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查分类目录引用失败"})
+		return
+	}
+	if referenced {
+		respondCatalogCategoryIdentityReadOnly(c)
+		return
+	}
 	if err := h.db.Model(&models.CompetitionCategory{}).Where("id = ?", id).Update("is_active", false).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除分类失败"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已停用分类"})
+}
+
+func (h *CompetitionHandler) catalogReferencesCategory(categoryID uint) (bool, error) {
+	var count int64
+	err := h.db.Model(&models.CompetitionEvent{}).
+		Where("primary_category_id = ? AND catalog_package_id IS NOT NULL", categoryID).
+		Count(&count).Error
+	return count > 0, err
+}
+
+func respondCatalogCategoryIdentityReadOnly(c *gin.Context) {
+	c.JSON(http.StatusConflict, gin.H{
+		"error_code": "catalog_category_identity_read_only",
+		"error":      "该分类已被目录包引用，不能修改 slug、停用或删除",
+	})
 }
 
 func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
@@ -710,11 +906,22 @@ func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
 	if pageSize < 1 || pageSize > 50 {
 		pageSize = 20
 	}
-	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory")
+	scope, activePackageID, err := resolveAdminCompetitionScope(h.db, c.Query("scope"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	query := applyAdminCompetitionScope(
+		h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory"),
+		h.db, scope, activePackageID,
+	)
 	filter := parseAdminFilterFromQuery(c)
 	query = applyAdminCompetitionFilter(query, filter, time.Now())
 	var total int64
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计比赛失败"})
+		return
+	}
 	var events []models.CompetitionEvent
 	if err := query.Order("updated_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&events).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取比赛失败"})
@@ -725,18 +932,141 @@ func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
 	if totalPages == 0 {
 		totalPages = 1
 	}
+	items, err := adminCompetitionEventDTOs(h.db, events, activePackageID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取比赛治理状态失败"})
+		return
+	}
+	summary, err := buildAdminCompetitionListSummary(h.db, activePackageID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计比赛治理范围失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items":       competitionEventDTOs(events),
+		"items":       items,
 		"total":       total,
 		"page":        page,
 		"page_size":   pageSize,
 		"total_pages": totalPages,
+		"scope":       scope,
+		"summary":     summary,
 	})
+}
+
+func resolveAdminCompetitionScope(db *gorm.DB, requested string) (string, *uint, error) {
+	requested = strings.TrimSpace(strings.ToLower(requested))
+	valid := map[string]bool{"active": true, "canonical": true, "manual": true, "superseded": true, "all": true}
+	if requested != "" && !valid[requested] {
+		return "", nil, fmt.Errorf("scope 必须是 active、canonical、manual、superseded 或 all")
+	}
+	var active models.CompetitionCatalogPackage
+	err := db.Where("is_active = ?", true).First(&active).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil, err
+	}
+	var activeID *uint
+	if err == nil {
+		value := active.ID
+		activeID = &value
+	}
+	if requested == "" {
+		if activeID != nil {
+			return "active", activeID, nil
+		}
+		return "canonical", nil, nil
+	}
+	return requested, activeID, nil
+}
+
+func applyAdminCompetitionScope(query, db *gorm.DB, scope string, activePackageID *uint) *gorm.DB {
+	switch scope {
+	case "active":
+		if activePackageID == nil {
+			return query.Where("1 = 0")
+		}
+		return query.Where("competition_events.catalog_package_id = ?", *activePackageID)
+	case "manual":
+		return query.Where("competition_events.catalog_package_id IS NULL").
+			Where("competition_events.competition_id LIKE ?", "MANUAL-%")
+	case "superseded":
+		if !db.Migrator().HasTable(&models.CompetitionLegacyDuplicateResolution{}) {
+			return query.Where("1 = 0")
+		}
+		duplicateIDs := db.Model(&models.CompetitionLegacyDuplicateResolution{}).Select("duplicate_event_id")
+		return query.Where("competition_events.id IN (?)", duplicateIDs)
+	case "canonical":
+		if !db.Migrator().HasTable(&models.CompetitionLegacyDuplicateResolution{}) {
+			return query
+		}
+		duplicateIDs := db.Model(&models.CompetitionLegacyDuplicateResolution{}).Select("duplicate_event_id")
+		return query.Where("competition_events.id NOT IN (?)", duplicateIDs)
+	default:
+		return query
+	}
+}
+
+func buildAdminCompetitionListSummary(db *gorm.DB, activePackageID *uint) (adminCompetitionListSummary, error) {
+	summary := adminCompetitionListSummary{}
+	base := db.Model(&models.CompetitionEvent{})
+	if err := base.Count(&summary.AllDatabaseRows).Error; err != nil {
+		return summary, err
+	}
+	if activePackageID != nil {
+		activeQuery := db.Model(&models.CompetitionEvent{}).
+			Where("catalog_package_id = ?", *activePackageID)
+		if err := activeQuery.Count(&summary.ActiveCatalog).Error; err != nil {
+			return summary, err
+		}
+		if err := db.Model(&models.CompetitionEvent{}).
+			Where("catalog_package_id = ? AND status = ?", *activePackageID, "published").
+			Count(&summary.ActivePublished).Error; err != nil {
+			return summary, err
+		}
+		if err := db.Model(&models.CompetitionEvent{}).
+			Where("catalog_package_id = ? AND search_display_allowed = ?", *activePackageID, true).
+			Count(&summary.DisplayEnabled).Error; err != nil {
+			return summary, err
+		}
+		if err := db.Model(&models.CompetitionEvent{}).
+			Where("catalog_package_id = ? AND candidate_pool_allowed = ?", *activePackageID, true).
+			Count(&summary.CandidateEnabled).Error; err != nil {
+			return summary, err
+		}
+		if err := db.Model(&models.CompetitionEvent{}).
+			Where("catalog_package_id = ? AND parent_event_id IS NOT NULL", *activePackageID).
+			Count(&summary.ParentRelationships).Error; err != nil {
+			return summary, err
+		}
+	}
+	if err := db.Model(&models.CompetitionEvent{}).
+		Where("catalog_package_id IS NULL AND competition_id LIKE ?", "MANUAL-%").
+		Count(&summary.Manual).Error; err != nil {
+		return summary, err
+	}
+	if db.Migrator().HasTable(&models.CompetitionLegacyDuplicateResolution{}) {
+		if err := db.Model(&models.CompetitionLegacyDuplicateResolution{}).
+			Count(&summary.ResolvedDuplicates).Error; err != nil {
+			return summary, err
+		}
+		duplicateIDs := db.Model(&models.CompetitionLegacyDuplicateResolution{}).Select("duplicate_event_id")
+		if err := db.Model(&models.CompetitionEvent{}).
+			Where("id IN (?)", duplicateIDs).Count(&summary.Superseded).Error; err != nil {
+			return summary, err
+		}
+		if err := db.Model(&models.CompetitionEvent{}).
+			Where("id NOT IN (?)", duplicateIDs).Count(&summary.Canonical).Error; err != nil {
+			return summary, err
+		}
+	} else {
+		summary.Canonical = summary.AllDatabaseRows
+	}
+	return summary, nil
 }
 
 func parseAdminFilterFromQuery(c *gin.Context) adminCompetitionFilter {
 	filter := adminCompetitionFilter{
+		Scope:             strings.TrimSpace(c.Query("scope")),
 		Status:            strings.TrimSpace(c.Query("status")),
 		MaintenanceStatus: strings.TrimSpace(c.Query("maintenance_status")),
 		CategorySlug:      strings.TrimSpace(c.Query("category_slug")),
@@ -834,6 +1164,12 @@ func (h *CompetitionHandler) AdminUpdateEvent(c *gin.Context) {
 	}
 	id, ok := parseUintParam(c, "id")
 	if !ok {
+		return
+	}
+	if _, err := ensureCompetitionEventMutable(h.db, id); err != nil {
+		if !respondCompetitionEventMutationError(c, err) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查比赛治理状态失败"})
+		}
 		return
 	}
 	var input competitionEventInput
@@ -980,9 +1316,11 @@ func (h *CompetitionHandler) performSingleAction(c *gin.Context, action string) 
 	if !ok {
 		return
 	}
-	var event models.CompetitionEvent
-	if err := h.db.First(&event, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "比赛不存在"})
+	event, err := ensureCompetitionEventMutable(h.db, id)
+	if err != nil {
+		if !respondCompetitionEventMutationError(c, err) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查比赛治理状态失败"})
+		}
 		return
 	}
 
@@ -1055,6 +1393,7 @@ func checkEventStatusTransition(currentStatus, action string) (string, error) {
 }
 
 type adminCompetitionFilter struct {
+	Scope                string   `json:"scope"`
 	Status               string   `json:"status"`
 	MaintenanceStatus    string   `json:"maintenance_status"`
 	CategorySlug         string   `json:"category_slug"`
@@ -1096,7 +1435,15 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 	var totalMatched int64
 
 	if input.Selection != nil && input.Selection.Mode == "query" {
-		queryCount := applyAdminCompetitionFilter(h.db.Model(&models.CompetitionEvent{}), input.Selection.Filters, time.Now())
+		scope, activePackageID, err := resolveAdminCompetitionScope(h.db, input.Selection.Filters.Scope)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		queryCount := applyAdminCompetitionScope(
+			applyAdminCompetitionFilter(h.db.Model(&models.CompetitionEvent{}), input.Selection.Filters, time.Now()),
+			h.db, scope, activePackageID,
+		)
 		if err := queryCount.Count(&totalMatched).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "计算匹配数量失败"})
 			return
@@ -1107,7 +1454,10 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 			return
 		}
 
-		query := applyAdminCompetitionFilter(h.db.Model(&models.CompetitionEvent{}), input.Selection.Filters, time.Now())
+		query := applyAdminCompetitionScope(
+			applyAdminCompetitionFilter(h.db.Model(&models.CompetitionEvent{}), input.Selection.Filters, time.Now()),
+			h.db, scope, activePackageID,
+		)
 		if len(input.Selection.ExcludedIDs) > 0 {
 			query = query.Where("id NOT IN ?", input.Selection.ExcludedIDs)
 		}
@@ -1149,18 +1499,35 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 	}
 
 	type batchEventState struct {
-		ID     uint
-		Status string
+		ID               uint
+		Status           string
+		CompetitionID    string
+		CatalogPackageID *uint
 	}
 	var states []batchEventState
-	if err := h.db.Model(&models.CompetitionEvent{}).Select("id", "status").Where("id IN ?", cleanIDs).Find(&states).Error; err != nil {
+	if err := h.db.Model(&models.CompetitionEvent{}).
+		Select("id", "status", "competition_id", "catalog_package_id").
+		Where("id IN ?", cleanIDs).Find(&states).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询比赛状态失败"})
 		return
 	}
 
-	foundIDs := make(map[uint]string, len(states))
+	foundIDs := make(map[uint]batchEventState, len(states))
 	for _, st := range states {
-		foundIDs[st.ID] = st.Status
+		foundIDs[st.ID] = st
+	}
+	supersededIDs := make(map[uint]bool)
+	if h.db.Migrator().HasTable(&models.CompetitionLegacyDuplicateResolution{}) {
+		var duplicateIDs []uint
+		if err := h.db.Model(&models.CompetitionLegacyDuplicateResolution{}).
+			Where("duplicate_event_id IN ?", cleanIDs).
+			Pluck("duplicate_event_id", &duplicateIDs).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询赛事归并状态失败"})
+			return
+		}
+		for _, id := range duplicateIDs {
+			supersededIDs[id] = true
+		}
 	}
 
 	var skipped []batchSkippedDetail
@@ -1172,10 +1539,24 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 	reasonCounts := make(map[string]int)
 
 	for _, id := range cleanIDs {
-		status, exists := foundIDs[id]
+		state, exists := foundIDs[id]
 		if !exists {
 			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: "比赛不存在或已删除"})
 			reasonCounts["比赛不存在或已删除"]++
+			continue
+		}
+		readOnlyReason := ""
+		switch {
+		case state.CatalogPackageID != nil:
+			readOnlyReason = "该赛事由活动目录包管理，只能通过目录修订修改"
+		case supersededIDs[id]:
+			readOnlyReason = "该赛事已被历史归并，不允许修改"
+		case !strings.HasPrefix(state.CompetitionID, "MANUAL-"):
+			readOnlyReason = "只有 MANUAL 赛事可通过旧管理入口修改"
+		}
+		if readOnlyReason != "" {
+			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: readOnlyReason})
+			reasonCounts[readOnlyReason]++
 			continue
 		}
 
@@ -1184,7 +1565,7 @@ func (h *CompetitionHandler) AdminBatchAction(c *gin.Context) {
 			continue
 		}
 
-		targetStatus, err := checkEventStatusTransition(status, input.Action)
+		targetStatus, err := checkEventStatusTransition(state.Status, input.Action)
 		if err != nil {
 			skipped = append(skipped, batchSkippedDetail{ID: id, Reason: err.Error()})
 			reasonCounts[err.Error()]++
@@ -1338,6 +1719,12 @@ func (h *CompetitionHandler) AdminVerifyEvent(c *gin.Context) {
 	}
 	id, ok := parseUintParam(c, "id")
 	if !ok {
+		return
+	}
+	if _, err := ensureCompetitionEventMutable(h.db, id); err != nil {
+		if !respondCompetitionEventMutationError(c, err) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查比赛治理状态失败"})
+		}
 		return
 	}
 	now := time.Now()

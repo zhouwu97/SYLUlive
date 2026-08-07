@@ -8,6 +8,7 @@ import '../models/ai_capabilities.dart';
 import '../models/ai_chat_message.dart';
 import '../models/ai_conversation.dart';
 import '../models/ai_personal_data_evidence.dart';
+import '../models/ai_quick_prompt.dart';
 import '../models/ai_quota.dart';
 import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
@@ -57,14 +58,19 @@ int aiVisibleCharacterCount(String value) =>
 class AiAssistantProvider extends ChangeNotifier {
   final AiAssistantService _service;
   final Future<void> Function()? _deviceToolSync;
+  final Random _random;
 
   AiAssistantProvider(
     this._service, {
     AiCapabilities? initialCapabilities,
     Future<void> Function()? deviceToolSync,
+    Random? random,
   })  : _capabilities = initialCapabilities,
         _quota = initialCapabilities?.quota,
-        _deviceToolSync = deviceToolSync;
+        _deviceToolSync = deviceToolSync,
+        _random = random ?? Random() {
+    _syncQuickPrompts();
+  }
 
   AiCapabilities? _capabilities;
   AiQuota? _quota;
@@ -86,6 +92,8 @@ class AiAssistantProvider extends ChangeNotifier {
   bool _loadingConversations = false;
   bool _disposed = false;
   int _streamGeneration = 0;
+  List<AiQuickPrompt> _quickPrompts = const [];
+  String _quickPromptPoolKey = '';
 
   AiCapabilities? get capabilities => _capabilities;
   AiQuota? get quota => _quota;
@@ -161,15 +169,11 @@ class AiAssistantProvider extends ChangeNotifier {
     return '正在请求你的手机读取本地缓存';
   }
 
-  List<String> get quickPrompts {
-    final prompts = <String>[];
-    if (_capabilities?.features.policyRag == true) {
-      prompts.addAll(const ['补考成绩怎么算', '重修有什么规定', '奖学金怎么评', '校历如何安排']);
-    }
-    if (_capabilities?.features.scheduleWindows == true) {
-      prompts.addAll(const ['今天下午有课吗', '本周哪天空闲', '下周一有课吗', '找两小时空闲']);
-    }
-    return prompts;
+  List<AiQuickPrompt> get quickPrompts => List.unmodifiable(_quickPrompts);
+
+  void refreshQuickPrompts() {
+    _selectQuickPrompts(avoidCurrent: true);
+    _notify();
   }
 
   Future<void>? _bootstrapFuture;
@@ -208,6 +212,7 @@ class AiAssistantProvider extends ChangeNotifier {
       final result = await _service.getCapabilities();
       _capabilities = result;
       _quota = result.quota;
+      _syncQuickPrompts();
     } catch (_) {
       if (!silent) _error = '暂时无法读取 AI 服务状态';
     } finally {
@@ -246,6 +251,7 @@ class AiAssistantProvider extends ChangeNotifier {
     _conversationId = null;
     _messages.clear();
     _resetRunState();
+    _selectQuickPrompts(avoidCurrent: true);
     _notify();
   }
 
@@ -730,6 +736,52 @@ class AiAssistantProvider extends ChangeNotifier {
     _notify();
   }
 
+  void _syncQuickPrompts() {
+    final features = _capabilities?.features;
+    final poolKey = [
+      features?.policyRag == true,
+      features?.scheduleWindows == true,
+      features?.hy3CompetitionCompare == true,
+      features?.hy3AcademicAnalysis == true,
+      features?.hy3WeekPlan == true,
+    ].join(':');
+    if (_quickPromptPoolKey == poolKey && _quickPrompts.isNotEmpty) return;
+    _quickPromptPoolKey = poolKey;
+    _selectQuickPrompts();
+  }
+
+  void _selectQuickPrompts({bool avoidCurrent = false}) {
+    final features = _capabilities?.features;
+    final pool = aiCommonQuestionBank.where((item) {
+      switch (item.feature) {
+        case AiQuickPromptFeature.policy:
+          return features?.policyRag == true;
+        case AiQuickPromptFeature.schedule:
+          return features?.scheduleWindows == true;
+        case AiQuickPromptFeature.competitionCompare:
+          return features?.hy3CompetitionCompare == true;
+        case AiQuickPromptFeature.academicAnalysis:
+          return features?.hy3AcademicAnalysis == true;
+        case AiQuickPromptFeature.weekPlan:
+          return features?.hy3WeekPlan == true;
+      }
+    }).toList();
+    if (pool.isEmpty) {
+      _quickPrompts = const [];
+      return;
+    }
+
+    if (avoidCurrent && pool.length > _quickPromptDisplayCount) {
+      final currentQuestions =
+          _quickPrompts.map((item) => item.question).toSet();
+      pool.removeWhere((item) => currentQuestions.contains(item.question));
+    }
+    pool.shuffle(_random);
+    _quickPrompts = List.unmodifiable(
+      pool.take(_quickPromptDisplayCount),
+    );
+  }
+
   bool _isTerminal(AiRunEventType type) =>
       type == AiRunEventType.completed ||
       type == AiRunEventType.failed ||
@@ -844,6 +896,191 @@ class AiAssistantProvider extends ChangeNotifier {
     super.dispose();
   }
 }
+
+const int _quickPromptDisplayCount = 4;
+
+const List<AiQuickPrompt> aiCommonQuestionBank = [
+  AiQuickPrompt(
+    category: '竞赛规划',
+    question: '对比适合我的竞赛',
+    feature: AiQuickPromptFeature.competitionCompare,
+  ),
+  AiQuickPrompt(
+    category: '学业分析',
+    question: '分析我的学业情况',
+    feature: AiQuickPromptFeature.academicAnalysis,
+  ),
+  AiQuickPrompt(
+    category: '学习计划',
+    question: '制定本周学习计划',
+    feature: AiQuickPromptFeature.weekPlan,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '挂科后怎么办',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '补考成绩怎么算',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '补考没过怎么办',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '教学管理',
+    question: '重修有什么规定',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '教学管理',
+    question: '重修成绩如何记载',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '实践课不及格怎么办',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '教学管理',
+    question: '缓考怎么申请',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '教学管理',
+    question: '课程免修怎么申请',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '休学如何办理',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '复学需要什么材料',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '转专业有什么条件',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '退学有哪些规定',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学籍管理',
+    question: '最长修业年限是几年',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '奖学金怎么评',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '国家奖学金申请条件',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '励志奖学金申请条件',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '助学金怎么申请',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '家庭经济困难如何认定',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '勤工助学怎么申请',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '学费交不起怎么办',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '应征入伍有哪些资助',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '奖助评优',
+    question: '孤儿学生有哪些资助',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '学业考试',
+    question: '考试违纪怎么处理',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '毕业学位',
+    question: '学位授予有哪些条件',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '校历如何安排',
+    feature: AiQuickPromptFeature.policy,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '今天下午有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '本周哪天空闲',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '下周一有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '找两小时空闲',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '明天第一节有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '这周末有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '今天晚上有课吗',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+  AiQuickPrompt(
+    category: '校园日程',
+    question: '下周哪天没课',
+    feature: AiQuickPromptFeature.schedule,
+  ),
+];
 
 String _uuidV4() {
   final random = Random.secure();

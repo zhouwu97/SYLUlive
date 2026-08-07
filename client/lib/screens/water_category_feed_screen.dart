@@ -164,7 +164,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     final st = _resolveFilterKey(_selectedFilterKey);
     final sort = st.key;
     final tagId = st.value;
-    await context.read<PostProvider>().loadPosts(
+    await context.read<PostProvider>().refresh(
           boardId: 1,
           sort: sort,
           type: section.slug,
@@ -835,29 +835,103 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const SizedBox(height: 10),
-          Center(
-            child: GestureDetector(
-              onTap: () {
-                _sheetController.animateTo(
-                  _collapsedSheetSize(context),
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOutCubic,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              if (!_sheetController.isAttached) return;
+              final minSize = _collapsedSheetSize(context);
+              final initialSize = _initialSheetSize(context);
+              final target = (_sheetController.size - minSize).abs() < 0.05
+                  ? initialSize
+                  : minSize;
+              _sheetController.animateTo(
+                target,
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+              );
+              if (_sheetScrollController != null &&
+                  _sheetScrollController!.hasClients &&
+                  _sheetScrollController!.offset > 0) {
+                _sheetScrollController!.jumpTo(0);
+              }
+            },
+            onVerticalDragUpdate: (details) {
+              final screenHeight = MediaQuery.of(context).size.height;
+              if (screenHeight <= 0 || !_sheetController.isAttached) return;
+
+              final minSheetSize = _collapsedSheetSize(context);
+              final maxSheetSize = _expandedSheetSize(context);
+              final deltaSize = -details.delta.dy / screenHeight;
+              final newSize = (_sheetController.size + deltaSize)
+                  .clamp(minSheetSize, maxSheetSize);
+
+              _sheetController.jumpTo(newSize);
+
+              // 帖子列表往下滑动时，拖动小白条往下拉，强制将列表滚动位置归零
+              if (details.delta.dy > 0 &&
+                  _sheetScrollController != null &&
+                  _sheetScrollController!.hasClients &&
+                  _sheetScrollController!.offset > 0) {
+                _sheetScrollController!.jumpTo(0);
+              }
+            },
+            onVerticalDragEnd: (details) {
+              if (!_sheetController.isAttached) return;
+              final minSize = _collapsedSheetSize(context);
+              final initialSize = _initialSheetSize(context);
+              final maxSize = _expandedSheetSize(context);
+
+              final velocity = details.primaryVelocity ?? 0;
+              final currentSize = _sheetController.size;
+              double targetSize;
+
+              if (velocity > 250) {
+                // 向下滑动：缩小到下一档
+                if (currentSize > initialSize) {
+                  targetSize = initialSize;
+                } else {
+                  targetSize = minSize;
+                }
+              } else if (velocity < -250) {
+                // 向上滑动：展开到上一档
+                if (currentSize < initialSize) {
+                  targetSize = initialSize;
+                } else {
+                  targetSize = maxSize;
+                }
+              } else {
+                // 停靠至最近的 snapSize
+                final snapSizes = [minSize, initialSize, maxSize];
+                targetSize = snapSizes.reduce(
+                  (a, b) => (a - currentSize).abs() < (b - currentSize).abs()
+                      ? a
+                      : b,
                 );
-              },
-              child: Container(
-                width: 38,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.18)
-                      : const Color(0xFFD9DDE5),
-                  borderRadius: BorderRadius.circular(999),
+              }
+
+              _sheetController.animateTo(
+                targetSize,
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+              );
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Center(
+                child: Container(
+                  width: 38,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.18)
+                        : const Color(0xFFD9DDE5),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 10),
           SectionFilterHeader(
             currentFilterKey: _selectedFilterKey,
             section: section,

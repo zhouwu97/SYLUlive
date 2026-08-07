@@ -199,6 +199,7 @@ Future<void> appBootstrap() async {
   await runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      await _initializeNativeNotificationOpenBridge();
 
       FlutterError.onError = (FlutterErrorDetails details) {
         FlutterError.presentError(details);
@@ -353,6 +354,9 @@ bool _privateMessageNotificationsReady = false;
 const MethodChannel _privateMessageNotificationChannel = MethodChannel(
   'shenliyuan/private_message_notifications',
 );
+const MethodChannel _notificationOpenChannel = MethodChannel(
+  'shenliyuan/notification_open',
+);
 
 // ── 移除 Flutter 侧 Alias 绑定状态追踪（统一由原生状态机管理） ──
 
@@ -366,6 +370,115 @@ final PendingNotificationOpen _pendingNotificationOpen =
 
 bool _jpushHandlersRegistered = false;
 bool _pendingNotificationProcessScheduled = false;
+bool _nativeNotificationOpenBridgeReady = false;
+bool _checkingNativeNotificationOpen = false;
+
+Future<void> _initializeNativeNotificationOpenBridge() async {
+  if (_nativeNotificationOpenBridgeReady) return;
+  _nativeNotificationOpenBridgeReady = true;
+
+  _notificationOpenChannel.setMethodCallHandler((call) async {
+    if (call.method != 'onNotificationOpen') {
+      throw MissingPluginException('未知通知点击方法: ${call.method}');
+    }
+
+    final raw = call.arguments;
+    if (raw is String && raw.isNotEmpty) {
+      await _handleNativeNotificationOpen(raw);
+    }
+    return true;
+  });
+
+  await _checkNativeNotificationOpen();
+}
+
+Future<void> _checkNativeNotificationOpen() async {
+  if (_checkingNativeNotificationOpen) return;
+  _checkingNativeNotificationOpen = true;
+  try {
+    final raw = await _notificationOpenChannel
+        .invokeMethod<String>('getPendingNotificationOpen');
+    if (raw != null && raw.isNotEmpty) {
+      await _handleNativeNotificationOpen(raw);
+    }
+  } on MissingPluginException {
+    // 非 Android 平台没有原生通知点击桥。
+  } catch (e) {
+    debugPrint('读取原生待处理通知失败: $e');
+  } finally {
+    _checkingNativeNotificationOpen = false;
+  }
+}
+
+Future<void> _handleNativeNotificationOpen(String raw) async {
+  final event = NativeNotificationOpen.parse(raw);
+  if (event == null) {
+    debugPrint('忽略格式无效的原生通知点击事件');
+    return;
+  }
+  if (event.isExpired(DateTime.now())) {
+    debugPrint('忽略已过期的原生通知点击: ${event.id}');
+    await _ackNativeNotificationOpen(event.id);
+    return;
+  }
+
+  final payload = event.payloadWithTrackingId();
+  final extras = extractJPushExtras(payload);
+  final recipientUserId = intFromNotificationExtra(
+    extras[notificationRecipientUserIdKey],
+  );
+  final accountDecision = _notificationAccountDecision(recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint('丢弃账号归属不匹配的原生通知点击: recipient=$recipientUserId');
+    await _ackNativeNotificationOpen(event.id);
+    return;
+  }
+
+  final type = extras['type']?.toString();
+
+  switch (type) {
+    case 'private_message':
+      final target = privateMessageTargetFromLocalPayload(jsonEncode(payload));
+      if (target == null) {
+        await _ackNativeNotificationOpen(event.id);
+        return;
+      }
+      await _clearPrivateMessageNotifications(target.conversationId);
+      _openPrivateMessage(target);
+      return;
+    case 'reply':
+      final target = NotificationOpenTarget.parse(payload);
+      if (target == null) {
+        await _ackNativeNotificationOpen(event.id);
+        return;
+      }
+      _storeOrOpenNotificationTarget(target);
+      return;
+    default:
+      debugPrint('忽略未知原生通知点击: type=$type');
+      await _ackNativeNotificationOpen(event.id);
+  }
+}
+
+Future<void> _ackNativeNotificationOpen(String? eventId) async {
+  if (eventId == null || eventId.isEmpty) return;
+  try {
+    final acknowledged = await _notificationOpenChannel.invokeMethod<bool>(
+          'ackNotificationOpen',
+          {'id': eventId},
+        ) ??
+        false;
+    if (acknowledged) {
+      Future<void>.delayed(Duration.zero, _checkNativeNotificationOpen)
+          .ignore();
+    }
+  } catch (e) {
+    debugPrint('确认原生通知点击失败: $e');
+  }
+}
 
 void _ensureJPushHandlersRegistered() {
   if (_jpushHandlersRegistered) return;
@@ -446,6 +559,19 @@ bool _isDuplicateNotificationOpen(
 }
 
 void _navigateToNotificationTarget(NotificationOpenTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingNotificationOpen.store(target);
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的延迟普通通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
     _pendingNotificationOpen.store(target);
@@ -456,15 +582,12 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
   final now = DateTime.now();
   if (_isDuplicateNotificationOpen(target, now)) {
     debugPrint('忽略重复的通知跳转: ${target.type}');
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
     return;
   }
 
   _lastOpenedNotificationTarget = target;
   _lastOpenedNotificationAt = now;
-
-  // 尝试拉起 App
-  const channel = MethodChannel('shenliyuan/foreground');
-  channel.invokeMethod('bringToForeground').catchError((e) {});
 
   navigator.popUntil((route) => route.isFirst);
 
@@ -478,6 +601,7 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
             builder: (_) => const NotificationsScreen(),
           ),
         );
+        _ackNativeNotificationOpen(target.nativeOpenId).ignore();
         return;
       }
 
@@ -489,11 +613,26 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
           ),
         ),
       );
+      _ackNativeNotificationOpen(target.nativeOpenId).ignore();
       return;
   }
 }
 
 void _storeOrOpenNotificationTarget(NotificationOpenTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingNotificationOpen.store(target);
+    _schedulePendingNotificationProcessing();
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的普通通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
 
   if (navigator != null) {
@@ -503,6 +642,25 @@ void _storeOrOpenNotificationTarget(NotificationOpenTarget target) {
 
   _pendingNotificationOpen.store(target);
   _schedulePendingNotificationProcessing();
+}
+
+NotificationAccountDecision _notificationAccountDecision(
+  int? recipientUserId,
+) {
+  final context = appNavigatorKey.currentContext;
+  if (context == null) {
+    return NotificationAccountDecision.waitForAuthentication;
+  }
+  final authProvider = context.read<AuthProvider>();
+  if (authProvider.isLoggedIn &&
+      !(authProvider.user?.legalConsentsActive ?? false)) {
+    return NotificationAccountDecision.waitForAuthentication;
+  }
+  return notificationAccountDecision(
+    authInitialized: authProvider.isInitialized,
+    currentUserId: authProvider.isLoggedIn ? authProvider.user?.id : null,
+    recipientUserId: recipientUserId,
+  );
 }
 
 void _schedulePendingNotificationProcessing() {
@@ -686,6 +844,14 @@ Future<bool> _handlePrivateMessageNotification(
     return true;
   }
 
+  if (_notificationAccountDecision(target.recipientUserId) !=
+      NotificationAccountDecision.allow) {
+    debugPrint(
+      '跳过非当前账号的私信处理: recipient=${target.recipientUserId}',
+    );
+    return true;
+  }
+
   if (opened) {
     await _clearPrivateMessageNotifications(target.conversationId);
     _openPrivateMessage(target);
@@ -777,6 +943,7 @@ Future<void> _showPrivateMessageLocalNotification(
         'sender_name': target.displayName,
         'sender_avatar': target.senderAvatar,
         'message_id': target.messageId,
+        notificationRecipientUserIdKey: target.recipientUserId,
       },
     );
     debugPrint('✅ 本地私信通知已弹出: ${target.displayName}');
@@ -797,9 +964,18 @@ Future<void> _clearPrivateMessageNotifications(int conversationId) async {
 }
 
 void _openPrivateMessage(PrivateMessageTarget target) {
-  // 尝试拉起 App
-  const channel = MethodChannel('shenliyuan/foreground');
-  channel.invokeMethod('bringToForeground').catchError((e) {});
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingPrivateMessageOpen.store(target);
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的私信通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
 
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
@@ -813,13 +989,50 @@ void _openPrivateMessage(PrivateMessageTarget target) {
   _navigateToPrivateMessage(target);
 }
 
+PrivateMessageTarget? _lastOpenedPrivateMessageTarget;
+DateTime? _lastOpenedPrivateMessageAt;
+
+bool _isDuplicatePrivateMessageOpen(
+  PrivateMessageTarget target,
+  DateTime now,
+) {
+  final previous = _lastOpenedPrivateMessageTarget;
+  final previousAt = _lastOpenedPrivateMessageAt;
+  if (previous == null || previousAt == null) return false;
+
+  return previous.sameConversation(target) &&
+      previous.messageId == target.messageId &&
+      now.difference(previousAt) < const Duration(seconds: 2);
+}
+
 void _navigateToPrivateMessage(PrivateMessageTarget target) {
+  final accountDecision = _notificationAccountDecision(target.recipientUserId);
+  if (accountDecision == NotificationAccountDecision.waitForAuthentication) {
+    _pendingPrivateMessageOpen.store(target);
+    return;
+  }
+  if (accountDecision == NotificationAccountDecision.reject) {
+    debugPrint(
+      '丢弃账号归属不匹配的延迟私信通知: recipient=${target.recipientUserId}',
+    );
+    _ackNativeNotificationOpen(target.nativeOpenId).ignore();
+    return;
+  }
+
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
     debugPrint('❌ navigate: navigator is null');
     return;
   }
   final resolvedTarget = _resolvePrivateMessageTarget(target);
+  final now = DateTime.now();
+  if (_isDuplicatePrivateMessageOpen(resolvedTarget, now)) {
+    debugPrint('忽略重复的私信通知跳转: ${resolvedTarget.conversationId}');
+    _ackNativeNotificationOpen(resolvedTarget.nativeOpenId).ignore();
+    return;
+  }
+  _lastOpenedPrivateMessageTarget = resolvedTarget;
+  _lastOpenedPrivateMessageAt = now;
   debugPrint(
     '🧭 navigate: push conv=${resolvedTarget.conversationId} sender=${resolvedTarget.senderId}',
   );
@@ -833,6 +1046,7 @@ void _navigateToPrivateMessage(PrivateMessageTarget target) {
       } else {
         unawaited(provider?.refreshMessages() ?? Future<void>.value());
       }
+      _ackNativeNotificationOpen(resolvedTarget.nativeOpenId).ignore();
       return;
     }
     final route = MaterialPageRoute<void>(
@@ -857,6 +1071,7 @@ void _navigateToPrivateMessage(PrivateMessageTarget target) {
       navigator.push(route);
       debugPrint('✅ navigate: push 成功');
     }
+    _ackNativeNotificationOpen(resolvedTarget.nativeOpenId).ignore();
   } catch (e) {
     debugPrint('❌ navigate: push 失败 - $e');
   }
@@ -1424,8 +1639,10 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     required bool fillScreen,
     required double blur,
   }) {
+    Widget imageLayer;
+
     if (fillScreen) {
-      return Image(
+      imageLayer = Image(
         image: imageProvider,
         fit: BoxFit.cover,
         alignment: alignment,
@@ -1434,35 +1651,53 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
           color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
         ),
       );
-    }
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Transform.scale(
-          scale: 1.06,
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-            child: Image(
-              image: imageProvider,
-              fit: BoxFit.cover,
-              alignment: alignment,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) => Container(
-                color:
-                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-              ),
+    } else {
+      imageLayer = Stack(
+        fit: StackFit.expand,
+        children: [
+          // 补齐屏幕空白区域
+          Image(
+            image: imageProvider,
+            fit: BoxFit.cover,
+            alignment: alignment,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => Container(
+              color:
+                  isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
             ),
           ),
+          // 保留完整背景主体
+          Image(
+            image: imageProvider,
+            fit: BoxFit.contain,
+            alignment: alignment,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+        ],
+      );
+    }
+
+    final effectiveBlur = blur.clamp(0.0, 30.0);
+
+    if (effectiveBlur <= 0.01) {
+      return imageLayer;
+    }
+
+    // 模糊会从图片边缘采样，略微放大，避免四周出现透明边或暗边。
+    final scale = 1.0 + effectiveBlur / 300.0;
+
+    return ClipRect(
+      child: ImageFiltered(
+        imageFilter: ImageFilter.blur(
+          sigmaX: effectiveBlur,
+          sigmaY: effectiveBlur,
         ),
-        Image(
-          image: imageProvider,
-          fit: BoxFit.contain,
-          alignment: alignment,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        child: Transform.scale(
+          scale: scale,
+          child: imageLayer,
         ),
-      ],
+      ),
     );
   }
 
@@ -1518,37 +1753,10 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       if (authProvider.isLoggedIn &&
           (authProvider.user?.legalConsentsActive ?? false)) {
         _ensureJPush(authProvider);
-        _checkNativePrivateMessage();
       }
+      _checkNativeNotificationOpen();
       _processPendingPrivateMessageOpen();
       _schedulePendingNotificationProcessing();
-    }
-  }
-
-  bool _checkingNativePrivateMessage = false;
-
-  Future<void> _checkNativePrivateMessage() async {
-    if (_checkingNativePrivateMessage) return;
-    _checkingNativePrivateMessage = true;
-
-    try {
-      final payload = await _privateMessageNotificationChannel
-          .invokeMethod<String>('getPendingPrivateMessage');
-
-      if (payload == null || payload.isEmpty) return;
-
-      final target = privateMessageTargetFromLocalPayload(payload);
-      if (target == null) {
-        debugPrint('原生私信通知参数解析失败: $payload');
-        return;
-      }
-
-      await _clearPrivateMessageNotifications(target.conversationId);
-      _openPrivateMessage(target);
-    } catch (e) {
-      debugPrint('读取原生待处理私信失败: $e');
-    } finally {
-      _checkingNativePrivateMessage = false;
     }
   }
 
@@ -1710,9 +1918,17 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
             _processPendingPrivateMessageOpen();
             _schedulePendingNotificationProcessing();
             if (PlatformCapabilities.current.supportsJPush) {
-              _checkNativePrivateMessage();
+              _checkNativeNotificationOpen();
             }
             _scheduleConversationRestore(authProvider);
+          });
+        } else if (!authProvider.isLoggedIn) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _processPendingPrivateMessageOpen();
+            _schedulePendingNotificationProcessing();
+            if (PlatformCapabilities.current.supportsJPush) {
+              _checkNativeNotificationOpen();
+            }
           });
         }
 

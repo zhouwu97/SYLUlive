@@ -27,8 +27,8 @@ class AiFeatures {
 }
 
 class AiCapabilities {
-  static const int defaultMessageChars = 200;
-  static const int maximumMessageChars = 300;
+  static const int defaultMessageChars = 500;
+  static const int maximumMessageChars = 500;
 
   final bool enabled;
   final bool accessAllowed;

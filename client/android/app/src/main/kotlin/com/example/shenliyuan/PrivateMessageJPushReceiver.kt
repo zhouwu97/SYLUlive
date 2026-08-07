@@ -268,27 +268,32 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
             null
         }
 
-        val isPrivateMessage =
-            json?.optString("type") == "private_message"
+        val notificationType = json?.optString("type")
+        val isPrivateMessage = notificationType == "private_message"
+        val isReply = notificationType == "reply"
 
         val conversationId =
             json?.optString("conversation_id")?.toLongOrNull()
 
-        if (!isPrivateMessage || conversationId == null) {
+        if (!isPrivateMessage && !isReply) {
             super.onNotifyMessageOpened(context, notificationMessage)
             return
         }
 
-        PrivateMessageNotificationStore.clear(
-            context,
-            conversationId,
-        )
+        if (isPrivateMessage && conversationId != null) {
+            PrivateMessageNotificationStore.clear(
+                context,
+                conversationId,
+            )
+        }
+
+        val pendingEvent = NotificationOpenStore.enqueue(context, json ?: JSONObject())
 
         val intent = Intent(context, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_OPEN_PRIVATE_MESSAGE
+            action = MainActivity.ACTION_OPEN_NOTIFICATION
             putExtra(
-                MainActivity.EXTRA_PRIVATE_MESSAGE_JSON,
-                extras,
+                MainActivity.EXTRA_NOTIFICATION_OPEN_JSON,
+                pendingEvent,
             )
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or

@@ -171,6 +171,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  final notificationOpenCalls = <MethodCall>[];
   messenger.setMockMethodCallHandler(
     const MethodChannel('shenliyuan/grade_reminders'),
     (_) async => null,
@@ -178,6 +179,13 @@ void main() {
   messenger.setMockMethodCallHandler(
     const MethodChannel('shenliyuan/private_message_notifications'),
     (_) async => null,
+  );
+  messenger.setMockMethodCallHandler(
+    const MethodChannel('shenliyuan/notification_open'),
+    (call) async {
+      notificationOpenCalls.add(call);
+      return true;
+    },
   );
 
   for (final authCase in _authCases) {
@@ -440,12 +448,17 @@ void main() {
     final provider = _provider(adapter, _FakeAuthCredentialStore());
     await provider.applyAuthPayload('old-token', _userJson(1));
     final generation = provider.sessionGeneration;
+    notificationOpenCalls.clear();
 
     await provider.logout();
 
     expect(provider.token, isNull);
     expect(provider.user, isNull);
     expect(provider.sessionGeneration, generation + 1);
+    expect(
+      notificationOpenCalls.map((call) => call.method),
+      contains('clearPendingNotificationOpen'),
+    );
   });
 
   test('确认新版协议后以服务端状态更新本地会话', () async {

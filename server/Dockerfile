@@ -16,7 +16,8 @@ FROM debian:bookworm-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssh-client \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/server .
 

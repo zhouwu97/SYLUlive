@@ -1,53 +1,30 @@
-import 'dart:io';
-import 'dart:ui';
-import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'
-    show Clipboard, ClipboardData, MethodChannel;
-import 'package:image_cropper/image_cropper.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
-
 import 'package:provider/provider.dart';
 
+import '../platform/platform_capabilities.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../providers/edu_provider.dart';
-import '../services/diagnostic_log_service.dart';
+import '../providers/theme_provider.dart';
 import '../services/grade_reminder_service.dart';
-import '../models/diagnostic_log_entry.dart';
 import '../services/keep_alive_service.dart';
-import '../services/wallpaper_prefetch_service.dart';
 import '../services/push_settings_service.dart';
-import '../utils/update_checker.dart';
-import '../widgets/glass_container.dart';
-import '../platform/platform_capabilities.dart';
-
-import '../widgets/about_app_sheet.dart';
-import 'diagnostic_log_screen.dart';
-import 'privacy_center_screen.dart';
+import '../widgets/campus/campus_theme.dart';
+import '../widgets/settings/settings_account_header.dart';
+import '../widgets/settings/settings_page_scaffold.dart';
+import '../widgets/settings/settings_section.dart';
+import '../widgets/settings/settings_status_badge.dart';
+import '../widgets/settings/settings_tile.dart';
 import 'account_security_screen.dart';
+import 'login_screen.dart';
+import 'privacy_center_screen.dart';
 
-const List<String> phonePresetWallpaperAssets = [
-  'morenbeijing.jpeg',
-  'wallpaper_custom_01.png',
-];
+import 'settings/appearance_settings_screen.dart';
+import 'settings/diagnostics_settings_screen.dart';
+import 'settings/notification_background_settings_screen.dart';
+import '../widgets/about_app_sheet.dart';
 
-const List<String> landscapePresetWallpaperAssets = [
-  'tablet_default_landscape.png',
-  'tablet_landscape_01.png',
-  'tablet_landscape_02.png',
-  'tablet_landscape_03.png',
-  'tablet_landscape_04.png',
-  'tablet_landscape_05.png',
-  'tablet_landscape_06.png',
-  'tablet_landscape_08.png',
-];
-
+/// 简化后的重构版设置首页
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -56,95 +33,161 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  static const String _wallpaperBaseUrl = WallpaperPrefetchService.baseUrl;
-
   KeepAliveStatus _keepAliveStatus = const KeepAliveStatus.unsupported();
-  bool _keepAliveBusy = false;
-  bool _hideRecentsBusy = false;
-  bool _pushEnabled = false;
-  bool _pushLoading = true;
+  RemotePushSnapshot? _pushSnapshot;
+  bool _loadingState = true;
 
   @override
   void initState() {
     super.initState();
-    _loadKeepAliveStatus();
-    _loadPushState();
+    _loadSummaryStates();
   }
 
-  Future<void> _loadPushState() async {
-    final enabled = await PushSettingsService.isEnabled();
+  Future<void> _loadSummaryStates() async {
+    final status = await KeepAliveService.instance.status();
+    RemotePushSnapshot? snapshot;
+    if (PlatformCapabilities.current.supportsJPush) {
+      snapshot = await PushSettingsService.getPushSnapshot();
+    }
+
     if (mounted) {
       setState(() {
-        _pushEnabled = enabled;
-        _pushLoading = false;
+        _keepAliveStatus = status;
+        _pushSnapshot = snapshot;
+        _loadingState = false;
       });
     }
   }
 
-  Future<void> _setPushEnabled(bool enabled) async {
-    if (_pushLoading) return;
-    setState(() => _pushLoading = true);
-    final auth = context.read<AuthProvider>();
-    final messenger = ScaffoldMessenger.of(context);
+  String _getAppearanceSummary(ThemeProvider theme) {
+    final modeText = theme.isCleanBackgroundMode ? '简洁模式' : '自定义背景';
+    final brightnessText = theme.isDarkMode ? '深色' : '浅色';
+    final cardText = theme.liquidGlass ? '液态玻璃' : '标准卡片';
+    return '$modeText · $brightnessText · $cardText';
+  }
 
-    if (enabled) {
-      final result = await PushSettingsService.enableAndRegister(auth);
-      if (mounted) {
-        setState(() {
-          _pushEnabled = true;
-          _pushLoading = false;
-        });
-        messenger.showSnackBar(SnackBar(content: Text(result.message)));
+  String _getNotificationSummary() {
+    if (_loadingState) return '正在读取通知与后台状态...';
+    if (!PlatformCapabilities.current.supportsJPush) {
+      return '当前平台不支持远程推送';
+    }
+    final snapshot = _pushSnapshot;
+    String pushText;
+    if (snapshot == null) {
+      pushText = '正在读取推送状态';
+    } else {
+      final status = resolveRemotePushStatus(snapshot);
+      switch (status) {
+        case ResolvedPushStatus.ready:
+          pushText = '远程推送已开启';
+          break;
+        case ResolvedPushStatus.configuring:
+          pushText = '远程推送配置中';
+          break;
+        case ResolvedPushStatus.permissionDenied:
+          pushText = '系统通知权限受限';
+          break;
+        case ResolvedPushStatus.registrationFailed:
+          pushText = '设备注册失败';
+          break;
+        case ResolvedPushStatus.channelUnavailable:
+          pushText = '私信通道待建立';
+          break;
+        case ResolvedPushStatus.channelBlocked:
+          pushText = '私信通道已被关';
+          break;
+        case ResolvedPushStatus.disabled:
+          pushText = '远程推送关闭';
+          break;
+        case ResolvedPushStatus.diagnosticsUnavailable:
+          pushText = '暂时无法读取推送状态';
+          break;
       }
-      return;
     }
 
-    final result = await PushSettingsService.disable(auth);
-    if (!mounted) return;
-    setState(() => _pushLoading = false);
-
-    if (!result.success) {
-      messenger.showSnackBar(
-          SnackBar(content: Text(result.errorMessage ?? '关闭远程推送失败')));
-      return;
+    String keepAliveText;
+    if (!_keepAliveStatus.supported) {
+      keepAliveText = '后台服务未开启';
+    } else if (_keepAliveStatus.serviceRunning) {
+      keepAliveText = '后台服务运行中';
+    } else if (_keepAliveStatus.enabled) {
+      keepAliveText = '后台待启动';
+    } else {
+      keepAliveText = '后台服务未开启';
     }
-
-    if (mounted) setState(() => _pushEnabled = false);
-    messenger
-        .showSnackBar(const SnackBar(content: Text('已关闭远程推送，课程和考试提醒不受影响')));
+    return '$pushText · $keepAliveText';
   }
 
-  Future<void> _loadKeepAliveStatus() async {
-    final status = await KeepAliveService.instance.status();
-    if (!mounted) return;
-    setState(() => _keepAliveStatus = status);
-  }
-
-  Future<void> _setKeepAliveEnabled(bool enabled) async {
-    if (_keepAliveBusy) return;
-    setState(() => _keepAliveBusy = true);
-    final status = await KeepAliveService.instance.setEnabled(enabled);
-    if (!mounted) return;
-    setState(() {
-      _keepAliveStatus = status;
-      _keepAliveBusy = false;
-    });
-    if (enabled) {
-      await _showKeepAliveGuideDialog();
+  int _calculatePendingIssues() {
+    final snapshot = _pushSnapshot;
+    if (snapshot == null || !snapshot.supported || !snapshot.optedIn) {
+      return 0;
     }
+    int issues = 0;
+    if (!snapshot.diagnosticsAvailable) {
+      issues++;
+    }
+    if (!snapshot.notificationsEnabled) {
+      issues++;
+    }
+    if (snapshot.registrationId == null || snapshot.registrationId!.isEmpty) {
+      issues++;
+    }
+    if (!snapshot.privateChannelExists) {
+      issues++;
+    }
+    if (snapshot.privateChannelBlocked) {
+      issues++;
+    }
+    if (snapshot.aliasState == 'pending_bind') {
+      issues++;
+    }
+    return issues;
   }
 
-  Future<void> _setHideRecentsEnabled(bool enabled) async {
-    if (_hideRecentsBusy) return;
-    setState(() => _hideRecentsBusy = true);
-    final status = await KeepAliveService.instance.setHideRecentsEnabled(
-      enabled,
+  Future<void> _handleLogout(
+    BuildContext context,
+    AuthProvider authProvider,
+  ) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text(
+          '退出后将清理本机教务会话和当前账号的课表状态，下次使用需要重新登录。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(
+              foregroundColor: CampusTheme.red,
+            ),
+            child: const Text('退出'),
+          ),
+        ],
+      ),
     );
-    if (!mounted) return;
-    setState(() {
-      _keepAliveStatus = status;
-      _hideRecentsBusy = false;
-    });
+
+    if (confirm != true || !context.mounted) return;
+
+    final userId = authProvider.user?.id.toString();
+    final eduProvider = context.read<EduProvider>();
+    final courseProvider = context.read<CourseScheduleProvider>();
+
+    if (userId != null) {
+      await GradeReminderService.instance.clearForUser(userId);
+    }
+    await eduProvider.clearLocalSession();
+    courseProvider.clearAllUserState();
+    await authProvider.logout();
+
+    if (context.mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 
   @override
@@ -152,1726 +195,190 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final themeProvider = context.watch<ThemeProvider>();
     final authProvider = context.watch<AuthProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isLoggedIn = authProvider.isLoggedIn && authProvider.user != null;
 
-    return PopScope(
-      canPop: themeProvider.predictiveBack,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        Navigator.pop(context);
-      },
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        extendBodyBehindAppBar: true,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-          foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
-          title: const Text('设置'),
-        ),
-        body: Stack(
-          fit: StackFit.expand,
+    final pendingIssues = _calculatePendingIssues();
+
+    return SettingsPageScaffold(
+      title: '设置',
+      onRefresh: _loadSummaryStates,
+      children: [
+        // 1. 顶部账号摘要
+        const SettingsAccountHeader(),
+
+        // 常用设置 (多彩图标 + 效果图开源配色)
+        SettingsSection(
+          title: '常用设置',
           children: [
-            _buildBackground(themeProvider, isDark),
-            SafeArea(
-              child: ListView(
-                physics: const BouncingScrollPhysics(),
-                children: [
-                  _buildSettingsSection(
-                    context,
-                    themeProvider,
-                    authProvider,
-                    isDark,
+            SettingsTile(
+              icon: Icons.wb_sunny_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
+              iconColor:
+                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
+              title: '外观与显示',
+              subtitle: _getAppearanceSummary(themeProvider),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AppearanceSettingsScreen(),
                   ),
-                  const SizedBox(height: 40),
-                ],
-              ),
+                );
+              },
+            ),
+            SettingsTile(
+              icon: Icons.notifications_none_rounded,
+              iconBgColor:
+                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA),
+              iconColor:
+                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4),
+              title: '通知与后台',
+              subtitle: _getNotificationSummary(),
+              trailing: pendingIssues > 0
+                  ? SettingsStatusBadge(
+                      label: '$pendingIssues项待处理',
+                      type: SettingsStatusBadgeType.warning,
+                    )
+                  : null,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        const NotificationBackgroundSettingsScreen(),
+                  ),
+                ).then((_) => _loadSummaryStates());
+              },
             ),
           ],
         ),
-      ),
-    );
-  }
 
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    String? bgPath = themeProvider.shouldShowCustomBackground
-        ? themeProvider.getCustomBackgroundImageFor(context)
-        : null;
+        // 账号与隐私 (多彩图标 + 效果图开源配色)
+        SettingsSection(
+          title: '账号与隐私',
+          children: [
+            SettingsTile(
+              icon: Icons.shield_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B382B) : const Color(0xFFE6F5EE),
+              iconColor:
+                  isDark ? const Color(0xFF81C784) : const Color(0xFF1E8256),
+              title: '账号与安全',
+              subtitle: '学号、邮箱、密码和教务授权',
+              onTap: () {
+                if (isLoggedIn) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AccountSecurityScreen(),
+                    ),
+                  );
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LoginScreen(),
+                    ),
+                  );
+                }
+              },
+            ),
+            SettingsTile(
+              icon: Icons.lock_outline_rounded,
+              iconBgColor:
+                  isDark ? const Color(0xFF1B3B36) : const Color(0xFFE4F4F0),
+              iconColor:
+                  isDark ? const Color(0xFF7ED6C5) : const Color(0xFF0D7B74),
+              title: '隐私与数据',
+              subtitle: '授权管理、查阅导出与账号注销',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PrivacyCenterScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
 
-    if (bgPath != null && bgPath.isNotEmpty) {
-      final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
-      final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
-      final imageProvider = isAsset
-          ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
-              as ImageProvider
-          : isLocalFile
-              ? FileImage(File(bgPath)) as ImageProvider
-              : NetworkImage(bgPath) as ImageProvider;
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          _buildBackgroundImage(
-            imageProvider: imageProvider,
-            isDark: isDark,
-            fillScreen:
-                themeProvider.getCustomBackgroundFillScreenFor(context) ||
-                    _isUsingFallbackBackgroundDirection(themeProvider),
-            blur: themeProvider.backgroundBlur,
-          ),
+        // 支持与其他 (多彩图标 + 效果图开源配色)
+        SettingsSection(
+          title: '支持与其他',
+          children: [
+            SettingsTile(
+              icon: Icons.build_outlined,
+              iconBgColor:
+                  isDark ? const Color(0xFF3D2A1A) : const Color(0xFFFDF0E6),
+              iconColor:
+                  isDark ? const Color(0xFFFFB74D) : const Color(0xFFE07A2B),
+              title: '诊断与反馈',
+              subtitle: '通知诊断、运行日志和问题反馈',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const DiagnosticsSettingsScreen(),
+                  ),
+                ).then((_) => _loadSummaryStates());
+              },
+            ),
+            SettingsTile(
+              icon: Icons.info_outline_rounded,
+              iconBgColor:
+                  isDark ? const Color(0xFF1A334E) : const Color(0xFFE6F0FA),
+              iconColor:
+                  isDark ? const Color(0xFF82B1FF) : const Color(0xFF2A72D4),
+              title: '关于沈理校园',
+              subtitle: '版本、检查更新与开源信息',
+              onTap: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const AboutAppSheet(),
+                );
+              },
+            ),
+          ],
+        ),
+
+        // 退出登录按钮卡片
+        if (isLoggedIn) ...[
+          const SizedBox(height: 4),
           Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.4)
-                : Colors.white.withValues(alpha: 0.3),
-          ),
-        ],
-      );
-    }
-    return _buildCleanBackground(isDark);
-  }
-
-  bool _isUsingFallbackBackgroundDirection(ThemeProvider themeProvider) {
-    final isWide =
-        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    return (isWide && !themeProvider.hasLandscapeBackground) ||
-        (!isWide && !themeProvider.hasBackground);
-  }
-
-  Widget _buildCleanBackground(bool isDark) {
-    return SizedBox.expand(
-      child: ColoredBox(
-        color: isDark ? kCleanWarmBackgroundDark : kCleanWarmBackgroundLight,
-      ),
-    );
-  }
-
-  Widget _buildBackgroundImage({
-    required ImageProvider imageProvider,
-    required bool isDark,
-    required bool fillScreen,
-    required double blur,
-    Alignment alignment = Alignment.center,
-  }) {
-    if (fillScreen) {
-      return Image(
-        image: imageProvider,
-        fit: BoxFit.cover,
-        alignment: alignment,
-        gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => Container(
-          color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-        ),
-      );
-    }
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Transform.scale(
-          scale: 1.06,
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-            child: Image(
-              image: imageProvider,
-              fit: BoxFit.cover,
-              alignment: alignment,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) => Container(
-                color:
-                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+            decoration: BoxDecoration(
+              color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: CampusTheme.red.withValues(alpha: 0.3),
               ),
-            ),
-          ),
-        ),
-        Image(
-          image: imageProvider,
-          fit: BoxFit.contain,
-          alignment: alignment,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSettingsSection(
-    BuildContext context,
-    ThemeProvider themeProvider,
-    AuthProvider authProvider,
-    bool isDark,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 外观模式
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.security_outlined,
-            iconColor: Colors.blue,
-            title: '账号与安全',
-            subtitle: '管理学号、邮箱、登录方式和教务连接',
-            isDark: isDark,
-            onTap: authProvider.isLoggedIn
-                ? () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const AccountSecurityScreen(),
-                      ),
-                    )
-                : null,
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.light_mode,
-            iconColor: Colors.blue,
-            title: '简洁模式',
-            subtitle: '使用干净背景，不删除已保存图片',
-            trailing: themeProvider.isCleanBackgroundMode
-                ? Icon(Icons.check_circle,
-                    color: Theme.of(context).primaryColor)
-                : null,
-            isDark: isDark,
-            onTap: () => themeProvider.setCleanBackgroundMode(),
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.wallpaper,
-            iconColor: Colors.purple,
-            title: '自定义背景',
-            subtitle: '显示你选择的背景图片',
-            trailing: themeProvider.backgroundMode == AppBackgroundMode.custom
-                ? Icon(Icons.check_circle,
-                    color: Theme.of(context).primaryColor)
-                : null,
-            isDark: isDark,
-            onTap: () => _handleCustomBackgroundModeTap(themeProvider),
-          ),
-        ),
-
-        const SizedBox(height: 8),
-
-        // 背景图片
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.wallpaper,
-            iconColor: Colors.purple,
-            title: '选择背景图片',
-            subtitle: themeProvider.hasAnyBackground ? '当前：已保存' : '当前：未设置',
-            isDark: isDark,
-            onTap: () => _showBackgroundPicker(context, themeProvider, false),
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.landscape,
-            iconColor: Colors.purpleAccent,
-            title: '横屏自定义背景',
-            subtitle: '平板或宽屏下显示的专属横向背景',
-            isDark: isDark,
-            onTap: () => _showBackgroundPicker(context, themeProvider, true),
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.opacity,
-            iconColor: Colors.teal,
-            title: '组件透明度',
-            trailing: SizedBox(
-              width: 120,
-              height: 32,
-              child: Slider(
-                value: themeProvider.componentOpacity,
-                min: 0.0,
-                max: 1.0,
-                onChanged: (v) => themeProvider.setComponentOpacity(v),
-                activeColor: Theme.of(context).primaryColor,
-              ),
-            ),
-            isDark: isDark,
-          ),
-        ),
-
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.delete_outline,
-            iconColor: Colors.redAccent,
-            title: '移除背景图片',
-            subtitle: '删除已保存的竖屏和横屏背景',
-            isDark: isDark,
-            onTap: themeProvider.hasAnyBackground
-                ? () => _showClearBackgroundDialog(context, themeProvider)
-                : null,
-          ),
-        ),
-
-        const SizedBox(height: 8),
-
-        // 视觉效果 — 独立卡片
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.blur_on,
-            iconColor: Colors.indigo,
-            title: '液态玻璃效果',
-            trailing: Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: themeProvider.liquidGlass,
-                onChanged: (v) =>
-                    _showLiquidGlassWarningDialog(context, themeProvider, v),
-                activeColor: Theme.of(context).primaryColor,
-              ),
-            ),
-            isDark: isDark,
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.navigation,
-            iconColor: Colors.orange,
-            title: '悬浮底栏',
-            trailing: Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: themeProvider.floatingNavBar,
-                onChanged: (v) => themeProvider.setFloatingNavBar(v),
-                activeColor: Theme.of(context).primaryColor,
-              ),
-            ),
-            isDark: isDark,
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.swipe,
-            iconColor: Colors.blue,
-            title: '预测性返回手势',
-            subtitle: 'Android 侧滑返回时预览上一页，关闭后仅顶部返回按钮可用',
-            trailing: Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: themeProvider.predictiveBack,
-                onChanged: (v) => themeProvider.setPredictiveBack(v),
-                activeColor: Theme.of(context).primaryColor,
-              ),
-            ),
-            isDark: isDark,
-          ),
-        ),
-        if (PlatformCapabilities.current.supportsJPush)
-          _buildSettingsRow(
-            child: _buildSettingsTile(
-              icon: Icons.notifications_none_rounded,
-              iconColor: Colors.blueAccent,
-              title: '接收远程消息推送',
-              subtitle: '默认关闭，开启后会向极光提供设备推送标识',
-              trailing: Transform.scale(
-                scale: 0.8,
-                child: Switch(
-                  value: _pushEnabled,
-                  onChanged: _pushLoading ? null : _setPushEnabled,
-                  activeThumbColor: Theme.of(context).primaryColor,
-                ),
-              ),
-              isDark: isDark,
-            ),
-          ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.battery_saver,
-            iconColor: Colors.green,
-            title: '后台保活',
-            subtitle: _keepAliveSubtitle(),
-            trailing: Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: _keepAliveStatus.supported && _keepAliveStatus.enabled,
-                onChanged: !_keepAliveStatus.supported || _keepAliveBusy
-                    ? null
-                    : _setKeepAliveEnabled,
-                activeThumbColor: Theme.of(context).primaryColor,
-              ),
-            ),
-            isDark: isDark,
-            onTap: _keepAliveStatus.supported
-                ? () => KeepAliveService.instance.openSettings()
-                : null,
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.layers_clear,
-            iconColor: Colors.deepPurple,
-            title: '从最近任务中隐藏（实验）',
-            subtitle: _hideRecentsSubtitle(),
-            trailing: Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: _keepAliveStatus.supported &&
-                    _keepAliveStatus.hideRecentsEnabled,
-                onChanged: !_keepAliveStatus.supported || _hideRecentsBusy
-                    ? null
-                    : _setHideRecentsEnabled,
-                activeThumbColor: Theme.of(context).primaryColor,
-              ),
-            ),
-            isDark: isDark,
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.dark_mode,
-            iconColor: isDark ? Colors.indigo : Colors.indigo,
-            title: '夜间模式',
-            trailing: Transform.scale(
-              scale: 0.8,
-              child: Switch(
-                value: themeProvider.isDarkMode,
-                onChanged: (v) => themeProvider.setDarkMode(v),
-                activeColor: Theme.of(context).primaryColor,
-              ),
-            ),
-            isDark: isDark,
-          ),
-        ),
-
-        const SizedBox(height: 8),
-
-        // 账号 — 独立卡片
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.receipt_long_rounded,
-            iconColor: Colors.blue,
-            title: '查看日志',
-            subtitle: '查看保活、推送和异常记录',
-            isDark: isDark,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const DiagnosticLogScreen()),
-              );
-            },
-          ),
-        ),
-        if (PlatformCapabilities.current.supportsJPush)
-          _buildSettingsRow(
-            child: _buildSettingsTile(
-              icon: Icons.troubleshoot,
-              iconColor: Colors.teal,
-              title: '推送诊断',
-              subtitle: '查看极光推送、权限与渠道状态',
-              isDark: isDark,
-              onTap: () => _showPushDiagnostics(context, isDark),
-            ),
-          ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.lock,
-            iconColor: Colors.orange,
-            title: '修改密码',
-            isDark: isDark,
-            onTap: () => _showChangePasswordDialog(context, authProvider),
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.privacy_tip_outlined,
-            iconColor: Colors.teal,
-            title: '隐私与数据权利',
-            subtitle: '查看协议、导出数据或注销账号',
-            isDark: isDark,
-            onTap: authProvider.isLoggedIn
-                ? () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const PrivacyCenterScreen()),
-                    )
-                : null,
-          ),
-        ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.info,
-            iconColor: Colors.blue,
-            title: '关于',
-            isDark: isDark,
-            onTap: () {
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (_) => const AboutAppSheet(),
-              );
-            },
-          ),
-        ),
-
-        // 退出登录
-        if (authProvider.isLoggedIn) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: LinearGradient(
-                  colors: [Colors.red[400]!, Colors.red[600]!],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.red.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () async {
-                    final userId = authProvider.user?.id.toString();
-                    final eduProvider = context.read<EduProvider>();
-                    final courseProvider =
-                        context.read<CourseScheduleProvider>();
-                    if (userId != null) {
-                      await GradeReminderService.instance.clearForUser(userId);
-                    }
-                    // 登出前清空本机教务和课表状态，防止跨账号数据泄漏。
-                    await eduProvider.clearLocalSession();
-                    courseProvider.clearAllUserState();
-                    await authProvider.logout();
-                    if (context.mounted) {
-                      Navigator.of(context).popUntil((route) => route.isFirst);
-                    }
-                  },
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 14),
-                    child: Center(
-                      child: Text(
-                        '退出登录',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  String _keepAliveSubtitle() {
-    if (!_keepAliveStatus.supported) return '当前平台不可用';
-    if (!_keepAliveStatus.enabled) return '开启后按提示加入后台白名单，提升提醒稳定性';
-    if (_keepAliveStatus.serviceRunning) {
-      return _keepAliveStatus.isIgnoringBatteryOptimizations
-          ? '运行中，后台提醒更稳定'
-          : '运行中，请允许自启动和后台无限制';
-    }
-    return '已开启，等待系统启动保活服务';
-  }
-
-  String _hideRecentsSubtitle() {
-    if (!_keepAliveStatus.supported) return '当前平台不可用';
-    return _keepAliveStatus.hideRecentsEnabled
-        ? '已隐藏；部分手机重新点击图标时可能恢复或重启，后台提醒和远程推送不受此开关控制'
-        : '开启后不显示在系统最近任务中；后台提醒和远程消息推送不受此开关控制';
-  }
-
-  Future<void> _showKeepAliveGuideDialog() async {
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('后台保活提示'),
-        content: const Text(
-          '请在接下来的系统页面里开启以下权限或设置：\n\n'
-          '• 电池使用：无限制\n'
-          '• 允许应用自启动\n'
-          '• 允许后台活动\n'
-          '• 最近任务中锁定应用\n\n'
-          '保活状态请看常驻通知或快捷设置开关。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('稍后'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              await KeepAliveService.instance.openSettings();
-            },
-            child: const Text('去设置'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 独立的设置卡片行（每个设置项单独一张毛玻璃卡片）
-  Widget _buildSettingsRow({required Widget child}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-      child: GlassContainer(
-        padding: EdgeInsets.zero,
-        borderRadius: 12,
-        blur: 12,
-        opacity: 0.15,
-        child: child,
-      ),
-    );
-  }
-
-  Widget _buildSettingsTile({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    String? subtitle,
-    Widget? trailing,
-    required bool isDark,
-    VoidCallback? onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: iconColor, size: 20),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: isDark ? Colors.white54 : Colors.grey[600],
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (trailing != null) trailing,
-              if (trailing == null && onTap != null)
-                Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: isDark ? Colors.white30 : Colors.grey[400],
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showBackgroundPicker(
-    BuildContext context,
-    ThemeProvider themeProvider,
-    bool isLandscape,
-  ) {
-    final backgrounds = isLandscape
-        ? landscapePresetWallpaperAssets
-        : phonePresetWallpaperAssets;
-
-    showDialog(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (context) {
-        final size = MediaQuery.of(context).size;
-        final maxDialogWidth = isLandscape ? 860.0 : 620.0;
-        final previewRatio = isLandscape ? 16 / 9 : 9 / 16;
-        final crossAxisCount = isLandscape
-            ? (size.width >= 900 ? 3 : 2)
-            : (size.width >= 760 ? 4 : 3);
-        final dialogWidth =
-            size.width < maxDialogWidth + 48 ? size.width - 48 : maxDialogWidth;
-        final gridMaxHeight = size.height * 0.58;
-
-        return Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: dialogWidth,
-              maxHeight: size.height * 0.86,
             ),
             child: Material(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              elevation: 18,
-              shadowColor: Colors.black38,
-              borderRadius: BorderRadius.circular(24),
-              clipBehavior: Clip.antiAlias,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            isLandscape ? '选择横屏背景' : '选择背景',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: '关闭',
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Flexible(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxHeight: gridMaxHeight),
-                        child: GridView.builder(
-                          shrinkWrap: true,
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: crossAxisCount,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: previewRatio,
-                          ),
-                          itemCount: backgrounds.length,
-                          itemBuilder: (context, index) {
-                            final value = backgrounds[index];
-                            final imagePath = _backgroundPreviewAsset(value);
-                            return GestureDetector(
-                              onTap: () async {
-                                await _useBundledBackground(
-                                  context,
-                                  themeProvider,
-                                  value,
-                                  isLandscape,
-                                );
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                }
-                              },
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(12),
-                                      color: Colors.black12,
-                                      image: DecorationImage(
-                                        image: AssetImage(imagePath),
-                                        fit: isLandscape
-                                            ? BoxFit.cover
-                                            : BoxFit.contain,
-                                      ),
-                                    ),
-                                    child: const SizedBox.expand(),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => _handleLogout(context, authProvider),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
+                  child: Center(
+                    child: Text(
+                      '退出登录',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: CampusTheme.red,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    _pickerActionButton(
-                      label: '自定义背景',
-                      icon: Icons.photo_library,
-                      onTap: () => _pickGalleryBackground(
-                        context,
-                        themeProvider,
-                        isLandscape,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        );
-      },
-    );
-  }
-
-  Future<void> _handleCustomBackgroundModeTap(
-      ThemeProvider themeProvider) async {
-    final switched = await themeProvider.trySetCustomBackgroundMode();
-    if (!mounted) return;
-    if (!switched) {
-      _showBackgroundPicker(context, themeProvider, false);
-    }
-  }
-
-  Future<void> _setBackground(
-    ThemeProvider themeProvider,
-    bool isLandscape,
-    String imagePath, {
-    bool fillScreen = false,
-  }) async {
-    if (isLandscape) {
-      await themeProvider.setLandscapeBackgroundImage(
-        imagePath,
-        fillScreen: fillScreen,
-      );
-    } else {
-      await themeProvider.setBackgroundImage(imagePath, fillScreen: fillScreen);
-    }
-  }
-
-  String? _remoteWallpaperUrl(String assetName) {
-    if (!assetName.startsWith('tablet_landscape_') &&
-        !assetName.startsWith('phone_wallpaper_')) {
-      return null;
-    }
-    return '$_wallpaperBaseUrl/$assetName';
-  }
-
-  String _wallpaperThumbnailAsset(String assetName) {
-    return 'assets/images/wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg';
-  }
-
-  String _backgroundPreviewAsset(String assetName) {
-    if (_remoteWallpaperUrl(assetName) == null) {
-      return ThemeProvider.resolveBundledAssetPath(assetName);
-    }
-    return _wallpaperThumbnailAsset(assetName);
-  }
-
-  Future<void> _useBundledBackground(
-    BuildContext context,
-    ThemeProvider themeProvider,
-    String assetName,
-    bool isLandscape,
-  ) async {
-    final remoteUrl = _remoteWallpaperUrl(assetName);
-    if (remoteUrl == null) {
-      await _setBackground(
-        themeProvider,
-        isLandscape,
-        assetName,
-        fillScreen: false,
-      );
-      return;
-    }
-
-    if (kIsWeb) {
-      await _setBackground(
-        themeProvider,
-        isLandscape,
-        remoteUrl,
-        fillScreen: true,
-      );
-      return;
-    }
-
-    if (!context.read<AuthProvider>().isLoggedIn) {
-      await _setBackground(
-        themeProvider,
-        isLandscape,
-        _wallpaperThumbnailAsset(assetName),
-        fillScreen: true,
-      );
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('当前使用压缩预览图，登录后可自动下载高清壁纸'),
-          ),
-        );
-      }
-      return;
-    }
-
-    try {
-      final savedPath = await _downloadWallpaper(remoteUrl, assetName);
-      await _setBackground(
-        themeProvider,
-        isLandscape,
-        savedPath,
-        fillScreen: true,
-      );
-    } catch (e) {
-      debugPrint('Download wallpaper failed: $e');
-      await _setBackground(
-        themeProvider,
-        isLandscape,
-        _wallpaperThumbnailAsset(assetName),
-        fillScreen: true,
-      );
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('高清壁纸下载失败，当前使用压缩预览图')));
-      }
-    }
-  }
-
-  Future<String> _downloadWallpaper(String url, String fileName) async {
-    final savedPath = await WallpaperPrefetchService.localPathFor(fileName);
-    await WallpaperPrefetchService.downloadAndVerifyImage(
-      Dio(),
-      url,
-      savedPath,
-    );
-    return savedPath;
-  }
-
-  Future<void> _pickGalleryBackground(
-    BuildContext context,
-    ThemeProvider themeProvider,
-    bool isLandscape,
-  ) async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
-
-    try {
-      final savedPath = await _cropAndSaveBackground(
-        image.path,
-        isLandscape: isLandscape,
-      );
-      if (savedPath == null) return;
-      await _setBackground(
-        themeProvider,
-        isLandscape,
-        savedPath,
-        fillScreen: true,
-      );
-      if (context.mounted) Navigator.pop(context);
-    } catch (e) {
-      debugPrint('Pick gallery background failed: $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('设置背景失败'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  Future<String?> _cropAndSaveBackground(
-    String sourcePath, {
-    required bool isLandscape,
-  }) async {
-    final screenSize = MediaQuery.sizeOf(context);
-    final isWideScreen = screenSize.width > screenSize.height;
-    final targetRatioX = isLandscape
-        ? (isWideScreen ? screenSize.width : 16.0)
-        : (isWideScreen ? 9.0 : screenSize.width);
-    final targetRatioY = isLandscape
-        ? (isWideScreen ? screenSize.height : 9.0)
-        : (isWideScreen ? 16.0 : screenSize.height);
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: sourcePath,
-      aspectRatio: CropAspectRatio(ratioX: targetRatioX, ratioY: targetRatioY),
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: isLandscape ? '裁剪横屏背景' : '裁剪竖屏背景',
-          toolbarColor: Colors.black,
-          toolbarWidgetColor: Colors.white,
-          statusBarColor: Colors.black,
-          backgroundColor: Colors.black,
-          initAspectRatio: isWideScreen || isLandscape
-              ? CropAspectRatioPreset.ratio16x9
-              : CropAspectRatioPreset.original,
-          lockAspectRatio: true,
-        ),
-        IOSUiSettings(
-          title: isLandscape ? '裁剪横屏背景' : '裁剪竖屏背景',
-          aspectRatioLockEnabled: true,
-          resetButtonHidden: true,
-        ),
+        ],
       ],
     );
-    if (cropped == null) return null;
-    return _saveBackgroundFile(cropped.path, isLandscape: isLandscape);
   }
-
-  Future<String> _saveBackgroundFile(
-    String sourcePath, {
-    required bool isLandscape,
-  }) async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final extension = path.extension(sourcePath).isEmpty
-        ? '.jpg'
-        : path.extension(sourcePath);
-    final fileName =
-        '${isLandscape ? 'landscape_background' : 'background'}_${DateTime.now().millisecondsSinceEpoch}$extension';
-    final savedPath = path.join(appDir.path, fileName);
-    final xf = XFile(sourcePath);
-    final bytes = await xf.readAsBytes();
-    await File(savedPath).writeAsBytes(bytes);
-    return savedPath;
-  }
-
-  Widget _pickerActionButton({
-    required String label,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 18, color: Colors.white),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showRestoreDefaultDialog(
-    BuildContext context,
-    ThemeProvider themeProvider,
-  ) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('恢复简洁模式'),
-        content: const Text('将暂时不显示背景图片，但会保留已保存的竖屏和横屏背景。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () async {
-              await themeProvider.setCleanBackgroundMode();
-              if (!context.mounted || !ctx.mounted) return;
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('已恢复简洁模式，背景图片仍已保留'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            child: const Text('确认恢复'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showClearBackgroundDialog(
-    BuildContext context,
-    ThemeProvider themeProvider,
-  ) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('移除背景图片'),
-        content: const Text('将删除已保存的竖屏和横屏背景，并切回简洁模式。此操作不会影响其他设置。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () async {
-              await themeProvider.clearBackground();
-              if (!context.mounted || !ctx.mounted) return;
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('已移除背景图片'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            child: const Text('确认移除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showLiquidGlassWarningDialog(
-    BuildContext context,
-    ThemeProvider themeProvider,
-    bool enable,
-  ) {
-    if (!enable) {
-      themeProvider.setLiquidGlass(false);
-      return;
-    }
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              color: Colors.orange.shade400,
-              size: 28,
-            ),
-            const SizedBox(width: 12),
-            const Text('性能警告'),
-          ],
-        ),
-        content: const Text(
-          '液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。',
-          style: TextStyle(height: 1.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-            },
-            child: const Text('了解，但继续开启'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              themeProvider.setLiquidGlass(true);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).primaryColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text('开启'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showEditProfileDialog(
-    BuildContext context,
-    AuthProvider authProvider,
-  ) async {
-    final controller = TextEditingController(text: authProvider.user?.nickname);
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('编辑资料'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: '昵称'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final result = await authProvider.updateProfile(controller.text);
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      result.success ? '更新成功' : (result.errorMessage ?? '更新失败'),
-                    ),
-                    backgroundColor: result.success ? Colors.green : Colors.red,
-                  ),
-                );
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-  }
-
-  Future<void> _showChangePasswordDialog(
-    BuildContext context,
-    AuthProvider authProvider,
-  ) async {
-    final oldController = TextEditingController();
-    final newController = TextEditingController();
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('修改密码'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: oldController,
-              decoration: const InputDecoration(labelText: '旧密码'),
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: newController,
-              decoration: const InputDecoration(labelText: '新密码'),
-              obscureText: true,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final result = await authProvider.changePassword(
-                oldController.text,
-                newController.text,
-              );
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      result.success ? '修改成功' : (result.errorMessage ?? '修改失败'),
-                    ),
-                    backgroundColor: result.success ? Colors.green : Colors.red,
-                  ),
-                );
-              }
-            },
-            child: const Text('确认'),
-          ),
-        ],
-      ),
-    );
-    oldController.dispose();
-    newController.dispose();
-  }
-
-  // ── 推送诊断 ──
-
-  static final _pushDiagChannel = MethodChannel(
-    'shenliyuan/private_message_notifications',
-  );
-
-  Future<void> _showPushDiagnostics(
-    BuildContext context,
-    bool isDark,
-  ) async {
-    final info = await _gatherPushDiagnostics();
-    if (!mounted) return;
-
-    final primary = Theme.of(context).primaryColor;
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.4),
-      builder: (sheetCtx) {
-        final isDarkSheet = Theme.of(sheetCtx).brightness == Brightness.dark;
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(sheetCtx).size.height * 0.75,
-          ),
-          decoration: BoxDecoration(
-            color: isDarkSheet
-                ? const Color(0xFF1E1E2E).withOpacity(0.95)
-                : Colors.white.withOpacity(0.95),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: isDarkSheet
-                  ? Colors.white.withOpacity(0.1)
-                  : Colors.white.withOpacity(0.5),
-              width: 1.5,
-            ),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 拖拽指示条
-                Padding(
-                  padding: const EdgeInsets.only(top: 12, bottom: 16),
-                  child: Container(
-                    width: 48,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: isDarkSheet ? Colors.white24 : Colors.grey[300],
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-                // 标题
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    children: [
-                      Icon(Icons.troubleshoot, color: primary, size: 24),
-                      const SizedBox(width: 10),
-                      Text(
-                        '推送诊断',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: isDarkSheet
-                              ? Colors.white
-                              : const Color(0xFF2D3142),
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.copy, size: 20),
-                        tooltip: '复制诊断信息',
-                        onPressed: () => _copyPushDiagnostics(sheetCtx, info),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // 诊断列表
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                    child: Column(
-                      children: [
-                        _diagRow(
-                          'RegistrationID',
-                          info.registrationId != null
-                              ? '***${info.registrationId!.length > 6 ? info.registrationId!.substring(info.registrationId!.length - 6) : info.registrationId}'
-                              : '未获取',
-                          info.registrationId != null
-                              ? Icons.check_circle
-                              : Icons.warning_amber_rounded,
-                          info.registrationId != null
-                              ? Colors.green
-                              : Colors.orange,
-                          isDarkSheet,
-                        ),
-                        _diagRow(
-                          '通知总权限',
-                          info.notificationsEnabled ? '已开启' : '已关闭',
-                          info.notificationsEnabled
-                              ? Icons.check_circle
-                              : Icons.cancel,
-                          info.notificationsEnabled ? Colors.green : Colors.red,
-                          isDarkSheet,
-                        ),
-                        _diagRow(
-                          '私信通知渠道',
-                          !info.privateMessageChannelExists
-                              ? '渠道不存在'
-                              : info.privateMessageChannelBlocked
-                                  ? '已关闭'
-                                  : '已开启',
-                          !info.privateMessageChannelExists ||
-                                  info.privateMessageChannelBlocked
-                              ? Icons.cancel
-                              : Icons.check_circle,
-                          !info.privateMessageChannelExists ||
-                                  info.privateMessageChannelBlocked
-                              ? Colors.red
-                              : Colors.green,
-                          isDarkSheet,
-                        ),
-                        if (info.privateMessageChannelExists)
-                          _diagRow(
-                            '渠道重要性',
-                            _importanceLabel(
-                                info.privateMessageChannelImportance),
-                            info.privateMessageChannelImportance >= 4
-                                ? Icons.notifications_active
-                                : Icons.notifications,
-                            info.privateMessageChannelImportance >= 4
-                                ? Colors.green
-                                : Colors.orange,
-                            isDarkSheet,
-                          ),
-                        _diagRow(
-                          info.storedAliasState == 'pending_bind'
-                              ? '本地待绑定 Alias'
-                              : '已存储 Alias',
-                          info.storedAlias != null
-                              ? '***${info.storedAlias!.length > 4 ? info.storedAlias!.substring(info.storedAlias!.length - 4) : info.storedAlias}'
-                              : '未存储',
-                          info.storedAlias != null
-                              ? (info.storedAliasState == 'active'
-                                  ? Icons.check_circle
-                                  : Icons.hourglass_empty)
-                              : Icons.warning_amber_rounded,
-                          info.storedAlias != null
-                              ? (info.storedAliasState == 'active'
-                                  ? Colors.green
-                                  : Colors.blue)
-                              : Colors.orange,
-                          isDarkSheet,
-                        ),
-                        _diagRow(
-                          'Alias 最近状态',
-                          info.aliasLastStatus ?? '无记录',
-                          info.aliasLastStatus == '成功'
-                              ? Icons.check_circle
-                              : info.aliasLastStatus == '失败'
-                                  ? Icons.error
-                                  : info.aliasLastStatus == '待绑定'
-                                      ? Icons.hourglass_empty
-                                      : Icons.help_outline,
-                          info.aliasLastStatus == '成功'
-                              ? Colors.green
-                              : info.aliasLastStatus == '失败'
-                                  ? Colors.red
-                                  : info.aliasLastStatus == '待绑定'
-                                      ? Colors.blue
-                                      : Colors.grey,
-                          isDarkSheet,
-                          subtitle: _joinDiagnosticSubtitle([
-                            info.aliasLastTime,
-                            info.aliasLastDetail,
-                          ]),
-                        ),
-                        if (info.error != null) ...[
-                          const SizedBox(height: 12),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: Colors.orange.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(Icons.warning_amber_rounded,
-                                    size: 16, color: Colors.orange),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    info.error!,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: isDarkSheet
-                                          ? Colors.orange[200]
-                                          : Colors.orange[800],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.pop(sheetCtx);
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const DiagnosticLogScreen(),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.receipt_long_rounded,
-                                size: 18),
-                            label: const Text('查看完整推送日志'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<_PushDiagnosticInfo> _gatherPushDiagnostics() async {
-    Map<String, dynamic> native = {};
-    List<DiagnosticLogEntry> logs = [];
-    final errors = <String>[];
-
-    // 原生诊断（含 RegistrationID、权限、渠道状态）
-    try {
-      final result = await _pushDiagChannel
-          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
-      native = result ?? {};
-    } catch (e) {
-      errors.add('原生诊断读取失败: $e');
-    }
-
-    // Alias 状态（从诊断日志）
-    try {
-      logs = await DiagnosticLogService.instance.getLogs();
-    } catch (e) {
-      errors.add('日志读取失败: $e');
-    }
-
-    // 从日志中提取最近一次 Alias 绑定状态
-    String? aliasLastStatus;
-    String? aliasLastTime;
-    String? aliasLastDetail;
-    for (final log in logs) {
-      if (log.source != '推送') continue;
-      if (log.type == 'Alias 绑定成功' || log.type == 'Alias 恢复成功') {
-        aliasLastStatus = '成功';
-        final effectiveTime =
-            log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
-        aliasLastTime = DateFormat(
-          'MM-dd HH:mm:ss',
-        ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
-        aliasLastDetail = log.detail.isNotEmpty ? log.detail : null;
-        break;
-      }
-      if (log.type == 'Alias 绑定失败' || log.type == 'Alias 恢复失败') {
-        aliasLastStatus = '失败';
-        final effectiveTime =
-            log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
-        aliasLastTime = DateFormat(
-          'MM-dd HH:mm:ss',
-        ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
-        aliasLastDetail = log.detail.isNotEmpty ? log.detail : null;
-        break;
-      }
-    }
-
-    final storedAliasState = native['storedAliasState']?.toString();
-    if (storedAliasState == 'active') {
-      if (aliasLastStatus != '成功') {
-        aliasLastTime = null;
-        aliasLastDetail = null;
-      }
-      aliasLastStatus = '成功';
-    } else if (storedAliasState == 'pending_bind' && aliasLastStatus == null) {
-      aliasLastStatus = '待绑定';
-    }
-
-    return _PushDiagnosticInfo(
-      // 使用原生返回的 RegistrationID，避免重复 JPush 插件查询
-      registrationId: native['registrationId']?.toString(),
-      notificationsEnabled: native['notificationsEnabled'] == true,
-      privateMessageChannelExists:
-          native['privateMessageChannelExists'] == true,
-      privateMessageChannelImportance:
-          (native['privateMessageChannelImportance'] as num?)?.toInt() ?? -1,
-      privateMessageChannelBlocked:
-          native['privateMessageChannelBlocked'] == true,
-      storedAlias: native['storedAlias']?.toString(),
-      storedAliasState: storedAliasState,
-      aliasLastStatus: aliasLastStatus,
-      aliasLastTime: aliasLastTime,
-      aliasLastDetail: aliasLastDetail,
-      error: errors.isNotEmpty ? errors.join('\n') : null,
-    );
-  }
-
-  void _copyPushDiagnostics(
-    BuildContext context,
-    _PushDiagnosticInfo info,
-  ) {
-    final sb = StringBuffer();
-    sb.writeln('═══ 推送诊断 ═══');
-    sb.writeln('RegistrationID: ${_maskValue(info.registrationId, 6)}');
-    sb.writeln('通知总权限: ${info.notificationsEnabled ? "已开启" : "已关闭"}');
-    sb.writeln('私信通知渠道存在: ${info.privateMessageChannelExists}');
-    sb.writeln('私信通知渠道已关闭: ${info.privateMessageChannelBlocked}');
-    sb.writeln(
-      '渠道重要性: ${_importanceLabel(info.privateMessageChannelImportance)}',
-    );
-    final aliasLabel =
-        info.storedAliasState == 'pending_bind' ? '本地待绑定 Alias' : '已存储 Alias';
-    sb.writeln('$aliasLabel: ${_maskValue(info.storedAlias, 4)}');
-    sb.writeln(
-      'Alias 最近状态: ${info.aliasLastStatus ?? "无记录"}'
-      '${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
-    );
-    if (info.aliasLastDetail != null) {
-      sb.writeln('Alias 最近详情: ${info.aliasLastDetail}');
-    }
-    if (info.error != null) {
-      sb.writeln('诊断异常: ${info.error}');
-    }
-    Clipboard.setData(ClipboardData(text: sb.toString()));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('诊断信息已复制到剪贴板（ID 已掩码）'),
-        behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.all(16),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  /// 掩码敏感值，仅保留末 N 位
-  String _maskValue(String? value, int visibleLength) {
-    if (value == null || value.isEmpty) return '未获取';
-    if (value.length <= visibleLength) return '***';
-    return '***${value.substring(value.length - visibleLength)}';
-  }
-
-  String _importanceLabel(int importance) {
-    switch (importance) {
-      case 0:
-        return '无 (IMPORTANCE_NONE)';
-      case 1:
-        return '最低 (IMPORTANCE_MIN)';
-      case 2:
-        return '低 (IMPORTANCE_LOW)';
-      case 3:
-        return '默认 (IMPORTANCE_DEFAULT)';
-      case 4:
-        return '高 (IMPORTANCE_HIGH)';
-      case 5:
-        return '最高 (IMPORTANCE_MAX)';
-      default:
-        return '未知 ($importance)';
-    }
-  }
-
-  Widget _diagRow(
-    String label,
-    String value,
-    IconData icon,
-    Color iconColor,
-    bool isDark, {
-    String? subtitle,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20, color: iconColor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white54 : Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'monospace',
-                    color: isDark ? Colors.white : const Color(0xFF2D3142),
-                  ),
-                ),
-                if (subtitle != null)
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? Colors.white38 : Colors.grey[500],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String? _joinDiagnosticSubtitle(List<String?> parts) {
-    final lines = parts
-        .whereType<String>()
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    return lines.isEmpty ? null : lines.join('\n');
-  }
-}
-
-/// 推送诊断信息
-class _PushDiagnosticInfo {
-  final String? registrationId;
-  final bool notificationsEnabled;
-  final bool privateMessageChannelExists;
-  final int privateMessageChannelImportance;
-  final bool privateMessageChannelBlocked;
-  final String? storedAlias;
-  final String? storedAliasState;
-  final String? aliasLastStatus;
-  final String? aliasLastTime;
-  final String? aliasLastDetail;
-  final String? error;
-
-  const _PushDiagnosticInfo({
-    required this.registrationId,
-    required this.notificationsEnabled,
-    required this.privateMessageChannelExists,
-    required this.privateMessageChannelImportance,
-    required this.privateMessageChannelBlocked,
-    required this.storedAlias,
-    required this.storedAliasState,
-    required this.aliasLastStatus,
-    required this.aliasLastTime,
-    required this.aliasLastDetail,
-    this.error,
-  });
 }

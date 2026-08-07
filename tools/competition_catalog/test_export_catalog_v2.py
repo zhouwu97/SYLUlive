@@ -36,6 +36,7 @@ def _workbook(*, drift: bool = False, preview_id: str = "COMP-001") -> Workbook:
         [
             "schema_version",
             "dataset_version",
+            "source_sheet",
             "publish_status",
             "production_load_allowed",
             "item_count",
@@ -45,6 +46,7 @@ def _workbook(*, drift: bool = False, preview_id: str = "COMP-001") -> Workbook:
         [
             "sylulive-competition-catalog/2.2",
             DATASET_VERSION,
+            "导入清洗版",
             "draft",
             False,
             1,
@@ -52,6 +54,9 @@ def _workbook(*, drift: bool = False, preview_id: str = "COMP-001") -> Workbook:
             drift,
         ],
     )
+    source = workbook.create_sheet("导入清洗版")
+    source.append(["competition_id", "parent_competition_id"])
+    source.append(["COMP-001", "COMP-PARENT"])
     _sheet(
         workbook,
         "赛事基础导出",
@@ -126,6 +131,7 @@ class GovernedWorkbookExportTest(unittest.TestCase):
         self.assertEqual(records[0]["competition_id"], "COMP-001")
         self.assertEqual(records[0]["title"], "预览标题")
         self.assertEqual(records[0]["summary"], "摘要")
+        self.assertEqual(records[0]["parent_competition_id"], "COMP-PARENT")
         self.assertIs(records[0]["candidate_pool_allowed"], True)
 
     def test_rejects_content_drift(self) -> None:

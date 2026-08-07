@@ -103,23 +103,23 @@ services:
       - AI_REQUEST_TIMEOUT_SECONDS=${AI_REQUEST_TIMEOUT_SECONDS:-60}
       - AI_LEGACY_MAX_OUTPUT_TOKENS=${AI_LEGACY_MAX_OUTPUT_TOKENS:-4096}
       - AI_MAX_TOOL_STEPS=${AI_MAX_TOOL_STEPS:-3}
-      - AI_MAX_MESSAGE_CHARS=${AI_MAX_MESSAGE_CHARS:-200}
+      - AI_MAX_MESSAGE_CHARS=${AI_MAX_MESSAGE_CHARS:-500}
       - AI_HOURLY_MESSAGE_LIMIT=${AI_HOURLY_MESSAGE_LIMIT:-3}
-      - AI_UNLIMITED_STUDENT_IDS=${AI_UNLIMITED_STUDENT_IDS:-2403130233}
+      - AI_UNLIMITED_STUDENT_IDS=${AI_UNLIMITED_STUDENT_IDS:-}
       - AI_USER_BUDGET_LIMIT_MICRO_YUAN=${AI_USER_BUDGET_LIMIT_MICRO_YUAN:-10000000}
       - AI_RESERVE_MICRO_YUAN=${AI_RESERVE_MICRO_YUAN:-20000}
       - AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS=${AI_INPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS:-4000000}
       - AI_OUTPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS=${AI_OUTPUT_PRICE_MICRO_YUAN_PER_MILLION_TOKENS:-16000000}
       - AI_EXTERNAL_MCP_ENABLED=${AI_EXTERNAL_MCP_ENABLED:-false}
-      - AI_EXTERNAL_MCP_TRANSPORT=${AI_EXTERNAL_MCP_TRANSPORT:-local_stdio}
+      - AI_EXTERNAL_MCP_TRANSPORT=${AI_EXTERNAL_MCP_TRANSPORT:-ssh_stdio}
       - AI_EXTERNAL_MCP_COMMAND=${AI_EXTERNAL_MCP_COMMAND:-}
       - AI_EXTERNAL_MCP_TOOL_TIMEOUT_SECONDS=${AI_EXTERNAL_MCP_TOOL_TIMEOUT_SECONDS:-90}
       - AI_EXTERNAL_MCP_MAX_CALLS_PER_RUN=${AI_EXTERNAL_MCP_MAX_CALLS_PER_RUN:-1}
       - AI_EXTERNAL_MCP_SSH_HOST=${AI_EXTERNAL_MCP_SSH_HOST:-}
       - AI_EXTERNAL_MCP_SSH_PORT=${AI_EXTERNAL_MCP_SSH_PORT:-22}
-      - AI_EXTERNAL_MCP_SSH_USER=${AI_EXTERNAL_MCP_SSH_USER:-}
-      - AI_EXTERNAL_MCP_SSH_KEY_PATH=${AI_EXTERNAL_MCP_SSH_KEY_PATH:-}
-      - AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH=${AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH:-}
+      - AI_EXTERNAL_MCP_SSH_USER=${AI_EXTERNAL_MCP_SSH_USER:-mcp-runner}
+      - AI_EXTERNAL_MCP_SSH_KEY_PATH=/run/secrets/mcp_ed25519
+      - AI_EXTERNAL_MCP_KNOWN_HOSTS_PATH=/run/secrets/mcp_known_hosts
       - AI_POLICY_RAG_ENABLED=${AI_POLICY_RAG_ENABLED:-false}
       - AI_LANGCHAIN_RAG_ENABLED=${AI_LANGCHAIN_RAG_ENABLED:-false}
       - AI_LANGCHAIN_RAG_ROLLOUT_PERCENT=${AI_LANGCHAIN_RAG_ROLLOUT_PERCENT:-0}
@@ -135,6 +135,13 @@ services:
       - server_data:/app/uploads
       - exam_paper_data:/app/private/exam-papers
       - competition_award_evidence_data:/app/private/competition-award-evidence
+    secrets:
+      - source: mcp_ssh_key
+        target: mcp_ed25519
+        mode: 0400
+      - source: mcp_known_hosts
+        target: mcp_known_hosts
+        mode: 0400
     restart: unless-stopped
     networks:
       - shenliyuan_network
@@ -158,6 +165,12 @@ volumes:
   competition_award_evidence_data:
   rag_model_cache:
   postgres_data:
+
+secrets:
+  mcp_ssh_key:
+    file: ${AI_EXTERNAL_MCP_SSH_KEY_FILE:-./deploy/mcp/disabled-key-placeholder}
+  mcp_known_hosts:
+    file: ${AI_EXTERNAL_MCP_KNOWN_HOSTS_FILE:-./deploy/mcp/disabled-known-hosts-placeholder}
 
 networks:
   shenliyuan_network:

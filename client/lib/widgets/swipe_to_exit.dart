@@ -21,7 +21,10 @@ class _SwipeToExitState extends State<SwipeToExit> {
   Offset? _startPosition;
 
   bool _supportsSwipe(PointerDeviceKind kind) {
-    return kind == PointerDeviceKind.touch || kind == PointerDeviceKind.stylus;
+    return kind == PointerDeviceKind.touch ||
+        kind == PointerDeviceKind.stylus ||
+        kind == PointerDeviceKind.mouse ||
+        kind == PointerDeviceKind.trackpad;
   }
 
   void _handlePointerDown(PointerDownEvent event) {

@@ -110,7 +110,21 @@ class CompetitionAdminEventCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Column(
                   children: [
-                    if (event.status == 'draft' && onPublish != null)
+                    if (!event.mutable)
+                      OutlinedButton.icon(
+                        onPressed: onTap,
+                        icon: const Icon(Icons.lock_outline_rounded, size: 15),
+                        label: const Text('目录只读'),
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          foregroundColor: CompetitionUiTokens.subColor(isDark),
+                          side: BorderSide(
+                            color: CompetitionUiTokens.borderColor(isDark),
+                          ),
+                        ),
+                      )
+                    else if (event.status == 'draft' && onPublish != null)
                       FilledButton(
                         onPressed: onPublish,
                         style: FilledButton.styleFrom(
@@ -143,36 +157,37 @@ class CompetitionAdminEventCard extends StatelessWidget {
                         ),
                         child: const Text('恢复草稿'),
                       ),
-                    
-                    PopupMenuButton<String>(
-                      tooltip: '更多操作',
-                      icon: Icon(
-                        Icons.more_horiz_rounded,
-                        color: CompetitionUiTokens.subColor(isDark),
+                    if (event.mutable)
+                      PopupMenuButton<String>(
+                        tooltip: '更多操作',
+                        icon: Icon(
+                          Icons.more_horiz_rounded,
+                          color: CompetitionUiTokens.subColor(isDark),
+                        ),
+                        onSelected: (value) {
+                          if (value == 'edit') onEdit?.call();
+                          if (value == 'archive') onArchive?.call();
+                          if (value == 'delete') onDelete?.call();
+                        },
+                        itemBuilder: (_) => [
+                          if (event.status != 'published')
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Text('编辑'),
+                            ),
+                          if (event.status != 'archived')
+                            const PopupMenuItem(
+                              value: 'archive',
+                              child: Text('归档'),
+                            ),
+                          if (event.status != 'published')
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Text('删除',
+                                  style: TextStyle(color: Colors.red)),
+                            ),
+                        ],
                       ),
-                      onSelected: (value) {
-                        if (value == 'edit') onEdit?.call();
-                        if (value == 'archive') onArchive?.call();
-                        if (value == 'delete') onDelete?.call();
-                      },
-                      itemBuilder: (_) => [
-                        if (event.status != 'published')
-                          const PopupMenuItem(
-                            value: 'edit',
-                            child: Text('编辑'),
-                          ),
-                        if (event.status != 'archived')
-                          const PopupMenuItem(
-                            value: 'archive',
-                            child: Text('归档'),
-                          ),
-                        if (event.status != 'published')
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Text('删除', style: TextStyle(color: Colors.red)),
-                          ),
-                      ],
-                    ),
                   ],
                 ),
               ],
@@ -233,7 +248,7 @@ List<String> _adminChips(CompetitionEvent event) {
     _statusText(event.status),
     event.timeStatusLabel,
   ];
-  
+
   final manualLabel = competitionManualRatingShort(event.recommendationLevel);
   if (manualLabel.isNotEmpty) {
     chips.add(manualLabel);

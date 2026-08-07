@@ -123,7 +123,7 @@ func TestNormalizeUserMessageCountsGraphemeClusters(t *testing.T) {
 	require.Equal(t, "ai_message_too_long", runtimeErr.Code)
 }
 
-func TestRuntimeAcceptsProductionMessageLimitAndRejectsHigherValue(t *testing.T) {
+func TestRuntimeAcceptsMessageLimitAt500AndRejectsAboveIt(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	config := RuntimeConfig{
 		ProviderName: "mock", Model: "mock", RequestTimeout: 5 * time.Second,

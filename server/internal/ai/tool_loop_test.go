@@ -128,6 +128,43 @@ func TestRuntimeToolLoopSynthesizesFinalAnswerAfterConfiguredMaxToolSteps(t *tes
 	require.Empty(t, requests[1].Tools, "达到工具轮数上限后必须禁用工具，只允许模型组织最终回答")
 }
 
+func TestRuntimeToolLoopValidatesCitationsAndEmitsSources(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	seedPublishedKnowledgeSource(t, db, 1, 1)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "citation_call", ToolName: "academic.get_overview"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "citation_call", ToolName: "academic.get_overview", ArgumentsDelta: `{"topic":"grades"}`},
+			{Type: ProviderEventCompleted},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "已根据工具结果完成回答。[chunk:1]"},
+			{Type: ProviderEventCompleted},
+		},
+	}}
+	runtime := newToolRuntime(t, db, provider, overviewTool{execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+		return map[string]bool{"ok": true}, nil
+	}})
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "请分析我的成绩",
+	})
+	require.NoError(t, err)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, "已根据工具结果完成回答。[1]", completed.AnswerCheckpoint)
+	require.NotContains(t, completed.AnswerCheckpoint, "chunk:")
+
+	var sourceEvent models.AIEvent
+	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "sources.ready").First(&sourceEvent).Error)
+	var payload struct {
+		Sources []SourceCard `json:"sources"`
+	}
+	require.NoError(t, json.Unmarshal(sourceEvent.Payload, &payload))
+	require.Len(t, payload.Sources, 1)
+	require.Equal(t, uint(1), payload.Sources[0].DocumentID)
+	require.Equal(t, []int{1}, payload.Sources[0].CitationNumbers)
+}
+
 func TestRuntimeDoesNotSynthesizeAcademicAnalysisWhenHy3ContextUnavailable(t *testing.T) {
 	db := newRuntimeTestDB(t)
 	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{

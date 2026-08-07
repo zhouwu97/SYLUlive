@@ -16,6 +16,7 @@ void main() {
             'sender_id': '7',
             'sender_name': 'Alice',
             'sender_avatar': '/uploads/alice.png',
+            'recipient_user_id': '21',
           }),
         },
       });
@@ -26,6 +27,7 @@ void main() {
       expect(target?.senderName, 'Alice');
       expect(target?.senderAvatar, '/uploads/alice.png');
       expect(target?.displayName, 'Alice');
+      expect(target?.recipientUserId, 21);
     });
 
     test('parses top-level JPush extras json string', () {
@@ -63,6 +65,8 @@ void main() {
       'sender_id': '11',
       'sender_name': 'Carol',
       'sender_avatar': '/uploads/carol.png',
+      '_native_notification_open_id': 'open-789',
+      'recipient_user_id': 21,
     }));
 
     expect(target?.conversationId, 31);
@@ -70,6 +74,8 @@ void main() {
     expect(target?.senderId, 11);
     expect(target?.senderAvatar, '/uploads/carol.png');
     expect(target?.displayName, 'Carol');
+    expect(target?.nativeOpenId, 'open-789');
+    expect(target?.recipientUserId, 21);
   });
 
   group('PendingPrivateMessageOpen', () {

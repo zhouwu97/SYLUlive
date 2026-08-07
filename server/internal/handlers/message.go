@@ -745,12 +745,13 @@ func (h *MessageHandler) pushPrivateMessage(targetUserID uint, sender models.Use
 	}
 	content := privateMessagePreview(message)
 	extras := map[string]interface{}{
-		"type":            "private_message",
-		"conversation_id": message.ConversationID,
-		"message_id":      message.ID,
-		"sender_id":       sender.ID,
-		"sender_name":     title,
-		"sender_avatar":   sender.Avatar,
+		"type":              "private_message",
+		"conversation_id":   message.ConversationID,
+		"message_id":        message.ID,
+		"sender_id":         sender.ID,
+		"sender_name":       title,
+		"sender_avatar":     sender.Avatar,
+		"recipient_user_id": targetUserID,
 	}
 	go func() {
 		if err := h.notifier.Notify(targetUserID, title, content, extras); err != nil {

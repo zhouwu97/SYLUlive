@@ -47,7 +47,7 @@ class BottomNavWrapper extends StatelessWidget {
   // 标准模式：毛玻璃底栏 紧贴底部 + 紧凑
   Widget _buildBlurNav(BuildContext context, bool isDark) {
     final bottomSafe = MediaQuery.of(context).padding.bottom;
-    final primaryColor = Theme.of(context).primaryColor;
+    const primaryColor = AppColors.brandPrimary;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -68,8 +68,9 @@ class BottomNavWrapper extends StatelessWidget {
                     bottom: bottomSafe > 0 ? bottomSafe : 2,
                   ),
                   decoration: BoxDecoration(
-                    color: (isDark ? const Color(0xFF1A1A2E) : Colors.white)
-                        .withValues(alpha: 0.85),
+                    color:
+                        (isDark ? AppColors.surfaceSecondaryDark : Colors.white)
+                            .withValues(alpha: 0.85),
                     border: Border(
                       top: BorderSide(
                         color: isDark
@@ -98,9 +99,31 @@ class BottomNavWrapper extends StatelessWidget {
                                       width: 48,
                                       height: 44,
                                       decoration: BoxDecoration(
-                                        color: primaryColor.withValues(
-                                            alpha: 0.12),
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            primaryColor.withValues(
+                                                alpha: 0.18),
+                                            primaryColor.withValues(
+                                                alpha: 0.07),
+                                          ],
+                                        ),
                                         borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: primaryColor.withValues(
+                                            alpha: 0.1,
+                                          ),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: primaryColor.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                            blurRadius: 14,
+                                            offset: const Offset(0, 5),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -153,7 +176,7 @@ class BottomNavWrapper extends StatelessWidget {
 
   // 悬浮模式：连成一块的弧形 Dock
   Widget _buildFloatingNav(BuildContext context, bool isDark) {
-    final primaryColor = Theme.of(context).primaryColor;
+    const primaryColor = AppColors.brandPrimary;
 
     return SafeArea(
       top: false,
@@ -173,7 +196,7 @@ class BottomNavWrapper extends StatelessWidget {
                 border: Border.all(
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.08)
-                      : const Color(0xFFE2EFEA),
+                      : AppColors.borderNormalLight,
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -204,11 +227,38 @@ class BottomNavWrapper extends StatelessWidget {
                                       width: 56,
                                       height: 40,
                                       decoration: BoxDecoration(
-                                        color: isDark
-                                            ? const Color(0xFF147C72)
-                                                .withValues(alpha: 0.2)
-                                            : const Color(0xFFEAF6F3),
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: isDark
+                                              ? [
+                                                  primaryColor.withValues(
+                                                    alpha: 0.24,
+                                                  ),
+                                                  primaryColor.withValues(
+                                                    alpha: 0.1,
+                                                  ),
+                                                ]
+                                              : [
+                                                  const Color(0xFFF3FBF8),
+                                                  const Color(0xFFE5F5F0),
+                                                ],
+                                        ),
                                         borderRadius: BorderRadius.circular(18),
+                                        border: Border.all(
+                                          color: primaryColor.withValues(
+                                            alpha: isDark ? 0.26 : 0.12,
+                                          ),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: primaryColor.withValues(
+                                              alpha: isDark ? 0.18 : 0.1,
+                                            ),
+                                            blurRadius: 16,
+                                            offset: const Offset(0, 5),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),

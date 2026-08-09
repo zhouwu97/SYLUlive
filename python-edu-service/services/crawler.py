@@ -26,7 +26,7 @@ ACADEMIC_SITUATION_PARSER_VERSION = "academic-situation-v2"
 ACADEMIC_REQUIREMENT_URL = "https://jxw.sylu.edu.cn/xjyj/xjyj_cxXjyjIndex.html"
 ACADEMIC_REQUIREMENT_QUERY_URL = "https://jxw.sylu.edu.cn/xjyj/xjyj_cxXjyjjdlb.html"
 ACADEMIC_REQUIREMENT_SOURCE_PATH = "/xjyj/xjyj_cxXjyjIndex.html"
-ACADEMIC_REQUIREMENT_PARSER_VERSION = "credit-requirement-v1"
+ACADEMIC_REQUIREMENT_PARSER_VERSION = "credit-requirement-v2"
 STUDENT_INFO_URL = "https://jxw.sylu.edu.cn/xsxxxggl/xsgrxxwh_cxXsgrxx.html"
 INDEX_INIT_MENU_URL = f"{INDEX_URL}/index_initMenu.html"
 
@@ -1612,19 +1612,29 @@ def parse_credit_requirement_json(
     modules: list[dict] = []
     improvement_courses: list[dict] = []
 
-    def visit(raw_node: Any) -> None:
+    def visit(raw_node: Any, parent_module: Optional[dict] = None) -> None:
         if not isinstance(raw_node, dict):
             return
         module = _parse_credit_requirement_json_module(raw_node)
+        next_parent = parent_module
         if module is not None:
             if module["module_type"] == "improvement":
                 improvement_courses.extend(module["courses"])
+            elif _is_credit_requirement_expression(module["name"]):
+                # “至少修 X 学分”是选修模块下的规则分支，不是独立培养模块。
+                # 保留它的课程到最近的真实模块，避免把规则文本误当成首页标题。
+                if parent_module is not None:
+                    _merge_credit_requirement_rule(parent_module, module)
+                else:
+                    # 没有父节点时不能丢弃官方数据，保留原节点作为降级展示。
+                    modules.append(module)
             else:
                 modules.append(module)
+                next_parent = module
         children = raw_node.get("xfyqjdList")
         if isinstance(children, list):
             for child in children:
-                visit(child)
+                visit(child, next_parent)
 
     for node in payload:
         visit(node)
@@ -1652,6 +1662,71 @@ def parse_credit_requirement_json(
         "error_code": None,
         "message": None,
     }
+
+
+def _is_credit_requirement_expression(name: str) -> bool:
+    """判断节点名称是否只是选课规则表达式，而非培养模块名称。"""
+    normalized = re.sub(r"\s+", "", name)
+    return bool(
+        re.fullmatch(
+            r"至少修\d+(?:\.\d+)?学分(?:[（(][^）)]*[)）])?",
+            normalized,
+        )
+        or re.fullmatch(
+            r"至少修\d+门(?:[（(][^）)]*[)）])?",
+            normalized,
+        )
+    )
+
+
+def _merge_credit_requirement_rule(parent: dict, rule: dict) -> None:
+    """将规则节点的课程并入父模块，且不重复课程明细。"""
+    parent_courses = parent.setdefault("courses", [])
+    existing_keys = {
+        (
+            course.get("course_code"),
+            course.get("course_name"),
+            course.get("actual_year"),
+            course.get("actual_semester"),
+        )
+        for course in parent_courses
+    }
+    added = 0.0
+    for course in rule.get("courses", []):
+        key = (
+            course.get("course_code"),
+            course.get("course_name"),
+            course.get("actual_year"),
+            course.get("actual_semester"),
+        )
+        if key in existing_keys:
+            continue
+        existing_keys.add(key)
+        parent_courses.append(course)
+        if course.get("completed") is True:
+            added += _to_float(course.get("credits"))
+
+    if added:
+        parent["earned_credits"] = max(
+            _to_float(parent.get("earned_credits")),
+            _to_float(parent.get("earned_credits")) + added,
+        )
+    parent["completed_course_count"] = sum(
+        course.get("completed") is True for course in parent_courses
+    )
+    required_credits = parent.get("required_credits")
+    required_count = parent.get("required_course_count")
+    if required_credits is None and required_count is None:
+        parent["status"] = "unknown"
+    elif (
+        (required_credits is None or parent["earned_credits"] >= required_credits)
+        and (required_count is None or parent["completed_course_count"] >= required_count)
+    ):
+        parent["status"] = "completed"
+    elif parent["earned_credits"] > 0 or parent["completed_course_count"] > 0:
+        parent["status"] = "in_progress"
+    else:
+        parent["status"] = "shortfall"
 
 
 def _parse_credit_requirement_json_module(raw: dict) -> Optional[dict]:

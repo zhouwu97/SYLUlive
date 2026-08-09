@@ -302,7 +302,7 @@ def test_query_context_extraction():
 def test_parser_version():
     """测试解析器版本号。"""
     result = parse_credit_requirement_html(_minimal_page())
-    assert result["parser_version"] == "credit-requirement-v1"
+    assert result["parser_version"] == "credit-requirement-v2"
 
 
 # ============== 真实 JSON 查询协议 ==============
@@ -387,6 +387,48 @@ def test_parse_credit_requirement_json_tree():
     assert course["actual_semester"] == "2"
     assert course["raw_status"] == "通过"
     assert course["completed"] is True
+
+
+def test_rule_nodes_use_their_parent_module_title():
+    """规则分支不应在首页伪装成独立模块，专业名称必须来自接口树。"""
+    payload = [
+        {
+            "xfyqjd_id": "major-elective",
+            "xfyqjdmc": "专业教育理论选修",
+            "yqzdxf": "17.75",
+            "kczdms": "0",
+            "kcList": [],
+            "xfyqjdList": [
+                {
+                    "xfyqjd_id": "rule-a",
+                    "xfyqjdmc": "至少修1.75学分",
+                    "yqzdxf": "1.75",
+                    "kcList": [
+                        {
+                            "kch": "A1",
+                            "kcmc": "专业选修 A",
+                            "xf": "1.75",
+                            "yxxf": "1.75",
+                            "cj": "90",
+                            "bfzcj": "90",
+                        }
+                    ],
+                },
+                {
+                    "xfyqjd_id": "rule-b",
+                    "xfyqjdmc": "至少修2.5学分",
+                    "yqzdxf": "2.5",
+                    "kcList": [],
+                },
+            ],
+        }
+    ]
+
+    result = parse_credit_requirement_json(payload)
+
+    assert [module["name"] for module in result["modules"]] == ["专业教育理论选修"]
+    assert result["modules"][0]["courses"][0]["course_name"] == "专业选修 A"
+    assert result["modules"][0]["earned_credits"] == 1.75
 
 
 @pytest.mark.asyncio

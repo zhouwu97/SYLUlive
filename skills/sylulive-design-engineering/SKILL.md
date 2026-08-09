@@ -30,7 +30,7 @@ Audit → design → implement → verify Flutter UI 变更的工作流 skill。
 target screen
 parent screen
 same-level sibling screen
-AppTheme (lib/theme/AppTheme.dart)
+AppTheme (client/lib/theme/AppTheme.dart)
 CampusTheme（如被引用）
 shared widgets
 Provider / state model

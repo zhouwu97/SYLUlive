@@ -15,6 +15,7 @@ import '../providers/theme_provider.dart';
 import '../theme/AppTheme.dart';
 import '../utils/app_time.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/state_placeholder.dart';
 import '../widgets/swipe_to_exit.dart';
 import 'chat_detail_screen.dart';
 
@@ -465,53 +466,37 @@ class _ChatListScreenState extends State<ChatListScreen>
     required bool splitMode,
   }) {
     if (provider.conversationLoading && provider.conversations.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: const [
-          SizedBox(height: 120),
-          Center(child: CircularProgressIndicator()),
-        ],
+      return _buildScrollableState(
+        const StatePlaceholder(
+          key: ValueKey('chat-list-loading'),
+          loading: true,
+          title: '加载会话中…',
+        ),
       );
     }
 
     if (provider.conversationError != null && provider.conversations.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          SizedBox(height: MediaQuery.sizeOf(context).height * 0.22),
-          Icon(Icons.cloud_off_outlined, size: 64, color: Colors.grey.shade400),
-          const SizedBox(height: 16),
-          Center(child: Text(provider.conversationError!)),
-          const SizedBox(height: 12),
-          Center(
-            child: FilledButton.tonal(
-              onPressed: provider.loadConversations,
-              child: const Text('重新加载'),
-            ),
-          ),
-        ],
+      return _buildScrollableState(
+        StatePlaceholder(
+          key: const ValueKey('chat-list-error'),
+          icon: Icons.cloud_off_outlined,
+          title: '会话加载失败',
+          subtitle: provider.conversationError,
+          actionLabel: '重新加载',
+          onAction: provider.loadConversations,
+        ),
       );
     }
 
     if (provider.conversations.isEmpty || conversations.isEmpty) {
       final hasQuery = _searchQuery.trim().isNotEmpty;
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          SizedBox(height: MediaQuery.sizeOf(context).height * 0.24),
-          Icon(
-            hasQuery ? Icons.search_off_rounded : Icons.forum_outlined,
-            size: 64,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: Text(
-              hasQuery ? '没有匹配的会话' : '暂无私信\n可以从其他用户主页发起聊天',
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
+      return _buildScrollableState(
+        StatePlaceholder(
+          key: const ValueKey('chat-list-empty'),
+          icon: hasQuery ? Icons.search_off_rounded : Icons.forum_outlined,
+          title: hasQuery ? '没有匹配的会话' : '暂无私信',
+          subtitle: hasQuery ? '换个关键词试试' : '可以从其他用户主页发起聊天',
+        ),
       );
     }
 
@@ -545,6 +530,19 @@ class _ChatListScreenState extends State<ChatListScreen>
           splitMode: splitMode,
         );
       },
+    );
+  }
+
+  /// 保持 Pull-to-refresh 的 AlwaysScrollable 语义，同时让占位内容垂直居中。
+  Widget _buildScrollableState(Widget child) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: child,
+        ),
+      ),
     );
   }
 

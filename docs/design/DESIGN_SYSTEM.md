@@ -50,7 +50,7 @@ Component Token（组件内部派生）
 | `surfacePrimary`（页面背景） | `#FFFAF4` | `#111315` |
 | `surfaceSecondary`（卡片/普通 surface） | `#FFFFFF` | `#1E2226` |
 | `textPrimary` | `#1F2328` | 待 Dark audit |
-| `textSecondary` | `#742B82` | 待 Dark audit |
+| `textSecondary` | `#747B82` | 待 Dark audit |
 | `borderNormal` | `#E2EFEA` | 待 Dark audit |
 | `borderSubtle` | `#E8EEE9` | 待 Dark audit |
 
@@ -164,7 +164,7 @@ Component Token（组件内部派生）
 | 2 | AppBar 标题字重 | Theme w600 / 二级页 w700 | w700 | PR5 |
 | 3 | Card 颜色 | `AppTheme.cardTheme` 未设 color → Material scheme.surface（非纯白）；`CampusTheme.card = #FFFFFF` 显式纯白 | 统一为一套 surface 语义 | PR5 |
 | 4 | Seed 色 | `ColorScheme.fromSeed(#6366F1)`，与品牌 `#147C72` 不一致 | 品牌 seed | PR5（QA 就绪后） |
-| 5 | 文件位置 | `utils/app_motion.dart` 在 utils，应归 `theme/` | `theme/app_motion.dart` | PR1 移动；PR4 收敛数值 |
+| 5 | 文件位置 | `utils/app_motion.dart` 在 utils，应归 `theme/` | `theme/app_motion.dart` | PR4 移动 + 收敛数值 |
 | 6 | 动效魔法值 | chat 0/35/45/100/130/220ms 等 | AppMotion token | PR4 + PR3 顺带 |
 | 7 | 字体字重 | 仅 Regular 单字重，w600/w700 合成 | 引入字重文件或明确已知限制 | 决策在 PR5 前 |
 | 8 | FAB 圆角 | 14 | 16 | PR5 |
@@ -174,7 +174,7 @@ Component Token（组件内部派生）
 | 顺序 | 内容 |
 | --- | --- |
 | Preflight | 工作区整理（处理未提交改动；基线干净） |
-| PR1 | Design Foundation：DESIGN_SYSTEM / MOTION / ADR；`AppTheme.dart → app_theme.dart` 重命名；`utils/app_motion.dart → theme/app_motion.dart`（git mv）；AppColors / AppRadius / AppSpacing 建 token；**不做全局视觉切换** |
+| PR1 | Design Foundation（已交付 `6b79d23f`）：文档冻结。`AppTheme.dart → app_theme.dart` 重命名、`utils/app_motion.dart → theme/app_motion.dart`、AppColors / AppRadius / AppSpacing token 属 **Foundation implementation debt**，随 PR4/PR5 收敛 |
 | PR2 | QA Infrastructure + AI Skill：Golden helpers、字体加载、viewport、DESIGN_QA 流程、PR checklist、sylulive-design skill |
 | PR3 | Chat Pilot：私信列表/详情/composer/发送态；chat magic duration 迁移；Widget tests + Goldens |
 | PR4 | Motion Cleanup：首页 Tab reveal 降频（见 MOTION.md §11）、navigation、AppMotion 收敛 |

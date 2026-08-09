@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
-import 'package:shenliyuan/theme/AppTheme.dart';
+import 'package:shenliyuan/theme/app_theme.dart';
 
 /// 稳定、真实、最小的 SYLUlive App shell，供 golden / widget 测试包裹待测 widget。
 ///

@@ -38,12 +38,12 @@
 
 | 阶段 | 动作 |
 | --- | --- |
-| PR1 | 冻结本决策；建立 `AppColors.brandPrimary` / `legacyMaterialSeed` / accent 常量；`ColorScheme` 仍由 legacy seed 生成（写为 known debt） |
+| PR1 | 冻结本决策（已交付 `6b79d23f`）。`AppColors` 等 token 文件属 **Foundation implementation debt**，随 PR4/PR5 落地；`ColorScheme` 仍由 legacy seed 生成（写为 known debt） |
 | PR1–PR4 | 各模块迁移只使用语义 token，不动 seed |
 | PR5 | `ColorScheme.fromSeed(AppColors.brandPrimary)` + 全 App 视觉迁移，由 Golden diff 验收 |
 
 ## 影响
 
 - 设计 token：`AppColors.brandPrimary` 成为全局唯一品牌入口。
-- QA：PR5 的视觉 diff 覆盖 matrix：360×800 light / 390×844 light / 360×800 dark / 7200×800 large-text（详见 PR2）。
+- QA：PR5 的视觉 diff 覆盖 matrix：360×800 light / 390×844 light / 360×800 dark / 360×800 large-text（详见 docs/design/DESIGN_QA.md）。
 - 无运行时破坏：本决策只冻结语义，不改变任何运行时行为。

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/api_constants.dart';
 import '../../services/emoji_favorite_service.dart';
+import '../../theme/app_motion.dart';
 import 'emoji_catalog.dart';
 import 'sticker_catalog.dart';
 
@@ -86,10 +87,14 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
 
   void _selectTab(int index) {
     if (index < 0 || index >= _tabCount) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pageController.jumpToPage(index);
+      return;
+    }
     _pageController.animateToPage(
       index,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
+      duration: AppMotion.tab,
+      curve: AppMotion.incoming,
     );
   }
 
@@ -101,10 +106,14 @@ class _AppEmojiPanelState extends State<AppEmojiPanel> {
         0.0,
         _tabScrollController.position.maxScrollExtent,
       );
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _tabScrollController.jumpTo(target);
+        return;
+      }
       _tabScrollController.animateTo(
         target,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
+        duration: AppMotion.fast,
+        curve: AppMotion.incoming,
       );
     });
   }

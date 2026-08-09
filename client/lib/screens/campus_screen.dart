@@ -306,13 +306,10 @@ class _CampusScreenState extends State<CampusScreen>
                       ),
                     ),
                     const SizedBox(height: 12),
-                    HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 3 : 4,
-                      child: CampusNewsSectionHeader(
-                        isDark: isDark,
-                        onCompetitionTap: () =>
-                            _openPage(const CompetitionCenterScreen()),
-                      ),
+                    CampusNewsSectionHeader(
+                      isDark: isDark,
+                      onCompetitionTap: () =>
+                          _openPage(const CompetitionCenterScreen()),
                     ),
                     const SizedBox(height: 6),
                   ]),
@@ -321,10 +318,7 @@ class _CampusScreenState extends State<CampusScreen>
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 126),
                 sliver: SliverToBoxAdapter(
-                  child: HomeTabRevealItem(
-                    index: _aiCapabilities == null ? 4 : 5,
-                    child: _buildRecentList(isDark),
-                  ),
+                  child: _buildRecentList(isDark),
                 ),
               ),
             ],

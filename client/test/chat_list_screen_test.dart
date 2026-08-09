@@ -128,12 +128,10 @@ void main() {
       find.byKey(const ValueKey('chat-conversation-42')),
     );
     final unreadDecoration = unreadTile.decoration as BoxDecoration;
-    expect(unreadDecoration.color, Colors.white);
-    expect(unreadDecoration.border, isA<Border>());
-    expect(
-      (unreadDecoration.border! as Border).top.color,
-      const Color(0xFFE5E2FF),
-    );
+    expect(unreadDecoration.color, isNot(Colors.transparent));
+    expect(unreadDecoration.border, isNull);
+    expect(unreadDecoration.boxShadow, isNull);
+    expect(unreadDecoration.borderRadius, BorderRadius.zero);
     expect(
       tester.getSize(find.byKey(const ValueKey('chat-conversation-42'))),
       const Size(368, 78),

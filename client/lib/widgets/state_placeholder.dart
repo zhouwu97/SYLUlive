@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../utils/app_motion.dart';
+import '../theme/app_motion.dart';
 
 /// 统一空态 / 加载态 / 错误态占位组件。
 ///
@@ -57,10 +57,11 @@ class StatePlaceholder extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               // 消息区被键盘/表情面板压缩时退化为最小形态，避免纵向溢出。
-              final tight = constraints.maxHeight.isFinite &&
-                  constraints.maxHeight < 160;
+              final tight =
+                  constraints.maxHeight.isFinite && constraints.maxHeight < 160;
               final showSubtitle = subtitle != null && !tight;
-              final showAction = actionLabel != null && onAction != null && !tight;
+              final showAction =
+                  actionLabel != null && onAction != null && !tight;
               final circleSize = tight
                   ? 56.0
                   : compact
@@ -84,12 +85,18 @@ class StatePlaceholder extends StatelessWidget {
                             width: 24,
                             height: 24,
                             child: Center(
-                              child: CircularProgressIndicator(strokeWidth: 2.4),
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2.4),
                             ),
                           )
                         : Icon(icon, size: compact ? 28 : 32, color: accent),
                   ),
-                  SizedBox(height: tight ? 10 : compact ? 14 : 18),
+                  SizedBox(
+                      height: tight
+                          ? 10
+                          : compact
+                              ? 14
+                              : 18),
                   Text(
                     title,
                     textAlign: TextAlign.center,
@@ -109,7 +116,8 @@ class StatePlaceholder extends StatelessWidget {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
-                        color: isDark ? Colors.white54 : const Color(0xFF847A74),
+                        color:
+                            isDark ? Colors.white54 : const Color(0xFF847A74),
                         height: 1.5,
                       ),
                     ),

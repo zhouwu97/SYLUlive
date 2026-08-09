@@ -5,11 +5,13 @@ class HomeTabRevealScope extends InheritedWidget {
     super.key,
     required this.animation,
     required this.serial,
+    this.revealEnabled = true,
     required super.child,
   });
 
   final Animation<double> animation;
   final int serial;
+  final bool revealEnabled;
 
   static HomeTabRevealScope? maybeOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<HomeTabRevealScope>();
@@ -17,7 +19,9 @@ class HomeTabRevealScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(HomeTabRevealScope oldWidget) {
-    return animation != oldWidget.animation || serial != oldWidget.serial;
+    return animation != oldWidget.animation ||
+        serial != oldWidget.serial ||
+        revealEnabled != oldWidget.revealEnabled;
   }
 }
 
@@ -28,12 +32,12 @@ class HomeTabRevealItem extends StatelessWidget {
     required this.child,
     this.enabled = true,
     this.revealOrder,
-    this.delayStep = 0.055,
-    this.initialOffset = 56,
-    this.initialOpacity = 0.80,
-    this.initialScale = 0.984,
+    this.delayStep = 0.025,
+    this.initialOffset = 12,
+    this.initialOpacity = 0.96,
+    this.initialScale = 0.995,
     this.curve = Curves.easeOutCubic,
-    this.maxDelayItems = 7,
+    this.maxDelayItems = 3,
   });
 
   final int index;
@@ -50,7 +54,14 @@ class HomeTabRevealItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scope = HomeTabRevealScope.maybeOf(context);
-    if (!enabled || scope == null) return child;
+    if (!enabled || scope == null || !scope.revealEnabled) return child;
+
+    // 迟挂载项必须读取 controller 的当前值。若首次 reveal 已完成，
+    // 新项直接进入最终状态，不能因为错过 completed callback 而补播。
+    if (scope.animation.status == AnimationStatus.completed ||
+        scope.animation.value >= 1) {
+      return child;
+    }
 
     final order = (revealOrder ?? index).clamp(0, maxDelayItems);
     final delay = order * delayStep;
@@ -62,15 +73,17 @@ class HomeTabRevealItem extends StatelessWidget {
       child: child,
       builder: (context, child) {
         final t = revealCurve.transform(scope.animation.value.clamp(0.0, 1.0));
-        return Opacity(
+        final fadedChild = Opacity(
           opacity: initialOpacity + (1 - initialOpacity) * t,
-          child: Transform.translate(
-            offset: Offset(0, initialOffset * (1 - t)),
-            child: Transform.scale(
-              scale: initialScale + (1 - initialScale) * t,
-              alignment: Alignment.topCenter,
-              child: child,
-            ),
+          child: child,
+        );
+        if (MediaQuery.disableAnimationsOf(context)) return fadedChild;
+        return Transform.translate(
+          offset: Offset(0, initialOffset * (1 - t)),
+          child: Transform.scale(
+            scale: initialScale + (1 - initialScale) * t,
+            alignment: Alignment.topCenter,
+            child: fadedChild,
           ),
         );
       },

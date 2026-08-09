@@ -16,7 +16,7 @@ import '../providers/theme_provider.dart';
 import '../services/app_update_coordinator.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/root_page_state_service.dart';
-import '../utils/app_motion.dart';
+import '../theme/app_motion.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
 import '../utils/screen_swipe.dart';
@@ -24,6 +24,7 @@ import '../widgets/bottom_nav.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/responsive_util.dart';
+import '../utils/tab_transition_ledger.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
 import 'course_schedule_screen.dart';
@@ -79,19 +80,16 @@ class HomeTabKeepAliveStage extends StatelessWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  int _currentIndex = 0;
+  late final TabTransitionLedger _mainTabLedger;
   bool _publishOpening = false;
   final GlobalKey _contentKey = GlobalKey(debugLabel: 'homeContentStack');
-  late final Set<int> _visitedTabs;
   final Map<int, Widget> _tabPages = {};
   late final AnimationController _mainTabController;
   late final AnimationController _contentTabController;
+  late final ValueNotifier<double> _mainVisualIndexListenable;
   Animation<double>? _mainTabAnimation;
-  double _mainVisualIndex = 0;
   double _mainAnimationStartVisualIndex = 0;
   double _mainAnimationEndVisualIndex = 0;
-  int? _mainTargetIndex;
-  int _tabTransitionSerial = 0;
   double _mainSwipeDx = 0;
   Timer? _announcementTimer;
   Timer? _announcementRetryTimer;
@@ -108,6 +106,17 @@ class _HomeScreenState extends State<HomeScreen>
   int _unreadBadgeCount = 0;
   bool _hasUrgentUnread = false;
   bool _hasAdminTasks = false;
+
+  int get _currentIndex => _mainTabLedger.currentIndex;
+  set _currentIndex(int value) => _mainTabLedger.currentIndex = value;
+  Set<int> get _visitedTabs => _mainTabLedger.visitedTabs;
+  Set<int> get _revealedTabs => _mainTabLedger.revealedTabs;
+  int? get _mainTargetIndex => _mainTabLedger.targetIndex;
+  set _mainTargetIndex(int? value) => _mainTabLedger.targetIndex = value;
+  int get _tabTransitionSerial => _mainTabLedger.serial;
+  set _tabTransitionSerial(int value) => _mainTabLedger.serial = value;
+  double get _mainVisualIndex => _mainTabLedger.visualIndex;
+  set _mainVisualIndex(double value) => _mainTabLedger.visualIndex = value;
 
   Future<void> _checkAdminTasks(AuthProvider auth) async {
     try {
@@ -165,16 +174,20 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _hasWidgetTabOverride = consumeWidgetTabSwitch();
-    _currentIndex = _hasWidgetTabOverride ? 2 : widget.initialTab;
+    _mainTabLedger = TabTransitionLedger(
+      itemCount: 5,
+      initialIndex:
+          (_hasWidgetTabOverride ? 2 : widget.initialTab).clamp(0, 4).toInt(),
+    );
     _mainVisualIndex = _currentIndex.toDouble();
-    _visitedTabs = {_currentIndex};
+    _mainVisualIndexListenable = ValueNotifier(_mainVisualIndex);
     _mainTabController = AnimationController(
       vsync: this,
-      duration: AppMotion.nav,
+      duration: AppMotion.tab,
     )..addListener(_handleMainTabAnimationTick);
     _contentTabController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: AppMotion.reveal,
       value: 1,
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
@@ -197,8 +210,10 @@ class _HomeScreenState extends State<HomeScreen>
         _mainAnimationStartVisualIndex = _mainVisualIndex;
         _mainAnimationEndVisualIndex = _mainVisualIndex;
         _visitedTabs.add(restored);
+        _revealedTabs.add(restored);
         _getOrCreateTabPage(restored);
       });
+      _mainVisualIndexListenable.value = _mainVisualIndex;
       _updateBackgroundForTab(restored);
     } catch (error) {
       DiagnosticLogService.instance.record(
@@ -286,6 +301,7 @@ class _HomeScreenState extends State<HomeScreen>
       ..removeListener(_handleMainTabAnimationTick)
       ..dispose();
     _contentTabController.dispose();
+    _mainVisualIndexListenable.dispose();
     _announcementTimer?.cancel();
     _announcementRetryTimer?.cancel();
     _initialUpdateFallbackTimer?.cancel();
@@ -303,9 +319,11 @@ class _HomeScreenState extends State<HomeScreen>
       _currentIndex = widget.initialTab;
       _mainTargetIndex = null;
       _mainVisualIndex = _currentIndex.toDouble();
+      _mainVisualIndexListenable.value = _mainVisualIndex;
       _mainAnimationStartVisualIndex = _mainVisualIndex;
       _mainAnimationEndVisualIndex = _mainVisualIndex;
       _visitedTabs.add(_currentIndex);
+      _revealedTabs.add(_currentIndex);
       _getOrCreateTabPage(_currentIndex);
     }
   }
@@ -1437,11 +1455,10 @@ class _HomeScreenState extends State<HomeScreen>
     if (_mainTargetIndex == null || animation == null || !mounted) return;
 
     final progress = animation.value.clamp(0.0, 1.0);
-    setState(() {
-      _mainVisualIndex = _mainAnimationStartVisualIndex +
-          (_mainAnimationEndVisualIndex - _mainAnimationStartVisualIndex) *
-              progress;
-    });
+    _mainVisualIndex = _mainAnimationStartVisualIndex +
+        (_mainAnimationEndVisualIndex - _mainAnimationStartVisualIndex) *
+            progress;
+    _mainVisualIndexListenable.value = _mainVisualIndex;
   }
 
   void _updateBackgroundForTab(int index) {
@@ -1451,21 +1468,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _switchTab(int index) {
     if (_currentIndex == index) return;
-    _tabTransitionSerial++;
-    _contentTabController.stop();
-    _mainTabController.stop();
-    if (mounted) {
-      setState(() {
-        _currentIndex = index;
-        _mainTargetIndex = null;
-        _mainVisualIndex = index.toDouble();
-        _mainAnimationStartVisualIndex = _mainVisualIndex;
-        _mainAnimationEndVisualIndex = _mainVisualIndex;
-        _visitedTabs.add(index);
-      });
-    }
-    _updateBackgroundForTab(index);
-    unawaited(_persistRootTab(index));
+    unawaited(_settleMainTab(
+      targetIndex: index,
+      duration: AppMotion.tab,
+      commit: true,
+    ));
   }
 
   void _onTabTapped(int index) {
@@ -1484,7 +1491,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (_mainTargetIndex != null) {
         await _settleMainTab(
           targetIndex: targetIndex,
-          duration: AppMotion.nav,
+          duration: AppMotion.tab,
           commit: false,
         );
       }
@@ -1493,7 +1500,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     await _settleMainTab(
       targetIndex: targetIndex,
-      duration: AppMotion.nav,
+      duration: AppMotion.tab,
       commit: true,
     );
   }
@@ -1577,9 +1584,13 @@ class _HomeScreenState extends State<HomeScreen>
     final targetIndex = _targetMainIndexForDx(_mainSwipeDx);
     if (targetIndex == null) {
       if (_mainTargetIndex != null) {
+        _mainTabLedger.cancel();
+        _mainTabController.stop();
+        _contentTabController.stop();
         setState(() {
           _mainTargetIndex = null;
           _mainVisualIndex = _currentIndex.toDouble();
+          _mainVisualIndexListenable.value = _mainVisualIndex;
         });
       }
       return;
@@ -1612,7 +1623,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (targetCandidate != null) {
         unawaited(_settleMainTab(
           targetIndex: null,
-          duration: AppMotion.nav,
+          duration: AppMotion.tab,
           commit: false,
         ));
       }
@@ -1635,13 +1646,13 @@ class _HomeScreenState extends State<HomeScreen>
     if (shouldSwitch) {
       unawaited(_settleMainTab(
         targetIndex: targetIndex,
-        duration: AppMotion.nav,
+        duration: AppMotion.tab,
         commit: true,
       ));
     } else {
       unawaited(_settleMainTab(
         targetIndex: targetCandidate,
-        duration: AppMotion.nav,
+        duration: AppMotion.tab,
         commit: false,
       ));
     }
@@ -1653,7 +1664,7 @@ class _HomeScreenState extends State<HomeScreen>
       _resetNavigationSwipe();
       unawaited(_settleMainTab(
         targetIndex: targetCandidate,
-        duration: AppMotion.nav,
+        duration: AppMotion.tab,
         commit: false,
       ));
     }
@@ -1677,14 +1688,19 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _settleMainTab({
     int? targetIndex,
-    Duration duration = AppMotion.nav,
+    Duration duration = AppMotion.tab,
     required bool commit,
   }) async {
     if (targetIndex == null || targetIndex == _currentIndex) {
+      _mainTabLedger.cancel();
+      _mainTabController.stop();
+      _contentTabController.stop();
       if (mounted) {
         setState(() {
           _mainTargetIndex = null;
           _mainVisualIndex = _currentIndex.toDouble();
+          _mainVisualIndexListenable.value = _mainVisualIndex;
+          _contentTabController.value = 1;
         });
       }
       return;
@@ -1693,11 +1709,15 @@ class _HomeScreenState extends State<HomeScreen>
     _mainTabController.stop();
     _mainTabController.duration = duration;
     _contentTabController.stop();
-    _contentTabController.duration = const Duration(milliseconds: 380);
-    final serial = ++_tabTransitionSerial;
     final fromIndex = _currentIndex;
     final visualStart = _mainVisualIndex;
-    final visualEnd = commit ? targetIndex.toDouble() : fromIndex.toDouble();
+    final target = targetIndex;
+    final plan = _mainTabLedger.begin(
+      target,
+      commit: commit,
+      visualStart: visualStart,
+    );
+    final visualEnd = commit ? target.toDouble() : fromIndex.toDouble();
     _mainTabAnimation = Tween<double>(
       begin: 0,
       end: 1,
@@ -1708,43 +1728,52 @@ class _HomeScreenState extends State<HomeScreen>
     ));
 
     setState(() {
-      _visitedTabs.add(targetIndex);
-      _getOrCreateTabPage(targetIndex);
-      _mainTargetIndex = targetIndex;
+      _getOrCreateTabPage(target);
       _mainAnimationStartVisualIndex = visualStart;
       _mainAnimationEndVisualIndex = visualEnd;
       _mainVisualIndex = visualStart;
-      if (commit) {
-        _currentIndex = targetIndex;
-      }
+      _mainVisualIndexListenable.value = _mainVisualIndex;
     });
 
     if (commit) {
-      _updateBackgroundForTab(targetIndex);
-      unawaited(_persistRootTab(targetIndex));
+      _updateBackgroundForTab(target);
+      unawaited(_persistRootTab(target));
     }
 
-    if (commit) {
-      try {
-        await _contentTabController.forward(from: 0).orCancel;
-      } on TickerCanceled {
-        return;
-      }
-      if (!mounted || serial != _tabTransitionSerial) return;
+    Future<void> contentFuture = Future<void>.value();
+    if (plan.shouldReveal) {
+      _contentTabController.duration = AppMotion.reveal;
+      _contentTabController.value = 0;
+      contentFuture = _contentTabController.forward(from: 0).orCancel;
+    } else {
+      // 已访问页面直接显示，避免重复位移、scale 和 stagger。
+      _contentTabController.value = 1;
     }
 
-    if (visualStart != visualEnd) {
-      try {
-        await _mainTabController.forward(from: 0).orCancel;
-      } on TickerCanceled {
-        return;
-      }
+    Future<void> navigationFuture = Future<void>.value();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (reduceMotion) {
+      // Reduced Motion 仍保留内容 opacity 反馈，但 indicator 直接落位，
+      // 不让用户等待一段位置动画才能确认 Tab 状态。
+      _mainVisualIndex = visualEnd;
+      _mainVisualIndexListenable.value = _mainVisualIndex;
+    } else if (visualStart != visualEnd) {
+      navigationFuture = _mainTabController.forward(from: 0).orCancel;
     }
-    if (!mounted) return;
+
+    try {
+      // 导航 indicator 与首次内容 reveal 同时开始，不能串行等待内容。
+      await Future.wait<void>([contentFuture, navigationFuture]);
+    } on TickerCanceled {
+      return;
+    }
+
+    if (!mounted || !_mainTabLedger.complete(plan)) return;
 
     setState(() {
       _mainTargetIndex = null;
       _mainVisualIndex = _currentIndex.toDouble();
+      _mainVisualIndexListenable.value = _mainVisualIndex;
       _mainAnimationStartVisualIndex = _mainVisualIndex;
       _mainAnimationEndVisualIndex = _mainVisualIndex;
     });
@@ -1842,7 +1871,7 @@ class _HomeScreenState extends State<HomeScreen>
             ? null
             : BottomNavWrapper(
                 currentIndex: _currentIndex,
-                visualIndex: _mainVisualIndex,
+                visualIndexListenable: _mainVisualIndexListenable,
                 onTap: _onTabTapped,
                 authProvider: authProvider,
                 badges: {
@@ -1955,6 +1984,7 @@ class _HomeScreenState extends State<HomeScreen>
             key: _contentKey,
             animation: _contentTabController,
             serial: _tabTransitionSerial,
+            revealEnabled: !_revealedTabs.contains(_currentIndex),
             child: ClipRRect(
               child: IndexedStack(
                 index: _currentIndex,
@@ -1972,6 +2002,7 @@ class _HomeScreenState extends State<HomeScreen>
       key: _contentKey,
       animation: _contentTabController,
       serial: _tabTransitionSerial,
+      revealEnabled: !_revealedTabs.contains(_currentIndex),
       child: HomeTabKeepAliveStage(
         index: _currentIndex,
         children: _buildLazyTabChildren(),

@@ -1,26 +1,24 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../theme/app_colors.dart';
 
 class _NavItemVisualState {
   const _NavItemVisualState({
     required this.color,
-    required this.scale,
-    required this.opacity,
     required this.fontWeight,
   });
 
   final Color color;
-  final double scale;
-  final double opacity;
   final FontWeight fontWeight;
 }
 
 class BottomNavWrapper extends StatelessWidget {
   final int currentIndex;
-  final double visualIndex;
+  final ValueListenable<double> visualIndexListenable;
   final Function(int) onTap;
   final AuthProvider authProvider;
   final Map<int, bool> badges;
@@ -28,7 +26,7 @@ class BottomNavWrapper extends StatelessWidget {
   const BottomNavWrapper({
     super.key,
     required this.currentIndex,
-    required this.visualIndex,
+    required this.visualIndexListenable,
     required this.onTap,
     required this.authProvider,
     this.badges = const {},
@@ -84,78 +82,63 @@ class BottomNavWrapper extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // 指示器位置由 HomeScreen 的连续进度统一驱动。
-                      Positioned(
-                        left: itemWidth * visualIndex,
-                        width: itemWidth,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: Container(
-                            width: 48,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: primaryColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
+                      // 只让 indicator 订阅逐帧进度，避免 Home/Scaffold 重建。
+                      Positioned.fill(
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: visualIndexListenable,
+                          builder: (context, visualIndex, child) {
+                            return Align(
+                              alignment: Alignment.centerLeft,
+                              child: Transform.translate(
+                                offset: Offset(itemWidth * visualIndex, 0),
+                                child: SizedBox(
+                                  width: itemWidth,
+                                  child: Center(
+                                    child: Container(
+                                      width: 48,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: primaryColor.withValues(
+                                            alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _labeledItem(
+                      ValueListenableBuilder<double>(
+                        valueListenable: visualIndexListenable,
+                        builder: (context, visualIndex, child) {
+                          const icons = [
                             Icons.home_rounded,
-                            '首页',
-                            0,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[0] == true,
-                          ),
-                          _labeledItem(
                             Icons.storefront_rounded,
-                            '集市',
-                            1,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[1] == true,
-                          ),
-                          _labeledItem(
                             Icons.calendar_month_rounded,
-                            '课表',
-                            2,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[2] == true,
-                          ),
-                          _labeledItem(
                             Icons.apartment_rounded,
-                            '校园',
-                            3,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[3] == true,
-                          ),
-                          _labeledItem(
                             Icons.person_rounded,
-                            '我',
-                            4,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[4] == true,
-                          ),
-                        ],
+                          ];
+                          const labels = ['首页', '集市', '课表', '校园', '我'];
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: List.generate(
+                              icons.length,
+                              (index) => _labeledItem(
+                                icons[index],
+                                labels[index],
+                                index,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                                visualIndex,
+                                badges[index] == true,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -206,76 +189,62 @@ class BottomNavWrapper extends StatelessWidget {
                   return Stack(
                     alignment: Alignment.center,
                     children: [
-                      // 选中项的背景指示器
-                      Positioned(
-                        left: itemWidth * visualIndex,
-                        width: itemWidth,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: Container(
-                            width: 56,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF147C72)
-                                      .withValues(alpha: 0.2)
-                                  : const Color(0xFFEAF6F3),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                          ),
+                      Positioned.fill(
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: visualIndexListenable,
+                          builder: (context, visualIndex, child) {
+                            return Align(
+                              alignment: Alignment.centerLeft,
+                              child: Transform.translate(
+                                offset: Offset(itemWidth * visualIndex, 0),
+                                child: SizedBox(
+                                  width: itemWidth,
+                                  child: Center(
+                                    child: Container(
+                                      width: 56,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: isDark
+                                            ? const Color(0xFF147C72)
+                                                .withValues(alpha: 0.2)
+                                            : const Color(0xFFEAF6F3),
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _iconOnly(
+                      ValueListenableBuilder<double>(
+                        valueListenable: visualIndexListenable,
+                        builder: (context, visualIndex, child) {
+                          const icons = [
                             Icons.home_rounded,
-                            0,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[0] == true,
-                          ),
-                          _iconOnly(
                             Icons.storefront_rounded,
-                            1,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[1] == true,
-                          ),
-                          _iconOnly(
                             Icons.calendar_month_rounded,
-                            2,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[2] == true,
-                          ),
-                          _iconOnly(
                             Icons.apartment_rounded,
-                            3,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[3] == true,
-                          ),
-                          _iconOnly(
                             Icons.person_rounded,
-                            4,
-                            context,
-                            primaryColor,
-                            itemWidth,
-                            visualIndex,
-                            badges[4] == true,
-                          ),
-                        ],
+                          ];
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: List.generate(
+                              icons.length,
+                              (index) => _iconOnly(
+                                icons[index],
+                                index,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                                visualIndex,
+                                badges[index] == true,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   );
@@ -316,42 +285,32 @@ class BottomNavWrapper extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Transform.scale(
-                scale: visualState.scale,
-                alignment: Alignment.center,
-                child: Opacity(
-                  opacity: visualState.opacity,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Icon(icon, color: visualState.color, size: 22),
-                      if (showBadge)
-                        Positioned(
-                          top: -2,
-                          right: -4,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(icon, color: visualState.color, size: 22),
+                  if (showBadge)
+                    Positioned(
+                      top: -2,
+                      right: -4,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
                         ),
-                    ],
-                  ),
-                ),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 2),
-              Opacity(
-                opacity: visualState.opacity,
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: visualState.color,
-                    fontWeight: visualState.fontWeight,
-                    fontSize: 10,
-                  ),
+              Text(
+                label,
+                style: TextStyle(
+                  color: visualState.color,
+                  fontWeight: visualState.fontWeight,
+                  fontSize: 10,
                 ),
               ),
             ],
@@ -385,31 +344,24 @@ class BottomNavWrapper extends StatelessWidget {
         width: width,
         height: 44,
         child: Center(
-          child: Transform.scale(
-            scale: visualState.scale,
-            alignment: Alignment.center,
-            child: Opacity(
-              opacity: visualState.opacity,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Icon(icon, color: visualState.color, size: 24),
-                  if (showBadge)
-                    Positioned(
-                      top: 0,
-                      right: -2,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(icon, color: visualState.color, size: 24),
+              if (showBadge)
+                Positioned(
+                  top: 0,
+                  right: -2,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
                     ),
-                ],
-              ),
-            ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -428,9 +380,7 @@ class BottomNavWrapper extends StatelessWidget {
     final inactiveColor = isDark ? Colors.white54 : Colors.grey;
 
     return _NavItemVisualState(
-      color: Color.lerp(inactiveColor, const Color(0xFF147C72), softenedT)!,
-      scale: 1.0 + 0.08 * softenedT,
-      opacity: 0.72 + 0.28 * softenedT,
+      color: Color.lerp(inactiveColor, AppColors.brandPrimary, softenedT)!,
       fontWeight: softenedT > 0.55 ? FontWeight.w700 : FontWeight.w500,
     );
   }

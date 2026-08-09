@@ -10,7 +10,7 @@ import '../config/api_constants.dart';
 import '../models/water_section.dart';
 import '../config/water_post_taxonomy.dart';
 import '../widgets/water_section/section_avatar.dart';
-import '../utils/app_motion.dart';
+import '../theme/app_motion.dart';
 import '../utils/responsive_util.dart';
 import '../utils/screen_swipe.dart';
 import '../utils/search_focus_gate.dart';
@@ -25,7 +25,6 @@ import '../providers/water_section_provider.dart';
 import '../services/root_page_state_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
-import '../widgets/home_tab_reveal.dart';
 import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/community_post_card.dart';
 import 'announcement_screen.dart';
@@ -108,16 +107,17 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   late AnimationController _feedSwitchController;
   Animation<double>? _feedSettleAnimation;
-  double _feedDragProgress = 0;
   int? _feedTargetIndex;
+  double _feedVisualIndexValue = kDefaultFeedModeIndex.toDouble();
+  late final ValueNotifier<double> _feedVisualIndexListenable;
+  double _feedSwipeStartVisualIndex = kDefaultFeedModeIndex.toDouble();
   double _feedSwipeDx = 0;
   bool _feedSwipeAccepted = false;
-  int _feedRevealSerial = 0;
-  bool _feedRevealActive = false;
   double? _pendingRestoredScrollOffset;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _autoRefreshTimer;
+  Timer? _announcementDelayTimer;
   List<model.Announcement> _announcements = [];
   List<model.Announcement> _unreadAnnouncements = [];
   bool _wasLoggedIn = false;
@@ -133,8 +133,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   int? _selectedUserId;
 
   static const _autoRefreshInterval = Duration(seconds: 60);
-  static const _feedSwitchDuration = Duration(milliseconds: 480);
-  static const _feedSettleDuration = Duration(milliseconds: 220);
   static const _feedTriggerDistance = 72.0;
   static const _feedTriggerVelocity = 520.0;
 
@@ -144,13 +142,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   int get _currentModeIndex => kFeedModes.indexWhere((m) => m.key == _feedMode);
 
-  double get _feedVisualIndex {
-    final currentIndex =
-        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
-    final targetIndex = _feedTargetIndex;
-    if (targetIndex == null) return currentIndex.toDouble();
-    return currentIndex +
-        (targetIndex - currentIndex) * _feedDragProgress.clamp(0.0, 1.0);
+  double get _feedVisualIndex => _feedVisualIndexValue;
+
+  void _setFeedVisualIndex(double value) {
+    _feedVisualIndexValue =
+        value.clamp(0.0, (kFeedModes.length - 1).toDouble());
+    _feedVisualIndexListenable.value = _feedVisualIndexValue;
   }
 
   String? get _currentRemoteSort => _currentConfig.remoteSort;
@@ -170,11 +167,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       for (final mode in kFeedModes)
         mode.key: ScrollController(keepScrollOffset: true),
     };
+    _feedVisualIndexListenable =
+        ValueNotifier<double>(_currentModeIndex.toDouble());
 
     WidgetsBinding.instance.addObserver(this);
     _feedSwitchController = AnimationController(
       vsync: this,
-      duration: _feedSettleDuration,
+      duration: AppMotion.tab,
     )..addListener(_handleFeedSettleTick);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _restoreCommunityState();
@@ -191,9 +190,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       context.read<WaterSectionProvider>().loadSections();
 
       // 延迟加载其他非核心数据
-      Future.delayed(const Duration(seconds: 3), () {
+      _announcementDelayTimer = Timer(const Duration(seconds: 3), () {
         if (mounted) {
-          _loadAnnouncements();
+          unawaited(_loadAnnouncements());
         }
       });
     });
@@ -224,6 +223,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _feedMode = state.mode;
       _pendingRestoredScrollOffset = state.scrollOffset;
     });
+    _setFeedVisualIndex(_currentModeIndex.toDouble());
     _scheduleRestoredScroll();
   }
 
@@ -271,6 +271,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopAutoRefresh();
+    _announcementDelayTimer?.cancel();
+    _announcementDelayTimer = null;
     unawaited(_persistCommunityState());
 
     for (final controller in _feedScrollControllers.values) {
@@ -282,6 +284,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _feedSwitchController
       ..removeListener(_handleFeedSettleTick)
       ..dispose();
+    _feedVisualIndexListenable.dispose();
     super.dispose();
   }
 
@@ -386,49 +389,62 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   void _handleFeedSettleTick() {
-    final targetIndex = _feedTargetIndex;
     final animation = _feedSettleAnimation;
-    if (targetIndex == null || animation == null || !mounted) return;
-    setState(() {
-      _feedDragProgress = animation.value.clamp(0.0, 1.0);
-    });
+    if (animation == null || !mounted) return;
+    _setFeedVisualIndex(animation.value);
+  }
+
+  Future<void> _animateFeedIndicatorTo(
+    int targetIndex, {
+    double? begin,
+    Duration duration = AppMotion.tab,
+  }) async {
+    final start = (begin ?? _feedVisualIndex).clamp(
+      0.0,
+      (kFeedModes.length - 1).toDouble(),
+    );
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _feedSwitchController.stop();
+      _feedSettleAnimation = null;
+      _setFeedVisualIndex(targetIndex.toDouble());
+      return;
+    }
+    _feedSwitchController.stop();
+    _feedSwitchController.duration = duration;
+    final animation = Tween<double>(
+      begin: start,
+      end: targetIndex.toDouble(),
+    ).animate(CurvedAnimation(
+      parent: _feedSwitchController,
+      curve: AppMotion.movement,
+    ));
+    _feedSettleAnimation = animation;
+    _setFeedVisualIndex(start);
+    try {
+      await _feedSwitchController.forward(from: 0).orCancel;
+    } on TickerCanceled {
+      return;
+    }
+    if (mounted && identical(animation, _feedSettleAnimation)) {
+      _setFeedVisualIndex(targetIndex.toDouble());
+    }
   }
 
   Future<void> _changeFeedMode(String mode) async {
     if (_feedMode == mode) return;
     final newIndex = kFeedModes.indexWhere((m) => m.key == mode);
     if (newIndex < 0) return;
-    final oldIndex =
-        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+    final startVisual = _feedVisualIndex;
     unawaited(_persistCommunityState());
 
     _refreshFeedMode(mode);
-    _feedSwitchController.stop();
-    _feedSwitchController.duration = _feedSwitchDuration;
-
-    _feedSettleAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _feedSwitchController,
-        curve: const Interval(0.0, 0.58, curve: Curves.easeOutQuad),
-      ),
-    );
-
     setState(() {
       _feedMode = mode;
-      _feedTargetIndex = oldIndex;
-      _feedDragProgress = 1.0;
-      _feedRevealSerial++;
-      _feedRevealActive = true;
-    });
-
-    await _feedSwitchController.forward(from: 0);
-
-    if (!mounted) return;
-    setState(() {
-      _feedRevealActive = false;
       _feedTargetIndex = null;
-      _feedDragProgress = 0;
     });
+
+    // 内容立即换，只有顶部 indicator 使用 120ms 的可 retarget 过渡。
+    await _animateFeedIndicatorTo(newIndex, begin: startVisual);
     unawaited(_persistCommunityState());
   }
 
@@ -533,6 +549,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void _handleFeedSwipeStart(DragStartDetails details) {
     _feedSwitchController.stop();
     _feedSwipeDx = 0;
+    _feedSwipeStartVisualIndex = _currentModeIndex.toDouble();
+    _setFeedVisualIndex(_feedSwipeStartVisualIndex);
     _feedSwipeAccepted = !isMainNavigationGestureZone(
       startY: details.globalPosition.dy,
       screenHeight: MediaQuery.sizeOf(context).height,
@@ -540,7 +558,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (_feedSwipeAccepted) {
       setState(() {
         _feedTargetIndex = null;
-        _feedDragProgress = 0;
       });
     }
   }
@@ -550,18 +567,17 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _feedSwipeDx += details.primaryDelta ?? 0;
     final targetIndex = _targetFeedIndexForDx(_feedSwipeDx);
     if (targetIndex == null) {
-      setState(() {
-        _feedTargetIndex = null;
-        _feedDragProgress = 0;
-      });
+      _feedTargetIndex = null;
+      _setFeedVisualIndex(_feedSwipeStartVisualIndex);
       return;
     }
 
-    _refreshFeedMode(kFeedModes[targetIndex].key);
-    setState(() {
-      _feedTargetIndex = targetIndex;
-      _feedDragProgress = 0;
-    });
+    final width = MediaQuery.sizeOf(context).width;
+    final progress = (_feedSwipeDx.abs() / width).clamp(0.0, 1.0);
+    _feedTargetIndex = targetIndex;
+    _setFeedVisualIndex(
+      _feedSwipeStartVisualIndex + (_feedSwipeDx < 0 ? 1 : -1) * progress,
+    );
   }
 
   Future<void> _handleFeedSwipe(DragEndDetails details) async {
@@ -583,13 +599,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (shouldSwitch) {
       await _changeFeedMode(kFeedModes[nextIndex].key);
     } else {
-      await _settleFeedMode(
-        targetIndex: _feedTargetIndex,
-        begin: _feedDragProgress,
-        end: 0.0,
-        duration: _feedSettleDuration,
-        commit: false,
-      );
+      await _animateFeedIndicatorTo(_currentModeIndex);
+      _feedTargetIndex = null;
     }
   }
 
@@ -605,55 +616,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _settleFeedMode({
     int? targetIndex,
-    double begin = 0,
-    double end = 0,
-    Duration duration = _feedSettleDuration,
     required bool commit,
   }) async {
-    if (targetIndex == null || targetIndex == _currentModeIndex) {
-      if (mounted) {
-        setState(() {
-          _feedTargetIndex = null;
-          _feedDragProgress = 0;
-        });
-      }
+    if (commit && targetIndex != null && targetIndex != _currentModeIndex) {
+      await _changeFeedMode(kFeedModes[targetIndex].key);
       return;
     }
-
-    if (commit) {
-      unawaited(_persistCommunityState());
-      _refreshFeedMode(kFeedModes[targetIndex].key);
-    }
-
-    _feedSwitchController.stop();
-    _feedSwitchController.duration = duration;
-    _feedSettleAnimation = Tween<double>(
-      begin: begin.clamp(0.0, 1.0).toDouble(),
-      end: end.clamp(0.0, 1.0).toDouble(),
-    ).animate(CurvedAnimation(
-      parent: _feedSwitchController,
-      curve: Curves.easeOutQuad,
-    ));
-
-    setState(() {
-      _feedTargetIndex = targetIndex;
-      _feedDragProgress = begin.clamp(0.0, 1.0).toDouble();
-    });
-
-    await _feedSwitchController.forward(from: 0);
-    if (!mounted) return;
-
-    setState(() {
-      if (commit) {
-        _feedMode = kFeedModes[targetIndex].key;
-        _feedRevealSerial++;
-      }
-      _feedTargetIndex = null;
-      _feedDragProgress = 0;
-    });
-    if (commit) {
-      unawaited(_persistCommunityState());
-    }
+    await _animateFeedIndicatorTo(_currentModeIndex);
+    _feedTargetIndex = null;
   }
 
   void _openMessages() {
@@ -1024,64 +994,79 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildFeedTabs(bool isDark) {
     const tabWidth = 48.0;
-    final visualIndex = _feedVisualIndex;
     final activeColor = isDark ? Colors.white : Colors.black87;
     final inactiveColor = isDark ? Colors.white54 : Colors.black45;
 
     return SizedBox(
       width: tabWidth * kFeedModes.length,
       height: 44,
-      child: Stack(
-        children: [
-          // 指示条跟随手势连续移动，而不是等状态切完再跳转。
-          Positioned(
-            left: visualIndex * tabWidth + (tabWidth - 22) / 2,
-            bottom: 3,
-            width: 22,
-            height: 3,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-
-          Row(
-            children: List.generate(kFeedModes.length, (index) {
-              final config = kFeedModes[index];
-              final activeT = (1 - (visualIndex - index).abs()).clamp(
-                0.0,
-                1.0,
-              );
-              final color = Color.lerp(inactiveColor, activeColor, activeT)!;
-              final scale = 1.0 + 0.03 * activeT;
-
-              return SizedBox(
-                width: tabWidth,
-                height: 44,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _changeFeedMode(config.key),
-                  child: Center(
-                    child: Transform.scale(
-                      scale: scale,
-                      child: Text(
-                        config.label,
-                        style: TextStyle(
-                          fontSize: 15 + 0.5 * activeT,
-                          fontWeight:
-                              activeT > 0.5 ? FontWeight.w800 : FontWeight.w500,
-                          color: color,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _feedVisualIndexListenable,
+        builder: (context, visualIndex, child) {
+          return Stack(
+            children: [
+              // 只有 indicator 订阅连续进度，内容状态在点击时立即更新。
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Transform.translate(
+                    offset: Offset(visualIndex * tabWidth, 0),
+                    child: SizedBox(
+                      width: tabWidth,
+                      height: 3,
+                      child: Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 3,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              );
-            }),
-          ),
-        ],
+              ),
+              Row(
+                children: List.generate(kFeedModes.length, (index) {
+                  final config = kFeedModes[index];
+                  final activeT = (1 - (visualIndex - index).abs()).clamp(
+                    0.0,
+                    1.0,
+                  );
+                  final color =
+                      Color.lerp(inactiveColor, activeColor, activeT)!;
+
+                  return SizedBox(
+                    width: tabWidth,
+                    height: 44,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        unawaited(_changeFeedMode(config.key));
+                      },
+                      child: Center(
+                        child: Text(
+                          config.label,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: activeT > 0.5
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1561,9 +1546,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         _feedSwipeAccepted = false;
         unawaited(_settleFeedMode(
           targetIndex: _feedTargetIndex,
-          begin: _feedDragProgress,
-          end: 0.0,
-          duration: _feedSettleDuration,
           commit: false,
         ));
       },
@@ -1596,13 +1578,21 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     FeedModeConfig config,
     String sort,
   ) {
-    final feedList = Selector<PostProvider,
-        ({List<Post> posts, bool isLoading, bool hasMore, int revision})>(
+    final feedList = Selector<
+        PostProvider,
+        ({
+          List<Post> posts,
+          bool isLoading,
+          bool hasMore,
+          String? error,
+          int revision
+        })>(
       selector: (context, postProvider) {
         return (
           posts: postProvider.postsFor(1, sort: sort),
           isLoading: postProvider.isLoadingFor(1, sort: sort),
           hasMore: postProvider.hasMoreFor(1, sort: sort),
+          error: postProvider.errorFor(1, sort: sort),
           revision: postProvider.revisionFor(1, sort: sort),
         );
       },
@@ -1610,6 +1600,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         final posts = data.posts;
         final isFeedLoading = data.isLoading;
         final feedHasMore = data.hasMore;
+        final feedError = data.error;
         final visiblePosts = _resolveVisiblePosts(posts, mode);
 
         final explicitPinnedPosts =
@@ -1691,6 +1682,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       child: CircularProgressIndicator(),
                     ),
                   )
+                else if (feedError != null && posts.isEmpty)
+                  SliverFillRemaining(
+                    child: _buildEmptyState(
+                      isDark,
+                      title: '帖子加载失败',
+                      subtitle: feedError,
+                      onRetry: _refresh,
+                    ),
+                  )
                 else if (pinnedPosts.isEmpty && normalPosts.isEmpty)
                   SliverFillRemaining(
                     child: mode == 'following'
@@ -1753,37 +1753,33 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                   ],
                                 )
                               : null,
-                          child: HomeTabRevealItem(
-                            index: index,
-                            revealOrder: index,
-                            child: CommunityPostCard(
-                              post: post,
-                              onAuthorTap: _openUserInSplit,
-                              onTap: () {
-                                if (_exitSearchInputMode()) {
-                                  return;
-                                }
-                                if (ResponsiveUtil.useDesktopShell(context)) {
-                                  _openPostInSplit(post);
-                                } else {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => post.isPoll
-                                          ? PollDetailScreen(
-                                              pollId: post.pollMeta!.id,
-                                              initialPost: post,
-                                            )
-                                          : PostDetailScreen(
-                                              postId: post.id,
-                                              isMarket: false,
-                                              initialPost: post,
-                                            ),
-                                    ),
-                                  );
-                                }
-                              },
-                            ),
+                          child: CommunityPostCard(
+                            post: post,
+                            onAuthorTap: _openUserInSplit,
+                            onTap: () {
+                              if (_exitSearchInputMode()) {
+                                return;
+                              }
+                              if (ResponsiveUtil.useDesktopShell(context)) {
+                                _openPostInSplit(post);
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => post.isPoll
+                                        ? PollDetailScreen(
+                                            pollId: post.pollMeta!.id,
+                                            initialPost: post,
+                                          )
+                                        : PostDetailScreen(
+                                            postId: post.id,
+                                            isMarket: false,
+                                            initialPost: post,
+                                          ),
+                                  ),
+                                );
+                              }
+                            },
                           ),
                         ),
                       );
@@ -1809,13 +1805,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       },
     );
 
-    if (!_feedRevealActive) return feedList;
-
-    return HomeTabRevealScope(
-      animation: _feedSwitchController,
-      serial: _feedRevealSerial,
-      child: feedList,
-    );
+    // Feed 是高频筛选路径：内容立即替换，不对帖子逐条重播 reveal。
+    return feedList;
   }
 
   Widget _buildSearchBar(bool isDark) {

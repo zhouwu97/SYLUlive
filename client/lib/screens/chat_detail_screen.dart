@@ -20,6 +20,7 @@ import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_feedback.dart';
+import '../utils/app_motion.dart';
 import '../utils/app_navigation.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_time.dart';
@@ -29,6 +30,7 @@ import '../widgets/cached_avatar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
 import '../widgets/emoji/sticker_composer_preview.dart';
+import '../widgets/state_placeholder.dart';
 import '../widgets/swipe_to_exit.dart';
 import 'image_viewer_screen.dart';
 
@@ -1009,8 +1011,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       } else {
         await _scrollController.animateTo(
           0,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
+          duration: AppMotion.nav,
+          curve: AppMotion.standard,
         );
       }
       if (settle) {
@@ -1263,46 +1265,37 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         !_initialLoadFinished &&
         provider.messages.isEmpty) {
       return _wrapMessageBackdrop(
-        const Center(child: CircularProgressIndicator()),
+        const StatePlaceholder(
+          key: ValueKey('chat-detail-loading'),
+          loading: true,
+          title: '加载消息中…',
+          compact: true,
+        ),
         includeBackdrop,
       );
     }
     if (provider.messageError != null && provider.messages.isEmpty) {
       return _wrapMessageBackdrop(
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(provider.messageError!),
-              const SizedBox(height: 12),
-              FilledButton.tonal(
-                onPressed: _initialize,
-                child: const Text('重新加载'),
-              ),
-            ],
-          ),
+        StatePlaceholder(
+          key: const ValueKey('chat-detail-error'),
+          icon: Icons.cloud_off_outlined,
+          title: '消息加载失败',
+          subtitle: provider.messageError,
+          actionLabel: '重新加载',
+          onAction: _initialize,
+          compact: true,
         ),
         includeBackdrop,
       );
     }
     if (provider.messages.isEmpty) {
       return _wrapMessageBackdrop(
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.waving_hand_outlined,
-                size: 56,
-                color: Colors.grey.shade500,
-              ),
-              const SizedBox(height: 14),
-              Text(
-                '向 ${widget.targetUser.nickname} 打个招呼吧',
-                style: TextStyle(color: Colors.grey.shade700),
-              ),
-            ],
-          ),
+        StatePlaceholder(
+          key: const ValueKey('chat-detail-empty'),
+          icon: Icons.waving_hand_outlined,
+          title: '向 ${widget.targetUser.nickname} 打个招呼吧',
+          subtitle: '发送第一条消息开始聊天',
+          compact: true,
         ),
         includeBackdrop,
       );
@@ -2030,8 +2023,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     height: 44,
                     child: AnimatedOpacity(
                       opacity: canSend ? 1 : 0,
-                      duration: const Duration(milliseconds: 130),
-                      curve: Curves.easeOut,
+                      duration: AppMotion.fast,
+                      curve: AppMotion.standard,
                       child: IgnorePointer(
                         ignoring: !canSend,
                         child: IconButton.filled(

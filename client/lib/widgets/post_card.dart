@@ -778,6 +778,19 @@ class _PostCardState extends State<PostCard>
     final post = _displayPost;
     return Row(
       children: [
+        Icon(
+          Icons.visibility_outlined,
+          size: 14,
+          color: isDark ? Colors.white30 : Colors.grey[400],
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '${post.viewCount}',
+          style: TextStyle(
+            fontSize: 11,
+            color: isDark ? Colors.white30 : Colors.grey[400],
+          ),
+        ),
         const Spacer(),
         // 点赞：原地点赞，不进入详情
         InkWell(

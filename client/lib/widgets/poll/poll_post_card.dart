@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import '../../config/api_constants.dart';
 import '../../models/poll.dart';
 import '../../models/post.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/poll_provider.dart';
 import '../cached_avatar.dart';
+import '../feed/feed_post_action_menu.dart';
 import '../post_media/post_media_view.dart';
 import 'poll_option_tile.dart';
 
@@ -18,12 +20,16 @@ class PollPostCard extends StatefulWidget {
   final ValueChanged<Post>? onPostUpdated;
   final PollCardVariant variant;
 
+  /// 卡片右上角操作菜单回调（FEED-3）。为空时不渲染菜单。
+  final ValueChanged<FeedPostAction>? onPostAction;
+
   const PollPostCard({
     super.key,
     required this.post,
     this.onTap,
     this.onAuthorTap,
     this.onPostUpdated,
+    this.onPostAction,
     this.variant = PollCardVariant.homeCompact,
   });
 
@@ -48,6 +54,12 @@ class _PollPostCardState extends State<PollPostCard> {
 
   void _syncSelection() {
     _selected = widget.post.pollMeta?.chosenOptionIds.toSet() ?? {};
+  }
+
+  /// 当前登录用户是否是本帖作者（仅当渲染操作菜单时调用）。
+  bool _isMine(BuildContext context) {
+    final user = context.read<AuthProvider>().user;
+    return user != null && widget.post.authorId == user.id;
   }
 
   void _toggle(int id) {
@@ -166,6 +178,14 @@ class _PollPostCardState extends State<PollPostCard> {
                             fontSize: 11,
                             fontWeight: FontWeight.w700)),
                   ),
+                  if (widget.onPostAction != null) ...[
+                    const SizedBox(width: 4),
+                    FeedPostActionMenu(
+                      isMine: _isMine(context),
+                      isDark: isDark,
+                      onAction: widget.onPostAction!,
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 12),

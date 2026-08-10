@@ -85,6 +85,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   final Map<int, GlobalKey> _messageKeys = {};
   MessageSendState? _sendState;
   MessageProvider? _messageProvider;
+  MessageRealtimeState _lastSeenRealtimeState =
+      MessageRealtimeState.disconnected;
+  bool _reconcilingOnReconnect = false;
   PageRoute<dynamic>? _subscribedRoute;
   bool _isRouteVisible = false;
   AppLifecycleState _lifecycleState =
@@ -223,6 +226,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _positionRequestVersion++;
     _deactivateConversation();
     _refreshTimer?.cancel();
+    _messageProvider?.setFallbackPollingActive(false);
     _keyboardMetricsTimer?.cancel();
     _messageFocusHighlightTimer?.cancel();
     _scrollController
@@ -248,7 +252,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   @override
   void didPush() {
     _isRouteVisible = true;
-    _activateConversationIfVisible();
+    // RouteObserver.subscribe 在 build 期间同步触发 didPush；
+    // _startPolling 会 notifyListeners，必须延迟到帧后。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _activateConversationIfVisible();
+    });
   }
 
   @override
@@ -335,10 +343,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   void _startPolling() {
     _refreshTimer?.cancel();
     if (!_isChatActive || _conversationId == null) return;
+    final provider = _messageProvider;
+    // SSE 健康时不做固定轮询，只做实时 + 事件驱动 reconciliation。
+    if (provider != null &&
+        provider.realtimeState == MessageRealtimeState.connected) {
+      provider.setFallbackPollingActive(false);
+      return;
+    }
     _refreshTimer = Timer(_pollDelay, () async {
       await _refreshMessages();
       if (mounted && _isChatActive) _startPolling();
     });
+    provider?.setFallbackPollingActive(true);
   }
 
   Duration get _pollDelay {
@@ -350,6 +366,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Future<void> _refreshMessages() async {
     if (!mounted || !_isChatActive || _conversationId == null) return;
     await context.read<MessageProvider>().refreshMessages();
+  }
+
+  /// SSE 重新连上后执行一次 REST reconciliation，覆盖当前会话与列表摘要。
+  Future<void> _reconcileAfterReconnect() async {
+    if (_reconcilingOnReconnect) return;
+    _reconcilingOnReconnect = true;
+    try {
+      if (!mounted || !_isChatActive) return;
+      final provider = context.read<MessageProvider>();
+      await provider.refreshMessages();
+      await provider.loadConversations(silent: true);
+    } finally {
+      _reconcilingOnReconnect = false;
+    }
   }
 
   Future<void> _restoreConversationAfterRouteReturn() async {
@@ -818,6 +848,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   void _deactivateConversation() {
     _refreshTimer?.cancel();
+    _messageProvider?.setFallbackPollingActive(false);
     final provider = _messageProvider;
     if (provider?.activeConversationId == _conversationId) {
       provider?.setActiveConversation(null);
@@ -857,6 +888,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (!mounted || !_initialLoadFinished) return;
     final provider = _messageProvider;
     if (provider == null) return;
+
+    // SSE 传输层状态变化：connected 时停止固定轮询并执行一次 REST
+    // reconciliation；断开时恢复 fallback polling（页面仍活跃时）。
+    if (provider.realtimeState != _lastSeenRealtimeState) {
+      _lastSeenRealtimeState = provider.realtimeState;
+      if (provider.realtimeState == MessageRealtimeState.connected) {
+        _refreshTimer?.cancel();
+        provider.setFallbackPollingActive(false);
+        if (_isChatActive) {
+          unawaited(_reconcileAfterReconnect());
+        }
+      } else {
+        _startPolling();
+      }
+    }
+
     final providerConversationId = provider.currentConversationId;
     if (_isChatActive &&
         _conversationId == null &&

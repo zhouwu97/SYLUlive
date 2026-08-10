@@ -186,3 +186,40 @@ func TestEventServiceDwellRemainsMax(t *testing.T) {
 	require.NoError(t, db.First(&imp).Error)
 	require.Equal(t, 3000, imp.DwellMS, "dwell 取最大，不累加")
 }
+
+func TestBaselineOverviewDiversityAndFairness(t *testing.T) {
+	db := newMetricsTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Post{}))
+	loc := shanghaiLocation()
+	day := time.Date(2026, 8, 10, 12, 0, 0, 0, loc)
+	created := day.UTC().Add(-time.Hour)
+
+	p1 := models.Post{BoardID: models.BoardShuitie, AuthorID: 1, PostType: "course_study", Title: "一", Content: "x", Status: models.PostStatusNormal, CreatedAt: created}
+	p2 := models.Post{BoardID: models.BoardShuitie, AuthorID: 2, PostType: "campus_life", Title: "二", Content: "x", Status: models.PostStatusNormal, CreatedAt: created}
+	require.NoError(t, db.Create(&p1).Error)
+	require.NoError(t, db.Create(&p2).Error)
+
+	now := created
+	// p1：20 个 session 各一次有效曝光（position 0），无 open；时间递增保证 session 顺序确定。
+	for i := 0; i < 20; i++ {
+		require.NoError(t, db.Create(&models.FeedImpression{
+			UserID: 1, PostID: p1.ID, FeedSessionID: fmt.Sprintf("s%d", i+1), FeedKind: "all",
+			AlgorithmVersion: "v3", Position: 0, VisibleMS: 800,
+			CreatedAt: now.Add(time.Second * time.Duration(i)),
+		}).Error)
+	}
+	// p2：1 个 session，position 1，带 open（时间更晚，不在前 3 个 session）。
+	openedAt := now.Add(time.Minute)
+	require.NoError(t, db.Create(&models.FeedImpression{
+		UserID: 1, PostID: p2.ID, FeedSessionID: "s21", FeedKind: "all",
+		AlgorithmVersion: "v3", Position: 1, VisibleMS: 800,
+		CreatedAt: now.Add(time.Minute), OpenedAt: &openedAt,
+	}).Error)
+
+	baseline, err := NewFeedMetricsService(db).BaselineOverview(context.Background(), day)
+	require.NoError(t, err)
+	require.Equal(t, 2, baseline.Top20DistinctAuthors)
+	require.Equal(t, 2, baseline.Top20DistinctSections)
+	require.Equal(t, "50.0%", baseline.NewPostFairnessPercent, "p1 达到20次，p2 未达到 → 1/2")
+	require.Equal(t, "0.0%", baseline.ColdStartCTR, "前 3 个 session（s1..s3）均无 open")
+}

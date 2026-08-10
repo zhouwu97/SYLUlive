@@ -4,7 +4,6 @@ import '../config/api_constants.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
 import '../models/water_section.dart';
-import '../models/user.dart';
 import '../providers/post_provider.dart';
 import '../providers/water_section_provider.dart';
 import '../screens/post_detail_screen.dart';
@@ -205,10 +204,6 @@ class _PostCardState extends State<PostCard>
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (widget.post.author != null) ...[
-                              const SizedBox(width: 4),
-                              _buildLevelBadge(widget.post.author!),
-                            ],
                             if (widget.post.waterSectionAuthorMeta != null) ...[
                               const SizedBox(width: 4),
                               _buildSectionLevelBadge(
@@ -230,44 +225,7 @@ class _PostCardState extends State<PostCard>
                   ),
                 ),
                 if (widget.post.boardId == 1 && widget.showCategoryBadge)
-                  _buildCategoryTag(context, isDark)
-                else if (widget.post.author != null)
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isDesktop ? 8 : 6,
-                      vertical: isDesktop ? 4 : 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getCreditColor(
-                        widget.post.author!.creditScore,
-                      ).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(isDesktop ? 8 : 6),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.verified,
-                          size: isDesktop ? 14 : 11,
-                          color: _getCreditColor(
-                            widget.post.author!.creditScore,
-                          ),
-                        ),
-                        SizedBox(width: isDesktop ? 4 : 3),
-                        Text(
-                          '${widget.post.author!.creditScore}%',
-                          style: TextStyle(
-                            color: _getCreditColor(
-                              widget.post.author!.creditScore,
-                            ),
-                            fontSize: isDesktop ? 12 : 10,
-                            height: 1.1,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildCategoryTag(context, isDark),
               ],
             ),
             if (widget.post.title.isNotEmpty) ...[
@@ -802,31 +760,11 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  Color _getCreditColor(int score) {
-    if (score >= 90) return Colors.green;
-    if (score >= 70) return Colors.orange;
-    if (score >= 50) return Colors.red;
-    return Colors.grey;
-  }
-
   Widget _buildBottomMeta(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final post = _displayPost;
     return Row(
       children: [
-        Icon(
-          Icons.visibility_outlined,
-          size: 14,
-          color: isDark ? Colors.white30 : Colors.grey[400],
-        ),
-        const SizedBox(width: 4),
-        Text(
-          '${post.viewCount}',
-          style: TextStyle(
-            fontSize: 11,
-            color: isDark ? Colors.white30 : Colors.grey[400],
-          ),
-        ),
         const Spacer(),
         // 点赞：原地点赞，不进入详情
         InkWell(
@@ -888,28 +826,6 @@ class _PostCardState extends State<PostCard>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildLevelBadge(User user) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 4,
-        vertical: 0.5,
-      ),
-      decoration: BoxDecoration(
-        color: Color(user.levelColorValue).withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        user.levelLabel,
-        style: TextStyle(
-          fontSize: 8,
-          height: 1.15,
-          fontWeight: FontWeight.w700,
-          color: Color(user.levelColorValue),
-        ),
-      ),
     );
   }
 

@@ -122,7 +122,7 @@
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `PUT` | `/api/feed/posts/:post_id/not-interested` | 标记不感兴趣（幂等）。`source` query 可选：`all`/`time`/`featured`/`following`，表示点击时所在 Tab，仅用于分析，默认 `all` |
+| `PUT` | `/api/feed/posts/:post_id/not-interested` | 标记不感兴趣。`source` query 可选：`all`/`time`/`featured`/`following`，表示点击时所在 Tab，仅用于分析，默认 `all`。有效期 90 天，重复标记会续期 |
 | `DELETE` | `/api/feed/posts/:post_id/not-interested` | 撤销不感兴趣（幂等） |
 | `PUT` | `/api/feed/authors/:author_id/hidden` | 不看TA：隐藏该作者（幂等，不取消关注） |
 | `DELETE` | `/api/feed/authors/:author_id/hidden` | 恢复显示该作者（幂等） |
@@ -131,6 +131,11 @@
 语义说明：
 - `HideFromFeed != BlockUser`：隐藏只影响 Feed 列表，不影响搜索、主页、直接帖子 URL、评论区与私信。
 - 「不看TA」与关注关系（`UserFollow`）无关：隐藏不取消关注，恢复后作者自然重新出现在关注流。
+
+FEED-H1 加固：
+- `not_interested` 有效期 90 天（`expires_at`），重复标记刷新有效期；历史无 `expires_at` 记录视为仍有效。
+- 不能隐藏自己、不能对自己的帖子标记不感兴趣（返回 `400`）。
+- 综合推荐 Snapshot 绑定用户：`loadmore` 时归属不匹配返回 `409 feed_session_expired`；隐藏作者 / 不感兴趣 / 撤销 / 恢复后，旧综合快照立即失效。
 
 ## 4.2 Feed 行为事件采集 (Feed Events) — FEED-2
 

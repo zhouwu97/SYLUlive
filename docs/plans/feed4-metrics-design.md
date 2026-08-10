@@ -167,12 +167,12 @@ cold_start_ctr = 注册后前 3 个 FeedSession 的 综合 CTR
 
 | 步骤 | 内容 |
 | --- | --- |
-| 1 | `models/feed_daily_metrics.go`（上表 schema） |
-| 2 | `services/feed_metrics_service.go`：`AggregateDay(ctx, day)` + 六项指标查询方法 |
-| 3 | `internal/tasks`：`StartFeedMetricsCron`（每日聚合 + TTL） |
-| 4 | `cmd/main.go`：AutoMigrate 注册 + cron 注册 |
-| 5 | 单测：聚合幂等（同一天重复跑不翻倍）、TTL 删除、六项指标口径 |
-| 6 | `server/API.md`：如需要 `GET /api/admin/feed/metrics`（管理端），P1 前先内部看板 |
+| 1 | `models/feed_daily_metrics.go`（上表 schema）✅ |
+| 2 | `services/feed_metrics_service.go`：`AggregateDay(ctx, day)` + 六项指标查询方法 ✅ |
+| 3 | `internal/tasks`：`StartFeedMetricsCron`（每日聚合 + TTL）✅ |
+| 4 | `cmd/main.go`：AutoMigrate 注册 + cron 注册 ✅ |
+| 5 | 单测：聚合幂等、TTL 删除、口径（含 FEED-H1 时区/scope）✅ |
+| 6 | `GET /api/admin/feed/metrics` + `/metrics/baseline`（FEED-4B，多样性/公平性/冷启动）✅ |
 
 ---
 
@@ -183,9 +183,10 @@ FEED-4 实现条件：
   [x] FEED-1 合入 MCP（feed_feedbacks / user_hidden_authors 表）—— 已合入
   [x] FEED-2 合入 MCP（feed_impressions 表）—— 已合入
   [x] Core 每日聚合 + 30 天 TTL —— 已实现（FEED-4 Core）
-  [x] FEED-H1 口径修正（CTR 分母 / Asia/Shanghai 时区 / interaction density scope）—— 已落地
+  [x] FEED-H1 口径修正 —— 已落地
+  [x] FEED-4B 管理端端点（metrics + baseline）—— 已实现
   [ ] FEED-3 客户端开始上报事件（依赖 UX-7 合入）
   [ ] 至少积累数日真实曝光数据
 
-当前：Core 已实现；报告完整性与真实数据验证等待 FEED-3 事件流入。
+当前：Core + 管理端点已实现；真实数据验证等待 FEED-3 事件流入。
 ```

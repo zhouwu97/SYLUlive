@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"time"
 
@@ -200,13 +202,23 @@ func (s *FeedMetricsService) AggregateAndCleanup(ctx context.Context, day time.T
 type MetricReport struct {
 	Date string `json:"date"`
 	Kind string `json:"feed_kind"`
-	CTR  string `json:"ctr"` // unique_opens / impressions
+
+	// 曝光 / 打开（FEED-4B 管理看板原始口径）。
+	AlgorithmVersion string `json:"algorithm_version"`
+	Impressions      int    `json:"impressions"`
+	UniqueOpens      int    `json:"unique_opens"`
+
+	CTR        string `json:"ctr"`          // unique_opens / impressions
+	AvgDwellMS int    `json:"avg_dwell_ms"` // sum_dwell / impressions
+
 	// 互动密度：仅 all 行有全局互动代理值；其它 feed_kind 无法按 Tab 归因 → null。
 	InteractionDensity      *string `json:"interaction_density"`
 	InteractionDensityScope string  `json:"interaction_density_scope"` // global_proxy | unavailable
 	// 负反馈：not_interested 可按 Source 归因；hidden_author 无 Source，只有全局计数。
 	NotInterestedRate       string `json:"not_interested_rate"`
 	HiddenAuthorGlobalCount int    `json:"hidden_author_global_count"`
+	// 综合负反馈率（not_interested + hidden）/ impressions ×1000。
+	NegativeRate string `json:"negative_rate"`
 }
 
 // BuildReport 读取 feed_daily_metrics 生成基线报告（仅含曝光 > 0 的行）。
@@ -232,17 +244,28 @@ func (s *FeedMetricsService) BuildReport(ctx context.Context, dayStart, dayEnd t
 			scope = "global_proxy"
 		}
 		notInterestedRate := ""
+		negRate := ""
+		avgDwell := 0
 		if r.Impressions > 0 {
 			notInterestedRate = formatFloat(float64(r.NotInterested) / float64(r.Impressions) * 1000)
+			negRate = formatFloat(float64(r.NotInterested+r.HiddenAuthors) / float64(r.Impressions) * 1000)
+			if r.SumDwellMS > 0 {
+				avgDwell = int(r.SumDwellMS / int64(r.Impressions))
+			}
 		}
 		reports = append(reports, MetricReport{
 			Date:                    r.Date.Format("2006-01-02"),
 			Kind:                    r.FeedKind,
+			AlgorithmVersion:        r.AlgorithmVersion,
+			Impressions:             r.Impressions,
+			UniqueOpens:             r.UniqueOpens,
 			CTR:                     ctr,
+			AvgDwellMS:              avgDwell,
 			InteractionDensity:      density,
 			InteractionDensityScope: scope,
 			NotInterestedRate:       notInterestedRate,
 			HiddenAuthorGlobalCount: r.HiddenAuthors,
+			NegativeRate:            negRate,
 		})
 	}
 	return reports, nil
@@ -255,4 +278,169 @@ func formatPercent(v float64) string {
 
 func formatFloat(v float64) string {
 	return strconv.FormatFloat(v, 'f', 2, 64)
+}
+
+// BaselineMetrics 某日的补充基线指标（FEED-4B §26.2-26.4）。
+type BaselineMetrics struct {
+	Date string `json:"date"`
+	// 第一屏多样性：当日 top-20 位置去重作者 / 版块数。
+	Top20DistinctAuthors  int `json:"top20_distinct_authors"`
+	Top20DistinctSections int `json:"top20_distinct_sections"`
+	// 新帖公平性：当日发布帖子中，24h 内获得 ≥20 次有效曝光的比例（%）。
+	NewPostFairnessPercent string `json:"new_post_fairness_percent"`
+	// 冷启动：注册后前 3 个 session 的「综合」CTR（%）。
+	ColdStartCTR string `json:"cold_start_ctr"`
+}
+
+// BaselineOverview 统计某上海自然日的补充基线指标。
+func (s *FeedMetricsService) BaselineOverview(ctx context.Context, day time.Time) (BaselineMetrics, error) {
+	loc := shanghaiLocation()
+	sh := day.In(loc)
+	dayStart := time.Date(sh.Year(), sh.Month(), sh.Day(), 0, 0, 0, 0, loc).UTC()
+	dayEnd := dayStart.AddDate(0, 0, 1)
+	out := BaselineMetrics{Date: day.In(loc).Format("2006-01-02")}
+
+	// 1. 第一屏多样性：position 0..19 的去重作者 / 版块。
+	var topImps []models.FeedImpression
+	if err := s.db.WithContext(ctx).
+		Where("position >= 0 AND position < 20 AND created_at >= ? AND created_at < ?", dayStart, dayEnd).
+		Find(&topImps).Error; err != nil {
+		return out, err
+	}
+	postIDs := map[uint]struct{}{}
+	for _, imp := range topImps {
+		postIDs[imp.PostID] = struct{}{}
+	}
+	if len(postIDs) > 0 {
+		ids := make([]uint, 0, len(postIDs))
+		for id := range postIDs {
+			ids = append(ids, id)
+		}
+		var rows []struct {
+			AuthorID uint
+			PostType string
+		}
+		if err := s.db.WithContext(ctx).Model(&models.Post{}).
+			Select("author_id, post_type").
+			Where("id IN ?", ids).
+			Scan(&rows).Error; err != nil {
+			return out, err
+		}
+		authors := map[uint]struct{}{}
+		sections := map[string]struct{}{}
+		for _, row := range rows {
+			authors[row.AuthorID] = struct{}{}
+			if row.PostType != "" {
+				sections[row.PostType] = struct{}{}
+			}
+		}
+		out.Top20DistinctAuthors = len(authors)
+		out.Top20DistinctSections = len(sections)
+	}
+
+	// 2. 新帖公平性：当日发布帖子 24h 内有效曝光（visible_ms>=700）≥20。
+	var dayPosts []models.Post
+	if err := s.db.WithContext(ctx).
+		Where("status = ? AND created_at >= ? AND created_at < ?", models.PostStatusNormal, dayStart, dayEnd).
+		Find(&dayPosts).Error; err != nil {
+		return out, err
+	}
+	if len(dayPosts) > 0 {
+		postIDs := make([]uint, 0, len(dayPosts))
+		byID := map[uint]models.Post{}
+		for _, p := range dayPosts {
+			postIDs = append(postIDs, p.ID)
+			byID[p.ID] = p
+		}
+		var validImps []models.FeedImpression
+		if err := s.db.WithContext(ctx).
+			Where("post_id IN ? AND visible_ms >= 700 AND created_at >= ? AND created_at < ?",
+				postIDs, dayStart, dayEnd.AddDate(0, 0, 1)).
+			Find(&validImps).Error; err != nil {
+			return out, err
+		}
+		counts := map[uint]int{}
+		for _, imp := range validImps {
+			// 只计发布后 24h 内的有效曝光。
+			if imp.CreatedAt.Before(byID[imp.PostID].CreatedAt.Add(24 * time.Hour)) {
+				counts[imp.PostID]++
+			}
+		}
+		reached := 0
+		for _, count := range counts {
+			if count >= 20 {
+				reached++
+			}
+		}
+		out.NewPostFairnessPercent = formatPercent(float64(reached) / float64(len(dayPosts)) * 100)
+	}
+
+	// 3. 冷启动：注册后前 3 个 session 的「综合」CTR。
+	coldStart := s.coldStartCTR(ctx, dayStart, dayEnd)
+	out.ColdStartCTR = coldStart
+
+	return out, nil
+}
+
+func (s *FeedMetricsService) coldStartCTR(ctx context.Context, dayStart, dayEnd time.Time) string {
+	// 读取当日 all 曝光明细，在 Go 侧聚合：每用户最早 3 个 session 的有效曝光 / open。
+	var imps []models.FeedImpression
+	if err := s.db.WithContext(ctx).
+		Where("feed_kind = ? AND created_at >= ? AND created_at < ?", "all", dayStart, dayEnd).
+		Find(&imps).Error; err != nil {
+		return ""
+	}
+	if len(imps) == 0 {
+		return ""
+	}
+	// user -> 有序 session 列表（含首次时间）。
+	type sessionEntry struct {
+		Session   string
+		CreatedAt time.Time
+	}
+	userSessions := map[uint][]sessionEntry{}
+	seenSession := map[string]bool{}
+	// user+session -> 聚合。
+	type sessionCount struct {
+		imps  int
+		opens int
+	}
+	counts := map[string]sessionCount{}
+	for _, imp := range imps {
+		if imp.VisibleMS < 700 {
+			continue
+		}
+		key := fmt.Sprintf("%d|%s", imp.UserID, imp.FeedSessionID)
+		c := counts[key]
+		c.imps++
+		if imp.OpenedAt != nil {
+			c.opens++
+		}
+		counts[key] = c
+		if !seenSession[key] {
+			seenSession[key] = true
+			userSessions[imp.UserID] = append(userSessions[imp.UserID], sessionEntry{
+				Session: imp.FeedSessionID, CreatedAt: imp.CreatedAt,
+			})
+		}
+	}
+	var totalImp, totalOpen int
+	for userID, entries := range userSessions {
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].CreatedAt.Before(entries[j].CreatedAt)
+		})
+		first := entries
+		if len(first) > 3 {
+			first = first[:3]
+		}
+		for _, entry := range first {
+			c := counts[fmt.Sprintf("%d|%s", userID, entry.Session)]
+			totalImp += c.imps
+			totalOpen += c.opens
+		}
+	}
+	if totalImp == 0 {
+		return ""
+	}
+	return formatPercent(float64(totalOpen) / float64(totalImp) * 100)
 }

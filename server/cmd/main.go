@@ -564,6 +564,7 @@ func main() {
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	feedHandler := handlers.NewFeedHandler(db)
 	feedEventHandler := handlers.NewFeedEventHandler(db)
+	feedMetricsHandler := handlers.NewFeedMetricsHandler(db)
 	pollHandler := handlers.NewPollHandler(db)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
 	competitionHandler, competitionHandlerErr := handlers.NewCompetitionHandlerWithEvidenceStorage(
@@ -1549,6 +1550,9 @@ func main() {
 		admin.POST("/exam-papers/:id/unpublish", examPaperHandler.AdminUnpublish)
 		admin.GET("/candidates", invitationHandler.GetCandidates)
 		admin.GET("/candidates/stats", invitationHandler.GetCandidatesStats)
+
+		admin.GET("/feed/metrics", feedMetricsHandler.AdminMetrics)
+		admin.GET("/feed/metrics/baseline", feedMetricsHandler.AdminBaseline)
 
 		admin.GET("/members", invitationHandler.GetMembers)
 

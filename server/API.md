@@ -251,6 +251,8 @@ FEED-H1 加固：
 | `GET` | `/api/admin/members` | 获取当前管理员列表，返回用户 ID 与学号/登录账号 |
 | `POST` | `/api/admin/invite/:id`| 邀请指定用户成为管理员 |
 | `POST` | `/api/teachers/admin/:id/vote-remove` | 投票罢免管理员 |
+| `GET` | `/api/admin/feed/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD&feed_kind=all` | Feed 每日指标（曝光/open/CTR/avg_dwell/互动密度/负反馈）；默认最近 7 个上海自然日 |
+| `GET` | `/api/admin/feed/metrics/baseline?date=YYYY-MM-DD` | 单日补充基线：top-20 多样性 / 新帖公平性 / 冷启动 CTR |
 
 **超级管理员 (Super Admin)**
 | Method | Endpoint | Description |

@@ -9,12 +9,15 @@ import (
 type HomeFeedService struct {
 	db          *gorm.DB
 	includePoll bool
+	visibility  *FeedVisibilityService
 }
 
-func NewHomeFeedService(db *gorm.DB) *HomeFeedService { return &HomeFeedService{db: db} }
+func NewHomeFeedService(db *gorm.DB) *HomeFeedService {
+	return &HomeFeedService{db: db, visibility: NewFeedVisibilityService(db)}
+}
 
 func NewHomeFeedServiceWithPoll(db *gorm.DB) *HomeFeedService {
-	return &HomeFeedService{db: db, includePoll: true}
+	return &HomeFeedService{db: db, includePoll: true, visibility: NewFeedVisibilityService(db)}
 }
 
 func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
@@ -26,12 +29,16 @@ func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
 	err := query.Order("pinned_weight DESC").Order("pinned_at DESC").Order("id DESC").Limit(3).Find(&posts).Error
 	return posts, err
 }
-func (s *HomeFeedService) BuildSnapshot(now time.Time) ([]uint, error) {
+
+// BuildSnapshot 构建首页推荐快照。
+// userID > 0 时应用 Feed 负反馈过滤（不看TA 对所有 Tab 生效，不感兴趣仅 all 生效）。
+func (s *HomeFeedService) BuildSnapshot(now time.Time, userID uint) ([]uint, error) {
 	base := func() *gorm.DB {
 		query := s.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
 		if !s.includePoll {
 			query = query.Where("content_kind <> ?", models.PostContentKindPoll)
 		}
+		query = s.visibility.ApplyFeedVisibility(query, userID, "all")
 		return query
 	}
 	var posts []models.Post

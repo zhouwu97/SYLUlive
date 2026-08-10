@@ -1447,89 +1447,9 @@ func main() {
 
 	}
 
-	// 公告路由
-
-	announcements := r.Group("/api/announcements")
-
-	{
-
-		announcements.GET("", announcementHandler.GetList)
-
-		announcements.GET("/active", announcementHandler.GetActive)
-
-	}
-
-	announcementsAuth := announcements.Group("")
-
-	announcementsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-
-	{
-		// 静态路由必须在 /:id 之前注册
-		announcementsAuth.GET("/unread", announcementHandler.GetUnread)
-		announcementsAuth.GET("/unread-count", announcementHandler.GetUnreadCount)
-		announcementsAuth.POST("/read-all", announcementHandler.MarkAllRead)
-
-		announcementsAuth.GET("/:id", announcementHandler.GetOne)
-		announcementsAuth.POST("/:id/read", announcementHandler.MarkRead)
-
-	}
-
-	announcementsAdmin := announcements.Group("")
-
-	announcementsAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-
-	{
-		announcementsAdmin.GET("/admin/list", announcementHandler.GetAdminList)
-
-		announcementsAdmin.POST("", announcementHandler.Create)
-
-		announcementsAdmin.PUT("/:id", announcementHandler.Update)
-
-		announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
-
-	}
-
-	// 公告别名路由：App 直连公网 IP 时，部分网络会卡住包含
-	// "announcement" 的明文 HTTP 路径；保留旧路径兼容，客户端走 notices。
-	notices := r.Group("/api/notices")
-
-	{
-
-		notices.GET("", announcementHandler.GetList)
-
-		notices.GET("/active", announcementHandler.GetActive)
-
-	}
-
-	noticesAuth := notices.Group("")
-
-	noticesAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-
-	{
-		// 静态路由必须在 /:id 之前注册
-		noticesAuth.GET("/unread", announcementHandler.GetUnread)
-		noticesAuth.GET("/unread-count", announcementHandler.GetUnreadCount)
-		noticesAuth.POST("/read-all", announcementHandler.MarkAllRead)
-
-		noticesAuth.GET("/:id", announcementHandler.GetOne)
-		noticesAuth.POST("/:id/read", announcementHandler.MarkRead)
-
-	}
-
-	noticesAdmin := notices.Group("")
-
-	noticesAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-
-	{
-		noticesAdmin.GET("/admin/list", announcementHandler.GetAdminList)
-
-		noticesAdmin.POST("", announcementHandler.Create)
-
-		noticesAdmin.PUT("/:id", announcementHandler.Update)
-
-		noticesAdmin.DELETE("/:id", announcementHandler.Delete)
-
-	}
+	// 公告路由：/api/announcements 与 /api/notices 为同一资源别名，
+	// 注册逻辑见 announcement_routes.go。
+	registerAnnouncementRoutes(r, announcementHandler, db, cfg)
 
 	// 举报路由
 

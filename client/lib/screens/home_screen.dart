@@ -48,6 +48,19 @@ Future<void> loadInitialFeedBeforeUpdateCheck({
   await initializeUpdateCheck();
 }
 
+/// 公告中断语义：只有 urgent 可以弹窗主动打断用户。
+///
+/// urgent → modal；important → banner / badge；normal → badge / 公告中心。
+/// important + modal 属于无效组合（服务端 has_urgent 也只统计 urgent），
+/// 客户端弹窗候选严格收敛为 urgent。
+@visibleForTesting
+bool isModalAnnouncementCandidate(Map<String, dynamic> item) {
+  final priority = item['priority']?.toString() ?? '';
+  final displayMode = item['display_mode']?.toString() ?? '';
+  return priority == 'urgent' &&
+      (displayMode == 'modal' || displayMode.isEmpty);
+}
+
 class HomeScreen extends StatefulWidget {
   final int initialTab;
   const HomeScreen({super.key, this.initialTab = 0});
@@ -480,20 +493,8 @@ class _HomeScreenState extends State<HomeScreen>
           final id = _announcementId(item);
           if (_dismissedAnnouncementIds.contains(id)) return false;
           if (_seenAnnouncementIds.contains(id)) return false;
-          final priority = item['priority']?.toString() ?? '';
-          final displayMode = item['display_mode']?.toString() ?? '';
-          return (priority == 'urgent' || priority == 'important') &&
-              (displayMode == 'modal' || displayMode.isEmpty);
+          return isModalAnnouncementCandidate(item);
         }).toList();
-
-        // Sort: urgent before important
-        candidates.sort((a, b) {
-          final pa = a['priority']?.toString() ?? '';
-          final pb = b['priority']?.toString() ?? '';
-          if (pa == 'urgent' && pb != 'urgent') return -1;
-          if (pa != 'urgent' && pb == 'urgent') return 1;
-          return 0;
-        });
 
         if (candidates.isNotEmpty) {
           final top = candidates.first;

@@ -12,7 +12,6 @@ import '../config/water_post_taxonomy.dart';
 import '../widgets/water_section/section_avatar.dart';
 import '../theme/app_motion.dart';
 import '../utils/responsive_util.dart';
-import '../utils/screen_swipe.dart';
 import '../utils/search_focus_gate.dart';
 
 import '../models/announcement.dart' as model;
@@ -112,7 +111,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   late final ValueNotifier<double> _feedVisualIndexListenable;
   double _feedSwipeStartVisualIndex = kDefaultFeedModeIndex.toDouble();
   double _feedSwipeDx = 0;
-  bool _feedSwipeAccepted = false;
   double? _pendingRestoredScrollOffset;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -551,19 +549,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _feedSwipeDx = 0;
     _feedSwipeStartVisualIndex = _currentModeIndex.toDouble();
     _setFeedVisualIndex(_feedSwipeStartVisualIndex);
-    _feedSwipeAccepted = !isMainNavigationGestureZone(
-      startY: details.globalPosition.dy,
-      screenHeight: MediaQuery.sizeOf(context).height,
-    );
-    if (_feedSwipeAccepted) {
-      setState(() {
-        _feedTargetIndex = null;
-      });
-    }
+    setState(() {
+      _feedTargetIndex = null;
+    });
   }
 
   void _handleFeedSwipeUpdate(DragUpdateDetails details) {
-    if (!_feedSwipeAccepted) return;
     _feedSwipeDx += details.primaryDelta ?? 0;
     final targetIndex = _targetFeedIndexForDx(_feedSwipeDx);
     if (targetIndex == null) {
@@ -581,12 +572,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _handleFeedSwipe(DragEndDetails details) async {
-    final accepted = _feedSwipeAccepted;
-    _feedSwipeAccepted = false;
-    if (!accepted) {
-      return;
-    }
-
     final velocity = details.primaryVelocity ?? 0;
     final nextIndex = _targetFeedIndexForDx(
       velocity.abs() >= _feedTriggerVelocity ? velocity : _feedSwipeDx,
@@ -1543,7 +1528,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       onHorizontalDragEnd: _handleFeedSwipe,
       onHorizontalDragCancel: () {
         _feedSwipeDx = 0;
-        _feedSwipeAccepted = false;
         unawaited(_settleFeedMode(
           targetIndex: _feedTargetIndex,
           commit: false,

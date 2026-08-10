@@ -14,7 +14,6 @@ import '../services/course_reminder_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import '../utils/responsive_util.dart';
-import '../utils/screen_swipe.dart';
 import 'course_schedule_settings_screen.dart';
 import 'home_widget_settings_screen.dart';
 import 'edu_screen.dart';
@@ -284,15 +283,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  bool _isCourseWeekSwipeArea(Offset globalPosition) {
-    final height = MediaQuery.sizeOf(context).height;
-    if (height <= 0) return false;
-    return !isMainNavigationGestureZone(
-      startY: globalPosition.dy,
-      screenHeight: height,
-    );
-  }
-
   bool _canDragWeek() {
     return !_isFetchingCourses && !_isImportingCourses && !_initializing;
   }
@@ -315,7 +305,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   void _handleWeekPointerDown(PointerDownEvent event) {
     if (_weekDragPointer != null ||
         !_canDragWeek() ||
-        !_isCourseWeekSwipeArea(event.position) ||
         !_weekPageController.hasClients) {
       return;
     }

@@ -12,7 +12,7 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
-import '../theme/AppTheme.dart';
+import '../theme/app_theme.dart';
 import '../utils/app_time.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/state_placeholder.dart';
@@ -581,19 +581,13 @@ class _ChatListScreenState extends State<ChatListScreen>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final muted = isDark ? Colors.white60 : const Color(0xFF6B7280);
-    final emphasized = !splitMode && conversation.unreadCount > 0;
+    final emphasized = conversation.unreadCount > 0;
     final tileColor = selected
         ? AppTheme.primaryColor.withValues(alpha: isDark ? 0.22 : 0.10)
         : emphasized
-            ? (isDark ? const Color(0xFF212936) : Colors.white)
+            ? AppTheme.primaryColor.withValues(alpha: isDark ? 0.10 : 0.035)
             : Colors.transparent;
-    final tileBorderColor = selected
-        ? AppTheme.primaryColor.withValues(alpha: 0.30)
-        : emphasized
-            ? (isDark
-                ? Colors.white.withValues(alpha: 0.12)
-                : const Color(0xFFE5E2FF))
-            : null;
+    final tileRadius = selected ? AppTheme.borderRadius : 0.0;
     final nickname = targetUser.nickname.isEmpty
         ? '用户${targetUser.id}'
         : targetUser.nickname;
@@ -604,24 +598,12 @@ class _ChatListScreenState extends State<ChatListScreen>
         key: ValueKey('chat-conversation-${conversation.id}'),
         decoration: BoxDecoration(
           color: tileColor,
-          borderRadius: BorderRadius.circular(18),
-          border: tileBorderColor == null
-              ? null
-              : Border.all(color: tileBorderColor),
-          boxShadow: emphasized && !isDark
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.035),
-                    blurRadius: 12,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : null,
+          borderRadius: BorderRadius.circular(tileRadius),
         ),
         child: Material(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
-          clipBehavior: Clip.antiAlias,
+          borderRadius: BorderRadius.circular(tileRadius),
+          clipBehavior: selected ? Clip.antiAlias : Clip.none,
           child: InkWell(
             onTap: () => _openConversation(conversation, targetUser, splitMode),
             child: SizedBox(
@@ -647,9 +629,11 @@ class _ChatListScreenState extends State<ChatListScreen>
                             nickname,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: emphasized
+                                  ? FontWeight.w700
+                                  : FontWeight.w600,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -708,7 +692,13 @@ class _ChatListScreenState extends State<ChatListScreen>
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12, color: muted),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: emphasized ? AppTheme.primaryColor : muted,
+                              fontWeight: emphasized
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
                           ),
                           const SizedBox(height: 6),
                           if (conversation.unreadCount > 0)
@@ -722,7 +712,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                               ),
                               decoration: BoxDecoration(
                                 color: AppTheme.primaryColor,
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
                                 conversation.unreadCount > 99

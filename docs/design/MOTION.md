@@ -1,8 +1,8 @@
 # SYLUlive 动效契约（Motion System）
 
-- 状态：**冻结 v1**（2026-08-09）
+- 状态：**冻结 v1（合同修订；movement 曲线待真机 A/B）**（2026-08-09）
 - 基线：`MCP` 分支当前工作树
-- 重要：**AppMotion 已存在且在用（`client/lib/utils/app_motion.dart`），本协议以它为唯一权威实现，不创建第二套 AppMotion**。PR1 将把它 `git mv` 到 `client/lib/theme/app_motion.dart` 并审计数值。
+- 重要：**AppMotion 已存在且在用（`client/lib/theme/app_motion.dart`），本协议以它为唯一权威实现，不创建第二套 AppMotion**。`client/lib/utils/app_motion.dart` 仅作为临时 deprecated export shim。
 
 ## 1. 第一原则：频率优先
 
@@ -19,24 +19,39 @@
 | 偶发 | BottomSheet、Dialog、图片选择、操作菜单 | 200–300ms |
 | 稀有 | 首次引导、重大完成状态 | 允许较明显 delight |
 
-## 3. Token（现有 AppMotion 权威清单）
+## 3. Token（AppMotion 权威清单）
 
 ```dart
-// client/lib/utils/app_motion.dart（PR1 迁移至 theme/）
-static const fast   = Duration(milliseconds: 160);
-static const normal = Duration(milliseconds: 240);
-static const nav    = Duration(milliseconds: 220);
-static const reveal = Duration(milliseconds: 360);
-static const page   = Duration(milliseconds: 320);
-static const detail = Duration(milliseconds: 360);
+// client/lib/theme/app_motion.dart
+static const micro   = Duration(milliseconds: 100); // 高频反馈
+static const tab     = Duration(milliseconds: 120); // indicator / 轻反馈
+static const fast    = Duration(milliseconds: 160);
+static const normal  = Duration(milliseconds: 220);
+static const overlay = Duration(milliseconds: 240);
+static const page    = Duration(milliseconds: 280);
+static const reveal  = Duration(milliseconds: 320); // 仅首次内容建立
 
 static const standard = Curves.easeOutCubic;   // 进入/主要
 static const incoming = Curves.easeOutCubic;   // 进入
-static const outgoing = Curves.easeInCubic;    // 退出
+static const outgoing = Curves.easeOutCubic;   // 退出
+static const movement = Curves.easeInOutCubic; // 当前候选：已存在对象的 A → B
 ```
 
+- `movement` 当前只作为候选实现；必须与 `Curves.easeOutCubic` 做 60Hz 真机 A/B，再冻结最终曲线。Widget/Golden 只能验证状态与布局，不能代替 feel-check。
 - 数值通过真实设备 feel-check 调整，不复制 Web 的 cubic-bezier。
-- 页面级 320/360ms 与 reveal 360ms 属于「大型过渡豁免」（规则 4）。
+- `utils/app_motion.dart` 中的 `nav`（旧 220ms）与 `detail`（旧 360ms）是临时兼容别名；新代码不得继续使用。
+
+### 3.1 旧 → 新迁移表
+
+| 旧 token | 新 token | 迁移说明 |
+| --- | --- | --- |
+| `nav`（220ms） | `tab`（120ms） | 高频 Tab / indicator 使用；运行时行为变化，必须单独验证快速 retarget |
+| `normal`（240ms） | `normal`（220ms） | 普通组件变化统一收敛，调用点需按状态矩阵复核 |
+| `detail`（360ms） | `page`（280ms） | 页面空间关系逐步收窄；旧值仅保留兼容，不得新增引用 |
+| `reveal`（360ms） | `reveal`（320ms） | 首次内容建立；幅度同时收敛到 10–12px |
+| `outgoing: easeInCubic` | `outgoing: easeOutCubic` | 运行时行为变化，不能作为纯文件迁移隐藏 |
+
+`AppMotion` 的旧别名将在全部生产调用点迁移并完成回滚窗口后删除。
 
 ## 4. 硬规则
 
@@ -77,7 +92,7 @@ UI 动画通常 ≤ 300ms；BottomSheet / 大型 Modal / 页面转场可按系�
 - 读取 `MediaQuery.disableAnimationsOf(context)`。
 - 降低后：保留 opacity / color 反馈；移除大距离位移动画 / scale / decorative stagger；**不简单粗暴全部置 0**。
 
-## 7. 当前已知动效现状（审计快照，2026-08-09）
+## 7. 修复前动效审计快照（2026-08-09）
 
 | 位置 | 现状 | 判定 |
 | --- | --- | --- |
@@ -86,13 +101,30 @@ UI 动画通常 ≤ 300ms；BottomSheet / 大型 Modal / 页面转场可按系�
 | `shuitie_screen.dart` / `edu_grade_screen.dart` | `AppMotion.incoming / outgoing` | ✅ 已按 token |
 | `AppMotion` 数值 | `reveal=360 / detail=360` | feel-check 后调整 |
 
-## 8. HomeTabReveal 审计结论（冻结：策略 B）
+本分支的实现状态：Root Tab / Feed indicator 已迁移到局部 `ValueNotifier`，Feed 内容不再套用逐条 reveal；上述表格保留为迁移前证据，避免把历史行为误读为当前合同。
+
+## 8. HomeTabReveal 审计结论（冻结：策略 B，合同修订）
 
 - 实际时长修正：`Interval` 参数是归一化进度，非秒。controller 触发前被设为 380ms，最后一项 delay=7×0.055=0.385 → **约 146ms 开始，380ms 结束**（不是 1.2s）。
-- 但当前行为是：**每次 Tab 切换都重放 stagger（位移 56px + 透明度 + scale 0.984）**。
-- **冻结策略 B**：首次访问 Tab → 保留现有 reveal；重复切换（已访问过的 Tab）→ 不重放 stagger，最多 80–120ms opacity 过渡。
+- 合同修订为：首次访问 Tab → 仅首屏 3–4 个高价值元素做 `translateY: 10–12px → 0`、`opacity: 0.92–0.96 → 1`、`scale: 0.995 → 1`，`AppMotion.reveal` 约 320ms，stagger 间隔 20–35ms。
+- 重复切换（已访问过的 Tab）→ 不重放位移、scale 或 stagger；只有出现明显闪变时，最多保留 80–100ms opacity bridge。
+- 高频 Feed 内容不进入 HomeTabReveal；Feed 切换只改变内容与 indicator，不对帖子逐条 stagger。
 - 理由：频率优先（高频 Tab 不重播）而非时长。
-- 执行：PR4 实现；实现时保留 token 值不变，只改触发条件。
+- 执行：PR4A-2 已在本分支实现；本节合同变更记录必须保留，不得静默覆盖冻结条款。
+
+### 8.1 Feel-check 证据门槛
+
+以下证据是合同验收的一部分，Widget/Golden 不能替代：
+
+| 环境 | 状态 | 记录要求 |
+| --- | --- | --- |
+| 60Hz 真机 | 必测 | 连续切 Tab、A→B→C retarget、取消、反向操作 |
+| 90Hz 真机 | 有硬件则测 | 记录设备与缺项，不因无设备阻塞静态实现 |
+| 120Hz 真机 | 有硬件则测 | 记录设备与缺项，不因无设备阻塞静态实现 |
+| Windows/Chrome | 仅回归辅助 | 可验证状态与布局，不能声称完成真机 feel-check |
+
+当前仓库环境未连接 Android 真机；本分支只记录静态/Widget 验证结果，真机体验需在设备可用后补录。
+证据登记见 [`FEEL_CHECK.md`](./FEEL_CHECK.md)。
 
 ## 9. Motion Audit 方法论（PR4 前执行）
 

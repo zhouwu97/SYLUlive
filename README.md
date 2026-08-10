@@ -42,6 +42,49 @@
 
 ---
 
+## 🎞️ 参考动画效果
+
+本节参考 [emilkowalski/skills](https://github.com/emilkowalski/skills) 中的设计工程与动效经验，并转译为 Flutter/SYLUlive 的实现方式。它是动效参考索引，最终以 [`docs/design/MOTION.md`](./docs/design/MOTION.md)、[`docs/design/DESIGN_SYSTEM.md`](./docs/design/DESIGN_SYSTEM.md) 和 [`docs/design/ACCESSIBILITY.md`](./docs/design/ACCESSIBILITY.md) 为准。
+
+### 动效决策顺序
+
+1. **先判断是否需要动画**：输入、滚动、返回、高频 Tab 等高频操作优先即时反馈；不要为了“看起来更酷”增加动画。
+2. **明确动画目的**：只能用于反馈、状态提示、空间连续性、避免内容突然出现/消失或首次引导解释。
+3. **再选择曲线与时长**：进入/退出使用 ease-out，屏幕内移动使用 ease-in-out；普通 UI 尽量控制在 300ms 内。
+4. **优先 transform 与 opacity**：避免直接动画大列表的 height、width、padding、margin；禁止从 `scale(0)` 出现，使用轻微缩放配合透明度。
+5. **保证可中断与可访问**：拖拽使用 spring/速度判断；尊重 `MediaQuery.disableAnimationsOf(context)`，降低动效时保留透明度或颜色反馈。
+
+### 效果速查
+
+| 效果 | 适用场景 | Flutter 参考实现 | 建议节奏 |
+| --- | --- | --- | --- |
+| **Press / Tap feedback** | 主按钮、可交互卡片 | `InkWell` 状态层或 `AnimatedScale` | `0.95–0.98`，约 100–160ms；不用于输入、滚动和导航本身 |
+| **Fade + Scale in** | 内容替换、轻量状态切换 | `AnimatedSwitcher`、`FadeTransition` + `ScaleTransition` | 从 `0.95` 到 `1.0`，使用 `AppMotion.incoming` |
+| **Slide in / Direction-aware transition** | 页面、详情、抽屉 | `SlideTransition` + `FadeTransition`、现有 `page_transitions.dart` | 由空间方向决定位移；复用 `AppMotion.tab/page` |
+| **Origin-aware pop in** | 菜单、Popover、Tooltip | `ScaleTransition(alignment: ...)` + `FadeTransition` | 从触发控件方向出现；弹窗居中，不能套用触发点原点 |
+| **Crossfade / State morph** | 图标、按钮文案、加载到结果 | `AnimatedSwitcher` 或 `AnimatedOpacity` | 入场快、退场清晰；快速重复触发必须可中断 |
+| **Stagger / Orchestration** | 首次进入的列表或网格 | `Interval` + `FadeTransition` / `SlideTransition` | 每项间隔 20–35ms；只用于偶发首次进入，不能阻塞交互 |
+| **Spring / Rubber-banding** | 拖拽、滑动关闭、越界回弹 | `AnimationController` + `SpringSimulation` | 根据手势速度决定是否关闭，边界使用阻尼，动画可被新手势打断 |
+| **Reveal** | 首次引导、图片或重点内容展示 | `ClipRect` / `ClipPath` 配合透明度 | 低频使用；不作为信息流和高频 Tab 的默认转场 |
+
+### 项目落地规则
+
+- 动画参数统一复用 `client/lib/theme/app_motion.dart` 中的 `AppMotion`，旧路径仅保留临时 deprecated shim，不得在页面里创建第二套 duration/curve token。
+- Web 参考中的 CSS `clip-path`、hover、Framer Motion 等概念不能直接搬入 Flutter；优先使用 Flutter 原生动画组件和现有路由实现。
+- `BackdropFilter`、重 blur、全量列表 stagger 不是默认方案；只有在视觉问题已被验证且通过性能检查时才考虑。
+- 高频 Tab 重复切换不重播大型 reveal；首次访问可以使用 reveal，已访问页面最多保留短暂 opacity 反馈。
+- reduced motion 下删除大距离位移、scale 和装饰性 stagger，但保留能解释状态变化的 opacity/color 反馈。
+
+### 外部参考入口
+
+- [Design Engineering](https://github.com/emilkowalski/skills/blob/main/skills/emil-design-eng/SKILL.md)：动效决策、曲线、时长、性能与无障碍原则。
+- [Animate](https://github.com/emilkowalski/skills/blob/main/skills/animate/SKILL.md)：从“是否应该动”到“如何实现”的构建顺序。
+- [Review Animations](https://github.com/emilkowalski/skills/blob/main/skills/review-animations/SKILL.md)：动效代码审查清单。
+- [Find Animation Opportunities](https://github.com/emilkowalski/skills/blob/main/skills/find-animation-opportunities/SKILL.md)：筛选真正值得增加动画的交互缝隙。
+- [Animation Vocabulary](https://github.com/emilkowalski/skills/blob/main/skills/animation-vocabulary/SKILL.md)：为 Fade、Pop、Stagger、Morph、Rubber-banding 等效果建立统一术语。
+
+---
+
 ## 🔗 SYLUlive 与 SYLUlive_MCP 如何联动
 
 两个仓库不是重复实现，也不是把 App 的全部 AI 功能交给外部模型，而是分别承担生产数据与独立决策能力。

@@ -729,7 +729,7 @@ WaterSectionFollow
 | FEED-H1 | `feed/backend-hardening` | UX 合回 MCP 后 | ✅ **本阶段已实现**（Snapshot UserID / 反馈失效 / 自反馈守卫 / 90 天过期 / 缓存隔离 / metrics 口径时区 scope） |
 | FEED-3 | `feed/user-control-ui` | UX-7 合入后（必须基于最新 MCP） | ✅ UX-7 已合入 MCP，门禁解除；待 FEED-H1 合入后开始 |
 | FEED-4 | baseline metrics（可并 FEED-3 数据落地后启动） | FEED-2/3 数据可用 | ✅ Core 已实现并合入 MCP；⛔ 报告/验收待 FEED-3 真实数据 |
-| FEED-5 | `feed/personalized-ranking-v1` | FEED-4 baseline | 📐 设计完成（feed5-personalized-design.md）；FEED-H1 前置加固已落地；⛔ 依赖 FEED-4 数据 |
+| FEED-5 | `feed/personalized-ranking-v1` | FEED-4 baseline | ✅ **工程已实现并合入 MCP**（UserFeatures/delta/exploration/trace/flag/shadow）；⛔ active rollout 待真实数据 ≥500 曝光 + ≥30 open |
 | FEED-6 | `feed/following-authors` | 不依赖个性化（可提前） | ✅ **本阶段已实现并合入 MCP**（关注作者 + 关注版块；hidden > following） |
 | FEED-7 | topics（P2） | P1 数据稳定后 | ⛔ 依赖 P1 |
 

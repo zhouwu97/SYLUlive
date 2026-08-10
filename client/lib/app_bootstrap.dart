@@ -51,6 +51,7 @@ import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/diagnostic_dio_interceptor.dart';
 import 'services/root_page_state_service.dart';
+import 'services/account_session_cleanup_coordinator.dart';
 import 'services/campus_calendar_service.dart';
 import 'services/post_cache_service.dart';
 import 'services/poll_service.dart';
@@ -1245,7 +1246,16 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: appUpdateCoordinator),
         ChangeNotifierProvider(create: (_) => AuthProvider(dio)),
-        ChangeNotifierProvider(create: (_) => PostProvider(dio)),
+        ChangeNotifierProvider(create: (_) {
+          final postProvider = PostProvider(dio);
+          // H1.5：登录/退出/切换账号时清除首页 Feed 缓存与状态，
+          // 避免账号 A 的个性化首页缓存被账号 B 读到。
+          AccountSessionCleanupCoordinator.instance.register(
+            postProvider,
+            () => postProvider.invalidateHomeFeedCaches(),
+          );
+          return postProvider;
+        }),
         ChangeNotifierProxyProvider<PostProvider, PollProvider>(
           create: (_) => PollProvider(PollService(dio)),
           update: (_, posts, polls) => polls!..bindPostProvider(posts),

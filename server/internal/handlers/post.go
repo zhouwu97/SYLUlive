@@ -35,6 +35,9 @@ func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *PostHan
 
 // Snapshot 帖子快照
 type Snapshot struct {
+	// UserID 快照归属用户。userID > 0 时快照已应用该用户的负反馈过滤，
+	// loadmore 必须校验归属；匿名 / 用户无关的 generic 快照为 0。
+	UserID           uint
 	PostIDs          []uint
 	ExpiredAt        time.Time
 	AlgorithmVersion string
@@ -42,7 +45,51 @@ type Snapshot struct {
 	FeedKind         string
 }
 
-var ActiveSnapshots sync.Map // key: session_id (string), value: Snapshot
+// ActiveSnapshots 帖子快照缓存。key: session_id (string)，value: Snapshot。
+var ActiveSnapshots sync.Map
+
+// ActiveUserSnapshots 用户 → 该用户综合推荐快照 session 集合的索引，
+// 用于用户反馈变化后快速失效其全部旧快照，避免遍历整个 ActiveSnapshots。
+var ActiveUserSnapshots sync.Map // key: userID (uint)，value: *sync.Map[sessionID -> struct{}]
+
+// storeSnapshot 存储快照；用户相关快照（UserID>0）同时登记到用户索引。
+func storeSnapshot(sessionID string, snap Snapshot) {
+	ActiveSnapshots.Store(sessionID, snap)
+	if snap.UserID == 0 {
+		return
+	}
+	idx, _ := ActiveUserSnapshots.LoadOrStore(snap.UserID, &sync.Map{})
+	idx.(*sync.Map).Store(sessionID, struct{}{})
+}
+
+// deleteSnapshot 删除快照；用户相关快照同时从用户索引移除。
+func deleteSnapshot(sessionID string) {
+	value, ok := ActiveSnapshots.Load(sessionID)
+	ActiveSnapshots.Delete(sessionID)
+	if !ok {
+		return
+	}
+	snap := value.(Snapshot)
+	if snap.UserID == 0 {
+		return
+	}
+	if idx, ok := ActiveUserSnapshots.Load(snap.UserID); ok {
+		idx.(*sync.Map).Delete(sessionID)
+	}
+}
+
+// invalidateUserFeedSnapshots 使该用户所有用户相关快照失效（如负反馈变化后）。
+func invalidateUserFeedSnapshots(userID uint) {
+	if userID == 0 {
+		return
+	}
+	if value, ok := ActiveUserSnapshots.LoadAndDelete(userID); ok {
+		value.(*sync.Map).Range(func(sessionID, _ interface{}) bool {
+			ActiveSnapshots.Delete(sessionID.(string))
+			return true
+		})
+	}
+}
 
 var allowedWaterPostTypes = map[string]struct{}{
 	"freshman_help": {},
@@ -325,7 +372,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 					return
 				}
 			} else {
-				ActiveSnapshots.Delete(sessionID)
+				deleteSnapshot(sessionID)
 			}
 		}
 	}
@@ -424,7 +471,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		!tagIDProvided &&
 		searchQuery == "" &&
 		sinceStr == "" {
-		query = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(query, optionalFeedUserID(c), sort)
+		query = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(query, optionalFeedUserID(c), sort, now)
 	}
 
 	// 关注信息：仅展示当前用户关注的版块内的帖子（水帖）
@@ -610,7 +657,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		ActiveSnapshots.Store(sessionID, Snapshot{
+		storeSnapshot(sessionID, Snapshot{
 			PostIDs:   allIDs,
 			ExpiredAt: time.Now().Add(10 * time.Minute),
 			Sort:      sort,
@@ -619,7 +666,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 		// 自动销毁
 		time.AfterFunc(10*time.Minute, func() {
-			ActiveSnapshots.Delete(sessionID)
+			deleteSnapshot(sessionID)
 		})
 
 		// 取出第一页
@@ -1012,8 +1059,9 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			return
 		}
 		snapshot := value.(Snapshot)
-		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm || snapshot.FeedKind != feedKind {
-			ActiveSnapshots.Delete(sessionID)
+		// H1.1：综合快照按用户过滤，loadmore 必须归属校验，避免复用他人个性化快照。
+		if time.Now().After(snapshot.ExpiredAt) || snapshot.Sort != "all" || snapshot.AlgorithmVersion != algorithm || snapshot.FeedKind != feedKind || snapshot.UserID != optionalFeedUserID(c) {
+			deleteSnapshot(sessionID)
 			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
 			return
 		}
@@ -1025,8 +1073,8 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			return
 		}
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all", FeedKind: feedKind})
-		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
+		storeSnapshot(sessionID, Snapshot{UserID: userID, PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), AlgorithmVersion: algorithm, Sort: "all", FeedKind: feedKind})
+		time.AfterFunc(10*time.Minute, func() { deleteSnapshot(sessionID) })
 	} else {
 		var normal []models.Post
 		timeQuery := h.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
@@ -1035,7 +1083,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		if !supportsPoll {
 			timeQuery = timeQuery.Where("content_kind <> ?", models.PostContentKindPoll)
 		}
-		timeQuery = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(timeQuery, userID, "time")
+		timeQuery = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(timeQuery, userID, "time", now)
 		err = timeQuery.Order("created_at DESC").Limit(500).Find(&normal).Error
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
@@ -1107,14 +1155,15 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 			return
 		}
 		snapshot := value.(Snapshot)
-		if time.Now().After(snapshot.ExpiredAt) || snapshot.FeedKind != "legacy_hot" {
-			ActiveSnapshots.Delete(sessionID)
+		if time.Now().After(snapshot.ExpiredAt) || snapshot.FeedKind != "legacy_hot" || snapshot.UserID != optionalFeedUserID(c) {
+			deleteSnapshot(sessionID)
 			c.JSON(http.StatusConflict, gin.H{"error": "信息流已更新，请重新刷新", "code": "feed_session_expired"})
 			return
 		}
 		ids = snapshot.PostIDs
 	} else {
-		ids, err = feed.BuildSnapshot(now, optionalFeedUserID(c))
+		userID := optionalFeedUserID(c)
+		ids, err = feed.BuildSnapshot(now, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
 			return
@@ -1136,8 +1185,8 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 		ids = finalIDs
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
-		ActiveSnapshots.Store(sessionID, Snapshot{PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), Sort: "all", FeedKind: "legacy_hot"})
-		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
+		storeSnapshot(sessionID, Snapshot{UserID: userID, PostIDs: ids, ExpiredAt: now.Add(10 * time.Minute), Sort: "all", FeedKind: "legacy_hot"})
+		time.AfterFunc(10*time.Minute, func() { deleteSnapshot(sessionID) })
 	}
 
 	end := offset + limit

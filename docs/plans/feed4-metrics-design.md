@@ -1,17 +1,17 @@
-# FEED-4：指标基线设计（设计先行，实现待门禁）
+# FEED-4：指标基线（设计 + Core 已实现；报告/验收待门禁）
 
 **日期：** 2026-08-10
-**性质：** 纯分析文档，未写任何代码
-**前置依赖：** FEED-1（`FeedFeedback` / `UserHiddenAuthor`）、FEED-2（`FeedImpression`）、FEED-3（客户端事件流入）
+**性质：** 设计文档；FEED-4 Core 聚合已实现并合入 MCP（`feed_daily_metrics` 每日 cron + 30 天 TTL）
+**前置依赖：** FEED-1（`FeedFeedback` / `UserHiddenAuthor`）、FEED-2（`FeedImpression`）已合入 MCP；FEED-3（客户端事件流入）待门禁
 
 ---
 
 # 0. 为什么现在先出设计
 
-FEED-4 的实现被三个门禁卡住：
+FEED-4 的 Core 聚合已在 MCP 落地，剩余受门禁限制的是报告完整性与真实数据验证：
 
 ```text
-1. FEED-1 / FEED-2 分支尚未合入 MCP（feed_impressions / feed_feedbacks 表不存在于 origin/MCP）
+1. FEED-1 / FEED-2 已合入 MCP（feed_impressions / feed_feedbacks 表已存在）
 2. FEED-3 客户端尚未开始上报事件（依赖 UX-7 合入）
 3. 即使建好聚合，也没有真实曝光数据可聚合
 ```
@@ -180,10 +180,12 @@ cold_start_ctr = 注册后前 3 个 FeedSession 的 综合 CTR
 
 ```text
 FEED-4 实现条件：
-  [ ] FEED-1 合入 MCP（feed_feedbacks / user_hidden_authors 表）
-  [ ] FEED-2 合入 MCP（feed_impressions 表）
+  [x] FEED-1 合入 MCP（feed_feedbacks / user_hidden_authors 表）—— 已合入
+  [x] FEED-2 合入 MCP（feed_impressions 表）—— 已合入
+  [x] Core 每日聚合 + 30 天 TTL —— 已实现（FEED-4 Core）
+  [x] FEED-H1 口径修正（CTR 分母 / Asia/Shanghai 时区 / interaction density scope）—— 已落地
   [ ] FEED-3 客户端开始上报事件（依赖 UX-7 合入）
   [ ] 至少积累数日真实曝光数据
 
-当前：设计完成，实现等待门禁。
+当前：Core 已实现；报告完整性与真实数据验证等待 FEED-3 事件流入。
 ```

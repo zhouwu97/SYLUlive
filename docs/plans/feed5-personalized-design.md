@@ -2,7 +2,7 @@
 
 **日期：** 2026-08-10
 **性质：** 纯分析文档，未写任何代码
-**前置依赖：** FEED-4 指标基线数据积累；FEED-1（负反馈表）与 FEED-2（曝光表）合入 MCP
+**前置依赖：** FEED-4 指标基线数据积累；FEED-1（负反馈表）与 FEED-2（曝光表）已合入 MCP；FEED-H1 已完成 Snapshot.UserID 绑定、反馈失效、90 天 not_interested 过期
 
 ---
 
@@ -11,7 +11,7 @@
 FEED-5 的实现被以下门禁卡住：
 
 ```text
-1. FEED-1 / FEED-2 分支已推送但尚未合入 MCP（表尚不在 origin/MCP）
+1. FEED-1 / FEED-2 已合入 MCP（表已在 origin/MCP）；FEED-H1 已完成 Snapshot.UserID 绑定 / 反馈失效 / 90 天过期
 2. FEED-4 基线指标需要真实数据积累（依赖 FEED-3 客户端事件流入，而 FEED-3 依赖 UX-7）
 3. 权重调参需要 Rank Trace 数据支撑，不能凭空虚设
 ```
@@ -30,7 +30,7 @@ FEED-5 的实现被以下门禁卡住：
 | 槽位 10/5/3/2 + 48h fresh | `home_feed_ranker.go:145-152` | byHot/byFresh/byActivity/byFeatured |
 | PlacementPolicy | `home_feed_ranker.go:53-95` | Strict/Relaxed1/Relaxed2/FinalFill |
 | Poll density | `home_feed_service.go:124-151` | 每 5 条正常插 1 投票 |
-| Snapshot 无 UserID | `handlers/post.go:37-43` | `PostIDs/ExpiredAt/AlgorithmVersion/Sort/FeedKind` —— **FEED-5 加 UserID** |
+| Snapshot 已含 UserID | `handlers/post.go:37-47` | FEED-H1 已加 `UserID` 并做 loadmore 归属校验；FEED-5 复用并扩展 |
 | `feed_session_expired` | `handlers/post.go:999` | 409 冲突码已存在，FEED-5 复用 |
 
 ---
@@ -216,7 +216,7 @@ not_interested                     → hard filter（FEED-1 已过滤）
 
 # 10. Snapshot 加 UserID
 
-当前 `Snapshot`（`handlers/post.go:37`）无 UserID。FEED-5 改为：
+FEED-H1 已按此结构落地 `Snapshot.UserID` 与 loadmore 归属校验（见 `handlers/post.go`）；FEED-5 保持并复用：
 
 ```go
 type Snapshot struct {
@@ -239,8 +239,9 @@ snapshot.UserID != currentUser → feed_session_expired（复用 409）
 ```
 
 > 注意：FEED-1 的 `BuildSnapshot(now, userID)` 已把 userID 传入排序；
-> FEED-5 还要把 userID 存进 Snapshot 并做 loadmore 校验，
-> 否则个性化 session 没有真正绑定用户。
+> FEED-H1 已把 userID 存进 Snapshot 并做 loadmore 校验（当前实现见
+> `handlers/post.go` 的 `getHomeFeedV2` / `getLegacyHomeFeedCompat`），
+> 个性化 session 已真正绑定用户。
 
 ---
 
@@ -290,9 +291,10 @@ reason_codes
 
 ```text
 FEED-5 实现条件：
-  [ ] FEED-1 / FEED-2 合入 MCP
+  [x] FEED-1 / FEED-2 合入 MCP（已合入）
+  [x] Snapshot.UserID 绑定 / loadmore 校验 / 反馈失效（FEED-H1 已落地）
   [ ] FEED-4 基线指标跑过一轮（有真实曝光数据）
   [ ] FEED-3 客户端事件流入（依赖 UX-7）
 
-当前：设计完成，实现等待门禁。
+当前：设计完成，FEED-H1 前置加固已落地，仍等待事件数据积累。
 ```

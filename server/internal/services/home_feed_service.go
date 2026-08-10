@@ -38,7 +38,7 @@ func (s *HomeFeedService) BuildSnapshot(now time.Time, userID uint) ([]uint, err
 		if !s.includePoll {
 			query = query.Where("content_kind <> ?", models.PostContentKindPoll)
 		}
-		query = s.visibility.ApplyFeedVisibility(query, userID, "all")
+		query = s.visibility.ApplyFeedVisibility(query, userID, "all", now)
 		return query
 	}
 	var posts []models.Post

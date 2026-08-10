@@ -310,10 +310,11 @@ func main() {
 		&models.CanteenRatingVote{},
 		&models.UserFollow{},
 
-		// Feed 推荐系统（FEED-1 / FEED-2）
+		// Feed 推荐系统（FEED-1 / FEED-2 / FEED-4）
 		&models.FeedFeedback{},
 		&models.UserHiddenAuthor{},
 		&models.FeedImpression{},
+		&models.FeedDailyMetrics{},
 
 		// 校园资讯
 		&models.CampusArticle{},
@@ -926,6 +927,7 @@ func main() {
 	// 启动后台定时任务
 
 	tasks.StartLotteryCron(db)
+	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))
 	var examPaperStorageCron *tasks.ExamPaperStorageCron
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
 		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
@@ -2104,6 +2106,7 @@ func main() {
 	examPaperStorageCron.Wait()
 	eduCredentialCleanupCron.Wait()
 	eduBindingRecoveryCron.Wait()
+	feedMetricsCron.Wait()
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
 	}

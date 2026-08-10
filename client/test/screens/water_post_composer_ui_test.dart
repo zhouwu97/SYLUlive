@@ -128,7 +128,7 @@ void main() {
     expect(contentHint.style?.fontSize, 14.5);
   });
 
-  testWidgets('publish requires a title before submitting',
+  testWidgets('empty title with content publishes (title optional)',
       (WidgetTester tester) async {
     final postProvider = FakePostProvider();
 
@@ -140,12 +140,9 @@ void main() {
       '今天食堂二楼的窗口很好吃',
     );
     await tester.tap(find.text('发布'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(postProvider.createPostCalls, 0);
-
-    final titleHint = tester.widget<Text>(find.text('添加标题'));
-    expect(titleHint.style?.color, const Color(0xFFE5484D));
+    expect(postProvider.createPostCalls, 1, reason: '标题可选，有正文即可发布');
   });
 
   testWidgets('missing content after title shows validation message',

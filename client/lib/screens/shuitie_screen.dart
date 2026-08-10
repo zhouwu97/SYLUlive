@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../app_bootstrap.dart';
 import '../config/api_constants.dart';
 import '../models/water_section.dart';
 import '../config/water_post_taxonomy.dart';
@@ -21,13 +22,21 @@ import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/water_section_provider.dart';
+import '../services/feed_event_service.dart';
+import '../services/feed_session_service.dart';
+import '../services/post_cache_service.dart';
 import '../services/root_page_state_service.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/community_post_card.dart';
+import '../widgets/feed/feed_exposure_tracker.dart';
+import '../widgets/feed/feed_post_action_menu.dart';
+import '../widgets/report_sheet.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
+import 'create_post_screen.dart';
+import 'poll/poll_composer_screen.dart';
 import 'check_in_calendar_screen.dart';
 import 'competition_center_screen.dart';
 import 'edu_grade_screen.dart';
@@ -94,7 +103,11 @@ const List<FeedModeConfig> kFeedModes = [
 const int kDefaultFeedModeIndex = 1; // 综合
 
 class ShuitieScreen extends StatefulWidget {
-  const ShuitieScreen({super.key});
+  /// 可选注入仅用于测试；生产环境创建内部实例。
+  final FeedSessionService? feedSessionService;
+  final FeedEventService? feedEventService;
+
+  const ShuitieScreen({super.key, this.feedSessionService, this.feedEventService});
 
   @override
   State<ShuitieScreen> createState() => _ShuitieScreenState();
@@ -103,6 +116,10 @@ class ShuitieScreen extends StatefulWidget {
 class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final Map<String, ScrollController> _feedScrollControllers;
+
+  // FEED-3：事件会话与批量上报（注入或内部默认）。
+  late final FeedSessionService _feedSessionService;
+  late final FeedEventService _feedEventService;
 
   late AnimationController _feedSwitchController;
   Animation<double>? _feedSettleAnimation;
@@ -137,6 +154,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Post? _selectedPost;
   int? _selectedUserId;
 
+  // FEED-3 桌面分屏：当前打开帖子的 open/dwell 归因上下文。
+  _SplitOrigin? _splitOrigin;
+
   static const _autoRefreshInterval = Duration(seconds: 60);
   static const _feedTriggerDistance = 72.0;
   static const _feedTriggerVelocity = 520.0;
@@ -167,6 +187,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   @override
   void initState() {
     super.initState();
+
+    // FEED-3：首次进入 Feed 即开启一个事件会话。
+    _feedSessionService = widget.feedSessionService ?? FeedSessionService();
+    _feedSessionService.newSession();
+    _feedEventService = widget.feedEventService ?? FeedEventService(getSharedDio());
 
     _feedScrollControllers = {
       for (final mode in kFeedModes)
@@ -214,6 +239,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _startAutoRefresh();
     } else if (state == AppLifecycleState.paused) {
       unawaited(_persistCommunityState());
+      _feedEventService.flushNow(); // 应用进入后台时尝试清空事件队列
       _stopAutoRefresh();
     }
   }
@@ -290,6 +316,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       ..removeListener(_handleFeedSettleTick)
       ..dispose();
     _feedVisualIndexListenable.dispose();
+    _feedEventService.dispose();
     super.dispose();
   }
 
@@ -1028,8 +1055,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  void _openPostInSplit(Post post, {bool focusReply = false}) {
+  void _openPostInSplit(Post post,
+      {bool focusReply = false, String feedKind = '', int position = 0}) {
     if (!mounted) return;
+    _finalizeSplitDwell(newPostId: post.id);
+    _recordSplitOpen(post, feedKind: feedKind, position: position);
     setState(() {
       _selectedPost = post;
       _selectedUserId = null;
@@ -1046,8 +1076,103 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
   }
 
+  // ── FEED-3 open/dwell 归因 ───────────────────────────────────────
+
+  /// 结束当前分屏帖子的停留计时（切换到另一帖/用户/关闭时调用）。
+  void _finalizeSplitDwell({int? newPostId}) {
+    final prev = _splitOrigin;
+    _splitOrigin = null;
+    if (prev == null || (newPostId != null && prev.postId == newPostId)) {
+      return;
+    }
+    final dwellMs = DateTime.now().difference(prev.openedAt).inMilliseconds;
+    if (dwellMs > 0) {
+      _feedEventService.enqueue(FeedEvent(
+        feedSessionId: prev.sessionId,
+        feedKind: prev.feedKind,
+        algorithmVersion: prev.algorithm,
+        type: 'dwell',
+        postId: prev.postId,
+        dwellMs: dwellMs,
+      ));
+    }
+  }
+
+  /// 记录分屏打开事件的归因上下文。
+  void _recordSplitOpen(Post post,
+      {required String feedKind, required int position}) {
+    final sessionId = _feedSessionService.currentSessionId;
+    if (sessionId == null) return;
+    final kind = feedKind.isEmpty ? (_currentRemoteSort ?? 'all') : feedKind;
+    final algorithm =
+        PostCacheService.expectedAlgorithmVersion(boardId: 1, sort: kind);
+    _feedEventService.enqueue(FeedEvent(
+      feedSessionId: sessionId,
+      feedKind: kind,
+      algorithmVersion: algorithm,
+      type: 'open',
+      postId: post.id,
+      position: position,
+    ));
+    _splitOrigin = _SplitOrigin(
+      postId: post.id,
+      sessionId: sessionId,
+      feedKind: kind,
+      algorithm: algorithm,
+      openedAt: DateTime.now(),
+    );
+  }
+
+  /// 移动端：打开详情前记 open，返回后记 dwell（不侵入详情页）。
+  void _openFeedDetail(Post post,
+      {required String sort, required int position}) {
+    final sessionId = _feedSessionService.currentSessionId;
+    final algorithm =
+        PostCacheService.expectedAlgorithmVersion(boardId: 1, sort: sort);
+    final openedAt = DateTime.now();
+    if (sessionId != null) {
+      _feedEventService.enqueue(FeedEvent(
+        feedSessionId: sessionId,
+        feedKind: sort,
+        algorithmVersion: algorithm,
+        type: 'open',
+        postId: post.id,
+        position: position,
+      ));
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => post.isPoll
+            ? PollDetailScreen(
+                pollId: post.pollMeta!.id,
+                initialPost: post,
+              )
+            : PostDetailScreen(
+                postId: post.id,
+                isMarket: false,
+                initialPost: post,
+              ),
+      ),
+    ).then((_) {
+      if (sessionId == null || !mounted) return;
+      final dwellMs = DateTime.now().difference(openedAt).inMilliseconds;
+      if (dwellMs > 0) {
+        _feedEventService.enqueue(FeedEvent(
+          feedSessionId: sessionId,
+          feedKind: sort,
+          algorithmVersion: algorithm,
+          type: 'dwell',
+          postId: post.id,
+          dwellMs: dwellMs,
+        ));
+      }
+    });
+  }
+
   void _openUserInSplit(int userId) {
     if (!mounted) return;
+    _finalizeSplitDwell();
     if (MediaQuery.of(context).size.width <= 600) {
       Navigator.push(
         context,
@@ -1059,6 +1184,113 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _selectedPost = null;
       _selectedUserId = userId;
     });
+  }
+
+  // ── FEED-3 卡片操作菜单 ──────────────────────────────────────────
+
+  Future<void> _handlePostAction(Post post, FeedPostAction action) async {
+    final postProvider = context.read<PostProvider>();
+    switch (action) {
+      case FeedPostAction.notInterested:
+        final source = _currentRemoteSort ?? 'all';
+        final undo = await postProvider.markPostNotInterestedOptimistic(
+          post,
+          source: source,
+        );
+        if (undo == null) {
+          _showFeedSnack('操作失败，请重试');
+          return;
+        }
+        _showUndoSnackBar(
+          message: '已减少此帖推荐',
+          onUndo: () => postProvider.undoFeedVisibility(undo),
+        );
+      case FeedPostAction.hideAuthor:
+        final undo = await postProvider.hideAuthorOptimistic(post.authorId);
+        if (undo == null) {
+          _showFeedSnack('操作失败，请重试');
+          return;
+        }
+        _showUndoSnackBar(
+          message: '已不再展示该用户',
+          onUndo: () => postProvider.undoFeedVisibility(undo),
+        );
+      case FeedPostAction.report:
+        showReportSheet(context, targetId: post.id, targetType: 'post');
+      case FeedPostAction.edit:
+        await _openEditPost(post);
+      case FeedPostAction.delete:
+        await _confirmDeletePost(post);
+    }
+  }
+
+  Future<void> _openEditPost(Post post) async {
+    if (post.isPoll) {
+      await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PollComposerScreen(editingPost: post),
+        ),
+      );
+      return;
+    }
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreatePostScreen(
+          boardId: post.boardId,
+          defaultPostType: post.postType,
+          editingPost: post,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeletePost(Post post) async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除帖子'),
+        content: const Text('删除后不可恢复，确定删除吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除', style: TextStyle(color: Color(0xFFE54848))),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await context.read<PostProvider>().deletePost(post.id);
+    }
+  }
+
+  void _showUndoSnackBar({
+    required String message,
+    required VoidCallback onUndo,
+  }) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(label: '撤销', onPressed: onUndo),
+        ),
+      );
+  }
+
+  void _showFeedSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildEmptyDetailState(bool isDark) {
@@ -1345,25 +1577,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   child: CommunityPostCard(
                     post: post,
                     onAuthorTap: _openUserInSplit,
+                    onPostAction: (action) => _handlePostAction(post, action),
                     onTap: () {
                       if (ResponsiveUtil.useDesktopShell(context)) {
-                        _openPostInSplit(post);
+                        _openPostInSplit(post,
+                            feedKind: 'following', position: 0);
                       } else {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => post.isPoll
-                                ? PollDetailScreen(
-                                    pollId: post.pollMeta!.id,
-                                    initialPost: post,
-                                  )
-                                : PostDetailScreen(
-                                    postId: post.id,
-                                    isMarket: false,
-                                    initialPost: post,
-                                  ),
-                          ),
-                        );
+                        _openFeedDetail(post,
+                            sort: 'following', position: 0);
                       }
                     },
                   ),
@@ -1855,50 +2076,53 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                   ],
                                 )
                               : null,
-                          child: CommunityPostCard(
+                          child: FeedExposureTracker(
                             post: post,
-                            onAuthorTap: _openUserInSplit,
-                            onCommentTap: (commentPost) {
-                              if (ResponsiveUtil.useDesktopShell(context)) {
-                                _openPostInSplit(commentPost, focusReply: true);
-                              } else {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PostDetailScreen(
-                                      postId: commentPost.id,
-                                      isMarket: false,
-                                      initialPost: commentPost,
-                                      focusReplyComposer: true,
+                            feedKind: sort,
+                            position: index,
+                            algorithmVersion:
+                                PostCacheService.expectedAlgorithmVersion(
+                              boardId: 1,
+                              sort: sort,
+                            ),
+                            sessionService: _feedSessionService,
+                            eventService: _feedEventService,
+                            child: CommunityPostCard(
+                              post: post,
+                              onAuthorTap: _openUserInSplit,
+                              onPostAction: (action) =>
+                                  _handlePostAction(post, action),
+                              onCommentTap: (commentPost) {
+                                if (ResponsiveUtil.useDesktopShell(context)) {
+                                  _openPostInSplit(commentPost,
+                                      focusReply: true);
+                                } else {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PostDetailScreen(
+                                        postId: commentPost.id,
+                                        isMarket: false,
+                                        initialPost: commentPost,
+                                        focusReplyComposer: true,
+                                      ),
                                     ),
-                                  ),
-                                );
-                              }
-                            },
-                            onTap: () {
-                              if (_exitSearchInputMode()) {
-                                return;
-                              }
-                              if (ResponsiveUtil.useDesktopShell(context)) {
-                                _openPostInSplit(post);
-                              } else {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => post.isPoll
-                                        ? PollDetailScreen(
-                                            pollId: post.pollMeta!.id,
-                                            initialPost: post,
-                                          )
-                                        : PostDetailScreen(
-                                            postId: post.id,
-                                            isMarket: false,
-                                            initialPost: post,
-                                          ),
-                                  ),
-                                );
-                              }
-                            },
+                                  );
+                                }
+                              },
+                              onTap: () {
+                                if (_exitSearchInputMode()) {
+                                  return;
+                                }
+                                if (ResponsiveUtil.useDesktopShell(context)) {
+                                  _openPostInSplit(post,
+                                      feedKind: sort, position: index);
+                                } else {
+                                  _openFeedDetail(post,
+                                      sort: sort, position: index);
+                                }
+                              },
+                            ),
                           ),
                         ),
                       );
@@ -2261,4 +2485,21 @@ class CheckInSuccessDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+/// FEED-3 桌面分屏打开帖子的归因上下文。
+class _SplitOrigin {
+  _SplitOrigin({
+    required this.postId,
+    required this.sessionId,
+    required this.feedKind,
+    required this.algorithm,
+    required this.openedAt,
+  });
+
+  final int postId;
+  final String sessionId;
+  final String feedKind;
+  final String algorithm;
+  final DateTime openedAt;
 }

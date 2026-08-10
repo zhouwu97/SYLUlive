@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -1018,22 +1019,38 @@ class PostProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<int?> uploadImage(XFile file) async {
+  /// 上传图片，返回 file_id。
+  ///
+  /// [onProgress] 提供 (sent, total)。优先用 `MultipartFile.fromFile` 流式上传，
+  /// 避免整文件 `readAsBytes` 占用内存；Web/无路径时回退 bytes。
+  Future<int?> uploadImage(
+    XFile file, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
     try {
-      final bytes = await file.readAsBytes();
       final rawName = file.name.trim().isNotEmpty
           ? file.name.trim()
           : file.path.split('/').last;
       final filename = _safeUploadFilename(rawName);
 
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(
-          bytes,
-          filename: filename,
-        ),
-      });
+      final MultipartFile multipartFile;
+      final path = file.path;
+      final pathUsable =
+          path.isNotEmpty && !path.startsWith('blob:') && await File(path).exists();
+      if (pathUsable) {
+        multipartFile = await MultipartFile.fromFile(path, filename: filename);
+      } else {
+        final bytes = await file.readAsBytes();
+        multipartFile = MultipartFile.fromBytes(bytes, filename: filename);
+      }
 
-      final response = await _dio.post('/upload', data: formData);
+      final formData = FormData.fromMap({'file': multipartFile});
+
+      final response = await _dio.post(
+        '/upload',
+        data: formData,
+        onSendProgress: onProgress,
+      );
       if (response.statusCode == 200 && response.data != null) {
         return response.data['file_id'] as int?;
       }

@@ -3,8 +3,9 @@ import 'package:image_picker/image_picker.dart';
 
 /// Mixin that provides image picking logic for publish forms.
 ///
-/// The host [State] must implement the abstract getters/setters so the mixin
-/// can read the current image lists and trigger rebuilds.
+/// The host [State] must implement [canAddMoreImages] and [onImageAdded];
+/// C-2 unified image model means the host decides how to turn the picked
+/// [XFile] into a list item.
 mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
   static final ImagePicker _picker = ImagePicker();
 
@@ -12,12 +13,8 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
   // Abstract – the host State supplies these
   // ---------------------------------------------------------------------------
 
-  List<XFile> get selectedImages;
-  List<dynamic> get existingImages; // List<PostImage> in practice
   bool get canAddMoreImages;
   void onImageAdded(XFile image);
-  void onNewImageRemoved(int index);
-  void onExistingImageRemoved(int index);
 
   // ---------------------------------------------------------------------------
   // Pick a single image from the given source

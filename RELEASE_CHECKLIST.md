@@ -14,7 +14,7 @@
 cd /opt/shenliyuan
 git log -1 --oneline
 cd /opt/shenliyuan/server
-go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
+go build -o /opt/shenliyuan/shenliyuan ./cmd
 systemctl restart shenliyuan
 systemctl status shenliyuan --no-pager
 ```

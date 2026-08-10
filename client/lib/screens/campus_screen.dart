@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../models/ai_capabilities.dart';
+import '../models/exam_schedule.dart';
 import '../services/ai_assistant_service.dart';
 import '../services/campus_article_service.dart';
+import '../services/exam_schedule_repository.dart';
+import '../providers/course_schedule_provider.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/campus_asset_preloader.dart';
 
@@ -16,6 +20,7 @@ import '../widgets/campus/campus_feature_notice_card.dart';
 import '../widgets/campus/campus_service_grid.dart';
 import '../widgets/campus/campus_news_section_header.dart';
 import '../widgets/campus/campus_news_card.dart';
+import '../widgets/campus/campus_today_card.dart';
 
 import 'campus_article_detail_screen.dart';
 import 'ai/ai_assistant_screen.dart';
@@ -23,7 +28,9 @@ import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
 import 'campus_map_tab_page.dart';
 import 'competition_center_screen.dart';
+import 'course_schedule_screen.dart';
 import 'edu_screen.dart';
+import 'exam_schedule_screen.dart';
 import 'teacher_rate_screen.dart';
 import 'team/team_recruitment_center_screen.dart';
 
@@ -32,7 +39,15 @@ class CampusScreen extends StatefulWidget {
   final CampusArticleService? articleService;
   final AiAssistantService? aiService;
 
-  const CampusScreen({super.key, this.articleService, this.aiService});
+  /// 可选时钟注入仅用于测试；生产环境使用真实时间。
+  final DateTime Function()? nowProvider;
+
+  const CampusScreen({
+    super.key,
+    this.articleService,
+    this.aiService,
+    this.nowProvider,
+  });
 
   @override
   State<CampusScreen> createState() => _CampusScreenState();
@@ -51,6 +66,9 @@ class _CampusScreenState extends State<CampusScreen>
   CampusArticleSummary? _latestArticle;
   String? _latestError;
   bool _latestLoaded = false;
+
+  // 今日卡片（UX-5）
+  List<CampusTodayItem> _todayItems = [];
 
   // 最近文章列表
   List<CampusArticleSummary> _recentArticles = [];
@@ -89,6 +107,7 @@ class _CampusScreenState extends State<CampusScreen>
       _loadLatest(generation),
       _loadRecent(generation),
       _loadAiCapabilities(generation),
+      _loadTodayItems(generation),
     ]).whenComplete(() {
       if (_loadGeneration == generation) {
         _loadFuture = null;
@@ -196,6 +215,151 @@ class _CampusScreenState extends State<CampusScreen>
     }
   }
 
+  // ── 今日卡片（UX-5）───────────────────────────────────────────────
+  // 数据只来自已有 Provider / 本地缓存 / 已加载 Snapshot，禁止在 build 中
+  // 发起网络请求；每项独立降级：任一数据源不可用只隐藏该项，其余项照常展示。
+
+  /// 课次起始时间（第1~12节）。与课表页共用同一张展示表，仅用于文案。
+  static const List<String> _kSectionStarts = [
+    '08:00', '08:55', '10:00', '10:55',
+    '13:00', '13:55', '14:50', '15:45',
+    '16:40', '17:35', '18:30', '19:25',
+  ];
+
+  DateTime _currentTime() => widget.nowProvider?.call() ?? DateTime.now();
+
+  Future<void> _loadTodayItems(int generation) async {
+    final items = <CampusTodayItem>[];
+
+    final nextClass = await _buildNextClassItem();
+    if (nextClass != null) items.add(nextClass);
+
+    final nextExam = await _buildNextExamItem();
+    if (nextExam != null) items.add(nextExam);
+
+    if (mounted && _loadGeneration == generation) {
+      setState(() => _todayItems = items);
+    }
+  }
+
+  Future<CampusTodayItem?> _buildNextClassItem() async {
+    final CourseScheduleProvider schedule;
+    try {
+      schedule = context.read<CourseScheduleProvider>();
+    } catch (_) {
+      // 宿主未挂载课表 Provider（如部分测试环境）→ 该项降级隐藏。
+      return null;
+    }
+    try {
+      if (schedule.semesterStart == null) {
+        await schedule.loadSemesterStart();
+      }
+      if (schedule.courses.isEmpty) {
+        await schedule.loadCachedCoursesIfAvailable();
+      }
+    } catch (_) {
+      return null;
+    }
+    if (!mounted) return null;
+
+    final now = _currentTime();
+    final week = schedule.getAcademicWeek(now);
+    if (week == null) return null;
+    final weekday = now.weekday;
+
+    final todayCourses = schedule.courses
+        .where((c) => c.weekday == weekday)
+        .where((c) => schedule.isCourseActive(c, week))
+        .where(
+          (c) =>
+              c.startSection >= 1 &&
+              c.startSection <= _kSectionStarts.length,
+        )
+        .toList()
+      ..sort((a, b) => a.startSection.compareTo(b.startSection));
+
+    // 下一节 = 今天尚未结束（含进行中）的最早课程；今天已无课则不展示。
+    CourseBlock? next;
+    for (final course in todayCourses) {
+      final start = _sectionStartOn(now, course.startSection);
+      if (start == null) continue;
+      if (now.isBefore(start.add(const Duration(minutes: 45)))) {
+        next = course;
+        break;
+      }
+    }
+    if (next == null) return null;
+
+    final start = _sectionStartOn(now, next.startSection)!;
+    final location =
+        (next.location?.isNotEmpty ?? false) ? ' · ${next.location}' : '';
+    final teacher =
+        (next.teacher?.isNotEmpty ?? false) ? ' · ${next.teacher}' : '';
+    return CampusTodayItem(
+      id: 'next-class',
+      icon: Icons.menu_book_rounded,
+      title: '下一节课 · ${next.name}',
+      subtitle: '今天 ${_formatClock(start)}$location$teacher',
+      onTap: () => _openPage(const CourseScheduleScreen()),
+    );
+  }
+
+  Future<CampusTodayItem?> _buildNextExamItem() async {
+    final List<ExamModel> exams;
+    try {
+      exams = await ExamScheduleRepository().load();
+    } catch (_) {
+      return null;
+    }
+    if (!mounted) return null;
+
+    final now = _currentTime();
+    final upcoming = exams.where((e) => e.startTime.isAfter(now)).toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    if (upcoming.isEmpty) return null;
+
+    final next = upcoming.first;
+    final location = next.location.isNotEmpty ? ' · ${next.location}' : '';
+    return CampusTodayItem(
+      id: 'next-exam',
+      icon: Icons.edit_calendar_rounded,
+      title: '考试 · ${next.name}',
+      subtitle: '${_formatExamStart(next.startTime, now)}$location',
+      onTap: () => _openPage(const ExamScheduleScreen()),
+    );
+  }
+
+  DateTime? _sectionStartOn(DateTime day, int section) {
+    if (section < 1 || section > _kSectionStarts.length) return null;
+    final parts = _kSectionStarts[section - 1].split(':');
+    return DateTime(
+      day.year,
+      day.month,
+      day.day,
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+    );
+  }
+
+  String _formatClock(DateTime time) {
+    final hh = time.hour.toString().padLeft(2, '0');
+    final mm = time.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  String _formatExamStart(DateTime start, DateTime now) {
+    final sameDay =
+        start.year == now.year && start.month == now.month && start.day == now.day;
+    if (sameDay) return '今天 ${_formatClock(start)}';
+    final tomorrow = now.add(const Duration(days: 1));
+    final isTomorrow =
+        start.year == tomorrow.year &&
+        start.month == tomorrow.month &&
+        start.day == tomorrow.day;
+    if (isTomorrow) return '明天 ${_formatClock(start)}';
+    return '${start.month}月${start.day}日 ${_formatClock(start)}';
+  }
+
   String _currentSemesterText() {
     final now = DateTime.now();
     if (now.month >= 9) {
@@ -255,6 +419,8 @@ class _CampusScreenState extends State<CampusScreen>
     super.build(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    // 今日卡片有数据才显示；其存在时下方模块的入场动画索引整体后移一格。
+    final todayShown = _todayItems.isNotEmpty;
 
     return Scaffold(
       backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
@@ -275,15 +441,25 @@ class _CampusScreenState extends State<CampusScreen>
                       index: 0,
                       child: CampusHeader(semester: _currentSemesterText()),
                     ),
+                    if (todayShown) ...[
+                      const SizedBox(height: 10),
+                      HomeTabRevealItem(
+                        index: 1,
+                        child: CampusTodayCard(
+                          items: _todayItems,
+                          isDark: isDark,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     HomeTabRevealItem(
-                      index: 1,
+                      index: todayShown ? 2 : 1,
                       child: _buildLatestCard(isDark),
                     ),
                     if (_aiCapabilities != null) ...[
                       const SizedBox(height: 12),
                       HomeTabRevealItem(
-                        index: 2,
+                        index: todayShown ? 3 : 2,
                         child: CampusAiEntryCard(
                           capabilities: _aiCapabilities!,
                           isDark: isDark,
@@ -293,7 +469,9 @@ class _CampusScreenState extends State<CampusScreen>
                     ],
                     const SizedBox(height: 12),
                     HomeTabRevealItem(
-                      index: _aiCapabilities == null ? 2 : 3,
+                      index: _aiCapabilities == null
+                          ? (todayShown ? 3 : 2)
+                          : (todayShown ? 4 : 3),
                       child: CampusServiceGrid(
                         isDark: isDark,
                         onEduTap: () => _openPage(const EduScreen()),

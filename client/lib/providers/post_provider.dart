@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
@@ -106,6 +107,77 @@ bool usesHomeFeedV2({
       normalizedType.isEmpty &&
       tagId == null &&
       (sort == 'all' || sort == 'time');
+}
+
+/// 乐观点赞变更的结果。
+enum LikeMutationStatus {
+  /// 服务端确认成功，乐观状态已生效。
+  success,
+
+  /// 网络失败，已回滚到变更前快照。
+  failed,
+
+  /// 服务端返回明确状态冲突，已按服务端 reconcile 结果收敛。
+  conflict,
+
+  /// 同一帖子已有变更在途，本次调用未发起任何请求。
+  pending,
+}
+
+class LikeMutationResult {
+  const LikeMutationResult.success({
+    required this.originalPost,
+    required this.optimisticPost,
+  })  : status = LikeMutationStatus.success,
+        reconciledPost = null;
+
+  const LikeMutationResult.failed({
+    required this.originalPost,
+    required this.optimisticPost,
+  })  : status = LikeMutationStatus.failed,
+        reconciledPost = null;
+
+  const LikeMutationResult.conflict({
+    required this.originalPost,
+    required this.optimisticPost,
+    required this.reconciledPost,
+  }) : status = LikeMutationStatus.conflict;
+
+  const LikeMutationResult.pending()
+      : status = LikeMutationStatus.pending,
+        originalPost = null,
+        optimisticPost = null,
+        reconciledPost = null;
+
+  final LikeMutationStatus status;
+
+  /// 调用时传入的帖子快照（失败时用于恢复视图）。
+  final Post? originalPost;
+
+  /// 乐观应用后的副本（成功时用于同步视图）。
+  final Post? optimisticPost;
+
+  /// 冲突 reconcile 得到的服务端状态（冲突时优先使用）。
+  final Post? reconciledPost;
+}
+
+/// 后台新鲜度探测结果：只暂存，不覆写可见列表。
+class FreshnessProbeResult {
+  const FreshnessProbeResult({
+    required this.posts,
+    required this.pinnedPosts,
+    required this.algorithmVersion,
+    required this.newPostCount,
+    required this.fetchedAt,
+  });
+
+  final List<Post> posts;
+  final List<Post> pinnedPosts;
+  final String algorithmVersion;
+
+  /// 相对当前可见列表，第一页新增的帖子数量（仅“最新”信息流可信）。
+  final int newPostCount;
+  final DateTime fetchedAt;
 }
 
 class PostProvider extends ChangeNotifier {
@@ -1100,6 +1172,248 @@ class PostProvider extends ChangeNotifier {
       debugPrint('取消点赞失败: $e');
       return false;
     }
+  }
+
+  // ---- 统一乐观点赞状态机 ----
+  // Feed 卡片、详情页共用同一套 mutation，禁止各 Widget 各自维护第二份点赞状态。
+
+  final Set<int> _pendingLikePostIds = {};
+
+  /// 该帖子是否已有一次点赞变更在途（防连点）。
+  bool isLikePending(int postId) => _pendingLikePostIds.contains(postId);
+
+  /// 对帖子执行一次乐观点赞/取消点赞。
+  ///
+  /// 立即翻转 [post] 的点赞状态并同步到所有已加载信息流，然后请求服务端；
+  /// 网络失败回滚旧快照；服务端明确状态冲突时通过单次 GET 做 reconcile，
+  /// 以服务端状态为准（不做整页重新拉取）。
+  Future<LikeMutationResult> toggleLikeOptimistic(Post post) async {
+    final postId = post.id;
+    if (_pendingLikePostIds.contains(postId)) {
+      return const LikeMutationResult.pending();
+    }
+    _pendingLikePostIds.add(postId);
+
+    final targetLiked = !post.isLiked;
+    final optimistic = post.copyWith(
+      isLiked: targetLiked,
+      likeCount: (post.likeCount + (targetLiked ? 1 : -1)).clamp(0, 1 << 30),
+    );
+    _replacePostInBoards(optimistic);
+    notifyListeners();
+
+    try {
+      if (targetLiked) {
+        await _dio.post('/posts/$postId/like');
+      } else {
+        await _dio.delete('/posts/$postId/like');
+      }
+      return LikeMutationResult.success(
+        originalPost: post,
+        optimisticPost: optimistic,
+      );
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final data = e.response?.data;
+      final isExplicitConflict = statusCode != null &&
+          statusCode >= 400 &&
+          statusCode < 500 &&
+          data is Map &&
+          data['error'] != null;
+      if (isExplicitConflict) {
+        // 服务端明确拒绝（例如“已经点赞/未点赞”）：单次 REST reconcile，
+        // 用服务端状态覆盖，而不是盲目回滚成本地旧快照。
+        final reconciled = await _reconcilePost(postId);
+        if (reconciled != null) {
+          _replacePostInBoards(reconciled);
+          notifyListeners();
+          return LikeMutationResult.conflict(
+            originalPost: post,
+            optimisticPost: optimistic,
+            reconciledPost: reconciled,
+          );
+        }
+      }
+      // 网络错误或 reconcile 失败：回滚旧快照。
+      _replacePostInBoards(post);
+      notifyListeners();
+      return LikeMutationResult.failed(
+        originalPost: post,
+        optimisticPost: optimistic,
+      );
+    } catch (e) {
+      _replacePostInBoards(post);
+      notifyListeners();
+      return LikeMutationResult.failed(
+        originalPost: post,
+        optimisticPost: optimistic,
+      );
+    } finally {
+      _pendingLikePostIds.remove(postId);
+    }
+  }
+
+  Future<Post?> _reconcilePost(int postId) async {
+    try {
+      final response = await _dio.get('/posts/$postId');
+      if (response.statusCode != 200 || response.data is! Map) return null;
+      return Post.fromJson(response.data as Map<String, dynamic>);
+    } catch (e) {
+      debugPrint('点赞冲突 reconcile 失败: $e');
+      return null;
+    }
+  }
+
+  // ---- 后台新鲜度探测 ----
+  // 自动刷新只做“探测 + 暂存”，绝不直接覆写用户正在阅读的可见列表；
+  // 是否应用由页面（顶部温和更新 / “内容有更新”浮条）决定。
+
+  final Map<String, FreshnessProbeResult> _pendingFreshSnapshots = {};
+  final Map<String, Future<FreshnessProbeResult?>> _probeInflight = {};
+
+  /// 是否有尚未应用的探测快照（供页面显示“内容有更新”浮条）。
+  bool hasPendingFreshSnapshot(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _pendingFreshSnapshots.containsKey(
+        _stateKey(boardId, sort, type, tagId: tagId),
+      );
+
+  /// 拉取第一页做新鲜度探测：列表内容不变时返回 null，变化时暂存快照并返回。
+  ///
+  /// 探测受 [requestVersion] 保护：期间用户手动刷新或切换了信息流，
+  /// 过期响应会被丢弃，不会污染新列表。
+  Future<FreshnessProbeResult?> probeFreshness({
+    int boardId = 1,
+    String sort = 'time',
+    String? type,
+    int? tagId,
+  }) {
+    final key = _stateKey(boardId, sort, type, tagId: tagId);
+    final reqKey = 'probe_$key';
+    final inflight = _probeInflight[reqKey];
+    if (inflight != null) return inflight;
+
+    final future = _probeInternal(
+      boardId: boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+    );
+    _probeInflight[reqKey] = future;
+    return future.whenComplete(() {
+      if (_probeInflight[reqKey] == future) {
+        _probeInflight.remove(reqKey);
+      }
+    });
+  }
+
+  Future<FreshnessProbeResult?> _probeInternal({
+    required int boardId,
+    required String sort,
+    String? type,
+    int? tagId,
+  }) async {
+    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
+    final requestVersion = board.requestVersion;
+    try {
+      final params = <String, dynamic>{
+        'board': boardId,
+        'type': type,
+        'sort': sort,
+        'page': 1,
+        'limit': 20,
+        'scene': 'refresh',
+        'capabilities': 'poll_v1',
+      };
+      if (usesHomeFeedV2(
+          boardId: boardId, sort: sort, type: type, tagId: tagId)) {
+        params['feed_version'] = 3;
+      }
+      if (tagId != null) {
+        params['tag_id'] = tagId;
+      }
+      final response = await _dio.get(
+        _postsEndpoint(sort, type: type),
+        queryParameters: params,
+      );
+      if (requestVersion != board.requestVersion) return null;
+      if (response.statusCode != 200) return null;
+
+      final posts = ((response.data['posts'] as List?) ?? [])
+          .map((e) => Post.fromJson(e))
+          .toList();
+      final pinned = ((response.data['pinned_posts'] as List?) ?? [])
+          .map((e) => Post.fromJson(e))
+          .toList();
+      final algorithmVersion =
+          response.data['algorithm_version']?.toString() ?? '';
+
+      final currentIds = board.posts.take(20).map((p) => p.id).toSet();
+      final newIds = posts.take(20).map((p) => p.id).toSet();
+      final pinnedChanged = !setEquals(
+        board.pinnedPosts.map((p) => p.id).toSet(),
+        pinned.map((p) => p.id).toSet(),
+      );
+      final hasChanges = !setEquals(currentIds, newIds) || pinnedChanged;
+      if (!hasChanges) return null;
+
+      final result = FreshnessProbeResult(
+        posts: posts,
+        pinnedPosts: pinned,
+        algorithmVersion: algorithmVersion,
+        newPostCount: newIds.difference(currentIds).length,
+        fetchedAt: DateTime.now(),
+      );
+      _pendingFreshSnapshots[_stateKey(boardId, sort, type, tagId: tagId)] =
+          result;
+      return result;
+    } catch (e) {
+      debugPrint('新鲜度探测失败(board=$boardId, sort=$sort): $e');
+      return null;
+    }
+  }
+
+  /// 应用暂存的新快照（用户点击“内容有更新”后调用）。
+  ///
+  /// 覆盖列表并同步持久化缓存；滚动回顶由调用方负责。
+  Future<bool> applyPendingFreshSnapshot({
+    int boardId = 1,
+    String sort = 'time',
+    String? type,
+    int? tagId,
+  }) async {
+    final key = _stateKey(boardId, sort, type, tagId: tagId);
+    final pending = _pendingFreshSnapshots.remove(key);
+    if (pending == null) return false;
+
+    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
+    board.posts = pending.posts;
+    board.pinnedPosts = pending.pinnedPosts;
+    board.algorithmVersion = pending.algorithmVersion;
+    board.sessionId = null;
+    board.currentPage = 2;
+    board.hasMore = pending.posts.length >= 20;
+    board.lastSuccessfulRefreshAt = pending.fetchedAt;
+    board.revision++;
+    await _savePostsToCache(
+      boardId,
+      sort,
+      board.posts,
+      type: type,
+      tagId: tagId,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// 丢弃暂存快照（切换信息流或页面销毁时调用，避免陈旧快照被误应用）。
+  void clearPendingFreshSnapshot({
+    int boardId = 1,
+    String sort = 'time',
+    String? type,
+    int? tagId,
+  }) {
+    _pendingFreshSnapshots.remove(_stateKey(boardId, sort, type, tagId: tagId));
   }
 
   /// 供外部在获取到最新帖子数据（如浏览量增加）时更新本地缓存，保持内外一致

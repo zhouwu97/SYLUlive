@@ -145,7 +145,7 @@ class _PollPostCardState extends State<PollPostCard> {
                             style: const TextStyle(
                                 fontSize: 13, fontWeight: FontWeight.w600)),
                         Text(
-                          '${_relativeTime(widget.post.createdAt)} · 校园投票',
+                          _relativeTime(widget.post.createdAt),
                           style: TextStyle(
                               fontSize: 11.5,
                               color: Theme.of(context).hintColor),

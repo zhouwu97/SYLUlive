@@ -9,6 +9,9 @@ class CommunityPostCard extends StatelessWidget {
   final VoidCallback? onTap;
   final ValueChanged<int>? onAuthorTap;
   final ValueChanged<Post>? onPostUpdated;
+
+  /// 评论按钮点击回调（透传给 PostCard）。
+  final ValueChanged<Post>? onCommentTap;
   final bool disableAuthorNavigation;
   final PollCardVariant pollVariant;
 
@@ -18,6 +21,7 @@ class CommunityPostCard extends StatelessWidget {
     this.onTap,
     this.onAuthorTap,
     this.onPostUpdated,
+    this.onCommentTap,
     this.disableAuthorNavigation = false,
     this.pollVariant = PollCardVariant.homeCompact,
   });
@@ -37,6 +41,7 @@ class CommunityPostCard extends StatelessWidget {
       post: post,
       onTap: onTap,
       onAuthorTap: onAuthorTap,
+      onCommentTap: onCommentTap,
       disableAuthorNavigation: disableAuthorNavigation,
     );
   }

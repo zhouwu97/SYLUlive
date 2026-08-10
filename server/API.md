@@ -16,6 +16,8 @@
 2. [用户与个人中心 (User)](#2-用户与个人中心-user)
 3. [教务系统 (Edu)](#3-教务系统-edu)
 4. [帖子与社区 (Posts & Replies)](#4-帖子与社区-posts--replies)
+4.1. [Feed 推荐用户控制 (Feed)](#41-feed-推荐用户控制-feed)
+4.2. [Feed 行为事件采集 (Feed Events)](#42-feed-行为事件采集-feed-events)
 5. [榜单与评价 (Ratings)](#5-榜单与评价-ratings)
 6. [消息与通知 (Messages)](#6-消息与通知-messages)
 7. [管理员与超级管理员 (Admin)](#7-管理员与超级管理员-admin)
@@ -111,6 +113,56 @@
 | `POST` | `/api/posts/:id/replies`| 发表回复或楼中楼 |
 | `DELETE` | `/api/replies/:id` | 删除回复 |
 | `POST` | `/api/replies/:id/like`| 点赞回复 |
+
+<<<<<<< HEAD
+## 4.1 Feed 推荐用户控制 (Feed) — FEED-1
+
+需要登录（AuthMiddleware）。负反馈过滤自动作用于首页信息流：
+- 不看TA（隐藏作者）：综合 / 最新 / 精华 / 关注 全部生效；
+- 不感兴趣：仅「综合」生效（最新/关注是用户主动查看路径，不偷偷过滤）。
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `PUT` | `/api/feed/posts/:post_id/not-interested` | 标记不感兴趣（幂等）。`source` query 可选：`all`/`time`/`featured`/`following`，表示点击时所在 Tab，仅用于分析，默认 `all` |
+| `DELETE` | `/api/feed/posts/:post_id/not-interested` | 撤销不感兴趣（幂等） |
+| `PUT` | `/api/feed/authors/:author_id/hidden` | 不看TA：隐藏该作者（幂等，不取消关注） |
+| `DELETE` | `/api/feed/authors/:author_id/hidden` | 恢复显示该作者（幂等） |
+| `GET` | `/api/feed/hidden-authors` | 获取已隐藏作者列表（含昵称/头像，按隐藏时间倒序） |
+
+语义说明：
+- `HideFromFeed != BlockUser`：隐藏只影响 Feed 列表，不影响搜索、主页、直接帖子 URL、评论区与私信。
+- 「不看TA」与关注关系（`UserFollow`）无关：隐藏不取消关注，恢复后作者自然重新出现在关注流。
+
+## 4.2 Feed 行为事件采集 (Feed Events) — FEED-2
+
+需要登录（AuthMiddleware）。用于推荐系统曝光 / 打开 / 停留数据采集。
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/feed/events/batch` | 批量上报 Feed 行为事件（幂等） |
+
+请求体：
+
+```json
+{
+  "feed_session_id": "事件专用 session，与快照 session_id 分离",
+  "feed_kind": "all | time | featured | following",
+  "algorithm_version": "home_all_v3_poll",
+  "events": [
+    { "type": "impression", "post_id": 1, "position": 3, "visible_ms": 800 },
+    { "type": "open", "post_id": 1 },
+    { "type": "dwell", "post_id": 1, "dwell_ms": 5000 }
+  ]
+}
+```
+
+幂等语义（单次请求内相同 `user + feed_session_id + feed_kind + post_id` 合并为一行）：
+
+- `impression`：upsert，`visible_ms` 取最大；
+- `open`：`opened_at` 取最早非空值，重复发送不增加数量；
+- `dwell`：`dwell_ms` 取最大，禁止累加，防止重试把阅读时长翻倍。
+
+限制：单次最多 500 条事件。`feed_session_id` 与现有快照 `session_id` 是两个概念，不要混用。
 
 ## 5. 榜单与评价 (Ratings)
 

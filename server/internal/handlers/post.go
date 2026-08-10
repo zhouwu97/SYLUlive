@@ -416,6 +416,17 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 	}
 
+	// Feed 负反馈过滤（FEED-1）：仅水帖首页 Tab（综合/最新/精华/关注）生效。
+	// 搜索、集市、版块内页、带标签页、增量请求不受影响。
+	if requestedBoardID != nil &&
+		*requestedBoardID == models.BoardShuitie &&
+		postType == "" &&
+		!tagIDProvided &&
+		searchQuery == "" &&
+		sinceStr == "" {
+		query = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(query, optionalFeedUserID(c), sort)
+	}
+
 	// 关注信息：仅展示当前用户关注的版块内的帖子（水帖）
 	if sort == "following" {
 		rawUserID, exists := c.Get("user_id")
@@ -977,6 +988,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		feed = services.NewHomeFeedServiceWithPoll(h.db)
 		feedKind = "home_v3_poll"
 	}
+	userID := optionalFeedUserID(c)
 	pinned, err := feed.PinnedPosts(now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
@@ -1007,7 +1019,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		}
 		ids = snapshot.PostIDs
 	} else if sortName == "all" {
-		ids, err = feed.BuildSnapshot(now)
+		ids, err = feed.BuildSnapshot(now, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
 			return
@@ -1017,15 +1029,14 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		time.AfterFunc(10*time.Minute, func() { ActiveSnapshots.Delete(sessionID) })
 	} else {
 		var normal []models.Post
-		err = h.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
+		timeQuery := h.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
 			Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
-			Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now).
-			Scopes(func(db *gorm.DB) *gorm.DB {
-				if supportsPoll {
-					return db
-				}
-				return db.Where("content_kind <> ?", models.PostContentKindPoll)
-			}).Order("created_at DESC").Limit(500).Find(&normal).Error
+			Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
+		if !supportsPoll {
+			timeQuery = timeQuery.Where("content_kind <> ?", models.PostContentKindPoll)
+		}
+		timeQuery = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(timeQuery, userID, "time")
+		err = timeQuery.Order("created_at DESC").Limit(500).Find(&normal).Error
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 			return
@@ -1103,7 +1114,7 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 		}
 		ids = snapshot.PostIDs
 	} else {
-		ids, err = feed.BuildSnapshot(now)
+		ids, err = feed.BuildSnapshot(now, optionalFeedUserID(c))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
 			return

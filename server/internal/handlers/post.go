@@ -474,7 +474,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		query = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(query, optionalFeedUserID(c), sort, now)
 	}
 
-	// 关注信息：仅展示当前用户关注的版块内的帖子（水帖）
+	// 关注信息：关注的作者 + 关注的版块（FEED-6）
 	if sort == "following" {
 		rawUserID, exists := c.Get("user_id")
 		userID, ok := rawUserID.(uint)
@@ -484,12 +484,19 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			})
 			return
 		}
-		followingSubQuery := h.db.
+		followedAuthorsSub := h.db.
+			Model(&models.UserFollow{}).
+			Select("following_id").
+			Where("follower_id = ?", userID)
+		followedSectionsSub := h.db.
 			Model(&models.WaterSectionFollow{}).
 			Joins("JOIN water_sections ON water_sections.id = water_section_follows.section_id").
 			Select("water_sections.slug").
 			Where("water_section_follows.user_id = ?", userID)
-		query = query.Where("posts.board_id = ? AND posts.post_type IN (?)", models.BoardShuitie, followingSubQuery)
+		query = query.Where(
+			"posts.board_id = ? AND (posts.author_id IN (?) OR posts.post_type IN (?))",
+			models.BoardShuitie, followedAuthorsSub, followedSectionsSub,
+		)
 	}
 
 	if searchQuery != "" {

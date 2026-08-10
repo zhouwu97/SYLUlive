@@ -87,6 +87,13 @@ class ApiConstants {
   // Public alias for announcements. Some mobile networks stall plaintext
   // direct-IP requests whose path contains "announcement".
   static const String noticesPath = '/notices';
+
+  // Feed 用户控制与事件采集（FEED-1 / FEED-2 / FEED-3）。
+  static String feedNotInterestedPath(int postId) =>
+      '/feed/posts/$postId/not-interested';
+  static String feedHiddenAuthorPath(int authorId) =>
+      '/feed/authors/$authorId/hidden';
+  static const String feedEventsBatchPath = '/feed/events/batch';
 }
 
 class StorageKeys {

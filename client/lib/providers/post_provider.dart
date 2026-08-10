@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
+import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../services/post_cache_service.dart';
 import '../utils/app_feedback.dart';
@@ -25,6 +26,37 @@ class _BoardState {
   int revision = 0;
   DateTime? lastSuccessfulRefreshAt;
   bool isRecoveringExpiredSession = false;
+}
+
+/// 一次可见性变更中被移除的帖子快照（FEED-3 撤销用）。
+class _FeedRemovedEntry {
+  _FeedRemovedEntry({
+    required this.boardKey,
+    required this.post,
+    required this.originalIndex,
+    required this.revisionAtMutation,
+  });
+
+  final String boardKey;
+  final Post post;
+  final int originalIndex;
+  // 记录变更提交后该 board 的 revision，用于撤销时的 revision 安全检查。
+  int revisionAtMutation;
+}
+
+/// 可见性变更（不感兴趣 / 不看TA）的撤销记录，用于 Snackbar「撤销」。
+class FeedVisibilityUndo {
+  const FeedVisibilityUndo._({
+    required this.isAuthorHide,
+    required this.postId,
+    required this.authorId,
+    required List<_FeedRemovedEntry> removed,
+  }) : _removed = removed;
+
+  final bool isAuthorHide;
+  final int postId;
+  final int authorId;
+  final List<_FeedRemovedEntry> _removed;
 }
 
 /// 创建帖子的返回结果
@@ -1501,5 +1533,164 @@ class PostProvider extends ChangeNotifier {
         _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
       }
     }
+  }
+
+  // ── FEED-3 乐观可见性 ─────────────────────────────────────────────
+
+  /// 是否属于首页主 Tab（sort ∈ all/time/featured/following 且无版块 type）。
+  bool _isMainFeedBoard(String key) {
+    final parts = key.split('|');
+    if (parts.length < 3) return false;
+    final sort = parts[1];
+    final type = parts[2];
+    if (type.isNotEmpty) return false;
+    return sort == 'all' ||
+        sort == 'time' ||
+        sort == 'featured' ||
+        sort == 'following';
+  }
+
+  void _syncBoardCacheAfterMutation(String key, _BoardState board) {
+    if (!_enableCache) return;
+    final keyParts = key.split('|');
+    final boardId = int.tryParse(keyParts.first) ?? 0;
+    final sort = keyParts.length > 1 ? keyParts[1] : 'time';
+    final type =
+        keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
+    final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
+        ? int.tryParse(keyParts[3])
+        : null;
+    _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+  }
+
+  void _restoreRemoved(List<_FeedRemovedEntry> removed) {
+    for (final entry in removed) {
+      final board = _boards[entry.boardKey];
+      if (board == null) continue;
+      final index = entry.originalIndex.clamp(0, board.posts.length);
+      board.posts.insert(index, entry.post);
+      board.revision++;
+    }
+  }
+
+  /// 乐观「不感兴趣」：本地立即从 all 信息流移除该帖，成功后返回撤销记录；
+  /// 服务端失败则回滚。source 为用户点击时所在 Tab（仅用于分析）。
+  Future<FeedVisibilityUndo?> markPostNotInterestedOptimistic(
+    Post post, {
+    required String source,
+  }) async {
+    final removed = <_FeedRemovedEntry>[];
+    for (final entry in _boards.entries) {
+      if (!_isMainFeedBoard(entry.key) ||
+          entry.key.split('|')[1] != 'all') {
+        continue;
+      }
+      final board = entry.value;
+      final index = board.posts.indexWhere((p) => p.id == post.id);
+      if (index < 0) continue;
+      final removedPost = board.posts[index];
+      board.posts.removeAt(index);
+      board.revision++;
+      removed.add(_FeedRemovedEntry(
+        boardKey: entry.key,
+        post: removedPost,
+        originalIndex: index,
+        revisionAtMutation: board.revision,
+      ));
+      _syncBoardCacheAfterMutation(entry.key, board);
+    }
+    if (removed.isNotEmpty) notifyListeners();
+
+    try {
+      await _dio.put(
+        ApiConstants.feedNotInterestedPath(post.id),
+        queryParameters: {'source': source},
+      );
+    } catch (_) {
+      _restoreRemoved(removed);
+      if (removed.isNotEmpty) notifyListeners();
+      return null;
+    }
+    return FeedVisibilityUndo._(
+      isAuthorHide: false,
+      postId: post.id,
+      authorId: 0,
+      removed: removed,
+    );
+  }
+
+  /// 乐观「不看 TA」：本地立即从 all/time/featured/following 移除该作者全部帖子。
+  Future<FeedVisibilityUndo?> hideAuthorOptimistic(int authorId) async {
+    final removed = <_FeedRemovedEntry>[];
+    for (final entry in _boards.entries) {
+      if (!_isMainFeedBoard(entry.key)) continue;
+      final board = entry.value;
+      final boardRemoved = <_FeedRemovedEntry>[];
+      for (var i = board.posts.length - 1; i >= 0; i--) {
+        if (board.posts[i].authorId == authorId) {
+          boardRemoved.add(_FeedRemovedEntry(
+            boardKey: entry.key,
+            post: board.posts[i],
+            originalIndex: i,
+            revisionAtMutation: board.revision,
+          ));
+          board.posts.removeAt(i);
+        }
+      }
+      if (boardRemoved.isNotEmpty) {
+        board.revision++;
+        // 撤销的 revision 基准取变更提交后的 board revision。
+        for (final e in boardRemoved) {
+          e.revisionAtMutation = board.revision;
+        }
+        removed.addAll(boardRemoved);
+        _syncBoardCacheAfterMutation(entry.key, board);
+      }
+    }
+    if (removed.isNotEmpty) notifyListeners();
+
+    try {
+      await _dio.put(ApiConstants.feedHiddenAuthorPath(authorId));
+    } catch (_) {
+      _restoreRemoved(removed);
+      if (removed.isNotEmpty) notifyListeners();
+      return null;
+    }
+    return FeedVisibilityUndo._(
+      isAuthorHide: true,
+      postId: 0,
+      authorId: authorId,
+      removed: removed,
+    );
+  }
+
+  /// 撤销一次可见性变更（Snackbar「撤销」）。
+  ///
+  /// Revision 安全：仅当相关 board 的 revision 与变更时一致才原位插回；
+  /// 若期间 Feed 已刷新（revision 变化），只调 API 撤销、不插回旧数据，
+  /// 由下一次刷新与服务端对齐。
+  Future<void> undoFeedVisibility(FeedVisibilityUndo undo) async {
+    try {
+      if (undo.isAuthorHide) {
+        await _dio.delete(ApiConstants.feedHiddenAuthorPath(undo.authorId));
+      } else {
+        await _dio.delete(ApiConstants.feedNotInterestedPath(undo.postId));
+      }
+    } catch (_) {
+      // API 撤销失败仍尽力恢复本地；下一次刷新会与服务端对齐。
+    }
+
+    final allSame = undo._removed.every((entry) {
+      final board = _boards[entry.boardKey];
+      return board != null && board.revision == entry.revisionAtMutation;
+    });
+    if (!allSame) return;
+
+    _restoreRemoved(undo._removed);
+    for (final entry in undo._removed) {
+      final board = _boards[entry.boardKey];
+      if (board != null) _syncBoardCacheAfterMutation(entry.boardKey, board);
+    }
+    notifyListeners();
   }
 }

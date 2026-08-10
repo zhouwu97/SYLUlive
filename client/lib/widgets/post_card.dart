@@ -11,6 +11,7 @@ import '../screens/user_home_screen.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'post_media/post_media_view.dart';
+import 'feed/feed_post_action_menu.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 
@@ -26,6 +27,9 @@ class PostCard extends StatefulWidget {
   /// 评论按钮点击回调；为空时默认进入详情并聚焦评论输入框。
   final ValueChanged<Post>? onCommentTap;
 
+  /// 卡片右上角操作菜单回调（FEED-3）。为空时不渲染菜单。
+  final ValueChanged<FeedPostAction>? onPostAction;
+
   const PostCard({
     super.key,
     required this.post,
@@ -36,6 +40,7 @@ class PostCard extends StatefulWidget {
     this.disableAuthorNavigation = false,
     this.onAuthorTap,
     this.onCommentTap,
+    this.onPostAction,
   });
 
   @override
@@ -226,6 +231,14 @@ class _PostCardState extends State<PostCard>
                 ),
                 if (widget.post.boardId == 1 && widget.showCategoryBadge)
                   _buildCategoryTag(context, isDark),
+                if (widget.onPostAction != null) ...[
+                  const SizedBox(width: 4),
+                  FeedPostActionMenu(
+                    isMine: isMyPost,
+                    isDark: isDark,
+                    onAction: widget.onPostAction!,
+                  ),
+                ],
               ],
             ),
             if (widget.post.title.isNotEmpty) ...[

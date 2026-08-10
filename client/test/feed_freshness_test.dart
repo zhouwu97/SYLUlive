@@ -10,6 +10,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
   _FeedAuthProvider({required this.client});
@@ -128,6 +129,9 @@ Future<void> _dispose(WidgetTester tester, _FreshnessPage page) async {
 }
 
 void main() {
+  // visibility_detector 在测试里用帧末回调而非内部 Timer，避免残留 pending timer。
+  VisibilityDetectorController.instance.updateInterval = Duration.zero;
+
   testWidgets('列表已向下滚动时后台探测不打断阅读，显示内容有更新浮条', (tester) async {
     final page = await _pumpFeed(tester, firstCount: 1);
 

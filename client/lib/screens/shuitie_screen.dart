@@ -1564,7 +1564,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           fontWeight: FontWeight.bold,
                           color: isDark ? Colors.white70 : Colors.black87)),
                   const SizedBox(height: 4),
-                  Text('关注版块后会在这里看到更新',
+                  Text('关注的人和版块有新动态时，会显示在这里',
                       style: TextStyle(
                           fontSize: 13,
                           color: isDark ? Colors.white54 : Colors.black54)),

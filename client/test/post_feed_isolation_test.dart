@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -379,6 +380,91 @@ void main() {
       pinnedUntil: DateTime.now().subtract(const Duration(minutes: 1)),
     );
     expect(expired.isActivePinned, isFalse);
+  });
+
+  test('invalidateHomeFeedCaches clears board-1 state and cache only', () async {
+    await PostCacheService.savePosts(
+      1,
+      CachedPostFeed(
+        posts: [
+          Post(
+            id: 1,
+            title: '首页帖',
+            content: '首页',
+            boardId: 1,
+            authorId: 1,
+            createdAt: DateTime.utc(2026, 6, 14, 8),
+          ),
+        ],
+        algorithmVersion: PostCacheService.expectedAlgorithmVersion(
+            boardId: 1, sort: 'all'),
+      ),
+      sort: 'all',
+    );
+    await PostCacheService.savePosts(
+      2,
+      CachedPostFeed(
+        posts: [
+          Post(
+            id: 2,
+            title: '集市帖',
+            content: '集市',
+            boardId: 2,
+            authorId: 1,
+            createdAt: DateTime.utc(2026, 6, 14, 8),
+          ),
+        ],
+      ),
+      sort: 'all',
+    );
+
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) =>
+            handler.resolve(_response(options, 1)),
+      ),
+    );
+    final provider = PostProvider(dio);
+    await provider.loadPosts(boardId: 1, sort: 'all');
+    await provider.loadPosts(boardId: 2, sort: 'all');
+    expect(provider.postsFor(1, sort: 'all'), isNotEmpty);
+    expect(provider.postsFor(2, sort: 'all'), isNotEmpty);
+
+    await provider.invalidateHomeFeedCaches();
+
+    expect(provider.postsFor(1, sort: 'all'), isEmpty, reason: 'board 1 状态已清');
+    expect(provider.postsFor(2, sort: 'all'), isNotEmpty, reason: '仅失效首页 board 1');
+    expect(await PostCacheService.loadPosts(1, sort: 'all'), isNull,
+        reason: 'board 1 Hive 缓存已清');
+    expect(await PostCacheService.loadPosts(2, sort: 'all'), isNotNull,
+        reason: 'board 2 Hive 缓存保留');
+  });
+
+  test('invalidateHomeFeedCaches drops in-flight stale board-1 responses',
+      () async {
+    final dio = Dio();
+    final gate = Completer<void>();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          await gate.future;
+          handler.resolve(_response(options, 10));
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: false);
+
+    final loading = provider.refresh(boardId: 1, sort: 'all');
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+
+    // 账号切换 → 失效首页 Feed；在途旧请求不得写回新账号状态。
+    await provider.invalidateHomeFeedCaches();
+    gate.complete();
+    await loading;
+
+    expect(provider.postsFor(1, sort: 'all'), isEmpty,
+        reason: '在途旧请求不得写回失效后的状态');
   });
 
   test('post parses market tags from list and comma-separated strings', () {

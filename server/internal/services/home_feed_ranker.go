@@ -19,6 +19,29 @@ type HomeFeedCandidate struct {
 	Quality            float64
 	HotScore           float64
 	ActivityScore      float64
+	// FEED-5 个性化增量（-0.20 ~ +0.20），由个性化层在排序前写入；0 = 不个性化。
+	PersonalDelta float64
+}
+
+// clampPersonalDelta 限制个性化增量范围，避免画像把公共质量压没。
+func clampPersonalDelta(delta float64) float64 {
+	if delta < -0.20 {
+		return -0.20
+	}
+	if delta > 0.20 {
+		return 0.20
+	}
+	return delta
+}
+
+// AdjustedHotScore 个性化后的热度分：HotScore * (1 + delta)。
+func AdjustedHotScore(c HomeFeedCandidate) float64 {
+	return c.HotScore * (1 + clampPersonalDelta(c.PersonalDelta))
+}
+
+// AdjustedActivityScore 个性化后的活跃分：ActivityScore * (1 + delta)。
+func AdjustedActivityScore(c HomeFeedCandidate) float64 {
+	return c.ActivityScore * (1 + clampPersonalDelta(c.PersonalDelta))
 }
 
 func ScoreHomeFeedCandidate(candidate *HomeFeedCandidate, now time.Time) {
@@ -103,7 +126,9 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 	byFresh := append([]HomeFeedCandidate(nil), candidates...)
 	byActivity := append([]HomeFeedCandidate(nil), candidates...)
 	byFeatured := append([]HomeFeedCandidate(nil), candidates...)
-	sort.SliceStable(byHot, func(i, j int) bool { return candidateLess(byHot[i], byHot[j], byHot[i].HotScore, byHot[j].HotScore) })
+	sort.SliceStable(byHot, func(i, j int) bool {
+		return candidateLess(byHot[i], byHot[j], AdjustedHotScore(byHot[i]), AdjustedHotScore(byHot[j]))
+	})
 	sort.SliceStable(byFresh, func(i, j int) bool {
 		left := byFresh[i].Post.CreatedAt
 		right := byFresh[j].Post.CreatedAt
@@ -113,7 +138,7 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 		return byFresh[i].Post.ID > byFresh[j].Post.ID
 	})
 	sort.SliceStable(byActivity, func(i, j int) bool {
-		return candidateLess(byActivity[i], byActivity[j], byActivity[i].ActivityScore, byActivity[j].ActivityScore)
+		return candidateLess(byActivity[i], byActivity[j], AdjustedActivityScore(byActivity[i]), AdjustedActivityScore(byActivity[j]))
 	})
 	sort.SliceStable(byFeatured, func(i, j int) bool {
 		left, right := byFeatured[i].Post.FeaturedAt, byFeatured[j].Post.FeaturedAt

@@ -10,6 +10,24 @@ import '../models/conversation.dart';
 import '../models/message_send_state.dart';
 import '../utils/app_feedback.dart';
 
+/// 私信实时传输层状态。
+///
+/// 与页面 UI 状态（loading/error）分离：UI 是否显示错误提示由
+/// “SSE 持续失败 AND fallback REST 也失败”共同决定，见各页面实现。
+enum MessageRealtimeState {
+  /// 未连接（未登录 / 会话已停止）。
+  disconnected,
+
+  /// 正在建立 SSE 连接。
+  connecting,
+
+  /// SSE 已建立，事件流正常消费中。
+  connected,
+
+  /// 连接断开，正在按退避策略重连。
+  reconnecting,
+}
+
 class MessageProvider extends ChangeNotifier {
   static const int _pageSize = 30;
   static const Duration _sendTimeout = Duration(seconds: 35);
@@ -44,6 +62,28 @@ class MessageProvider extends ChangeNotifier {
   CancelToken? _eventCancelToken;
   int _realtimeGeneration = 0;
   bool _disposed = false;
+
+  MessageRealtimeState _realtimeState = MessageRealtimeState.disconnected;
+  bool _fallbackPollingActive = false;
+
+  /// 当前 SSE 传输层状态。状态真正变化时才 notifyListeners。
+  MessageRealtimeState get realtimeState => _realtimeState;
+
+  /// 页面级 fallback polling 是否正在运行（SSE 不可用时由页面开启）。
+  bool get fallbackPollingActive => _fallbackPollingActive;
+
+  void _setRealtimeState(MessageRealtimeState next) {
+    if (_realtimeState == next) return;
+    _realtimeState = next;
+    notifyListeners();
+  }
+
+  /// 页面启动/停止 fallback polling 时上报，供测试与诊断使用。
+  void setFallbackPollingActive(bool active) {
+    if (_fallbackPollingActive == active) return;
+    _fallbackPollingActive = active;
+    notifyListeners();
+  }
 
   MessageProvider(this._dio);
 
@@ -1020,10 +1060,12 @@ class MessageProvider extends ChangeNotifier {
     _realtimeGeneration++;
     _eventCancelToken?.cancel('会话已切换');
     _eventCancelToken = null;
+    _setRealtimeState(MessageRealtimeState.disconnected);
   }
 
   Future<void> _runRealtimeLoop(int userId, int generation) async {
     var retryDelay = const Duration(seconds: 1);
+    _setRealtimeState(MessageRealtimeState.connecting);
     while (!_disposed &&
         _sessionUserId == userId &&
         generation == _realtimeGeneration) {
@@ -1042,18 +1084,28 @@ class MessageProvider extends ChangeNotifier {
         final body = response.data;
         if (body == null) throw StateError('实时消息响应为空');
         retryDelay = const Duration(seconds: 1);
+        // 连接建立成功：通知页面停止 fallback polling 并执行一次 reconciliation。
+        _setRealtimeState(MessageRealtimeState.connected);
         await _consumeEventStream(body, userId, generation);
+        if (!_disposed &&
+            _sessionUserId == userId &&
+            generation == _realtimeGeneration) {
+          // 事件流正常结束（服务端断开）：进入重连。
+          _setRealtimeState(MessageRealtimeState.reconnecting);
+        }
       } on DioException catch (error) {
         if (CancelToken.isCancel(error) ||
             _sessionUserId != userId ||
             generation != _realtimeGeneration) {
           return;
         }
+        _setRealtimeState(MessageRealtimeState.reconnecting);
         debugPrint('私信实时连接中断，等待重连: $error');
       } catch (error) {
         if (_sessionUserId != userId || generation != _realtimeGeneration) {
           return;
         }
+        _setRealtimeState(MessageRealtimeState.reconnecting);
         debugPrint('私信实时事件解析失败，等待重连: $error');
       }
 
@@ -1063,6 +1115,9 @@ class MessageProvider extends ChangeNotifier {
         _maxRealtimeRetryDelay.inSeconds,
       );
       retryDelay = Duration(seconds: nextSeconds);
+    }
+    if (!_disposed) {
+      _setRealtimeState(MessageRealtimeState.disconnected);
     }
   }
 

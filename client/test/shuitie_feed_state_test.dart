@@ -12,6 +12,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
   _FeedAuthProvider({required this.client, required this.loggedIn});
@@ -36,6 +37,9 @@ class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 void main() {
+  // visibility_detector 在测试里用帧末回调而非内部 Timer，避免残留 pending timer。
+  VisibilityDetectorController.instance.updateInterval = Duration.zero;
+
   testWidgets('feed keeps loading state while the first request is pending',
       (tester) async {
     final gate = Completer<void>();

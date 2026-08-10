@@ -46,7 +46,7 @@ git clone -b main https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan-src
 
 cd /opt/shenliyuan-src/server
 go mod download
-go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
+go build -o /opt/shenliyuan/shenliyuan ./cmd
 chmod +x /opt/shenliyuan/shenliyuan
 
 # 确认 /opt/shenliyuan/.env 已配置完成后启动服务
@@ -82,7 +82,7 @@ git pull --ff-only origin main
 
 cd /opt/shenliyuan-src/server
 go mod download
-go build -o /opt/shenliyuan/shenliyuan.new ./cmd/main.go
+go build -o /opt/shenliyuan/shenliyuan.new ./cmd
 
 cp -a /opt/shenliyuan/shenliyuan /opt/shenliyuan/shenliyuan.bak.$(date +%Y%m%d_%H%M%S)
 mv /opt/shenliyuan/shenliyuan.new /opt/shenliyuan/shenliyuan
@@ -315,7 +315,7 @@ git clone -b main https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan-src
 `
 cd /opt/shenliyuan-src/server
 go mod download
-go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
+go build -o /opt/shenliyuan/shenliyuan ./cmd
 chmod +x /opt/shenliyuan/shenliyuan
 systemctl restart shenliyuan
 ```

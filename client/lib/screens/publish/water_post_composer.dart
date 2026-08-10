@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
+import '../../models/publish_image_item.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
@@ -53,8 +54,15 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   bool _titleNeedsAttention = false;
   String _selectedPostType = 'campus_life';
   int? _selectedTagId;
-  final List<XFile> _selectedImages = [];
-  final List<PostImage> _existingImages = [];
+
+  // C-2 统一图片列表（existing + local 混合，顺序即发布顺序）。
+  final List<PublishImageItem> _images = [];
+  int _localImageSeq = 0;
+
+  String _nextLocalImageId() {
+    _localImageSeq++;
+    return 'local-${DateTime.now().millisecondsSinceEpoch}-$_localImageSeq';
+  }
 
   // C-1 草稿：防抖自动保存，发布成功清理。
   final PostDraftService _draftService = PostDraftService();
@@ -66,26 +74,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   // ---------------------------------------------------------------------------
 
   @override
-  List<XFile> get selectedImages => _selectedImages;
-
-  @override
-  List<PostImage> get existingImages => _existingImages;
-
-  @override
   void onImageAdded(XFile image) {
     _scheduleDraftSave();
-    setState(() => _selectedImages.add(image));
+    setState(() => _images.add(PublishImageItem.local(image, _nextLocalImageId())));
   }
-
-  @override
-  void onNewImageRemoved(int index) {
-    _scheduleDraftSave();
-    setState(() => _selectedImages.removeAt(index));
-  }
-
-  @override
-  void onExistingImageRemoved(int index) =>
-      setState(() => _existingImages.removeAt(index));
 
   // ---------------------------------------------------------------------------
   // 辅助状态
@@ -98,11 +90,32 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     return PrivilegedAccounts.canUploadUnlimitedImages(studentId);
   }
 
-  int get _totalImageCount => _existingImages.length + _selectedImages.length;
+  int get _totalImageCount => _images.length;
 
   @override
   bool get canAddMoreImages =>
       _canUploadUnlimitedImages || _totalImageCount < _maxImages;
+
+  // ---- 统一图片操作 ----
+
+  void _removeImage(String id) {
+    _scheduleDraftSave();
+    setState(() => _images.removeWhere((e) => e.id == id));
+  }
+
+  /// 拖拽排序：把 dragged 移到 target 所在位置（语义见 reorderImages）。
+  void _moveImage(String draggedId, String targetId) {
+    reorderImages(_images, draggedId, targetId);
+    _scheduleDraftSave();
+    setState(() {});
+  }
+
+  /// 按 UI 顺序解析 file_ids：existing 直接取 fileId，local 逐张上传；
+  /// 顺序严格等于 _images 顺序。上传失败返回 null。
+  Future<List<int>?> _resolveOrderedFileIds(PostProvider postProvider) {
+    return resolveOrderedFileIds(_images,
+        (file) => postProvider.uploadImage(file));
+  }
 
   int get _charCount => _contentController.text.length;
 
@@ -150,7 +163,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     if (post != null) {
       _titleController.text = post.title;
       _contentController.text = post.content;
-      _existingImages.addAll(post.images);
+      _images.addAll(post.images.map(PublishImageItem.existing));
       _selectedTagId = post.waterTagId;
     }
     final rawPostType = post?.postType ?? widget.initialPostType;
@@ -215,7 +228,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     for (final path in draft.draftImagePaths) {
       final file = File(path);
       if (await file.exists()) {
-        _selectedImages.add(XFile(path));
+        _images.add(PublishImageItem.local(XFile(path), _nextLocalImageId()));
       }
     }
     if (mounted) setState(() {});
@@ -235,7 +248,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       content: _contentController.text.trim(),
       postType: _selectedPostType,
       waterTagId: _selectedTagId,
-      draftImagePaths: _selectedImages.map((image) => image.path).toList(),
+      draftImagePaths: _images
+          .where((e) => e.source == PublishImageSource.local)
+          .map((e) => e.localFile!.path)
+          .toList(),
       updatedAt: DateTime.now(),
     );
     if (draft.isEmpty) {
@@ -294,19 +310,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     try {
       final postProvider = context.read<PostProvider>();
 
-      final List<int> fileIds = [];
-      bool hasUploadError = false;
-      for (final image in _selectedImages) {
-        final fileId = await postProvider.uploadImage(image);
-        if (fileId != null) {
-          fileIds.add(fileId);
-        } else {
-          hasUploadError = true;
-          break;
-        }
-      }
-
-      if (hasUploadError) {
+      // C-2：file_ids 严格等于 UI 图片顺序（existing + local 混合）。
+      final fileIds = await _resolveOrderedFileIds(postProvider);
+      if (fileIds == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -318,11 +324,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         return;
       }
 
-      final mergedFileIds = [
-        ..._existingImages.map((image) => image.fileId),
-        ...fileIds,
-      ];
-
       final result = _isEditing
           ? await postProvider.updatePost(
               postId: widget.editingPost!.id,
@@ -333,7 +334,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               waterTagId: _selectedTagId,
               price: 0,
               contact: '',
-              fileIds: mergedFileIds,
+              fileIds: fileIds,
             )
           : await postProvider.createPost(
               boardId: 1,
@@ -343,7 +344,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               waterTagId: _selectedTagId,
               price: null,
               contact: null,
-              fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
+              fileIds: fileIds.isNotEmpty ? fileIds : null,
             );
 
       if (!mounted) return;
@@ -817,12 +818,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
                   child: PublishImageGrid(
-                    existingImages: _existingImages,
-                    selectedImages: _selectedImages,
+                    images: _images,
                     canAddMore: canAddMoreImages,
-                    onAddImage: showImageSourceDialog,
-                    onRemoveNewImage: onNewImageRemoved,
-                    onRemoveExistingImage: onExistingImageRemoved,
+                    onAdd: showImageSourceDialog,
+                    onRemove: _removeImage,
+                    onReorder: _moveImage,
                     compact: true,
                   ),
                 ),

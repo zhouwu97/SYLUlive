@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../config/market_contact_type.dart';
 import '../../config/privileged_accounts.dart';
 import '../../models/post.dart';
+import '../../models/publish_image_item.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import 'exposure_publish_form.dart';
@@ -53,8 +54,15 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   bool _isLoading = false;
   Set<_PublishField> _attentionFields = {};
   int _attentionPulse = 0;
-  final List<XFile> _selectedImages = [];
-  final List<PostImage> _existingImages = [];
+  // C-2 统一图片列表（existing + local 混合，顺序即发布顺序）。
+  final List<PublishImageItem> _images = [];
+  int _localImageSeq = 0;
+
+  String _nextLocalImageId() {
+    _localImageSeq++;
+    return 'local-${DateTime.now().millisecondsSinceEpoch}-$_localImageSeq';
+  }
+
   final Set<String> _selectedMarketTags = {};
 
   bool _hasTriedSubmit = false;
@@ -69,9 +77,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         _contactController.text.trim().isNotEmpty ||
         _contactType.isNotEmpty;
 
-    final hasMediaOrTags = _selectedImages.isNotEmpty ||
+    final hasMediaOrTags = _images.any((e) => e.source == PublishImageSource.local) ||
         _selectedMarketTags.isNotEmpty ||
-        _existingImages.length != (widget.editingPost?.images.length ?? 0);
+        _images.length != (widget.editingPost?.images.length ?? 0);
 
     if (!_isEditing) return hasText || hasMediaOrTags;
 
@@ -82,8 +90,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         _priceController.text != p.price.toString() ||
         _contactType != p.contactType ||
         _contactController.text != p.contact ||
-        _selectedImages.isNotEmpty ||
-        _existingImages.length != p.images.length ||
+        _images.any((e) => e.source == PublishImageSource.local) ||
+        _images.length != p.images.length ||
         _selectedMarketTags.join('|') != p.marketTags.join('|');
   }
 
@@ -135,21 +143,26 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   // ---------------------------------------------------------------------------
 
   @override
-  List<XFile> get selectedImages => _selectedImages;
+  void onImageAdded(XFile image) =>
+      setState(() => _images.add(PublishImageItem.local(image, _nextLocalImageId())));
 
-  @override
-  List<PostImage> get existingImages => _existingImages;
+  // ---- 统一图片操作 ----
 
-  @override
-  void onImageAdded(XFile image) => setState(() => _selectedImages.add(image));
+  void _removeImage(String id) {
+    setState(() => _images.removeWhere((e) => e.id == id));
+  }
 
-  @override
-  void onNewImageRemoved(int index) =>
-      setState(() => _selectedImages.removeAt(index));
+  void _moveImage(String draggedId, String targetId) {
+    reorderImages(_images, draggedId, targetId);
+    setState(() {});
+  }
 
-  @override
-  void onExistingImageRemoved(int index) =>
-      setState(() => _existingImages.removeAt(index));
+  /// 按 UI 顺序解析 file_ids：existing 直接取 fileId，local 逐张上传；
+  /// 顺序严格等于 _images 顺序。上传失败返回 null。
+  Future<List<int>?> _resolveOrderedFileIds(PostProvider postProvider) {
+    return resolveOrderedFileIds(_images,
+        (file) => postProvider.uploadImage(file));
+  }
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -162,7 +175,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     return PrivilegedAccounts.canUploadUnlimitedImages(studentId);
   }
 
-  int get _totalImageCount => _existingImages.length + _selectedImages.length;
+  int get _totalImageCount => _images.length;
 
   @override
   bool get canAddMoreImages =>
@@ -277,7 +290,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       _contactType = post.contactType;
       _contactController.text = post.contact;
       _postType = post.postType;
-      _existingImages.addAll(post.images);
+      _images.addAll(post.images.map(PublishImageItem.existing));
       _selectedMarketTags.addAll(post.marketTags);
     } else if (widget.defaultPostType != null) {
       _postType = widget.defaultPostType!;
@@ -435,19 +448,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     try {
       final postProvider = context.read<PostProvider>();
 
-      final List<int> fileIds = [];
-      bool hasUploadError = false;
-      for (final image in _selectedImages) {
-        final fileId = await postProvider.uploadImage(image);
-        if (fileId != null) {
-          fileIds.add(fileId);
-        } else {
-          hasUploadError = true;
-          break;
-        }
-      }
-
-      if (hasUploadError) {
+      // C-2：file_ids 严格等于 UI 图片顺序（existing + local 混合）。
+      final fileIds = await _resolveOrderedFileIds(postProvider);
+      if (fileIds == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -459,11 +462,6 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         return;
       }
 
-      final mergedFileIds = [
-        ..._existingImages.map((image) => image.fileId),
-        ...fileIds,
-      ];
-
       final result = _isEditing
           ? await postProvider.updatePost(
               postId: widget.editingPost!.id,
@@ -474,7 +472,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               price: _showsPriceField ? double.tryParse(priceText) : null,
               contactType: _contactType,
               contact: contact,
-              fileIds: mergedFileIds,
+              fileIds: fileIds,
               marketTags: _selectedMarketTags.toList(growable: false),
             )
           : await postProvider.createPost(
@@ -485,7 +483,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               price: _showsPriceField ? double.tryParse(priceText) : null,
               contactType: _contactType.isNotEmpty ? _contactType : null,
               contact: contact.isNotEmpty ? contact : null,
-              fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
+              fileIds: fileIds.isNotEmpty ? fileIds : null,
               marketTags: _selectedMarketTags.toList(growable: false),
             );
 
@@ -696,12 +694,11 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         ),
         const SizedBox(height: 8),
         PublishImageGrid(
-          existingImages: _existingImages,
-          selectedImages: _selectedImages,
+          images: _images,
           canAddMore: canAddMoreImages,
-          onAddImage: showImageSourceDialog,
-          onRemoveNewImage: onNewImageRemoved,
-          onRemoveExistingImage: onExistingImageRemoved,
+          onAdd: showImageSourceDialog,
+          onRemove: _removeImage,
+          onReorder: _moveImage,
           addLabel: '添加图片',
           compact: true,
           accent: _marketAccent,

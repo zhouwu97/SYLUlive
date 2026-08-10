@@ -75,6 +75,11 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
     if (draftPriority != null) priority = draftPriority;
     if (draftIncludeNewUsers != null) includeNewUsers = draftIncludeNewUsers;
 
+    // 收敛无效组合（含历史数据/草稿）：只有 urgent 允许 modal。
+    if (displayMode == 'modal' && priority != 'urgent') {
+      displayMode = priority == 'important' ? 'banner' : 'center';
+    }
+
     Future<void> saveDraft() async {
       await prefs.setString('${draftKey}_title', titleCtrl.text);
       await prefs.setString('${draftKey}_content', contentCtrl.text);
@@ -240,6 +245,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                                 initialValue: displayMode,
                                 decoration: const InputDecoration(
                                   labelText: '展示方式',
+                                  helperText: '弹窗仅对紧急公告生效',
                                   border: OutlineInputBorder(),
                                   contentPadding: EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 14),
@@ -254,7 +260,14 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                                 ],
                                 onChanged: (v) {
                                   if (v != null) {
-                                    setDialogState(() => displayMode = v);
+                                    setDialogState(() {
+                                      displayMode = v;
+                                      // 只有 urgent 允许 modal：选择弹窗时自动提升优先级。
+                                      if (displayMode == 'modal' &&
+                                          priority != 'urgent') {
+                                        priority = 'urgent';
+                                      }
+                                    });
                                     saveDraft();
                                   }
                                 },
@@ -264,6 +277,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                                 initialValue: priority,
                                 decoration: const InputDecoration(
                                   labelText: '优先级',
+                                  helperText: '紧急 → 弹窗；重要 → 横幅/角标；普通 → 公告中心',
                                   border: OutlineInputBorder(),
                                   contentPadding: EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 14),
@@ -278,7 +292,16 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                                 ],
                                 onChanged: (v) {
                                   if (v != null) {
-                                    setDialogState(() => priority = v);
+                                    setDialogState(() {
+                                      priority = v;
+                                      // important/normal 不允许弹窗：自动回落到横幅/公告中心。
+                                      if (displayMode == 'modal' &&
+                                          priority != 'urgent') {
+                                        displayMode = priority == 'important'
+                                            ? 'banner'
+                                            : 'center';
+                                      }
+                                    });
                                     saveDraft();
                                   }
                                 },

@@ -20,6 +20,7 @@ class PublishImageGrid extends StatelessWidget {
   final VoidCallback onAdd;
   final ValueChanged<String> onRemove;
   final void Function(String draggedId, String targetId) onReorder;
+  final ValueChanged<String>? onRetry;
   final void Function(int index)? onPreviewImage;
   final bool compact;
   final bool singleSlot;
@@ -33,6 +34,7 @@ class PublishImageGrid extends StatelessWidget {
     required this.onAdd,
     required this.onRemove,
     required this.onReorder,
+    this.onRetry,
     this.onPreviewImage,
     this.compact = false,
     this.singleSlot = false,
@@ -175,6 +177,40 @@ class PublishImageGrid extends StatelessWidget {
                 ),
             },
           ),
+
+          // 上传状态覆盖层（仅本地新图；C-3）
+          if (item.source == PublishImageSource.local &&
+              item.uploadState == PublishImageUploadState.uploading)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black45,
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      value: item.progress > 0 ? item.progress : null,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (item.source == PublishImageSource.local &&
+              item.uploadState == PublishImageUploadState.failed)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: onRetry == null ? null : () => onRetry!(item.id),
+                child: const ColoredBox(
+                  color: Colors.black45,
+                  child: Center(
+                    child: Icon(Icons.refresh_rounded,
+                        color: Colors.white, size: 26),
+                  ),
+                ),
+              ),
+            ),
 
           // 封面角标
           if (isFirst)

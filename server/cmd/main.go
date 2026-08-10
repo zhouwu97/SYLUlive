@@ -310,6 +310,12 @@ func main() {
 		&models.CanteenRatingVote{},
 		&models.UserFollow{},
 
+		// Feed 推荐系统（FEED-1 / FEED-2 / FEED-4）
+		&models.FeedFeedback{},
+		&models.UserHiddenAuthor{},
+		&models.FeedImpression{},
+		&models.FeedDailyMetrics{},
+
 		// 校园资讯
 		&models.CampusArticle{},
 		&models.JWCSyncState{},
@@ -556,6 +562,8 @@ func main() {
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
+	feedHandler := handlers.NewFeedHandler(db)
+	feedEventHandler := handlers.NewFeedEventHandler(db)
 	pollHandler := handlers.NewPollHandler(db)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
 	competitionHandler, competitionHandlerErr := handlers.NewCompetitionHandlerWithEvidenceStorage(
@@ -919,6 +927,7 @@ func main() {
 	// 启动后台定时任务
 
 	tasks.StartLotteryCron(db)
+	feedMetricsCron := tasks.StartFeedMetricsCron(appCtx, services.NewFeedMetricsService(db))
 	var examPaperStorageCron *tasks.ExamPaperStorageCron
 	if examPaperStorageJobs != nil && examPaperStorageMaintenance != nil {
 		examPaperStorageCron = tasks.StartExamPaperStorageCron(appCtx, examPaperStorageJobs, examPaperStorageMaintenance)
@@ -1419,6 +1428,22 @@ func main() {
 
 		like.DELETE("/replies/:id/like", likeHandler.UnlikeReply)
 
+	}
+
+	// Feed 推荐路由（FEED-1 用户控制 + FEED-2 行为事件采集）
+
+	feed := r.Group("/api/feed")
+
+	feed.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+
+	{
+		feed.PUT("/posts/:post_id/not-interested", feedHandler.MarkNotInterested)
+		feed.DELETE("/posts/:post_id/not-interested", feedHandler.UndoNotInterested)
+		feed.PUT("/authors/:author_id/hidden", feedHandler.HideAuthor)
+		feed.DELETE("/authors/:author_id/hidden", feedHandler.RestoreAuthor)
+		feed.GET("/hidden-authors", feedHandler.GetHiddenAuthors)
+
+		feed.POST("/events/batch", feedEventHandler.RecordEventsBatch)
 	}
 
 	// 私信路由
@@ -2001,6 +2026,7 @@ func main() {
 	examPaperStorageCron.Wait()
 	eduCredentialCleanupCron.Wait()
 	eduBindingRecoveryCron.Wait()
+	feedMetricsCron.Wait()
 	if serveErr != nil {
 		log.Fatal("服务器运行失败:", serveErr)
 	}

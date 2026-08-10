@@ -459,7 +459,8 @@ freshness probe
 # 7. FEED-4：指标基线
 
 > 📐 **设计已完成（2026-08-10）**：`docs/plans/feed4-metrics-design.md`（feed_daily_metrics schema + 六项指标 SQL 口径 + TTL 布线）。
-> **实现待门禁**：FEED-1/2 合入 MCP + FEED-3 客户端事件流入 + 真实数据积累。
+> ✅ **Core 已实现并合入 MCP**：每日聚合 cron + 30 天 TTL（`feed_metrics_cron.go`）；FEED-H1 已修 CTR 分母 / Asia/Shanghai 时区 / interaction density scope。
+> **剩余待门禁**：FEED-3 客户端事件流入 + 真实数据积累（报告完整性 / baseline 验收）。
 
 在任何 P1 个性化之前先跑 baseline。
 
@@ -725,9 +726,10 @@ WaterSectionFollow
 | FEED-0 | `feed/recommendation-preflight` | UX-2 合入后 | ✅ 已完成（preflight 报告） |
 | FEED-1 | `feed/negative-feedback-backend` | UX-2 合入后 | ✅ **已合入 MCP `1aa5912d`** |
 | FEED-2 | `feed/impression-backend` | UX-2 合入后 | ✅ **已合入 MCP `1aa5912d`** |
-| FEED-3 | `feed/user-control-ui` | UX-7 合入后（必须基于最新 MCP） | ⛔ 阻塞：UX-7 未合入 |
-| FEED-4 | baseline metrics（可并 FEED-3 数据落地后启动） | FEED-2/3 数据可用 | 📐 设计完成；⛔ 实现待 FEED-3 数据 |
-| FEED-5 | `feed/personalized-ranking-v1` | FEED-4 baseline | 📐 设计完成（feed5-personalized-design.md）；⛔ 依赖 FEED-4 |
+| FEED-H1 | `feed/backend-hardening` | UX 合回 MCP 后 | ✅ **本阶段已实现**（Snapshot UserID / 反馈失效 / 自反馈守卫 / 90 天过期 / 缓存隔离 / metrics 口径时区 scope） |
+| FEED-3 | `feed/user-control-ui` | UX-7 合入后（必须基于最新 MCP） | ✅ UX-7 已合入 MCP，门禁解除；待 FEED-H1 合入后开始 |
+| FEED-4 | baseline metrics（可并 FEED-3 数据落地后启动） | FEED-2/3 数据可用 | ✅ Core 已实现并合入 MCP；⛔ 报告/验收待 FEED-3 真实数据 |
+| FEED-5 | `feed/personalized-ranking-v1` | FEED-4 baseline | 📐 设计完成（feed5-personalized-design.md）；FEED-H1 前置加固已落地；⛔ 依赖 FEED-4 数据 |
 | FEED-6 | following authors | FEED-5 后 | ⛔ 依赖 FEED-5 |
 | FEED-7 | topics（P2） | P1 数据稳定后 | ⛔ 依赖 P1 |
 

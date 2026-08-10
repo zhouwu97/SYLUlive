@@ -68,14 +68,20 @@ func (h *FeedHandler) MarkNotInterested(c *gin.Context) {
 		return
 	}
 	var post models.Post
-	if err := h.db.Select("id", "status").First(&post, postID).Error; err != nil {
+	if err := h.db.Select("id", "status", "author_id").First(&post, postID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		return
+	}
+	// H1.3：不允许对自己的帖子标记不感兴趣。
+	if post.AuthorID == userID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能对自己的帖子标记不感兴趣"})
 		return
 	}
 	if err := h.visibility.MarkNotInterested(userID, postID, source); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
+	invalidateUserFeedSnapshots(userID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -93,6 +99,7 @@ func (h *FeedHandler) UndoNotInterested(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
+	invalidateUserFeedSnapshots(userID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -113,10 +120,16 @@ func (h *FeedHandler) HideAuthor(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "作者不存在"})
 		return
 	}
+	// H1.3：不允许隐藏自己。
+	if authorID == userID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能隐藏自己"})
+		return
+	}
 	if err := h.visibility.HideAuthor(userID, authorID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
+	invalidateUserFeedSnapshots(userID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
@@ -134,6 +147,7 @@ func (h *FeedHandler) RestoreAuthor(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
+	invalidateUserFeedSnapshots(userID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

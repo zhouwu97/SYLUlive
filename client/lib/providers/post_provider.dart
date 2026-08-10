@@ -273,6 +273,27 @@ class PostProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 清除首页 Feed 缓存与状态（H1.5：账号隔离）。
+  ///
+  /// 首页（board 1）内容可能受 UserHiddenAuthor / not_interested 个性化影响，
+  /// 因此登录 / 退出 / 切换账号 / 隐藏或恢复作者后必须整体失效，避免账号 A 的
+  /// 个性化缓存被账号 B 读到。同时 bump requestVersion，丢弃在途旧请求的写入。
+  Future<void> invalidateHomeFeedCaches() async {
+    final keys = _boards.keys.where((key) => key.startsWith('1|')).toList();
+    for (final key in keys) {
+      _boards[key]?.requestVersion++;
+      _boards.remove(key);
+    }
+    if (_enableCache) {
+      try {
+        await PostCacheService.clearBoard(1);
+      } catch (e) {
+        debugPrint('清除首页 Feed 缓存失败: $e');
+      }
+    }
+    notifyListeners();
+  }
+
   Future<void> _savePostsToCache(
     int boardId,
     String sort,

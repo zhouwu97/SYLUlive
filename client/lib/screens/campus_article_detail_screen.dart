@@ -1,12 +1,17 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../platform/contracts/external_navigator.dart';
 
 import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../services/campus_article_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_text_styles.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/app_page_app_bar.dart';
+import '../widgets/campus/campus_theme.dart';
 
 /// 文章详情页。
 ///
@@ -88,18 +93,20 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       );
       return;
     }
+    final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       final uri = Uri.parse(url);
       final opened = await ExternalNavigator.current().open(uri);
-      if (!opened) {
-        if (context.mounted) {
-          AppFeedback.showSnackBar(context, '无法打开浏览器', isError: true);
-        }
+      if (!opened && messenger?.mounted == true) {
+        messenger!.showSnackBar(
+          const SnackBar(content: Text('无法打开浏览器')),
+        );
       }
     } catch (e) {
-      if (mounted) {
-        AppFeedback.showSnackBar(context, '无法打开浏览器', isError: true);
-      }
+      if (messenger?.mounted != true) return;
+      messenger!.showSnackBar(
+        const SnackBar(content: Text('无法打开浏览器')),
+      );
     }
   }
 
@@ -111,15 +118,8 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     final detail = _detail;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF101219) : const Color(0xFFF8F7FC),
-      appBar: AppBar(
-        title: const Text('文章详情'),
-        backgroundColor: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        foregroundColor: isDark ? Colors.white : const Color(0xFF20212B),
-        elevation: 0,
-        scrolledUnderElevation: 0.5,
-      ),
+      backgroundColor: CampusTheme.pageBackground(context),
+      appBar: const AppPageAppBar(title: Text('文章详情')),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadDetail,
@@ -149,7 +149,12 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        MediaQuery.viewPaddingOf(context).bottom + AppSpacing.section,
+      ),
       children: [
         _buildHeader(isDark, detail),
         const SizedBox(height: 20),
@@ -160,7 +165,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
         ],
         const SizedBox(height: 24),
         _buildSourceLink(isDark, detail.sourceUrl),
-        if (_errorMessage != null && detail != null) ...[
+        if (_errorMessage != null) ...[
           const SizedBox(height: 16),
           _buildInlineRetry(isDark),
         ],
@@ -172,7 +177,12 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
   Widget _buildLoadingState(bool isDark) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        MediaQuery.viewPaddingOf(context).bottom + AppSpacing.section,
+      ),
       children: [
         _buildHeaderSkeleton(isDark),
         const SizedBox(height: 20),
@@ -182,7 +192,6 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   }
 
   Widget _buildHeaderSkeleton(bool isDark) {
-    final baseColor = isDark ? const Color(0xFF1B1E28) : Colors.white;
     final shimmerColor = isDark ? Colors.white12 : const Color(0xFFEDEBF3);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -242,14 +251,8 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
   Widget _buildRetryCard(bool isDark, String message) {
     return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-        ),
-      ),
+      padding: const EdgeInsets.all(AppSpacing.xxl),
+      decoration: _surfaceDecoration(isDark),
       child: Column(
         children: [
           Icon(
@@ -289,35 +292,33 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   // ── 文章头部 ───────────────────────────────────────────────────
 
   Widget _buildHeader(bool isDark, CampusArticleDetail detail) {
-    final primary = Theme.of(context).colorScheme.primary;
+    const primary = AppColors.brandPrimary;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 分类标签
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.xs,
+          ),
           decoration: BoxDecoration(
-            color: primary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(99),
+            color: primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
           child: Text(
             detail.category.isNotEmpty ? detail.category : '校园资讯',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: primary,
-            ),
+            style: AppTextStyles.labelMedium.copyWith(color: primary),
           ),
         ),
         const SizedBox(height: 12),
         // 标题
         Text(
           detail.title,
-          style: TextStyle(
+          style: AppTextStyles.titleLarge.copyWith(
             fontSize: 20,
             height: 1.4,
-            fontWeight: FontWeight.w800,
-            color: isDark ? Colors.white : const Color(0xFF20212B),
+            color: isDark ? Colors.white : AppColors.textPrimaryLight,
           ),
         ),
         const SizedBox(height: 10),
@@ -327,13 +328,19 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
             if (detail.publishDate.isNotEmpty) detail.publishDate,
             if (detail.authorDepartment.isNotEmpty) detail.authorDepartment,
           ].join(' · '),
-          style: TextStyle(
+          style: AppTextStyles.bodyMedium.copyWith(
             fontSize: 12.5,
-            color: isDark ? Colors.white54 : Colors.black54,
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.58)
+                : AppColors.textSecondaryLight,
           ),
         ),
       ],
     );
+  }
+
+  BoxDecoration _surfaceDecoration(bool isDark, {bool softGreen = false}) {
+    return CampusTheme.cardDecoration(isDark, softGreen: softGreen);
   }
 
   // ── 正文区域 ───────────────────────────────────────────────────
@@ -344,14 +351,8 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     // 弱正文且有附件 → 显示附件提示
     if (detail.isWeakContent && hasAttachments) {
       return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-          ),
-        ),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: _surfaceDecoration(isDark, softGreen: true),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -379,22 +380,16 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     // 有正文 → 显示正文
     if (detail.contentText.trim().isNotEmpty) {
       return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-          ),
-        ),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: _surfaceDecoration(isDark),
         child: SelectableText(
           detail.contentText,
-          style: TextStyle(
+          style: AppTextStyles.bodyMedium.copyWith(
             fontSize: 15,
             height: 1.75,
             color: isDark
                 ? Colors.white.withValues(alpha: 0.87)
-                : const Color(0xFF2C2D38),
+                : AppColors.textPrimaryLight,
           ),
         ),
       );
@@ -402,14 +397,8 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
     // 正文为空且无附件 → 引导查看原文
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-        ),
-      ),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: _surfaceDecoration(isDark),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -445,21 +434,23 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       children: [
         Text(
           '附件（${attachments.length}）',
-          style: TextStyle(
+          style: AppTextStyles.titleMedium.copyWith(
             fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : const Color(0xFF292A35),
+            color: isDark ? Colors.white : AppColors.textPrimaryLight,
           ),
         ),
         const SizedBox(height: 8),
         // 验证码提示
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
           decoration: BoxDecoration(
             color: (isDark ? Colors.amber : Colors.orange).withValues(
               alpha: 0.1,
             ),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Row(
             children: [
@@ -492,18 +483,12 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   }
 
   Widget _buildAttachmentCard(bool isDark, CampusAttachment attachment) {
-    final primary = Theme.of(context).colorScheme.primary;
+    const primary = AppColors.brandPrimary;
     final isUrlSafe = attachment.isUrlSafe;
 
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-        ),
-      ),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: _surfaceDecoration(isDark),
       child: Row(
         children: [
           // 扩展名图标
@@ -512,7 +497,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
             height: 44,
             decoration: BoxDecoration(
               color: primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppRadius.md),
             ),
             child: Icon(attachment.icon, color: primary, size: 22),
           ),
@@ -526,7 +511,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
                   children: [
                     Text(
                       attachment.extensionLabel,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: primary,
@@ -571,7 +556,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
                     ),
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              minimumSize: const Size(0, 36),
+              minimumSize: const Size(0, 44),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -604,7 +589,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
   // ── 查看学校原文 ───────────────────────────────────────────────
 
   Widget _buildSourceLink(bool isDark, String sourceUrl) {
-    final primary = Theme.of(context).colorScheme.primary;
+    const primary = AppColors.brandPrimary;
     final isUrlSafe = isSafeCampusUrl(sourceUrl);
 
     return SizedBox(
@@ -618,14 +603,14 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
                   isError: true,
                 ),
         style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
           side: BorderSide(
             color: isUrlSafe
                 ? primary.withValues(alpha: 0.4)
                 : (isDark ? Colors.white10 : const Color(0xFFEDEBF3)),
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
         ),
         icon: Icon(

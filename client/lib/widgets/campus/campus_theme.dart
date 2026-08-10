@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_radius.dart';
 
 class CampusTheme {
   static const Color bg = Color(0xFFFFFAF4);
@@ -36,7 +37,7 @@ class CampusTheme {
               colors: [Colors.white, Color(0xFFF1FBF7)],
             )
           : null,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(AppRadius.lg),
       border: Border.all(
         color: isDark ? Colors.white.withValues(alpha: 0.08) : border,
       ),

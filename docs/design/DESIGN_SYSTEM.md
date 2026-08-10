@@ -133,7 +133,7 @@ Component Token（组件内部派生）
 | 背景 | 跟随页面（`CampusTheme.pageBackground`） |
 | elevation / scrolledUnder | 0 |
 
-现状：`AppTheme.appBarTheme` 为 48px / w600；`AppPageAppBar` 为 56px / w700。统一目标 56/w700。
+现状：`app_theme.dart` 的 `AppTheme.appBarTheme` 为 48px / w600；`AppPageAppBar` 为 56px / w700。统一目标 56/w700。
 
 ## 9. 触控（Accessibility 最低线）
 
@@ -174,11 +174,17 @@ Component Token（组件内部派生）
 | 顺序 | 内容 |
 | --- | --- |
 | Preflight | 工作区整理（处理未提交改动；基线干净） |
-| PR1 | Design Foundation（已交付 `6b79d23f`）：文档冻结。`AppTheme.dart → app_theme.dart` 重命名、`utils/app_motion.dart → theme/app_motion.dart`、AppColors / AppRadius / AppSpacing token 属 **Foundation implementation debt**，随 PR4/PR5 收敛 |
+| PR1 | Design Foundation（已交付 `6b79d23f`）：文档冻结。`AppTheme.dart → app_theme.dart`、`utils/app_motion.dart → theme/app_motion.dart` 已完成机械迁移；AppColors / AppRadius / AppSpacing / AppTextStyles token 已落地，视觉切换仍属 PR5A-1 |
 | PR2 | QA Infrastructure + AI Skill：Golden helpers、字体加载、viewport、DESIGN_QA 流程、PR checklist、sylulive-design skill |
 | PR3 | Chat Pilot：私信列表/详情/composer/发送态；chat magic duration 迁移；Widget tests + Goldens |
-| PR4 | Motion Cleanup：首页 Tab reveal 降频（见 MOTION.md §11）、navigation、AppMotion 收敛 |
-| PR5 | Theme Semantic Convergence：seed → brandPrimary、AppBar 48→56、Card/surface、radius 全局迁移 |
-| PR6+ | Feature Migration：首页 Feed → 教务 → 竞赛/投票/市场 → 设置 |
+| PR4A-0 | ✅ AppMotion 文件机械迁移：`utils/app_motion.dart → theme/app_motion.dart`，保留临时 deprecated shim；不改页面行为 |
+| PR4A-1 | ✅ Motion Semantic Foundation：Amplitude Contract、`micro/tab/overlay/movement`、进入/退出曲线与 reduced-motion 规则；movement 最终曲线待真机 A/B |
+| PR4A-2 | ✅ 高频路径 Motion Cleanup：首页 Root Tab / Feed / BottomNav；Chat Emoji 与 Scroll Intent 保持独立文件边界，可独立回滚 |
+| PR4B-P | Gesture Prototype：A/B/C 三个 throwaway 方向，完成冲突矩阵与设备 feel-check 后再决定生产方案 |
+| PR4B | Gesture Production：仅实现被 Prototype Gate 选中的 direct manipulation 方向 |
+| PR5A-0 | ✅ Theme 文件/Token 机械迁移：`AppTheme.dart → app_theme.dart`、基础 token 文件；不切 seed、不改视觉行为 |
+| PR5A-1 | ⏳ Theme Semantic Convergence：seed → brandPrimary、AppBar 48→56、Card/surface、radius 全局迁移；等待 Linux canonical Golden diff 后单独执行 |
+| PR5B | Shell Primitives：BottomNav、SearchField、BottomSheetShell、SectionHeader、基础 Surface |
+| PR6+ | Feature Migration：首页 Feed → 教务 → 竞赛/投票/集市 → 设置；Chat 会话列表另做独立视觉迁移 |
 
 **设计工程完成后：新页面只要遵守本文件与 QA 流程，就不应明显跑偏——不依赖某个 AI、某次 prompt 或某人的临时审美。**

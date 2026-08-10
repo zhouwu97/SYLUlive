@@ -46,6 +46,16 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 		keyword = strings.TrimSpace(c.Query("student_id"))
 	}
 
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 50 {
+		pageSize = 20
+	}
+
 	query := h.db.Model(&models.User{}).
 		Select("id, nickname, student_id, avatar, credit_score, role, report_count").
 		Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser)
@@ -68,23 +78,40 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 		}
 	}
 
+	var total int64
+	query.Count(&total)
+
+	offset := (page - 1) * pageSize
 	var candidates []models.User
-	if err := query.Order("credit_score DESC, created_at DESC").Limit(50).Find(&candidates).Error; err != nil {
+	if err := query.Order("credit_score DESC, created_at DESC").Limit(pageSize+1).Offset(offset).Find(&candidates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取候选人列表失败"})
 		return
 	}
 
-	response := make([]AdminUserBriefResponse, 0, len(candidates))
-	for _, candidate := range candidates {
-		response = append(response, adminUserBriefResponse(candidate))
+	hasMore := len(candidates) > pageSize
+	if hasMore {
+		candidates = candidates[:pageSize]
 	}
-	c.JSON(http.StatusOK, response)
+
+	items := make([]AdminUserBriefResponse, 0, len(candidates))
+	for _, candidate := range candidates {
+		items = append(items, adminUserBriefResponse(candidate))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":     items,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+		"has_more":  hasMore,
+	})
 }
 
 // GetCandidatesStats 获取用户分布统计
 func (h *InvitationHandler) GetCandidatesStats(c *gin.Context) {
 	var total int64
 	var eduCount int64
+	var eligible int64
 
 	if err := h.db.Model(&models.User{}).Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计数据失败"})
@@ -96,10 +123,16 @@ func (h *InvitationHandler) GetCandidatesStats(c *gin.Context) {
 		return
 	}
 
+	if err := h.db.Model(&models.User{}).Where("role = ? AND credit_score > 90 AND report_count = 0", models.RoleUser).Count(&eligible).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计数据失败"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"total": total,
-		"edu":   eduCount,
-		"other": total - eduCount,
+		"total":    total,
+		"edu":      eduCount,
+		"other":    total - eduCount,
+		"eligible": eligible,
 	})
 }
 

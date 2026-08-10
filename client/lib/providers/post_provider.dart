@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import '../models/post.dart';
 import '../services/post_cache_service.dart';
 import '../utils/app_feedback.dart';
@@ -163,6 +162,11 @@ class PostProvider extends ChangeNotifier {
   bool hasMoreFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
       _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).hasMore;
+
+  /// 读取指定信息流的错误，不与当前活跃 sort 混用。
+  String? errorFor(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).error;
 
   int requestVersionFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
@@ -427,6 +431,7 @@ class PostProvider extends ChangeNotifier {
           board.algorithmVersion = cachedFeed.algorithmVersion;
         }
       }
+      board.error = AppFeedback.dioErrorMessage(e);
       debugPrint('增量拉取失败(board=$boardId): ${e.type}');
     } catch (e) {
       if (cachedFeed != null &&
@@ -439,6 +444,7 @@ class PostProvider extends ChangeNotifier {
           board.algorithmVersion = cachedFeed.algorithmVersion;
         }
       }
+      board.error = e.toString();
       debugPrint('增量拉取异常(board=$boardId)');
     }
 
@@ -621,6 +627,7 @@ class PostProvider extends ChangeNotifier {
     board.currentPage = 1;
     board.hasMore = true;
     board.hasCacheLoaded = true;
+    board.error = null;
 
     if (board.posts.isEmpty) {
       board.isLoading = true;
@@ -689,7 +696,11 @@ class PostProvider extends ChangeNotifier {
         succeeded = true;
       }
     } on DioException catch (e) {
+      board.error = AppFeedback.dioErrorMessage(e);
       debugPrint('刷新失败(board=$boardId): ${e.message}');
+    } catch (e) {
+      board.error = e.toString();
+      debugPrint('刷新异常(board=$boardId): $e');
     }
 
     if (requestVersion == board.requestVersion) {

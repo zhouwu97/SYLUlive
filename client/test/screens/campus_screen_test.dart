@@ -72,5 +72,34 @@ void main() {
       // 不应出现"待接入"
       expect(find.text('待接入'), findsNothing);
     });
+
+    testWidgets('1.3 倍字号下校园页不产生布局异常', (tester) async {
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
+          child: const MaterialApp(home: CampusScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('校园服务'), findsOneWidget);
+    });
+
+    testWidgets('暗色主题保留校园页结构与入口', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
+          home: const CampusScreen(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('校园'), findsOneWidget);
+      expect(find.text('校园资讯'), findsOneWidget);
+    });
   });
 }

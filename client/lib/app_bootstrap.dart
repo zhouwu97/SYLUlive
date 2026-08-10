@@ -41,7 +41,7 @@ import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/team/team_recruitment_detail_screen.dart';
 import 'services/course_reminder_service.dart';
-import 'theme/AppTheme.dart';
+import 'theme/app_theme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
 import 'utils/grade_screen_registry.dart';

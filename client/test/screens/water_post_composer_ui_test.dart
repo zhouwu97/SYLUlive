@@ -51,7 +51,9 @@ class FakePostProvider extends Fake
   }
 
   @override
-  Future<int?> uploadImage(XFile file) async => 1;
+  Future<int?> uploadImage(XFile file,
+          {void Function(int sent, int total)? onProgress}) async =>
+      1;
 }
 
 Widget buildComposerTestApp(FakePostProvider postProvider) {

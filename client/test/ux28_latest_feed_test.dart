@@ -10,6 +10,7 @@ import 'package:shenliyuan/providers/theme_provider.dart';
 import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/shuitie_screen.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 class _FeedAuthProvider extends ChangeNotifier implements AuthProvider {
   _FeedAuthProvider({required this.client});
@@ -131,6 +132,9 @@ Future<void> _dispose(WidgetTester tester, _FeedTestPage page) async {
 }
 
 void main() {
+  // visibility_detector 在测试里用帧末回调而非内部 Timer，避免残留 pending timer。
+  VisibilityDetectorController.instance.updateInterval = Duration.zero;
+
   testWidgets('最新 feed 保持服务端顺序，30 天前旧帖仍显示，客户端不二次排序',
       (tester) async {
     final now = DateTime.now();

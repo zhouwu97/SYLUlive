@@ -13,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
+import '../utils/app_navigator.dart' show appRouteObserver;
 import '../utils/app_time.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/state_placeholder.dart';
@@ -27,12 +28,19 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   Timer? _refreshTimer;
   int? _selectedConversationId;
   User? _selectedTargetUser;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  MessageProvider? _messageProvider;
+  PageRoute<dynamic>? _subscribedRoute;
+  MessageRealtimeState _lastSeenRealtimeState =
+      MessageRealtimeState.disconnected;
+  bool _routeVisible = true;
+  AppLifecycleState _lifecycleState =
+      WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
 
   @override
   void initState() {
@@ -43,42 +51,119 @@ class _ChatListScreenState extends State<ChatListScreen>
       final auth = context.read<AuthProvider>();
       if (!auth.isLoggedIn) return;
       context.read<MessageProvider>().loadConversations();
-      _startPolling();
+      _maybeStartPolling();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final provider = context.read<MessageProvider>();
+    if (!identical(provider, _messageProvider)) {
+      _messageProvider?.removeListener(_handleProviderChanged);
+      _messageProvider = provider..addListener(_handleProviderChanged);
+    }
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && !identical(route, _subscribedRoute)) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _refreshTimer?.cancel();
+    _messageProvider?.removeListener(_handleProviderChanged);
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+    }
+    _stopPolling();
     _searchController.dispose();
     super.dispose();
   }
 
   @override
+  void didPush() {
+    _routeVisible = true;
+    // RouteObserver.subscribe 在 build 期间同步触发 didPush；
+    // 启动 polling 会 notifyListeners，必须延迟到帧后。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeStartPolling();
+    });
+  }
+
+  @override
+  void didPushNext() {
+    // 被详情页覆盖：列表页不可见，停止页面级 fallback polling。
+    _routeVisible = false;
+    _stopPolling();
+  }
+
+  @override
+  void didPopNext() {
+    _routeVisible = true;
+    _maybeStartPolling();
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
     if (state == AppLifecycleState.resumed) {
       context.read<MessageProvider>().loadConversations(silent: true);
-      _startPolling();
+      _maybeStartPolling();
     } else {
-      _refreshTimer?.cancel();
+      _stopPolling();
     }
   }
 
-  void _startPolling() {
+  void _handleProviderChanged() {
+    if (!mounted) return;
+    final provider = _messageProvider;
+    if (provider == null) return;
+    final state = provider.realtimeState;
+    if (state == _lastSeenRealtimeState) return;
+    _lastSeenRealtimeState = state;
+    if (state == MessageRealtimeState.connected) {
+      // SSE 健康：停止固定轮询。
+      _stopPolling();
+    } else {
+      // SSE 不可用：恢复 fallback polling（页面可见时才真正启动）。
+      _maybeStartPolling();
+    }
+  }
+
+  /// 仅在“页面可见 AND 前台 AND SSE 未连接”时允许 fallback polling。
+  void _maybeStartPolling() {
+    if (!mounted || !_routeVisible) return;
+    if (_lifecycleState != AppLifecycleState.resumed) return;
+    final provider = _messageProvider;
+    if (provider == null) return;
+    if (provider.realtimeState == MessageRealtimeState.connected) {
+      provider.setFallbackPollingActive(false);
+      return;
+    }
     _refreshTimer?.cancel();
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) {
+      if (mounted && _routeVisible) {
         context.read<MessageProvider>().loadConversations(silent: true);
       }
     });
+    provider.setFallbackPollingActive(true);
+  }
+
+  void _stopPolling() {
+    _refreshTimer?.cancel();
+    _messageProvider?.setFallbackPollingActive(false);
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     if (!auth.isLoggedIn) {
-      _refreshTimer?.cancel();
+      _stopPolling();
       final isDark = Theme.of(context).brightness == Brightness.dark;
       return SwipeToExit(
         child: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -175,7 +260,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                   await Navigator.pushNamed(context, '/login');
                   if (mounted && context.read<AuthProvider>().isLoggedIn) {
                     context.read<MessageProvider>().loadConversations();
-                    _startPolling();
+                    _maybeStartPolling();
                   }
                 },
                 icon: const Icon(Icons.login),
@@ -795,7 +880,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     );
     if (mounted) {
       messageProvider.loadConversations(silent: true);
-      _startPolling();
+      _maybeStartPolling();
     }
   }
 

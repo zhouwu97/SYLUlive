@@ -114,7 +114,6 @@
 | `DELETE` | `/api/replies/:id` | 删除回复 |
 | `POST` | `/api/replies/:id/like`| 点赞回复 |
 
-<<<<<<< HEAD
 ## 4.1 Feed 推荐用户控制 (Feed) — FEED-1
 
 需要登录（AuthMiddleware）。负反馈过滤自动作用于首页信息流：

@@ -43,6 +43,7 @@ class PostDetailScreen extends StatefulWidget {
   final int? targetReplyId;
   final bool isDesktopSplitMode;
   final bool hideBackButton;
+  final bool focusReplyComposer;
   final ValueChanged<int>? onAuthorTap;
 
   const PostDetailScreen({
@@ -53,6 +54,7 @@ class PostDetailScreen extends StatefulWidget {
     this.targetReplyId,
     this.isDesktopSplitMode = false,
     this.hideBackButton = false,
+    this.focusReplyComposer = false,
     this.onAuthorTap,
   });
 
@@ -174,8 +176,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   List<Reply> _replies = [];
   bool _isLoading = true;
   String? _errorMessage;
-  bool _liked = false;
-  int _likeCount = 0;
   final _replyComposerController = PostReplyComposerController();
   bool _isSending = false;
   bool _hasPendingFeaturedApp = false;
@@ -199,6 +199,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     _activeTargetReplyId = widget.targetReplyId;
     _loadPost();
+    if (widget.focusReplyComposer) {
+      // 等详情页首帧完成后再展开评论输入框并聚焦，
+      // 避免在路由/键盘尚未就绪时“碰运气”等待。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (!context.read<AuthProvider>().isLoggedIn) return;
+        _replyComposerController.open();
+      });
+    }
   }
 
   Future<void> _loadWaterSectionPermission({bool forceRefresh = false}) async {
@@ -262,8 +271,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               .map((e) => Reply.fromJson(e))
               .toList();
           _post = mergedPost.copyWith(replyCount: _replies.length);
-          _liked = mergedPost.isLiked;
-          _likeCount = mergedPost.likeCount;
           _isLoading = false;
         });
       // 同步到外部列表以更新浏览量等数据
@@ -356,37 +363,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ).showSnackBar(const SnackBar(content: Text('请先登录')));
       return;
     }
-    if (mounted)
-      setState(() {
-        _liked = !_liked;
-        _likeCount += _liked ? 1 : -1;
-        if (_post != null) {
-          _post = _post!.copyWith(isLiked: _liked, likeCount: _likeCount);
-        }
-      });
-    if (_post != null) {
-      context.read<PostProvider>().updatePostInCache(_post!);
-    }
-
-    try {
-      if (_liked) {
-        await _dio.post('/posts/${widget.postId}/like');
-      } else {
-        await _dio.delete('/posts/${widget.postId}/like');
-      }
-    } catch (_) {
-      if (mounted)
-        setState(() {
-          _liked = !_liked;
-          _likeCount += _liked ? 1 : -1;
-          if (_post != null) {
-            _post = _post!.copyWith(isLiked: _liked, likeCount: _likeCount);
-          }
-        });
+    final current = _post;
+    if (current == null) return;
+    final provider = context.read<PostProvider>();
+    if (provider.isLikePending(current.id)) return;
+    final result = await provider.toggleLikeOptimistic(current);
+    if (!mounted) return;
+    setState(() {
+      _post = switch (result.status) {
+        LikeMutationStatus.success => result.optimisticPost,
+        LikeMutationStatus.conflict =>
+          result.reconciledPost ?? result.optimisticPost,
+        LikeMutationStatus.failed ||
+        LikeMutationStatus.pending =>
+          result.originalPost,
+      };
       if (_post != null) {
-        context.read<PostProvider>().updatePostInCache(_post!);
+        // 保持与当前回复列表一致，避免 count 被乐观副本覆盖。
+        _post = _post!.copyWith(replyCount: _replies.length);
       }
-    }
+    });
   }
 
   Future<bool> _sendReplyDraft(PostReplyDraft draft) async {
@@ -2694,18 +2690,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  _post?.isLiked == true
+                      ? Icons.thumb_up
+                      : Icons.thumb_up_outlined,
                   size: 16,
-                  color: _liked
+                  color: _post?.isLiked == true
                       ? Theme.of(context).primaryColor
                       : (isDark ? Colors.white38 : Colors.grey[500]),
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '$_likeCount',
+                  '${_post?.likeCount ?? 0}',
                   style: TextStyle(
                     fontSize: 11.5,
-                    color: _liked
+                    color: _post?.isLiked == true
                         ? Theme.of(context).primaryColor
                         : (isDark ? Colors.white38 : Colors.grey[500]),
                   ),
@@ -2792,8 +2790,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return PostReplyComposer(
       controller: _replyComposerController,
       replyCount: _post?.replyCount ?? _replies.length,
-      likeCount: _likeCount,
-      liked: _liked,
+      likeCount: _post?.likeCount ?? 0,
+      liked: _post?.isLiked ?? false,
       sending: _isSending,
       enabled: context.watch<AuthProvider>().isLoggedIn,
       onToggleLike: _toggleLike,
@@ -3205,11 +3203,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
         _buildActionButton(
-          icon: _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
-          color: _liked
+          icon:
+              _post?.isLiked == true ? Icons.thumb_up : Icons.thumb_up_outlined,
+          color: _post?.isLiked == true
               ? const Color(0xFFFF6B6B)
               : (isDark ? Colors.white38 : Colors.grey.shade500),
-          label: '$_likeCount',
+          label: '${_post?.likeCount ?? 0}',
           onTap: _toggleLike,
         ),
         _buildActionButton(

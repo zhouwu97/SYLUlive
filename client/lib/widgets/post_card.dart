@@ -4,8 +4,9 @@ import '../config/api_constants.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
 import '../models/water_section.dart';
-import '../models/user.dart';
+import '../providers/post_provider.dart';
 import '../providers/water_section_provider.dart';
+import '../screens/post_detail_screen.dart';
 import '../screens/user_home_screen.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
@@ -22,6 +23,9 @@ class PostCard extends StatefulWidget {
   final bool disableAuthorNavigation;
   final ValueChanged<int>? onAuthorTap;
 
+  /// 评论按钮点击回调；为空时默认进入详情并聚焦评论输入框。
+  final ValueChanged<Post>? onCommentTap;
+
   const PostCard({
     super.key,
     required this.post,
@@ -31,6 +35,7 @@ class PostCard extends StatefulWidget {
     this.showCategoryBadge = true,
     this.disableAuthorNavigation = false,
     this.onAuthorTap,
+    this.onCommentTap,
   });
 
   @override
@@ -41,6 +46,69 @@ class _PostCardState extends State<PostCard>
     with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
+
+  /// 乐观点赞后的本地覆盖：优先于 [widget.post] 显示，保证搜索结果等
+  /// 不在 PostProvider 缓存内的列表也能即时一致。
+  Post? _optimisticOverride;
+
+  Post get _displayPost => _optimisticOverride ?? widget.post;
+
+  @override
+  void didUpdateWidget(PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.id != widget.post.id) {
+      _optimisticOverride = null;
+    }
+  }
+
+  Future<void> _toggleLike() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先登录')));
+      return;
+    }
+    final provider = context.read<PostProvider>();
+    final current = _displayPost;
+    if (provider.isLikePending(current.id)) return;
+    final result = await provider.toggleLikeOptimistic(current);
+    if (!mounted) return;
+    setState(() {
+      _optimisticOverride = switch (result.status) {
+        LikeMutationStatus.success => result.optimisticPost,
+        LikeMutationStatus.conflict =>
+          result.reconciledPost ?? result.optimisticPost,
+        LikeMutationStatus.failed || LikeMutationStatus.pending => null,
+      };
+    });
+  }
+
+  void _handleCommentTap() {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先登录')));
+      return;
+    }
+    final callback = widget.onCommentTap;
+    if (callback != null) {
+      callback(widget.post);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PostDetailScreen(
+          postId: widget.post.id,
+          isMarket: widget.post.boardId == 2,
+          initialPost: widget.post,
+          focusReplyComposer: true,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -136,10 +204,6 @@ class _PostCardState extends State<PostCard>
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (widget.post.author != null) ...[
-                              const SizedBox(width: 4),
-                              _buildLevelBadge(widget.post.author!),
-                            ],
                             if (widget.post.waterSectionAuthorMeta != null) ...[
                               const SizedBox(width: 4),
                               _buildSectionLevelBadge(
@@ -161,44 +225,7 @@ class _PostCardState extends State<PostCard>
                   ),
                 ),
                 if (widget.post.boardId == 1 && widget.showCategoryBadge)
-                  _buildCategoryTag(context, isDark)
-                else if (widget.post.author != null)
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isDesktop ? 8 : 6,
-                      vertical: isDesktop ? 4 : 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getCreditColor(
-                        widget.post.author!.creditScore,
-                      ).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(isDesktop ? 8 : 6),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.verified,
-                          size: isDesktop ? 14 : 11,
-                          color: _getCreditColor(
-                            widget.post.author!.creditScore,
-                          ),
-                        ),
-                        SizedBox(width: isDesktop ? 4 : 3),
-                        Text(
-                          '${widget.post.author!.creditScore}%',
-                          style: TextStyle(
-                            color: _getCreditColor(
-                              widget.post.author!.creditScore,
-                            ),
-                            fontSize: isDesktop ? 12 : 10,
-                            height: 1.1,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildCategoryTag(context, isDark),
               ],
             ),
             if (widget.post.title.isNotEmpty) ...[
@@ -733,85 +760,72 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  Color _getCreditColor(int score) {
-    if (score >= 90) return Colors.green;
-    if (score >= 70) return Colors.orange;
-    if (score >= 50) return Colors.red;
-    return Colors.grey;
-  }
-
   Widget _buildBottomMeta(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final post = _displayPost;
     return Row(
       children: [
-        Icon(
-          Icons.visibility_outlined,
-          size: 14,
-          color: isDark ? Colors.white30 : Colors.grey[400],
-        ),
-        const SizedBox(width: 4),
-        Text(
-          '${widget.post.viewCount}',
-          style: TextStyle(
-            fontSize: 11,
-            color: isDark ? Colors.white30 : Colors.grey[400],
+        const Spacer(),
+        // 点赞：原地点赞，不进入详情
+        InkWell(
+          key: const ValueKey('post-card-like'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: _toggleLike,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  size: 16,
+                  color: post.isLiked
+                      ? const Color(0xFFFF6B6B)
+                      : (isDark ? Colors.white38 : Colors.grey[500]),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${post.likeCount}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: post.isLiked
+                        ? const Color(0xFFFF6B6B)
+                        : (isDark ? Colors.white38 : Colors.grey[500]),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(width: 12),
-        Icon(
-          widget.post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
-          size: 14,
-          color: widget.post.isLiked
-              ? const Color(0xFFFF6B6B)
-              : (isDark ? Colors.white30 : Colors.grey[400]),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          '${widget.post.likeCount}',
-          style: TextStyle(
-            fontSize: 11,
-            color: widget.post.isLiked
-                ? const Color(0xFFFF6B6B)
-                : (isDark ? Colors.white30 : Colors.grey[400]),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Icon(
-          Icons.chat_bubble_outline,
-          size: 14,
-          color: isDark ? Colors.white30 : Colors.grey[400],
-        ),
-        const SizedBox(width: 4),
-        Text(
-          '${widget.post.replyCount}',
-          style: TextStyle(
-            fontSize: 11,
-            color: isDark ? Colors.white30 : Colors.grey[400],
+        const SizedBox(width: 10),
+        // 评论：进入详情并聚焦评论输入框
+        InkWell(
+          key: const ValueKey('post-card-comment'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: _handleCommentTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.chat_bubble_outline,
+                  size: 16,
+                  color: isDark ? Colors.white38 : Colors.grey[500],
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${post.replyCount}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white38 : Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildLevelBadge(User user) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 4,
-        vertical: 0.5,
-      ),
-      decoration: BoxDecoration(
-        color: Color(user.levelColorValue).withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        user.levelLabel,
-        style: TextStyle(
-          fontSize: 8,
-          height: 1.15,
-          fontWeight: FontWeight.w700,
-          color: Color(user.levelColorValue),
-        ),
-      ),
     );
   }
 

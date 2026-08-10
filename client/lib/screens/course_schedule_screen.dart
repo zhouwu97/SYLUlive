@@ -14,7 +14,6 @@ import '../services/course_reminder_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import '../utils/responsive_util.dart';
-import '../utils/screen_swipe.dart';
 import 'course_schedule_settings_screen.dart';
 import 'home_widget_settings_screen.dart';
 import 'edu_screen.dart';
@@ -162,6 +161,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   String _lastTermId = '';
   DateTime? _lastSemesterStart;
+  DateTime? _lastSyncedAt;
 
   DateTime _pageAnchorDate(CourseScheduleProvider sc) {
     final start = sc.currentTerm.startDate;
@@ -284,15 +284,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  bool _isCourseWeekSwipeArea(Offset globalPosition) {
-    final height = MediaQuery.sizeOf(context).height;
-    if (height <= 0) return false;
-    return !isMainNavigationGestureZone(
-      startY: globalPosition.dy,
-      screenHeight: height,
-    );
-  }
-
   bool _canDragWeek() {
     return !_isFetchingCourses && !_isImportingCourses && !_initializing;
   }
@@ -315,7 +306,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   void _handleWeekPointerDown(PointerDownEvent event) {
     if (_weekDragPointer != null ||
         !_canDragWeek() ||
-        !_isCourseWeekSwipeArea(event.position) ||
         !_weekPageController.hasClients) {
       return;
     }
@@ -765,6 +755,94 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
+  // ====== 上次同步 / 回到本周（UX-6） ======
+
+  Future<void> _loadLastSyncStatus() async {
+    final CourseScheduleProvider sc;
+    try {
+      sc = context.read<CourseScheduleProvider>();
+    } catch (_) {
+      return;
+    }
+    final fetchedAt = await sc.loadLastFetchedAt();
+    if (!mounted || fetchedAt == null) return;
+    setState(() => _lastSyncedAt = fetchedAt);
+  }
+
+  String _syncStatusLabel(DateTime fetchedAt, DateTime now) {
+    // 保险箱快照的 fetchedAt 是 UTC，展示前先转本地时区，避免跨日判断偏移。
+    final local = fetchedAt.toLocal();
+    final dayDiff = DateTime(now.year, now.month, now.day)
+        .difference(DateTime(local.year, local.month, local.day))
+        .inDays;
+    if (dayDiff <= 0) {
+      final hh = local.hour.toString().padLeft(2, '0');
+      final mm = local.minute.toString().padLeft(2, '0');
+      return '本地课表 · 今天 $hh:$mm 已同步';
+    }
+    return '使用本地课表 · $dayDiff 天前同步';
+  }
+
+  /// 当前展示周是否就是自然周（周一起点）。
+  bool get _isShowingCurrentWeek =>
+      _weekStart.isAtSameMomentAs(_mondayOf(DateTime.now()));
+
+  void _goBackToCurrentWeek() {
+    if (!_weekPageController.hasClients) return;
+    final currentWeek = _mondayOf(DateTime.now());
+    final dayOffset = currentWeek.difference(_weekBaseStart).inDays;
+    final targetPage = _weekCenterPage + (dayOffset ~/ 7);
+    final settleToken = ++_weekSettleToken;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _weekPageController.jumpToPage(targetPage);
+      if (mounted) {
+        setState(() => _weekStart = _weekStartForPage(targetPage));
+      }
+      return;
+    }
+    _weekPageController
+        .animateToPage(
+          targetPage,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        )
+        .then((_) {
+      if (!mounted || settleToken != _weekSettleToken) return;
+      setState(() => _weekStart = _weekStartForPage(targetPage));
+    });
+  }
+
+  Widget _buildBackToCurrentWeekButton() {
+    final primary = CampusTheme.primary;
+    return GestureDetector(
+      key: const ValueKey('schedule-back-to-current-week'),
+      behavior: HitTestBehavior.opaque,
+      onTap: _goBackToCurrentWeek,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.vertical_align_top_rounded, size: 14, color: primary),
+            const SizedBox(width: 4),
+            Text(
+              '回到本周',
+              style: TextStyle(
+                fontSize: 12,
+                color: primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ====== 顶部表头 ======
   Widget _buildDateHeader(CourseScheduleProvider sc) {
     final today = DateTime.now();
@@ -845,12 +923,38 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       case CourseMenuAction.settings:
                         _openCourseSettings(context, sc);
                         break;
+                      case CourseMenuAction.setSemesterStart:
+                        unawaited(_pickSemesterStart(context));
+                        break;
                     }
                   },
                 ),
               ],
             ),
           ),
+          if (_lastSyncedAt != null) ...[
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _syncStatusLabel(_lastSyncedAt!, DateTime.now()),
+                  style: TextStyle(fontSize: 12, color: secondaryColor),
+                ),
+              ),
+            ),
+          ],
+          if (!_isShowingCurrentWeek) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _buildBackToCurrentWeekButton(),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           // 星期表头
           Row(
@@ -1666,6 +1770,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       // 非关键路径：异步加载后台服务状态和提醒状态，不阻塞 UI
       _loadBackgroundStatusAsync();
+      unawaited(_loadLastSyncStatus());
     } catch (e) {
       debugPrint('加载课表设置失败: ${e.runtimeType}');
       if (mounted) {

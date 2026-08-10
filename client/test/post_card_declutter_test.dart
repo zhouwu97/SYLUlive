@@ -148,11 +148,11 @@ class _PollService extends PollService {
 }
 
 void main() {
-  testWidgets('帖子卡片不再显示信用分、浏览量与等级徽标', (tester) async {
+  testWidgets('帖子卡片不再显示信用分与等级徽标，查看数恢复显示', (tester) async {
     await _pumpPostCard(tester, _post(boardId: 2, creditScore: 95));
 
     expect(find.textContaining('%'), findsNothing, reason: '信用分应下沉详情');
-    expect(find.text('9999'), findsNothing, reason: '浏览量应下沉详情');
+    expect(find.text('9999'), findsOneWidget, reason: '查看数应保留在卡片上');
     expect(find.textContaining('Lv.'), findsNothing, reason: '经验等级徽标应移除');
 
     // 主视觉仍保留：昵称、时间、标题、正文、点赞、评论。

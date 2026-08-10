@@ -488,24 +488,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   List<Post> _resolveVisiblePosts(List<Post> posts, String mode) {
     if (_searchQuery.isNotEmpty) return _searchResults;
 
-    List<Post> sortedPosts = List.from(posts);
-
-    // 排序逻辑已下沉至服务端，客户端只需原样返回
-    // 但对于新帖过滤可以保留部分逻辑（如果服务端未实现new模式的话）
-    if (mode == 'new') {
-      final now = DateTime.now();
-      final recent = sortedPosts
-          .where((post) => now.difference(post.createdAt).inDays < 3)
-          .toList();
-      if (recent.isNotEmpty) {
-        recent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        return recent;
-      }
-      sortedPosts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return sortedPosts.take(12).toList();
-    }
-
-    return sortedPosts;
+    // UX-2.8：排序/过滤权威在服务端（sort=time/all/featured/following）。
+    // 客户端只做原样透传，不再做 3 天过滤、take(12) 或 createdAt 二次排序，
+    // 避免“最新”时间线与服务端不一致。
+    return posts;
   }
 
   Future<void> _refresh() async {

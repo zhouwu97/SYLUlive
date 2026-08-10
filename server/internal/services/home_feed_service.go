@@ -1,15 +1,23 @@
 package services
 
 import (
-	"gorm.io/gorm"
-	"shenliyuan/internal/models"
+	"context"
+	"fmt"
 	"time"
+
+	"gorm.io/gorm"
+
+	"shenliyuan/internal/models"
 )
 
 type HomeFeedService struct {
 	db          *gorm.DB
 	includePoll bool
 	visibility  *FeedVisibilityService
+
+	// FEED-5：个性化 shadow 开关与 active rollout 百分比（由 handler 注入）。
+	personalizationShadow bool
+	rolloutPercent        int
 }
 
 func NewHomeFeedService(db *gorm.DB) *HomeFeedService {
@@ -18,6 +26,13 @@ func NewHomeFeedService(db *gorm.DB) *HomeFeedService {
 
 func NewHomeFeedServiceWithPoll(db *gorm.DB) *HomeFeedService {
 	return &HomeFeedService{db: db, includePoll: true, visibility: NewFeedVisibilityService(db)}
+}
+
+// SetPersonalization 配置 FEED-5 个性化：shadow 计算+trace（不改排序），percent 为
+// active rollout 百分比（0=仅 shadow）。
+func (s *HomeFeedService) SetPersonalization(shadow bool, percent int) {
+	s.personalizationShadow = shadow
+	s.rolloutPercent = percent
 }
 
 func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
@@ -32,7 +47,8 @@ func (s *HomeFeedService) PinnedPosts(now time.Time) ([]models.Post, error) {
 
 // BuildSnapshot 构建首页推荐快照。
 // userID > 0 时应用 Feed 负反馈过滤（不看TA 对所有 Tab 生效，不感兴趣仅 all 生效）。
-func (s *HomeFeedService) BuildSnapshot(now time.Time, userID uint) ([]uint, error) {
+// FEED-5：shadow 个性化在此串联（UserFeatures → PersonalDelta → 探索 → trace）。
+func (s *HomeFeedService) BuildSnapshot(ctx context.Context, now time.Time, userID uint) ([]uint, error) {
 	base := func() *gorm.DB {
 		query := s.db.Model(&models.Post{}).Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
 		if !s.includePoll {
@@ -125,7 +141,33 @@ func (s *HomeFeedService) BuildSnapshot(now time.Time, userID uint) ([]uint, err
 	if len(ranked) > 500 {
 		ranked = ranked[:500]
 	}
-	return ranked, nil
+	// FEED-5：shadow 个性化（计算 + trace，默认不改用户排序）。
+	if !s.personalizationShadow {
+		return ranked, nil
+	}
+	baseline := ranked
+	features := s.BuildUserFeatures(ctx, userID, ids, now)
+	for i := range candidates {
+		candidates[i].PersonalDelta = ComputePersonalDelta(candidates[i], features, now)
+	}
+	personalized := RankHomeFeed(candidates, now)
+	if s.includePoll {
+		personalized = applyPollDensity(personalized, pollByPost)
+	}
+	if len(personalized) > 500 {
+		personalized = personalized[:500]
+	}
+	personalized = applyExploration(personalized, candidates, features, now)
+	s.saveRankTrace(ctx, userID, fmt.Sprintf("%d", now.UnixNano()), candidates, features, personalized, now, personalizationAlgorithmVersion())
+	if s.rolloutPercent > 0 && userInRollout(userID, s.rolloutPercent) {
+		return personalized, nil
+	}
+	return baseline, nil
+}
+
+// personalizationAlgorithmVersion 返回个性化算法版本标识（shadow 仍可用 v4 追踪）。
+func personalizationAlgorithmVersion() string {
+	return "home_all_v4_personalized"
 }
 
 // applyPollDensity 保持推荐流可扫描性；内容不足时会在末尾保留一个投票入口。

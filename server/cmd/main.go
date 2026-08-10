@@ -315,6 +315,7 @@ func main() {
 		&models.UserHiddenAuthor{},
 		&models.FeedImpression{},
 		&models.FeedDailyMetrics{},
+		&models.FeedRankTrace{},
 
 		// 校园资讯
 		&models.CampusArticle{},
@@ -562,6 +563,7 @@ func main() {
 	privacyHandler := handlers.NewPrivacyHandlerWithEduCredentialCleanup(db, eduCredentialCleanupJobs)
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
+	postHandler.SetFeedPersonalization(cfg.HomeFeedPersonalizationShadow, cfg.HomeFeedPersonalizationPercent)
 	feedHandler := handlers.NewFeedHandler(db)
 	feedEventHandler := handlers.NewFeedEventHandler(db)
 	feedMetricsHandler := handlers.NewFeedMetricsHandler(db)

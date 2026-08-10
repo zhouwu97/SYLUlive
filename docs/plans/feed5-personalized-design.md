@@ -293,8 +293,10 @@ reason_codes
 FEED-5 实现条件：
   [x] FEED-1 / FEED-2 合入 MCP（已合入）
   [x] Snapshot.UserID 绑定 / loadmore 校验 / 反馈失效（FEED-H1 已落地）
-  [ ] FEED-4 基线指标跑过一轮（有真实曝光数据）
-  [ ] FEED-3 客户端事件流入（依赖 UX-7）
+  [x] FEED-4 Core + FEED-4B 管理端点（已实现）
+  [x] FEED-3 客户端事件流入（已实现，等待真实流量）
+  [x] FEED-5 工程（UserFeatures / delta / exploration / trace / flag / shadow）—— 已实现并合入 MCP
+  [ ] 真实有效曝光 ≥500 + open ≥30 —— 只阻塞 active rollout（PHASE 15 灰度），不阻塞 shadow
 
-当前：设计完成，FEED-H1 前置加固已落地，仍等待事件数据积累。
+当前：FEED-5 工程完成，shadow 已启用（percent=0，不改用户排序）；等真实数据达标后再灰度。
 ```

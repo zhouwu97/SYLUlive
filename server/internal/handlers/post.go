@@ -26,6 +26,16 @@ type PostHandler struct {
 	db                *gorm.DB
 	jpushAppKey       string
 	jpushMasterSecret string
+
+	// FEED-5：个性化 shadow 开关与 active rollout 百分比。
+	feedShadow  bool
+	feedRollout int
+}
+
+// SetFeedPersonalization 注入 FEED-5 个性化配置（shadow 计算 + rollout 百分比）。
+func (h *PostHandler) SetFeedPersonalization(shadow bool, percent int) {
+	h.feedShadow = shadow
+	h.feedRollout = percent
 }
 
 // NewPostHandler 创建帖子处理器
@@ -1037,9 +1047,11 @@ func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
 // getHomeFeedV2 返回独立置顶和普通首页帖子；普通快照不会包含有效置顶。
 func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID string, page, limit, offset int, now time.Time, supportsPoll bool) {
 	feed := services.NewHomeFeedService(h.db)
+	feed.SetPersonalization(h.feedShadow, h.feedRollout)
 	feedKind := "home_v2"
 	if supportsPoll {
 		feed = services.NewHomeFeedServiceWithPoll(h.db)
+		feed.SetPersonalization(h.feedShadow, h.feedRollout)
 		feedKind = "home_v3_poll"
 	}
 	userID := optionalFeedUserID(c)
@@ -1074,7 +1086,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		}
 		ids = snapshot.PostIDs
 	} else if sortName == "all" {
-		ids, err = feed.BuildSnapshot(now, userID)
+		ids, err = feed.BuildSnapshot(c.Request.Context(), now, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
 			return
@@ -1148,6 +1160,7 @@ func (h *PostHandler) loadPostsInOrder(ids []uint) ([]models.Post, error) {
 // getLegacyHomeFeedCompat 兼容旧版本首页请求
 func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID string, page, limit, offset int, now time.Time) {
 	feed := services.NewHomeFeedService(h.db)
+	feed.SetPersonalization(h.feedShadow, h.feedRollout)
 	pinned, err := feed.PinnedPosts(now)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取置顶帖子失败"})
@@ -1170,7 +1183,7 @@ func (h *PostHandler) getLegacyHomeFeedCompat(c *gin.Context, scene, sessionID s
 		ids = snapshot.PostIDs
 	} else {
 		userID := optionalFeedUserID(c)
-		ids, err = feed.BuildSnapshot(now, userID)
+		ids, err = feed.BuildSnapshot(c.Request.Context(), now, userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "构建首页信息流失败"})
 			return

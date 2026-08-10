@@ -194,6 +194,12 @@ func (s *FeedMetricsService) AggregateAndCleanup(ctx context.Context, day time.T
 	if _, err := visSvc.CleanupExpiredFeedbacks(ctx, time.Now()); err != nil {
 		log.Printf("清理过期 Feed 反馈失败: %v", err)
 	}
+	// FEED-5：排序追踪 30 天 TTL（失败不阻断主流程）。
+	if err := s.db.WithContext(ctx).
+		Where("created_at < ?", time.Now().Add(-ttl)).
+		Delete(&models.FeedRankTrace{}).Error; err != nil {
+		log.Printf("清理 Feed 排序追踪失败: %v", err)
+	}
 	eventSvc := NewFeedEventService(s.db)
 	return eventSvc.CleanupExpired(ctx, time.Now().Add(-ttl))
 }

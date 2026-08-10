@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../models/campus_article.dart';
+import '../../theme/app_motion.dart';
+import '../../theme/app_radius.dart';
 import 'campus_notice_tag.dart';
 import 'campus_theme.dart';
 
-class CampusNewsCard extends StatelessWidget {
+class CampusNewsCard extends StatefulWidget {
   final CampusArticleSummary article;
   final bool isDark;
   final VoidCallback onTap;
@@ -16,22 +18,49 @@ class CampusNewsCard extends StatelessWidget {
   });
 
   @override
+  State<CampusNewsCard> createState() => _CampusNewsCardState();
+}
+
+class _CampusNewsCardState extends State<CampusNewsCard> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
+    final article = widget.article;
+    final isDark = widget.isDark;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+
+    final surface = Material(
       color: isDark ? CampusTheme.darkCard : CampusTheme.card,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(AppRadius.lg),
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
+        onTap: widget.onTap,
+        onHighlightChanged: (highlighted) {
+          if (mounted) setState(() => _pressed = highlighted);
+        },
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: AnimatedContainer(
+          duration: reduceMotion ? Duration.zero : AppMotion.micro,
+          curve: AppMotion.standard,
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : CampusTheme.softBorder,
+              color: _pressed
+                  ? CampusTheme.primary.withValues(alpha: isDark ? 0.3 : 0.18)
+                  : isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : CampusTheme.softBorder,
             ),
+            boxShadow: _pressed
+                ? [
+                    BoxShadow(
+                      color: CampusTheme.primary.withValues(alpha: 0.08),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
+                    ),
+                  ]
+                : null,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,6 +143,14 @@ class CampusNewsCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    if (reduceMotion) return surface;
+    return AnimatedScale(
+      scale: _pressed ? 0.985 : 1.0,
+      duration: AppMotion.micro,
+      curve: AppMotion.standard,
+      child: surface,
     );
   }
 }

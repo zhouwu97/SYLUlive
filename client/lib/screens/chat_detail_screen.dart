@@ -20,12 +20,13 @@ import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
 import '../services/root_page_state_service.dart';
 import '../utils/app_feedback.dart';
-import '../utils/app_motion.dart';
+import '../theme/app_motion.dart';
 import '../utils/app_navigation.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_time.dart';
+import '../utils/chat_scroll_intent.dart';
 import '../utils/text_editing_helper.dart';
-import '../theme/AppTheme.dart';
+import '../theme/app_theme.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
@@ -72,6 +73,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   double _lastKeyboardHeight = _fallbackKeyboardHeight;
   double _stableKeyboardHeight = _fallbackKeyboardHeight;
   Timer? _keyboardMetricsTimer;
+  Timer? _messageFocusHighlightTimer;
   bool _hasObservedKeyboardHeight = false;
   bool _keyboardRequestPending = false;
   ChatBottomPanel _bottomPanel = ChatBottomPanel.none;
@@ -89,6 +91,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
   int? _lastObservedServerMessageId;
   int _newMessageCount = 0;
+  int? _messageFocusHighlightId;
   static const MethodChannel _privateMessageNotificationsChannel =
       MethodChannel('shenliyuan/private_message_notifications');
   static const double _fallbackKeyboardHeight = 300;
@@ -221,6 +224,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _deactivateConversation();
     _refreshTimer?.cancel();
     _keyboardMetricsTimer?.cancel();
+    _messageFocusHighlightTimer?.cancel();
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -296,7 +300,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   void _scheduleStableKeyboardHeight(double keyboardInset) {
     if (keyboardInset <= 0) return;
     if (!_keyboardRequestPending &&
-        (keyboardInset >= _stableKeyboardHeight || !_hasObservedKeyboardHeight)) {
+        (keyboardInset >= _stableKeyboardHeight ||
+            !_hasObservedKeyboardHeight)) {
       _keyboardMetricsTimer?.cancel();
       setState(() {
         _stableKeyboardHeight = keyboardInset;
@@ -459,7 +464,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       senderId: context.read<AuthProvider>().user?.id,
     );
     _lastMessageActivity = DateTime.now();
-    unawaited(_scrollToLatestMessage(settle: true));
+    unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
     unawaited(_completeOutgoingSend(sendFuture));
   }
 
@@ -488,7 +493,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         senderId: context.read<AuthProvider>().user?.id,
       );
       _lastMessageActivity = DateTime.now();
-      unawaited(_scrollToLatestMessage(settle: true));
+      unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
       unawaited(_completeOutgoingSend(sendFuture, isMedia: true));
     } catch (error) {
       if (!mounted) return;
@@ -504,7 +509,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   void _retryMessage(Message message) {
     final clientMessageId = message.clientMessageId;
     if (clientMessageId == null) return;
-    unawaited(_scrollToLatestMessage(settle: true));
+    unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
     final sendFuture = context.read<MessageProvider>().retryMessage(
           widget.targetUser.id,
           clientMessageId,
@@ -660,7 +665,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         senderId: context.read<AuthProvider>().user?.id,
       );
       _lastMessageActivity = DateTime.now();
-      unawaited(_scrollToLatestMessage(settle: true));
+      unawaited(_scrollToLatestMessage(intent: ChatScrollIntent.ownSend));
       await _completeOutgoingSend(sendFuture, isMedia: true);
     } catch (error) {
       if (mounted) {
@@ -709,6 +714,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final showEmojiPanel =
         _bottomPanel == ChatBottomPanel.emoji && !_isComposerBlocked;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final emojiPanel = AppEmojiPanel(
+      key: const ValueKey('chat-emoji-panel'),
+      onEmojiSelected: _insertEmoji,
+      onStickerSelected: _selectSticker,
+      onFavoriteImageSelected: _sendFavoriteImage,
+      onBackspace: () => deletePreviousCharacter(_textController),
+      // 媒体上传不应冻结 Emoji 或 Sticker 的连续发送能力。
+      enabled: !_isComposerBlocked,
+    );
     return SizedBox(
       key: const ValueKey('chat-bottom-viewport'),
       width: double.infinity,
@@ -718,14 +733,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         child: showEmojiPanel
             ? SafeArea(
                 top: false,
-                child: AppEmojiPanel(
-                  key: const ValueKey('chat-emoji-panel'),
-                  onEmojiSelected: _insertEmoji,
-                  onStickerSelected: _selectSticker,
-                  onFavoriteImageSelected: _sendFavoriteImage,
-                  onBackspace: () => deletePreviousCharacter(_textController),
-                  // 媒体上传不应冻结 Emoji 或 Sticker 的连续发送能力。
-                  enabled: !_isComposerBlocked,
+                child: TweenAnimationBuilder<double>(
+                  key: const ValueKey('chat-emoji-content-transition'),
+                  tween: Tween(begin: 0.94, end: 1),
+                  duration: reduceMotion ? AppMotion.micro : AppMotion.tab,
+                  curve: AppMotion.incoming,
+                  child: emojiPanel,
+                  builder: (context, value, child) {
+                    final faded = Opacity(opacity: value, child: child);
+                    if (reduceMotion) return faded;
+                    return Transform.translate(
+                      offset: Offset(0, 6 * (1 - value)),
+                      child: faded,
+                    );
+                  },
                 ),
               )
             : const SizedBox.expand(),
@@ -880,7 +901,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       if (!mounted) return;
       if (includesOwnMessage || wasNearBottom) {
         if (_newMessageCount != 0) setState(() => _newMessageCount = 0);
-        unawaited(_scrollToLatestMessage(settle: true));
+        unawaited(_scrollToLatestMessage(
+          intent: includesOwnMessage
+              ? ChatScrollIntent.ownSend
+              : ChatScrollIntent.incomingNearBottom,
+        ));
         unawaited(_markVisibleMessagesRead());
       } else if (incomingCount > 0) {
         setState(() => _newMessageCount += incomingCount);
@@ -925,7 +950,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         return;
       }
 
-      if (targetMessageId != null && _ensureMessageVisible(targetMessageId)) {
+      if (targetMessageId != null &&
+          _ensureMessageVisible(
+            targetMessageId,
+            intent: ChatScrollIntent.restore,
+          )) {
         targetFound = true;
         continue;
       }
@@ -943,19 +972,37 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _initialPositionSettled = true;
   }
 
-  bool _ensureMessageVisible(int targetMessageId) {
+  bool _ensureMessageVisible(
+    int targetMessageId, {
+    ChatScrollIntent intent = ChatScrollIntent.messageFocus,
+  }) {
     final targetContext = _messageKeys[targetMessageId]?.currentContext;
     if (targetContext == null) {
       _jumpNearMessage(targetMessageId);
       return false;
     }
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final shouldAnimate = intent.usesAnimatedFocus(reduceMotion: reduceMotion);
     Scrollable.ensureVisible(
       targetContext,
-      duration: Duration.zero,
+      duration: shouldAnimate ? AppMotion.fast : Duration.zero,
       alignment: 0.72,
-      curve: Curves.easeOut,
+      curve: AppMotion.standard,
     );
+    if (intent.showsFocusHighlight) {
+      _highlightMessage(targetMessageId);
+    }
     return true;
+  }
+
+  void _highlightMessage(int messageId) {
+    _messageFocusHighlightTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _messageFocusHighlightId = messageId);
+    _messageFocusHighlightTimer = Timer(AppMotion.normal, () {
+      if (!mounted || _messageFocusHighlightId != messageId) return;
+      setState(() => _messageFocusHighlightId = null);
+    });
   }
 
   void _jumpNearMessage(int targetMessageId) {
@@ -984,7 +1031,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     for (var attempt = 0; attempt < 5; attempt++) {
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || !_isChatActive) return;
-      if (_ensureMessageVisible(messageId)) {
+      if (_ensureMessageVisible(
+        messageId,
+        intent: ChatScrollIntent.messageFocus,
+      )) {
         if (_newMessageCount != 0) setState(() => _newMessageCount = 0);
         unawaited(_markVisibleMessagesRead());
         return;
@@ -999,26 +1049,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Future<void> _scrollToLatestMessage({
-    bool jump = false,
-    bool settle = false,
+    ChatScrollIntent intent = ChatScrollIntent.incomingNearBottom,
   }) async {
-    final attempts = settle ? 4 : 1;
-    for (var attempt = 0; attempt < attempts; attempt++) {
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted || !_scrollController.hasClients) return;
-      if (jump || attempt > 0) {
-        _scrollController.jumpTo(0);
-      } else {
-        await _scrollController.animateTo(
-          0,
-          duration: AppMotion.nav,
-          curve: AppMotion.standard,
-        );
-      }
-      if (settle) {
-        await Future<void>.delayed(const Duration(milliseconds: 35));
-      }
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_scrollController.hasClients) return;
+
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (intent.usesJumpScroll(reduceMotion: reduceMotion)) {
+      _jumpToLatestMessage();
+      return;
     }
+
+    await _scrollController.animateTo(
+      0,
+      duration: AppMotion.tab,
+      curve: AppMotion.standard,
+    );
   }
 
   @override
@@ -1386,7 +1432,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               child: FilledButton.icon(
                 onPressed: () {
                   setState(() => _newMessageCount = 0);
-                  unawaited(_scrollToLatestMessage(settle: true));
+                  unawaited(_scrollToLatestMessage(
+                    intent: ChatScrollIntent.incomingNearBottom,
+                  ));
                   unawaited(_markVisibleMessagesRead());
                 },
                 icon: const Icon(Icons.arrow_downward_rounded, size: 18),
@@ -1523,6 +1571,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       isGroupStart: isGroupStart,
       isGroupEnd: isGroupEnd,
     );
+    final isHighlighted = _messageFocusHighlightId == message.id;
+    final highlightColor = isMine
+        ? Colors.white.withValues(alpha: 0.72)
+        : AppTheme.primaryColor.withValues(alpha: 0.72);
 
     return Padding(
       padding: EdgeInsets.only(top: groupGap, bottom: isGroupEnd ? 3 : 0),
@@ -1566,12 +1618,23 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                       border: Border.all(
                         color: message.isStickerOnly
                             ? Colors.transparent
-                            : isMine
-                                ? Colors.transparent
-                                : (isDark
-                                    ? Colors.white.withValues(alpha: 0.10)
-                                    : const Color(0xFFECE8E4)),
+                            : isHighlighted
+                                ? highlightColor
+                                : isMine
+                                    ? Colors.transparent
+                                    : (isDark
+                                        ? Colors.white.withValues(alpha: 0.10)
+                                        : const Color(0xFFECE8E4)),
                       ),
+                      boxShadow: isHighlighted
+                          ? [
+                              BoxShadow(
+                                color: highlightColor.withValues(alpha: 0.18),
+                                blurRadius: 10,
+                                spreadRadius: 1,
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2016,30 +2079,36 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                 valueListenable: _textController,
                 builder: (context, value, _) {
                   final canSend = !blocked &&
-                      (value.text.trim().isNotEmpty || _selectedSticker != null);
+                      (value.text.trim().isNotEmpty ||
+                          _selectedSticker != null);
                   return SizedBox(
                     key: const ValueKey('chat-send-button-container'),
                     width: 44,
                     height: 44,
-                    child: AnimatedOpacity(
-                      opacity: canSend ? 1 : 0,
-                      duration: AppMotion.fast,
+                    child: AnimatedScale(
+                      scale: canSend ? 1 : 0.985,
+                      duration: AppMotion.tab,
                       curve: AppMotion.standard,
-                      child: IgnorePointer(
-                        ignoring: !canSend,
-                        child: IconButton.filled(
-                          key: const ValueKey('chat-send-button'),
-                          tooltip: '发送',
-                          onPressed: canSend ? _sendMessage : null,
-                          style: IconButton.styleFrom(
-                            fixedSize: const Size(44, 44),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            backgroundColor: AppTheme.primaryColor,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: AppTheme.primaryColor,
-                            disabledForegroundColor: Colors.white,
+                      child: AnimatedOpacity(
+                        opacity: canSend ? 1 : 0,
+                        duration: AppMotion.tab,
+                        curve: AppMotion.standard,
+                        child: IgnorePointer(
+                          ignoring: !canSend,
+                          child: IconButton.filled(
+                            key: const ValueKey('chat-send-button'),
+                            tooltip: '发送',
+                            onPressed: canSend ? _sendMessage : null,
+                            style: IconButton.styleFrom(
+                              fixedSize: const Size(44, 44),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              backgroundColor: AppTheme.primaryColor,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: AppTheme.primaryColor,
+                              disabledForegroundColor: Colors.white,
+                            ),
+                            icon: const Icon(Icons.send_rounded, size: 20),
                           ),
-                          icon: const Icon(Icons.send_rounded, size: 20),
                         ),
                       ),
                     ),

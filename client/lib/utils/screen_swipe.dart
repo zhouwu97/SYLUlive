@@ -6,21 +6,8 @@ enum SwipeAxisIntent {
   vertical,
 }
 
-const double mainNavigationGestureZoneHeight = 120.0;
 const double pageExitSwipeFraction = 0.3;
 const double pageExitSwipeDirectionRatio = 1.2;
-
-bool mainNavigationRequiresBottomZone(int index) {
-  return index == 0 || index == 1 || index == 2;
-}
-
-bool isMainNavigationGestureZone({
-  required double startY,
-  required double screenHeight,
-}) {
-  if (screenHeight <= 0) return false;
-  return startY >= screenHeight - mainNavigationGestureZoneHeight;
-}
 
 SwipeAxisIntent resolveSwipeAxisIntent({
   required double dx,

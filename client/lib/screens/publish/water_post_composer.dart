@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
+import '../../services/post_draft_service.dart';
 import '../../widgets/water_section/section_avatar.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
@@ -53,6 +56,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   final List<XFile> _selectedImages = [];
   final List<PostImage> _existingImages = [];
 
+  // C-1 草稿：防抖自动保存，发布成功清理。
+  final PostDraftService _draftService = PostDraftService();
+  Timer? _draftDebounce;
+  static const Duration _draftDebounceDuration = Duration(milliseconds: 800);
+
   // ---------------------------------------------------------------------------
   // PublishImagePickerMixin 抽象成员实现
   // ---------------------------------------------------------------------------
@@ -64,11 +72,16 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   List<PostImage> get existingImages => _existingImages;
 
   @override
-  void onImageAdded(XFile image) => setState(() => _selectedImages.add(image));
+  void onImageAdded(XFile image) {
+    _scheduleDraftSave();
+    setState(() => _selectedImages.add(image));
+  }
 
   @override
-  void onNewImageRemoved(int index) =>
-      setState(() => _selectedImages.removeAt(index));
+  void onNewImageRemoved(int index) {
+    _scheduleDraftSave();
+    setState(() => _selectedImages.removeAt(index));
+  }
 
   @override
   void onExistingImageRemoved(int index) =>
@@ -146,6 +159,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         : 'campus_life';
     _titleController.addListener(_onTitleChanged);
     _contentController.addListener(_onContentChanged);
+    if (!_isEditing) {
+      unawaited(_restoreDraft());
+    }
     // 加载版块列表供标签选择
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<WaterSectionProvider>();
@@ -155,6 +171,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   @override
   void dispose() {
+    _draftDebounce?.cancel();
+    unawaited(_persistDraft()); // 退出前落盘当前草稿（编辑态不保存）
     _titleController.removeListener(_onTitleChanged);
     _contentController.removeListener(_onContentChanged);
     _titleWarningController.dispose();
@@ -165,6 +183,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   }
 
   void _onTitleChanged() {
+    _scheduleDraftSave();
     if (!_titleNeedsAttention || _titleController.text.trim().isEmpty) {
       return;
     }
@@ -173,20 +192,67 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     setState(() => _titleNeedsAttention = false);
   }
 
-  void _onContentChanged() => setState(() {});
+  void _onContentChanged() {
+    _scheduleDraftSave();
+    setState(() {});
+  }
+
+  // ── C-1 草稿 ─────────────────────────────────────────────────────
+
+  Future<void> _restoreDraft() async {
+    final draft = await _draftService.load();
+    if (draft == null || draft.isEmpty || !mounted) return;
+    if (_titleController.text.isEmpty) {
+      _titleController.text = draft.title;
+    }
+    if (_contentController.text.isEmpty) {
+      _contentController.text = draft.content;
+    }
+    if (_selectedPostType == 'campus_life' && draft.postType.isNotEmpty) {
+      _selectedPostType = draft.postType;
+    }
+    _selectedTagId ??= draft.waterTagId;
+    for (final path in draft.draftImagePaths) {
+      final file = File(path);
+      if (await file.exists()) {
+        _selectedImages.add(XFile(path));
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// 防抖自动保存草稿（标题/正文/图片变化时调用）。
+  void _scheduleDraftSave() {
+    if (_isEditing) return;
+    _draftDebounce?.cancel();
+    _draftDebounce = Timer(_draftDebounceDuration, _persistDraft);
+  }
+
+  Future<void> _persistDraft() async {
+    if (_isEditing) return;
+    final draft = PostDraft(
+      title: _titleController.text.trim(),
+      content: _contentController.text.trim(),
+      postType: _selectedPostType,
+      waterTagId: _selectedTagId,
+      draftImagePaths: _selectedImages.map((image) => image.path).toList(),
+      updatedAt: DateTime.now(),
+    );
+    if (draft.isEmpty) {
+      await _draftService.clear();
+      return;
+    }
+    await _draftService.save(draft);
+  }
 
   // ---------------------------------------------------------------------------
   // 校验
   // ---------------------------------------------------------------------------
 
   bool _validate() {
-    final title = _titleController.text.trim();
     final content = _contentController.text.trim();
     final isFormValid = _formKey.currentState!.validate();
-    if (title.isEmpty) {
-      _showTitleRequiredHint();
-      return false;
-    }
+    // C-1：标题可选，正文 required。
     if (content.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -210,13 +276,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       return false;
     }
     return isFormValid;
-  }
-
-  void _showTitleRequiredHint() {
-    if (!mounted) return;
-    _titleFocusNode.requestFocus();
-    setState(() => _titleNeedsAttention = true);
-    _titleWarningController.forward(from: 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -289,6 +348,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
       if (!mounted) return;
       if (result.success) {
+        _draftDebounce?.cancel();
+        unawaited(_draftService.clear()); // 发布成功清理草稿
         _showSubmitSuccessFeedback(result.post);
         if (!mounted) return;
         Navigator.of(context).pop(true);

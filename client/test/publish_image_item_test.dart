@@ -95,4 +95,67 @@ void main() {
     Future<int?> fail(XFile f) async => null;
     expect(await resolveOrderedFileIds(images, fail), isNull);
   });
+
+  group('uploadImagesConcurrently（C-3）', () {
+    test('并发上传后 file_ids 按 UI 顺序（与完成顺序无关）', () async {
+      final images = [
+        PublishImageItem.local(XFile('/tmp/a.jpg'), 'a'),
+        PublishImageItem.local(XFile('/tmp/b.jpg'), 'b'),
+        PublishImageItem.existing(_existing(10, 10)),
+        PublishImageItem.local(XFile('/tmp/c.jpg'), 'c'),
+      ];
+      final map = {'a': 100, 'b': 200, 'c': 300};
+      final ok = await uploadImagesConcurrently(
+        images,
+        maxConcurrent: 3,
+        upload: (item) async => map[item.id],
+      );
+      expect(ok, isTrue);
+      expect(images.map((e) => e.fileId).toList(), [100, 200, 10, 300],
+          reason: 'file_ids 严格按 UI 顺序');
+      expect(
+        images
+            .where((e) => e.source == PublishImageSource.local)
+            .every((e) => e.uploadState == PublishImageUploadState.success),
+        isTrue,
+      );
+    });
+
+    test('任一失败返回 false，失败项 failed；重试只上传失败项', () async {
+      final images = [
+        PublishImageItem.local(XFile('/tmp/a.jpg'), 'a'),
+        PublishImageItem.local(XFile('/tmp/b.jpg'), 'b'),
+      ];
+      var uploads = 0;
+      final ok = await uploadImagesConcurrently(
+        images,
+        maxConcurrent: 2,
+        upload: (item) async {
+          uploads++;
+          return item.id == 'b' ? null : 1;
+        },
+      );
+      expect(ok, isFalse);
+      expect(images[0].uploadState, PublishImageUploadState.success);
+      expect(images[1].uploadState, PublishImageUploadState.failed);
+
+      // 重试失败项 b：清空后并发上传（a 已有 fileId 不再上传）。
+      final beforeUploads = uploads;
+      final b = images[1];
+      b.fileId = null;
+      b.uploadState = PublishImageUploadState.waiting;
+      final ok2 = await uploadImagesConcurrently(
+        images,
+        maxConcurrent: 2,
+        upload: (item) async {
+          uploads++;
+          return 99;
+        },
+      );
+      expect(ok2, isTrue);
+      expect(b.fileId, 99);
+      expect(b.uploadState, PublishImageUploadState.success);
+      expect(uploads - beforeUploads, 1, reason: '只重传失败项 b，不重传 a');
+    });
+  });
 }

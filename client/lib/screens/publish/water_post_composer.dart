@@ -110,11 +110,52 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     setState(() {});
   }
 
-  /// 按 UI 顺序解析 file_ids：existing 直接取 fileId，local 逐张上传；
-  /// 顺序严格等于 _images 顺序。上传失败返回 null。
-  Future<List<int>?> _resolveOrderedFileIds(PostProvider postProvider) {
-    return resolveOrderedFileIds(_images,
-        (file) => postProvider.uploadImage(file));
+  /// 上传所有本地图（并发 ≤3），更新每个 item 的 uploadState / progress / fileId。
+  /// 全部成功返回 true；任一失败返回 false（失败项留在 failed 态，可重试）。
+  Future<bool> _uploadLocalImages(PostProvider postProvider) {
+    return uploadImagesConcurrently(
+      _images,
+      maxConcurrent: 3,
+      upload: (item) => postProvider.uploadImage(
+        item.localFile!,
+        onProgress: (sent, total) {
+          if (total > 0) {
+            item.progress = sent / total;
+            if (mounted) setState(() {});
+          }
+        },
+      ),
+      onStateChanged: () {
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  /// 重试单个失败图片：清空 fileId，置为 waiting，下次提交时重新上传。
+  void _retryImage(String id) {
+    for (final item in _images) {
+      if (item.id == id && item.source == PublishImageSource.local) {
+        item.fileId = null;
+        item.uploadState = PublishImageUploadState.waiting;
+        item.progress = 0;
+      }
+    }
+    setState(() {});
+  }
+
+  /// 按 UI 顺序组装 file_ids（上传完成后调用；未成功上传的 local 返回 null）。
+  List<int>? _orderedFileIds() {
+    final fileIds = <int>[];
+    for (final item in _images) {
+      switch (item.source) {
+        case PublishImageSource.existing:
+          fileIds.add(item.existingImage!.fileId);
+        case PublishImageSource.local:
+          if (item.fileId == null) return null;
+          fileIds.add(item.fileId!);
+      }
+    }
+    return fileIds;
   }
 
   int get _charCount => _contentController.text.length;
@@ -310,8 +351,21 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     try {
       final postProvider = context.read<PostProvider>();
 
+      // C-3：并发上传本地图（失败项可重试，不提交）。
+      if (!await _uploadLocalImages(postProvider)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('图片上传失败，请点击图片重试'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
       // C-2：file_ids 严格等于 UI 图片顺序（existing + local 混合）。
-      final fileIds = await _resolveOrderedFileIds(postProvider);
+      final fileIds = _orderedFileIds();
       if (fileIds == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -823,6 +877,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     onAdd: showImageSourceDialog,
                     onRemove: _removeImage,
                     onReorder: _moveImage,
+                    onRetry: _retryImage,
                     compact: true,
                   ),
                 ),

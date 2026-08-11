@@ -483,13 +483,13 @@ class AiAssistantProvider extends ChangeNotifier {
       }
       if (run.state == 'completed') {
         _connectionState = AiConnectionState.completed;
-        final hasChunkReferences = extractAiChunkIds(_streamedText).isNotEmpty;
+        final hasCitationMarkers = hasAiCitationMarkers(_streamedText);
         _upsertAssistant(
           _streamedText,
           AiMessageStatus.completed,
           sources: _sources,
           sourceRecoveryState: _sources.isEmpty
-              ? hasChunkReferences
+              ? hasCitationMarkers
                   ? AiSourceRecoveryState.loading
                   : AiSourceRecoveryState.notNeeded
               : AiSourceRecoveryState.loaded,
@@ -601,11 +601,11 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.completed:
         _connectionState = AiConnectionState.completed;
         if (event.quota != null) _quota = event.quota;
-        final hasChunkReferences = extractAiChunkIds(_streamedText).isNotEmpty;
+        final hasCitationMarkers = hasAiCitationMarkers(_streamedText);
         _upsertAssistant(_streamedText, AiMessageStatus.completed,
             sources: _sources,
             sourceRecoveryState: _sources.isEmpty
-                ? hasChunkReferences
+                ? hasCitationMarkers
                     ? AiSourceRecoveryState.loading
                     : AiSourceRecoveryState.notNeeded
                 : AiSourceRecoveryState.loaded,
@@ -701,8 +701,8 @@ class AiAssistantProvider extends ChangeNotifier {
     if (index < 0) return;
     final current = _messages[index];
     if (!force && current.sources.isNotEmpty) return;
+    if (!hasAiCitationMarkers(content)) return;
     final chunkIds = extractAiChunkIds(content);
-    if (chunkIds.isEmpty) return;
 
     _messages[index] = current.copyWith(
       sourceRecoveryState: AiSourceRecoveryState.loading,
@@ -716,7 +716,7 @@ class AiAssistantProvider extends ChangeNotifier {
       // 旧服务端没有来源聚合接口时，继续按 chunk 读取兼容正文。
     }
 
-    if (resolved.isEmpty) {
+    if (resolved.isEmpty && chunkIds.isNotEmpty) {
       resolved = await _loadFallbackSources(chunkIds);
     }
     final resolvedChunkIds = resolved
@@ -726,7 +726,8 @@ class AiAssistantProvider extends ChangeNotifier {
               : (source.chunkId > 0 ? [source.chunkId] : const <int>[]),
         )
         .toSet();
-    final state = chunkIds.every(resolvedChunkIds.contains)
+    final state = resolved.isNotEmpty &&
+            (chunkIds.isEmpty || chunkIds.every(resolvedChunkIds.contains))
         ? AiSourceRecoveryState.loaded
         : AiSourceRecoveryState.failed;
     final latestIndex = _messages.indexWhere((item) => item.id == messageId);

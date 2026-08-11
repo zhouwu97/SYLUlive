@@ -46,4 +46,21 @@ void main() {
     expect(result.content, '[3] [4]');
     expect(result.chunkToCitation, {18: 3, 19: 4});
   });
+
+  test('旧回答中的笼统来源标记会关联已恢复的来源卡片', () {
+    const source = AiSource(
+      type: AiSourceType.policy,
+      chunkId: 18,
+      title: '沈阳理工大学学士学位授予条件',
+      citationNumbers: [1],
+    );
+
+    final result = resolveMessageSources(
+      content: '学位课程平均绩点达到 2.0。[来源]',
+      sources: const [source],
+    );
+
+    expect(result.content, '学位课程平均绩点达到 2.0。[1]');
+    expect(hasAiCitationMarkers('请看[来源]'), isTrue);
+  });
 }

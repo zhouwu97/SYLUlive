@@ -34,7 +34,8 @@ CourseScheduleSettingsSnapshot _snapshot() {
     reminderAdvanceMinutes: 5,
     reminderBusy: false,
     scheduledReminderCount: 0,
-    reminderSummary: '已关闭课程提醒',
+    // 即使上游快照残留旧文案，关闭态也必须以布尔状态为准。
+    reminderSummary: '提前 5 分钟 · 已安排 3 个提醒',
     backgroundKeepAliveSubtitle: '建议授权：电池优化白名单、精确闹钟',
     backgroundKeepAliveReady: false,
     backgroundKeepAliveSupported: true,
@@ -112,6 +113,7 @@ void main() {
       CampusTheme.bg,
     );
     expect(find.text('已关闭课程提醒'), findsOneWidget);
+    expect(find.text('提前 5 分钟 · 已安排 3 个提醒'), findsNothing);
   });
 
   testWidgets('统一配色在暗色与大字号下保持可渲染', (tester) async {

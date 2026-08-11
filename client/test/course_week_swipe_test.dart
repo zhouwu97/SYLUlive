@@ -165,9 +165,71 @@ void main() {
 
     await _disposeCourse(tester, page);
   });
+
+  testWidgets('未设置开学周时不展示课程且不能横向切周', (tester) async {
+    final page = await _pumpCourse(
+      tester,
+      configureSemesterStart: false,
+    );
+
+    expect(find.text('未设置开学周'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('schedule-semester-start-required')),
+      findsOneWidget,
+    );
+    expect(find.byType(PageView), findsNothing);
+
+    await tester.dragFrom(const Offset(220, 400), const Offset(-250, 0));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('schedule-semester-start-required')),
+      findsOneWidget,
+    );
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('课表拖动时保持跟手，松手后才同步周次', (tester) async {
+    final page = await _pumpCourse(tester);
+    final before = _weekHeaderText(tester);
+    expect(before, isNotNull);
+
+    final controller =
+        tester.widget<PageView>(find.byType(PageView)).controller!;
+    final startPage = controller.page!;
+    final gesture = await tester.startGesture(const Offset(220, 400));
+    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-25, 0));
+    await gesture.moveBy(const Offset(-25, 0));
+    await tester.pump();
+
+    final pageWhileHolding = controller.page!;
+    expect(pageWhileHolding, isNot(closeTo(startPage, 0.001)));
+    expect(_weekHeaderText(tester), before);
+
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(controller.page, closeTo(pageWhileHolding, 0.001));
+    expect(_weekHeaderText(tester), before);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(_weekHeaderText(tester), isNot(before));
+
+    await _disposeCourse(tester, page);
+  });
 }
 
-Future<_CourseTestPage> _pumpCourse(WidgetTester tester) async {
+Future<_CourseTestPage> _pumpCourse(
+  WidgetTester tester, {
+  bool configureSemesterStart = true,
+}) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.physicalSize = const Size(400, 800);
   tester.view.devicePixelRatio = 1;
@@ -235,6 +297,9 @@ Future<_CourseTestPage> _pumpCourse(WidgetTester tester) async {
       },
     ],
   );
+  if (configureSemesterStart) {
+    await scheduleProvider.setSemesterStart(DateTime.now());
+  }
 
   final auth = _CourseAuthProvider(client: dio);
   final eduProvider = _BoundEduProvider();

@@ -8,6 +8,7 @@ import '../../utils/ai_citation_mapper.dart';
 import 'ai_competition_plan_draft_card.dart';
 import 'ai_evidence_card.dart';
 import 'ai_source_card.dart';
+import '../campus/campus_theme.dart';
 
 class AiMessageCard extends StatelessWidget {
   final AiChatMessage message;
@@ -27,7 +28,13 @@ class AiMessageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == AiMessageRole.user;
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final assistantSurface =
+        isDark ? colors.primaryContainer : CampusTheme.primaryLight;
+    final assistantBorder =
+        isDark ? Colors.white.withValues(alpha: 0.12) : CampusTheme.border;
     final citation = resolveMessageSources(
       content: message.content,
       sources: message.sources,
@@ -37,12 +44,13 @@ class AiMessageCard extends StatelessWidget {
       child: FractionallySizedBox(
         widthFactor: isUser ? 0.72 : 0.88,
         child: Container(
+          key: ValueKey('ai-message-card-${message.id}'),
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
-            color: isUser ? colors.primary : colors.surfaceContainerHighest,
+            color: isUser ? colors.primary : assistantSurface,
             borderRadius: BorderRadius.circular(isUser ? 16 : 18),
-            border: isUser ? null : Border.all(color: colors.outlineVariant),
+            border: isUser ? null : Border.all(color: assistantBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

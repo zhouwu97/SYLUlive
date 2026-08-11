@@ -183,13 +183,13 @@ class _ChatListScreenState extends State<ChatListScreen>
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
 
     return SwipeToExit(
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: _privateMessageSystemUiStyle(isDark),
         child: Scaffold(
-          backgroundColor:
-              isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+          backgroundColor: colors.surface,
           appBar: AppBar(
             toolbarHeight: 64,
             title: const Text(
@@ -210,12 +210,11 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   SystemUiOverlayStyle _privateMessageSystemUiStyle(bool isDark) {
+    final colors = Theme.of(context).colorScheme;
     return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
         .copyWith(
-      statusBarColor:
-          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
-      systemNavigationBarColor:
-          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      statusBarColor: colors.surface,
+      systemNavigationBarColor: colors.surface,
       statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
       systemNavigationBarIconBrightness:
           isDark ? Brightness.light : Brightness.dark,
@@ -224,9 +223,9 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   Widget _buildLoginRequiredScaffold() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      backgroundColor: colors.surface,
       appBar: AppBar(
         title: const Text('私信'),
         backgroundColor: Colors.transparent,
@@ -242,14 +241,14 @@ class _ChatListScreenState extends State<ChatListScreen>
               Icon(
                 Icons.lock_outline,
                 size: 64,
-                color: isDark ? Colors.white30 : Colors.grey[400],
+                color: colors.onSurfaceVariant,
               ),
               const SizedBox(height: 16),
               Text(
                 '登录后查看私信\n你收到的聊天、交易沟通和同学私信会显示在这里',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: isDark ? Colors.white60 : Colors.grey[600],
+                  color: colors.onSurfaceVariant,
                   fontSize: 16,
                   height: 1.5,
                 ),
@@ -276,6 +275,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget _buildWideLayout(MessageProvider provider, int currentUserId) {
     final width = MediaQuery.sizeOf(context).width >= 1000 ? 320.0 : 292.0;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: _privateMessageSystemUiStyle(isDark),
       child: Stack(
@@ -287,8 +287,8 @@ class _ChatListScreenState extends State<ChatListScreen>
             backgroundColor: Colors.transparent,
             appBar: AppBar(
               title: const Text('私信'),
-              backgroundColor: Colors.white.withValues(alpha: 0.20),
-              foregroundColor: const Color(0xFF111827),
+              backgroundColor: colors.surface.withValues(alpha: 0.92),
+              foregroundColor: colors.onSurface,
               surfaceTintColor: Colors.transparent,
               elevation: 0,
               systemOverlayStyle: _privateMessageSystemUiStyle(isDark),
@@ -299,10 +299,10 @@ class _ChatListScreenState extends State<ChatListScreen>
                   width: width,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.72),
+                      color: colors.surface.withValues(alpha: 0.92),
                       border: Border(
                         right: BorderSide(
-                          color: Colors.black.withValues(alpha: 0.08),
+                          color: colors.outlineVariant.withValues(alpha: 0.8),
                         ),
                       ),
                     ),
@@ -328,12 +328,13 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget _buildPrivateMessageBackground() {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     final bgPath = themeProvider.getCustomBackgroundImageFor(context);
     if (!themeProvider.shouldShowCustomBackground ||
         bgPath == null ||
         bgPath.isEmpty) {
       return ColoredBox(
-        color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+        color: colors.surface,
       );
     }
 
@@ -343,7 +344,10 @@ class _ChatListScreenState extends State<ChatListScreen>
       fit: StackFit.expand,
       children: [
         _buildPrivateMessageBackgroundImage(imageProvider: imageProvider),
-        ColoredBox(color: Colors.white.withValues(alpha: 0.24)),
+        ColoredBox(
+          color: (isDark ? colors.scrim : colors.surface)
+              .withValues(alpha: isDark ? 0.30 : 0.24),
+        ),
       ],
     );
   }
@@ -361,27 +365,30 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget _buildPrivateMessageBackgroundImage({
     required ImageProvider imageProvider,
   }) {
-    const fallbackColor = kCleanWarmBackgroundLight;
+    final fallbackColor = Theme.of(context).colorScheme.surface;
     // 私信双栏背景同样固定铺满，避免竖图在宽屏时留下整块空白。
     return Image(
       image: imageProvider,
       fit: BoxFit.cover,
       alignment: Alignment.center,
       gaplessPlayback: true,
-      errorBuilder: (_, __, ___) => const ColoredBox(color: fallbackColor),
+      errorBuilder: (_, __, ___) => ColoredBox(color: fallbackColor),
     );
   }
 
   Widget _buildWideDetailPane(MessageProvider provider) {
+    final colors = Theme.of(context).colorScheme;
     final selectedTarget = _selectedTargetUser;
     if (selectedTarget == null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.forum_outlined, size: 72, color: Colors.grey.shade400),
+            Icon(Icons.forum_outlined,
+                size: 72, color: colors.onSurfaceVariant),
             const SizedBox(height: 16),
-            Text('选择左侧会话开始聊天', style: TextStyle(color: Colors.grey.shade600)),
+            Text('选择左侧会话开始聊天',
+                style: TextStyle(color: colors.onSurfaceVariant)),
           ],
         ),
       );
@@ -452,7 +459,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Widget _buildConversationSearchField() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
       child: SizedBox(
@@ -466,8 +473,7 @@ class _ChatListScreenState extends State<ChatListScreen>
             hintText: '搜索联系人或消息',
             isDense: true,
             filled: true,
-            fillColor:
-                isDark ? const Color(0xFF242A35) : const Color(0xFFF3F1EF),
+            fillColor: colors.surfaceContainerHighest,
             prefixIcon: const Icon(Icons.search_rounded, size: 20),
             suffixIcon: _searchQuery.isEmpty
                 ? null
@@ -491,7 +497,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Widget _buildRecentMessagesLabel() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Align(
@@ -499,7 +505,7 @@ class _ChatListScreenState extends State<ChatListScreen>
         child: Text(
           '最近消息',
           style: TextStyle(
-            color: isDark ? Colors.white60 : const Color(0xFF817A75),
+            color: colors.onSurfaceVariant,
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -664,13 +670,14 @@ class _ChatListScreenState extends State<ChatListScreen>
     final previewIsAlert = !hasDraft && lastMessage?.isFailed == true;
     final selected = splitMode && _selectedConversationId == conversation.id;
     final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final muted = isDark ? Colors.white60 : const Color(0xFF6B7280);
+    final muted = colors.onSurfaceVariant;
     final emphasized = conversation.unreadCount > 0;
     final tileColor = selected
-        ? AppTheme.primaryColor.withValues(alpha: isDark ? 0.22 : 0.10)
+        ? colors.primary.withValues(alpha: isDark ? 0.22 : 0.10)
         : emphasized
-            ? AppTheme.primaryColor.withValues(alpha: isDark ? 0.10 : 0.035)
+            ? colors.primary.withValues(alpha: isDark ? 0.10 : 0.035)
             : Colors.transparent;
     final tileRadius = selected ? AppTheme.borderRadius : 0.0;
     final nickname = targetUser.nickname.isEmpty
@@ -779,7 +786,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
-                              color: emphasized ? AppTheme.primaryColor : muted,
+                              color: emphasized ? colors.primary : muted,
                               fontWeight: emphasized
                                   ? FontWeight.w600
                                   : FontWeight.w400,
@@ -796,7 +803,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                                 horizontal: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: AppTheme.primaryColor,
+                                color: colors.primary,
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
@@ -804,8 +811,8 @@ class _ChatListScreenState extends State<ChatListScreen>
                                     ? '99+'
                                     : '${conversation.unreadCount}',
                                 textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: colors.onPrimary,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                   height: 1.15,

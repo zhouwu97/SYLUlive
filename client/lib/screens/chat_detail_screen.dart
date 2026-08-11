@@ -19,6 +19,7 @@ import '../providers/theme_provider.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/emoji_favorite_service.dart';
 import '../services/root_page_state_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/app_feedback.dart';
 import '../theme/app_motion.dart';
 import '../utils/app_navigation.dart';
@@ -26,7 +27,6 @@ import '../utils/app_navigator.dart';
 import '../utils/app_time.dart';
 import '../utils/chat_scroll_intent.dart';
 import '../utils/text_editing_helper.dart';
-import '../theme/app_theme.dart';
 import '../widgets/cached_avatar.dart';
 import '../widgets/emoji/app_emoji_panel.dart';
 import '../widgets/emoji/sticker_catalog.dart';
@@ -743,7 +743,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final height = _bottomViewportHeight;
     final showEmojiPanel =
         _bottomPanel == ChatBottomPanel.emoji && !_isComposerBlocked;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final emojiPanel = AppEmojiPanel(
       key: const ValueKey('chat-emoji-panel'),
@@ -759,7 +759,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       width: double.infinity,
       height: height,
       child: ColoredBox(
-        color: isDark ? const Color(0xFF1B202A) : Colors.white,
+        color: colors.surface,
         child: showEmojiPanel
             ? SafeArea(
                 top: false,
@@ -1202,15 +1202,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Color _chatSurfaceColor() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight;
+    return Theme.of(context).colorScheme.surface;
   }
 
   SystemUiOverlayStyle _chatSystemOverlayStyle(bool isDark) {
+    final colors = Theme.of(context).colorScheme;
     return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
         .copyWith(
-      statusBarColor: _chatSurfaceColor(),
-      systemNavigationBarColor: isDark ? const Color(0xFF1B202A) : Colors.white,
+      statusBarColor: colors.surface,
+      systemNavigationBarColor: colors.surfaceContainerHighest,
       statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
       systemNavigationBarIconBrightness:
           isDark ? Brightness.light : Brightness.dark,
@@ -1218,9 +1218,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildChatHeader({required bool showBackButton}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final foreground = isDark ? Colors.white : const Color(0xFF171719);
-    final muted = isDark ? Colors.white60 : const Color(0xFF9A9490);
+    final colors = Theme.of(context).colorScheme;
+    final foreground = colors.onSurface;
+    final muted = colors.onSurfaceVariant;
     final nickname = widget.targetUser.nickname.isEmpty
         ? '用户${widget.targetUser.id}'
         : widget.targetUser.nickname;
@@ -1230,9 +1230,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         color: _chatSurfaceColor(),
         border: Border(
           bottom: BorderSide(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : const Color(0xFFECE8E4),
+            color: colors.outlineVariant,
           ),
         ),
       ),
@@ -1514,12 +1512,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildChatBackground() {
     final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     final bgPath = themeProvider.getCustomBackgroundImageFor(context);
     if (!themeProvider.shouldShowCustomBackground ||
         bgPath == null ||
         bgPath.isEmpty) {
       return ColoredBox(
-        color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+        color: colors.surface,
       );
     }
 
@@ -1532,9 +1531,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           imageProvider: imageProvider,
         ),
         ColoredBox(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.16)
-              : Colors.white.withValues(alpha: 0.15),
+          color: (isDark ? colors.scrim : colors.surface)
+              .withValues(alpha: isDark ? 0.28 : 0.15),
         ),
       ],
     );
@@ -1553,18 +1551,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildChatBackgroundImage({
     required ImageProvider imageProvider,
   }) {
-    const fallbackColor = kCleanWarmBackgroundLight;
+    final fallbackColor = Theme.of(context).colorScheme.surface;
     // 私信消息区始终铺满可视区域，避免 contain 模式在两侧留下暖白空隙。
     return Image(
       image: imageProvider,
       fit: BoxFit.cover,
       alignment: Alignment.center,
       gaplessPlayback: true,
-      errorBuilder: (_, __, ___) => const ColoredBox(color: fallbackColor),
+      errorBuilder: (_, __, ___) => ColoredBox(color: fallbackColor),
     );
   }
 
   Widget _buildTimeLabel(DateTime time) {
+    final colors = Theme.of(context).colorScheme;
     final local = AppTime.toShanghai(time);
     final now = AppTime.nowShanghai();
     final sameDay = local.year == now.year &&
@@ -1574,9 +1573,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Text(
         DateFormat(sameDay ? 'HH:mm' : 'MM-dd HH:mm').format(local),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
-          color: Color(0xFF9A9490),
+          color: colors.onSurfaceVariant,
         ),
       ),
     );
@@ -1605,13 +1604,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final senderName = sender?.nickname.isNotEmpty == true
         ? sender!.nickname
         : (isMine ? '我' : widget.targetUser.nickname);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bubbleColor = isMine
-        ? AppTheme.primaryColor
-        : (isDark ? const Color(0xFF252B36) : Colors.white);
-    final textColor = isMine
-        ? Colors.white
-        : (isDark ? Colors.white : const Color(0xFF111827));
+    final colors = Theme.of(context).colorScheme;
+    final bubbleColor =
+        isMine ? colors.primary : colors.surfaceContainerHighest;
+    final textColor = isMine ? colors.onPrimary : colors.onSurface;
     final groupGap = isGroupStart ? 10.0 : 4.0;
     final bubbleRadius = _messageBubbleRadius(
       isMine: isMine,
@@ -1620,8 +1616,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     );
     final isHighlighted = _messageFocusHighlightId == message.id;
     final highlightColor = isMine
-        ? Colors.white.withValues(alpha: 0.72)
-        : AppTheme.primaryColor.withValues(alpha: 0.72);
+        ? colors.onPrimary.withValues(alpha: 0.72)
+        : colors.primary.withValues(alpha: 0.72);
 
     return Padding(
       padding: EdgeInsets.only(top: groupGap, bottom: isGroupEnd ? 3 : 0),
@@ -1669,9 +1665,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                                 ? highlightColor
                                 : isMine
                                     ? Colors.transparent
-                                    : (isDark
-                                        ? Colors.white.withValues(alpha: 0.10)
-                                        : const Color(0xFFECE8E4)),
+                                    : colors.outlineVariant,
                       ),
                       boxShadow: isHighlighted
                           ? [
@@ -1872,11 +1866,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildMessageStatus(Message message) {
+    final colors = Theme.of(context).colorScheme;
     if (message.isPending) {
-      return const Text(
+      return Text(
         '发送中',
-        key: ValueKey('message-status-pending'),
-        style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+        key: const ValueKey('message-status-pending'),
+        style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
       );
     }
     if (message.isFailed) {
@@ -1886,11 +1881,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           key: ValueKey('retry-${message.stableKey}'),
           onTap: () => _retryMessage(message),
           borderRadius: BorderRadius.circular(4),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
             child: Text(
               '发送失败 · 点击重试',
-              style: TextStyle(fontSize: 11, color: Color(0xFFDC2626)),
+              style: TextStyle(fontSize: 11, color: colors.error),
             ),
           ),
         ),
@@ -1900,7 +1895,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       message.readAt == null ? '已送达' : '已读',
       key: ValueKey(
           'message-status-${message.readAt == null ? 'sent' : 'read'}'),
-      style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+      style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
     );
   }
 
@@ -1997,7 +1992,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildInputBar() {
     final blocked = _isComposerBlocked;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -2006,12 +2001,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           key: const ValueKey('chat-composer'),
           padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1B202A) : Colors.white,
+            color: colors.surface,
             border: Border(
               top: BorderSide(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : Colors.black.withValues(alpha: 0.06),
+                color: colors.outlineVariant,
               ),
             ),
           ),
@@ -2060,8 +2053,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                       readOnly: blocked,
                       style: TextStyle(
                         color: blocked
-                            ? (isDark ? Colors.white38 : Colors.black38)
-                            : (isDark ? Colors.white : const Color(0xFF111827)),
+                            ? colors.onSurfaceVariant
+                            : colors.onSurface,
                       ),
                       minLines: 1,
                       maxLines: 4,
@@ -2071,18 +2064,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                         isDense: true,
                         filled: true,
                         fillColor: blocked
-                            ? (isDark
-                                ? const Color(0xFF2B313D)
-                                : const Color(0xFFE5E7EB))
-                            : (isDark
-                                ? const Color(0xFF292F3A)
-                                : const Color(0xFFF4F2F4)),
+                            ? colors.surfaceContainerHigh
+                            : colors.surfaceContainerHighest,
                         hintStyle: TextStyle(
-                          color: isDark
-                              ? Colors.white38
-                              : Colors.black.withValues(
-                                  alpha: blocked ? 0.4 : 0.46,
-                                ),
+                          color: colors.onSurfaceVariant.withValues(
+                            alpha: blocked ? 0.7 : 1,
+                          ),
                         ),
                         suffixIconConstraints: const BoxConstraints(
                           minWidth: 44,
@@ -2150,9 +2137,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                               fixedSize: const Size(44, 44),
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               backgroundColor: AppTheme.primaryColor,
-                              foregroundColor: Colors.white,
+                              foregroundColor: colors.onPrimary,
                               disabledBackgroundColor: AppTheme.primaryColor,
-                              disabledForegroundColor: Colors.white,
+                              disabledForegroundColor: colors.onPrimary,
                             ),
                             icon: const Icon(Icons.send_rounded, size: 20),
                           ),
@@ -2185,10 +2172,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     );
     if (_bottomPanel != ChatBottomPanel.none) return composerContent;
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     // 空闲状态由 Composer 自身消费系统手势安全区，避免透明系统栏压住输入控件。
     return ColoredBox(
-      color: isDark ? const Color(0xFF1B202A) : Colors.white,
+      color: colors.surface,
       child: SafeArea(
         top: false,
         maintainBottomViewPadding: true,
@@ -2200,17 +2187,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildPMLockedBanner() {
     final pendingFirstContact =
         _firstContactSendPending && !_isServerSendBlocked;
+    final colors = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      color: const Color(0xFFFFF7E6),
+      color: colors.errorContainer,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
             Icons.lock_outline,
             size: 14,
-            color: Colors.orange.shade700,
+            color: colors.onErrorContainer,
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -2220,7 +2208,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                   : '对方未关注你。对方回复前，你只能发送 1 条消息。',
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.orange.shade800,
+                color: colors.onErrorContainer,
                 height: 1.3,
               ),
             ),

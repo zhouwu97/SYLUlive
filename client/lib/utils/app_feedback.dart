@@ -5,6 +5,11 @@ import 'app_navigator.dart';
 class AppFeedback {
   const AppFeedback._();
 
+  static const Duration _infoDuration = Duration(seconds: 3);
+  static const Duration _successDuration = Duration(seconds: 2);
+  static const Duration _errorDuration = Duration(seconds: 4);
+  static const Duration _actionDuration = Duration(seconds: 6);
+
   static String dioErrorMessage(
     DioException e, {
     String serviceName = '服务器',
@@ -72,28 +77,123 @@ class AppFeedback {
     }
   }
 
+  /// 统一的普通提示层。优先使用根 messenger，避免提示被局部 Scaffold
+  /// 或宽屏分栏吸附到不同位置；测试或局部宿主没有根 messenger 时才回退到 context。
+  static void info(String message, {BuildContext? context}) {
+    _show(
+      message,
+      context: context,
+      kind: _FeedbackKind.info,
+      duration: _infoDuration,
+    );
+  }
+
+  static void success(String message, {BuildContext? context}) {
+    _show(
+      message,
+      context: context,
+      kind: _FeedbackKind.success,
+      duration: _successDuration,
+    );
+  }
+
+  static void error(String message, {BuildContext? context}) {
+    _show(
+      message,
+      context: context,
+      kind: _FeedbackKind.error,
+      duration: _errorDuration,
+    );
+  }
+
+  static void action(
+    String message, {
+    required String actionLabel,
+    required VoidCallback onAction,
+    BuildContext? context,
+  }) {
+    _show(
+      message,
+      context: context,
+      kind: _FeedbackKind.action,
+      duration: _actionDuration,
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+  }
+
+  /// 兼容旧调用点；业务代码应迁移到 info/success/error/action。
   static void showSnackBar(
     BuildContext context,
     String message, {
     bool isError = false,
   }) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red.shade600 : null,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    if (isError) {
+      error(message, context: context);
+    } else {
+      info(message, context: context);
+    }
   }
 
   static void showGlobalToast(String message, {bool isError = false}) {
-    scaffoldMessengerKey.currentState?.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red.shade600 : null,
-        behavior: SnackBarBehavior.floating,
+    if (isError) {
+      error(message);
+    } else {
+      info(message);
+    }
+  }
+
+  static void _show(
+    String message, {
+    BuildContext? context,
+    required _FeedbackKind kind,
+    required Duration duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    final messenger = scaffoldMessengerKey.currentState ??
+        (context == null ? null : ScaffoldMessenger.maybeOf(context));
+    if (messenger == null || message.trim().isEmpty) return;
+
+    final theme = context == null ? null : Theme.of(context);
+    final colors = theme?.colorScheme;
+    final palette = _FeedbackPalette.from(kind, colors);
+    final content = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 560),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(palette.icon, size: 18, color: palette.foreground),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              message,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: palette.foreground),
+            ),
+          ),
+        ],
       ),
     );
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: content,
+          duration: duration,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          backgroundColor: palette.background,
+          action: actionLabel == null || onAction == null
+              ? null
+              : SnackBarAction(
+                  label: actionLabel,
+                  textColor: palette.foreground,
+                  onPressed: onAction,
+                ),
+        ),
+      );
   }
 
   static Future<void> showErrorDialog(
@@ -149,5 +249,52 @@ class AppFeedback {
       ),
     );
     return ok == true;
+  }
+}
+
+enum _FeedbackKind { info, success, error, action }
+
+class _FeedbackPalette {
+  const _FeedbackPalette({
+    required this.background,
+    required this.foreground,
+    required this.icon,
+  });
+
+  final Color background;
+  final Color foreground;
+  final IconData icon;
+
+  factory _FeedbackPalette.from(
+    _FeedbackKind kind,
+    ColorScheme? colors,
+  ) {
+    final scheme = colors ?? ColorScheme.fromSeed(seedColor: Colors.teal);
+    switch (kind) {
+      case _FeedbackKind.info:
+        return _FeedbackPalette(
+          background: scheme.secondaryContainer,
+          foreground: scheme.onSecondaryContainer,
+          icon: Icons.info_outline_rounded,
+        );
+      case _FeedbackKind.success:
+        return _FeedbackPalette(
+          background: scheme.tertiaryContainer,
+          foreground: scheme.onTertiaryContainer,
+          icon: Icons.check_circle_outline_rounded,
+        );
+      case _FeedbackKind.error:
+        return _FeedbackPalette(
+          background: scheme.errorContainer,
+          foreground: scheme.onErrorContainer,
+          icon: Icons.error_outline_rounded,
+        );
+      case _FeedbackKind.action:
+        return _FeedbackPalette(
+          background: scheme.inverseSurface,
+          foreground: scheme.onInverseSurface,
+          icon: Icons.touch_app_outlined,
+        );
+    }
   }
 }

@@ -15,6 +15,7 @@ import '../../features/personal_data_sync/personal_data_sync_result.dart';
 import '../../features/personal_data_sync/erke_snapshot_upload.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/webvpn_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../widgets/erke_snapshot_upload_dialog.dart';
 import 'campus_personal_data_permission_screen.dart';
 
@@ -136,12 +137,11 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
           .where((item) => item.status == PersonalSyncItemStatus.success)
           .length;
       final erkeMessage = result.items[PersonalSyncDataset.erke]?.message;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          '已更新 $successful/${result.items.length} 项个人数据'
-          '${erkeMessage == null ? '' : '。$erkeMessage'}',
-        ),
-      ));
+      AppFeedback.success(
+        '已更新 $successful/${result.items.length} 项个人数据'
+        '${erkeMessage == null ? '' : '。$erkeMessage'}',
+        context: context,
+      );
       setState(() => _statuses = _load());
     } finally {
       vpn.dispose();
@@ -210,13 +210,11 @@ class _PersonalDataCenterScreenState extends State<PersonalDataCenterScreen> {
     try {
       await ErkeSnapshotUploadGateway(widget.dio).delete();
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('已删除服务端二课快照')));
+        AppFeedback.success('已删除服务端二课快照', context: context);
       }
     } on ErkeSnapshotUploadException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
+        AppFeedback.error(error.message, context: context);
       }
     }
   }

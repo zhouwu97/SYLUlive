@@ -33,6 +33,9 @@ class _FakePostProvider extends Fake
   List<String>? lastMarketTags;
 
   @override
+  Post? postFor(int postId) => null;
+
+  @override
   Future<CreatePostResult> createPost({
     required int boardId,
     required String content,

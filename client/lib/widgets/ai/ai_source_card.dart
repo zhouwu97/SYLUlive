@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../models/ai_source.dart';
-import '../campus/campus_theme.dart';
 
 class AiSourceCard extends StatelessWidget {
   final AiSource source;
@@ -10,10 +9,12 @@ class AiSourceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
-        border: Border.all(color: CampusTheme.softBorder),
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
         borderRadius: BorderRadius.circular(8),
       ),
       child: _SourceExpansionTile(source: source, loadContent: loadContent),
@@ -43,14 +44,21 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
         widget.source.chunkId <= 0) {
       return;
     }
+    _loadContent();
+  }
+
+  void _loadContent() {
+    final loader = widget.loadContent;
+    if (loader == null || widget.source.chunkId <= 0) return;
     setState(() {
-      _contentRequest = widget.loadContent!(widget.source.chunkId);
+      _contentRequest = loader(widget.source.chunkId);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final source = widget.source;
+    final colors = Theme.of(context).colorScheme;
     return ExpansionTile(
       onExpansionChanged: _handleExpansionChanged,
       tilePadding: const EdgeInsets.symmetric(horizontal: 12),
@@ -64,21 +72,25 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
           AiSourceType.competitionEvidence => Icons.fact_check_outlined,
           AiSourceType.policy => Icons.description_rounded,
         },
-        color: CampusTheme.primary,
+        color: colors.primary,
         size: 20,
       ),
       title: Text(
         source.title,
         maxLines: _expanded ? null : 2,
         overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+        style: TextStyle(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+          color: colors.onSurface,
+        ),
       ),
       subtitle: Text(
         [
           source.typeLabel,
           source.citationLabel,
         ].where((value) => value.isNotEmpty).join(' · '),
-        style: const TextStyle(fontSize: 11),
+        style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
       ),
       children: [
         if (source.type == AiSourceType.competitionCatalog ||
@@ -86,9 +98,8 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
           _SourceMetadataRow(
             icon: Icons.dataset_outlined,
             label: '目录版本',
-            value: source.datasetVersion.isEmpty
-                ? '未标注'
-                : source.datasetVersion,
+            value:
+                source.datasetVersion.isEmpty ? '未标注' : source.datasetVersion,
           ),
           _SourceMetadataRow(
             icon: Icons.tag_rounded,
@@ -154,8 +165,8 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               source.reliabilityNote,
-              style: const TextStyle(
-                color: CampusTheme.subText,
+              style: TextStyle(
+                color: colors.onSurfaceVariant,
                 fontSize: 11.5,
                 height: 1.45,
               ),
@@ -173,21 +184,34 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
                 );
               }
               if (snapshot.hasError) {
-                return const Padding(
-                  padding: EdgeInsets.only(top: 10),
-                  child: Text(
-                    '正文加载失败，请稍后重试',
-                    style: TextStyle(color: CampusTheme.subText, fontSize: 12),
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '来源暂时无法加载',
+                          style: TextStyle(color: colors.error, fontSize: 12),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _loadContent,
+                        child: const Text('重试'),
+                      ),
+                    ],
                   ),
                 );
               }
               final content = snapshot.data;
               if (content == null || content.content.trim().isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.only(top: 10),
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
                   child: Text(
                     '暂无可展开的正文',
-                    style: TextStyle(color: CampusTheme.subText, fontSize: 12),
+                    style: TextStyle(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
                   ),
                 );
               }
@@ -196,12 +220,16 @@ class _SourceExpansionTileState extends State<_SourceExpansionTile> {
                 margin: const EdgeInsets.only(top: 10),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF5F8F5),
+                  color: colors.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   content.content,
-                  style: const TextStyle(fontSize: 12.5, height: 1.55),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.55,
+                    color: colors.onSurface,
+                  ),
                 ),
               );
             },
@@ -231,19 +259,20 @@ class _SourceMetadataRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 15, color: CampusTheme.subText),
+          Icon(icon, size: 15, color: colors.onSurfaceVariant),
           const SizedBox(width: 6),
           SizedBox(
             width: 58,
             child: Text(
               label,
-              style: const TextStyle(
-                color: CampusTheme.subText,
+              style: TextStyle(
+                color: colors.onSurfaceVariant,
                 fontSize: 11.5,
                 height: 1.4,
               ),

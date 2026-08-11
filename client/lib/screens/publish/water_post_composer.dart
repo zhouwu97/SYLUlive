@@ -15,6 +15,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
 import '../../services/post_draft_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../widgets/water_section/section_avatar.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
@@ -76,7 +77,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   @override
   void onImageAdded(XFile image) {
     _scheduleDraftSave();
-    setState(() => _images.add(PublishImageItem.local(image, _nextLocalImageId())));
+    setState(
+        () => _images.add(PublishImageItem.local(image, _nextLocalImageId())));
   }
 
   // ---------------------------------------------------------------------------
@@ -312,23 +314,13 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     // C-1：标题可选，正文 required。
     if (content.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('写点内容再发布吧'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppFeedback.error('写点内容再发布吧', context: context);
       }
       return false;
     }
     if (content.length > _maxContentLength) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('正文最多 2000 字'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppFeedback.error('正文最多 2000 字', context: context);
       }
       return false;
     }
@@ -354,12 +346,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       // C-3：并发上传本地图（失败项可重试，不提交）。
       if (!await _uploadLocalImages(postProvider)) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('图片上传失败，请点击图片重试'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          AppFeedback.error('图片上传失败，请点击图片重试', context: context);
         }
         return;
       }
@@ -368,11 +355,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       final fileIds = _orderedFileIds();
       if (fileIds == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('图片上传失败，请检查网络或图片是否过大'),
-              backgroundColor: Colors.red,
-            ),
+          AppFeedback.error(
+            '图片上传失败，请检查网络或图片是否过大',
+            context: context,
           );
         }
         return;
@@ -409,18 +394,14 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         if (!mounted) return;
         Navigator.of(context).pop(true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_userFacingPostError(result.errorMessage)),
-            backgroundColor: Colors.red,
-          ),
+        AppFeedback.error(
+          _userFacingPostError(result.errorMessage),
+          context: context,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('发布失败：$e'), backgroundColor: Colors.red),
-        );
+        AppFeedback.error('发布失败：$e', context: context);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -469,26 +450,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              lines.first,
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            for (final line in lines.skip(1)) ...[
-              const SizedBox(height: 2),
-              Text(line),
-            ],
-          ],
-        ),
-      ),
-    );
+    AppFeedback.success(lines.join('\n'), context: context);
   }
 
   // ---------------------------------------------------------------------------

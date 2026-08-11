@@ -24,6 +24,8 @@ func newCanteenTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(&models.WaterTeamRecruitment{}, &models.WaterTeamApplication{},
 		&models.User{},
+		&models.File{},
+		&models.FileUploadGrant{},
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},

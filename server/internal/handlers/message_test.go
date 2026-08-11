@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -505,12 +507,26 @@ func TestMessageSendImageResponseAndPush(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("send image status=%d body=%s", response.Code, response.Body.String())
 	}
-	var message models.Message
+	var message PrivateMessageDTO
 	if err := json.Unmarshal(response.Body.Bytes(), &message); err != nil {
 		t.Fatalf("decode image message: %v", err)
 	}
-	if message.File == nil || message.File.Path != file.Path {
+	privateURL := fmt.Sprintf("/api/messages/files/%d", file.ID)
+	if message.File == nil || message.File.ID != file.ID || message.File.DownloadURL != privateURL {
 		t.Fatalf("expected response to include image file: %s", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), file.Path) {
+		t.Fatalf("private file path leaked in response: %s", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), `"path"`) {
+		t.Fatalf("private file path field must not be returned: %s", response.Body.String())
+	}
+	var stored models.File
+	if err := db.First(&stored, file.ID).Error; err != nil {
+		t.Fatalf("load stored file: %v", err)
+	}
+	if stored.Status != "active" || stored.AccessScope != models.FileAccessPrivate {
+		t.Fatalf("private file state=%+v", stored)
 	}
 
 	select {
@@ -530,6 +546,66 @@ func TestMessageSendImageResponseAndPush(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected private message push call")
+	}
+}
+
+func TestPrivateMessageFileRequiresConversationMembership(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	createMessageTestUser(t, db, 3, "Carol")
+	uploadDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(uploadDir, "private.png"), []byte("private-image"), 0o600); err != nil {
+		t.Fatalf("write private file: %v", err)
+	}
+	file := models.File{
+		Hash: "private-hash", Path: "/uploads/private.png", Size: 13,
+		MimeType: "image/png", UploaderID: 1, Status: "active", AccessScope: models.FileAccessPrivate,
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	conversation := models.Conversation{User1ID: 1, User2ID: 2}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	message := models.Message{ConversationID: conversation.ID, SenderID: 1, Content: "[图片]", FileID: &file.ID}
+	if err := db.Create(&message).Error; err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	handler := NewMessageHandler(db)
+	handler.SetUploadDir(uploadDir)
+	for _, testCase := range []struct {
+		name   string
+		userID uint
+		status int
+	}{
+		{name: "sender", userID: 1, status: http.StatusOK},
+		{name: "recipient", userID: 2, status: http.StatusOK},
+		{name: "unrelated", userID: 3, status: http.StatusNotFound},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			response := performMessageRequest(t, handler.ServePrivateFile, http.MethodGet,
+				"/api/messages/files/"+fmt.Sprint(file.ID),
+				gin.Params{{Key: "file_id", Value: fmt.Sprint(file.ID)}}, testCase.userID, "")
+			if response.Code != testCase.status {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, testCase.status, response.Body.String())
+			}
+			if testCase.status == http.StatusOK && response.Body.String() != "private-image" {
+				t.Fatalf("body=%q", response.Body.String())
+			}
+		})
+	}
+
+	publicHandler := NewUploadHandler(uploadDir, 1024, db)
+	publicResponse := httptest.NewRecorder()
+	publicContext, _ := gin.CreateTestContext(publicResponse)
+	publicContext.Request = httptest.NewRequest(http.MethodGet, "/uploads/private.png", nil)
+	publicContext.Params = gin.Params{{Key: "filepath", Value: "/private.png"}}
+	publicHandler.ServePublic(publicContext)
+	if publicResponse.Code != http.StatusNotFound {
+		t.Fatalf("private file public route status=%d body=%s", publicResponse.Code, publicResponse.Body.String())
 	}
 }
 

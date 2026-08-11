@@ -21,22 +21,27 @@ func EnsureSystemUser(tx *gorm.DB) (models.User, error) {
 	err := tx.Where("student_id = ?", SystemUserStudentID).First(&user).Error
 	if err == nil {
 		updates := map[string]any{}
+		roleChanged := user.Role != models.RoleAdmin
 		if user.Nickname != SystemUserNickname {
 			updates["nickname"] = SystemUserNickname
 		}
 		if user.PasswordHash == "" {
 			updates["password_hash"] = "system_auto_no_login"
 		}
-		if user.Role != models.RoleAdmin {
-			updates["role"] = models.RoleAdmin
-		}
 		if user.CreditScore == 0 {
 			updates["credit_score"] = 100
+		}
+		if roleChanged {
+			if err := UpdateUserRoleAndInvalidateToken(tx, user.ID, models.RoleAdmin); err != nil {
+				return models.User{}, err
+			}
 		}
 		if len(updates) > 0 {
 			if err := tx.Model(&user).Updates(updates).Error; err != nil {
 				return models.User{}, err
 			}
+		}
+		if roleChanged || len(updates) > 0 {
 			if err := tx.First(&user, user.ID).Error; err != nil {
 				return models.User{}, err
 			}

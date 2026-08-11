@@ -14,6 +14,7 @@ import '../models/ai_run.dart';
 import '../models/ai_run_event.dart';
 import '../models/ai_source.dart';
 import '../services/ai_assistant_service.dart';
+import '../utils/ai_citation_mapper.dart';
 
 enum AiConnectionState {
   idle,
@@ -482,7 +483,18 @@ class AiAssistantProvider extends ChangeNotifier {
       }
       if (run.state == 'completed') {
         _connectionState = AiConnectionState.completed;
-        _upsertAssistant(_streamedText, AiMessageStatus.completed);
+        final hasChunkReferences = extractAiChunkIds(_streamedText).isNotEmpty;
+        _upsertAssistant(
+          _streamedText,
+          AiMessageStatus.completed,
+          sources: _sources,
+          sourceRecoveryState: _sources.isEmpty
+              ? hasChunkReferences
+                  ? AiSourceRecoveryState.loading
+                  : AiSourceRecoveryState.notNeeded
+              : AiSourceRecoveryState.loaded,
+        );
+        if (_sources.isEmpty) await _resolveSourcesForRun(runId);
         await _finishRun();
       } else if (run.state == 'failed' || run.state == 'expired') {
         _connectionState = AiConnectionState.failed;
@@ -554,9 +566,12 @@ class AiAssistantProvider extends ChangeNotifier {
         }
         break;
       case AiRunEventType.sources:
-        _sources = List<AiSource>.unmodifiable(event.sources);
+        _sources = List<AiSource>.unmodifiable(
+          deduplicateAiSources(event.sources),
+        );
         _upsertAssistant(_streamedText, AiMessageStatus.streaming,
             sources: _sources,
+            sourceRecoveryState: AiSourceRecoveryState.loaded,
             personalDataEvidence: _evidenceForRun(event.runId));
         break;
       case AiRunEventType.personalDataEvidence:
@@ -586,9 +601,18 @@ class AiAssistantProvider extends ChangeNotifier {
       case AiRunEventType.completed:
         _connectionState = AiConnectionState.completed;
         if (event.quota != null) _quota = event.quota;
+        final hasChunkReferences = extractAiChunkIds(_streamedText).isNotEmpty;
         _upsertAssistant(_streamedText, AiMessageStatus.completed,
             sources: _sources,
+            sourceRecoveryState: _sources.isEmpty
+                ? hasChunkReferences
+                    ? AiSourceRecoveryState.loading
+                    : AiSourceRecoveryState.notNeeded
+                : AiSourceRecoveryState.loaded,
             personalDataEvidence: _evidenceForRun(event.runId));
+        if (_sources.isEmpty && event.runId.isNotEmpty) {
+          unawaited(_resolveSourcesForRun(event.runId));
+        }
         unawaited(_finishRun());
         break;
       case AiRunEventType.failed:
@@ -597,6 +621,9 @@ class AiAssistantProvider extends ChangeNotifier {
         if (_streamedText.isNotEmpty) {
           _upsertAssistant(_streamedText, AiMessageStatus.failed,
               sources: _sources,
+              sourceRecoveryState: _sources.isEmpty
+                  ? AiSourceRecoveryState.failed
+                  : AiSourceRecoveryState.loaded,
               personalDataEvidence: _evidenceForRun(event.runId));
         }
         break;
@@ -617,31 +644,126 @@ class AiAssistantProvider extends ChangeNotifier {
   }
 
   Future<void> _restoreSources(List<AiConversationMessage> history) async {
-    for (final message in history
-        .where((item) => item.role == 'assistant' && item.runId != null)) {
+    // 新 DTO 已直接携带 sources；只有旧历史缺少来源时才逐 Run 请求兼容
+    // endpoint，绝不再为每条历史消息 replay 一遍完整 SSE。
+    for (final message in history.where(
+      (item) => item.role == 'assistant' && item.runId != null,
+    )) {
+      final index = _messages.indexWhere((item) => item.id == message.id);
+      if (index < 0) continue;
+      final inlineSources = deduplicateAiSources(message.sources);
+      if (inlineSources.isNotEmpty) {
+        _messages[index] = _messages[index].copyWith(
+          sources: inlineSources,
+          sourceRecoveryState: AiSourceRecoveryState.loaded,
+        );
+        continue;
+      }
+      await _resolveSourcesForMessage(
+        messageId: message.id,
+        runId: message.runId!,
+        content: message.content,
+      );
+    }
+  }
+
+  Future<void> retryMessageSources(AiChatMessage message) async {
+    final runId = message.requestId.trim();
+    if (runId.isEmpty) return;
+    await _resolveSourcesForMessage(
+      messageId: message.id,
+      runId: runId,
+      content: message.content,
+      force: true,
+    );
+  }
+
+  Future<void> _resolveSourcesForRun(String runId) async {
+    final index = _messages.lastIndexWhere(
+      (item) => item.role == AiMessageRole.assistant && item.requestId == runId,
+    );
+    if (index < 0) return;
+    final message = _messages[index];
+    await _resolveSourcesForMessage(
+      messageId: message.id,
+      runId: runId,
+      content: message.content,
+    );
+  }
+
+  Future<void> _resolveSourcesForMessage({
+    required String messageId,
+    required String runId,
+    required String content,
+    bool force = false,
+  }) async {
+    final index = _messages.indexWhere((item) => item.id == messageId);
+    if (index < 0) return;
+    final current = _messages[index];
+    if (!force && current.sources.isNotEmpty) return;
+    final chunkIds = extractAiChunkIds(content);
+    if (chunkIds.isEmpty) return;
+
+    _messages[index] = current.copyWith(
+      sourceRecoveryState: AiSourceRecoveryState.loading,
+    );
+    _notify();
+
+    List<AiSource> resolved = const [];
+    try {
+      resolved = deduplicateAiSources(await _service.getRunSources(runId));
+    } catch (_) {
+      // 旧服务端没有来源聚合接口时，继续按 chunk 读取兼容正文。
+    }
+
+    if (resolved.isEmpty) {
+      resolved = await _loadFallbackSources(chunkIds);
+    }
+    final resolvedChunkIds = resolved
+        .expand(
+          (source) => source.chunkIds.isNotEmpty
+              ? source.chunkIds
+              : (source.chunkId > 0 ? [source.chunkId] : const <int>[]),
+        )
+        .toSet();
+    final state = chunkIds.every(resolvedChunkIds.contains)
+        ? AiSourceRecoveryState.loaded
+        : AiSourceRecoveryState.failed;
+    final latestIndex = _messages.indexWhere((item) => item.id == messageId);
+    if (latestIndex < 0) return;
+    _messages[latestIndex] = _messages[latestIndex].copyWith(
+      sources: resolved,
+      sourceRecoveryState: state,
+    );
+    if (_run?.id == runId) {
+      _sources = List<AiSource>.unmodifiable(resolved);
+    }
+    _notify();
+  }
+
+  Future<List<AiSource>> _loadFallbackSources(List<int> chunkIds) async {
+    final result = <AiSource>[];
+    for (final chunkId in chunkIds) {
       try {
-        List<AiSource> restored = const [];
-        final evidence = <AiPersonalDataEvidence>[];
-        await for (final event in _service.streamRunEvents(message.runId!)) {
-          if (event.type == AiRunEventType.sources) restored = event.sources;
-          if (event.type == AiRunEventType.personalDataEvidence) {
-            _mergeEvidenceList(evidence, event.personalDataEvidence);
-          }
-          if (_isTerminal(event.type)) break;
-        }
-        if (restored.isNotEmpty || evidence.isNotEmpty) {
-          final index = _messages.indexWhere((item) => item.id == message.id);
-          if (index >= 0) {
-            _messages[index] = _messages[index].copyWith(
-              sources: restored,
-              personalDataEvidence: evidence,
-            );
-          }
-        }
+        final content = await _service.getSourceContent(chunkId);
+        result.add(
+          AiSource(
+            type: AiSourceType.policy,
+            chunkId: chunkId,
+            chunkIds: [chunkId],
+            documentId: content.documentId,
+            title: content.title,
+            locators: [
+              if (content.sectionTitle.trim().isNotEmpty) content.sectionTitle,
+              if (content.locator.trim().isNotEmpty) content.locator,
+            ],
+          ),
+        );
       } catch (_) {
-        // 历史来源恢复失败不阻断正文展示。
+        // 单个 chunk 失败不阻断其它来源；最终由 failed 状态明确告知用户。
       }
     }
+    return deduplicateAiSources(result);
   }
 
   AiChatMessage _fromHistory(AiConversationMessage message) {
@@ -652,6 +774,10 @@ class AiAssistantProvider extends ChangeNotifier {
           message.role == 'user' ? AiMessageRole.user : AiMessageRole.assistant,
       content: message.content,
       status: AiMessageStatus.completed,
+      sources: deduplicateAiSources(message.sources),
+      sourceRecoveryState: message.sources.isNotEmpty
+          ? AiSourceRecoveryState.loaded
+          : AiSourceRecoveryState.notNeeded,
       createdAt: message.createdAt ?? DateTime.now(),
     );
   }
@@ -660,6 +786,7 @@ class AiAssistantProvider extends ChangeNotifier {
     String text,
     AiMessageStatus status, {
     List<AiSource>? sources,
+    AiSourceRecoveryState? sourceRecoveryState,
     List<AiPersonalDataEvidence>? personalDataEvidence,
   }) {
     if (text.isEmpty &&
@@ -676,6 +803,7 @@ class AiAssistantProvider extends ChangeNotifier {
         content: text.isEmpty ? _messages[index].content : text,
         status: status,
         sources: sources,
+        sourceRecoveryState: sourceRecoveryState,
         personalDataEvidence: personalDataEvidence,
       );
       return;
@@ -688,6 +816,8 @@ class AiAssistantProvider extends ChangeNotifier {
       status: status,
       createdAt: DateTime.now(),
       sources: sources ?? const [],
+      sourceRecoveryState:
+          sourceRecoveryState ?? AiSourceRecoveryState.notNeeded,
       personalDataEvidence: personalDataEvidence ?? const [],
     ));
   }
@@ -759,11 +889,12 @@ class AiAssistantProvider extends ChangeNotifier {
         case AiQuickPromptFeature.schedule:
           return features?.scheduleWindows == true;
         case AiQuickPromptFeature.competitionCompare:
-          return features?.hy3CompetitionCompare == true;
+          // 这三项是空状态中的固定“快捷能力”，不进入“猜你想问”的轮换池。
+          return false;
         case AiQuickPromptFeature.academicAnalysis:
-          return features?.hy3AcademicAnalysis == true;
+          return false;
         case AiQuickPromptFeature.weekPlan:
-          return features?.hy3WeekPlan == true;
+          return false;
       }
     }).toList();
     if (pool.isEmpty) {

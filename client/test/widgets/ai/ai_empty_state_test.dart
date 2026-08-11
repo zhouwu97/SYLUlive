@@ -4,7 +4,7 @@ import 'package:shenliyuan/models/ai_quick_prompt.dart';
 import 'package:shenliyuan/widgets/ai/ai_empty_state.dart';
 
 void main() {
-  testWidgets('AI 业务入口合并到常用问题且保持四项紧凑布局', (tester) async {
+  testWidgets('AI 业务入口与猜你想问分区展示且保持紧凑布局', (tester) async {
     String? selectedPrompt;
     await tester.pumpWidget(
       MaterialApp(
@@ -46,12 +46,13 @@ void main() {
       ),
     );
 
-    expect(find.text('常用问题'), findsOneWidget);
+    expect(find.text('快捷能力'), findsOneWidget);
+    expect(find.text('猜你想问'), findsOneWidget);
     expect(find.text('学业分析'), findsOneWidget);
     expect(find.text('本周计划'), findsOneWidget);
     expect(find.text('学业考试'), findsOneWidget);
     expect(find.text('教学管理'), findsOneWidget);
-    expect(find.text('奖助评优'), findsNothing);
+    expect(find.text('奖助评优'), findsOneWidget);
 
     await tester.tap(find.text('学业分析'));
     expect(selectedPrompt, '分析我的学业情况，找出主要风险并给出改进建议');

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shenliyuan/models/post.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
@@ -27,6 +28,9 @@ class FakePostProvider extends Fake
   int createPostCalls = 0;
   String? lastContent;
   String? lastTitle;
+
+  @override
+  Post? postFor(int postId) => null;
 
   @override
   Future<CreatePostResult> createPost({

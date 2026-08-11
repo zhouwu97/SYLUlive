@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../campus/campus_theme.dart';
 
 class AiQuickActionCard extends StatelessWidget {
   final IconData icon;
@@ -17,15 +16,16 @@ class AiQuickActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE3E8E5), width: 1),
+          border: Border.all(color: colors.outlineVariant, width: 1),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -33,13 +33,13 @@ class AiQuickActionCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: CampusTheme.primaryLight,
+                color: colors.primaryContainer,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
                 icon,
                 size: 18,
-                color: CampusTheme.primary,
+                color: colors.primary,
               ),
             ),
             const SizedBox(width: 10),
@@ -50,18 +50,18 @@ class AiQuickActionCard extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF20272B),
+                      color: colors.onSurface,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: Color(0xFF7B8388),
+                      color: colors.onSurfaceVariant,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -92,29 +92,30 @@ class AiPrimaryActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: CampusTheme.primaryLight,
+          color: colors.primaryContainer,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-              color: CampusTheme.primary.withValues(alpha: 0.2), width: 1),
+              color: colors.primary.withValues(alpha: 0.2), width: 1),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.5),
+                color: colors.onPrimaryContainer.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
                 icon,
                 size: 24,
-                color: CampusTheme.primary,
+                color: colors.onPrimaryContainer,
               ),
             ),
             const SizedBox(width: 14),
@@ -128,7 +129,7 @@ class AiPrimaryActionCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: CampusTheme.primary,
+                      color: colors.onPrimaryContainer,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -136,7 +137,7 @@ class AiPrimaryActionCard extends StatelessWidget {
                     subtitle,
                     style: TextStyle(
                       fontSize: 12,
-                      color: CampusTheme.primary.withValues(alpha: 0.8),
+                      color: colors.onPrimaryContainer.withValues(alpha: 0.8),
                     ),
                   ),
                 ],
@@ -145,7 +146,7 @@ class AiPrimaryActionCard extends StatelessWidget {
             Icon(
               Icons.chevron_right_rounded,
               size: 20,
-              color: CampusTheme.primary,
+              color: colors.onPrimaryContainer,
             ),
           ],
         ),
@@ -168,15 +169,16 @@ class AiPromptCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE3E8E5), width: 1),
+          border: Border.all(color: colors.outlineVariant, width: 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -184,18 +186,18 @@ class AiPromptCard extends StatelessWidget {
           children: [
             Text(
               category,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF147C72),
+                color: colors.primary,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               prompt,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: Color(0xFF20272B),
+                color: colors.onSurface,
                 fontWeight: FontWeight.w500,
               ),
               maxLines: 2,

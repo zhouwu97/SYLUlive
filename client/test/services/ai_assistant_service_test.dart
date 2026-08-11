@@ -111,6 +111,41 @@ void main() {
     expect(identical(firstPair.first, cached), isTrue);
   });
 
+  test('从 Run 来源聚合接口恢复来源 DTO', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.path, '/ai/runs/run-1/sources');
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'sources': [
+                  {
+                    'type': 'policy',
+                    'primary_chunk_id': 18,
+                    'chunk_ids': [18, 19],
+                    'document_id': 4,
+                    'title': '奖助学金管理办法',
+                  },
+                ],
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final sources = await AiAssistantService(dio).getRunSources('run-1');
+
+    expect(sources, hasLength(1));
+    expect(sources.single.chunkId, 18);
+    expect(sources.single.chunkIds, [18, 19]);
+    expect(sources.single.title, '奖助学金管理办法');
+  });
+
   test('一次性授权只提交 Run、scope 和决定', () async {
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
     dio.interceptors.add(

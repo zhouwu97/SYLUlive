@@ -433,8 +433,9 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     if (updated != null) {
       setState(() => _post = updated);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(provider.mutationError(pollId) ?? '提前结束投票失败')),
+      AppFeedback.error(
+        provider.mutationError(pollId) ?? '提前结束投票失败',
+        context: context,
       );
     }
   }

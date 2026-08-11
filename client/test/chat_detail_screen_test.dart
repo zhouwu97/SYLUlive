@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +24,9 @@ class _FakeAuthProvider extends ChangeNotifier implements AuthProvider {
 
   @override
   User get user => currentUser;
+
+  @override
+  String? get token => 'test-token';
 
   @override
   bool get isLoggedIn => true;
@@ -398,9 +402,7 @@ void main() {
     final composerTopWithKeyboard =
         tester.getTopLeft(find.byKey(const ValueKey('chat-composer'))).dy;
     expect(
-      tester
-          .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
-          .height,
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
       356,
     );
 
@@ -480,9 +482,7 @@ void main() {
     await _pumpFrames(tester, count: 2);
     expect(find.byType(AppEmojiPanel), findsOneWidget);
     expect(
-      tester
-          .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
-          .height,
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
       300,
     );
 
@@ -505,9 +505,7 @@ void main() {
     }
     await _pumpFrames(tester, count: 3);
     expect(
-      tester
-          .getSize(find.byKey(const ValueKey('chat-bottom-viewport')))
-          .height,
+      tester.getSize(find.byKey(const ValueKey('chat-bottom-viewport'))).height,
       356,
     );
     await _disposeChat(tester, provider);
@@ -552,6 +550,34 @@ void main() {
       await EmojiFavoriteService.instance.containsImage(imagePath),
       isTrue,
     );
+    await _disposeChat(tester, provider);
+  });
+
+  testWidgets('private message image sends the bearer token', (tester) async {
+    final provider = MessageProvider(
+      _chatDio(messages: [
+        {
+          'id': 89,
+          'conversation_id': 42,
+          'sender_id': 3,
+          'content': '',
+          'file_id': 99,
+          'file': {
+            'id': 99,
+            'mime_type': 'image/jpeg',
+            'size': 1024,
+            'download_url': '/api/messages/files/99',
+          },
+          'created_at': '2026-08-11T12:00:00Z',
+        },
+      ]),
+    );
+    await _pumpChat(tester, provider);
+
+    final image = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage).first,
+    );
+    expect(image.httpHeaders, {'Authorization': 'Bearer test-token'});
     await _disposeChat(tester, provider);
   });
 

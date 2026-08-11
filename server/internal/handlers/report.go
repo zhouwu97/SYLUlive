@@ -13,7 +13,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+var errReportAlreadyHandled = errors.New("report already handled")
 
 // ReportHandler 举报处理器
 type ReportHandler struct {
@@ -193,11 +196,11 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 	}
 	var report models.Report
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&report, reportID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&report, reportID).Error; err != nil {
 			return err
 		}
 		if report.Status != models.ReportStatusPending {
-			return fmt.Errorf("report_already_handled")
+			return errReportAlreadyHandled
 		}
 		now := time.Now()
 		report.Status = models.ReportStatus(input.Status)
@@ -295,7 +298,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "举报或目标内容不存在"})
-		case err.Error() == "report_already_handled":
+		case errors.Is(err, errReportAlreadyHandled):
 			c.JSON(http.StatusConflict, gin.H{"error": "举报已处理，请勿重复提交"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "处理举报失败"})

@@ -14,11 +14,13 @@ import '../utils/post_image_cache.dart';
 class ImageViewerScreen extends StatefulWidget {
   final List<String> imageUrls;
   final int initialIndex;
+  final Map<String, String> httpHeaders;
 
   const ImageViewerScreen({
     super.key,
     required this.imageUrls,
     this.initialIndex = 0,
+    this.httpHeaders = const {},
   });
 
   @override
@@ -97,7 +99,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     try {
       final response = await Dio().get<List<int>>(
         url,
-        options: Options(responseType: ResponseType.bytes),
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: widget.httpHeaders,
+        ),
       );
       final data = response.data;
       if (data != null && data.isNotEmpty) {
@@ -147,6 +152,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   Future<Uint8List?> _readVisibleImage(String url) async {
     final provider = CachedNetworkImageProvider(
       url,
+      headers: widget.httpHeaders,
       cacheManager: PostImageCache.manager,
     );
     final stream = provider.resolve(const ImageConfiguration());
@@ -354,6 +360,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                     : CachedNetworkImage(
                         cacheManager: PostImageCache.manager,
                         imageUrl: widget.imageUrls[index],
+                        httpHeaders: widget.httpHeaders,
                         fit: BoxFit.contain,
                         placeholder: (context, url) => const Center(
                           child: CircularProgressIndicator(color: Colors.white),

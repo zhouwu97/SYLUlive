@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -153,6 +154,50 @@ func TestGetSourceChunkOnlyReturnsPublishedKnowledge(t *testing.T) {
 	require.NoError(t, db.Model(&document).Update("status", models.KnowledgeStatusRevoked).Error)
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	require.Equal(t, http.StatusNotFound, response.Code, response.Body.String())
+}
+
+func TestGetRunSourcesOnlyReturnsOwnedPersistedSources(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.AIRun{}, &models.AIEvent{}))
+
+	userID := uint(41)
+	runID := uuid.NewString()
+	require.NoError(t, db.Create(&models.AIRun{
+		ID: runID, UserID: userID, ConversationID: uuid.NewString(), ClientRequestID: uuid.NewString(),
+		State: models.AIRunStateCompleted, Provider: "mock", Model: "mock", MessageHash: "hash",
+		MessageLength: 1, ExpiresAt: time.Now().Add(time.Hour),
+	}).Error)
+	payload, err := json.Marshal(map[string]any{
+		"sources": []map[string]any{{
+			"primary_chunk_id": 18,
+			"document_id":      3,
+			"title":            "学生手册",
+			"citation_numbers": []int{1},
+		}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&models.AIEvent{
+		RunID: runID, Seq: 1, Type: "sources.ready", Payload: payload, CreatedAt: time.Now(),
+	}).Error)
+
+	router := gin.New()
+	router.GET("/runs/:id/sources", func(c *gin.Context) {
+		c.Set("user_id", userID)
+		NewAIRuntimeHandler(db, nil).GetRunSources(c)
+	})
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs/"+runID+"/sources", nil))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Contains(t, response.Body.String(), `"primary_chunk_id":18`)
+	require.Contains(t, response.Body.String(), `"title":"学生手册"`)
+
+	response = httptest.NewRecorder()
+	userID = 99
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs/"+runID+"/sources", nil))
 	require.Equal(t, http.StatusNotFound, response.Code, response.Body.String())
 }
 

@@ -139,8 +139,8 @@ _DOMAIN_DOCUMENT_RULES: Sequence[tuple[Sequence[str], str, str, Sequence[str]]] 
     (
         ("学位证", "学士学位", "授予学位"),
         "bachelor_degree",
-        "national_bachelor_degree_regulation",
-        ("学士学位", "学位授予", "学位授予条件"),
+        "school_bachelor_degree_requirement",
+        ("学士学位", "学位授予", "学位课程平均学分绩点", "课程不及格"),
     ),
     (
         ("计算机科学与技术", "计算机专业", "通信工程", "电子信息工程", "智能科学与技术"),

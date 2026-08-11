@@ -1,9 +1,9 @@
 {
   "version": "v0.8",
-  "source_commit": "99cbb345bd7a518fd749588629a0fc7942750604",
-  "document_count": 9,
+  "source_commit": "eb31e3af46ab2c877fa922ec71d38466ffb46968",
+  "document_count": 10,
   "sha256_canonicalization": "newline-lf-v1",
-  "documents_sha256": "251bb2f4516ec00abc4e58d553769b55ae3438aa0534e24d003d58ce32377b18",
+  "documents_sha256": "54c13f7fc42e0ae31fa9c08c7ba5120874847e13687362745a2bb472cf672c3c",
   "intent_contract_sha256": "7ea8731be114570cf680a85d9a1d8c5899f4625b2b22408e3e62a48f8137d4ee",
   "unresolved_source_conflicts": [
     "school_work_study_policy:failed_course_count_exactly_two"

@@ -175,7 +175,7 @@ def test_policy_query_planner_routes_direct_aid_policy_names(
 @pytest.mark.parametrize(
     ("question", "document_type"),
     [
-        ("学位证怎么拿", "national_bachelor_degree_regulation"),
+        ("学位证怎么拿", "school_bachelor_degree_requirement"),
         ("计算机专业都学啥", "official_major_profile"),
         ("通信工程以后干什么", "official_major_profile"),
         ("能换到别的专业吗", "school_undergraduate_major_transfer_policy"),

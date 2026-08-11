@@ -6,7 +6,6 @@ import 'package:shenliyuan/models/ai_capabilities.dart';
 import 'package:shenliyuan/models/ai_chat_message.dart';
 import 'package:shenliyuan/models/ai_quota.dart';
 import 'package:shenliyuan/models/ai_run_event.dart';
-import 'package:shenliyuan/models/ai_source.dart';
 import 'package:shenliyuan/providers/ai_assistant_provider.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
 
@@ -310,7 +309,7 @@ void main() {
     expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
   });
 
-  test('完成事件缺少 sources 时从 Run 来源接口恢复引用', () async {
+  test('完成事件中的笼统来源标记会从 Run 来源接口恢复引用', () async {
     final requestedPaths = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
     dio.interceptors.add(
@@ -387,7 +386,7 @@ void main() {
       runId: 'run-1',
       seq: 1,
       type: AiRunEventType.delta,
-      text: '请参考 [chunk:18]',
+      text: '请参考 [来源]',
     ));
     provider.applyRunEvent(const AiRunEvent(
       runId: 'run-1',

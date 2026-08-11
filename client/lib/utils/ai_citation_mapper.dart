@@ -20,6 +20,14 @@ class AiCitationMapping {
   bool get hasUnresolvedChunks => unresolvedChunkIds.isNotEmpty;
 }
 
+/// 旧模型有时会输出笼统的“[来源]”，而不是可校验的公开引用编号。
+/// 只要消息存在这种标记，就需要尝试恢复 Run 完成时持久化的来源卡片。
+bool hasAiCitationMarkers(String content) {
+  return RegExp(r'\[chunk:[^\]\s]+\]', caseSensitive: false)
+          .hasMatch(content) ||
+      RegExp(r'\[(?:来源|source)\]', caseSensitive: false).hasMatch(content);
+}
+
 AiCitationMapping resolveMessageSources({
   required String content,
   required List<AiSource> sources,
@@ -65,8 +73,25 @@ AiCitationMapping resolveMessageSources({
     },
   );
 
+  final orderedCitations = renderedSources
+      .expand((source) => source.citationNumbers)
+      .toList(growable: false);
+  var genericCitationIndex = 0;
+  final normalizedRendered = rendered.replaceAllMapped(
+    RegExp(r'\[(?:来源|source)\]', caseSensitive: false),
+    (_) {
+      if (orderedCitations.isEmpty) return '[来源暂不可用]';
+      final citation = orderedCitations[
+          genericCitationIndex < orderedCitations.length
+              ? genericCitationIndex
+              : orderedCitations.length - 1];
+      genericCitationIndex++;
+      return '[$citation]';
+    },
+  );
+
   return AiCitationMapping(
-    content: rendered,
+    content: normalizedRendered,
     sources: renderedSources,
     chunkToCitation: Map.unmodifiable(chunkToCitation),
     unresolvedChunkIds: List.unmodifiable(unresolved),

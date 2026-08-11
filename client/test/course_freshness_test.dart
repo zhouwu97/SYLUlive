@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -129,7 +127,9 @@ class _BoundEduProvider extends EduProvider {
 Future<void> _seedVault(
   AccountScopedSnapshotStore store, {
   required DateTime fetchedAt,
+  DateTime? semesterStart,
 }) async {
+  final configuredSemesterStart = semesterStart ?? DateTime.now();
   await store.write(
     type: PersonalDataType.schedule,
     schemaVersion: 1,
@@ -155,7 +155,7 @@ Future<void> _seedVault(
             },
           ],
           'hidden_course_ids': <int>[],
-          'semester_start': null,
+          'semester_start': configuredSemesterStart.toUtc().toIso8601String(),
           'archives': <dynamic>[],
           'active_archive_id': null,
         },
@@ -167,6 +167,8 @@ Future<void> _seedVault(
 Future<_CourseTestPage> _pumpCourse(
   WidgetTester tester, {
   required CourseScheduleProvider scheduleProvider,
+  ThemeMode themeMode = ThemeMode.light,
+  double textScale = 1,
 }) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.physicalSize = const Size(400, 800);
@@ -211,7 +213,18 @@ Future<_CourseTestPage> _pumpCourse(
         ),
         ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
       ],
-      child: const MaterialApp(home: CourseScheduleScreen()),
+      child: MaterialApp(
+        theme: ThemeData.light(),
+        darkTheme: ThemeData.dark(),
+        themeMode: themeMode,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(textScale),
+          ),
+          child: child!,
+        ),
+        home: const CourseScheduleScreen(),
+      ),
     ),
   );
   await tester.pump(const Duration(milliseconds: 50));
@@ -305,6 +318,50 @@ void main() {
     await tester.tap(find.byKey(pill));
     await tester.pumpAndSettle();
     expect(find.byKey(pill), findsNothing);
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('回到本周操作位于顶部工具区，不额外占用表头行', (tester) async {
+    final store = _MemorySnapshotStore();
+    await _seedVault(store, fetchedAt: DateTime.now());
+    final provider = _newProvider(store);
+    final page = await _pumpCourse(tester, scheduleProvider: provider);
+
+    await tester.dragFrom(const Offset(220, 400), const Offset(-250, 0));
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('schedule-back-to-current-week'));
+    final syncStatus = find.textContaining('已同步');
+    expect(button, findsOneWidget);
+    expect(tester.getSize(button).width, greaterThanOrEqualTo(44));
+    expect(
+      tester.getTopLeft(button).dy,
+      lessThan(tester.getTopLeft(syncStatus).dy),
+    );
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('大字体深色模式下顶部回到本周操作不溢出', (tester) async {
+    final store = _MemorySnapshotStore();
+    await _seedVault(store, fetchedAt: DateTime.now());
+    final provider = _newProvider(store);
+    final page = await _pumpCourse(
+      tester,
+      scheduleProvider: provider,
+      themeMode: ThemeMode.dark,
+      textScale: 1.3,
+    );
+
+    await tester.dragFrom(const Offset(220, 400), const Offset(-250, 0));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('schedule-back-to-current-week')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
 
     await _disposeCourse(tester, page);
   });

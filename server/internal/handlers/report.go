@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"shenliyuan/internal/models"
@@ -31,22 +33,39 @@ type CreateReportInput struct {
 	Reason     string `json:"reason" binding:"required"`
 }
 
+type reportCreateError struct {
+	status  int
+	code    string
+	message string
+}
+
+func (e *reportCreateError) Error() string { return e.message }
+
 // Create 创建举报
 func (h *ReportHandler) Create(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID := c.GetUint("user_id")
 
 	var input CreateReportInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if input.TargetType != "post" && input.TargetType != "reply" && input.TargetType != "teacher_rating" && input.TargetType != "major_rating" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的 target_type"})
+	report, err := createReport(h.db, userID, input)
+	if err != nil {
+		writeReportCreateError(c, err)
 		return
 	}
-	if reasonLength := len([]rune(input.Reason)); reasonLength < 2 || reasonLength > 500 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "举报理由长度需在 2 到 500 个字符之间"})
-		return
+	c.JSON(http.StatusCreated, report)
+}
+
+// createReport 是统一举报写入逻辑，供新接口和旧兼容接口共同使用。
+// 兼容接口只负责解析 HTTP 输入，不直接调用另一个 Gin Handler。
+func createReport(db *gorm.DB, userID uint, input CreateReportInput) (models.Report, error) {
+	if input.TargetType != "post" && input.TargetType != "reply" && input.TargetType != "teacher_rating" && input.TargetType != "major_rating" {
+		return models.Report{}, &reportCreateError{status: http.StatusBadRequest, code: "invalid_target_type", message: "不支持的 target_type"}
+	}
+	if reasonLength := len([]rune(strings.TrimSpace(input.Reason))); reasonLength < 2 || reasonLength > 500 {
+		return models.Report{}, &reportCreateError{status: http.StatusBadRequest, code: "invalid_report_reason", message: "举报理由长度需在 2 到 500 个字符之间"}
 	}
 	var targetOwner uint
 	var snapshot string
@@ -54,50 +73,51 @@ func (h *ReportHandler) Create(c *gin.Context) {
 	switch input.TargetType {
 	case "post":
 		var post models.Post
-		if err := h.db.Select("author_id", "status").First(&post, input.TargetID).Error; err != nil || post.Status == models.PostStatusDeleted {
-			c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在或已删除"})
-			return
+		if err := db.Select("author_id", "status").First(&post, input.TargetID).Error; err != nil || post.Status == models.PostStatusDeleted {
+			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "帖子不存在或已删除"}
 		}
 		targetOwner = post.AuthorID
 	case "reply":
 		var reply models.Reply
-		if err := h.db.Select("author_id", "status").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
-			c.JSON(http.StatusNotFound, gin.H{"error": "回复不存在或已删除"})
-			return
+		if err := db.Select("author_id", "status").First(&reply, input.TargetID).Error; err != nil || reply.Status != models.ReplyStatusNormal {
+			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "回复不存在或已删除"}
 		}
 		targetOwner = reply.AuthorID
 	case "teacher_rating":
 		var tr models.TeacherRating
-		if err := h.db.First(&tr, input.TargetID).Error; err != nil || tr.Status != "normal" || tr.DeletedAt.Valid {
-			c.JSON(http.StatusNotFound, gin.H{"error": "评价不存在或已删除"})
-			return
+		if err := db.First(&tr, input.TargetID).Error; err != nil || tr.Status != "normal" || tr.DeletedAt.Valid {
+			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "评价不存在或已删除"}
 		}
 		targetOwner = tr.UserID
-		snapshot = fmt.Sprintf(`{"star":%d,"comment":"%s"}`, tr.Star, tr.Comment)
+		payload, err := json.Marshal(gin.H{"star": tr.Star, "comment": tr.Comment})
+		if err != nil {
+			return models.Report{}, err
+		}
+		snapshot = string(payload)
 	case "major_rating":
 		var mr models.MajorRating
-		if err := h.db.First(&mr, input.TargetID).Error; err != nil || mr.Status != "normal" || mr.DeletedAt.Valid {
-			c.JSON(http.StatusNotFound, gin.H{"error": "评价不存在或已删除"})
-			return
+		if err := db.First(&mr, input.TargetID).Error; err != nil || mr.Status != "normal" || mr.DeletedAt.Valid {
+			return models.Report{}, &reportCreateError{status: http.StatusNotFound, code: "target_not_found", message: "评价不存在或已删除"}
 		}
 		targetOwner = mr.UserID
-		snapshot = fmt.Sprintf(`{"star":%d,"comment":"%s"}`, mr.Star, mr.Comment)
+		payload, err := json.Marshal(gin.H{"star": mr.Star, "comment": mr.Comment})
+		if err != nil {
+			return models.Report{}, err
+		}
+		snapshot = string(payload)
 	}
-	if targetOwner == userID.(uint) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不能举报自己的内容"})
-		return
+	if targetOwner == userID {
+		return models.Report{}, &reportCreateError{status: http.StatusBadRequest, code: "self_report_forbidden", message: "不能举报自己的内容"}
 	}
 	var existing models.Report
-	if err := h.db.Where("reporter_id = ? AND target_type = ? AND target_id = ? AND status = ?", userID, input.TargetType, input.TargetID, models.ReportStatusPending).First(&existing).Error; err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "请勿重复举报"})
-		return
+	if err := db.Where("reporter_id = ? AND target_type = ? AND target_id = ? AND status = ?", userID, input.TargetType, input.TargetID, models.ReportStatusPending).First(&existing).Error; err == nil {
+		return models.Report{}, &reportCreateError{status: http.StatusConflict, code: "report_already_pending", message: "请勿重复举报"}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询举报状态失败"})
-		return
+		return models.Report{}, err
 	}
 
 	report := models.Report{
-		ReporterID:     userID.(uint),
+		ReporterID:     userID,
 		TargetType:     input.TargetType,
 		TargetID:       input.TargetID,
 		ReasonCode:     input.ReasonCode,
@@ -107,12 +127,22 @@ func (h *ReportHandler) Create(c *gin.Context) {
 		Status:         models.ReportStatusPending,
 	}
 
-	if err := h.db.Create(&report).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建举报失败"})
+	if err := db.Create(&report).Error; err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "uq_pending_report_target") {
+			return models.Report{}, &reportCreateError{status: http.StatusConflict, code: "report_already_pending", message: "请勿重复举报"}
+		}
+		return models.Report{}, err
+	}
+	return report, nil
+}
+
+func writeReportCreateError(c *gin.Context, err error) {
+	var createErr *reportCreateError
+	if errors.As(err, &createErr) {
+		c.JSON(createErr.status, gin.H{"code": createErr.code, "error": createErr.message})
 		return
 	}
-
-	c.JSON(http.StatusCreated, report)
+	c.JSON(http.StatusInternalServerError, gin.H{"code": "report_create_failed", "error": "创建举报失败"})
 }
 
 // GetList 获取举报列表（仅管理员）
@@ -242,6 +272,17 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 				return fmt.Errorf("invalid_target_type")
 			}
 			if err := tx.Model(&models.User{}).Where("id = ?", targetUserID).Update("report_count", gorm.Expr("report_count + 1")).Error; err != nil {
+				return err
+			}
+			// 同一目标的其他待处理举报不能再次触发删除、计数或申诉。
+			if err := tx.Model(&models.Report{}).
+				Where("target_type = ? AND target_id = ? AND status = ? AND id <> ?", report.TargetType, report.TargetID, models.ReportStatusPending, report.ID).
+				Updates(map[string]interface{}{
+					"status":     models.ReportStatusIgnored,
+					"handler_id": userID.(uint),
+					"handled_at": &now,
+					"result":     fmt.Sprintf("目标已通过举报 #%d 完成治理", report.ID),
+				}).Error; err != nil {
 				return err
 			}
 		}

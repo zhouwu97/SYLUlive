@@ -75,11 +75,12 @@ func (s *FileService) SaveFile(file *gin.Context, formName string) (*models.File
 	io.Copy(dst, src)
 
 	newFile := models.File{
-		Hash:     hash,
-		Path:     path,
-		Size:     totalSize,
-		MimeType: f.Header.Get("Content-Type"),
-		RefCount: 1,
+		Hash:        hash,
+		Path:        path,
+		Size:        totalSize,
+		MimeType:    f.Header.Get("Content-Type"),
+		RefCount:    1,
+		AccessScope: models.FileAccessPrivate,
 	}
 
 	if err := s.db.Create(&newFile).Error; err != nil {

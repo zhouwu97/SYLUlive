@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -326,8 +328,33 @@ func (h *TeacherHandler) VoteRating(c *gin.Context) {
 
 // ReportRating 举报评价
 func (h *TeacherHandler) ReportRating(c *gin.Context) {
-	_ = c.Param("id")
-	c.JSON(http.StatusOK, gin.H{"message": "已收到举报，管理员将审核处理"})
+	ratingID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || ratingID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_rating_id", "error": "无效的评价ID"})
+		return
+	}
+	var input struct {
+		ReasonCode string `json:"reason_code"`
+		Reason     string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(input.Reason) == "" {
+		input.Reason = "评价举报"
+	}
+	report, err := createReport(h.db, c.GetUint("user_id"), CreateReportInput{
+		TargetType: "teacher_rating",
+		TargetID:   uint(ratingID),
+		ReasonCode: input.ReasonCode,
+		Reason:     input.Reason,
+	})
+	if err != nil {
+		writeReportCreateError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, report)
 }
 
 // VoteRemoveAdmin 投票罢免管理员
@@ -466,12 +493,29 @@ func (h *TeacherHandler) GetRemovalRequests(c *gin.Context) {
 
 // GetViolations 获取用户违规记录
 func (h *TeacherHandler) GetViolations(c *gin.Context) {
-	userIDStr := c.Query("user_id")
+	userID := c.GetUint("user_id")
 	var violations []models.UserViolation
-	query := h.db.Preload("User")
-	if userIDStr != "" {
-		query = query.Where("user_id = ?", userIDStr)
+	if err := h.db.Where("user_id = ?", userID).
+		Order("created_at DESC").Find(&violations).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取违规记录失败"})
+		return
 	}
+	c.JSON(http.StatusOK, violations)
+}
+
+// GetAdminViolations 获取管理员违规记录列表。管理员能力使用独立路由，
+// 避免普通用户接口通过 user_id 参数扩大读取范围。
+func (h *TeacherHandler) GetAdminViolations(c *gin.Context) {
+	query := h.db.Model(&models.UserViolation{}).Preload("User")
+	if userIDStr := strings.TrimSpace(c.Query("user_id")); userIDStr != "" {
+		userID, err := strconv.ParseUint(userIDStr, 10, 64)
+		if err != nil || userID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
+			return
+		}
+		query = query.Where("user_id = ?", userID)
+	}
+	var violations []models.UserViolation
 	if err := query.Order("created_at DESC").Find(&violations).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取违规记录失败"})
 		return
@@ -518,14 +562,31 @@ func (h *TeacherHandler) AddViolation(c *gin.Context) {
 // AppealViolation 申诉违规
 func (h *TeacherHandler) AppealViolation(c *gin.Context) {
 	idStr := c.Param("id")
-	id, _ := strconv.ParseUint(idStr, 10, 64)
-	var v models.UserViolation
-	if h.db.First(&v, id).Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "记录不存在"})
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"code": "violation_not_found", "error": "记录不存在"})
 		return
 	}
-	if err := h.db.Model(&v).Update("appealed", true).Error; err != nil {
+	userID := c.GetUint("user_id")
+	var v models.UserViolation
+	if err := h.db.Where("id = ? AND user_id = ?", id, userID).First(&v).Error; err != nil {
+		// 对不存在和不属于当前用户的记录统一返回 404，避免枚举记录归属。
+		c.JSON(http.StatusNotFound, gin.H{"code": "violation_not_found", "error": "记录不存在"})
+		return
+	}
+	if v.Appealed {
+		c.JSON(http.StatusConflict, gin.H{"code": "violation_already_appealed", "error": "该违规记录已提交申诉"})
+		return
+	}
+	result := h.db.Model(&models.UserViolation{}).
+		Where("id = ? AND user_id = ? AND appealed = ?", id, userID, false).
+		Update("appealed", true)
+	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
+	if result.RowsAffected != 1 {
+		c.JSON(http.StatusConflict, gin.H{"code": "violation_already_appealed", "error": "该违规记录已提交申诉"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "申诉已提交"})

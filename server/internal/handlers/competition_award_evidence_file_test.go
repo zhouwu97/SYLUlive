@@ -43,7 +43,7 @@ func TestCompetitionAwardEvidenceStorageIsolatedFromPublicFiles(t *testing.T) {
 	}
 	publicFile := models.File{
 		Hash: hashValue, Path: "/uploads/" + publicRelative, Size: int64(len(content)),
-		MimeType: "image/png", UploaderID: 10, Status: "active",
+		MimeType: "image/png", UploaderID: 10, Status: "active", AccessScope: models.FileAccessPublic,
 	}
 	if err := db.Create(&publicFile).Error; err != nil {
 		t.Fatal(err)

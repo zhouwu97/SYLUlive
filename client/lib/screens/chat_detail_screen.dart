@@ -1593,6 +1593,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final imageUrl = message.imageUrl.isEmpty
         ? null
         : ApiConstants.fullUrl(message.imageUrl);
+    final privateMediaHeaders = _privateMediaHeaders();
     final localImagePath = message.localImagePath?.trim();
     final hasImage = imageUrl != null || localImagePath?.isNotEmpty == true;
     final stickerUrl =
@@ -1694,6 +1695,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                                       MaterialPageRoute(
                                         builder: (_) => ImageViewerScreen(
                                           imageUrls: [imageUrl],
+                                          httpHeaders: privateMediaHeaders,
                                         ),
                                       ),
                                     ),
@@ -1702,6 +1704,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                               child: _buildMessageImage(
                                 localImagePath: localImagePath,
                                 imageUrl: imageUrl,
+                                httpHeaders: privateMediaHeaders,
                               ),
                             ),
                           ),
@@ -1781,11 +1784,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildMessageImage({
     required String? localImagePath,
     required String? imageUrl,
+    required Map<String, String> httpHeaders,
   }) {
     Widget networkImage() {
       if (imageUrl == null) return _buildBrokenMessageImage();
       return CachedNetworkImage(
         imageUrl: imageUrl,
+        httpHeaders: httpHeaders,
         width: 210,
         height: 156,
         fit: BoxFit.cover,
@@ -1815,6 +1820,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       );
     }
     return networkImage();
+  }
+
+  Map<String, String> _privateMediaHeaders() {
+    final token = context.read<AuthProvider>().token;
+    if (token == null || token.isEmpty) {
+      return const {};
+    }
+    return {'Authorization': 'Bearer $token'};
   }
 
   Widget _buildStickerImage(String imageUrl, String? stickerId) {

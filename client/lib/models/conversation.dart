@@ -195,7 +195,7 @@ class FileItem {
     return FileItem(
       id: json['id'] ?? 0,
       hash: json['hash'] ?? '',
-      path: json['path'] ?? '',
+      path: (json['download_url'] ?? json['path'] ?? '').toString(),
       size: json['size'] ?? 0,
       mimeType: json['mime_type'] ?? '',
     );

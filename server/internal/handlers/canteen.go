@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -410,34 +412,56 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 		return
 	}
 
-	var rating models.CanteenRating
-	err = h.db.Where("canteen_id = ? AND user_id = ?", cid, userID).First(&rating).Error
-	if err == nil {
-		// 已存在则更新
-		if err := h.db.Model(&rating).Updates(map[string]interface{}{
-			"star":    input.Star,
-			"comment": input.Comment,
-			"images":  input.Images,
-		}).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新评价失败"})
+	var imagePaths []string
+	if strings.TrimSpace(input.Images) != "" {
+		if err := json.Unmarshal([]byte(input.Images), &imagePaths); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "图片列表格式错误"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"message": "评价已更新", "rating": rating})
-	} else {
-		// 新建
-		rating = models.CanteenRating{
-			CanteenID: uint(cid),
-			UserID:    userID,
-			Star:      input.Star,
-			Comment:   input.Comment,
-			Images:    input.Images,
-		}
-		if err := h.db.Create(&rating).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-			return
-		}
-		c.JSON(http.StatusCreated, gin.H{"message": "评价成功", "rating": rating})
 	}
+
+	var rating models.CanteenRating
+	created := false
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		findErr := tx.Where("canteen_id = ? AND user_id = ?", cid, userID).First(&rating).Error
+		switch {
+		case findErr == nil:
+			rating.Star = input.Star
+			rating.Comment = input.Comment
+			rating.Images = input.Images
+			if err := tx.Model(&rating).Updates(map[string]interface{}{
+				"star":    input.Star,
+				"comment": input.Comment,
+				"images":  input.Images,
+			}).Error; err != nil {
+				return err
+			}
+		case errors.Is(findErr, gorm.ErrRecordNotFound):
+			rating = models.CanteenRating{
+				CanteenID: uint(cid),
+				UserID:    userID,
+				Star:      input.Star,
+				Comment:   input.Comment,
+				Images:    input.Images,
+			}
+			if err := tx.Create(&rating).Error; err != nil {
+				return err
+			}
+			created = true
+		default:
+			return findErr
+		}
+		return services.ClaimPublicImagePathsForUser(tx, userID, imagePaths...)
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存评价失败"})
+		return
+	}
+	if created {
+		c.JSON(http.StatusCreated, gin.H{"message": "评价成功", "rating": rating})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "评价已更新", "rating": rating})
 }
 
 // DeleteCanteen 管理员删除食堂（驳回并扣除10经验）
@@ -508,6 +532,9 @@ func (h *CanteenHandler) ApproveCanteen(c *gin.Context) {
 			return fmt.Errorf("canteen_already_verified")
 		}
 		if err := tx.Model(&canteen).Update("verified", true).Error; err != nil {
+			return err
+		}
+		if err := services.ClaimPublicImagePaths(tx, canteen.Image); err != nil {
 			return err
 		}
 		var admin models.User
@@ -618,6 +645,11 @@ func (h *CanteenHandler) UpdateImage(c *gin.Context) {
 
 		if err := tx.Save(&canteen).Error; err != nil {
 			return fmt.Errorf("更新食堂图片失败")
+		}
+		if canteen.Verified {
+			if err := services.ClaimPublicImagePaths(tx, canteen.Image); err != nil {
+				return fmt.Errorf("公开食堂图片失败")
+			}
 		}
 
 		// 记录管理员操作

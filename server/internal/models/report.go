@@ -16,15 +16,15 @@ const (
 // Report 举报
 type Report struct {
 	ID             uint         `gorm:"primaryKey" json:"id"`
-	ReporterID     uint         `gorm:"not null;index;uniqueIndex:uq_pending_report_target" json:"reporter_id"`
-	TargetType     string       `gorm:"size:20;not null;index;uniqueIndex:uq_pending_report_target" json:"target_type"` // post/reply/teacher_rating/major_rating
-	TargetID       uint         `gorm:"not null;index;uniqueIndex:uq_pending_report_target" json:"target_id"`
+	ReporterID     uint         `gorm:"not null;index" json:"reporter_id"`
+	TargetType     string       `gorm:"size:20;not null;index" json:"target_type"` // post/reply/teacher_rating/major_rating
+	TargetID       uint         `gorm:"not null;index" json:"target_id"`
 	ReasonCode     string       `gorm:"size:50;index" json:"reason_code"`
 	Reason         string       `gorm:"type:text;not null" json:"reason"`
 	TargetAuthorID *uint        `gorm:"index" json:"target_author_id"`
 	TargetSnapshot string       `gorm:"type:text" json:"target_snapshot"`
 	Action         string       `gorm:"size:50" json:"action"`
-	Status         ReportStatus `gorm:"default:pending;index;uniqueIndex:uq_pending_report_target" json:"status"`
+	Status         ReportStatus `gorm:"default:pending;index" json:"status"`
 	HandlerID      *uint        `json:"handler_id"`
 	Result         string       `gorm:"size:500" json:"result"`        // 处理结果说明
 	DeleteReason   string       `gorm:"size:500" json:"delete_reason"` // 删除理由

@@ -881,6 +881,15 @@ func (h *WaterSectionHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存版块失败"})
 		return
 	}
+	if err := services.ClaimPublicImagePaths(h.db,
+		section.CoverURL,
+		section.CoverPortraitURL,
+		section.CoverLandscapeURL,
+		section.CoverSquareURL,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "公开版块图片失败"})
+		return
+	}
 	after := waterSectionSnapshot(section)
 	snapshot, _ := json.Marshal(gin.H{"before": before, "after": after})
 	reason := strings.TrimSpace(req.Reason)
@@ -1779,6 +1788,9 @@ func (h *WaterSectionHandler) AdminApproveSectionIconReview(c *gin.Context) {
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.WaterSection{}).Where("id = ?", review.SectionID).
 			Update("avatar_url", review.NewAvatarURL).Error; err != nil {
+			return err
+		}
+		if err := services.ClaimPublicImagePaths(tx, review.NewAvatarURL); err != nil {
 			return err
 		}
 

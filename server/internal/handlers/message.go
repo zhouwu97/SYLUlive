@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ const (
 // MessageHandler 私信处理器
 type MessageHandler struct {
 	db          *gorm.DB
+	uploadDir   string
 	notifier    messageNotifier
 	rateLimiter *messageRateLimiter
 	events      *messageEventBroker
@@ -56,10 +58,67 @@ func NewMessageHandler(db *gorm.DB, notifiers ...messageNotifier) *MessageHandle
 
 var _ messageNotifier = (*services.NotificationService)(nil)
 
+// MessageFileDTO 是私信附件的最小安全响应，不暴露服务器磁盘路径。
+type MessageFileDTO struct {
+	ID          uint   `json:"id"`
+	MimeType    string `json:"mime_type"`
+	Size        int64  `json:"size"`
+	DownloadURL string `json:"download_url"`
+}
+
+// PrivateMessageDTO 统一 REST、SSE 和发送响应的私信结构。
+type PrivateMessageDTO struct {
+	ID              uint                      `json:"id"`
+	ConversationID  uint                      `json:"conversation_id"`
+	SenderID        uint                      `json:"sender_id"`
+	ClientMessageID *string                   `json:"client_message_id,omitempty"`
+	Content         string                    `json:"content"`
+	FileID          *uint                     `json:"file_id"`
+	StickerID       *string                   `json:"sticker_id,omitempty"`
+	CreatedAt       time.Time                 `json:"created_at"`
+	ReadAt          *time.Time                `json:"read_at"`
+	Sender          models.PublicUserResponse `json:"sender"`
+	File            *MessageFileDTO           `json:"file"`
+}
+
+func privateMessageFileResponse(file *models.File) *MessageFileDTO {
+	if file == nil || file.ID == 0 {
+		return nil
+	}
+	return &MessageFileDTO{
+		ID:          file.ID,
+		MimeType:    file.MimeType,
+		Size:        file.Size,
+		DownloadURL: fmt.Sprintf("/api/messages/files/%d", file.ID),
+	}
+}
+
+func privateMessageResponse(message models.Message) PrivateMessageDTO {
+	return PrivateMessageDTO{
+		ID:              message.ID,
+		ConversationID:  message.ConversationID,
+		SenderID:        message.SenderID,
+		ClientMessageID: message.ClientMessageID,
+		Content:         message.Content,
+		FileID:          message.FileID,
+		StickerID:       message.StickerID,
+		CreatedAt:       message.CreatedAt,
+		ReadAt:          message.ReadAt,
+		Sender:          models.PublicUser(message.Sender),
+		File:            privateMessageFileResponse(message.File),
+	}
+}
+
+// SetUploadDir 注入公开上传目录，用于私信附件的安全磁盘解析。
+func (h *MessageHandler) SetUploadDir(uploadDir string) {
+	h.uploadDir = strings.TrimSpace(uploadDir)
+}
+
 type messageRateLimiter struct {
-	mu       sync.Mutex
-	pairHits map[string][]time.Time
-	userHits map[uint][]time.Time
+	mu            sync.Mutex
+	pairHits      map[string][]time.Time
+	userHits      map[uint][]time.Time
+	lastCleanupAt time.Time
 }
 
 func newMessageRateLimiter() *messageRateLimiter {
@@ -75,6 +134,23 @@ func (l *messageRateLimiter) allow(senderID, targetID uint, now time.Time) bool 
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.lastCleanupAt.IsZero() || !now.Before(l.lastCleanupAt.Add(time.Minute)) {
+		for key, hits := range l.pairHits {
+			if recent := recentMessageHits(hits, windowStart); len(recent) == 0 {
+				delete(l.pairHits, key)
+			} else {
+				l.pairHits[key] = recent
+			}
+		}
+		for userID, hits := range l.userHits {
+			if recent := recentMessageHits(hits, windowStart); len(recent) == 0 {
+				delete(l.userHits, userID)
+			} else {
+				l.userHits[userID] = recent
+			}
+		}
+		l.lastCleanupAt = now
+	}
 
 	pairRecent := recentMessageHits(l.pairHits[key], windowStart)
 	userRecent := recentMessageHits(l.userHits[senderID], windowStart)
@@ -116,16 +192,16 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		Avatar   string `json:"avatar"`
 	}
 	type messageSummary struct {
-		ID              uint         `json:"id"`
-		ConversationID  uint         `json:"conversation_id"`
-		SenderID        uint         `json:"sender_id"`
-		ClientMessageID *string      `json:"client_message_id,omitempty"`
-		Content         string       `json:"content"`
-		FileID          *uint        `json:"file_id"`
-		StickerID       *string      `json:"sticker_id,omitempty"`
-		CreatedAt       time.Time    `json:"created_at"`
-		ReadAt          *time.Time   `json:"read_at"`
-		File            *models.File `json:"file"`
+		ID              uint            `json:"id"`
+		ConversationID  uint            `json:"conversation_id"`
+		SenderID        uint            `json:"sender_id"`
+		ClientMessageID *string         `json:"client_message_id,omitempty"`
+		Content         string          `json:"content"`
+		FileID          *uint           `json:"file_id"`
+		StickerID       *string         `json:"sticker_id,omitempty"`
+		CreatedAt       time.Time       `json:"created_at"`
+		ReadAt          *time.Time      `json:"read_at"`
+		File            *MessageFileDTO `json:"file"`
 	}
 	type conversationResponse struct {
 		ID            uint            `json:"id"`
@@ -212,7 +288,7 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 					StickerID:       message.StickerID,
 					CreatedAt:       message.CreatedAt,
 					ReadAt:          message.ReadAt,
-					File:            message.File,
+					File:            privateMessageFileResponse(message.File),
 				}
 			}
 		}
@@ -364,7 +440,56 @@ func (h *MessageHandler) GetMessages(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, messages)
+	responses := make([]PrivateMessageDTO, 0, len(messages))
+	for _, message := range messages {
+		responses = append(responses, privateMessageResponse(message))
+	}
+	c.JSON(http.StatusOK, responses)
+}
+
+// ServePrivateFile 只允许当前用户所属会话中的消息附件被读取。
+// 无权限和不存在统一返回 404，避免确认私信附件是否存在。
+func (h *MessageHandler) ServePrivateFile(c *gin.Context) {
+	notFound := func() {
+		c.Status(http.StatusNotFound)
+		c.Writer.WriteHeaderNow()
+	}
+	fileID, err := strconv.ParseUint(c.Param("file_id"), 10, 64)
+	if err != nil || fileID == 0 {
+		notFound()
+		return
+	}
+	userID := c.GetUint("user_id")
+
+	var file models.File
+	err = h.db.Model(&models.File{}).
+		Where("files.id = ?", fileID).
+		Where(`EXISTS (
+			SELECT 1
+			FROM messages AS m
+			JOIN conversations AS conv ON conv.id = m.conversation_id
+			WHERE m.file_id = files.id
+			  AND (conv.user1_id = ? OR conv.user2_id = ?)
+		)`, userID, userID).
+		First(&file).Error
+	if err != nil {
+		notFound()
+		return
+	}
+
+	fullPath, err := services.ResolveUploadPath(h.uploadDir, file.Path)
+	if err != nil {
+		notFound()
+		return
+	}
+	if _, err := os.Stat(fullPath); err != nil {
+		notFound()
+		return
+	}
+	c.Header("Content-Type", file.MimeType)
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.File(fullPath)
 }
 
 func parseMessageLimit(raw string) int {
@@ -471,7 +596,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		}
 		if found {
 			c.Header("X-Idempotent-Replay", "true")
-			c.JSON(http.StatusCreated, existing)
+			c.JSON(http.StatusCreated, privateMessageResponse(existing))
 			return
 		}
 	}
@@ -480,9 +605,14 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	// current 已经给 target 发过且 target 未关注/未回复 → 拒绝
 	allow, reason, _, canErr := h.canSendMessage(currentUserID, targetID)
 	if canErr != nil {
-		// 内部错误不阻断主流程，按"允许"处理但记日志
 		log.Printf("[PM_LIMIT] canSendMessage unexpected error current=%d target=%d err=%v", currentUserID, targetID, canErr)
-	} else if !allow {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "暂时无法确认私信发送权限，请稍后重试",
+			"code":  "message_send_state_unavailable",
+		})
+		return
+	}
+	if !allow {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "对方未关注你或回复你之前，只能发送 1 条消息，请等待对方回应。",
 			"code":  "message_requires_reply_or_follow",
@@ -553,6 +683,11 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		if err := tx.Create(&message).Error; err != nil {
 			return err
 		}
+		if input.FileID != nil {
+			if err := services.ClaimPrivateMessageFile(tx, *input.FileID); err != nil {
+				return err
+			}
+		}
 		return tx.Model(&conv).Update("last_message_at", message.CreatedAt).Error
 	})
 	if createErr != nil {
@@ -565,7 +700,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 			)
 			if lookupErr == nil && found {
 				c.Header("X-Idempotent-Replay", "true")
-				c.JSON(http.StatusCreated, existing)
+				c.JSON(http.StatusCreated, privateMessageResponse(existing))
 				return
 			}
 		}
@@ -577,16 +712,17 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	if messageFile != nil {
 		message.File = messageFile
 	}
+	response := privateMessageResponse(message)
 	h.events.publish(
 		[]uint{conversation.User1ID, conversation.User2ID},
 		privateMessageEvent{
 			Type:           "message.created",
 			ConversationID: message.ConversationID,
-			Message:        &message,
+			Message:        &response,
 		},
 	)
 	h.pushPrivateMessage(targetID, sender, message)
-	c.JSON(http.StatusCreated, message)
+	c.JSON(http.StatusCreated, response)
 }
 
 var errClientMessageTargetMismatch = errors.New("client message id target mismatch")

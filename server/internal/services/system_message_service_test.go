@@ -1,12 +1,16 @@
 package services
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 )
 
@@ -40,6 +44,50 @@ func TestEnsureSystemUserCreatesReusableAdminAccount(t *testing.T) {
 	}
 	if first.Role != models.RoleAdmin || first.StudentID != SystemUserStudentID {
 		t.Fatalf("系统账号属性错误: %#v", first)
+	}
+}
+
+func TestEnsureSystemUserRoleRepairInvalidatesOldToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	middleware.InvalidateTokenVersionCache(0)
+	db := newSystemMessageTestDB(t)
+	user := models.User{
+		StudentID:    SystemUserStudentID,
+		PasswordHash: "legacy",
+		Role:         models.RoleUser,
+		TokenVersion: 4,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("创建遗留系统账号失败: %v", err)
+	}
+
+	const secret = "system-message-test-secret"
+	oldToken, err := middleware.GenerateToken(user.ID, string(models.RoleUser), user.TokenVersion, secret)
+	if err != nil {
+		t.Fatalf("生成旧令牌失败: %v", err)
+	}
+	router := gin.New()
+	router.GET("/protected", middleware.AuthMiddleware(db, secret), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	if _, err := EnsureSystemUser(db); err != nil {
+		t.Fatalf("修复系统账号失败: %v", err)
+	}
+	var repaired models.User
+	if err := db.First(&repaired, user.ID).Error; err != nil {
+		t.Fatalf("读取修复后的系统账号失败: %v", err)
+	}
+	if repaired.Role != models.RoleAdmin || repaired.TokenVersion != user.TokenVersion+1 {
+		t.Fatalf("系统账号角色/令牌版本未正确修复: %+v", repaired)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer "+oldToken)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("角色修复后旧令牌仍可用: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

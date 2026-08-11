@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,6 +54,57 @@ type Snapshot struct {
 	AlgorithmVersion string
 	Sort             string
 	FeedKind         string
+}
+
+// latestFeedCursor 是最新 Feed 的稳定游标。created_at 相同时使用 ID
+// 作为第二排序键，避免同一时间写入的帖子在翻页时重复或丢失。
+type latestFeedCursor struct {
+	CreatedAt time.Time `json:"created_at"`
+	ID        uint      `json:"id"`
+}
+
+func parseLatestFeedCursor(c *gin.Context) (*latestFeedCursor, error) {
+	raw := strings.TrimSpace(c.Query("cursor"))
+	createdAtRaw := firstNonEmpty(c.Query("cursor_created_at"), c.Query("cursor_time"))
+	idRaw := strings.TrimSpace(c.Query("cursor_id"))
+	if raw != "" {
+		payload := []byte(raw)
+		if !strings.HasPrefix(raw, "{") {
+			decoded, err := base64.RawURLEncoding.DecodeString(raw)
+			if err != nil {
+				return nil, fmt.Errorf("游标编码无效")
+			}
+			payload = decoded
+		}
+		var cursor latestFeedCursor
+		if err := json.Unmarshal(payload, &cursor); err != nil {
+			return nil, fmt.Errorf("游标格式无效")
+		}
+		if cursor.ID == 0 || cursor.CreatedAt.IsZero() {
+			return nil, fmt.Errorf("游标字段不完整")
+		}
+		return &cursor, nil
+	}
+	if createdAtRaw == "" && idRaw == "" {
+		return nil, nil
+	}
+	if createdAtRaw == "" || idRaw == "" {
+		return nil, fmt.Errorf("游标字段不完整")
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, createdAtRaw)
+	if err != nil {
+		return nil, fmt.Errorf("游标时间无效")
+	}
+	id, err := strconv.ParseUint(idRaw, 10, 64)
+	if err != nil || id == 0 {
+		return nil, fmt.Errorf("游标 ID 无效")
+	}
+	return &latestFeedCursor{CreatedAt: createdAt, ID: uint(id)}, nil
+}
+
+func encodeLatestFeedCursor(cursor latestFeedCursor) string {
+	payload, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
 // ActiveSnapshots 帖子快照缓存。key: session_id (string)，value: Snapshot。
@@ -1071,6 +1123,10 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			algorithm = "home_time_v3_poll"
 		}
 	}
+	if sortName == "time" {
+		h.getHomeLatestFeedV2(c, pinned, page, limit, offset, now, supportsPoll, algorithm)
+		return
+	}
 	if sortName == "all" && scene == "loadmore" {
 		value, ok := ActiveSnapshots.Load(sessionID)
 		if !ok {
@@ -1103,7 +1159,7 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 			timeQuery = timeQuery.Where("content_kind <> ?", models.PostContentKindPoll)
 		}
 		timeQuery = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(timeQuery, userID, "time", now)
-		err = timeQuery.Order("created_at DESC").Limit(500).Find(&normal).Error
+		err = timeQuery.Order("created_at DESC, id DESC").Find(&normal).Error
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
 			return
@@ -1134,6 +1190,90 @@ func (h *PostHandler) getHomeFeedV2(c *gin.Context, sortName, scene, sessionID s
 		pinned = []models.Post{}
 	}
 	c.JSON(http.StatusOK, gin.H{"pinned_posts": pinned, "posts": posts, "total": len(ids), "page": page, "limit": limit, "session_id": sessionID, "algorithm_version": algorithm})
+}
+
+// getHomeLatestFeedV2 使用数据库 keyset 游标读取“最新”Feed，不再先把结果
+// 截断到 500 条再在内存中分页。旧客户端仍可使用 page/offset；支持游标的
+// 客户端应优先传 cursor_created_at + cursor_id，或传 next_cursor_token。
+func (h *PostHandler) getHomeLatestFeedV2(c *gin.Context, pinned []models.Post, page, limit, offset int, now time.Time, supportsPoll bool, algorithm string) {
+	userID := optionalFeedUserID(c)
+	query := h.db.Model(&models.Post{}).
+		Where("board_id = ? AND status = ?", models.BoardShuitie, models.PostStatusNormal).
+		Where("NOT EXISTS (SELECT 1 FROM water_team_recruitments wtr WHERE wtr.post_id = posts.id)").
+		Where("NOT (is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?))", true, now)
+	if !supportsPoll {
+		query = query.Where("content_kind <> ?", models.PostContentKindPoll)
+	}
+	query = services.NewFeedVisibilityService(h.db).ApplyFeedVisibility(query, userID, "time", now)
+
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计最新帖子失败"})
+		return
+	}
+
+	cursor, err := parseLatestFeedCursor(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_feed_cursor", "error": err.Error()})
+		return
+	}
+	pageQuery := query
+	if cursor != nil {
+		pageQuery = pageQuery.Where("created_at < ? OR (created_at = ? AND id < ?)", cursor.CreatedAt, cursor.CreatedAt, cursor.ID)
+	} else if offset > 0 {
+		// 兼容旧客户端的 page/offset 请求，但不再把可见结果截断到 500。
+		pageQuery = pageQuery.Offset(offset)
+	}
+
+	var rows []models.Post
+	if err := pageQuery.Order("created_at DESC, id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取最新帖子失败"})
+		return
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	ids := make([]uint, 0, len(rows))
+	for _, post := range rows {
+		ids = append(ids, post.ID)
+	}
+	posts, err := h.loadPostsInOrder(ids)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取最新帖子失败"})
+		return
+	}
+	h.hydratePosts(c, posts, now)
+	h.hydratePosts(c, pinned, now)
+	if posts == nil {
+		posts = []models.Post{}
+	}
+	if pinned == nil {
+		pinned = []models.Post{}
+	}
+
+	var nextCursor *latestFeedCursor
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		nextCursor = &latestFeedCursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"pinned_posts":      pinned,
+		"posts":             posts,
+		"total":             total,
+		"page":              page,
+		"limit":             limit,
+		"session_id":        "",
+		"algorithm_version": algorithm,
+		"has_more":          hasMore,
+		"next_cursor":       nextCursor,
+		"next_cursor_token": func() string {
+			if nextCursor == nil {
+				return ""
+			}
+			return encodeLatestFeedCursor(*nextCursor)
+		}(),
+	})
 }
 
 func (h *PostHandler) loadPostsInOrder(ids []uint) ([]models.Post, error) {
@@ -1386,6 +1526,9 @@ func (h *PostHandler) Create(c *gin.Context) {
 		if _, err := services.ValidateImageFileIDs(tx, fileIDs, 9, userID.(uint)); err != nil {
 			return err
 		}
+		if err := services.ClaimPublicImageFiles(tx, fileIDs); err != nil {
+			return err
+		}
 		if err := tx.Create(&post).Error; err != nil {
 			return err
 		}
@@ -1561,6 +1704,9 @@ func (h *PostHandler) Update(c *gin.Context) {
 		}
 		if replaceImages {
 			if _, err := services.ValidateImageFileIDs(tx, fileIDs, 9, userID.(uint)); err != nil {
+				return err
+			}
+			if err := services.ClaimPublicImageFiles(tx, fileIDs); err != nil {
 				return err
 			}
 		}

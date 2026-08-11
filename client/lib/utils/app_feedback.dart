@@ -155,9 +155,13 @@ class AppFeedback {
         (context == null ? null : ScaffoldMessenger.maybeOf(context));
     if (messenger == null || message.trim().isEmpty) return;
 
+    final layoutContext = context ?? scaffoldMessengerKey.currentContext;
     final theme = context == null ? null : Theme.of(context);
     final colors = theme?.colorScheme;
     final palette = _FeedbackPalette.from(kind, colors);
+    final bottomInset = layoutContext == null
+        ? 0.0
+        : MediaQuery.maybeOf(layoutContext)?.viewPadding.bottom ?? 0.0;
     final content = ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 560),
       child: Row(
@@ -183,7 +187,7 @@ class AppFeedback {
           content: content,
           duration: duration,
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          margin: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomInset),
           backgroundColor: palette.background,
           action: actionLabel == null || onAction == null
               ? null

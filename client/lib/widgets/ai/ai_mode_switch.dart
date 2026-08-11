@@ -13,15 +13,19 @@ class AiModeSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Container(
         height: 42,
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
-          color: const Color(0xFFE8F5F2), // primarySoft
+          color: isDark
+              ? colors.surfaceContainerHighest
+              : CampusTheme.primaryLight,
           borderRadius: BorderRadius.circular(21),
-          border: Border.all(color: const Color(0xFFE3E8E5), width: 1),
+          border: Border.all(color: colors.outlineVariant, width: 1),
         ),
         child: Row(
           children: [
@@ -63,17 +67,18 @@ class _ModeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
+          color: isSelected ? colors.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
+                    color: colors.shadow.withValues(alpha: 0.08),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -87,14 +92,14 @@ class _ModeButton extends StatelessWidget {
               Icon(
                 icon,
                 size: 16,
-                color: isSelected ? CampusTheme.primary : const Color(0xFF7B8388),
+                color: isSelected ? colors.primary : colors.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 14,
-                  color: isSelected ? CampusTheme.primary : const Color(0xFF7B8388),
+                  color: isSelected ? colors.primary : colors.onSurfaceVariant,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),

@@ -5,6 +5,7 @@ import '../../platform/platform_capabilities.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/keep_alive_service.dart';
 import '../../services/push_settings_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../widgets/campus/campus_theme.dart';
 import '../../widgets/settings/settings_page_scaffold.dart';
 import '../../widgets/settings/settings_section.dart';
@@ -106,12 +107,11 @@ class _NotificationBackgroundSettingsScreenState
     });
 
     final auth = context.read<AuthProvider>();
-    final messenger = ScaffoldMessenger.of(context);
 
     if (enabled) {
       final result = await PushSettingsService.enableAndRegister(auth);
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text(result.message)));
+      AppFeedback.info(result.message, context: context);
       await _loadPushState();
       return;
     }
@@ -121,14 +121,16 @@ class _NotificationBackgroundSettingsScreenState
 
     if (!result.success) {
       setState(() => _pushStatus = previousStatus);
-      messenger.showSnackBar(
-        SnackBar(content: Text(result.errorMessage ?? '关闭远程推送失败')),
+      AppFeedback.error(
+        result.errorMessage ?? '关闭远程推送失败',
+        context: context,
       );
       return;
     }
 
-    messenger.showSnackBar(
-      const SnackBar(content: Text('已关闭远程推送，课程和考试提醒不受影响')),
+    AppFeedback.success(
+      '已关闭远程推送，课程和考试提醒不受影响',
+      context: context,
     );
     await _loadPushState();
   }
@@ -166,41 +168,45 @@ class _NotificationBackgroundSettingsScreenState
   }
 
   Future<void> _showKeepAliveGuideDialog() async {
+    final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('后台保活推荐设置'),
-        content: const SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '为了保证私信接收和后台通知即时送达，建议在系统设置中完成以下配置：',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 12),
-              Text('1. 电池优化：设置为“不限制”或“无限制”；'),
-              SizedBox(height: 6),
-              Text('2. 自启动管理：开启“允许自启动”；'),
-              SizedBox(height: 6),
-              Text('3. 最近任务锁定：在多任务界面给本应用加锁。'),
-            ],
+      builder: (ctx) => Theme(
+        data: dialogTheme,
+        child: AlertDialog(
+          title: const Text('后台保活推荐设置'),
+          content: const SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '为了保证私信接收和后台通知即时送达，建议在系统设置中完成以下配置：',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 12),
+                Text('1. 电池优化：设置为“不限制”或“无限制”；'),
+                SizedBox(height: 6),
+                Text('2. 自启动管理：开启“允许自启动”；'),
+                SizedBox(height: 6),
+                Text('3. 最近任务锁定：在多任务界面给本应用加锁。'),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('稍后再说'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                KeepAliveService.instance.openSettings();
+              },
+              child: const Text('前往系统设置'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('稍后再说'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              KeepAliveService.instance.openSettings();
-            },
-            child: const Text('前往系统设置'),
-          ),
-        ],
       ),
     );
   }

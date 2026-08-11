@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../utils/app_feedback.dart';
+
 /// Mixin that provides image picking logic for publish forms.
 ///
 /// The host [State] must implement [canAddMoreImages] and [onImageAdded];
@@ -28,12 +30,7 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
       final length = await image.length();
       if (length > 10 * 1024 * 1024) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('图片大小不能超过 10MB'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          AppFeedback.error('图片大小不能超过 10MB', context: context);
         }
         return;
       }
@@ -44,9 +41,7 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
         }
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('最多只能添加 9 张图片')));
+          AppFeedback.info('最多只能添加 9 张图片', context: context);
         }
       }
     } catch (e) {

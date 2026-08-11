@@ -170,11 +170,26 @@ class AiAssistantService {
     );
   }
 
-
   Future<AiRun> getRun(String runId) async {
     final response = await _dio.get('/ai/runs/$runId');
     _expectStatus(response, 200);
     return AiRun.fromJson(_map(_map(response.data)['run']));
+  }
+
+  /// 恢复已完成 Run 的来源事件快照。
+  ///
+  /// 该接口是 additive contract；旧服务端暂未提供时由 Provider 继续走
+  /// 会话 DTO / chunk 正文 fallback，不会因为来源接口失败而隐藏回答正文。
+  Future<List<AiSource>> getRunSources(String runId) async {
+    final response = await _dio.get('/ai/runs/$runId/sources');
+    _expectStatus(response, 200);
+    final data = _map(response.data);
+    final rawSources = data['sources'];
+    if (rawSources is! List) return const [];
+    return rawSources
+        .whereType<Map>()
+        .map((item) => AiSource.fromJson(Map<String, dynamic>.from(item)))
+        .toList(growable: false);
   }
 
   Future<AiRun> cancelRun(String runId) async {

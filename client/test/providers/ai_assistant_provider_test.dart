@@ -3,8 +3,10 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/ai_capabilities.dart';
+import 'package:shenliyuan/models/ai_chat_message.dart';
 import 'package:shenliyuan/models/ai_quota.dart';
 import 'package:shenliyuan/models/ai_run_event.dart';
+import 'package:shenliyuan/models/ai_source.dart';
 import 'package:shenliyuan/providers/ai_assistant_provider.dart';
 import 'package:shenliyuan/services/ai_assistant_service.dart';
 
@@ -159,7 +161,7 @@ void main() {
     expect(aiVisibleCharacterCount('👨‍👩‍👧‍👦'), 1);
   });
 
-  test('Hy3 能力控制三个业务入口显示与隐藏', () {
+  test('Hy3 能力只进入固定快捷入口，不混入轮换问题池', () {
     final available = AiAssistantProvider(
       AiAssistantService(Dio()),
       initialCapabilities: const AiCapabilities(
@@ -181,9 +183,20 @@ void main() {
     );
     addTearDown(available.dispose);
 
+    expect(available.capabilities?.features.hy3CompetitionCompare, isTrue);
+    expect(available.capabilities?.features.hy3AcademicAnalysis, isTrue);
+    expect(available.capabilities?.features.hy3WeekPlan, isTrue);
     expect(
       available.quickPrompts.map((item) => item.question),
-      containsAll(const ['对比适合我的竞赛', '分析我的学业情况', '制定本周学习计划']),
+      isNot(contains('对比适合我的竞赛')),
+    );
+    expect(
+      available.quickPrompts.map((item) => item.question),
+      isNot(contains('分析我的学业情况')),
+    );
+    expect(
+      available.quickPrompts.map((item) => item.question),
+      isNot(contains('制定本周学习计划')),
     );
 
     final unavailable = AiAssistantProvider(
@@ -295,6 +308,159 @@ void main() {
 
     expect(provider.streamedText, '奖学金评定规则见学生手册。');
     expect(provider.messages.single.content, '奖学金评定规则见学生手册。');
+  });
+
+  test('完成事件缺少 sources 时从 Run 来源接口恢复引用', () async {
+    final requestedPaths = <String>[];
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestedPaths.add(options.path);
+          if (options.path == '/ai/runs/run-1/sources') {
+            handler.resolve(
+              Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'sources': [
+                    {
+                      'type': 'policy',
+                      'primary_chunk_id': 18,
+                      'document_id': 4,
+                      'title': '奖助学金管理办法',
+                    },
+                  ],
+                },
+              ),
+            );
+            return;
+          }
+          if (options.path == '/ai/capabilities') {
+            handler.resolve(
+              Response<Map<String, dynamic>>(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'enabled': true,
+                  'access_allowed': true,
+                  'chat_enabled': true,
+                  'phase': 'p2',
+                  'features': {'policy_rag': true},
+                  'quota': {
+                    'limit': 3,
+                    'remaining': 2,
+                    'window_seconds': 3600,
+                  },
+                  'max_message_chars': 20,
+                },
+              ),
+            );
+            return;
+          }
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: {'conversations': <Map<String, dynamic>>[]},
+            ),
+          );
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: false,
+        chatEnabled: true,
+        phase: 'p2',
+        features: AiFeatures(policyRag: true, scheduleWindows: false),
+        quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
+        maxMessageChars: 20,
+      ),
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-1',
+      seq: 1,
+      type: AiRunEventType.delta,
+      text: '请参考 [chunk:18]',
+    ));
+    provider.applyRunEvent(const AiRunEvent(
+      runId: 'run-1',
+      seq: 2,
+      type: AiRunEventType.completed,
+    ));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final assistant = provider.messages.singleWhere(
+      (message) => message.role == AiMessageRole.assistant,
+    );
+    expect(assistant.sourceRecoveryState, AiSourceRecoveryState.loaded);
+    expect(assistant.sources.single.title, '奖助学金管理办法');
+    expect(requestedPaths, contains('/ai/runs/run-1/sources'));
+  });
+
+  test('历史会话优先使用消息内来源，不逐条重放 SSE', () async {
+    final requestedPaths = <String>[];
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestedPaths.add(options.path);
+          handler.resolve(
+            Response<Map<String, dynamic>>(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'conversation': {
+                  'id': 'conversation-1',
+                  'title': '奖学金咨询',
+                },
+                'messages': [
+                  {
+                    'id': 'message-1',
+                    'conversation_id': 'conversation-1',
+                    'run_id': 'run-1',
+                    'role': 'assistant',
+                    'content': '请参考 [chunk:18]',
+                    'sources': [
+                      {
+                        'type': 'policy',
+                        'primary_chunk_id': 18,
+                        'title': '奖助学金管理办法',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ),
+          );
+        },
+      ),
+    );
+    final provider = AiAssistantProvider(
+      AiAssistantService(dio),
+      initialCapabilities: const AiCapabilities(
+        enabled: true,
+        accessAllowed: true,
+        internalTestOnly: false,
+        chatEnabled: true,
+        phase: 'p2',
+        features: AiFeatures(policyRag: true, scheduleWindows: false),
+        quota: AiQuota(limit: 3, remaining: 2, windowSeconds: 3600),
+        maxMessageChars: 20,
+      ),
+    );
+    addTearDown(provider.dispose);
+
+    await provider.openConversation('conversation-1');
+
+    expect(provider.messages.single.sources.single.title, '奖助学金管理办法');
+    expect(requestedPaths, ['/ai/conversations/conversation-1']);
   });
 
   test('输出达到长度上限时明确提示回答不完整', () {

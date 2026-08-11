@@ -119,11 +119,12 @@ func TestReplyCreateRejectsImageWithSticker(t *testing.T) {
 		t.Fatalf("write image: %v", err)
 	}
 	file := models.File{
-		Hash:     "reply-image",
-		Path:     "/uploads/reply.png",
-		Size:     5,
-		MimeType: "image/png",
-		Status:   "active",
+		Hash:       "reply-image",
+		Path:       "/uploads/reply.png",
+		Size:       5,
+		MimeType:   "image/png",
+		UploaderID: 1,
+		Status:     "active",
 	}
 	if err := db.Create(&file).Error; err != nil {
 		t.Fatalf("create image file: %v", err)
@@ -150,11 +151,12 @@ func TestReplyCreateAllowsImageOnly(t *testing.T) {
 		t.Fatalf("write image: %v", err)
 	}
 	file := models.File{
-		Hash:     "favorite-image",
-		Path:     "/uploads/favorite.png",
-		Size:     5,
-		MimeType: "image/png",
-		Status:   "temporary",
+		Hash:       "favorite-image",
+		Path:       "/uploads/favorite.png",
+		Size:       5,
+		MimeType:   "image/png",
+		UploaderID: 1,
+		Status:     "temporary",
 	}
 	if err := db.Create(&file).Error; err != nil {
 		t.Fatalf("create image file: %v", err)

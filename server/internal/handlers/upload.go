@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	xdraw "golang.org/x/image/draw"
@@ -81,25 +82,32 @@ func (h *UploadHandler) ServePublic(c *gin.Context) {
 	var file models.File
 	variant, originalRelative := imageVariantRequest(relative)
 	if variant == "" {
-		if err := h.db.Where("path = ?", path).First(&file).Error; err != nil {
+		if err := h.db.Where("path = ? AND access_scope = ?", path, models.FileAccessPublic).First(&file).Error; err != nil {
 			c.Status(http.StatusNotFound)
 			c.Writer.WriteHeaderNow()
 			return
 		}
 	} else {
 		originalPath := "/uploads/" + originalRelative
-		if err := h.db.Where("path = ?", originalPath).First(&file).Error; err != nil {
+		if err := h.db.Where("path = ? AND access_scope = ?", originalPath, models.FileAccessPublic).First(&file).Error; err != nil {
 			c.Status(http.StatusNotFound)
 			c.Writer.WriteHeaderNow()
 			return
 		}
 	}
-	fullPath := filepath.Join(h.uploadDir, filepath.FromSlash(relative))
+	fullPath, err := services.ResolveUploadPath(h.uploadDir, path)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		c.Writer.WriteHeaderNow()
+		return
+	}
 	if variant != "" {
-		originalFullPath := filepath.Join(
-			h.uploadDir,
-			filepath.FromSlash(originalRelative),
-		)
+		originalFullPath, err := services.ResolveUploadPath(h.uploadDir, "/uploads/"+originalRelative)
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			c.Writer.WriteHeaderNow()
+			return
+		}
 		maxDimension := 480
 		if variant == "medium" {
 			maxDimension = 1280
@@ -257,7 +265,11 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	err = h.db.Where("hash = ?", hashStr).First(&existing).Error
 	if err == nil {
 		// 确认磁盘文件仍然存在再复用，防止"数据库有记录但物理文件丢失"返回 404。
-		diskPath := filepath.Join(h.uploadDir, strings.TrimPrefix(existing.Path, "/uploads/"))
+		diskPath, pathErr := services.ResolveUploadPath(h.uploadDir, existing.Path)
+		if pathErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "文件路径记录非法"})
+			return
+		}
 		if _, statErr := os.Stat(diskPath); statErr == nil {
 			if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
@@ -304,13 +316,14 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 
 	// 创建文件记录
 	fileRecord := models.File{
-		Hash:       hashStr,
-		Path:       "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
-		Size:       file.Size,
-		MimeType:   getMimeType(ext),
-		RefCount:   1,
-		UploaderID: c.GetUint("user_id"),
-		Status:     "temporary",
+		Hash:        hashStr,
+		Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
+		Size:        file.Size,
+		MimeType:    getMimeType(ext),
+		RefCount:    1,
+		UploaderID:  c.GetUint("user_id"),
+		Status:      "temporary",
+		AccessScope: models.FileAccessPrivate,
 	}
 
 	if err := h.createOrGetFile(&fileRecord); err != nil {
@@ -385,7 +398,10 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 		// 相同内容直接复用已有文件记录，跳过磁盘写入
 		var existing models.File
 		if err := h.db.Where("hash = ?", hashStr).First(&existing).Error; err == nil {
-			diskPath := filepath.Join(h.uploadDir, strings.TrimPrefix(existing.Path, "/uploads/"))
+			diskPath, pathErr := services.ResolveUploadPath(h.uploadDir, existing.Path)
+			if pathErr != nil {
+				continue
+			}
 			if _, statErr := os.Stat(diskPath); statErr == nil {
 				if err := h.grantFileToUser(existing.ID, c.GetUint("user_id")); err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "记录文件所有权失败"})
@@ -436,13 +452,14 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 
 		// 创建文件记录
 		fileRecord := models.File{
-			Hash:       hashStr,
-			Path:       "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
-			Size:       file.Size,
-			MimeType:   getMimeType(ext),
-			RefCount:   1,
-			UploaderID: c.GetUint("user_id"),
-			Status:     "temporary",
+			Hash:        hashStr,
+			Path:        "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
+			Size:        file.Size,
+			MimeType:    getMimeType(ext),
+			RefCount:    1,
+			UploaderID:  c.GetUint("user_id"),
+			Status:      "temporary",
+			AccessScope: models.FileAccessPrivate,
 		}
 		if err := h.createOrGetFile(&fileRecord); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})

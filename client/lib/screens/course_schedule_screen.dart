@@ -134,6 +134,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   int _reminderAdvanceMinutes = 5;
   bool _courseReminderBusy = false;
   int _scheduledReminderCount = 0;
+  int _backgroundStatusRequestId = 0;
   bool _isFetchingCourses = false;
   bool _isImportingCourses = false;
   CourseBackgroundKeepAliveStatus _backgroundKeepAliveStatus =
@@ -1782,6 +1783,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   Future<void> _loadBackgroundStatusAsync() async {
+    final requestId = ++_backgroundStatusRequestId;
     try {
       final remindersEnabled = await CourseReminderService.instance.isEnabled();
       final reminderCount =
@@ -1793,7 +1795,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             onTimeout: () =>
                 const CourseBackgroundKeepAliveStatus.unsupported(),
           );
-      if (mounted) {
+      if (mounted && requestId == _backgroundStatusRequestId) {
         setState(() {
           _courseReminderEnabled = remindersEnabled;
           _scheduledReminderCount = reminderCount;
@@ -1874,7 +1876,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       scheduledReminderCount: _scheduledReminderCount,
       reminderSummary: _courseReminderEnabled
           ? '提前 $_reminderAdvanceMinutes 分钟 · 已安排 $_scheduledReminderCount 个提醒'
-          : '上课前 $_reminderAdvanceMinutes 分钟静音提醒',
+          : '已关闭课程提醒',
       backgroundKeepAliveSubtitle: _backgroundKeepAliveSubtitle(),
       backgroundKeepAliveReady: _backgroundKeepAliveStatus.isReady,
       backgroundKeepAliveSupported: _backgroundKeepAliveStatus.supported,
@@ -1907,22 +1909,35 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       return;
     }
 
+    // 使正在返回的旧状态读取失效，避免“关闭后又被旧请求改回开启”。
+    ++_backgroundStatusRequestId;
     if (mounted) setState(() => _courseReminderBusy = true);
-    final result = await CourseReminderService.instance.setEnabled(
-      enabled,
-      courses: sc.courses,
-      semesterStart: sc.semesterStart,
-    );
-    final persistedEnabled = await CourseReminderService.instance.isEnabled();
-    if (!mounted || !context.mounted) return;
-    setState(() {
-      _courseReminderEnabled = result.enabled && persistedEnabled;
-      _scheduledReminderCount = result.scheduledCount;
-      _courseReminderBusy = false;
-    });
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(result.message)));
+    try {
+      final result = await CourseReminderService.instance.setEnabled(
+        enabled,
+        courses: sc.courses,
+        semesterStart: sc.semesterStart,
+      );
+      final persistedEnabled = await CourseReminderService.instance.isEnabled();
+      if (!mounted) return;
+
+      final actualEnabled = result.enabled && persistedEnabled;
+      setState(() {
+        _courseReminderEnabled = actualEnabled;
+        _scheduledReminderCount = actualEnabled ? result.scheduledCount : 0;
+        _courseReminderBusy = false;
+      });
+      if (context.mounted) {
+        AppFeedback.showSnackBar(context, result.message);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _courseReminderBusy = false);
+      if (context.mounted) {
+        AppFeedback.error('课程提醒设置失败，请稍后重试', context: context);
+      }
+      debugPrint('更新课程提醒状态失败: $error');
+    }
   }
 
   Future<void> _changeReminderAdvanceMinutesFromSettings(
@@ -1949,25 +1964,29 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Future<void> _requestBackgroundKeepAliveFromSettings(
     BuildContext context,
   ) async {
+    final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('后台保活授权'),
-        content: const Text(
-          '请在系统页面允许忽略电池优化、精确闹钟、自启动或后台运行。'
-          '这样即使从任务卡片清除应用，课程提醒也能由系统闹钟唤起。'
-          '如果在系统设置里强行停止应用，Android 会禁止所有提醒。',
+      builder: (dialogContext) => Theme(
+        data: dialogTheme,
+        child: AlertDialog(
+          title: const Text('后台保活授权'),
+          content: const Text(
+            '请在系统页面允许忽略电池优化、精确闹钟、自启动或后台运行。'
+            '这样即使从任务卡片清除应用，课程提醒也能由系统闹钟唤起。'
+            '如果在系统设置里强行停止应用，Android 会禁止所有提醒。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('去授权'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('去授权'),
-          ),
-        ],
       ),
     );
     if (confirmed != true) return;

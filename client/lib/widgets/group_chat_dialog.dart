@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
 
+import '../utils/app_feedback.dart';
+import 'campus/campus_theme.dart';
+
 const String kGroupChatNumber = '692905367';
 const String kGroupChatQrAsset = 'assets/images/group_chat_qr.png';
 
 Future<void> showGroupChatDialog(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
-  const accent = Colors.blue;
+  const accent = CampusTheme.primary;
   final dialogBackground = isDark ? const Color(0xFF1E1E2E) : Colors.white;
   final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
   final labelColor = isDark ? Colors.white54 : const Color(0xFF9094A6);
@@ -137,17 +140,7 @@ Future<void> showGroupChatDialog(BuildContext context) {
             onPressed: () {
               Clipboard.setData(const ClipboardData(text: kGroupChatNumber));
               Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('QQ群号已复制到剪贴板'),
-                  behavior: SnackBarBehavior.floating,
-                  margin: const EdgeInsets.all(16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
+              AppFeedback.success('QQ群号已复制到剪贴板', context: context);
             },
             icon: const Icon(Icons.copy_rounded, size: 16),
             label: const Text('复制群号'),
@@ -160,7 +153,7 @@ Future<void> showGroupChatDialog(BuildContext context) {
 
 Future<void> _handleDownload(BuildContext context) async {
   final isDark = Theme.of(context).brightness == Brightness.dark;
-  const accent = Colors.blue;
+  const accent = CampusTheme.primary;
   final dialogBackground = isDark ? const Color(0xFF1E1E2E) : Colors.white;
   final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
   final contentColor = isDark ? Colors.white70 : const Color(0xFF4F5568);
@@ -212,9 +205,7 @@ Future<void> _handleDownload(BuildContext context) async {
       final access = await Gal.requestAccess();
       if (!access) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('需要相册权限才能保存图片')),
-        );
+        AppFeedback.error('需要相册权限才能保存图片', context: context);
         return;
       }
     }
@@ -224,13 +215,9 @@ Future<void> _handleDownload(BuildContext context) async {
     await Gal.putImageBytes(bytes);
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已保存到相册')),
-    );
+    AppFeedback.success('已保存到相册', context: context);
   } catch (e) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('保存失败: $e')),
-    );
+    AppFeedback.error('保存失败: $e', context: context);
   }
 }

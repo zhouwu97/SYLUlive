@@ -90,6 +90,34 @@ void main() {
     expect(find.text('毕业清单'), findsNothing);
   });
 
+  testWidgets('AI 页面暗色主题下控件保持可渲染', (tester) async {
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: FakeAuthProvider(),
+          ),
+          ChangeNotifierProvider<EduProvider>.value(
+            value: FakeEduProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
+          home: AiAssistantScreen(
+            service: FakeAiAssistantService(),
+            dio: Dio(),
+            capabilities: AiCapabilities.fromJson(const {}),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('校园问答'), findsWidgets);
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
   testWidgets('Hy3 能力决定三个业务入口是否可见', (tester) async {
     Widget buildScreen(Map<String, dynamic> features) => MultiProvider(
           providers: [

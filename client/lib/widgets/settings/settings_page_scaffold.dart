@@ -18,7 +18,8 @@ class SettingsPageScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseTheme = Theme.of(context);
+    final isDark = baseTheme.brightness == Brightness.dark;
     final pageBg = CampusTheme.pageBackground(context);
 
     Widget content = Center(
@@ -47,30 +48,33 @@ class SettingsPageScaffold extends StatelessWidget {
       );
     }
 
-    return Scaffold(
-      backgroundColor: pageBg,
-      appBar: AppBar(
-        title: Text(
-          title,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
+    return Theme(
+      data: CampusTheme.withBrandAccent(baseTheme),
+      child: Scaffold(
+        backgroundColor: pageBg,
+        appBar: AppBar(
+          title: Text(
+            title,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : CampusTheme.text,
+            ),
+          ),
+          centerTitle: false,
+          backgroundColor: pageBg,
+          surfaceTintColor: Colors.transparent,
+          scrolledUnderElevation: 0,
+          elevation: 0,
+          iconTheme: IconThemeData(
             color: isDark ? Colors.white : CampusTheme.text,
           ),
+          actions: actions,
         ),
-        centerTitle: false,
-        backgroundColor: pageBg,
-        surfaceTintColor: Colors.transparent,
-        scrolledUnderElevation: 0,
-        elevation: 0,
-        iconTheme: IconThemeData(
-          color: isDark ? Colors.white : CampusTheme.text,
+        body: SafeArea(
+          top: false,
+          child: content,
         ),
-        actions: actions,
-      ),
-      body: SafeArea(
-        top: false,
-        child: content,
       ),
     );
   }

@@ -27,6 +27,31 @@ class CampusTheme {
   static const Color cyan = Color(0xFF0EA5A4);
   static const Color red = Color(0xFFE54848);
 
+  /// 将页面级品牌 accent 注入现有主题，保留原主题的明暗、字体和组件形状。
+  ///
+  /// 不改全局 AppTheme 的 seed，避免影响尚未完成迁移的业务页面；需要统一
+  /// 校园/设置类页面时，在页面边界使用这个方法即可。
+  static ThemeData withBrandAccent(ThemeData base) {
+    final isDark = base.brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFF7ED6C5) : primary;
+    final onAccent = isDark ? darkBg : Colors.white;
+    final accentContainer = isDark ? const Color(0xFF1B3B36) : primaryLight;
+    final onAccentContainer = isDark ? const Color(0xFFBFEDE3) : primary;
+
+    return base.copyWith(
+      colorScheme: base.colorScheme.copyWith(
+        primary: accent,
+        onPrimary: onAccent,
+        primaryContainer: accentContainer,
+        onPrimaryContainer: onAccentContainer,
+        secondary: accent,
+        onSecondary: onAccent,
+        secondaryContainer: accentContainer,
+        onSecondaryContainer: onAccentContainer,
+      ),
+    );
+  }
+
   static BoxDecoration cardDecoration(bool isDark, {bool softGreen = false}) {
     return BoxDecoration(
       color: isDark ? darkCard : card,

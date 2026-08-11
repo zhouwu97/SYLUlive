@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../campus/campus_theme.dart';
-
 class AiErrorCard extends StatelessWidget {
   final String message;
   final String? actionLabel;
@@ -16,23 +14,26 @@ class AiErrorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
+        color: colors.errorContainer,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFF6D5AE)),
+        border: Border.all(color: colors.error.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline_rounded,
-              color: CampusTheme.orange, size: 19),
+          Icon(Icons.info_outline_rounded, color: colors.error, size: 19),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(color: CampusTheme.text, fontSize: 12.5),
+              style: TextStyle(
+                color: colors.onErrorContainer,
+                fontSize: 12.5,
+              ),
             ),
           ),
           if (actionLabel != null)

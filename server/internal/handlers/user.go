@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -211,7 +212,12 @@ func (h *UserHandler) UpdateAvatar(c *gin.Context) {
 	}
 
 	avatar := versionedAvatarURL(input.Avatar)
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("avatar", avatar).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("avatar", avatar).Error; err != nil {
+			return err
+		}
+		return services.ClaimPublicImagePathsForUser(tx, userID.(uint), avatar)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
@@ -244,7 +250,12 @@ func (h *UserHandler) UpdateBackground(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("background", input.Background).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("background", input.Background).Error; err != nil {
+			return err
+		}
+		return services.ClaimPublicImagePathsForUser(tx, userID.(uint), input.Background)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}

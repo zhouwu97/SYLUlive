@@ -353,6 +353,9 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 
 	}
+	if err := ensureSecurityHardeningSchema(db); err != nil {
+		log.Fatal("安全加固数据库迁移失败:", err)
+	}
 	if err := models.BackfillCompetitionCatalogMetadata(db); err != nil {
 		log.Fatal("竞赛目录兼容数据回填失败:", err)
 	}
@@ -594,6 +597,7 @@ func main() {
 	likeHandler := handlers.NewLikeHandler(db)
 
 	messageHandler := handlers.NewMessageHandler(db, services.NewNotificationService(cfg.JPushAppKey, cfg.JPushMasterSecret))
+	messageHandler.SetUploadDir(cfg.UploadDir)
 
 	announcementHandler := handlers.NewAnnouncementHandler(db)
 
@@ -1461,6 +1465,8 @@ func main() {
 
 		messages.GET("/events", messageHandler.Events)
 
+		messages.GET("/files/:file_id", messageHandler.ServePrivateFile)
+
 		messages.GET("/users/:target_user_id/conversation", messageHandler.GetConversationWithUser)
 
 		messages.GET("/conversations/:id", messageHandler.GetMessages)
@@ -1904,6 +1910,15 @@ func main() {
 
 	}
 
+	// 管理员违规列表使用独立资源路径，普通用户接口永远只返回当前用户记录。
+	adminViolations := r.Group("/api/admin/violations")
+	adminViolations.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		adminViolations.GET("", teacherHandler.GetAdminViolations)
+		adminViolations.POST("", teacherHandler.AddViolation)
+		adminViolations.PUT("/:id/appeal", teacherHandler.HandleAppeal)
+	}
+
 	// 抽奖路由
 
 	lotteryGroup := r.Group("/api/lottery")
@@ -2002,27 +2017,49 @@ func main() {
 		}
 	}
 
-	// 版本信息
-
+	// 版本信息。/api/version 是旧客户端兼容适配器，发布版本统一从
+	// AppRelease 读取，避免与 /api/app/update 维护两套版本真相。
 	r.GET("/api/version", func(c *gin.Context) {
+		latest, err := appReleaseService.GetLatestPublished(c.Request.Context(), models.AppReleasePlatformAndroid, models.AppReleaseChannelStable)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"code": "version_service_unavailable", "error": "版本服务暂不可用"})
+			return
+		}
 
-		c.JSON(http.StatusOK, gin.H{
-
-			"version": "1.6.2",
-
-			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
-
-			"force_update": false, // 保留兼容旧版逻辑
-
-			"download_url": "https://sylulive.online/uploads/app-release.apk",
-
+		response := gin.H{
+			"version":             "",
+			"min_version":         "",
+			"min_version_code":    int64(0),
+			"force_update":        false,
+			"download_url":        "",
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
+			"gitee_download_url":  "https://gitee.com/chunhezi/SYLUlive/releases",
+			"update_msg":          "",
+		}
+		if latest == nil {
+			c.JSON(http.StatusOK, response)
+			return
+		}
 
-			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
-
-			"update_msg": "1. 优化校园地图首次加载、复位与横屏查看\n2. 校历升级为可点击的结构化月历，支持教学周、假期和日期详情\n3. 校历支持离线回退、后台更新与官方原图核验",
-		})
-
+		currentVersionRaw := strings.TrimSpace(c.Query("version_code"))
+		if currentVersionRaw == "" {
+			currentVersionRaw = strings.TrimSpace(c.GetHeader("X-App-Version-Code"))
+		}
+		currentVersion, parseErr := strconv.ParseInt(currentVersionRaw, 10, 64)
+		forceUpdate := parseErr == nil && currentVersion > 0 && currentVersion < latest.MinimumSupportedVersionCode
+		downloadURL := "/api/app/releases/" + strconv.FormatUint(uint64(latest.ID), 10) + "/download"
+		if latest.DeliveryMode == models.AppReleaseDeliveryModeExternalMarket {
+			downloadURL = latest.ActionURL
+		}
+		response["version"] = latest.VersionName
+		// 旧协议只有字符串字段，使用同源的最低支持构建号，同时提供
+		// min_version_code 供能理解新协议的客户端使用。
+		response["min_version"] = strconv.FormatInt(latest.MinimumSupportedVersionCode, 10)
+		response["min_version_code"] = latest.MinimumSupportedVersionCode
+		response["force_update"] = forceUpdate
+		response["download_url"] = downloadURL
+		response["update_msg"] = latest.Changelog
+		c.JSON(http.StatusOK, response)
 	})
 
 	log.Println("服务器启动在 :8080")
@@ -2047,23 +2084,21 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 	now := time.Now()
 
 	if err := db.Where("student_id = ?", studentID).First(&existing).Error; err == nil {
-
-		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-
-		db.Model(&existing).Updates(map[string]interface{}{
-
-			"password_hash": string(hashedPassword),
-
-			"nickname": "超级管理员",
-
-			"role": models.RoleSuperAdmin,
-
-			"credit_score": 100,
-
+		// 已存在的种子账号不因服务重启而覆盖密码或无条件轮换令牌；
+		// 只有角色真的发生变化时才通过统一 Service 失效旧会话。
+		if existing.Role != models.RoleSuperAdmin {
+			if err := services.UpdateUserRoleAndInvalidateToken(db, existing.ID, models.RoleSuperAdmin); err != nil {
+				log.Printf("系统超级管理员角色修复失败: %v", err)
+			}
+		}
+		if err := db.Model(&existing).Updates(map[string]interface{}{
+			"nickname":       "超级管理员",
+			"credit_score":   100,
 			"account_status": "active",
-
-			"cancelled_at": nil,
-		})
+			"cancelled_at":   nil,
+		}).Error; err != nil {
+			log.Printf("系统超级管理员状态更新失败: %v", err)
+		}
 		// 超管种子账号不经教务注册流程，但必须满足登录查询的已认证身份条件。
 		db.Model(&existing).
 			Where("student_verified_at IS NULL").
@@ -2094,22 +2129,60 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 	}
 
-	// 已移除硬编码提升超级管理员代码
-
-	// 移除将其他超级管理员降级的代码，允许多个超级管理员共存
-
-	// db.Model(&models.User{}).
-
-	// 	Where("role = ? AND student_id <> ?", models.RoleSuperAdmin, studentID).
-
-	// 	Update("role", models.RoleUser)
-
-	db.Model(&models.User{}).
-		Where("student_id = ? AND role = ?", "admin", models.RoleAdmin).
-		Update("role", models.RoleUser)
+	var legacyAdmin models.User
+	if err := db.Select("id", "role").Where("student_id = ? AND role = ?", "admin", models.RoleAdmin).First(&legacyAdmin).Error; err == nil {
+		if err := services.UpdateUserRoleAndInvalidateToken(db, legacyAdmin.ID, models.RoleUser); err != nil {
+			log.Printf("遗留 admin 账号降权失败: %v", err)
+		}
+	}
 
 	log.Printf("系统超级管理员已就绪: %s", studentID)
 
+}
+
+// ensureSecurityHardeningSchema 建立文件访问范围和举报 pending 唯一约束，
+// 并把已有公开业务引用的文件回填为 public；未被公开引用的历史文件保持 private。
+func ensureSecurityHardeningSchema(db *gorm.DB) error {
+	statements := []string{
+		`ALTER TABLE files ADD COLUMN IF NOT EXISTS access_scope VARCHAR(16) NOT NULL DEFAULT 'private'`,
+		`CREATE INDEX IF NOT EXISTS idx_files_access_scope ON files (access_scope)`,
+		`UPDATE files SET access_scope = 'private' WHERE access_scope IS NULL OR access_scope = ''`,
+		`UPDATE files
+SET status = 'active', claimed_at = COALESCE(claimed_at, CURRENT_TIMESTAMP)
+WHERE EXISTS (SELECT 1 FROM messages WHERE messages.file_id = files.id)`,
+		`UPDATE files SET access_scope = 'public'
+WHERE EXISTS (SELECT 1 FROM post_images WHERE post_images.file_id = files.id)
+   OR EXISTS (SELECT 1 FROM reply_images WHERE reply_images.file_id = files.id)
+   OR EXISTS (SELECT 1 FROM users WHERE users.avatar = files.path OR users.avatar LIKE files.path || '?%')
+   OR EXISTS (SELECT 1 FROM users WHERE users.background = files.path OR users.background LIKE files.path || '?%')
+   OR EXISTS (SELECT 1 FROM water_sections
+              WHERE water_sections.avatar_url = files.path
+                 OR water_sections.cover_url = files.path
+                 OR water_sections.cover_portrait_url = files.path
+                 OR water_sections.cover_landscape_url = files.path
+                 OR water_sections.cover_square_url = files.path)`,
+		`UPDATE files SET access_scope = 'public'
+WHERE EXISTS (SELECT 1 FROM canteens
+              WHERE canteens.verified = TRUE
+                AND (canteens.image = files.path
+                  OR canteens.image LIKE files.path || '?%'))
+   OR EXISTS (SELECT 1
+              FROM canteen_ratings
+              JOIN canteens ON canteens.id = canteen_ratings.canteen_id
+              WHERE canteens.verified = TRUE
+                AND (canteen_ratings.images LIKE '%' || files.path || '%'
+                  OR canteen_ratings.images LIKE '%/' || files.path || '%'))`,
+		`DROP INDEX IF EXISTS uq_pending_report_target`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_report_target
+ ON reports (reporter_id, target_type, target_id)
+ WHERE status = 'pending'`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ensureCanteenNormalizedNameIndex 回填历史数据后建立数据库级唯一约束。

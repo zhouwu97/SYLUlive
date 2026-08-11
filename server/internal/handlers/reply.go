@@ -171,6 +171,9 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		if _, err := services.ValidateImageFileIDs(tx, parsedFileIDs, 9, userID.(uint)); err != nil {
 			return err
 		}
+		if err := services.ClaimPublicImageFiles(tx, parsedFileIDs); err != nil {
+			return err
+		}
 		if err := tx.Create(&reply).Error; err != nil {
 			return err
 		}

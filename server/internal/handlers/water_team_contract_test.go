@@ -71,7 +71,7 @@ func TestStandaloneTeamRecruitmentLifecycle(t *testing.T) {
 		t.Fatalf("create team tag: %v", err)
 	}
 	imageFile := models.File{
-		Hash: "team-contract-image", Path: "/uploads/team.png", Size: 10, MimeType: "image/png",
+		Hash: "team-contract-image", Path: "/uploads/team.png", Size: 10, MimeType: "image/png", UploaderID: owner.ID,
 	}
 	if err := db.Create(&imageFile).Error; err != nil {
 		t.Fatalf("create image file: %v", err)

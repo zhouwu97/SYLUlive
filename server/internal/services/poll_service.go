@@ -97,15 +97,8 @@ func (s *PollService) Create(userID uint, role string, input CreatePollInput) (m
 	if err != nil {
 		return models.Post{}, err
 	}
-	var user models.User
-	if err := s.db.Select("id").First(&user, userID).Error; err != nil {
-		return models.Post{}, newPollError(PollCodePermissionDenied, "用户不存在")
-	}
-	if !isAdminRole(role) {
-		if err := s.checkCreationLimit(userID); err != nil {
-			return models.Post{}, err
-		}
-	}
+	unlock := s.acquirePollWriteLock()
+	defer unlock()
 
 	now := s.now()
 	post := models.Post{
@@ -120,7 +113,21 @@ func (s *PollService) Create(userID uint, role string, input CreatePollInput) (m
 		LastActivityAt: now,
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// PostgreSQL 使用用户行锁把“额度检查 + 创建”串成一个事务；
+		// SQLite 由 acquirePollWriteLock 提供同等的测试环境串行语义。
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&user, userID).Error; err != nil {
+			return newPollError(PollCodePermissionDenied, "用户不存在")
+		}
+		if !isAdminRole(role) {
+			if err := s.checkCreationLimit(tx, userID, now); err != nil {
+				return err
+			}
+		}
 		if _, err := ValidateImageFileIDs(tx, input.FileIDs, 3, userID); err != nil {
+			return err
+		}
+		if err := ClaimPublicImageFiles(tx, input.FileIDs); err != nil {
 			return err
 		}
 		if err := tx.Create(&post).Error; err != nil {
@@ -200,6 +207,9 @@ func (s *PollService) Update(pollID, userID uint, role string, input CreatePollI
 		}
 		if _, err := ValidateImageFileIDs(tx, input.FileIDs, 3, userID); err != nil {
 			return newPollError(PollCodeInvalidInput, err.Error())
+		}
+		if err := ClaimPublicImageFiles(tx, input.FileIDs); err != nil {
+			return err
 		}
 		if effectivePollStatus(poll, post.Status, now) != models.PollStatusActive {
 			return newPollError(PollCodeEnded, "投票已结束，不能编辑")
@@ -634,17 +644,16 @@ func validatePollMutableInput(input *CreatePollInput) error {
 	return nil
 }
 
-func (s *PollService) checkCreationLimit(userID uint) error {
-	now := s.now()
+func (s *PollService) checkCreationLimit(db *gorm.DB, userID uint, now time.Time) error {
 	var active int64
-	if err := s.db.Model(&models.Poll{}).Joins("JOIN posts ON posts.id = polls.post_id").Where("posts.author_id = ? AND posts.status = ? AND polls.status = ? AND polls.ends_at > ?", userID, models.PostStatusNormal, models.PollStatusActive, now).Count(&active).Error; err != nil {
+	if err := db.Model(&models.Poll{}).Joins("JOIN posts ON posts.id = polls.post_id").Where("posts.author_id = ? AND posts.status = ? AND polls.status = ? AND polls.ends_at > ?", userID, models.PostStatusNormal, models.PollStatusActive, now).Count(&active).Error; err != nil {
 		return err
 	}
 	if active >= 5 {
 		return newPollError(PollCodeCreationLimit, "最多同时发起 5 个进行中的投票")
 	}
 	var recent int64
-	if err := s.db.Model(&models.Poll{}).Joins("JOIN posts ON posts.id = polls.post_id").Where("posts.author_id = ? AND polls.created_at >= ?", userID, now.Add(-24*time.Hour)).Count(&recent).Error; err != nil {
+	if err := db.Model(&models.Poll{}).Joins("JOIN posts ON posts.id = polls.post_id").Where("posts.author_id = ? AND polls.created_at >= ?", userID, now.Add(-24*time.Hour)).Count(&recent).Error; err != nil {
 		return err
 	}
 	if recent >= 5 {

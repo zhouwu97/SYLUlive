@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -109,6 +110,46 @@ func TestPollServiceCreateAndResultVisibility(t *testing.T) {
 	}
 	if *changed.PollMeta.Options[1].VoteCount != 0 || *changed.PollMeta.Options[2].VoteCount != 1 || changed.PollMeta.ParticipantCount != 1 {
 		t.Fatalf("改票计数错误: %#v", changed.PollMeta.Options)
+	}
+}
+
+func TestPollServiceCreateSerializesPerUserQuota(t *testing.T) {
+	db := newPollServiceTestDB(t)
+	now := time.Date(2026, 7, 18, 12, 0, 0, 0, time.Local)
+	owner := seedPollUser(t, db, "concurrent-owner")
+	service := NewPollService(db)
+	service.SetNowForTest(func() time.Time { return now })
+
+	var wg sync.WaitGroup
+	results := make(chan error, 10)
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := service.Create(owner.ID, string(owner.Role), pollInput(now))
+			results <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	successes := 0
+	for err := range results {
+		if err == nil {
+			successes++
+			continue
+		}
+		requirePollCode(t, err, PollCodeCreationLimit)
+	}
+	if successes > 5 {
+		t.Fatalf("concurrent poll creations=%d, want at most 5", successes)
+	}
+	var active int64
+	if err := db.Model(&models.Poll{}).Where("status = ?", models.PollStatusActive).Count(&active).Error; err != nil {
+		t.Fatalf("count active polls: %v", err)
+	}
+	if active > 5 {
+		t.Fatalf("active polls=%d, want at most 5", active)
 	}
 }
 

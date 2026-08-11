@@ -159,9 +159,13 @@ class AppFeedback {
     final theme = context == null ? null : Theme.of(context);
     final colors = theme?.colorScheme;
     final palette = _FeedbackPalette.from(kind, colors);
-    final bottomInset = layoutContext == null
-        ? 0.0
-        : MediaQuery.maybeOf(layoutContext)?.viewPadding.bottom ?? 0.0;
+    final mediaQuery =
+        layoutContext == null ? null : MediaQuery.maybeOf(layoutContext);
+    final viewPaddingBottom = mediaQuery?.viewPadding.bottom ?? 0.0;
+    final contentPaddingBottom = mediaQuery?.padding.bottom ?? 0.0;
+    final bottomInset = viewPaddingBottom > contentPaddingBottom
+        ? viewPaddingBottom
+        : contentPaddingBottom;
     final content = ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 560),
       child: Row(

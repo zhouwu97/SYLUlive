@@ -25,6 +25,8 @@ enum RemotePushUiStatus {
   diagnosticsUnavailable,
 }
 
+enum _KeepAliveGuideAction { later, openSettings }
+
 /// 通知与后台设置二级页
 class NotificationBackgroundSettingsScreen extends StatefulWidget {
   const NotificationBackgroundSettingsScreen({super.key});
@@ -143,6 +145,17 @@ class _NotificationBackgroundSettingsScreenState
 
   Future<void> _setKeepAliveEnabled(bool enabled) async {
     if (_keepAliveBusy) return;
+
+    // “稍后再说”表示暂不启用前台服务；不能先写入开启状态，再让用户
+    // 以为只是关闭了说明弹窗。
+    if (enabled && !_keepAliveStatus.enabled) {
+      final action = await _showKeepAliveGuideDialog();
+      if (!mounted || action != _KeepAliveGuideAction.openSettings) {
+        await _loadKeepAliveStatus();
+        return;
+      }
+    }
+
     setState(() => _keepAliveBusy = true);
     final status = await KeepAliveService.instance.setEnabled(enabled);
     if (!mounted) return;
@@ -151,7 +164,7 @@ class _NotificationBackgroundSettingsScreenState
       _keepAliveBusy = false;
     });
     if (enabled) {
-      await _showKeepAliveGuideDialog();
+      await KeepAliveService.instance.openSettings();
     }
   }
 
@@ -167,48 +180,58 @@ class _NotificationBackgroundSettingsScreenState
     });
   }
 
-  Future<void> _showKeepAliveGuideDialog() async {
+  /// 从说明入口打开系统设置时，不改变保活开关的当前状态。
+  Future<void> _openKeepAliveGuide() async {
+    final action = await _showKeepAliveGuideDialog();
+    if (action == _KeepAliveGuideAction.openSettings) {
+      await KeepAliveService.instance.openSettings();
+    }
+  }
+
+  Future<_KeepAliveGuideAction> _showKeepAliveGuideDialog() async {
     final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => Theme(
-        data: dialogTheme,
-        child: AlertDialog(
-          title: const Text('后台保活推荐设置'),
-          content: const SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '为了保证私信接收和后台通知即时送达，建议在系统设置中完成以下配置：',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+    return await showDialog<_KeepAliveGuideAction>(
+          context: context,
+          builder: (ctx) => Theme(
+            data: dialogTheme,
+            child: AlertDialog(
+              title: const Text('后台保活推荐设置'),
+              content: const SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '为了保证私信接收和后台通知即时送达，建议在系统设置中完成以下配置：',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 12),
+                    Text('1. 电池优化：设置为“不限制”或“无限制”；'),
+                    SizedBox(height: 6),
+                    Text('2. 自启动管理：开启“允许自启动”；'),
+                    SizedBox(height: 6),
+                    Text('3. 最近任务锁定：在多任务界面给本应用加锁。'),
+                  ],
                 ),
-                SizedBox(height: 12),
-                Text('1. 电池优化：设置为“不限制”或“无限制”；'),
-                SizedBox(height: 6),
-                Text('2. 自启动管理：开启“允许自启动”；'),
-                SizedBox(height: 6),
-                Text('3. 最近任务锁定：在多任务界面给本应用加锁。'),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx, rootNavigator: true)
+                      .pop(_KeepAliveGuideAction.later),
+                  child: const Text('稍后再说'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(ctx, rootNavigator: true)
+                        .pop(_KeepAliveGuideAction.openSettings);
+                  },
+                  child: const Text('前往系统设置'),
+                ),
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('稍后再说'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                KeepAliveService.instance.openSettings();
-              },
-              child: const Text('前往系统设置'),
-            ),
-          ],
-        ),
-      ),
-    );
+        ) ??
+        _KeepAliveGuideAction.later;
   }
 
   Widget _buildPushStatusBadge() {
@@ -393,7 +416,7 @@ class _NotificationBackgroundSettingsScreenState
                 icon: Icons.settings_applications_outlined,
                 title: '系统保活指南',
                 subtitle: '包含电池无限制设置、允许自启动等提示',
-                onTap: _showKeepAliveGuideDialog,
+                onTap: _openKeepAliveGuide,
               ),
             ],
           ),

@@ -6,6 +6,7 @@ import '../app_bootstrap.dart';
 import '../models/campus_article.dart';
 import '../services/campus_article_service.dart';
 import '../utils/app_feedback.dart';
+import '../widgets/campus/campus_theme.dart';
 import 'campus_article_detail_screen.dart';
 
 /// 全部校园资讯列表页。
@@ -215,43 +216,47 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final pageBackground = CampusTheme.pageBackground(context);
 
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF101219) : const Color(0xFFF8F7FC),
-      appBar: AppBar(
-        title: const Text('校园资讯'),
-        backgroundColor: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        foregroundColor: isDark ? Colors.white : const Color(0xFF20212B),
-        elevation: 0,
-        scrolledUnderElevation: 0.5,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // 副标题
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '校内通知与竞赛信息',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: isDark ? Colors.white54 : Colors.black54,
+    return Theme(
+      data: CampusTheme.withBrandAccent(theme),
+      child: Scaffold(
+        backgroundColor: pageBackground,
+        appBar: AppBar(
+          title: const Text('校园资讯'),
+          backgroundColor: pageBackground,
+          foregroundColor: isDark ? Colors.white : CampusTheme.text,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
+        ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // 副标题
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '校内通知与竞赛信息',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: isDark ? Colors.white60 : CampusTheme.subText,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            // 分类筛选
-            _buildFilterTabs(isDark),
-            const SizedBox(height: 8),
-            // 列表
-            Expanded(
-              child: _buildListContent(isDark),
-            ),
-          ],
+              const SizedBox(height: 12),
+              // 分类筛选
+              _buildFilterTabs(isDark),
+              const SizedBox(height: 8),
+              // 列表
+              Expanded(
+                child: _buildListContent(isDark),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -260,7 +265,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
   // ── 分类筛选标签 ───────────────────────────────────────────────
 
   Widget _buildFilterTabs(bool isDark) {
-    final primary = Theme.of(context).colorScheme.primary;
+    const primary = CampusTheme.primary;
 
     return SizedBox(
       height: 38,
@@ -280,12 +285,12 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
               decoration: BoxDecoration(
                 color: isSelected
                     ? primary
-                    : (isDark ? const Color(0xFF1B1E28) : Colors.white),
+                    : (isDark ? CampusTheme.darkCard : CampusTheme.card),
                 borderRadius: BorderRadius.circular(99),
                 border: Border.all(
                   color: isSelected
                       ? primary
-                      : (isDark ? Colors.white10 : const Color(0xFFEDEBF3)),
+                      : (isDark ? Colors.white10 : CampusTheme.softBorder),
                 ),
               ),
               alignment: Alignment.center,
@@ -296,7 +301,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                   fontWeight: FontWeight.w600,
                   color: isSelected
                       ? Colors.white
-                      : (isDark ? Colors.white70 : const Color(0xFF555666)),
+                      : (isDark ? Colors.white70 : CampusTheme.subText),
                 ),
               ),
             ),
@@ -345,15 +350,14 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
   }
 
   Widget _buildArticleItem(bool isDark, CampusArticleSummary article) {
-    final primary = Theme.of(context).colorScheme.primary;
+    const primary = CampusTheme.primary;
     // 比赛通知用橙金色，教务通知/公告保持主色
-    final tagColor =
-        article.source == 'cxcy' ? const Color(0xFFE89B30) : primary;
+    final tagColor = article.source == 'cxcy' ? CampusTheme.orange : primary;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
+        color: isDark ? CampusTheme.darkCard : CampusTheme.card,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: () => _openDetail(article),
@@ -363,7 +367,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
+                color: isDark ? Colors.white10 : CampusTheme.border,
               ),
             ),
             child: Column(
@@ -395,7 +399,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                       article.shortDate,
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? Colors.white38 : Colors.black45,
+                        color: isDark ? Colors.white54 : CampusTheme.subText,
                       ),
                     ),
                   ],
@@ -410,7 +414,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                     fontSize: 15,
                     height: 1.4,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : const Color(0xFF292A35),
+                    color: isDark ? Colors.white : CampusTheme.text,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -421,7 +425,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                       Icon(
                         Icons.badge_outlined,
                         size: 13,
-                        color: isDark ? Colors.white38 : Colors.black45,
+                        color: isDark ? Colors.white54 : CampusTheme.subText,
                       ),
                       const SizedBox(width: 4),
                       Flexible(
@@ -431,7 +435,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12,
-                            color: isDark ? Colors.white38 : Colors.black45,
+                            color:
+                                isDark ? Colors.white54 : CampusTheme.subText,
                           ),
                         ),
                       ),
@@ -442,7 +447,8 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                         ' · ',
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white24 : Colors.black26,
+                          color:
+                              isDark ? Colors.white30 : CampusTheme.softBorder,
                         ),
                       ),
                     ],
@@ -450,14 +456,14 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                       Icon(
                         Icons.attach_file_rounded,
                         size: 13,
-                        color: isDark ? Colors.white38 : Colors.black45,
+                        color: isDark ? Colors.white54 : CampusTheme.subText,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         '含附件',
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.black45,
+                          color: isDark ? Colors.white54 : CampusTheme.subText,
                         ),
                       ),
                     ],
@@ -474,7 +480,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
   // ── 骨架屏 ─────────────────────────────────────────────────────
 
   Widget _buildSkeletonList(bool isDark) {
-    final shimmerColor = isDark ? Colors.white10 : const Color(0xFFEDEBF3);
+    final shimmerColor = isDark ? Colors.white10 : CampusTheme.softBorder;
     return ListView.builder(
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
@@ -486,7 +492,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
             height: 110,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1B1E28) : Colors.white,
+              color: isDark ? CampusTheme.darkCard : CampusTheme.card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: shimmerColor),
             ),
@@ -536,14 +542,14 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
           Icon(
             Icons.inbox_rounded,
             size: 56,
-            color: isDark ? Colors.white24 : Colors.black26,
+            color: isDark ? Colors.white30 : CampusTheme.subText,
           ),
           const SizedBox(height: 12),
           Text(
             '暂无校园资讯',
             style: TextStyle(
               fontSize: 15,
-              color: isDark ? Colors.white38 : Colors.black45,
+              color: isDark ? Colors.white54 : CampusTheme.subText,
             ),
           ),
           const SizedBox(height: 16),
@@ -568,7 +574,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
             Icon(
               Icons.cloud_off_rounded,
               size: 56,
-              color: isDark ? Colors.white24 : Colors.black26,
+              color: isDark ? Colors.white30 : CampusTheme.subText,
             ),
             const SizedBox(height: 12),
             Text(
@@ -576,7 +582,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: isDark ? Colors.white54 : Colors.black54,
+                color: isDark ? Colors.white70 : CampusTheme.subText,
               ),
             ),
             const SizedBox(height: 16),
@@ -614,7 +620,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
             '没有更多了',
             style: TextStyle(
               fontSize: 12.5,
-              color: isDark ? Colors.white24 : Colors.black26,
+              color: isDark ? Colors.white30 : CampusTheme.subText,
             ),
           ),
         ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/course_term.dart';
+import '../campus/campus_theme.dart';
 
 /// A bottom-sheet week picker for setting the semester start date.
 ///
@@ -11,13 +12,17 @@ class CourseSemesterStartPicker {
     required CourseTerm term,
     DateTime? initialMonday,
   }) {
+    final pickerTheme = CampusTheme.withBrandAccent(Theme.of(context));
     return showModalBottomSheet<DateTime>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _PickerContent(
-        term: term,
-        initialMonday: initialMonday,
+      builder: (_) => Theme(
+        data: pickerTheme,
+        child: _PickerContent(
+          term: term,
+          initialMonday: initialMonday,
+        ),
       ),
     );
   }
@@ -46,10 +51,12 @@ class _PickerContentState extends State<_PickerContent> {
     super.initState();
     _selectedMonday = widget.initialMonday;
     if (widget.initialMonday != null) {
-      _baseMonth = DateTime(widget.initialMonday!.year, widget.initialMonday!.month, 1);
+      _baseMonth =
+          DateTime(widget.initialMonday!.year, widget.initialMonday!.month, 1);
     } else {
       final y = int.tryParse(widget.term.year) ?? DateTime.now().year;
-      _baseMonth = widget.term.semester == 3 ? DateTime(y, 8, 1) : DateTime(y + 1, 2, 1);
+      _baseMonth =
+          widget.term.semester == 3 ? DateTime(y, 8, 1) : DateTime(y + 1, 2, 1);
     }
     _currentPage = 6;
     _pageController = PageController(initialPage: _currentPage);
@@ -131,7 +138,7 @@ class _PickerContentState extends State<_PickerContent> {
     return Container(
       height: height,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.grey[50],
+        color: isDark ? CampusTheme.darkCard : CampusTheme.card,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: Column(
@@ -162,7 +169,7 @@ class _PickerContentState extends State<_PickerContent> {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
               widget.term.title,
-              style: const TextStyle(color: Colors.grey, fontSize: 14),
+              style: TextStyle(color: CampusTheme.subText, fontSize: 14),
             ),
           ),
           const SizedBox(height: 6),
@@ -219,13 +226,17 @@ class _PickerContentState extends State<_PickerContent> {
                 child: Icon(
                   Icons.arrow_drop_down,
                   size: 20,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.5),
                 ),
               ),
             ],
           ),
         ),
-        IconButton(icon: const Icon(Icons.chevron_right), onPressed: _nextMonth),
+        IconButton(
+            icon: const Icon(Icons.chevron_right), onPressed: _nextMonth),
       ],
     );
   }
@@ -248,14 +259,17 @@ class _PickerContentState extends State<_PickerContent> {
                 onPressed: () => setState(() => _pickerYear--),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 decoration: BoxDecoration(
                   color: _primary(context)!.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text('$_pickerYear 年',
                     style: TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold, color: _primary(context))),
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _primary(context))),
               ),
               IconButton(
                 icon: const Icon(Icons.chevron_right),
@@ -287,7 +301,9 @@ class _PickerContentState extends State<_PickerContent> {
                     decoration: BoxDecoration(
                       color: sel
                           ? _primary(context)
-                          : (isDark ? Colors.white.withValues(alpha: 0.06) : Colors.grey[100]),
+                          : (isDark
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : Colors.grey[100]),
                       borderRadius: BorderRadius.circular(12),
                       border: sel
                           ? null
@@ -328,7 +344,7 @@ class _PickerContentState extends State<_PickerContent> {
             width: 32,
             child: Text(day,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                style: TextStyle(color: CampusTheme.subText, fontSize: 13)),
           );
         }).toList(),
       ),
@@ -360,10 +376,14 @@ class _PickerContentState extends State<_PickerContent> {
             child: Container(
               margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 12),
               decoration: BoxDecoration(
-                color: isSelected ? primary.withValues(alpha: 0.12) : Colors.transparent,
+                color: isSelected
+                    ? primary.withValues(alpha: 0.12)
+                    : Colors.transparent,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isSelected ? primary.withValues(alpha: 0.5) : Colors.transparent,
+                  color: isSelected
+                      ? primary.withValues(alpha: 0.5)
+                      : Colors.transparent,
                   width: 1.5,
                 ),
               ),
@@ -395,9 +415,13 @@ class _PickerContentState extends State<_PickerContent> {
                     child = Text('${day.day}',
                         style: TextStyle(
                             color: inMonth
-                                ? (isSelected ? primary : (isDark ? Colors.white : Colors.black87))
+                                ? (isSelected
+                                    ? primary
+                                    : (isDark ? Colors.white : Colors.black87))
                                 : Colors.grey.withValues(alpha: 0.45),
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
                             fontSize: 14));
                   }
 
@@ -421,29 +445,41 @@ class _PickerContentState extends State<_PickerContent> {
 
     return Container(
       padding: EdgeInsets.only(
-        left: 24, right: 24, top: 16,
+        left: 24,
+        right: 24,
+        top: 16,
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2A2A) : Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, -4))],
+        color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, -4))
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_selectedMonday != null) ...[
-            const Text('已选择', style: TextStyle(color: Colors.grey, fontSize: 13)),
+            Text('已选择',
+                style: TextStyle(color: CampusTheme.subText, fontSize: 13)),
             const SizedBox(height: 4),
-            Text('第1周 · ${_fmt(_selectedMonday!)}—${_fmt(_selectedMonday!.add(const Duration(days: 6)))}',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+                '第1周 · ${_fmt(_selectedMonday!)}—${_fmt(_selectedMonday!.add(const Duration(days: 6)))}',
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 2),
             Text('以${_fmt(_selectedMonday!)}周一作为开学日期',
                 style: TextStyle(color: primary, fontSize: 13)),
           ] else ...[
-            const Text('尚未选择', style: TextStyle(color: Colors.grey, fontSize: 13)),
+            Text('尚未选择',
+                style: TextStyle(color: CampusTheme.subText, fontSize: 13)),
             const SizedBox(height: 4),
-            const Text('--', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('--',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 2),
             const Text('请在上方日历中选择',
                 style: TextStyle(color: Colors.transparent, fontSize: 13)),
@@ -455,7 +491,8 @@ class _PickerContentState extends State<_PickerContent> {
                 child: OutlinedButton(
                   style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12))),
                   onPressed: () => Navigator.pop(context),
                   child: const Text('取消'),
                 ),
@@ -468,9 +505,12 @@ class _PickerContentState extends State<_PickerContent> {
                     elevation: 0,
                     backgroundColor: primary,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
-                  onPressed: _selectedMonday == null ? null : () => Navigator.pop(context, _selectedMonday),
+                  onPressed: _selectedMonday == null
+                      ? null
+                      : () => Navigator.pop(context, _selectedMonday),
                   child: const Text('保存设置'),
                 ),
               ),

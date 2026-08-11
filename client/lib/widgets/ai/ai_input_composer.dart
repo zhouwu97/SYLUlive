@@ -86,7 +86,7 @@ class _AiInputComposerState extends State<AiInputComposer> {
     return SafeArea(
       top: false,
       child: Container(
-        color: isDark ? colors.surface : Colors.white, // ensure bottom bar bg
+        color: Theme.of(context).scaffoldBackgroundColor,
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -96,7 +96,8 @@ class _AiInputComposerState extends State<AiInputComposer> {
               height: 48,
               padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
+                color:
+                    isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Row(
@@ -129,7 +130,8 @@ class _AiInputComposerState extends State<AiInputComposer> {
                     Text(
                       '$_count/${widget.maxCharacters}',
                       style: TextStyle(
-                        color: overLimit ? colors.error : colors.onSurfaceVariant,
+                        color:
+                            overLimit ? colors.error : colors.onSurfaceVariant,
                         fontSize: 11,
                       ),
                     ),
@@ -143,10 +145,12 @@ class _AiInputComposerState extends State<AiInputComposer> {
                           ? widget.onCancel
                           : (canSend ? _send : null),
                       style: IconButton.styleFrom(
-                        backgroundColor: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF),
-                        disabledBackgroundColor: colors.surfaceContainerHighest.withValues(alpha: 0.5),
-                        foregroundColor: Colors.white,
-                        disabledForegroundColor: colors.onSurfaceVariant.withValues(alpha: 0.3),
+                        backgroundColor: colors.primary,
+                        disabledBackgroundColor: colors.surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        foregroundColor: colors.onPrimary,
+                        disabledForegroundColor:
+                            colors.onSurfaceVariant.withValues(alpha: 0.3),
                         shape: const CircleBorder(),
                         padding: EdgeInsets.zero,
                       ),

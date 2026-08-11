@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/home_widget_config.dart';
 import '../services/home_widget_service.dart';
+import '../utils/app_feedback.dart';
+import '../widgets/campus/campus_theme.dart';
 
 class HomeWidgetSettingsScreen extends StatefulWidget {
   const HomeWidgetSettingsScreen({super.key});
@@ -11,7 +13,8 @@ class HomeWidgetSettingsScreen extends StatefulWidget {
       _HomeWidgetSettingsScreenState();
 }
 
-class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> with WidgetsBindingObserver {
+class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen>
+    with WidgetsBindingObserver {
   final Map<HomeWidgetKind, HomeWidgetAppearance> _appearances = {};
   final Map<HomeWidgetKind, HomeWidgetPreviewData> _previews = {};
   final Map<HomeWidgetKind, HomeWidgetSize> _previewSizes = {
@@ -47,7 +50,8 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
   @override
   void didChangePlatformBrightness() {
     super.didChangePlatformBrightness();
-    final hasSystemTheme = _appearances.values.any((a) => a.theme == HomeWidgetTheme.system);
+    final hasSystemTheme =
+        _appearances.values.any((a) => a.theme == HomeWidgetTheme.system);
     if (hasSystemTheme) {
       HomeWidgetService.syncAll();
     }
@@ -80,30 +84,34 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
   Future<void> _editTitle(HomeWidgetKind kind) async {
     final appearance = _appearances[kind]!;
     final controller = TextEditingController(text: appearance.title);
+    final dialogTheme = CampusTheme.withBrandAccent(Theme.of(context));
     final title = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('${_kindTitle(kind)}标题'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 12,
-          decoration: const InputDecoration(
-            labelText: '小组件标题',
-            border: OutlineInputBorder(),
+      builder: (dialogContext) => Theme(
+        data: dialogTheme,
+        child: AlertDialog(
+          title: Text('${_kindTitle(kind)}标题'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 12,
+            decoration: const InputDecoration(
+              labelText: '小组件标题',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
           ),
-          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              child: const Text('保存'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
     controller.dispose();
@@ -127,8 +135,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
       HomeWidgetPinStatus.failed =>
         result.message == null ? '添加请求失败，请稍后重试。' : '添加请求失败：${result.message}',
     };
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    AppFeedback.info(message, context: context);
   }
 
   Future<void> _syncKind(HomeWidgetKind kind) async {
@@ -140,9 +147,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
       _previews[kind] = preview;
       _counts = counts;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${_kindTitle(kind)}已同步')),
-    );
+    AppFeedback.success('${_kindTitle(kind)}已同步', context: context);
   }
 
   Future<void> _syncAll() async {
@@ -152,44 +157,55 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
     await _load();
     if (!mounted) return;
     setState(() => _syncingAll = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('全部桌面小组件已同步')),
-    );
+    AppFeedback.success('全部桌面小组件已同步', context: context);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('桌面小组件')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-              physics: const BouncingScrollPhysics(),
-              children: [
-                _buildKindSection(HomeWidgetKind.course),
-                const SizedBox(height: 20),
-                _buildKindSection(HomeWidgetKind.exam),
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: _syncingAll ? null : _syncAll,
-                  icon: _syncingAll
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.sync),
-                  label: const Text('同步全部小组件'),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '系统桌面的网格尺寸和圆角由启动器决定，实际占位可能与预览略有差异。',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
+    final baseTheme = Theme.of(context);
+    final pageBackground = CampusTheme.pageBackground(context);
+
+    return Theme(
+      data: CampusTheme.withBrandAccent(baseTheme),
+      child: Scaffold(
+        backgroundColor: pageBackground,
+        appBar: AppBar(
+          title: const Text('桌面小组件'),
+          backgroundColor: pageBackground,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  _buildKindSection(HomeWidgetKind.course),
+                  const SizedBox(height: 20),
+                  _buildKindSection(HomeWidgetKind.exam),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: _syncingAll ? null : _syncAll,
+                    icon: _syncingAll
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.sync),
+                    label: const Text('同步全部小组件'),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '系统桌面的网格尺寸和圆角由启动器决定，实际占位可能与预览略有差异。',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+      ),
     );
   }
 
@@ -202,7 +218,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E2430) : Colors.white,
+        color: isDark ? CampusTheme.darkCard : CampusTheme.card,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -212,7 +228,7 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
           ),
         ],
         border: Border.all(
-          color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
+          color: isDark ? Colors.white10 : CampusTheme.softBorder,
         ),
       ),
       child: Padding(
@@ -246,21 +262,37 @@ class _HomeWidgetSettingsScreenState extends State<HomeWidgetSettingsScreen> wit
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white70 : Colors.black87,
+                      color: isDark ? Colors.white70 : CampusTheme.text,
                     ),
                   ),
                 ),
                 SegmentedButton<HomeWidgetSize>(
                   segments: const [
-                    ButtonSegment(value: HomeWidgetSize.size2x2, label: Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Text('2×2', style: TextStyle(fontWeight: FontWeight.w600)))),
-                    ButtonSegment(value: HomeWidgetSize.size4x2, label: Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Text('4×2', style: TextStyle(fontWeight: FontWeight.w600)))),
+                    ButtonSegment(
+                        value: HomeWidgetSize.size2x2,
+                        label: Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4),
+                            child: Text('2×2',
+                                style:
+                                    TextStyle(fontWeight: FontWeight.w600)))),
+                    ButtonSegment(
+                        value: HomeWidgetSize.size4x2,
+                        label: Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4),
+                            child: Text('4×2',
+                                style:
+                                    TextStyle(fontWeight: FontWeight.w600)))),
                   ],
                   selected: {previewSize},
-                  onSelectionChanged: (set) => setState(() => _previewSizes[kind] = set.first),
+                  onSelectionChanged: (set) =>
+                      setState(() => _previewSizes[kind] = set.first),
                   style: SegmentedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
-                    backgroundColor: isDark ? Colors.white10 : Colors.grey[100],
-                    selectedBackgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                    backgroundColor:
+                        isDark ? Colors.white10 : CampusTheme.softBorder,
+                    selectedBackgroundColor: isDark
+                        ? const Color(0xFF1B3B36)
+                        : CampusTheme.primaryLight,
                   ),
                   showSelectedIcon: false,
                 ),
@@ -408,42 +440,43 @@ class _HomeWidgetPreview extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (kind == HomeWidgetKind.course)
-                  Text(
-                    data.subtitle,
-                    style: TextStyle(color: palette.secondaryText, fontSize: 9),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Expanded(
-              child: items.isEmpty
-                  ? Center(
-                      child: Text(
-                        kind == HomeWidgetKind.course ? '今天没有课' : '近期暂无考试',
-                        style:
-                            TextStyle(color: palette.mutedText, fontSize: 11),
-                      ),
-                    )
-                  : ListView.separated(
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 5),
-                      itemBuilder: (context, index) {
-                        final item = items[index];
-                        return _PreviewItem(
-                          item: item,
-                          kind: kind,
-                          detailed: isWide,
-                          palette: palette,
-                        );
-                      },
+                  if (kind == HomeWidgetKind.course)
+                    Text(
+                      data.subtitle,
+                      style:
+                          TextStyle(color: palette.secondaryText, fontSize: 9),
                     ),
-            ),
-          ],
+                ],
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: items.isEmpty
+                    ? Center(
+                        child: Text(
+                          kind == HomeWidgetKind.course ? '今天没有课' : '近期暂无考试',
+                          style:
+                              TextStyle(color: palette.mutedText, fontSize: 11),
+                        ),
+                      )
+                    : ListView.separated(
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 5),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return _PreviewItem(
+                            item: item,
+                            kind: kind,
+                            detailed: isWide,
+                            palette: palette,
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
     );
   }
 }

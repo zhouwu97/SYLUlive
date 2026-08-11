@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../widgets/campus/campus_theme.dart';
+
 class CourseScheduleSettingsSnapshot {
   const CourseScheduleSettingsSnapshot({
     required this.courseCount,
@@ -111,32 +113,36 @@ class _CourseScheduleSettingsScreenState
   }
 
   Future<void> _pickReminderMinutes() async {
+    final sheetTheme = CampusTheme.withBrandAccent(Theme.of(context));
     final selected = await showModalBottomSheet<int>(
       context: context,
       showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '提醒时间',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+      builder: (context) => Theme(
+        data: sheetTheme,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '提醒时间',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
                 ),
               ),
-            ),
-            for (final minutes in const [5, 10, 15, 20, 30])
-              ListTile(
-                title: Text('提前 $minutes 分钟'),
-                trailing: minutes == _snapshot.reminderAdvanceMinutes
-                    ? const Icon(Icons.check)
-                    : null,
-                onTap: () => Navigator.of(context).pop(minutes),
-              ),
-          ],
+              for (final minutes in const [5, 10, 15, 20, 30])
+                ListTile(
+                  title: Text('提前 $minutes 分钟'),
+                  trailing: minutes == _snapshot.reminderAdvanceMinutes
+                      ? const Icon(Icons.check)
+                      : null,
+                  onTap: () => Navigator.of(context).pop(minutes),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -149,170 +155,197 @@ class _CourseScheduleSettingsScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('课表设置'),
-        actions: [
-          IconButton(
-            tooltip: '刷新状态',
-            onPressed: _busy ? null : _refreshSnapshot,
-            icon: _busy
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh_outlined),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-        physics: const BouncingScrollPhysics(),
-        children: [
-          _CourseSettingsHeaderCard(snapshot: _snapshot),
-          const SizedBox(height: 18),
-          _CourseSettingsSection(
-            title: '课表数据',
-            children: [
-              _CourseSettingsTile(
-                icon: Icons.cloud_download_outlined,
-                title: '从教务刷新课表',
-                subtitle: '拉取最新数据并覆盖当前课表',
-                onTap: () => _runAndRefresh(widget.callbacks.refreshCourses),
-              ),
-              _CourseSettingsTile(
-                icon: Icons.collections_bookmark_outlined,
-                title: '课表存档',
-                subtitle: '保存、切换、导入本地课表存档',
-                onTap: () => _runAndRefresh(widget.callbacks.openArchive),
-              ),
-              _CourseSettingsTile(
-                icon: Icons.event_outlined,
-                title: '设置开学第一周',
-                subtitle: _snapshot.semesterStartText,
-                onTap: () => _runAndRefresh(widget.callbacks.pickSemesterStart),
-              ),
-              _CourseSettingsTile(
-                icon: Icons.ios_share_outlined,
-                title: '分享本周课表',
-                subtitle: '生成文字版课表并分享',
-                onTap: () => _runAndRefresh(widget.callbacks.shareSchedule),
-              ),
-            ],
-          ),
-          _CourseSettingsSection(
-            title: '课程管理',
-            children: [
-              _CourseSettingsTile(
-                icon: Icons.add_circle_outline,
-                title: '添加自定义课程',
-                subtitle: '手动添加 / AI 识别课表图片或文字',
-                onTap: () => _runAndRefresh(widget.callbacks.addCustomCourse),
-              ),
-            ],
-          ),
-          _CourseSettingsSection(
-            title: '课程提醒',
-            children: [
-              SwitchListTile(
-                secondary: const Icon(Icons.notifications_active_outlined),
-                title: const Text('课程提醒'),
-                subtitle: Text(_snapshot.reminderSummary),
-                value: _snapshot.reminderEnabled,
-                onChanged: _snapshot.reminderBusy
-                    ? null
-                    : (value) => _runAndRefresh(
-                          () => widget.callbacks.toggleReminder(value),
-                        ),
-              ),
-              _CourseSettingsTile(
-                icon: Icons.timer_outlined,
-                title: '提醒时间',
-                subtitle: '提前 ${_snapshot.reminderAdvanceMinutes} 分钟',
-                enabled: !_snapshot.reminderBusy,
-                onTap: _pickReminderMinutes,
-              ),
-              _CourseSettingsTile(
-                icon: _snapshot.backgroundKeepAliveReady
-                    ? Icons.verified_user_outlined
-                    : Icons.battery_alert_outlined,
-                title: '后台保活授权',
-                subtitle: _snapshot.backgroundKeepAliveSubtitle,
-                enabled: _snapshot.backgroundKeepAliveSupported &&
-                    !_snapshot.backgroundKeepAliveBusy,
-                onTap: () => _runAndRefresh(
-                  widget.callbacks.requestBackgroundKeepAlive,
+    final baseTheme = Theme.of(context);
+    final pageBackground = CampusTheme.pageBackground(context);
+
+    return Theme(
+      data: CampusTheme.withBrandAccent(baseTheme),
+      child: Scaffold(
+        backgroundColor: pageBackground,
+        appBar: AppBar(
+          title: const Text('课表设置'),
+          backgroundColor: pageBackground,
+          foregroundColor: baseTheme.colorScheme.onSurface,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          actions: [
+            IconButton(
+              tooltip: '刷新状态',
+              onPressed: _busy ? null : _refreshSnapshot,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_outlined),
+            ),
+          ],
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+          physics: const BouncingScrollPhysics(),
+          children: [
+            _CourseSettingsHeaderCard(snapshot: _snapshot),
+            const SizedBox(height: 18),
+            _CourseSettingsSection(
+              title: '课表数据',
+              children: [
+                _CourseSettingsTile(
+                  icon: Icons.cloud_download_outlined,
+                  title: '从教务刷新课表',
+                  subtitle: '拉取最新数据并覆盖当前课表',
+                  onTap: () => _runAndRefresh(widget.callbacks.refreshCourses),
                 ),
-              ),
-            ],
-          ),
-          _CourseSettingsSection(
-            title: '课表显示',
-            children: [
-              _CourseDisplaySliderTile(
-                title: '课程块透明度',
-                value: _snapshot.scheduleCardOpacity,
-                min: 0.1,
-                max: 1,
-                divisions: 18,
-                valueLabel: '${(_snapshot.scheduleCardOpacity * 100).round()}%',
-                onChanged: (value) {
-                  setState(() {
-                    _snapshot = _copySnapshot(
-                      scheduleCardOpacity: value,
+                _CourseSettingsTile(
+                  icon: Icons.collections_bookmark_outlined,
+                  title: '课表存档',
+                  subtitle: '保存、切换、导入本地课表存档',
+                  onTap: () => _runAndRefresh(widget.callbacks.openArchive),
+                ),
+                _CourseSettingsTile(
+                  icon: Icons.event_outlined,
+                  title: '设置开学第一周',
+                  subtitle: _snapshot.semesterStartText,
+                  onTap: () =>
+                      _runAndRefresh(widget.callbacks.pickSemesterStart),
+                ),
+                _CourseSettingsTile(
+                  icon: Icons.ios_share_outlined,
+                  title: '分享本周课表',
+                  subtitle: '生成文字版课表并分享',
+                  onTap: () => _runAndRefresh(widget.callbacks.shareSchedule),
+                ),
+              ],
+            ),
+            _CourseSettingsSection(
+              title: '课程管理',
+              children: [
+                _CourseSettingsTile(
+                  icon: Icons.add_circle_outline,
+                  title: '添加自定义课程',
+                  subtitle: '手动添加 / AI 识别课表图片或文字',
+                  onTap: () => _runAndRefresh(widget.callbacks.addCustomCourse),
+                ),
+              ],
+            ),
+            _CourseSettingsSection(
+              title: '课程提醒',
+              children: [
+                SwitchListTile(
+                  secondary: Icon(
+                    _snapshot.reminderEnabled
+                        ? Icons.notifications_active_outlined
+                        : Icons.notifications_none_outlined,
+                    color: _snapshot.reminderEnabled
+                        ? CampusTheme.primary
+                        : CampusTheme.subText,
+                  ),
+                  title: const Text('课程提醒'),
+                  subtitle: Text(
+                    _snapshot.reminderEnabled
+                        ? _snapshot.reminderSummary
+                        : '已关闭课程提醒',
+                  ),
+                  value: _snapshot.reminderEnabled,
+                  onChanged: _snapshot.reminderBusy
+                      ? null
+                      : (value) => _runAndRefresh(
+                            () => widget.callbacks.toggleReminder(value),
+                          ),
+                ),
+                _CourseSettingsTile(
+                  icon: Icons.timer_outlined,
+                  title: '提醒时间',
+                  subtitle: '提前 ${_snapshot.reminderAdvanceMinutes} 分钟',
+                  enabled: !_snapshot.reminderBusy,
+                  onTap: _pickReminderMinutes,
+                ),
+                _CourseSettingsTile(
+                  icon: _snapshot.backgroundKeepAliveReady
+                      ? Icons.verified_user_outlined
+                      : Icons.battery_alert_outlined,
+                  title: '后台保活授权',
+                  subtitle: _snapshot.backgroundKeepAliveSubtitle,
+                  enabled: _snapshot.backgroundKeepAliveSupported &&
+                      !_snapshot.backgroundKeepAliveBusy,
+                  onTap: () => _runAndRefresh(
+                    widget.callbacks.requestBackgroundKeepAlive,
+                  ),
+                ),
+              ],
+            ),
+            _CourseSettingsSection(
+              title: '课表显示',
+              children: [
+                _CourseDisplaySliderTile(
+                  title: '课程块透明度',
+                  value: _snapshot.scheduleCardOpacity,
+                  min: 0.1,
+                  max: 1,
+                  divisions: 18,
+                  valueLabel:
+                      '${(_snapshot.scheduleCardOpacity * 100).round()}%',
+                  onChanged: (value) {
+                    setState(() {
+                      _snapshot = _copySnapshot(
+                        scheduleCardOpacity: value,
+                      );
+                    });
+                    unawaited(widget.callbacks.updateScheduleOpacity(value));
+                  },
+                ),
+                _CourseDisplaySliderTile(
+                  title: '每节课高度',
+                  value: _snapshot.scheduleSlotHeight,
+                  min: 55,
+                  max: 120,
+                  divisions: 13,
+                  valueLabel: '${_snapshot.scheduleSlotHeight.round()} dp',
+                  onChanged: (value) {
+                    setState(() {
+                      _snapshot = _copySnapshot(scheduleSlotHeight: value);
+                    });
+                    unawaited(
+                      widget.callbacks.updateScheduleSlotHeight(value),
                     );
-                  });
-                  unawaited(widget.callbacks.updateScheduleOpacity(value));
-                },
-              ),
-              _CourseDisplaySliderTile(
-                title: '每节课高度',
-                value: _snapshot.scheduleSlotHeight,
-                min: 55,
-                max: 120,
-                divisions: 13,
-                valueLabel: '${_snapshot.scheduleSlotHeight.round()} dp',
-                onChanged: (value) {
-                  setState(() {
-                    _snapshot = _copySnapshot(scheduleSlotHeight: value);
-                  });
-                  unawaited(widget.callbacks.updateScheduleSlotHeight(value));
-                },
-              ),
-              _CourseSettingsTile(
-                icon: Icons.restart_alt_outlined,
-                title: '恢复课表显示默认值',
-                subtitle: '仅重置课程块透明度和每节课高度',
-                onTap: () => _runAndRefresh(
-                  widget.callbacks.resetScheduleDisplay,
+                  },
                 ),
-              ),
-            ],
-          ),
-          _CourseSettingsSection(
-            title: '桌面小组件',
-            children: [
-              _CourseSettingsTile(
-                icon: Icons.widgets_outlined,
-                title: '管理桌面小组件',
-                subtitle: '课表、考试、样式与尺寸',
-                onTap: () => _runAndRefresh(widget.callbacks.openHomeWidgets),
-              ),
-            ],
-          ),
-          _CourseSettingsSection(
-            title: '高级维护',
-            children: [
-              _CourseSettingsTile(
-                icon: Icons.refresh_outlined,
-                title: '重新读取设置状态',
-                subtitle: '检查本地设置、提醒和后台权限状态',
-                onTap: _refreshSnapshot,
-              ),
-            ],
-          ),
-        ],
+                _CourseSettingsTile(
+                  icon: Icons.restart_alt_outlined,
+                  title: '恢复课表显示默认值',
+                  subtitle: '仅重置课程块透明度和每节课高度',
+                  onTap: () => _runAndRefresh(
+                    widget.callbacks.resetScheduleDisplay,
+                  ),
+                ),
+              ],
+            ),
+            _CourseSettingsSection(
+              title: '桌面小组件',
+              children: [
+                _CourseSettingsTile(
+                  icon: Icons.widgets_outlined,
+                  title: '管理桌面小组件',
+                  subtitle: '课表、考试、样式与尺寸',
+                  onTap: () => _runAndRefresh(widget.callbacks.openHomeWidgets),
+                ),
+              ],
+            ),
+            _CourseSettingsSection(
+              title: '高级维护',
+              children: [
+                _CourseSettingsTile(
+                  icon: Icons.refresh_outlined,
+                  title: '重新读取设置状态',
+                  subtitle: '检查本地设置、提醒和后台权限状态',
+                  onTap: _refreshSnapshot,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -347,21 +380,22 @@ class _CourseSettingsHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const primary = CampusTheme.primary;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.08),
+        color: primary.withValues(alpha: isDark ? 0.16 : 0.08),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.primary.withValues(alpha: 0.14)),
+        border: Border.all(color: primary.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             '课表管理与显示',
             style: TextStyle(
-              color: scheme.primary,
+              color: primary,
               fontWeight: FontWeight.w800,
               fontSize: 18,
             ),
@@ -394,10 +428,11 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.75),
+        color: isDark ? CampusTheme.darkCard : CampusTheme.card,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(label, style: const TextStyle(fontSize: 13)),
@@ -431,11 +466,10 @@ class _CourseSettingsSection extends StatelessWidget {
           ),
           DecoratedBox(
             decoration: BoxDecoration(
-              color:
-                  isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
+              color: isDark ? CampusTheme.darkCard : CampusTheme.card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isDark ? Colors.white10 : const Color(0xFFE5E7EB),
+                color: isDark ? Colors.white10 : CampusTheme.border,
               ),
             ),
             child: Column(children: children),

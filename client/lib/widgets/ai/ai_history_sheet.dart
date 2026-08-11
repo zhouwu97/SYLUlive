@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/ai_assistant_provider.dart';
+import '../../utils/app_feedback.dart';
 import 'ai_history_tile.dart';
 
 class AiHistorySheet extends StatefulWidget {
   final VoidCallback? onFocusRequest;
-  
+
   const AiHistorySheet({super.key, this.onFocusRequest});
 
   @override
@@ -52,7 +53,8 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
                         const Expanded(
                           child: Text(
                             '历史会话',
-                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                                fontSize: 17, fontWeight: FontWeight.w700),
                           ),
                         ),
                         SizedBox(
@@ -88,12 +90,16 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
                                   children: [
                                     const Text(
                                       '暂无历史会话',
-                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600),
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
                                       '提出问题后，会话会保存在这里',
-                                      style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
+                                      style: TextStyle(
+                                          color: colors.onSurfaceVariant,
+                                          fontSize: 13),
                                     ),
                                     const SizedBox(height: 16),
                                     FilledButton(
@@ -111,21 +117,29 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
                                 controller: scrollController,
                                 itemCount: provider.conversations.length,
                                 itemBuilder: (_, index) {
-                                  final conversation = provider.conversations[index];
-                                  final selected = conversation.id == provider.conversationId;
+                                  final conversation =
+                                      provider.conversations[index];
+                                  final selected = conversation.id ==
+                                      provider.conversationId;
                                   return AiHistoryTile(
                                     conversation: conversation,
                                     isSelected: selected,
                                     isDeleting: _deletingId == conversation.id,
                                     onTap: () async {
                                       if (provider.isRunning) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('请等待当前回答完成或先停止生成')),
+                                        AppFeedback.info(
+                                          '请等待当前回答完成或先停止生成',
+                                          context: context,
                                         );
                                         return;
                                       }
-                                      await provider.openConversation(conversation.id);
-                                      if (mounted && provider.error == null) {
+                                      await provider
+                                          .openConversation(conversation.id);
+                                      if (!context.mounted ||
+                                          provider.error != null) {
+                                        return;
+                                      }
+                                      if (context.mounted) {
                                         Navigator.pop(context);
                                       }
                                     },
@@ -134,30 +148,41 @@ class _AiHistorySheetState extends State<AiHistorySheet> {
                                         context: context,
                                         builder: (dialogContext) => AlertDialog(
                                           title: const Text('删除会话？'),
-                                          content: const Text('删除后无法恢复其中的问答记录。'),
+                                          content:
+                                              const Text('删除后无法恢复其中的问答记录。'),
                                           actions: [
                                             TextButton(
-                                                onPressed: () => Navigator.pop(dialogContext, false),
+                                                onPressed: () => Navigator.pop(
+                                                    dialogContext, false),
                                                 child: const Text('取消')),
                                             FilledButton(
-                                                onPressed: () => Navigator.pop(dialogContext, true),
-                                                style: FilledButton.styleFrom(backgroundColor: colors.error),
+                                                onPressed: () => Navigator.pop(
+                                                    dialogContext, true),
+                                                style: FilledButton.styleFrom(
+                                                    backgroundColor:
+                                                        colors.error),
                                                 child: const Text('删除')),
                                           ],
                                         ),
                                       );
                                       if (confirmed == true && mounted) {
-                                        setState(() => _deletingId = conversation.id);
+                                        setState(() =>
+                                            _deletingId = conversation.id);
                                         try {
-                                          await provider.deleteConversation(conversation.id);
+                                          await provider.deleteConversation(
+                                              conversation.id);
                                         } catch (e) {
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text('删除失败，请重试')),
-                                            );
+                                          if (!context.mounted) {
+                                            return;
                                           }
+                                          AppFeedback.error(
+                                            '删除失败，请重试',
+                                            context: context,
+                                          );
                                         } finally {
-                                          if (mounted) setState(() => _deletingId = null);
+                                          if (mounted) {
+                                            setState(() => _deletingId = null);
+                                          }
                                         }
                                       }
                                     },

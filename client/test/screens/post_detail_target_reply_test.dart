@@ -420,6 +420,9 @@ class FakePostProvider extends Fake
     with ChangeNotifier
     implements PostProvider {
   @override
+  Post? postFor(int postId) => null;
+
+  @override
   void updatePostInCache(Post post) {}
 }
 

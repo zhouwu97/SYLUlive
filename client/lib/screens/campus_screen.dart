@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +14,8 @@ import '../services/exam_schedule_repository.dart';
 import '../providers/course_schedule_provider.dart';
 import '../widgets/home_tab_reveal.dart';
 import '../utils/campus_asset_preloader.dart';
+import '../utils/app_feedback.dart';
+import '../utils/campus_today.dart';
 
 import '../widgets/campus/campus_theme.dart';
 import '../widgets/campus/campus_ai_entry_card.dart';
@@ -54,7 +58,7 @@ class CampusScreen extends StatefulWidget {
 }
 
 class _CampusScreenState extends State<CampusScreen>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   @override
   bool get wantKeepAlive => true;
 
@@ -69,6 +73,9 @@ class _CampusScreenState extends State<CampusScreen>
 
   // 今日卡片（UX-5）
   List<CampusTodayItem> _todayItems = [];
+  List<CourseBlock> _cachedTodayCourses = const [];
+  List<ExamModel> _cachedTodayExams = const [];
+  Timer? _todayTimer;
 
   // 最近文章列表
   List<CampusArticleSummary> _recentArticles = [];
@@ -82,10 +89,40 @@ class _CampusScreenState extends State<CampusScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final dio = getSharedDio();
     _articleService = widget.articleService ?? CampusArticleService(dio);
     _aiService = widget.aiService ?? AiAssistantService(dio);
     _loadAll();
+    _startTodayTimer();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _todayTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startTodayTimer();
+      _recomputeTodayItems();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _todayTimer?.cancel();
+      _todayTimer = null;
+    }
+  }
+
+  void _startTodayTimer() {
+    if (_todayTimer != null) return;
+    _todayTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _recomputeTodayItems(),
+    );
   }
 
   @override
@@ -100,7 +137,11 @@ class _CampusScreenState extends State<CampusScreen>
   }
 
   Future<void> _loadAll({bool force = false}) async {
-    if (force) _loadFuture = null;
+    if (force) {
+      _loadFuture = null;
+      _cachedTodayCourses = const [];
+      _cachedTodayExams = const [];
+    }
     if (_loadFuture != null) return _loadFuture!;
     final generation = ++_loadGeneration;
     _loadFuture = Future.wait([
@@ -199,8 +240,9 @@ class _CampusScreenState extends State<CampusScreen>
     final hasOldData =
         isLatest ? _latestArticle != null : _recentArticles.isNotEmpty;
     if (hasOldData) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${isLatest ? '头条' : '资讯'}刷新失败: $message')),
+      AppFeedback.error(
+        '${isLatest ? '头条' : '资讯'}刷新失败: $message',
+        context: context,
       );
     } else {
       setState(() {
@@ -217,147 +259,77 @@ class _CampusScreenState extends State<CampusScreen>
 
   // ── 今日卡片（UX-5）───────────────────────────────────────────────
   // 数据只来自已有 Provider / 本地缓存 / 已加载 Snapshot，禁止在 build 中
-  // 发起网络请求；每项独立降级：任一数据源不可用只隐藏该项，其余项照常展示。
-
-  /// 课次起始时间（第1~12节）。与课表页共用同一张展示表，仅用于文案。
-  static const List<String> _kSectionStarts = [
-    '08:00', '08:55', '10:00', '10:55',
-    '13:00', '13:55', '14:50', '15:45',
-    '16:40', '17:35', '18:30', '19:25',
-  ];
-
+  // 发起网络请求；计时器只重算已缓存数据，不会在后台触发网络请求。
   DateTime _currentTime() => widget.nowProvider?.call() ?? DateTime.now();
 
   Future<void> _loadTodayItems(int generation) async {
-    final items = <CampusTodayItem>[];
-
-    final nextClass = await _buildNextClassItem();
-    if (nextClass != null) items.add(nextClass);
-
-    final nextExam = await _buildNextExamItem();
-    if (nextExam != null) items.add(nextExam);
-
-    if (mounted && _loadGeneration == generation) {
-      setState(() => _todayItems = items);
-    }
-  }
-
-  Future<CampusTodayItem?> _buildNextClassItem() async {
-    final CourseScheduleProvider schedule;
+    CourseScheduleProvider? schedule;
     try {
       schedule = context.read<CourseScheduleProvider>();
     } catch (_) {
-      // 宿主未挂载课表 Provider（如部分测试环境）→ 该项降级隐藏。
-      return null;
+      // 宿主未挂载课表 Provider 时，课程项独立降级隐藏。
     }
+
+    if (schedule != null) {
+      try {
+        if (schedule.semesterStart == null) {
+          await schedule.loadSemesterStart();
+        }
+        if (schedule.courses.isEmpty) {
+          await schedule.loadCachedCoursesIfAvailable();
+        }
+        final week = schedule.getAcademicWeek(_currentTime());
+        _cachedTodayCourses = week == null
+            ? const []
+            : schedule.courses
+                .where((course) => schedule!.isCourseActive(course, week))
+                .toList(growable: false);
+      } catch (_) {
+        _cachedTodayCourses = const [];
+      }
+    } else {
+      _cachedTodayCourses = const [];
+    }
+
     try {
-      if (schedule.semesterStart == null) {
-        await schedule.loadSemesterStart();
-      }
-      if (schedule.courses.isEmpty) {
-        await schedule.loadCachedCoursesIfAvailable();
-      }
+      _cachedTodayExams =
+          (await ExamScheduleRepository().load()).toList(growable: false);
     } catch (_) {
-      return null;
+      _cachedTodayExams = const [];
     }
-    if (!mounted) return null;
 
-    final now = _currentTime();
-    final week = schedule.getAcademicWeek(now);
-    if (week == null) return null;
-    final weekday = now.weekday;
+    if (mounted && _loadGeneration == generation) {
+      _recomputeTodayItems(generation: generation);
+    }
+  }
 
-    final todayCourses = schedule.courses
-        .where((c) => c.weekday == weekday)
-        .where((c) => schedule.isCourseActive(c, week))
-        .where(
-          (c) =>
-              c.startSection >= 1 &&
-              c.startSection <= _kSectionStarts.length,
+  void _recomputeTodayItems({int? generation}) {
+    if (!mounted || (generation != null && generation != _loadGeneration)) {
+      return;
+    }
+    final entries = buildCampusTodayEntries(
+      now: _currentTime(),
+      courses: _cachedTodayCourses,
+      exams: _cachedTodayExams,
+    );
+    final items = entries
+        .map(
+          (entry) => CampusTodayItem(
+            id: entry.id,
+            icon: entry.kind == CampusTodayEntryKind.course
+                ? Icons.menu_book_rounded
+                : Icons.edit_calendar_rounded,
+            title: entry.title,
+            subtitle: entry.subtitle,
+            onTap: () => _openPage(
+              entry.kind == CampusTodayEntryKind.course
+                  ? const CourseScheduleScreen()
+                  : const ExamScheduleScreen(),
+            ),
+          ),
         )
-        .toList()
-      ..sort((a, b) => a.startSection.compareTo(b.startSection));
-
-    // 下一节 = 今天尚未结束（含进行中）的最早课程；今天已无课则不展示。
-    CourseBlock? next;
-    for (final course in todayCourses) {
-      final start = _sectionStartOn(now, course.startSection);
-      if (start == null) continue;
-      if (now.isBefore(start.add(const Duration(minutes: 45)))) {
-        next = course;
-        break;
-      }
-    }
-    if (next == null) return null;
-
-    final start = _sectionStartOn(now, next.startSection)!;
-    final location =
-        (next.location?.isNotEmpty ?? false) ? ' · ${next.location}' : '';
-    final teacher =
-        (next.teacher?.isNotEmpty ?? false) ? ' · ${next.teacher}' : '';
-    return CampusTodayItem(
-      id: 'next-class',
-      icon: Icons.menu_book_rounded,
-      title: '下一节课 · ${next.name}',
-      subtitle: '今天 ${_formatClock(start)}$location$teacher',
-      onTap: () => _openPage(const CourseScheduleScreen()),
-    );
-  }
-
-  Future<CampusTodayItem?> _buildNextExamItem() async {
-    final List<ExamModel> exams;
-    try {
-      exams = await ExamScheduleRepository().load();
-    } catch (_) {
-      return null;
-    }
-    if (!mounted) return null;
-
-    final now = _currentTime();
-    final upcoming = exams.where((e) => e.startTime.isAfter(now)).toList()
-      ..sort((a, b) => a.startTime.compareTo(b.startTime));
-    if (upcoming.isEmpty) return null;
-
-    final next = upcoming.first;
-    final location = next.location.isNotEmpty ? ' · ${next.location}' : '';
-    return CampusTodayItem(
-      id: 'next-exam',
-      icon: Icons.edit_calendar_rounded,
-      title: '考试 · ${next.name}',
-      subtitle: '${_formatExamStart(next.startTime, now)}$location',
-      onTap: () => _openPage(const ExamScheduleScreen()),
-    );
-  }
-
-  DateTime? _sectionStartOn(DateTime day, int section) {
-    if (section < 1 || section > _kSectionStarts.length) return null;
-    final parts = _kSectionStarts[section - 1].split(':');
-    return DateTime(
-      day.year,
-      day.month,
-      day.day,
-      int.parse(parts[0]),
-      int.parse(parts[1]),
-    );
-  }
-
-  String _formatClock(DateTime time) {
-    final hh = time.hour.toString().padLeft(2, '0');
-    final mm = time.minute.toString().padLeft(2, '0');
-    return '$hh:$mm';
-  }
-
-  String _formatExamStart(DateTime start, DateTime now) {
-    final sameDay =
-        start.year == now.year && start.month == now.month && start.day == now.day;
-    if (sameDay) return '今天 ${_formatClock(start)}';
-    final tomorrow = now.add(const Duration(days: 1));
-    final isTomorrow =
-        start.year == tomorrow.year &&
-        start.month == tomorrow.month &&
-        start.day == tomorrow.day;
-    if (isTomorrow) return '明天 ${_formatClock(start)}';
-    return '${start.month}月${start.day}日 ${_formatClock(start)}';
+        .toList(growable: false);
+    setState(() => _todayItems = items);
   }
 
   String _currentSemesterText() {

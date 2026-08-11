@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/api_constants.dart';
@@ -219,6 +218,7 @@ class PostProvider extends ChangeNotifier {
 
   final Map<String, _BoardState> _boards = {};
   final Map<String, Future<void>> _inflightRequests = {};
+  final Map<int, Post> _canonicalPosts = {};
   final int _activeBoardId = 1;
 
   PostProvider(this._dio, {bool enableCache = true})
@@ -253,11 +253,27 @@ class PostProvider extends ChangeNotifier {
   _BoardState get _board => _ensureBoard(_activeBoardId);
 
   List<Post> postsFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).posts;
+      {String sort = 'time', String? type, int? tagId}) {
+    final posts =
+        _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).posts;
+    for (final post in posts) {
+      _canonicalPosts[post.id] = post;
+    }
+    return posts;
+  }
+
   List<Post> pinnedPostsFor(int boardId,
-          {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).pinnedPosts;
+      {String sort = 'time', String? type, int? tagId}) {
+    final posts =
+        _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).pinnedPosts;
+    for (final post in posts) {
+      _canonicalPosts[post.id] = post;
+    }
+    return posts;
+  }
+
+  /// 返回当前已加载帖子状态，供卡片避免维护第二份点赞快照。
+  Post? postFor(int postId) => _canonicalPosts[postId];
   bool isLoadingFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
       _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).isLoading;
@@ -1035,8 +1051,9 @@ class PostProvider extends ChangeNotifier {
 
       final MultipartFile multipartFile;
       final path = file.path;
-      final pathUsable =
-          path.isNotEmpty && !path.startsWith('blob:') && await File(path).exists();
+      final pathUsable = path.isNotEmpty &&
+          !path.startsWith('blob:') &&
+          await File(path).exists();
       if (pathUsable) {
         multipartFile = await MultipartFile.fromFile(path, filename: filename);
       } else {
@@ -1499,6 +1516,7 @@ class PostProvider extends ChangeNotifier {
 
   /// 从全部已加载列表和置顶区移除帖子，并同步持久化缓存。
   void removeExternalPost(int postId) {
+    _canonicalPosts.remove(postId);
     var changed = false;
     for (final entry in _boards.entries) {
       final keyParts = entry.key.split('|');
@@ -1525,6 +1543,7 @@ class PostProvider extends ChangeNotifier {
   }
 
   void _replacePostInBoards(Post updated) {
+    _canonicalPosts[updated.id] = updated;
     for (final entry in _boards.entries) {
       final keyParts = entry.key.split('|');
       final boardId = int.tryParse(keyParts.first) ?? 0;
@@ -1586,6 +1605,7 @@ class PostProvider extends ChangeNotifier {
       if (board == null) continue;
       final index = entry.originalIndex.clamp(0, board.posts.length);
       board.posts.insert(index, entry.post);
+      _canonicalPosts[entry.post.id] = entry.post;
       board.revision++;
     }
   }
@@ -1598,8 +1618,7 @@ class PostProvider extends ChangeNotifier {
   }) async {
     final removed = <_FeedRemovedEntry>[];
     for (final entry in _boards.entries) {
-      if (!_isMainFeedBoard(entry.key) ||
-          entry.key.split('|')[1] != 'all') {
+      if (!_isMainFeedBoard(entry.key) || entry.key.split('|')[1] != 'all') {
         continue;
       }
       final board = entry.value;
@@ -1686,7 +1705,7 @@ class PostProvider extends ChangeNotifier {
   /// Revision 安全：仅当相关 board 的 revision 与变更时一致才原位插回；
   /// 若期间 Feed 已刷新（revision 变化），只调 API 撤销、不插回旧数据，
   /// 由下一次刷新与服务端对齐。
-  Future<void> undoFeedVisibility(FeedVisibilityUndo undo) async {
+  Future<bool> undoFeedVisibility(FeedVisibilityUndo undo) async {
     try {
       if (undo.isAuthorHide) {
         await _dio.delete(ApiConstants.feedHiddenAuthorPath(undo.authorId));
@@ -1694,14 +1713,15 @@ class PostProvider extends ChangeNotifier {
         await _dio.delete(ApiConstants.feedNotInterestedPath(undo.postId));
       }
     } catch (_) {
-      // API 撤销失败仍尽力恢复本地；下一次刷新会与服务端对齐。
+      // API 撤销失败时保持当前隐藏状态，避免 UI 与服务端语义相反。
+      return false;
     }
 
     final allSame = undo._removed.every((entry) {
       final board = _boards[entry.boardKey];
       return board != null && board.revision == entry.revisionAtMutation;
     });
-    if (!allSame) return;
+    if (!allSame) return true;
 
     _restoreRemoved(undo._removed);
     for (final entry in undo._removed) {
@@ -1709,5 +1729,6 @@ class PostProvider extends ChangeNotifier {
       if (board != null) _syncBoardCacheAfterMutation(entry.boardKey, board);
     }
     notifyListeners();
+    return true;
   }
 }

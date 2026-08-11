@@ -18,6 +18,7 @@ import '../services/diagnostic_log_service.dart';
 import '../services/root_page_state_service.dart';
 import '../theme/app_motion.dart';
 import '../utils/app_navigator.dart';
+import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/glass_container.dart';
@@ -1648,12 +1649,9 @@ class _HomeScreenState extends State<HomeScreen>
             break;
           }
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(globalAward == null
-                ? '投票发布成功'
-                : '投票发布成功 · 全站经验 +${globalAward.exp}'),
-          ),
+        AppFeedback.success(
+          globalAward == null ? '投票发布成功' : '投票发布成功 · 全站经验 +${globalAward.exp}',
+          context: context,
         );
       }
       if (result != null) {

@@ -9,6 +9,7 @@ import '../../models/post.dart';
 import '../../models/publish_image_item.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
+import '../../utils/app_feedback.dart';
 import 'exposure_publish_form.dart';
 import 'widgets/publish_bottom_bar.dart';
 import 'widgets/publish_image_grid.dart';
@@ -77,9 +78,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         _contactController.text.trim().isNotEmpty ||
         _contactType.isNotEmpty;
 
-    final hasMediaOrTags = _images.any((e) => e.source == PublishImageSource.local) ||
-        _selectedMarketTags.isNotEmpty ||
-        _images.length != (widget.editingPost?.images.length ?? 0);
+    final hasMediaOrTags =
+        _images.any((e) => e.source == PublishImageSource.local) ||
+            _selectedMarketTags.isNotEmpty ||
+            _images.length != (widget.editingPost?.images.length ?? 0);
 
     if (!_isEditing) return hasText || hasMediaOrTags;
 
@@ -143,8 +145,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   // ---------------------------------------------------------------------------
 
   @override
-  void onImageAdded(XFile image) =>
-      setState(() => _images.add(PublishImageItem.local(image, _nextLocalImageId())));
+  void onImageAdded(XFile image) => setState(
+      () => _images.add(PublishImageItem.local(image, _nextLocalImageId())));
 
   // ---- 统一图片操作 ----
 
@@ -467,12 +469,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     final auth = context.read<AuthProvider>();
     if (auth.user?.studentVerified != true) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('毕业用户仅可发布普通帖子，不能在集市发帖'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppFeedback.error('毕业用户仅可发布普通帖子，不能在集市发帖', context: context);
       }
       return;
     }
@@ -492,12 +489,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       // C-3：并发上传本地图（失败项可重试，不提交）。
       if (!await _uploadLocalImages(postProvider)) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('图片上传失败，请点击图片重试'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          AppFeedback.error('图片上传失败，请点击图片重试', context: context);
         }
         return;
       }
@@ -506,11 +498,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       final fileIds = _orderedFileIds();
       if (fileIds == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('图片上传失败，请检查网络或图片是否过大'),
-              backgroundColor: Colors.red,
-            ),
+          AppFeedback.error(
+            '图片上传失败，请检查网络或图片是否过大',
+            context: context,
           );
         }
         return;
@@ -546,21 +536,11 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         _skipDraftGuard = true;
         Navigator.of(context).pop(true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.errorMessage ?? '发布失败'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppFeedback.error(result.errorMessage ?? '发布失败', context: context);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('发布失败：$e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppFeedback.error('发布失败：$e', context: context);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

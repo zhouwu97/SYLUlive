@@ -15,14 +15,21 @@ class FeedPostActionMenu extends StatelessWidget {
     required this.isMine,
     required this.isDark,
     required this.onAction,
+    this.allowNotInterested = true,
+    this.allowHideAuthor = true,
+    this.allowReport = true,
   });
 
   final bool isMine;
   final bool isDark;
   final ValueChanged<FeedPostAction> onAction;
+  final bool allowNotInterested;
+  final bool allowHideAuthor;
+  final bool allowReport;
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final entries = <Object>[
       if (isMine) ...[
         const AppPopupAction(
@@ -37,22 +44,26 @@ class FeedPostActionMenu extends StatelessWidget {
           danger: true,
         ),
       ] else ...[
-        const AppPopupAction(
-          value: 'not_interested',
-          label: '不感兴趣',
-          icon: Icons.block_rounded,
-        ),
-        const AppPopupAction(
-          value: 'hide_author',
-          label: '不看 TA',
-          icon: Icons.visibility_off_outlined,
-        ),
-        const Divider(),
-        const AppPopupAction(
-          value: 'report',
-          label: '举报',
-          icon: Icons.flag_outlined,
-        ),
+        if (allowNotInterested)
+          const AppPopupAction(
+            value: 'not_interested',
+            label: '不感兴趣',
+            icon: Icons.block_rounded,
+          ),
+        if (allowHideAuthor)
+          const AppPopupAction(
+            value: 'hide_author',
+            label: '不看 TA',
+            icon: Icons.visibility_off_outlined,
+          ),
+        if ((allowNotInterested || allowHideAuthor) && allowReport)
+          const Divider(),
+        if (allowReport)
+          const AppPopupAction(
+            value: 'report',
+            label: '举报',
+            icon: Icons.flag_outlined,
+          ),
       ],
     ];
 
@@ -60,7 +71,7 @@ class FeedPostActionMenu extends StatelessWidget {
       icon: Icon(
         Icons.more_horiz_rounded,
         size: 20,
-        color: isDark ? Colors.white54 : Colors.grey[500],
+        color: colors.onSurfaceVariant,
       ),
       entries: entries,
       onSelected: (value) => onAction(_fromValue(value)),

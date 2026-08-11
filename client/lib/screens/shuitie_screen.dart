@@ -13,6 +13,7 @@ import '../config/water_post_taxonomy.dart';
 import '../widgets/water_section/section_avatar.dart';
 import '../theme/app_motion.dart';
 import '../utils/responsive_util.dart';
+import '../utils/app_feedback.dart';
 import '../utils/search_focus_gate.dart';
 
 import '../models/announcement.dart' as model;
@@ -107,7 +108,8 @@ class ShuitieScreen extends StatefulWidget {
   final FeedSessionService? feedSessionService;
   final FeedEventService? feedEventService;
 
-  const ShuitieScreen({super.key, this.feedSessionService, this.feedEventService});
+  const ShuitieScreen(
+      {super.key, this.feedSessionService, this.feedEventService});
 
   @override
   State<ShuitieScreen> createState() => _ShuitieScreenState();
@@ -191,7 +193,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     // FEED-3：首次进入 Feed 即开启一个事件会话。
     _feedSessionService = widget.feedSessionService ?? FeedSessionService();
     _feedSessionService.newSession();
-    _feedEventService = widget.feedEventService ?? FeedEventService(getSharedDio());
+    _feedEventService =
+        widget.feedEventService ?? FeedEventService(getSharedDio());
 
     _feedScrollControllers = {
       for (final mode in kFeedModes)
@@ -599,9 +602,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildFreshnessBanner() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colors = Theme.of(context).colorScheme;
     return Material(
-      color: isDark ? const Color(0xFF2B2F3A) : Colors.white,
+      color: colors.surfaceContainerHighest,
       elevation: 3,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
@@ -616,7 +619,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               Icon(
                 Icons.arrow_upward_rounded,
                 size: 16,
-                color: Theme.of(context).primaryColor,
+                color: colors.primary,
               ),
               const SizedBox(width: 6),
               Text(
@@ -624,7 +627,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : const Color(0xFF1F2430),
+                  color: colors.onSurface,
                 ),
               ),
             ],
@@ -1203,7 +1206,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         }
         _showUndoSnackBar(
           message: '已减少此帖推荐',
-          onUndo: () => postProvider.undoFeedVisibility(undo),
+          onUndo: () => unawaited(_undoFeedVisibility(undo)),
         );
       case FeedPostAction.hideAuthor:
         final undo = await postProvider.hideAuthorOptimistic(post.authorId);
@@ -1213,7 +1216,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         }
         _showUndoSnackBar(
           message: '已不再展示该用户',
-          onUndo: () => postProvider.undoFeedVisibility(undo),
+          onUndo: () => unawaited(_undoFeedVisibility(undo)),
         );
       case FeedPostAction.report:
         showReportSheet(context, targetId: post.id, targetType: 'post');
@@ -1275,22 +1278,25 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     required VoidCallback onUndo,
   }) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 4),
-          action: SnackBarAction(label: '撤销', onPressed: onUndo),
-        ),
-      );
+    AppFeedback.action(
+      message,
+      context: context,
+      actionLabel: '撤销',
+      onAction: onUndo,
+    );
   }
 
   void _showFeedSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppFeedback.error(message, context: context);
+  }
+
+  Future<void> _undoFeedVisibility(FeedVisibilityUndo undo) async {
+    final restored =
+        await context.read<PostProvider>().undoFeedVisibility(undo);
+    if (!restored && mounted) {
+      AppFeedback.error('撤销失败，当前隐藏状态未改变', context: context);
+    }
   }
 
   Widget _buildEmptyDetailState(bool isDark) {
@@ -1572,23 +1578,28 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ),
             )
           else if (posts.isNotEmpty)
-            ...posts.take(2).map((post) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: CommunityPostCard(
-                    post: post,
-                    onAuthorTap: _openUserInSplit,
-                    onPostAction: (action) => _handlePostAction(post, action),
-                    onTap: () {
-                      if (ResponsiveUtil.useDesktopShell(context)) {
-                        _openPostInSplit(post,
-                            feedKind: 'following', position: 0);
-                      } else {
-                        _openFeedDetail(post,
-                            sort: 'following', position: 0);
-                      }
-                    },
-                  ),
-                )),
+            ...posts.take(2).toList().asMap().entries.map((entry) {
+              final post = entry.value;
+              final position = entry.key;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: CommunityPostCard(
+                  post: post,
+                  onAuthorTap: _openUserInSplit,
+                  onPostAction: (action) => _handlePostAction(post, action),
+                  allowNotInterested: false,
+                  onTap: () {
+                    if (ResponsiveUtil.useDesktopShell(context)) {
+                      _openPostInSplit(post,
+                          feedKind: 'following', position: position);
+                    } else {
+                      _openFeedDetail(post,
+                          sort: 'following', position: position);
+                    }
+                  },
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -1819,7 +1830,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              '关注的版块发布帖子后，会显示在这里',
+              '关注的人和版块有新动态时，会显示在这里',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
@@ -1849,41 +1860,30 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   // ---- 普通信息流内容（含搜索框折叠） ----
   Widget _buildFeedContent(bool isDark) {
-    return Stack(
-      children: [
-        GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onHorizontalDragStart: _handleFeedSwipeStart,
-          onHorizontalDragUpdate: _handleFeedSwipeUpdate,
-          onHorizontalDragEnd: _handleFeedSwipe,
-          onHorizontalDragCancel: () {
-            _feedSwipeDx = 0;
-            unawaited(_settleFeedMode(
-              targetIndex: _feedTargetIndex,
-              commit: false,
-            ));
-          },
-          child: RefreshIndicator(
-            onRefresh: () async {
-              await _refresh();
-              await _loadAnnouncements();
-            },
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 680),
-                child: _buildFeedModePage(isDark, _feedMode),
-              ),
-            ),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: _handleFeedSwipeStart,
+      onHorizontalDragUpdate: _handleFeedSwipeUpdate,
+      onHorizontalDragEnd: _handleFeedSwipe,
+      onHorizontalDragCancel: () {
+        _feedSwipeDx = 0;
+        unawaited(_settleFeedMode(
+          targetIndex: _feedTargetIndex,
+          commit: false,
+        ));
+      },
+      child: RefreshIndicator(
+        onRefresh: () async {
+          await _refresh();
+          await _loadAnnouncements();
+        },
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: _buildFeedModePage(isDark, _feedMode),
           ),
         ),
-        if (_freshnessBannerVisible)
-          Positioned(
-            top: 10,
-            left: 0,
-            right: 0,
-            child: Center(child: _buildFreshnessBanner()),
-          ),
-      ],
+      ),
     );
   }
 
@@ -1965,7 +1965,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             slivers: [
               SliverPersistentHeader(
-                pinned: false,
+                pinned: true,
                 floating: true,
                 delegate: _SliverSearchBarDelegate(
                   vsync: this,
@@ -1975,6 +1975,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   ),
                 ),
               ),
+              if (_freshnessBannerVisible)
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _SliverFreshnessBannerDelegate(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+                      child: Center(child: _buildFreshnessBanner()),
+                    ),
+                  ),
+                ),
               if (mode == 'following' && !_followingExpanded) ...[
                 if (!context.read<AuthProvider>().isLoggedIn)
                   SliverToBoxAdapter(
@@ -2023,7 +2033,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             title:
                                 _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
                             subtitle: _searchQuery.isNotEmpty
-                                ? '目前只按标题搜索，换个标题关键词试试'
+                                ? '目前只按帖子标题搜索，换个标题关键词试试'
                                 : '发布第一条帖子吧',
                             onRetry: _refresh,
                           ),
@@ -2092,6 +2102,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                               onAuthorTap: _openUserInSplit,
                               onPostAction: (action) =>
                                   _handlePostAction(post, action),
+                              allowNotInterested: sort == 'all',
                               onCommentTap: (commentPost) {
                                 if (ResponsiveUtil.useDesktopShell(context)) {
                                   _openPostInSplit(commentPost,
@@ -2163,6 +2174,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ? Colors.white.withValues(alpha: 0.12)
           : const Color(0xFFEEF0F5),
       child: TextField(
+        key: const ValueKey('feed-search-field'),
         controller: _searchController,
         focusNode: _searchFocusNode,
         onChanged: _onSearchChanged,
@@ -2173,7 +2185,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           border: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 9),
-          hintText: '搜索账号、用户或帖子关键词',
+          hintText: '搜索帖子标题关键词',
           hintStyle: const TextStyle(fontSize: 14),
           prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon: _searchController.text.isEmpty
@@ -2249,7 +2261,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 }
 
-// ---- 搜索框折叠 SliverPersistentHeaderDelegate ----
+// ---- 搜索框固定 SliverPersistentHeaderDelegate ----
 class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   final TickerProvider _vsync;
   final Widget child;
@@ -2261,7 +2273,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => 46;
 
   @override
-  double get minExtent => 0;
+  double get minExtent => 46;
 
   @override
   FloatingHeaderSnapConfiguration get snapConfiguration =>
@@ -2294,6 +2306,34 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant _SliverSearchBarDelegate oldDelegate) {
     return oldDelegate.child != child;
   }
+}
+
+class _SliverFreshnessBannerDelegate extends SliverPersistentHeaderDelegate {
+  const _SliverFreshnessBannerDelegate({required this.child});
+
+  final Widget child;
+
+  @override
+  double get minExtent => 54;
+
+  @override
+  double get maxExtent => 54;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surface,
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _SliverFreshnessBannerDelegate oldDelegate) =>
+      oldDelegate.child != child;
 }
 
 class CheckInSuccessDialog extends StatelessWidget {

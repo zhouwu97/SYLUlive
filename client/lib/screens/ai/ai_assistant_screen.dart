@@ -37,6 +37,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/ai_assistant_provider.dart';
 import '../../providers/edu_provider.dart';
 import '../../services/ai_assistant_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../widgets/ai/ai_empty_state.dart';
 import '../../widgets/ai/ai_personal_empty_state.dart';
 import '../../widgets/ai/ai_error_card.dart';
@@ -204,8 +205,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       if (mounted && granted != null) {
         final submitted = await _provider.submitConsent(granted);
         if (!submitted && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_provider.error ?? '提交本次授权失败，请稍后重试')),
+          AppFeedback.error(
+            _provider.error ?? '提交本次授权失败，请稍后重试',
+            context: context,
           );
         }
       }
@@ -409,9 +411,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   Future<void> _submitPublic(String message) async {
     if (!await _featureFlags.isEnabled(AIFeatureFlag.chat)) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('校园 AI 问答当前已关闭')));
+        AppFeedback.info('校园 AI 问答当前已关闭', context: context);
       }
       return;
     }
@@ -736,9 +736,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       _replaceCompetitionDraft(updated);
       await _persistPersonalHistory();
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('已加入我的竞赛计划')));
+        AppFeedback.success('已加入我的竞赛计划', context: context);
       }
     } on CompetitionPlanActionException catch (error) {
       if (!_isCurrentPersonalRequest(requestEpoch)) return;
@@ -747,15 +745,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         await _persistPersonalHistory();
       }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.message)));
+        AppFeedback.error(error.message, context: context);
       }
     } catch (_) {
       if (mounted && _isCurrentPersonalRequest(requestEpoch)) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('加入计划失败，请稍后重试')));
+        AppFeedback.error('加入计划失败，请稍后重试', context: context);
       }
     }
   }
@@ -840,9 +834,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   Future<void> _openAiSetting(String value) async {
     if (value == 'graduation' && !BetaReleasePolicy.aiGraduationAssistant) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('毕业助手在当前内测版本中暂未开放')));
+      AppFeedback.info('毕业助手在当前内测版本中暂未开放', context: context);
       return;
     }
     final auth = context.read<AuthProvider>();
@@ -882,9 +874,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         _personalError = null;
         _personalNeedsModelConfiguration = false;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('个人助手模型已保存')));
+      AppFeedback.success('个人助手模型已保存', context: context);
     }
   }
 
@@ -894,13 +884,14 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       value: _provider,
       child: Consumer<AiAssistantProvider>(
         builder: (context, provider, _) {
+          final colors = Theme.of(context).colorScheme;
           final capabilities = provider.capabilities ?? widget.capabilities;
           final quota = provider.quota ?? capabilities.quota;
           final maxInputCharacters = _personalMode
               ? PersonalAIRuntimeLimits.maximumInputCharacters
               : capabilities.maxMessageChars;
           return Scaffold(
-            backgroundColor: const Color(0xFFF7F8F6),
+            backgroundColor: colors.surface,
             appBar: AppPageAppBar(
               title: const AiAppBarTitle(),
               actions: [
@@ -993,6 +984,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                         subtitle: '分析我的学业情况',
                                         prompt: '分析我的学业情况，找出主要风险并给出改进建议',
                                       ),
+                                    if (capabilities
+                                        .features.hy3CompetitionCompare)
+                                      const AiSuggestedPrompt(
+                                        title: '竞赛对比',
+                                        subtitle: '对比适合我的竞赛',
+                                        prompt: '对比适合我的竞赛',
+                                      ),
                                     if (capabilities.features.hy3WeekPlan)
                                       const AiSuggestedPrompt(
                                         title: '本周计划',
@@ -1040,6 +1038,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                     message: message,
                                     loadSourceContent:
                                         widget.service.getSourceContent,
+                                    onRetrySources: () => unawaited(
+                                      _provider.retryMessageSources(message),
+                                    ),
                                   ),
                                 if (provider.isRunning)
                                   AiTypingStatus(

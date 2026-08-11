@@ -1,3 +1,5 @@
+import 'ai_source.dart';
+
 class AiConversation {
   final String id;
   final String title;
@@ -32,6 +34,7 @@ class AiConversationMessage {
   final String? runId;
   final String role;
   final String content;
+  final List<AiSource> sources;
   final DateTime? createdAt;
 
   const AiConversationMessage({
@@ -40,6 +43,7 @@ class AiConversationMessage {
     required this.role,
     required this.content,
     this.runId,
+    this.sources = const [],
     this.createdAt,
   });
 
@@ -50,10 +54,19 @@ class AiConversationMessage {
       runId: json['run_id']?.toString(),
       role: json['role']?.toString() ?? 'assistant',
       content: json['content']?.toString() ?? '',
+      sources: _parseSources(json['sources']),
       createdAt:
           DateTime.tryParse(json['created_at']?.toString() ?? '')?.toLocal(),
     );
   }
+}
+
+List<AiSource> _parseSources(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map((item) => AiSource.fromJson(Map<String, dynamic>.from(item)))
+      .toList(growable: false);
 }
 
 class AiConversationDetails {

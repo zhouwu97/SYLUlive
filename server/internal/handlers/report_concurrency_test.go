@@ -28,19 +28,19 @@ func TestHandleReportPostgresSerializesConcurrentHandling(t *testing.T) {
 	db := openReportConcurrencyPostgres(t)
 
 	reporter := models.User{
-		StudentID:    "report-concurrency-reporter",
+		StudentID:    "rep-concur-001",
 		PasswordHash: "hash",
 		Nickname:     "Reporter",
 		Role:         models.RoleUser,
 	}
 	owner := models.User{
-		StudentID:    "report-concurrency-owner",
+		StudentID:    "owner-concur-001",
 		PasswordHash: "hash",
 		Nickname:     "Owner",
 		Role:         models.RoleUser,
 	}
 	admin := models.User{
-		StudentID:    "report-concurrency-admin",
+		StudentID:    "admin-concur-001",
 		PasswordHash: "hash",
 		Nickname:     "Admin",
 		Role:         models.RoleAdmin,

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../services/ai_personal_data_permission_service.dart';
+import '../../utils/app_feedback.dart';
 
 /// 配置校园 Agent 跨会话访问个人数据时的长期授权偏好。
 class CampusPersonalDataPermissionScreen extends StatefulWidget {
@@ -97,8 +98,7 @@ class _CampusPersonalDataPermissionScreenState
       });
     } on AiPersonalDataPermissionException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
+        AppFeedback.error(error.message, context: context);
       }
     } finally {
       if (mounted && accountUserId == _accountUserId) {

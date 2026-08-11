@@ -27,7 +27,7 @@ Map<String, dynamic> _feedJson(List<int> postIds) => {
       'total': postIds.length,
     };
 
-Dio _feedDio({bool failFeedWrite = false}) {
+Dio _feedDio({bool failFeedWrite = false, bool failFeedUndo = false}) {
   final dio = Dio();
   dio.interceptors.add(
     InterceptorsWrapper(
@@ -45,7 +45,8 @@ Dio _feedDio({bool failFeedWrite = false}) {
           return;
         }
         if (options.path.startsWith('/feed/')) {
-          if (failFeedWrite) {
+          if (failFeedWrite ||
+              (failFeedUndo && options.method.toUpperCase() == 'DELETE')) {
             handler.reject(
               DioException(
                 requestOptions: options,
@@ -55,7 +56,8 @@ Dio _feedDio({bool failFeedWrite = false}) {
             );
           } else {
             handler.resolve(
-              Response(requestOptions: options, statusCode: 200, data: {'ok': true}),
+              Response(
+                  requestOptions: options, statusCode: 200, data: {'ok': true}),
             );
           }
           return;
@@ -85,10 +87,12 @@ void main() {
     expect(provider.postsFor(1, sort: 'time').length, 3);
 
     final post = provider.postsFor(1, sort: 'all').firstWhere((p) => p.id == 3);
-    final undo = await provider.markPostNotInterestedOptimistic(post, source: 'all');
+    final undo =
+        await provider.markPostNotInterestedOptimistic(post, source: 'all');
     expect(undo, isNotNull);
 
-    expect(provider.postsFor(1, sort: 'all').map((p) => p.id), isNot(contains(3)));
+    expect(
+        provider.postsFor(1, sort: 'all').map((p) => p.id), isNot(contains(3)));
     expect(provider.postsFor(1, sort: 'time').map((p) => p.id), contains(3),
         reason: '不感兴趣只移 all，不移 time');
 
@@ -106,8 +110,9 @@ void main() {
     final undo = await provider.hideAuthorOptimistic(7);
     expect(undo, isNotNull);
     for (final sort in ['all', 'time', 'featured', 'following']) {
-      expect(provider.postsFor(1, sort: sort).map((p) => p.id),
-          isNot(contains(3)), reason: '不看TA 对所有 Tab 生效: $sort');
+      expect(
+          provider.postsFor(1, sort: sort).map((p) => p.id), isNot(contains(3)),
+          reason: '不看TA 对所有 Tab 生效: $sort');
     }
 
     await provider.undoFeedVisibility(undo!);
@@ -121,9 +126,28 @@ void main() {
     final provider = await _loadedProvider(_feedDio(failFeedWrite: true));
     final post = provider.postsFor(1, sort: 'all').firstWhere((p) => p.id == 3);
 
-    final undo = await provider.markPostNotInterestedOptimistic(post, source: 'all');
+    final undo =
+        await provider.markPostNotInterestedOptimistic(post, source: 'all');
     expect(undo, isNull, reason: '失败不返回撤销记录');
     expect(provider.postsFor(1, sort: 'all').map((p) => p.id), contains(3),
         reason: '失败回滚');
+  });
+
+  test('撤销接口失败时不恢复本地隐藏状态', () async {
+    final provider = await _loadedProvider(_feedDio(failFeedUndo: true));
+    final post = provider.postsFor(1, sort: 'all').firstWhere((p) => p.id == 3);
+
+    final undo = await provider.markPostNotInterestedOptimistic(
+      post,
+      source: 'all',
+    );
+    expect(undo, isNotNull);
+    expect(
+        provider.postsFor(1, sort: 'all').map((p) => p.id), isNot(contains(3)));
+
+    final restored = await provider.undoFeedVisibility(undo!);
+    expect(restored, isFalse);
+    expect(
+        provider.postsFor(1, sort: 'all').map((p) => p.id), isNot(contains(3)));
   });
 }

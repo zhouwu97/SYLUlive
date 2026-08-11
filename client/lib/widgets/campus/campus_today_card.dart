@@ -38,8 +38,9 @@ class CampusTodayCard extends StatelessWidget {
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
 
-    final subtitleColor = isDark ? Colors.white38 : const Color(0xFF6B7280);
-    final iconColor = isDark ? Colors.white54 : const Color(0xFF4B5563);
+    final colors = Theme.of(context).colorScheme;
+    final subtitleColor = colors.onSurfaceVariant;
+    final iconColor = colors.onSurfaceVariant;
 
     return Material(
       color: Colors.transparent,
@@ -55,7 +56,7 @@ class CampusTodayCard extends StatelessWidget {
                   Icon(
                     Icons.today_rounded,
                     size: 17,
-                    color: Theme.of(context).primaryColor,
+                    color: colors.primary,
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -63,7 +64,7 @@ class CampusTodayCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
-                      color: isDark ? Colors.white : CampusTheme.text,
+                      color: colors.onSurface,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -92,7 +93,7 @@ class CampusTodayCard extends StatelessWidget {
     CampusTodayItem item,
     Color iconColor,
   ) {
-    final isDark = this.isDark;
+    final colors = Theme.of(context).colorScheme;
     return InkWell(
       key: ValueKey('campus-today-${item.id}'),
       borderRadius: BorderRadius.circular(AppRadius.md),
@@ -105,9 +106,7 @@ class CampusTodayCard extends StatelessWidget {
               width: 34,
               height: 34,
               decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).primaryColor.withValues(alpha: isDark ? 0.16 : 0.10),
+                color: colors.primaryContainer,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(item.icon, size: 18, color: iconColor),
@@ -124,7 +123,7 @@ class CampusTodayCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : CampusTheme.text,
+                      color: colors.onSurface,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -134,7 +133,7 @@ class CampusTodayCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
-                      color: isDark ? Colors.white38 : const Color(0xFF6B7280),
+                      color: colors.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -144,7 +143,7 @@ class CampusTodayCard extends StatelessWidget {
             Icon(
               Icons.chevron_right_rounded,
               size: 20,
-              color: isDark ? Colors.white24 : const Color(0xFF9CA3AF),
+              color: colors.onSurfaceVariant.withValues(alpha: 0.6),
             ),
           ],
         ),

@@ -6,6 +6,8 @@ enum AiMessageRole { user, assistant }
 
 enum AiMessageStatus { pending, streaming, completed, failed }
 
+enum AiSourceRecoveryState { notNeeded, loading, loaded, failed }
+
 class AiChatMessage {
   final String id;
   final String requestId;
@@ -13,6 +15,7 @@ class AiChatMessage {
   final String content;
   final AiMessageStatus status;
   final List<AiSource> sources;
+  final AiSourceRecoveryState sourceRecoveryState;
   final List<AiPersonalDataEvidence> personalDataEvidence;
   final List<CompetitionPlanActionDraft> actionDrafts;
   final DateTime createdAt;
@@ -25,6 +28,7 @@ class AiChatMessage {
     required this.status,
     required this.createdAt,
     this.sources = const [],
+    this.sourceRecoveryState = AiSourceRecoveryState.notNeeded,
     this.personalDataEvidence = const [],
     this.actionDrafts = const [],
   });
@@ -33,6 +37,7 @@ class AiChatMessage {
     String? content,
     AiMessageStatus? status,
     List<AiSource>? sources,
+    AiSourceRecoveryState? sourceRecoveryState,
     List<AiPersonalDataEvidence>? personalDataEvidence,
     List<CompetitionPlanActionDraft>? actionDrafts,
   }) {
@@ -44,6 +49,7 @@ class AiChatMessage {
       status: status ?? this.status,
       createdAt: createdAt,
       sources: sources ?? this.sources,
+      sourceRecoveryState: sourceRecoveryState ?? this.sourceRecoveryState,
       personalDataEvidence: personalDataEvidence ?? this.personalDataEvidence,
       actionDrafts: actionDrafts ?? this.actionDrafts,
     );

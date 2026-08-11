@@ -6,6 +6,7 @@ import '../../models/poll.dart';
 import '../../models/post.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/poll_provider.dart';
+import '../../utils/app_feedback.dart';
 import '../cached_avatar.dart';
 import '../feed/feed_post_action_menu.dart';
 import '../post_media/post_media_view.dart';
@@ -22,6 +23,9 @@ class PollPostCard extends StatefulWidget {
 
   /// 卡片右上角操作菜单回调（FEED-3）。为空时不渲染菜单。
   final ValueChanged<FeedPostAction>? onPostAction;
+  final bool allowNotInterested;
+  final bool allowHideAuthor;
+  final bool allowReport;
 
   const PollPostCard({
     super.key,
@@ -30,6 +34,9 @@ class PollPostCard extends StatefulWidget {
     this.onAuthorTap,
     this.onPostUpdated,
     this.onPostAction,
+    this.allowNotInterested = true,
+    this.allowHideAuthor = true,
+    this.allowReport = true,
     this.variant = PollCardVariant.homeCompact,
   });
 
@@ -72,9 +79,7 @@ class _PollPostCardState extends State<PollPostCard> {
         } else if (_selected.length < poll.maxChoices) {
           _selected.add(id);
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('最多选择 ${poll.maxChoices} 项')),
-          );
+          AppFeedback.info('最多选择 ${poll.maxChoices} 项', context: context);
         }
       } else {
         _selected = {id};
@@ -94,8 +99,7 @@ class _PollPostCardState extends State<PollPostCard> {
     } else {
       final message = context.read<PollProvider>().mutationError(poll.id);
       if (message != null) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
+        AppFeedback.error(message, context: context);
       }
     }
   }
@@ -184,6 +188,9 @@ class _PollPostCardState extends State<PollPostCard> {
                       isMine: _isMine(context),
                       isDark: isDark,
                       onAction: widget.onPostAction!,
+                      allowNotInterested: widget.allowNotInterested,
+                      allowHideAuthor: widget.allowHideAuthor,
+                      allowReport: widget.allowReport,
                     ),
                   ],
                 ],

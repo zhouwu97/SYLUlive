@@ -154,6 +154,11 @@ void main() {
     // 浮条出现。
     final banner = find.byKey(const ValueKey('feed-freshness-banner'));
     expect(banner, findsOneWidget);
+    final searchFinder = find.byKey(const ValueKey('feed-search-field'));
+    final searchRect = tester.getRect(searchFinder);
+    final bannerRect = tester.getRect(banner);
+    expect(searchRect.overlaps(bannerRect), isFalse,
+        reason: '新鲜度提示应占用滚动流位置，不覆盖搜索框');
 
     // 点击浮条：应用新快照并回到顶部。
     await tester.tap(banner);

@@ -18,6 +18,9 @@ class CommunityPostCard extends StatelessWidget {
 
   /// 卡片右上角操作菜单回调（FEED-3），透传给 PostCard / PollPostCard。
   final ValueChanged<FeedPostAction>? onPostAction;
+  final bool allowNotInterested;
+  final bool allowHideAuthor;
+  final bool allowReport;
 
   const CommunityPostCard({
     super.key,
@@ -29,6 +32,9 @@ class CommunityPostCard extends StatelessWidget {
     this.disableAuthorNavigation = false,
     this.pollVariant = PollCardVariant.homeCompact,
     this.onPostAction,
+    this.allowNotInterested = true,
+    this.allowHideAuthor = true,
+    this.allowReport = true,
   });
 
   @override
@@ -41,6 +47,9 @@ class CommunityPostCard extends StatelessWidget {
         onPostUpdated: onPostUpdated,
         variant: pollVariant,
         onPostAction: onPostAction,
+        allowNotInterested: allowNotInterested,
+        allowHideAuthor: allowHideAuthor,
+        allowReport: allowReport,
       );
     }
     return PostCard(
@@ -50,6 +59,9 @@ class CommunityPostCard extends StatelessWidget {
       onCommentTap: onCommentTap,
       disableAuthorNavigation: disableAuthorNavigation,
       onPostAction: onPostAction,
+      allowNotInterested: allowNotInterested,
+      allowHideAuthor: allowHideAuthor,
+      allowReport: allowReport,
     );
   }
 }

@@ -16,11 +16,16 @@ class ImageViewerScreen extends StatefulWidget {
   final int initialIndex;
   final Map<String, String> httpHeaders;
 
+  /// 与 imageUrls 一一对应的本地内存字节（如刚上传的图片预览）；
+  /// 对应下标为 null 时回退到网络/CachedNetworkImage。
+  final List<Uint8List?>? imageBytes;
+
   const ImageViewerScreen({
     super.key,
     required this.imageUrls,
     this.initialIndex = 0,
     this.httpHeaders = const {},
+    this.imageBytes,
   });
 
   @override
@@ -93,6 +98,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final alreadyDownloaded = _downloadedImages[_currentIndex];
     if (alreadyDownloaded != null) {
       return alreadyDownloaded;
+    }
+
+    final memoryBytes = widget.imageBytes != null &&
+            _currentIndex < widget.imageBytes!.length
+        ? widget.imageBytes![_currentIndex]
+        : null;
+    if (memoryBytes != null) {
+      final ext = _guessExtensionFromBytes(memoryBytes, 'png');
+      return _ImageBytesResult(memoryBytes, '原图', ext, _guessMimeType(ext));
     }
 
     // 尝试直接下载原始字节
@@ -354,10 +368,17 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
             },
             child: InteractiveViewer(
               child: Center(
-                child: _downloadedImages.containsKey(index)
-                    ? Image.memory(_downloadedImages[index]!.bytes,
-                        fit: BoxFit.contain)
-                    : CachedNetworkImage(
+                child: (widget.imageBytes != null &&
+                        index < widget.imageBytes!.length &&
+                        widget.imageBytes![index] != null)
+                    ? Image.memory(
+                        widget.imageBytes![index]!,
+                        fit: BoxFit.contain,
+                      )
+                    : _downloadedImages.containsKey(index)
+                        ? Image.memory(_downloadedImages[index]!.bytes,
+                            fit: BoxFit.contain)
+                        : CachedNetworkImage(
                         cacheManager: PostImageCache.manager,
                         imageUrl: widget.imageUrls[index],
                         httpHeaders: widget.httpHeaders,

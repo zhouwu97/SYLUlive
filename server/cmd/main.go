@@ -671,7 +671,7 @@ func main() {
 
 	canteenHandler := handlers.NewCanteenHandler(db)
 
-	feedbackHandler := handlers.NewFeedbackHandler(db)
+	feedbackHandler := handlers.NewFeedbackHandler(db, cfg.UploadDir)
 
 	checkinHandler := handlers.NewCheckInHandler(db)
 	checkinCompensationHandler := handlers.NewCheckInCompensationHandler(db)

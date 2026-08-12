@@ -62,6 +62,9 @@ type ProviderRequest struct {
 	Temperature float64
 	MaxTokens   int
 	Tools       []ToolDefinition
+	// RequiredTool 由 Runtime 的依赖规划设置；非空时 Provider 必须先调用该工具。
+	// Runtime 仍会独立校验实际调用，不能只依赖厂商实现 tool_choice。
+	RequiredTool string
 }
 
 type ProviderEvent struct {
@@ -106,15 +109,16 @@ func (e *ProviderError) Error() string { return e.Class }
 func (e *ProviderError) Unwrap() error { return e.Err }
 
 const (
-	ProviderErrorAuthentication = "authentication_error"
-	ProviderErrorRateLimited    = "rate_limited"
-	ProviderErrorTimeout        = "provider_timeout"
-	ProviderErrorUnavailable    = "provider_unavailable"
-	ProviderErrorInvalid        = "invalid_response"
-	ProviderErrorCancelled      = "context_cancelled"
-	ProviderErrorRejected       = "content_rejected"
-	ProviderErrorOutputLimit    = "output_limit_reached"
-	ProviderErrorUnknown        = "unknown_provider_error"
+	ProviderErrorAuthentication  = "authentication_error"
+	ProviderErrorRateLimited     = "rate_limited"
+	ProviderErrorTimeout         = "provider_timeout"
+	ProviderErrorUnavailable     = "provider_unavailable"
+	ProviderErrorInvalid         = "invalid_response"
+	ProviderErrorCancelled       = "context_cancelled"
+	ProviderErrorRejected        = "content_rejected"
+	ProviderErrorRequestRejected = "provider_request_rejected"
+	ProviderErrorOutputLimit     = "output_limit_reached"
+	ProviderErrorUnknown         = "unknown_provider_error"
 )
 
 // Provider 隔离外部模型厂商，生产实现与测试 Mock 必须遵守相同取消语义。

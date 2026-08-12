@@ -108,8 +108,8 @@ func (h *AIRuntimeHandler) GetRun(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"run": run})
 }
 
-// GetRunSources 返回 Run 完成时持久化的来源卡片，供历史回答恢复引用。
-// 来源事件只包含公开的文档元数据，不把完整正文随会话接口返回。
+// GetRunSources 返回 Run 完成时持久化的公开来源与个人数据来源元数据。
+// 个人来源可包含本次送入分析器的去身份化输入，但不包含账号、凭据或原始教务响应。
 func (h *AIRuntimeHandler) GetRunSources(c *gin.Context) {
 	runID := strings.TrimSpace(c.Param("id"))
 	var run models.AIRun
@@ -129,8 +129,13 @@ func (h *AIRuntimeHandler) GetRunSources(c *gin.Context) {
 		Where("run_id = ? AND type = ?", run.ID, "sources.ready").
 		Order("seq DESC").
 		First(&event)
+	personalEvidence, evidenceErr := h.personalDataEvidence(c.Request.Context(), run.ID)
+	if evidenceErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": "ai_source_read_failed", "message": "读取回答来源失败"})
+		return
+	}
 	if errors.Is(query.Error, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusOK, gin.H{"run_id": run.ID, "sources": []ai.SourceCard{}})
+		c.JSON(http.StatusOK, gin.H{"run_id": run.ID, "sources": []ai.SourceCard{}, "personal_data_evidence": personalEvidence})
 		return
 	}
 	if query.Error != nil {
@@ -145,7 +150,34 @@ func (h *AIRuntimeHandler) GetRunSources(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": "ai_source_read_failed", "message": "回答来源格式错误"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"run_id": run.ID, "sources": payload.Sources})
+	c.JSON(http.StatusOK, gin.H{"run_id": run.ID, "sources": payload.Sources, "personal_data_evidence": personalEvidence})
+}
+
+func (h *AIRuntimeHandler) personalDataEvidence(ctx context.Context, runID string) ([]map[string]interface{}, error) {
+	var events []models.AIEvent
+	if err := h.db.WithContext(ctx).Where("run_id = ? AND type = ?", runID, "personal_data.evidence").Order("seq ASC").Find(&events).Error; err != nil {
+		return nil, err
+	}
+	result := make([]map[string]interface{}, 0)
+	seen := map[string]struct{}{}
+	for _, event := range events {
+		var payload struct {
+			Evidence []map[string]interface{} `json:"evidence"`
+		}
+		if json.Unmarshal(event.Payload, &payload) != nil {
+			continue
+		}
+		for _, item := range payload.Evidence {
+			encoded, _ := json.Marshal(item)
+			key := string(encoded)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			result = append(result, item)
+		}
+	}
+	return result, nil
 }
 
 // SubmitRunConsent 只接受当前 JWT 用户对指定等待中 Run 的一次性决定。

@@ -324,9 +324,15 @@ func (r *Runtime) Execute(runID, message string) {
 		return
 	}
 	toolDefinitions := routeModelTools(message, r.toolDefinitions())
+	requiredTool, _ := requiredDecisionTool(message, toolDefinitions)
 	hasTools := len(toolDefinitions) > 0
 	_, _ = r.appendEvent(ctx, runID, "retrieval.started", map[string]interface{}{}, true)
-	retrieval, err := r.retriever.Retrieve(ctx, message)
+	retrieval := RetrievalResult{}
+	var err error
+	retrievalQuery := policyRetrievalQuery(message, requiredTool)
+	if retrievalQuery != "" {
+		retrieval, err = r.retriever.Retrieve(ctx, retrievalQuery)
+	}
 	if err != nil {
 		if !hasTools {
 			r.failBeforeGeneration(runID, "rag_unavailable", true)
@@ -337,7 +343,7 @@ func (r *Runtime) Execute(runID, message string) {
 	// 自定义召回器可能不构建计划；此处兜底，保证生成层始终拿到意图和必答分支。
 	queryPlan := retrieval.Plan
 	if queryPlan.Intent == "" {
-		queryPlan = BuildPolicyQueryPlan(message)
+		queryPlan = BuildPolicyQueryPlan(retrievalQuery)
 	}
 	retrieval.Plan = queryPlan
 	retrieval.Chunks = selectPolicyCoverage(queryPlan, retrieval.Chunks, policyCoverageLimit)
@@ -345,7 +351,7 @@ func (r *Runtime) Execute(runID, message string) {
 	if len(retrieval.Chunks) == 0 {
 		retrieval.DegradedModes = append(retrieval.DegradedModes, "rag_insufficient_sources")
 	}
-	if shouldAnswerFromVerifiedRAG(queryPlan, retrieval.Chunks) {
+	if requiredTool == "" && shouldAnswerFromVerifiedRAG(queryPlan, retrieval.Chunks) {
 		// 明确制度问题已有直接知识库证据时，不再向模型暴露公开搜索工具，
 		// 避免弱相关通知或相邻制度覆盖已核验规则。
 		toolDefinitions = nil
@@ -365,6 +371,8 @@ func (r *Runtime) Execute(runID, message string) {
 	systemPrompt := campusAgentSystemPrompt
 	if queryPlan.IsPolicyIntent() && len(promptChunks) > 0 && !hasTools {
 		systemPrompt = policySystemPrompt
+	} else if hasTools {
+		systemPrompt += " 个人成绩、课程、学分和二课数据只能来自工具结果；补考、二次考试、重修、报名、缴费等校内流程只能来自已核验证据，不能把个人工具的分析建议当成校规。"
 	}
 	messages := []Message{
 		{Role: "system", Content: systemPrompt},
@@ -377,7 +385,7 @@ func (r *Runtime) Execute(runID, message string) {
 		}
 	}
 	startedAt := time.Now()
-	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions)
+	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, false)
 	if outcome.cancelled {
 		r.finalizeCancelled(runID, outcome.generated, outcome.usage, time.Since(startedAt))
 		return
@@ -399,11 +407,24 @@ func (r *Runtime) Execute(runID, message string) {
 	r.markQuotaConsumed(runID)
 	now := time.Now()
 	_ = r.db.Model(&models.AIRun{}).Where("id = ? AND started_at IS NULL", runID).Update("started_at", now).Error
+	if len(retrieval.Chunks) == 0 && (strings.Contains(strings.ToLower(outcome.answer), "[chunk:") || containsGenericCitationPlaceholder(outcome.answer)) {
+		// 个人工具回答没有政策分块；模型沿用引用格式时只移除伪标记，
+		// 个人数据依据由 personal_data.evidence 单独展示。
+		outcome.answer = stripUnbackedCitationMarkers(outcome.answer)
+	}
 	_, _ = r.appendEvent(ctx, runID, "answer.delta", map[string]interface{}{"text": outcome.answer}, false)
-	validateCitations := len(retrieval.Chunks) > 0 &&
+	procedureClaim := containsCampusProcedureClaim(outcome.answer)
+	validateCitations := procedureClaim || (len(retrieval.Chunks) > 0 &&
 		((!outcome.toolUsed && queryPlan.IsPolicyIntent()) ||
-			strings.Contains(outcome.answer, "[chunk:"))
-	r.completeRun(runID, outcome.answer, retrieval.Chunks, outcome.usage, time.Since(startedAt), validateCitations)
+			strings.Contains(outcome.answer, "[chunk:")))
+	r.completeRun(runID, outcome.answer, retrieval.Chunks, outcome.usage, time.Since(startedAt), validateCitations, outcome.citationFallback)
+}
+
+func containsCampusProcedureClaim(answer string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(answer))
+	return containsAny(normalized,
+		"补考", "二次考试", "二考", "重修", "重新学习", "重新修读",
+		"报名", "缴费", "教务通知", "学校组织", "学院安排")
 }
 
 func (r *Runtime) ragPath(userID uint) string {
@@ -688,7 +709,7 @@ func retakeFocusGuidance(focus string) string {
 	}
 }
 
-func (r *Runtime) completeRun(runID, rawAnswer string, chunks []RetrievedChunk, usage ProviderEvent, latency time.Duration, validateCitations bool) {
+func (r *Runtime) completeRun(runID, rawAnswer string, chunks []RetrievedChunk, usage ProviderEvent, latency time.Duration, validateCitations bool, invalidFallback ...string) {
 	chunks = r.currentPublishedChunks(chunks)
 	answer := rawAnswer
 	sources := make([]SourceCard, 0)
@@ -697,6 +718,9 @@ func (r *Runtime) completeRun(runID, rawAnswer string, chunks []RetrievedChunk, 
 		answer, sources, invalid = ValidateCitations(rawAnswer, chunks)
 		if invalid || len(sources) == 0 {
 			answer = unverifiableCampusAnswer
+			if len(invalidFallback) > 0 && strings.TrimSpace(invalidFallback[0]) != "" {
+				answer = strings.TrimSpace(invalidFallback[0])
+			}
 			sources = []SourceCard{}
 			invalid = true
 		}

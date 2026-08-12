@@ -22,6 +22,26 @@ type scriptedToolProvider struct {
 	requests []ProviderRequest
 }
 
+type countingRetriever struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (retriever *countingRetriever) Retrieve(context.Context, string) (RetrievalResult, error) {
+	retriever.mu.Lock()
+	defer retriever.mu.Unlock()
+	retriever.calls++
+	return RetrievalResult{Chunks: []RetrievedChunk{{
+		ChunkID: 1, DocumentID: 1, Content: "弱相关政策资料", Title: "测试政策",
+	}}}, nil
+}
+
+func (retriever *countingRetriever) Calls() int {
+	retriever.mu.Lock()
+	defer retriever.mu.Unlock()
+	return retriever.calls
+}
+
 func (provider *scriptedToolProvider) Name() string { return "scripted" }
 func (provider *scriptedToolProvider) Capabilities() ProviderCapabilities {
 	return ProviderCapabilities{Streaming: true, ToolCalls: true, JSONSchema: true, UsageInStream: true}
@@ -197,6 +217,252 @@ func TestRuntimeDoesNotSynthesizeAcademicAnalysisWhenHy3ContextUnavailable(t *te
 	require.Equal(t, "personal_context_unavailable", failed.ErrorCode)
 	require.Empty(t, failed.AnswerCheckpoint)
 	require.Len(t, provider.Requests(), 1, "Hy3 不可用后不得让模型伪造个人分析")
+}
+
+func TestRuntimeRequiresPersonalDecisionToolBeforeFinalAnswer(t *testing.T) {
+	tests := []struct {
+		name        string
+		message     string
+		toolName    string
+		modelName   string
+		unsafeReply string
+		retrievals  int
+	}{
+		{
+			name:        "学业分析",
+			message:     "分析我的学业情况，找出主要风险并给出改进建议",
+			toolName:    "hy3_decision.analyze_academic",
+			modelName:   "hy3_decision_analyze_academic",
+			unsafeReply: "你的主要学业风险通常集中在成绩门槛和课程不及格。",
+			retrievals:  1,
+		},
+		{
+			name:        "本周学习计划",
+			message:     "结合我的课表和目标，帮我制定本周学习计划",
+			toolName:    "hy3_decision.plan_student_week",
+			modelName:   "hy3_decision_plan_student_week",
+			unsafeReply: "本周学习计划应按目标优先、课前预习来排。",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := newRuntimeTestDB(t)
+			provider := &scriptedToolProvider{rounds: [][]ProviderEvent{{
+				{Type: ProviderEventTextDelta, Text: test.unsafeReply},
+				{Type: ProviderEventCompleted},
+			}}}
+			retriever := &countingRetriever{}
+			tool := namedOverviewTool{name: test.toolName, overviewTool: overviewTool{
+				execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+					t.Fatal("模型未发起工具调用时不应执行工具")
+					return nil, nil
+				},
+			}}
+			registry, err := NewToolRegistry(db, tool)
+			require.NoError(t, err)
+			runtime, err := NewRuntime(db, provider, retriever, NewEventBroker(), RuntimeConfig{
+				ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
+				MaxToolSteps: 3, MaxMessageChars: 100, HourlyMessageLimit: 10,
+				DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+				InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+				AuditHashSecret: "required-tool-test",
+			}, WithToolRegistry(registry))
+			require.NoError(t, err)
+
+			run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+				ClientRequestID: uuid.NewString(), Message: test.message,
+			})
+			require.NoError(t, err)
+			failed := waitRunState(t, db, run.ID, models.AIRunStateFailed)
+			require.Equal(t, "required_tool_not_used", failed.ErrorCode)
+			require.Empty(t, failed.AnswerCheckpoint)
+			require.Equal(t, test.retrievals, retriever.Calls())
+
+			requests := provider.Requests()
+			require.Len(t, requests, 1)
+			require.Equal(t, test.modelName, requests[0].RequiredTool)
+			require.Len(t, requests[0].Tools, 1)
+			require.Equal(t, test.modelName, requests[0].Tools[0].Name)
+
+			var assistantMessages int64
+			require.NoError(t, db.Model(&models.AIConversationMessage{}).
+				Where("run_id = ? AND role = ?", run.ID, "assistant").Count(&assistantMessages).Error)
+			require.Zero(t, assistantMessages)
+		})
+	}
+}
+
+func TestRuntimeCompletesAfterRequiredPersonalDecisionTool(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "required_academic", ToolName: "hy3_decision_analyze_academic"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "required_academic", ToolName: "hy3_decision_analyze_academic", ArgumentsDelta: `{}`},
+			{Type: ProviderEventCompleted, FinishReason: "tool_calls"},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "已基于学业工具结果完成分析。"},
+			{Type: ProviderEventCompleted, FinishReason: "stop"},
+		},
+	}}
+	retriever := &countingRetriever{}
+	tool := namedOverviewTool{name: "hy3_decision.analyze_academic", overviewTool: overviewTool{
+		execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+			return map[string]interface{}{"status": "ok", "source": "server_snapshot"}, nil
+		},
+	}}
+	registry, err := NewToolRegistry(db, tool)
+	require.NoError(t, err)
+	runtime, err := NewRuntime(db, provider, retriever, NewEventBroker(), RuntimeConfig{
+		ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
+		MaxToolSteps: 3, MaxMessageChars: 100, HourlyMessageLimit: 10,
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+		AuditHashSecret: "required-tool-success-test",
+	}, WithToolRegistry(registry))
+	require.NoError(t, err)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "分析我的学业情况，找出主要风险并给出改进建议",
+	})
+	require.NoError(t, err)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, "已基于学业工具结果完成分析。", completed.AnswerCheckpoint)
+	require.Equal(t, 1, retriever.Calls())
+	requests := provider.Requests()
+	require.Len(t, requests, 2)
+	require.Equal(t, "hy3_decision_analyze_academic", requests[0].RequiredTool)
+	require.Empty(t, requests[1].RequiredTool)
+
+	var calls []models.AIToolCall
+	require.NoError(t, db.Where("run_id = ?", run.ID).Find(&calls).Error)
+	require.Len(t, calls, 1)
+	require.Equal(t, "completed", calls[0].Status)
+}
+
+func TestAcademicAnalysisEmitsPersonalEvidenceAndPolicySources(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	seedPublishedKnowledgeSource(t, db, 1, 1)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "academic_with_sources", ToolName: "hy3_decision_analyze_academic"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "academic_with_sources", ToolName: "hy3_decision_analyze_academic", ArgumentsDelta: `{}`},
+			{Type: ProviderEventCompleted, FinishReason: "tool_calls"},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "信号与系统目前未通过，建议先复习薄弱章节。后续补考或重修应以学校规定为准。[chunk:1]"},
+			{Type: ProviderEventCompleted, FinishReason: "stop"},
+		},
+	}}
+	tool := namedOverviewTool{name: "hy3_decision.analyze_academic", overviewTool: overviewTool{
+		execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+			return map[string]interface{}{
+				"status": "ok",
+				"analysis": map[string]interface{}{
+					"risk_summary": "failed_required_credits 为3，建议后续补考或重修",
+				},
+				"deterministic_findings": map[string]interface{}{
+					"failed_course_count": 1, "failed_required_credits": 3,
+					"earned_credits": 25.5, "credit_gap": 0, "erke_gap": 0,
+					"unknown_grade_course_count": 0, "missing_credit_course_count": 0,
+					"data_completeness_percent": 100, "failed_courses": []string{"信号与系统"},
+				},
+				"analysis_input": map[string]interface{}{
+					"courses": []map[string]interface{}{{
+						"course_name": "信号与系统", "grade": 58.0, "credits": 3.0,
+						"is_required": true, "passed": false,
+					}},
+					"earned_credits": 25.5, "required_credits": 25.5,
+					"erke_earned": 0.0, "erke_required": 0.0,
+				},
+				"source": "hy3_mcp", "warnings": []string{},
+			}, nil
+		},
+	}}
+	registry, err := NewToolRegistry(db, tool)
+	require.NoError(t, err)
+	retriever := fixedRetriever{result: RetrievalResult{
+		Plan: BuildPolicyQueryPlan("挂科了怎么办"),
+		Chunks: []RetrievedChunk{{
+			ChunkID: 1, DocumentID: 1, DocumentType: DocTypeStatusPolicy,
+			Title: "学生手册", Content: "课程首次考核不合格后，按学校规定参加后续考核。",
+		}},
+	}}
+	runtime, err := NewRuntime(db, provider, retriever, NewEventBroker(), RuntimeConfig{
+		ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
+		MaxToolSteps: 3, MaxMessageChars: 100, HourlyMessageLimit: 10,
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+		AuditHashSecret: "academic-evidence-test",
+	}, WithToolRegistry(registry))
+	require.NoError(t, err)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "分析我的学业情况，找出主要风险并给出改进建议",
+	})
+	require.NoError(t, err)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Contains(t, completed.AnswerCheckpoint, "[1]")
+
+	requests := provider.Requests()
+	require.Len(t, requests, 2)
+	require.Contains(t, requests[1].Messages[len(requests[1].Messages)-1].Content, "未通过必修课程涉及学分")
+	require.NotContains(t, requests[1].Messages[len(requests[1].Messages)-1].Content, "failed_required_credits")
+	require.NotContains(t, requests[1].Messages[len(requests[1].Messages)-1].Content, "risk_summary")
+
+	var personalEvent models.AIEvent
+	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "personal_data.evidence").First(&personalEvent).Error)
+	require.Contains(t, string(personalEvent.Payload), "信号与系统")
+	var sourcesEvent models.AIEvent
+	require.NoError(t, db.Where("run_id = ? AND type = ?", run.ID, "sources.ready").First(&sourcesEvent).Error)
+	require.Contains(t, string(sourcesEvent.Payload), "学生手册")
+}
+
+func TestAcademicAnalysisDoesNotDeliverCampusProcedureWithoutPolicySource(t *testing.T) {
+	db := newRuntimeTestDB(t)
+	provider := &scriptedToolProvider{rounds: [][]ProviderEvent{
+		{
+			{Type: ProviderEventToolCallStarted, CallID: "academic_without_sources", ToolName: "hy3_decision_analyze_academic"},
+			{Type: ProviderEventToolArgumentsDelta, CallID: "academic_without_sources", ToolName: "hy3_decision_analyze_academic", ArgumentsDelta: `{}`},
+			{Type: ProviderEventCompleted, FinishReason: "tool_calls"},
+		},
+		{
+			{Type: ProviderEventTextDelta, Text: "请关注后续补考或重修安排。"},
+			{Type: ProviderEventCompleted, FinishReason: "stop"},
+		},
+	}}
+	tool := namedOverviewTool{name: "hy3_decision.analyze_academic", overviewTool: overviewTool{
+		execute: func(context.Context, uint, json.RawMessage) (interface{}, error) {
+			return map[string]interface{}{
+				"status": "ok",
+				"deterministic_findings": map[string]interface{}{
+					"failed_course_count": 1, "failed_required_credits": 3,
+					"earned_credits": 25.5, "credit_gap": 0, "erke_gap": 0,
+					"unknown_grade_course_count": 0, "missing_credit_course_count": 0,
+					"data_completeness_percent": 100, "failed_courses": []string{"信号与系统"},
+				},
+				"analysis_input": map[string]interface{}{}, "warnings": []string{},
+			}, nil
+		},
+	}}
+	registry, err := NewToolRegistry(db, tool)
+	require.NoError(t, err)
+	runtime, err := NewRuntime(db, provider, fixedRetriever{}, NewEventBroker(), RuntimeConfig{
+		ProviderName: "scripted", Model: "scripted", RequestTimeout: 5 * time.Second,
+		MaxToolSteps: 3, MaxMessageChars: 100, HourlyMessageLimit: 10,
+		DefaultBudgetLimitMicroYuan: 1_000_000, ReservationMicroYuan: 10_000,
+		InputPriceMicroYuanPerMillion: 1_000_000, OutputPriceMicroYuanPerMillion: 1_000_000,
+		AuditHashSecret: "academic-no-policy-test",
+	}, WithToolRegistry(registry))
+	require.NoError(t, err)
+
+	run, _, err := runtime.CreateRun(context.Background(), 7, CreateRunRequest{
+		ClientRequestID: uuid.NewString(), Message: "分析我的学业情况，找出主要风险并给出改进建议",
+	})
+	require.NoError(t, err)
+	completed := waitRunState(t, db, run.ID, models.AIRunStateCompleted)
+	require.Equal(t, unverifiableCampusAnswer, completed.AnswerCheckpoint)
+	require.NotContains(t, completed.AnswerCheckpoint, "补考或重修安排")
 }
 
 func TestRuntimeUsesVerifiedRAGWithoutPublicToolsForKnownPolicyIntent(t *testing.T) {
@@ -591,4 +857,88 @@ func TestExtractPersonalDataEvidenceOnlyEmitsAllowedMetadata(t *testing.T) {
 	require.NotContains(t, string(payload), "高等数学")
 	require.NotContains(t, string(payload), "92")
 	require.NotContains(t, string(payload), "public_database")
+}
+
+func TestExtractPersonalDataEvidenceKeepsSanitizedHy3AcademicInput(t *testing.T) {
+	result := json.RawMessage(`{
+		"source":"hy3_mcp",
+		"analysis_input":{
+			"courses":[{"course_name":"信号与系统","grade":58,"credits":3,"is_required":true,"passed":false,"student_id":"2400000000"}],
+			"earned_credits":25.5,"required_credits":25.5,"erke_earned":0,"erke_required":0,
+			"password":"secret","cookie":"private"
+		}
+	}`)
+
+	evidence := extractPersonalDataEvidence(result)
+	require.Len(t, evidence, 1)
+	require.Equal(t, "hy3_mcp", evidence[0].Source)
+	require.Equal(t, "academic_analysis", evidence[0].Dataset)
+	require.Equal(t, "信号与系统", evidence[0].AnalysisInput["courses"].([]map[string]interface{})[0]["course_name"])
+	payload, err := json.Marshal(evidence)
+	require.NoError(t, err)
+	require.NotContains(t, string(payload), "student_id")
+	require.NotContains(t, string(payload), "password")
+	require.NotContains(t, string(payload), "cookie")
+	require.NotContains(t, string(payload), "2400000000")
+}
+
+func TestAcademicToolResultForModelUsesChineseWhitelist(t *testing.T) {
+	raw := json.RawMessage(`{
+		"status":"ok",
+		"analysis":{"risk_summary":"failed_required_credits 为0，后续补考或重修","priority_actions":["补考"]},
+		"deterministic_findings":{
+			"failed_course_count":2,"failed_required_credits":6,"earned_credits":25.5,
+			"credit_gap":0,"erke_gap":0,"unknown_grade_course_count":0,
+			"missing_credit_course_count":0,"data_completeness_percent":100,
+			"failed_courses":["信号与系统","计算机网络"]
+		},
+		"analysis_input":{
+			"courses":[{"course_name":"信号与系统","grade":58,"credits":3,"is_required":true,"passed":false}],
+			"earned_credits":25.5,"required_credits":25.5,"erke_earned":0,"erke_required":0
+		},
+		"warnings":[]
+	}`)
+
+	result := toolResultForModel("hy3_decision_analyze_academic", raw)
+	require.JSONEq(t, `{
+		"status":"ok",
+		"学业结论":{
+			"未通过课程数":2,"未通过必修课程涉及学分":6,"已获得学分":25.5,
+			"总学分缺口":0,"二课学分缺口":0,"成绩未知课程数":0,
+			"学分未知课程数":0,"数据完整度百分比":100,
+			"未通过课程":["信号与系统","计算机网络"]
+		},
+		"分析依据":{
+			"课程":[{"课程名称":"信号与系统","成绩":58,"学分":3,"课程性质":"必修","状态":"未通过"}],
+			"已获得学分":25.5,"要求学分":25.5,"已获得二课学分":0,"要求二课学分":0
+		},
+		"warnings":[]
+	}`, string(result))
+	require.NotContains(t, string(result), "risk_summary")
+	require.NotContains(t, string(result), "credit_gap")
+	require.NotContains(t, string(result), "failed_required_credits")
+	require.NotContains(t, string(result), "后续补考或重修")
+}
+
+func TestAcademicCitationFallbackKeepsPersonalGradeFacts(t *testing.T) {
+	raw := json.RawMessage(`{
+		"status":"ok","is_stale":true,
+		"analysis_input":{
+			"courses":[
+				{"course_name":"信号与系统","grade":55.8,"credits":3.5,"is_required":false,"passed":false},
+				{"course_name":"电磁场与电磁波","grade":60.1,"credits":2.5,"is_required":false,"passed":true}
+			],
+			"earned_credits":25.5,"required_credits":25.5
+		}
+	}`)
+
+	fallback := academicCitationFallback("hy3_decision_analyze_academic", raw)
+	require.Contains(t, fallback, "已成功读取你的个人成绩")
+	require.Contains(t, fallback, "《信号与系统》成绩 55.8、3.5 学分")
+	require.NotContains(t, fallback, "电磁场与电磁波")
+	require.Contains(t, fallback, "25.5 / 25.5")
+	require.Contains(t, fallback, "成绩快照已过期")
+	require.Contains(t, fallback, "个人成绩结论不受影响")
+	require.NotContains(t, fallback, "应参加补考")
+	require.NotContains(t, fallback, "可以申请重修")
 }

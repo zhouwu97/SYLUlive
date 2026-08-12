@@ -26,7 +26,7 @@ func (p *OpenAICompatibleProvider) Name() string { return "openai-compatible" }
 func (p *OpenAICompatibleProvider) Capabilities() ProviderCapabilities {
 	return ProviderCapabilities{
 		Streaming: true, ToolCalls: true, JSONSchema: true, ReasoningContent: true,
-		PromptCache: true, UsageInStream: true,
+		PromptCache: true, UsageInStream: true, ForcedToolChoice: true,
 	}
 }
 
@@ -112,22 +112,33 @@ func (p *OpenAICompatibleProvider) Start(ctx context.Context, request ProviderRe
 		Type     string         `json:"type"`
 		Function ToolDefinition `json:"function"`
 	}
+	type openAICompatibleToolChoice struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
 	tools := make([]openAICompatibleTool, 0, len(request.Tools))
 	for _, tool := range request.Tools {
 		tools = append(tools, openAICompatibleTool{Type: "function", Function: tool})
 	}
 	payload := struct {
-		Model         string                 `json:"model"`
-		Messages      []Message              `json:"messages"`
-		Temperature   float64                `json:"temperature,omitempty"`
-		MaxTokens     int                    `json:"max_tokens,omitempty"`
-		Stream        bool                   `json:"stream"`
-		StreamOptions map[string]bool        `json:"stream_options"`
-		Tools         []openAICompatibleTool `json:"tools,omitempty"`
+		Model         string                      `json:"model"`
+		Messages      []Message                   `json:"messages"`
+		Temperature   float64                     `json:"temperature,omitempty"`
+		MaxTokens     int                         `json:"max_tokens,omitempty"`
+		Stream        bool                        `json:"stream"`
+		StreamOptions map[string]bool             `json:"stream_options"`
+		Tools         []openAICompatibleTool      `json:"tools,omitempty"`
+		ToolChoice    *openAICompatibleToolChoice `json:"tool_choice,omitempty"`
 	}{
 		Model: p.model, Messages: request.Messages, Temperature: request.Temperature,
 		MaxTokens: request.MaxTokens, Stream: true,
 		StreamOptions: map[string]bool{"include_usage": true}, Tools: tools,
+	}
+	if request.RequiredTool != "" {
+		payload.ToolChoice = &openAICompatibleToolChoice{Type: "function"}
+		payload.ToolChoice.Function.Name = request.RequiredTool
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -276,7 +287,7 @@ func providerHTTPError(status int) error {
 	case status >= 500:
 		class = ProviderErrorUnavailable
 	case status == http.StatusBadRequest || status == http.StatusUnprocessableEntity:
-		class = ProviderErrorRejected
+		class = ProviderErrorRequestRejected
 	}
 	return &ProviderError{Class: class, Err: fmt.Errorf("provider HTTP %d", status)}
 }

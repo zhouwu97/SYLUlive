@@ -58,6 +58,25 @@ func TestValidateNumberedCitationsRejectsForgeryAndAggregatesByDocument(t *testi
 	require.True(t, invalid)
 }
 
+func TestValidateNumberedCitationsAllowsRetrievedSubset(t *testing.T) {
+	chunks := []RetrievedChunk{
+		{ChunkID: 18, DocumentID: 3, CitationNumber: 1, Title: "学籍管理规定"},
+		{ChunkID: 19, DocumentID: 4, CitationNumber: 2, Title: "补考业务口径"},
+		{ChunkID: 20, DocumentID: 5, CitationNumber: 3, Title: "课程重修办法"},
+	}
+
+	answer, sources, invalid := ValidateCitations(
+		"课程未通过后应按规定处理。[1] 成绩记载以课程口径为准。[2]",
+		chunks,
+	)
+
+	require.False(t, invalid)
+	require.Equal(t, "课程未通过后应按规定处理。[1] 成绩记载以课程口径为准。[2]", answer)
+	require.Len(t, sources, 2)
+	require.Equal(t, []int{1}, sources[0].CitationNumbers)
+	require.Equal(t, []int{2}, sources[1].CitationNumbers)
+}
+
 func TestValidateNumberedCitationsIgnoresMarkdownNumericLinkLabels(t *testing.T) {
 	chunks := []RetrievedChunk{{
 		ChunkID: 18, DocumentID: 3, CitationNumber: 1, Title: "学生手册",

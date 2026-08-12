@@ -257,8 +257,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(GradeEmptyState), findsOneWidget);
-    expect(find.text('成绩加载失败'), findsNothing);
-    expect(find.text('暂无成绩'), findsNothing);
+    expect(find.text('成绩获取失败'), findsNothing);
+    expect(find.text('当前学期暂无成绩'), findsNothing);
 
     edu.finishPendingGrades();
     await tester.pumpAndSettle();
@@ -270,9 +270,9 @@ void main() {
       edu: _FakeEduProvider(gradeMode: _LoadMode.error),
     );
 
-    expect(find.text('成绩加载失败'), findsOneWidget);
+    expect(find.text('成绩获取失败'), findsOneWidget);
     expect(find.text('测试成绩错误'), findsOneWidget);
-    expect(find.text('暂无成绩'), findsNothing);
+    expect(find.text('当前学期暂无成绩'), findsNothing);
   });
 
   testWidgets('成绩空数据和学业空数据均显示明确空状态', (tester) async {
@@ -284,7 +284,8 @@ void main() {
       ),
     );
 
-    expect(find.text('暂无成绩'), findsOneWidget);
+    expect(find.text('当前学期暂无成绩'), findsOneWidget);
+    expect(find.text('成绩获取失败'), findsNothing);
     await tester.tap(find.text('学业总览'));
     await tester.pumpAndSettle();
 
@@ -356,7 +357,7 @@ void main() {
       tester,
       auth: _FakeAuthProvider(null),
     );
-    expect(find.text('成绩加载失败'), findsOneWidget);
+    expect(find.text('成绩获取失败'), findsOneWidget);
     expect(find.text('请先登录后查看成绩'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
@@ -365,7 +366,7 @@ void main() {
       tester,
       edu: _FakeEduProvider(bound: false),
     );
-    expect(find.text('成绩加载失败'), findsOneWidget);
+    expect(find.text('成绩获取失败'), findsOneWidget);
     expect(find.text('请先绑定教务账号'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });

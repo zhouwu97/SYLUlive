@@ -41,6 +41,57 @@ func routeModelTools(message string, definitions []ToolDefinition) []ToolDefinit
 	return selected
 }
 
+// requiredDecisionTool 将明确的个人决策意图转换为服务端完成条件。
+// 返回的名称使用模型可见别名，与 ToolDefinition.Name 保持一致。
+func requiredDecisionTool(message string, definitions []ToolDefinition) (string, bool) {
+	_, required := hy3RouteTargets(message)
+	if required == "" {
+		return "", false
+	}
+	for _, definition := range definitions {
+		if definition.Name == required {
+			return required, true
+		}
+	}
+	// Hy3 未注册时 routeModelTools 会保留内置学业工具降级路径；
+	// 这些工具的选择依赖具体数据集，不能强制成不存在的 Hy3 名称。
+	return "", false
+}
+
+func requiredDecisionToolForMessages(messages []Message, definitions []ToolDefinition) (string, bool) {
+	for index := len(messages) - 1; index >= 0; index-- {
+		if messages[index].Role == "user" {
+			return requiredDecisionTool(messages[index].Content, definitions)
+		}
+	}
+	return "", false
+}
+
+// shouldRetrievePolicyForDecision 仅让明确同时询问校规的个人问题进入双依赖路径。
+// 单纯学业分析和周计划不应被弱相关政策资料污染。
+func shouldRetrievePolicyForDecision(message, requiredTool string) bool {
+	if requiredTool == "" {
+		return true
+	}
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	return containsAny(normalized,
+		"规定", "政策", "办法", "申请条件", "能否申请", "是否可以申请",
+		"奖学金", "评奖", "转专业", "学位授予", "毕业条件")
+}
+
+// policyRetrievalQuery 为个人学业风险分析补充固定的校规检索语义。
+// 用户原问题仍原样进入生成提示；这里只让 Retriever 命中挂科后续处理的正式依据。
+func policyRetrievalQuery(message, requiredTool string) string {
+	message = strings.TrimSpace(message)
+	if requiredTool == "hy3_decision_analyze_academic" {
+		return "挂科了怎么办"
+	}
+	if shouldRetrievePolicyForDecision(message, requiredTool) {
+		return message
+	}
+	return ""
+}
+
 func academicToolDefinitions(definitions []ToolDefinition) []ToolDefinition {
 	selected := make([]ToolDefinition, 0, len(definitions))
 	for _, definition := range definitions {

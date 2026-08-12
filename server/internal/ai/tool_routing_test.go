@@ -101,3 +101,22 @@ func TestVerifiedPolicyRAGDoesNotDisablePersonalHy3Intent(t *testing.T) {
 	require.False(t, shouldAnswerFromVerifiedRAG(BuildPolicyQueryPlan("补考成绩怎么算"), weakChunks))
 	require.False(t, shouldAnswerFromVerifiedRAG(BuildPolicyQueryPlan("计算我的 GPA 和学分情况"), makeupChunks))
 }
+
+func TestPolicyRetrievalQueryForAcademicAnalysisTargetsFailedCourseRules(t *testing.T) {
+	query := policyRetrievalQuery(
+		"分析我的学业情况，找出主要风险并给出改进建议",
+		"hy3_decision_analyze_academic",
+	)
+	require.Equal(t, "挂科了怎么办", query)
+	require.Equal(t, PolicyIntentFailedCourse, BuildPolicyQueryPlan(query).Intent)
+}
+
+func TestPolicyRetrievalQueryKeepsNonAcademicQuestion(t *testing.T) {
+	require.Equal(t, "奖学金有什么规定", policyRetrievalQuery("奖学金有什么规定", ""))
+}
+
+func TestCampusProcedureClaimRequiresCitation(t *testing.T) {
+	require.True(t, containsCampusProcedureClaim("请关注后续补考或重修安排"))
+	require.True(t, containsCampusProcedureClaim("按学院安排报名"))
+	require.False(t, containsCampusProcedureClaim("信号与系统目前未通过，建议优先复习"))
+}

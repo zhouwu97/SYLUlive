@@ -403,7 +403,7 @@ void main() {
     expect(requestedPaths, contains('/ai/runs/run-1/sources'));
   });
 
-  test('历史会话优先使用消息内来源，不逐条重放 SSE', () async {
+  test('历史会话保留消息内政策来源，并通过聚合接口补个人证据', () async {
     final requestedPaths = <String>[];
     final dio = Dio(BaseOptions(baseUrl: 'https://example.test/api'));
     dio.interceptors.add(
@@ -459,7 +459,10 @@ void main() {
     await provider.openConversation('conversation-1');
 
     expect(provider.messages.single.sources.single.title, '奖助学金管理办法');
-    expect(requestedPaths, ['/ai/conversations/conversation-1']);
+    expect(requestedPaths, [
+      '/ai/conversations/conversation-1',
+      '/ai/runs/run-1/sources',
+    ]);
   });
 
   test('输出达到长度上限时明确提示回答不完整', () {
@@ -504,6 +507,7 @@ void main() {
       'external_mcp_timeout': '学业分析服务响应超时，请稍后重试',
       'external_mcp_invalid_result': '学业分析结果校验失败，请稍后重试',
       'provider_unavailable': '回答服务暂时不可用，请稍后重试',
+      'provider_request_rejected': '回答服务暂时未接受本次请求，请重试',
       'rate_limited': '当前请求较多，请稍后重试',
     };
 

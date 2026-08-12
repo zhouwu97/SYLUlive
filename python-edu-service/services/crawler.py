@@ -777,9 +777,6 @@ class EduCrawler:
                 break
             page += 1
 
-        if not all_items:
-            raise GradesNotOpenError("当前学期暂无成绩")
-
         return all_items
 
     async def fetch_grade_detail(

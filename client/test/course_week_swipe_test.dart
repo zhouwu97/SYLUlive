@@ -136,6 +136,11 @@ String? _weekHeaderText(WidgetTester tester) {
   return null;
 }
 
+DateTime _mondayOf(DateTime d) {
+  return DateTime(d.year, d.month, d.day)
+      .subtract(Duration(days: d.weekday - 1));
+}
+
 void main() {
   testWidgets('课表中部横滑切周', (tester) async {
     final page = await _pumpCourse(tester);
@@ -224,11 +229,155 @@ void main() {
 
     await _disposeCourse(tester, page);
   });
+
+  // ====== 有限分页边界 ======
+
+  String weekRange(DateTime monday) =>
+      '${monday.month}/${monday.day} - ${monday.add(const Duration(days: 6)).month}/${monday.add(const Duration(days: 6)).day}';
+
+  // 当前日期早于开学 → 锚定到第 1 周
+  testWidgets('开学日在未来时 page0 就是第1周', (tester) async {
+    final futureMonday = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final page = await _pumpCourse(tester, semesterStart: futureMonday);
+
+    final controller =
+        tester.widget<PageView>(find.byType(PageView)).controller!;
+    expect(controller.page, closeTo(0, 0.001));
+    expect(find.text('第 1 周'), findsOneWidget);
+    expect(_weekHeaderText(tester), contains(weekRange(futureMonday)));
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('第1周向前(右滑)不能进入第0周', (tester) async {
+    final futureMonday = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final page = await _pumpCourse(tester, semesterStart: futureMonday);
+    expect(find.text('第 1 周'), findsOneWidget);
+    final before = _weekHeaderText(tester);
+
+    await tester.dragFrom(const Offset(220, 400), const Offset(250, 0));
+    await tester.pumpAndSettle();
+
+    final controller =
+        tester.widget<PageView>(find.byType(PageView)).controller!;
+    expect(controller.page, closeTo(0, 0.001));
+    expect(find.text('第 1 周'), findsOneWidget);
+    expect(_weekHeaderText(tester), before);
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('第1周向后(左滑)进入第2周', (tester) async {
+    final futureMonday = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final page = await _pumpCourse(tester, semesterStart: futureMonday);
+
+    final controller =
+        tester.widget<PageView>(find.byType(PageView)).controller!;
+    expect(controller.page, closeTo(0, 0.001));
+
+    await tester.dragFrom(const Offset(220, 400), const Offset(-250, 0));
+    await tester.pumpAndSettle();
+
+    expect(controller.page, closeTo(1, 0.001));
+    expect(find.text('第 2 周'), findsOneWidget);
+    final week2 = futureMonday.add(const Duration(days: 7));
+    expect(_weekHeaderText(tester), contains(weekRange(week2)));
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('第2周向前(右滑)返回第1周', (tester) async {
+    final futureMonday = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final page = await _pumpCourse(tester, semesterStart: futureMonday);
+
+    await tester.dragFrom(const Offset(220, 400), const Offset(-250, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('第 2 周'), findsOneWidget);
+
+    await tester.dragFrom(const Offset(220, 400), const Offset(250, 0));
+    await tester.pumpAndSettle();
+
+    final controller =
+        tester.widget<PageView>(find.byType(PageView)).controller!;
+    expect(controller.page, closeTo(0, 0.001));
+    expect(find.text('第 1 周'), findsOneWidget);
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('最后一周不能再向后(左滑)', (tester) async {
+    const maxWeek = 20; // CourseTerm 默认值
+    final lastWeekMonday = _mondayOf(DateTime.now());
+    final semesterStart = lastWeekMonday
+        .subtract(Duration(days: (maxWeek - 1) * 7));
+    final page = await _pumpCourse(tester, semesterStart: semesterStart);
+
+    final controller =
+        tester.widget<PageView>(find.byType(PageView)).controller!;
+    expect(controller.page, closeTo(maxWeek - 1, 0.001));
+    expect(find.text('第 $maxWeek 周'), findsOneWidget);
+    final before = _weekHeaderText(tester);
+
+    await tester.dragFrom(const Offset(220, 400), const Offset(-250, 0));
+    await tester.pumpAndSettle();
+
+    expect(controller.page, closeTo(maxWeek - 1, 0.001));
+    expect(find.text('第 $maxWeek 周'), findsOneWidget);
+    expect(_weekHeaderText(tester), before);
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('重设开学周后分页器日期与页码同步重置', (tester) async {
+    final original = _mondayOf(DateTime.now()).add(const Duration(days: 21));
+    final page = await _pumpCourse(tester, semesterStart: original);
+    expect(find.text('第 1 周'), findsOneWidget);
+
+    // 先滑到第2周，制造非初始状态
+    await tester.dragFrom(const Offset(220, 400), const Offset(-250, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('第 2 周'), findsOneWidget);
+
+    final newStart = _mondayOf(DateTime.now()).add(const Duration(days: 42));
+    await page.scheduleProvider.setSemesterStart(newStart);
+    await tester.pumpAndSettle();
+
+    final controller =
+        tester.widget<PageView>(find.byType(PageView)).controller!;
+    expect(controller.page, closeTo(0, 0.001));
+    expect(find.text('第 1 周'), findsOneWidget);
+    expect(_weekHeaderText(tester), contains(weekRange(newStart)));
+
+    await _disposeCourse(tester, page);
+  });
+
+  testWidgets('拖动时星期表头与课程网格保持同一水平位移', (tester) async {
+    final page = await _pumpCourse(tester);
+
+    final headerBefore = tester.getCenter(find.text('一')).dx;
+    final cardBefore = tester.getCenter(find.text('高等数学')).dx;
+
+    final gesture = await tester.startGesture(const Offset(220, 400));
+    await gesture.moveBy(const Offset(-100, 0));
+    await tester.pump();
+
+    final headerDuring = tester.getCenter(find.text('一')).dx;
+    final cardDuring = tester.getCenter(find.text('高等数学')).dx;
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(headerDuring - headerBefore,
+        closeTo(cardDuring - cardBefore, 0.5));
+
+    await _disposeCourse(tester, page);
+  });
 }
 
 Future<_CourseTestPage> _pumpCourse(
   WidgetTester tester, {
   bool configureSemesterStart = true,
+  DateTime? semesterStart,
 }) async {
   AppPreferencesStore.setMockInitialValues({});
   tester.view.physicalSize = const Size(400, 800);
@@ -298,7 +447,7 @@ Future<_CourseTestPage> _pumpCourse(
     ],
   );
   if (configureSemesterStart) {
-    await scheduleProvider.setSemesterStart(DateTime.now());
+    await scheduleProvider.setSemesterStart(semesterStart ?? DateTime.now());
   }
 
   final auth = _CourseAuthProvider(client: dio);

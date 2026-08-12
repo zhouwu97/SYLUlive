@@ -656,8 +656,9 @@ class AiAssistantProvider extends ChangeNotifier {
         _messages[index] = _messages[index].copyWith(
           sources: inlineSources,
           sourceRecoveryState: AiSourceRecoveryState.loaded,
+          personalDataEvidence: message.personalDataEvidence,
         );
-        continue;
+        if (message.personalDataEvidence.isNotEmpty) continue;
       }
       await _resolveSourcesForMessage(
         messageId: message.id,
@@ -700,8 +701,12 @@ class AiAssistantProvider extends ChangeNotifier {
     final index = _messages.indexWhere((item) => item.id == messageId);
     if (index < 0) return;
     final current = _messages[index];
-    if (!force && current.sources.isNotEmpty) return;
-    if (!hasAiCitationMarkers(content)) return;
+    if (!force &&
+        current.sources.isNotEmpty &&
+        current.personalDataEvidence.isNotEmpty) {
+      return;
+    }
+    final hasCitationMarkers = hasAiCitationMarkers(content);
     final chunkIds = extractAiChunkIds(content);
 
     _messages[index] = current.copyWith(
@@ -709,9 +714,18 @@ class AiAssistantProvider extends ChangeNotifier {
     );
     _notify();
 
-    List<AiSource> resolved = const [];
+    List<AiSource> resolved = deduplicateAiSources(current.sources);
+    List<AiPersonalDataEvidence> personalEvidence =
+        List<AiPersonalDataEvidence>.from(current.personalDataEvidence);
     try {
-      resolved = deduplicateAiSources(await _service.getRunSources(runId));
+      final runSources = await _service.getRunSources(runId);
+      if (runSources.sources.isNotEmpty) {
+        resolved = deduplicateAiSources([
+          ...resolved,
+          ...runSources.sources,
+        ]);
+      }
+      _mergeEvidenceList(personalEvidence, runSources.personalDataEvidence);
     } catch (_) {
       // 旧服务端没有来源聚合接口时，继续按 chunk 读取兼容正文。
     }
@@ -726,16 +740,20 @@ class AiAssistantProvider extends ChangeNotifier {
               : (source.chunkId > 0 ? [source.chunkId] : const <int>[]),
         )
         .toSet();
-    final state = resolved.isNotEmpty &&
-            (chunkIds.isEmpty || chunkIds.every(resolvedChunkIds.contains))
-        ? AiSourceRecoveryState.loaded
-        : AiSourceRecoveryState.failed;
+    final state = !hasCitationMarkers
+        ? AiSourceRecoveryState.notNeeded
+        : resolved.isNotEmpty &&
+                (chunkIds.isEmpty || chunkIds.every(resolvedChunkIds.contains))
+            ? AiSourceRecoveryState.loaded
+            : AiSourceRecoveryState.failed;
     final latestIndex = _messages.indexWhere((item) => item.id == messageId);
     if (latestIndex < 0) return;
     _messages[latestIndex] = _messages[latestIndex].copyWith(
       sources: resolved,
       sourceRecoveryState: state,
+      personalDataEvidence: personalEvidence,
     );
+    _mergePersonalDataEvidence(runId, personalEvidence);
     if (_run?.id == runId) {
       _sources = List<AiSource>.unmodifiable(resolved);
     }
@@ -779,6 +797,7 @@ class AiAssistantProvider extends ChangeNotifier {
       sourceRecoveryState: message.sources.isNotEmpty
           ? AiSourceRecoveryState.loaded
           : AiSourceRecoveryState.notNeeded,
+      personalDataEvidence: message.personalDataEvidence,
       createdAt: message.createdAt ?? DateTime.now(),
     );
   }
@@ -1009,6 +1028,8 @@ class AiAssistantProvider extends ChangeNotifier {
         return '回答服务暂时不可用，请稍后重试';
       case 'content_rejected':
         return '该问题暂时无法处理，请调整表述后重试';
+      case 'provider_request_rejected':
+        return '回答服务暂时未接受本次请求，请重试';
       case 'invalid_response':
       case 'unknown_provider_error':
         return '回答结果异常，请重新提问';

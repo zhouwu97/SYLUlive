@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/models/ai_chat_message.dart';
+import 'package:shenliyuan/models/ai_personal_data_evidence.dart';
 import 'package:shenliyuan/widgets/ai/ai_message_card.dart';
 import 'package:shenliyuan/widgets/campus/campus_theme.dart';
 
@@ -48,5 +49,50 @@ void main() {
       (bubble.decoration! as BoxDecoration).color,
       theme.colorScheme.primaryContainer,
     );
+  });
+
+  testWidgets('个人学业来源可展开核对成绩和学分输入', (tester) async {
+    final academicMessage = AiChatMessage(
+      id: 'answer-academic',
+      requestId: 'run-academic',
+      role: AiMessageRole.assistant,
+      content: '你当前有两门课程需要优先处理。',
+      status: AiMessageStatus.completed,
+      createdAt: DateTime.utc(2026, 8, 12),
+      personalDataEvidence: const [
+        AiPersonalDataEvidence(
+          source: 'hy3_mcp',
+          dataset: 'academic_analysis',
+          analysisInput: {
+            'courses': [
+              {
+                'course_name': '信号与系统',
+                'grade': 58,
+                'credits': 3,
+                'is_required': true,
+                'passed': false,
+              },
+            ],
+            'earned_credits': 25.5,
+            'required_credits': 25.5,
+            'erke_earned': 0,
+            'erke_required': 0,
+          },
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AiMessageCard(message: academicMessage)),
+      ),
+    );
+
+    expect(find.text('个人数据来源'), findsOneWidget);
+    await tester.tap(find.text('个人数据来源'));
+    await tester.pumpAndSettle();
+    expect(find.text('学业分析：Hy3 确定性分析'), findsOneWidget);
+    expect(find.text('学分 25.5 / 25.5 · 二课 0 / 0'), findsOneWidget);
+    expect(find.text('信号与系统'), findsOneWidget);
+    expect(find.text('成绩 58 · 3 学分 · 必修 · 未通过'), findsOneWidget);
   });
 }

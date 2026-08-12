@@ -289,6 +289,9 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 		return
 	}
 	usage := decodeResumeUsage(json.RawMessage(resume.UsageJSON))
+	toolDefinitions := routeModelToolsForMessages(messages, r.toolDefinitions())
+	requiredTool, _ := requiredDecisionToolForMessages(messages, toolDefinitions)
+	requiredToolCompleted := requiredTool == ""
 	var run models.AIRun
 	if err := r.db.WithContext(ctx).First(&run, "id = ?", resume.RunID).Error; err != nil {
 		return
@@ -332,6 +335,13 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 				waiting = append(waiting, pendingToolWait{CallID: item.CallID, Name: item.ToolName, Wait: *execution.Wait})
 				continue
 			}
+			if failureCode := fatalToolResultCode(item.ToolName, execution.Result); failureCode != "" {
+				r.failAfterProvider(resume.RunID, true, failureCode, usage, 0)
+				return
+			}
+			if item.ToolName == requiredTool {
+				requiredToolCompleted = true
+			}
 			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(execution.Result)})
 			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false, "resumed": true,
@@ -366,6 +376,13 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 				r.failAfterProvider(resume.RunID, true, "resume_tool_state_conflict", usage, 0)
 				return
 			}
+			if failureCode := fatalToolResultCode(item.ToolName, result); failureCode != "" {
+				r.failAfterProvider(resume.RunID, true, failureCode, usage, 0)
+				return
+			}
+			if resume.WaitingState != models.AIRunStateWaitingUserConsent && item.ToolName == requiredTool {
+				requiredToolCompleted = true
+			}
 			messages = append(messages, Message{Role: "tool", ToolCallID: item.CallID, Content: string(result)})
 			_, _ = r.appendEvent(ctx, resume.RunID, "tool.completed", map[string]interface{}{
 				"call_id": item.CallID, "tool_name": item.ToolName, "success": true, "cached": false,
@@ -383,8 +400,7 @@ func (r *Runtime) executeResumedRun(resumeID string) {
 	_ = r.db.WithContext(ctx).Where("id = ? AND status = ?", resume.ID, "resuming").Delete(&models.AIRunResumeJob{}).Error
 
 	startedAt := time.Now()
-	toolDefinitions := routeModelToolsForMessages(messages, r.toolDefinitions())
-	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions)
+	outcome := r.executeToolLoop(ctx, &run, messages, toolDefinitions, requiredTool, requiredToolCompleted)
 	usage = mergeProviderUsage(usage, outcome.usage)
 	if outcome.cancelled {
 		r.finalizeCancelled(run.ID, true, usage, time.Since(startedAt))

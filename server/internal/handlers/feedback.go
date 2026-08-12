@@ -3,10 +3,12 @@ package handlers
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"html"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/http"
 	"net/smtp"
 	"net/textproto"
@@ -23,8 +25,10 @@ import (
 
 const maxFeedbackImages = 4
 
-// maxEmailAttachmentSize 规避常见 SMTP 附件上限（163 等约 25MB），预留 MIME 编码膨胀空间。
-const maxEmailAttachmentSize = 20 << 20
+// maxEmailMessageSize 是整个 MIME 消息编码后的上限，对齐常见 SMTP 附件总大小限制（163 等约 25MB）。
+var maxEmailMessageSize = 25 << 20
+
+var errFeedbackEmailTooLarge = errors.New("feedback email exceeds size limit")
 
 // FeedbackHandler 反馈处理器
 type FeedbackHandler struct {
@@ -76,14 +80,6 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 		files, err := services.ValidateImageFileIDs(h.db, input.ImageIDs, maxFeedbackImages, uid)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "截图无效，请重新上传"})
-			return
-		}
-		var totalSize int64
-		for _, f := range files {
-			totalSize += f.Size
-		}
-		if totalSize > maxEmailAttachmentSize {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "截图过大，邮件服务无法发送，请精简后重试"})
 			return
 		}
 		attached = files
@@ -167,6 +163,10 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 
 	message, err := buildFeedbackEmail(h.uploadDir, to, VerifyCodeConfig.SMTPFrom, subject, body, attached)
 	if err != nil {
+		if errors.Is(err, errFeedbackEmailTooLarge) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "截图过大，邮件服务无法发送，请精简后重试"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "邮件构建失败，请稍后重试"})
 		return
 	}
@@ -181,8 +181,9 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "反馈已提交，感谢您的建议！"})
 }
 
-// buildFeedbackEmail 组装 multipart/mixed 邮件：HTML 正文 + 内嵌（inline）截图附件。
-// 截图从磁盘读取，直接作为 MIME 附件发送，不生成任何公网链接。
+// buildFeedbackEmail 组装 multipart/related 邮件：HTML 为根部件，截图以 Content-ID 内嵌
+// （供 <img src="cid:..."> 引用）。截图从磁盘读取，直接作为 MIME 附件发送，不生成任何公网链接。
+// 任意一张预期截图构造失败都会让整封邮件构建失败，绝不静默缺图。
 func buildFeedbackEmail(uploadDir, to, from, subject, body string, files []models.File) ([]byte, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -191,28 +192,34 @@ func buildFeedbackEmail(uploadDir, to, from, subject, body string, files []model
 	fmt.Fprintf(&buf, "From: %s\r\n", from)
 	fmt.Fprintf(&buf, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))
 	fmt.Fprintf(&buf, "MIME-Version: 1.0\r\n")
-	fmt.Fprintf(&buf, "Content-Type: multipart/mixed; boundary=%s\r\n", mw.Boundary())
+	fmt.Fprintf(&buf, "Content-Type: multipart/related; boundary=%s; type=\"text/html\"\r\n", mw.Boundary())
 	fmt.Fprintf(&buf, "\r\n")
 
+	// HTML 正文含中文与 emoji，不能用 7bit；quoted-printable 对以 ASCII 为主的 HTML 膨胀最小。
 	textHeader := textproto.MIMEHeader{}
 	textHeader.Set("Content-Type", "text/html; charset=UTF-8")
-	textHeader.Set("Content-Transfer-Encoding", "7bit")
+	textHeader.Set("Content-Transfer-Encoding", "quoted-printable")
 	textPart, err := mw.CreatePart(textHeader)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := textPart.Write([]byte(body)); err != nil {
+	qp := quotedprintable.NewWriter(textPart)
+	if _, err := qp.Write([]byte(body)); err != nil {
+		qp.Close()
+		return nil, err
+	}
+	if err := qp.Close(); err != nil {
 		return nil, err
 	}
 
 	for i, file := range files {
 		path, err := services.ResolveUploadPath(uploadDir, file.Path)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("resolve attachment %d: %w", i+1, err)
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("read attachment %d: %w", i+1, err)
 		}
 		imgHeader := textproto.MIMEHeader{}
 		imgHeader.Set("Content-Type", file.MimeType)
@@ -221,20 +228,23 @@ func buildFeedbackEmail(uploadDir, to, from, subject, body string, files []model
 		imgHeader.Set("Content-Disposition", fmt.Sprintf(`inline; filename="screenshot_%d%s"`, i+1, filepath.Ext(file.Path)))
 		imgPart, err := mw.CreatePart(imgHeader)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("create attachment %d: %w", i+1, err)
 		}
 		enc := base64.NewEncoder(base64.StdEncoding, imgPart)
 		if _, err := enc.Write(data); err != nil {
 			enc.Close()
-			continue
+			return nil, fmt.Errorf("write attachment %d: %w", i+1, err)
 		}
 		if err := enc.Close(); err != nil {
-			continue
+			return nil, fmt.Errorf("finalize attachment %d: %w", i+1, err)
 		}
 	}
 
 	if err := mw.Close(); err != nil {
 		return nil, err
+	}
+	if buf.Len() > maxEmailMessageSize {
+		return nil, errFeedbackEmailTooLarge
 	}
 	return buf.Bytes(), nil
 }

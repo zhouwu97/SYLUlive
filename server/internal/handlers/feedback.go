@@ -14,6 +14,7 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"shenliyuan/internal/models"
@@ -230,13 +231,8 @@ func buildFeedbackEmail(uploadDir, to, from, subject, body string, files []model
 		if err != nil {
 			return nil, fmt.Errorf("create attachment %d: %w", i+1, err)
 		}
-		enc := base64.NewEncoder(base64.StdEncoding, imgPart)
-		if _, err := enc.Write(data); err != nil {
-			enc.Close()
+		if _, err := imgPart.Write([]byte(mimeBase64(data))); err != nil {
 			return nil, fmt.Errorf("write attachment %d: %w", i+1, err)
-		}
-		if err := enc.Close(); err != nil {
-			return nil, fmt.Errorf("finalize attachment %d: %w", i+1, err)
 		}
 	}
 
@@ -247,4 +243,20 @@ func buildFeedbackEmail(uploadDir, to, from, subject, body string, files []model
 		return nil, errFeedbackEmailTooLarge
 	}
 	return buf.Bytes(), nil
+}
+
+// mimeBase64 按 RFC 2045 将 Base64 输出折行为每行 76 字符（CRLF 分隔）。
+// 标准库 base64.NewEncoder 不折行，超长行可能被真实 SMTP 中继（163/QQ 等）
+// 拒收或截断，因此大附件必须在此显式折行。
+func mimeBase64(data []byte) string {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	var sb strings.Builder
+	sb.Grow(len(encoded) + len(encoded)/76*2)
+	for len(encoded) > 76 {
+		sb.WriteString(encoded[:76])
+		sb.WriteString("\r\n")
+		encoded = encoded[76:]
+	}
+	sb.WriteString(encoded)
+	return sb.String()
 }

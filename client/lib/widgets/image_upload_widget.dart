@@ -120,6 +120,18 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
             response.data['url'] != null) {
           final rawFileId = response.data['file_id'];
           final fileId = rawFileId is num ? rawFileId.toInt() : 0;
+          if (fileId <= 0) {
+            // 服务端已私有化并按归属校验，file_id 缺失/0 一律视为上传失败。
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('图片上传失败'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
           final url = response.data['url'] as String;
           if (mounted) {
             setState(() {

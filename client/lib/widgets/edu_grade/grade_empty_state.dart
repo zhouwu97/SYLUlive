@@ -92,7 +92,7 @@ class GradeEmptyState extends StatelessWidget {
           Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            isFilterEmpty ? '该筛选条件下暂无课程' : '暂无成绩',
+            isFilterEmpty ? '该筛选条件下暂无课程' : '当前学期暂无成绩',
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
@@ -115,7 +115,7 @@ class GradeEmptyState extends StatelessWidget {
           Icon(Icons.cloud_off_outlined, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           const Text(
-            '成绩加载失败',
+            '成绩获取失败',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),

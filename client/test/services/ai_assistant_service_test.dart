@@ -131,6 +131,27 @@ void main() {
                     'title': '奖助学金管理办法',
                   },
                 ],
+                'personal_data_evidence': [
+                  {
+                    'source': 'hy3_mcp',
+                    'dataset': 'academic_analysis',
+                    'analysis_input': {
+                      'courses': [
+                        {
+                          'course_name': '信号与系统',
+                          'grade': 58,
+                          'credits': 3,
+                          'is_required': true,
+                          'passed': false,
+                        },
+                      ],
+                      'earned_credits': 25.5,
+                      'required_credits': 25.5,
+                      'erke_earned': 0,
+                      'erke_required': 0,
+                    },
+                  },
+                ],
               },
             ),
           );
@@ -140,10 +161,19 @@ void main() {
 
     final sources = await AiAssistantService(dio).getRunSources('run-1');
 
-    expect(sources, hasLength(1));
-    expect(sources.single.chunkId, 18);
-    expect(sources.single.chunkIds, [18, 19]);
-    expect(sources.single.title, '奖助学金管理办法');
+    expect(sources.sources, hasLength(1));
+    expect(sources.sources.single.chunkId, 18);
+    expect(sources.sources.single.chunkIds, [18, 19]);
+    expect(sources.sources.single.title, '奖助学金管理办法');
+    expect(sources.personalDataEvidence, hasLength(1));
+    expect(
+      sources.personalDataEvidence.single.academicCourses.single.name,
+      '信号与系统',
+    );
+    expect(
+      sources.personalDataEvidence.single.academicCourses.single.detail,
+      '成绩 58 · 3 学分 · 必修 · 未通过',
+    );
   });
 
   test('一次性授权只提交 Run、scope 和决定', () async {

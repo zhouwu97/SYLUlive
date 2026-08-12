@@ -995,7 +995,9 @@ func validateNumberedCitations(answer string, chunks []RetrievedChunk) (string, 
 		}
 		index = end + 1
 	}
-	if len(seen) == 0 || len(seen) != len(allowed) {
+	// 召回集合是模型可用证据的上界，不是必须逐条引用的清单。
+	// 回答可以只使用其中与实际结论相关的子集，但至少要有一条合法引用。
+	if len(seen) == 0 {
 		invalid = true
 	}
 	return answer, aggregateSourceCards(cited), invalid
@@ -1004,6 +1006,15 @@ func validateNumberedCitations(answer string, chunks []RetrievedChunk) (string, 
 func containsGenericCitationPlaceholder(answer string) bool {
 	lower := strings.ToLower(answer)
 	return strings.Contains(answer, "[来源]") || strings.Contains(lower, "[source]")
+}
+
+func stripUnbackedCitationMarkers(answer string) string {
+	cleaned, _, _ := ValidateCitations(answer, nil)
+	cleaned = strings.ReplaceAll(cleaned, "[来源]", "")
+	for _, marker := range []string{"[source]", "[Source]", "[SOURCE]"} {
+		cleaned = strings.ReplaceAll(cleaned, marker, "")
+	}
+	return cleaned
 }
 
 func aggregateSourceCards(chunks []RetrievedChunk) []SourceCard {

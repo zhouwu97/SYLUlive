@@ -16,7 +16,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   final TextEditingController _contentController = TextEditingController();
   final TextEditingController _contactController = TextEditingController();
   String _type = 'suggestion'; // 'bug' or 'suggestion'
-  List<String> _uploadedImages = [];
+  List<UploadedImage> _uploadedImages = [];
   bool _isSubmitting = false;
   int _charCount = 0;
 
@@ -53,7 +53,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
         data: {
           'content': content,
           'type': _type,
-          'images': _uploadedImages,
+          'image_ids': _uploadedImages.map((e) => e.fileId).toList(),
           'contact': _contactController.text.trim(),
         },
       );
@@ -214,8 +214,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             const SizedBox(height: 12),
             ImageUploadWidget(
               maxImages: 4,
-              onImagesUploaded: (urls) {
-                setState(() => _uploadedImages = urls);
+              onImagesUploaded: (images) {
+                setState(() => _uploadedImages = images);
               },
             ),
             const SizedBox(height: 24),

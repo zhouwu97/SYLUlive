@@ -958,8 +958,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         largeCard: true,
                         emptyTitle: '添加图片',
                         emptySubtitle: '建议上传店铺门面或招牌图',
-                        onImagesUploaded: (urls) {
-                          uploadedImageUrls = urls;
+                        onImagesUploaded: (images) {
+                          uploadedImageUrls =
+                              images.map((e) => e.url).toList();
                           setModalState(() {});
                         },
                       ),

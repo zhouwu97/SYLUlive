@@ -14,8 +14,6 @@ import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/app_update_coordinator.dart';
-import '../services/diagnostic_log_service.dart';
-import '../services/root_page_state_service.dart';
 import '../theme/app_motion.dart';
 import '../utils/app_navigator.dart';
 import '../utils/app_feedback.dart';
@@ -198,60 +196,12 @@ class _HomeScreenState extends State<HomeScreen>
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!_hasWidgetTabOverride) {
-        await _restoreRootTab();
-      }
+    // 冷启动以用户启动页偏好（startOnTimetable）为唯一根 Tab 依据；
+    // 不再用"上次停留的一级页面"覆盖它。明确导航意图（桌面小组件/通知/深链）
+    // 由 widgetTabSwitch 与后续深链回调处理，优先级始终更高。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _bootstrapHome();
     });
-  }
-
-  Future<void> _restoreRootTab() async {
-    try {
-      final restored = await RootPageStateStore.instance.readRootTab();
-      if (!mounted || restored == null || restored == _currentIndex) return;
-      setState(() {
-        _currentIndex = restored;
-        _mainVisualIndex = restored.toDouble();
-        _mainAnimationStartVisualIndex = _mainVisualIndex;
-        _mainAnimationEndVisualIndex = _mainVisualIndex;
-        _visitedTabs.add(restored);
-        _revealedTabs.add(restored);
-        _getOrCreateTabPage(restored);
-      });
-      _mainVisualIndexListenable.value = _mainVisualIndex;
-      _updateBackgroundForTab(restored);
-    } catch (error) {
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '存储',
-        type: '页面状态恢复失败',
-        summary: '无法恢复上次首页位置',
-        detail: error.toString(),
-        eventCode: 'navigation_root_state_restore_failed',
-        category: 'navigation',
-        operation: 'restore',
-        result: 'failure',
-      );
-    }
-  }
-
-  Future<void> _persistRootTab(int index) async {
-    try {
-      await RootPageStateStore.instance.saveRootTab(index);
-    } catch (error) {
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '存储',
-        type: '页面状态保存失败',
-        summary: '无法保存当前首页位置',
-        detail: error.toString(),
-        eventCode: 'navigation_root_state_save_failed',
-        category: 'navigation',
-        operation: 'save',
-        result: 'failure',
-      );
-    }
   }
 
   void _bootstrapHome() {
@@ -1578,7 +1528,6 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (commit) {
       _updateBackgroundForTab(target);
-      unawaited(_persistRootTab(target));
     }
 
     Future<void> contentFuture = Future<void>.value();

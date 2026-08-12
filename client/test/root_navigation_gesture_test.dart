@@ -12,6 +12,7 @@ import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/home_screen.dart';
 import 'package:shenliyuan/screens/market_screen.dart';
 import 'package:shenliyuan/services/app_update_coordinator.dart';
+import 'package:shenliyuan/utils/app_navigator.dart';
 import 'package:shenliyuan/widgets/bottom_nav.dart';
 import 'package:shenliyuan/platform/contracts/preferences_store.dart';
 
@@ -88,6 +89,42 @@ void main() {
 
     await _disposeHome(tester, page);
   });
+
+  testWidgets('冷启动 start_on_timetable=true 不被上次停留的一级 Tab 覆盖', (tester) async {
+    AppPreferencesStore.setMockInitialValues({
+      'start_on_timetable': true,
+      'navigation_last_root_tab': 4,
+    });
+    // HomeInitialTabResolver: start_on_timetable=true -> 课表(2)
+    final page = await _pumpHome(tester, initialTab: 2);
+    await tester.pump();
+    expect(_rootTabIndex(tester), 2);
+    await _disposeHome(tester, page);
+  });
+
+  testWidgets('冷启动 start_on_timetable=false 不被上次停留的一级 Tab 覆盖', (tester) async {
+    AppPreferencesStore.setMockInitialValues({
+      'start_on_timetable': false,
+      'navigation_last_root_tab': 4,
+    });
+    // HomeInitialTabResolver: start_on_timetable=false -> 首页(0)
+    final page = await _pumpHome(tester, initialTab: 0);
+    await tester.pump();
+    expect(_rootTabIndex(tester), 0);
+    await _disposeHome(tester, page);
+  });
+
+  testWidgets('桌面小组件明确要求课表时优先于任何启动偏好', (tester) async {
+    AppPreferencesStore.setMockInitialValues({
+      'start_on_timetable': false,
+      'navigation_last_root_tab': 4,
+    });
+    widgetTabSwitch.value++;
+    final page = await _pumpHome(tester, initialTab: 0);
+    await tester.pump();
+    expect(_rootTabIndex(tester), 2);
+    await _disposeHome(tester, page);
+  });
 }
 
 Finder _navLabel(String label) {
@@ -103,8 +140,12 @@ int _rootTabIndex(WidgetTester tester) {
       .index;
 }
 
-Future<_HomeTestPage> _pumpHome(WidgetTester tester) async {
-  AppPreferencesStore.setMockInitialValues({});
+Future<_HomeTestPage> _pumpHome(
+  WidgetTester tester, {
+  int initialTab = 0,
+  Map<String, Object> prefs = const {},
+}) async {
+  AppPreferencesStore.setMockInitialValues({...prefs});
   tester.view.physicalSize = const Size(400, 800);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -150,7 +191,7 @@ Future<_HomeTestPage> _pumpHome(WidgetTester tester) async {
       ChangeNotifierProvider<AppUpdateCoordinator>.value(
           value: updateCoordinator),
     ],
-    child: const MaterialApp(home: HomeScreen()),
+    child: MaterialApp(home: HomeScreen(initialTab: initialTab)),
   );
   await tester.pumpWidget(widget);
   await tester.pump();
@@ -170,6 +211,8 @@ Future<_HomeTestPage> _pumpHome(WidgetTester tester) async {
 Future<void> _disposeHome(WidgetTester tester, _HomeTestPage page) async {
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pump(const Duration(milliseconds: 100));
+  // 课表 Tab 的后台保活检查带 2s 超时定时器，放行它避免遗留 pending timer。
+  await tester.pump(const Duration(seconds: 2));
   page.auth.dispose();
   page.postProvider.dispose();
   page.messageProvider.dispose();

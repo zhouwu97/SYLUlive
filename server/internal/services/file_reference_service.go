@@ -189,6 +189,19 @@ func uploadReferenceCandidates(publicPaths ...string) []string {
 	return paths
 }
 
+// ClaimPrivateFiles 在私有业务（如反馈附件）引用文件后激活文件，
+// 但保持 access_scope=private，避免反馈截图暴露到公开 /uploads。
+func ClaimPrivateFiles(tx *gorm.DB, fileIDs []uint) error {
+	if len(fileIDs) == 0 {
+		return nil
+	}
+	now := time.Now()
+	return tx.Model(&models.File{}).Where("id IN ?", fileIDs).Updates(map[string]interface{}{
+		"status":     "active",
+		"claimed_at": &now,
+	}).Error
+}
+
 // ClaimPrivateMessageFile 在私信引用附件后激活文件，但保持 private 访问范围。
 func ClaimPrivateMessageFile(tx *gorm.DB, fileID uint) error {
 	if fileID == 0 {

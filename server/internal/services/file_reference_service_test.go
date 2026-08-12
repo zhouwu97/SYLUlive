@@ -113,3 +113,29 @@ func TestClaimPublicImagePathsForUserRejectsPrivateForeignFile(t *testing.T) {
 		t.Fatalf("expected foreign private path to be rejected, got %v", err)
 	}
 }
+
+func TestClaimPrivateFilesActivatesButKeepsPrivate(t *testing.T) {
+	db := newFileReferenceTestDB(t)
+	files := []models.File{
+		{Hash: "p-a", Path: "/uploads/p-a.png", MimeType: "image/png", Size: 1, UploaderID: 7, AccessScope: models.FileAccessPrivate},
+		{Hash: "p-b", Path: "/uploads/p-b.png", MimeType: "image/png", Size: 2, UploaderID: 7, AccessScope: models.FileAccessPrivate},
+	}
+	if err := db.Create(&files).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := ClaimPrivateFiles(db, []uint{files[0].ID, files[1].ID}); err != nil {
+		t.Fatal(err)
+	}
+	var stored []models.File
+	if err := db.Order("id ASC").Find(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range stored {
+		if file.Status != "active" || file.ClaimedAt == nil {
+			t.Fatalf("file was not activated: %+v", file)
+		}
+		if file.AccessScope != models.FileAccessPrivate {
+			t.Fatalf("ClaimPrivateFiles must not flip access_scope to public, got %q", file.AccessScope)
+		}
+	}
+}

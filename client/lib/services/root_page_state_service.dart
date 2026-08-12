@@ -86,25 +86,12 @@ class RootPageStateStore {
   RootPageStateStore({AppPreferencesStore? preferences})
       : _preferences = preferences;
 
-  static const rootTabKey = 'navigation_last_root_tab';
   static const communityFeedModeKey = 'navigation_community_feed_mode';
   static const communityFeedScrollKey = 'navigation_community_feed_scroll';
   static const conversationKey = 'navigation_last_conversation';
   static final instance = RootPageStateStore();
 
   final AppPreferencesStore? _preferences;
-
-  Future<int?> readRootTab() async {
-    final preferences = _preferences ?? await AppPreferencesStore.getInstance();
-    final value = preferences.getInt(rootTabKey);
-    return value != null && value >= 0 && value <= 4 ? value : null;
-  }
-
-  Future<void> saveRootTab(int index) async {
-    if (index < 0 || index > 4) return;
-    final preferences = _preferences ?? await AppPreferencesStore.getInstance();
-    await preferences.setInt(rootTabKey, index);
-  }
 
   Future<CommunityFeedState?> readCommunityFeedState({
     required Set<String> validModes,

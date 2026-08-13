@@ -1238,6 +1238,8 @@ func main() {
 
 		posts.GET("/:id/replies/:replyId/children", replyHandler.GetChildren)
 
+		posts.GET("/:id/replies/:replyId/context", replyHandler.GetReplyContext)
+
 	}
 
 	r.GET("/api/search", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), searchHandler.Search)

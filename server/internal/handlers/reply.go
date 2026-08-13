@@ -200,26 +200,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 	}
 
 	// 6) 登录用户点赞状态（仅本页回复）。
-	if userID, exists := c.Get("user_id"); exists {
-		uid := userID.(uint)
-		var replyIDs []uint
-		for _, r := range ordered {
-			replyIDs = append(replyIDs, r.ID)
-		}
-		if len(replyIDs) > 0 {
-			var likedReplyIDs []uint
-			h.db.Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id IN ?", uid, "reply", replyIDs).Pluck("target_id", &likedReplyIDs)
-			likedMap := make(map[uint]bool)
-			for _, id := range likedReplyIDs {
-				likedMap[id] = true
-			}
-			for i := range ordered {
-				if likedMap[ordered[i].ID] {
-					ordered[i].IsLiked = true
-				}
-			}
-		}
-	}
+	h.applyReplyLikeStatus(c, ordered)
 
 	// 7) total 与帖子 reply_count 口径一致：正常回复 + tombstone 根。
 	var normalTotal int64
@@ -237,7 +218,103 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 	})
 }
 
+// applyReplyLikeStatus 为给定回复列表填充登录用户的 is_liked 状态。
+func (h *ReplyHandler) applyReplyLikeStatus(c *gin.Context, replies []models.Reply) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		return
+	}
+	uid := userID.(uint)
+	replyIDs := make([]uint, 0, len(replies))
+	for _, r := range replies {
+		replyIDs = append(replyIDs, r.ID)
+	}
+	if len(replyIDs) == 0 {
+		return
+	}
+	var likedReplyIDs []uint
+	if err := h.db.Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id IN ?", uid, "reply", replyIDs).Pluck("target_id", &likedReplyIDs).Error; err != nil {
+		return
+	}
+	likedMap := make(map[uint]bool)
+	for _, id := range likedReplyIDs {
+		likedMap[id] = true
+	}
+	for i := range replies {
+		if likedMap[replies[i].ID] {
+			replies[i].IsLiked = true
+		}
+	}
+}
+
+// replyContextResponse 通知深链的精确上下文。
+type replyContextResponse struct {
+	Reply       models.Reply `json:"reply"`
+	RootReply   models.Reply `json:"root_reply"`
+	RootReplyID uint         `json:"root_reply_id"`
+}
+
+// GetReplyContext 返回通知目标的精确上下文：目标回复 + 其线程根（含 child 总数）。
+// 客户端在目标不在已加载分页时用它直接打开对应线程并定位，替代盲翻分页页。
+func (h *ReplyHandler) GetReplyContext(c *gin.Context) {
+	postIDStr := c.Param("id")
+	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
+		return
+	}
+	replyIDStr := c.Param("replyId")
+	replyID, err := strconv.ParseUint(replyIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的评论ID"})
+		return
+	}
+
+	var target models.Reply
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&target, replyID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "评论不存在"})
+		return
+	}
+	if target.PostID != uint(postID) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "评论不存在"})
+		return
+	}
+
+	// 线程根：子回复取其 parent，根评论就是它自己。
+	rootID := target.ID
+	if target.ParentReplyID != nil {
+		rootID = *target.ParentReplyID
+	}
+	var root models.Reply
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&root, rootID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "根评论不存在"})
+		return
+	}
+	if root.PostID != uint(postID) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "根评论不存在"})
+		return
+	}
+	var childCount int64
+	if err := h.db.Model(&models.Reply{}).
+		Where("parent_reply_id = ? AND status = ?", rootID, models.ReplyStatusNormal).
+		Count(&childCount).Error; err == nil {
+		root.ChildReplyCount = int(childCount)
+	}
+
+	replies := []models.Reply{target, root}
+	h.applyReplyLikeStatus(c, replies)
+	target, root = replies[0], replies[1]
+
+	c.JSON(http.StatusOK, replyContextResponse{
+		Reply:       target,
+		RootReply:   root,
+		RootReplyID: rootID,
+	})
+}
+
 // GetChildren 懒加载某条根评论的子回复（created_at ASC 游标分页）。
+// 深链定位：?before_reply_id=X 返回以 X 结尾的一页（X 必须是该根下的 normal
+// 子回复），next_cursor 从 X 继续向后加载。
 func (h *ReplyHandler) GetChildren(c *gin.Context) {
 	postIDStr := c.Param("id")
 	postID, err := strconv.ParseUint(postIDStr, 10, 64)
@@ -273,6 +350,61 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 		return
 	}
 
+	// 深链锚点窗口：以 before_reply_id 结尾的一页。
+	if before := c.Query("before_reply_id"); before != "" {
+		bid, perr := strconv.ParseUint(before, 10, 64)
+		if perr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的定位参数"})
+			return
+		}
+		var anchor models.Reply
+		if err := h.db.Select("id", "created_at", "parent_reply_id", "status").First(&anchor, bid).Error; err != nil ||
+			anchor.Status != models.ReplyStatusNormal ||
+			anchor.ParentReplyID == nil || uint64(*anchor.ParentReplyID) != replyID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "定位评论不属于该线程"})
+			return
+		}
+		// (created_at,id) <= anchor 的最后 limit+1 条，DESC 取再反转为 ASC，
+		// 得到以 anchor 结尾的一页。
+		var tail []models.Reply
+		if err := h.db.Where("parent_reply_id = ? AND status = ? AND (created_at < ? OR (created_at = ? AND id <= ?))",
+			replyID, models.ReplyStatusNormal, anchor.CreatedAt, anchor.CreatedAt, anchor.ID).
+			Order("created_at DESC, id DESC").
+			Limit(limit + 1).
+			Preload("Author").Preload("Images").Preload("Images.File").
+			Find(&tail).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取子回复失败"})
+			return
+		}
+		for i, j := 0, len(tail)-1; i < j; i, j = i+1, j-1 {
+			tail[i], tail[j] = tail[j], tail[i]
+		}
+		if len(tail) > limit {
+			// 丢弃窗口外更早的一条，保留以 anchor 结尾的最近一页。
+			tail = tail[1:]
+		}
+		// 锚点之后是否还有更多。
+		var after int64
+		if err := h.db.Model(&models.Reply{}).
+			Where("parent_reply_id = ? AND status = ? AND (created_at > ? OR (created_at = ? AND id > ?))",
+				replyID, models.ReplyStatusNormal, anchor.CreatedAt, anchor.CreatedAt, anchor.ID).
+			Count(&after).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取子回复失败"})
+			return
+		}
+		nextCursor := ""
+		if after > 0 {
+			// RFC3339Nano：秒级精度会让游标条目在下一页重复出现。
+			nextCursor = anchor.CreatedAt.Format(time.RFC3339Nano) + "|" + strconv.FormatUint(uint64(anchor.ID), 10)
+		}
+		h.applyReplyLikeStatus(c, tail)
+		c.JSON(http.StatusOK, gin.H{
+			"replies":     tail,
+			"next_cursor": nextCursor,
+		})
+		return
+	}
+
 	query := h.db.Where("parent_reply_id = ? AND status = ?", replyID, models.ReplyStatusNormal)
 	if cursor := c.Query("cursor"); cursor != "" {
 		parts := strings.Split(cursor, "|")
@@ -305,26 +437,7 @@ func (h *ReplyHandler) GetChildren(c *gin.Context) {
 		nextCursor = last.CreatedAt.Format(time.RFC3339Nano) + "|" + strconv.FormatUint(uint64(last.ID), 10)
 	}
 
-	if userID, exists := c.Get("user_id"); exists {
-		uid := userID.(uint)
-		replyIDs := make([]uint, 0, len(children))
-		for _, r := range children {
-			replyIDs = append(replyIDs, r.ID)
-		}
-		if len(replyIDs) > 0 {
-			var likedReplyIDs []uint
-			h.db.Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id IN ?", uid, "reply", replyIDs).Pluck("target_id", &likedReplyIDs)
-			likedMap := make(map[uint]bool)
-			for _, id := range likedReplyIDs {
-				likedMap[id] = true
-			}
-			for i := range children {
-				if likedMap[children[i].ID] {
-					children[i].IsLiked = true
-				}
-			}
-		}
-	}
+	h.applyReplyLikeStatus(c, children)
 
 	c.JSON(http.StatusOK, gin.H{
 		"replies":     children,

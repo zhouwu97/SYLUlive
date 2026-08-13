@@ -31,6 +31,9 @@ func shouldTrace(userID uint) bool {
 // applyExploration 在个性化结果的第一页 20 条中，用探索候选替换固定槽位（5/11/17，
 // 即 0-based 4/10/16）。探索来源取 deep feed（排名 20 之后）中探索分高的帖子：
 // 新帖 + 用户未深度接触的版块/作者。
+//
+// 必须使用"交换"而非"覆盖"：覆盖会把深位帖子原地保留，导致同一 ID 重复出现，
+// 同时让被顶出的 top-20 帖子凭空消失。交换保持长度、ID 集合与唯一性不变。
 func applyExploration(
 	ranked []uint,
 	candidates []HomeFeedCandidate,
@@ -45,6 +48,7 @@ func applyExploration(
 		byID[c.Post.ID] = c
 	}
 	// 探索候选池：排名 20 之后的 deep feed 帖子，按探索分排序。
+	// 只有探索分 > 0 的帖子才允许进入探索池，避免“随机把深层帖子提上来”。
 	type explore struct {
 		id    uint
 		score float64
@@ -68,6 +72,9 @@ func applyExploration(
 		if features.AuthorAffinity(c.Post.AuthorID) < 0.2 {
 			score += 0.4
 		}
+		if score <= 0 {
+			continue
+		}
 		pool = append(pool, explore{id: c.Post.ID, score: score})
 	}
 	sort.SliceStable(pool, func(i, j int) bool { return pool[i].score > pool[j].score })
@@ -77,8 +84,20 @@ func applyExploration(
 		if len(result) <= slot || len(pool) == 0 {
 			break
 		}
-		result[slot] = pool[0].id
+		exploreID := pool[0].id
 		pool = pool[1:]
+		// 找到该探索帖在深位（≥20）的原始位置，与之交换。
+		deepPos := -1
+		for i := 20; i < len(result); i++ {
+			if result[i] == exploreID {
+				deepPos = i
+				break
+			}
+		}
+		if deepPos < 0 || deepPos == slot {
+			continue
+		}
+		result[slot], result[deepPos] = result[deepPos], result[slot]
 	}
 	return result
 }

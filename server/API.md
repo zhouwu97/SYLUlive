@@ -182,7 +182,7 @@ FEED-H1 加固：
 | `GET` | `/api/majors/:id` | 获取专业详情及评价 |
 | `POST` | `/api/majors/:id/rate` | 评价专业 |
 | `DELETE` | `/api/majors/rating/:id` | 删除自己的专业评价 |
-| `GET` | `/api/canteens` | 获取食堂评分列表 |
+| `GET` | `/api/canteens` | 获取食堂评分列表（Bayesian 排序；含 `dish_count`/`dish_photo_count`） |
 | `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 公开获取食堂详情及评价；登录时附带个人评价/投票状态 |
 | `POST` | `/api/canteens/:id/rate` | 评价食堂（需登录并绑定教务） |
 | `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
@@ -221,6 +221,53 @@ FEED-H1 加固：
 ```
 
 食堂详情返回的每条 `ratings` 会包含 `helpful_count`、`unhelpful_count`、`my_vote`。`my_vote` 为 `up`、`down` 或 `null`。
+
+### 食堂菜品实拍 (Canteen Dish Photos)
+
+菜品图库：每道菜最多 3 张审核通过的实拍；`dish.status = active AND approved 实拍 > 0` 才公开展示。菜名不单独审核，管理员审核图片时一并查看。
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/canteens/:id/dishes` | 公开菜品列表（approved-only），返回 `id/name/cover_image/photo_count/last_photo_at` |
+| `GET` | `/api/canteens/:canteenId/dishes/:dishId` | 公开菜品详情 + approved 实拍列表 |
+| `POST` | `/api/canteens/:canteenId/dish-photos` | (需登录+绑定教务) 投稿实拍，单图 |
+| `GET` | `/api/canteens/dish-photos/pending` | (管理员) 待审核实拍列表 |
+| `POST` | `/api/canteens/dish-photos/:photoId/approve` | (管理员) 通过实拍，文件转 public |
+| `POST` | `/api/canteens/dish-photos/:photoId/reject` | (管理员) 驳回实拍，文件保持 private |
+| `POST` | `/api/canteens/dish-photos/:photoId/archive` | (管理员) 下架实拍（业务隐藏，不 revoke 文件） |
+| `PATCH` | `/api/canteens/dishes/:dishId` | (管理员) 重命名或隐藏菜品 |
+
+**投稿**
+
+`POST /api/canteens/:canteenId/dish-photos`，Body 二选一：
+
+```json
+{ "dish_id": 12, "file_id": 9527 }
+```
+
+或（未找到菜品时按名称创建/复用）：
+
+```json
+{ "dish_name": "锅包肉", "file_id": 9527 }
+```
+
+- 菜名归一化：trim、合并并删除内部空白、兼容全角空格、转小写（`"锅 包 肉"` → `"锅包肉"`），同食堂归一化菜名唯一。
+- 一次投稿严格一张图片（服务端 `maxCount=1` 硬限制）。
+- 投稿后 `DishPhoto.status = pending`，文件保持 `active/private`，公共接口不可见。
+
+错误码：
+
+| Status | code | 说明 |
+|---|---|---|
+| 403 | `edu_binding_required` | 未绑定教务 |
+| 409 | `dish_gallery_full` | 该菜品已有 3 张审核实拍 |
+| 409 | `pending_photo_exists` | 同一用户同一菜已有待审核实拍 |
+| 409 | `duplicate_photo` | 图片文件已被其他投稿引用 |
+| 409 | `already_reviewed` | 实拍已被审核处理 |
+
+**驳回原因 code**：`unrelated`（与菜品不符）、`blurry`（图片过于模糊）、`duplicate`（重复图片）、`privacy`（包含明显个人隐私）、`advertisement`（广告/二维码）、`inappropriate`（不适宜内容）、`other`（其他）。
+
+**文件生命周期**：`/upload` → `temporary/private` → 投稿 `ClaimPrivateFiles` → `active/private` → 管理员通过 `ClaimPublicImageFiles` → `active/public`；驳回保持 `private`；下架仅业务隐藏，不强制 revoke（文件可能被其他公开业务引用）。
 
 ## 6. 消息与通知 (Messages)
 

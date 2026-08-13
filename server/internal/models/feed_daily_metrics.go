@@ -29,6 +29,11 @@ type FeedDailyMetrics struct {
 	Replies   int `gorm:"not null;default:0" json:"replies"`
 	PollVotes int `gorm:"not null;default:0" json:"poll_votes"`
 
+	// FEED-V5：post_like / reply_like 分开统计，避免揉成一个数字，
+	// 便于判断 V5 是否真正提高"深层互动"。
+	PostLikes  int `gorm:"not null;default:0" json:"post_likes"`
+	ReplyLikes int `gorm:"not null;default:0" json:"reply_likes"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

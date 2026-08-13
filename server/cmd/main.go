@@ -308,8 +308,6 @@ func main() {
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},
-		&models.CanteenDish{},
-		&models.CanteenDishPhoto{},
 		&models.UserFollow{},
 
 		// Feed 推荐系统（FEED-1 / FEED-2 / FEED-4）
@@ -457,9 +455,6 @@ func main() {
 	if err := models.EnsureRatingInteractionSchema(db); err != nil {
 		log.Fatal("评价交互系统数据库约束未就绪:", err)
 	}
-	if err := models.EnsureCanteenDishSchema(db); err != nil {
-		log.Fatal("菜品图库数据库约束未就绪:", err)
-	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
 	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
@@ -572,6 +567,7 @@ func main() {
 
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	postHandler.SetFeedPersonalization(cfg.HomeFeedPersonalizationShadow, cfg.HomeFeedPersonalizationPercent)
+	postHandler.SetFeedPersonalizationV5(cfg.HomeFeedV5PersonalizationShadow, cfg.HomeFeedV5PersonalizationPercent)
 	feedHandler := handlers.NewFeedHandler(db)
 	feedEventHandler := handlers.NewFeedEventHandler(db)
 	feedMetricsHandler := handlers.NewFeedMetricsHandler(db)
@@ -675,12 +671,6 @@ func main() {
 	majorHandler := handlers.NewMajorHandler(db)
 
 	canteenHandler := handlers.NewCanteenHandler(db)
-
-	canteenDishHandler := handlers.NewCanteenDishHandler(db)
-
-	canteenDishPhotoHandler := handlers.NewCanteenDishPhotoHandler(db)
-
-	canteenDishPhotoAdminHandler := handlers.NewCanteenDishPhotoAdminHandler(db)
 
 	feedbackHandler := handlers.NewFeedbackHandler(db, cfg.UploadDir)
 
@@ -1861,10 +1851,6 @@ func main() {
 		// 食堂详情属于公开内容；存在有效登录态时附带“我的评价/投票”状态。
 		canteen.GET("/:id", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), canteenHandler.GetDetail)
 
-		// 菜品图库（approved-only 公开内容）
-		canteen.GET("/:id/dishes", canteenDishHandler.ListDishes)
-		canteen.GET("/:id/dishes/:dishId", canteenDishHandler.GetDish)
-
 	}
 
 	canteenAdmin := canteen.Group("")
@@ -1883,13 +1869,6 @@ func main() {
 
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
-		// 菜品实拍审核
-		canteenAdmin.GET("/dish-photos/pending", canteenDishPhotoAdminHandler.AdminListPendingDishPhotos)
-		canteenAdmin.POST("/dish-photos/:photoId/approve", canteenDishPhotoAdminHandler.ApproveDishPhoto)
-		canteenAdmin.POST("/dish-photos/:photoId/reject", canteenDishPhotoAdminHandler.RejectDishPhoto)
-		canteenAdmin.POST("/dish-photos/:photoId/archive", canteenDishPhotoAdminHandler.ArchiveDishPhoto)
-		canteenAdmin.PATCH("/dishes/:dishId", canteenDishPhotoAdminHandler.AdminUpdateDish)
-
 	}
 
 	canteenAuth := canteen.Group("")
@@ -1903,9 +1882,6 @@ func main() {
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
 
 		canteenAuth.PUT("/ratings/:ratingId/vote", canteenHandler.VoteRating)
-
-		// 菜品实拍投稿（学生，单图）
-		canteenAuth.POST("/:canteenId/dish-photos", canteenDishPhotoHandler.SubmitDishPhoto)
 
 	}
 

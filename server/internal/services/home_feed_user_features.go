@@ -8,7 +8,7 @@ import (
 	"shenliyuan/internal/models"
 )
 
-// UserFeedFeatures 用户 Feed 个性化特征（FEED-5）。
+// UserFeedFeatures 用户 Feed 个性化特征（FEED-5 / FEED-V5）。
 //
 // 全部按 30 天窗口批量聚合，权重做时间衰减（0.95^daysAgo）。
 // 只依赖现有表：likes / replies / feed_impressions / user_follows / water_section_follows。
@@ -18,10 +18,15 @@ type UserFeedFeatures struct {
 	LikedAuthorCount   map[uint]float64
 	RepliedAuthorCount map[uint]float64
 	OpenedAuthorCount  map[uint]float64
-	DwellByAuthorMS    map[uint]int64
+	DwellByAuthorMS    map[uint]float64
 
 	LikedSectionCount  map[string]float64
 	OpenedSectionCount map[string]float64
+
+	// FEED-V5：评论点赞/回复是"内容主题兴趣"信号，只累计到版块，
+	// 不直接等同于"喜欢评论作者"。
+	ReplyLikedSectionCount map[string]float64
+	RepliedSectionCount    map[string]float64
 
 	FollowedAuthors  map[uint]bool
 	FollowedSections map[string]bool
@@ -42,6 +47,23 @@ func decay(createdAt, now time.Time) float64 {
 	return math.Pow(0.95, days)
 }
 
+// saturation 平滑饱和：sat(x, k) = 1 - exp(-x/k)。
+// 与 math.Min(1, count) 不同，互动 1/3/8 次时兴趣逐步递增，
+// 但次数再多也不会权重爆炸。
+func saturation(count float64, k float64) float64 {
+	if count <= 0 {
+		return 0
+	}
+	if k <= 0 {
+		return 1
+	}
+	return 1 - math.Exp(-count/k)
+}
+
+// maxDwellPerEventMS 单次打开最多计 120s dwell（FEED-V5），
+// 防止"打开帖子放后台 20 分钟"被解释成超强兴趣。
+const maxDwellPerEventMS = int64(120 * 1000)
+
 // BuildUserFeatures 批量聚合用户 30 天 Feed 特征（FEED-5 §28）。
 // candidateIDs 用于 SeenPenalty（只统计候选帖子），可为空。
 func (s *HomeFeedService) BuildUserFeatures(
@@ -51,18 +73,20 @@ func (s *HomeFeedService) BuildUserFeatures(
 	now time.Time,
 ) UserFeedFeatures {
 	features := UserFeedFeatures{
-		UserID:             userID,
-		LikedAuthorCount:   map[uint]float64{},
-		RepliedAuthorCount: map[uint]float64{},
-		OpenedAuthorCount:  map[uint]float64{},
-		DwellByAuthorMS:    map[uint]int64{},
-		LikedSectionCount:  map[string]float64{},
-		OpenedSectionCount: map[string]float64{},
-		FollowedAuthors:    map[uint]bool{},
-		FollowedSections:   map[string]bool{},
-		SeenPostIDs:        map[uint]bool{},
-		SeenSessionsByPost: map[uint]int{},
-		SeenOpenedPostIDs:  map[uint]bool{},
+		UserID:                 userID,
+		LikedAuthorCount:       map[uint]float64{},
+		RepliedAuthorCount:     map[uint]float64{},
+		OpenedAuthorCount:      map[uint]float64{},
+		DwellByAuthorMS:        map[uint]float64{},
+		LikedSectionCount:      map[string]float64{},
+		OpenedSectionCount:     map[string]float64{},
+		ReplyLikedSectionCount: map[string]float64{},
+		RepliedSectionCount:    map[string]float64{},
+		FollowedAuthors:        map[uint]bool{},
+		FollowedSections:       map[string]bool{},
+		SeenPostIDs:            map[uint]bool{},
+		SeenSessionsByPost:     map[uint]int{},
+		SeenOpenedPostIDs:      map[uint]bool{},
 	}
 	if userID == 0 {
 		return features
@@ -114,7 +138,25 @@ func (s *HomeFeedService) BuildUserFeatures(
 		}
 	}
 
-	// replies → 帖子作者/版块。
+	// reply_likes → 评论点赞是"内容主题兴趣"信号：Like(reply) → reply.post_id →
+	// post.post_type → ReplyLikedSectionCount。只累计版块，不累计作者。
+	var replyLiked []postSignal
+	if err := s.db.WithContext(ctx).
+		Table("likes l").
+		Select("p.post_type AS post_type, l.created_at AS created_at").
+		Joins("JOIN replies r ON r.id = l.target_id").
+		Joins("JOIN posts p ON p.id = r.post_id").
+		Where("l.user_id = ? AND l.target_type = ? AND l.created_at >= ?", userID, "reply", cutoff).
+		Scan(&replyLiked).Error; err == nil {
+		for _, row := range replyLiked {
+			if row.PostType != "" {
+				features.ReplyLikedSectionCount[row.PostType] += decay(row.CreatedAt, now)
+			}
+			features.HasSignal = true
+		}
+	}
+
+	// replies → 帖子作者/版块（RepliedSectionCount 是现成数据，V4 未累计）。
 	var replied []postSignal
 	if err := s.db.WithContext(ctx).
 		Table("replies r").
@@ -124,6 +166,9 @@ func (s *HomeFeedService) BuildUserFeatures(
 		Scan(&replied).Error; err == nil {
 		for _, row := range replied {
 			features.RepliedAuthorCount[row.AuthorID] += decay(row.CreatedAt, now)
+			if row.PostType != "" {
+				features.RepliedSectionCount[row.PostType] += decay(row.CreatedAt, now)
+			}
 			features.HasSignal = true
 		}
 	}
@@ -147,8 +192,13 @@ func (s *HomeFeedService) BuildUserFeatures(
 			if row.PostType != "" {
 				features.OpenedSectionCount[row.PostType] += decay(row.CreatedAt, now)
 			}
+			// FEED-V5：dwell 必须按时间衰减，且单次 cap 120s。
 			if row.DwellMS > 0 {
-				features.DwellByAuthorMS[row.AuthorID] += int64(row.DwellMS)
+				bounded := int64(row.DwellMS)
+				if bounded > maxDwellPerEventMS {
+					bounded = maxDwellPerEventMS
+				}
+				features.DwellByAuthorMS[row.AuthorID] += float64(bounded) * decay(row.CreatedAt, now)
 			}
 			features.HasSignal = true
 		}
@@ -186,23 +236,27 @@ func (f UserFeedFeatures) AuthorAffinity(authorID uint) float64 {
 	if f.FollowedAuthors[authorID] {
 		score += 1.0
 	}
-	score += math.Min(1.0, f.RepliedAuthorCount[authorID]) * 0.8
-	score += math.Min(1.0, f.LikedAuthorCount[authorID]) * 0.5
+	score += saturation(f.RepliedAuthorCount[authorID], 3) * 0.8
+	score += saturation(f.LikedAuthorCount[authorID], 3) * 0.5
 	if f.DwellByAuthorMS[authorID] >= 10*60*1000 {
 		score += 0.4
 	}
-	score += math.Min(1.0, f.OpenedAuthorCount[authorID]) * 0.2
+	score += saturation(f.OpenedAuthorCount[authorID], 5) * 0.2
 	return math.Min(1.0, score)
 }
 
 // SectionAffinity 归一化版块亲和（0~1）。
+// FEED-V5：评论点赞（ReplyLikedSectionCount）与评论（RepliedSectionCount）
+// 是内容主题兴趣的强信号，权重低于帖子点赞但纳入计算。
 func (f UserFeedFeatures) SectionAffinity(slug string) float64 {
 	score := 0.0
 	if f.FollowedSections[slug] {
 		score += 1.0
 	}
-	score += math.Min(1.0, f.LikedSectionCount[slug]) * 0.5
-	score += math.Min(1.0, f.OpenedSectionCount[slug]) * 0.2
+	score += saturation(f.LikedSectionCount[slug], 3) * 0.5
+	score += saturation(f.OpenedSectionCount[slug], 5) * 0.2
+	score += saturation(f.RepliedSectionCount[slug], 4) * 0.2
+	score += saturation(f.ReplyLikedSectionCount[slug], 3) * 0.3
 	return math.Min(1.0, score)
 }
 

@@ -34,6 +34,7 @@ func newReplyTestDB(t *testing.T) *gorm.DB {
 		&models.FileUploadGrant{},
 		&models.ExpLog{},
 		&models.Notification{},
+		&models.Like{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}

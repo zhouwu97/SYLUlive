@@ -111,10 +111,16 @@ func (s *FeedMetricsService) AggregateDay(ctx context.Context, day time.Time) er
 	}
 
 	// 3. 互动：全局当日计数。
-	var likes, replies, pollVotes int64
+	var likes, postLikes, replyLikes, replies, pollVotes int64
 	if err := s.db.WithContext(ctx).Model(&models.Like{}).
 		Where("target_type = ? AND created_at >= ? AND created_at < ?", "post", dayStartUTC, dayEndUTC).
 		Count(&likes).Error; err != nil {
+		return err
+	}
+	postLikes = likes
+	if err := s.db.WithContext(ctx).Model(&models.Like{}).
+		Where("target_type = ? AND created_at >= ? AND created_at < ?", "reply", dayStartUTC, dayEndUTC).
+		Count(&replyLikes).Error; err != nil {
 		return err
 	}
 	if err := s.db.WithContext(ctx).Model(&models.Reply{}).
@@ -157,6 +163,8 @@ func (s *FeedMetricsService) AggregateDay(ctx context.Context, day time.Time) er
 				if kind == "all" {
 					row.HiddenAuthors = int(hiddenAuthors)
 					row.Likes = int(likes)
+					row.PostLikes = int(postLikes)
+					row.ReplyLikes = int(replyLikes)
 					row.Replies = int(replies)
 					row.PollVotes = int(pollVotes)
 				}
@@ -170,6 +178,8 @@ func (s *FeedMetricsService) AggregateDay(ctx context.Context, day time.Time) er
 						"not_interested": row.NotInterested,
 						"hidden_authors": row.HiddenAuthors,
 						"likes":          row.Likes,
+						"post_likes":     row.PostLikes,
+						"reply_likes":    row.ReplyLikes,
 						"replies":        row.Replies,
 						"poll_votes":     row.PollVotes,
 						"updated_at":     time.Now(),

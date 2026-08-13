@@ -240,8 +240,27 @@ class _DishPhotoUploadSheet extends StatefulWidget {
 class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
   int? _fileId;
   bool _submitting = false;
+  late final TextEditingController _dishNameCtrl;
 
-  bool get _canSubmit => _fileId != null && widget.dishId != null;
+  /// 支持两种提交模式：
+  /// - dishId 模式：选择已有菜品（从菜品详情页进入）
+  /// - dish_name 模式：输入新菜名，服务端不存在时自动创建 CanteenDish
+  bool get _hasDishTarget =>
+      widget.dishId != null || _dishNameCtrl.text.trim().isNotEmpty;
+
+  bool get _canSubmit => _fileId != null && _hasDishTarget;
+
+  @override
+  void initState() {
+    super.initState();
+    _dishNameCtrl = TextEditingController(text: widget.dishName ?? '');
+  }
+
+  @override
+  void dispose() {
+    _dishNameCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -285,12 +304,53 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
               ),
               const SizedBox(height: 6),
               Text(
-                widget.dishName ?? '这道菜',
+                widget.dishId != null ? (widget.dishName ?? '这道菜') : '给这道菜起个名字',
                 style: TextStyle(
                   fontSize: 13,
                   color: CanteenTheme.textSecondaryColor(isDark),
                 ),
               ),
+              if (widget.dishId == null) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _dishNameCtrl,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: '输入菜名，例如：锅包肉',
+                    hintStyle: TextStyle(
+                      fontSize: 13,
+                      color: CanteenTheme.textTertiaryColor(isDark),
+                    ),
+                    prefixIcon: const Icon(Icons.restaurant_rounded, size: 20),
+                    filled: true,
+                    fillColor: CanteenTheme.surfaceMutedBg(isDark),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusMd),
+                      borderSide: BorderSide(
+                        color: CanteenTheme.borderColor(isDark),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusMd),
+                      borderSide: BorderSide(
+                        color: CanteenTheme.borderColor(isDark),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.circular(CanteenTheme.radiusMd),
+                      borderSide: BorderSide(color: accent, width: 1.4),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               Text(
                 '请上传能清楚看到菜品主体的真实照片。图片通过管理员审核后公开展示。',
@@ -400,7 +460,9 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
     final message = await widget.provider.submitDishPhoto(
       widget.canteenId,
       dishId: widget.dishId,
-      dishName: widget.dishName,
+      dishName: widget.dishId != null
+          ? widget.dishName
+          : _dishNameCtrl.text.trim(),
       fileId: _fileId!,
     );
     if (!mounted) return;

@@ -104,17 +104,22 @@ class CanteenReviewSection extends StatelessWidget {
             ),
           ),
         ),
-        // 刷新时评价区顶部 2px 细进度条（绝不整页 loading）
+        // 刷新时评价区顶部 2px 细进度条（绝不整页 loading）。
+        // 非刷新态保留 2px 占位高度（不显示条），避免布局跳变。
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
-            child: LinearProgressIndicator(
-              minHeight: 2,
-              value: isRefreshing ? null : 1.0,
-              color: CanteenTheme.accentColor(isDark),
-              backgroundColor: Colors.transparent,
-            ),
+          child: SizedBox(
+            height: 2,
+            child: isRefreshing
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
+                    child: const LinearProgressIndicator(
+                      minHeight: 2,
+                      color: CanteenTheme.accent,
+                      backgroundColor: Colors.transparent,
+                    ),
+                  )
+                : null,
           ),
         ),
         const SizedBox(height: 12),

@@ -15,6 +15,7 @@ import '../widgets/canteen/canteen_detail_skeleton.dart';
 import '../widgets/canteen/canteen_review_section.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/dish_gallery_section.dart';
+import 'canteen_dish_detail_screen.dart' show showDishPhotoUploadSheet;
 import 'canteen_dish_list_screen.dart';
 
 /// 食堂详情页：Hero + 信息区 + 大家都在吃 + 评价区 + 底部写评价。
@@ -53,9 +54,15 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   String _reviewSort = 'best';
   String _reviewFilter = 'all';
 
+  // 菜品/实拍统计：初值来自列表页入口快照，随后由图鉴区真实数据刷新
+  late int _dishCount;
+  late int _dishPhotoCount;
+
   @override
   void initState() {
     super.initState();
+    _dishCount = widget.dishCount;
+    _dishPhotoCount = widget.dishPhotoCount;
     _loadInitial();
   }
 
@@ -79,7 +86,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   }
 
   /// 筛选/排序切换：Hero、店铺信息、菜品区一律不动，只刷新评价区。
-  Future<void> _refreshReviews() async {
+  /// 返回三态：
+  /// - `true`：成功应用
+  /// - `false`：请求失败（调用方回滚筛选/排序并提示）
+  /// - `null`：已被更新的请求取代（stale，调用方不做任何事）
+  Future<bool?> _refreshReviews() async {
     final generation = ++_requestGeneration;
     setState(() => _reviewsRefreshing = true);
     final data = await context.read<CanteenProvider>().loadCanteenDetail(
@@ -87,19 +98,25 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           reviewSort: _reviewSort,
           reviewFilter: _reviewFilter,
         );
-    if (!mounted || generation != _requestGeneration) return;
+    if (!mounted || generation != _requestGeneration) return null;
+    final success = data.isNotEmpty && data['canteen'] != null;
     setState(() {
-      if (data.isNotEmpty && data['canteen'] != null) {
+      if (success) {
         _canteenData = data;
+        _reviewDataVersion++;
       }
       _reviewsRefreshing = false;
-      _reviewDataVersion++;
     });
+    return success;
   }
 
   /// 静默整页刷新（评价提交 / 菜品页返回后），不显示任何 loading。
   Future<void> _reloadSilently() async {
     final generation = ++_requestGeneration;
+    // 若评价区还有在途刷新，先归位，避免被陈旧响应留下 refreshing 状态
+    if (_reviewsRefreshing) {
+      setState(() => _reviewsRefreshing = false);
+    }
     final data = await context.read<CanteenProvider>().loadCanteenDetail(
           widget.canteenId,
           reviewSort: _reviewSort,
@@ -109,8 +126,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     setState(() {
       if (data.isNotEmpty && data['canteen'] != null) {
         _canteenData = data;
+        _reviewDataVersion++;
       }
-      _reviewDataVersion++;
     });
   }
 
@@ -161,13 +178,25 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                         (_canteenData?['average_star'] as num?)?.toDouble() ??
                             0,
                     ratingCount: ratingCount,
-                    dishCount: widget.dishCount,
-                    dishPhotoCount: widget.dishPhotoCount,
+                    dishCount: _dishCount,
+                    dishPhotoCount: _dishPhotoCount,
                   ),
                   DishGallerySection(
                     canteenId: widget.canteenId,
                     canteenName: widget.canteenName,
-                    onUpload: () => _openDishList(),
+                    onViewAll: _openDishList,
+                    onUpload: _openDishPhotoUpload,
+                    onStatsChanged: (count, photos) {
+                      if (!mounted) return;
+                      if (count == _dishCount &&
+                          photos == _dishPhotoCount) {
+                        return;
+                      }
+                      setState(() {
+                        _dishCount = count;
+                        _dishPhotoCount = photos;
+                      });
+                    },
                   ),
                   CanteenReviewSection(
                     reviews: reviews,
@@ -180,13 +209,25 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     currentUserId: context.read<AuthProvider>().user?.id,
                     onSortChanged: (value) async {
                       if (_reviewSort == value) return;
+                      final previous = _reviewSort;
                       setState(() => _reviewSort = value);
-                      await _refreshReviews();
+                      final result = await _refreshReviews();
+                      if (!mounted) return;
+                      if (result == false) {
+                        setState(() => _reviewSort = previous);
+                        _showRefreshFailed();
+                      }
                     },
                     onFilterChanged: (value) async {
                       if (_reviewFilter == value) return;
+                      final previous = _reviewFilter;
                       setState(() => _reviewFilter = value);
-                      await _refreshReviews();
+                      final result = await _refreshReviews();
+                      if (!mounted) return;
+                      if (result == false) {
+                        setState(() => _reviewFilter = previous);
+                        _showRefreshFailed();
+                      }
                     },
                     onVote: _voteRating,
                     onWriteReview: _showRatingSheet,
@@ -204,6 +245,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   // ── Hero ───────────────────────────────────────────────────────
 
   Widget _buildHeroSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final imageUrl = _canteenData?['canteen']?['image']?.toString() ?? '';
     final hasImage = imageUrl.isNotEmpty;
     final heroHeight =
@@ -228,10 +270,11 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                   ? CachedNetworkImage(
                       imageUrl: ApiConstants.fullUrl(imageUrl),
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _buildImagePlaceholder(),
-                      placeholder: (_, __) => _buildImagePlaceholder(),
+                      errorWidget: (_, __, ___) =>
+                          _buildImagePlaceholder(isDark),
+                      placeholder: (_, __) => _buildImagePlaceholder(isDark),
                     )
-                  : _buildImagePlaceholder(),
+                  : _buildImagePlaceholder(isDark),
             ),
             Container(
               decoration: BoxDecoration(
@@ -269,9 +312,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  Widget _buildImagePlaceholder() {
+  Widget _buildImagePlaceholder(bool isDark) {
     return Container(
-      color: CanteenTheme.surfaceMutedBg(false),
+      color: CanteenTheme.surfaceMutedBg(isDark),
       child: const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -394,6 +437,25 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       ),
     );
     if (mounted) await _reloadSilently();
+  }
+
+  /// 空图鉴「上传菜品实拍」：直接打开上传 Sheet（dish_name 模式），
+  /// 不再经由菜品列表页的空列表死路。
+  Future<void> _openDishPhotoUpload() async {
+    final success = await showDishPhotoUploadSheet(
+      context,
+      canteenId: widget.canteenId,
+      provider: context.read<CanteenProvider>(),
+    );
+    if (success == true && mounted) {
+      await _reloadSilently();
+    }
+  }
+
+  void _showRefreshFailed() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('刷新失败，请重试')),
+    );
   }
 
   // ── 投票（乐观更新，逻辑与重构前一致）───────────────────────────
@@ -799,6 +861,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                           child: _buildCoverPreview(
                             currentImage: currentImage,
                             pendingCoverBytes: pendingCoverBytes,
+                            isDark: isDark,
                           ),
                         ),
                       ),
@@ -884,6 +947,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   Widget _buildCoverPreview({
     required String currentImage,
     required Uint8List? pendingCoverBytes,
+    required bool isDark,
   }) {
     if (pendingCoverBytes != null) {
       return Image.memory(
@@ -896,17 +960,17 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       return CachedNetworkImage(
         imageUrl: ApiConstants.fullUrl(currentImage),
         fit: BoxFit.cover,
-        errorWidget: (_, __, ___) => _buildCoverPreviewPlaceholder(),
-        placeholder: (_, __) => _buildCoverPreviewPlaceholder(),
+        errorWidget: (_, __, ___) => _buildCoverPreviewPlaceholder(isDark),
+        placeholder: (_, __) => _buildCoverPreviewPlaceholder(isDark),
       );
     }
 
-    return _buildCoverPreviewPlaceholder();
+    return _buildCoverPreviewPlaceholder(isDark);
   }
 
-  Widget _buildCoverPreviewPlaceholder() {
+  Widget _buildCoverPreviewPlaceholder(bool isDark) {
     return Container(
-      color: CanteenTheme.surfaceMutedBg(false),
+      color: CanteenTheme.surfaceMutedBg(isDark),
       child: const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,

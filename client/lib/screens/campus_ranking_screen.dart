@@ -102,7 +102,7 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
         children: [
           Column(
             children: [
-              if (_tabCtrl.index == 1 && _showDisclaimer)
+              if (_tabCtrl.index == 0 && _showDisclaimer)
                 _buildDisclaimer(isDark),
               _buildSearchBar(isDark),
               _buildSegmentedControl(isDark),
@@ -292,15 +292,10 @@ class _CampusRankingScreenState extends State<CampusRankingScreen>
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
-            onChanged: (value) {
-              if (_tabCtrl.index == 1) {
-                context.read<TeacherProvider>().loadTeachers(
-                      query: value.trim().isEmpty ? null : value,
-                    );
-              } else {
-                setState(() {});
-              }
-            },
+            // 两个 Tab 均为本地即时过滤：学科榜在 _buildSubjectGroups 中过滤，
+            // 专业榜在 _buildMajorList 中过滤。这里只触发重建，不发网络请求，
+            // 避免专业榜搜索误请求教师接口、以及无 debounce 的高频请求。
+            onChanged: (_) => setState(() {}),
           ),
         ),
       );

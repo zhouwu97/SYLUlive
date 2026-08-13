@@ -199,6 +199,38 @@ void main() {
     expect(find.text('上传菜品实拍'), findsOneWidget);
   });
 
+  testWidgets('筛选请求失败后回滚标签并提示，不拿旧数据冒充新筛选', (tester) async {
+    // 初始请求（all）成功；之后任何筛选请求都返回 500（provider 解析为 {}）
+    var detailCalls = 0;
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1' && options.method == 'GET') {
+        detailCalls++;
+        if (detailCalls == 1) {
+          return _json(_detailJson(ratingCount: 2), 200);
+        }
+        return _json('{"error":"internal"}', 500);
+      }
+      return _json('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(_buildApp(dio));
+    await tester.pumpAndSettle();
+    expect(find.text('用户评价'), findsOneWidget);
+
+    // 点击「有图」→ 请求失败
+    await tester.ensureVisible(find.text('有图'));
+    await tester.pump();
+    await tester.tap(find.text('有图'));
+    await tester.pumpAndSettle();
+
+    // 标签回滚到「全部」：有图不再选中（其文字颜色回到非选中态由选中态校验）
+    // 核心断言：筛选值已回滚 → 内容仍是全部评价（rating_count=2 显示）
+    expect(find.text('· 2'), findsOneWidget);
+    // 失败提示
+    expect(find.text('刷新失败，请重试'), findsOneWidget);
+  });
+
   testWidgets('320px 宽度渲染无溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));

@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../config/api_constants.dart';
 import '../models/canteen_dish.dart';
 import '../providers/canteen_provider.dart';
+import '../widgets/canteen/canteen_empty_state.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import 'canteen_dish_detail_screen.dart';
 
@@ -44,6 +45,18 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
     }
   }
 
+  /// 空列表 → 直接打开上传 Sheet（dish_name 模式），可输入新菜名投稿第一张实拍。
+  Future<void> _openUploadSheet() async {
+    final success = await showDishPhotoUploadSheet(
+      context,
+      canteenId: widget.canteenId,
+      provider: context.read<CanteenProvider>(),
+    );
+    if (success == true && mounted) {
+      await _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -66,12 +79,12 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _dishes.isEmpty
-              ? Center(
-                  child: Text(
-                    '暂无实拍菜品',
-                    style: TextStyle(
-                        color: CanteenTheme.textSecondaryColor(isDark)),
-                  ),
+              ? CanteenEmptyState(
+                  icon: Icons.photo_camera_outlined,
+                  title: '还没有实拍菜品',
+                  subtitle: '上传第一道菜的第一张实拍吧',
+                  actionLabel: '上传第一道菜实拍',
+                  onAction: _openUploadSheet,
                 )
               : GridView.builder(
                   padding: const EdgeInsets.all(16),

@@ -141,7 +141,7 @@ class _CanteenScreenState extends State<CanteenScreen> {
           ),
         ),
         content: const Text(
-          '按评分、评价人数和菜品实拍数量综合计算，帮助同学找到更值得去吃的食堂。',
+          '综合排序采用加权评分，兼顾评分与评价人数，降低少量评价造成的排名波动。菜品和实拍数量仅供参考，不参与评分计算。',
           style: TextStyle(fontSize: 13, height: 1.5),
         ),
         actions: [

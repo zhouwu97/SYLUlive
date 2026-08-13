@@ -11,16 +11,25 @@ import 'canteen_theme.dart';
 
 /// 食堂详情页「大家都在吃」菜品图鉴区。
 /// 图片作为主体（148x104 圆角 14），卡片本身不描边；空态提供上传 CTA。
+///
+/// 职责分离：
+/// - [onViewAll]：「查看全部」→ 菜品列表页
+/// - [onUpload]：空态「上传菜品实拍」→ 直接打开上传 Sheet（dish_name 模式）
+/// - [onStatsChanged]：图鉴加载后回传真实菜品/实拍统计，供详情头刷新
 class DishGallerySection extends StatefulWidget {
   final int canteenId;
   final String canteenName;
+  final VoidCallback? onViewAll;
   final VoidCallback? onUpload;
+  final void Function(int dishCount, int dishPhotoCount)? onStatsChanged;
 
   const DishGallerySection({
     super.key,
     required this.canteenId,
     required this.canteenName,
+    this.onViewAll,
     this.onUpload,
+    this.onStatsChanged,
   });
 
   @override
@@ -41,12 +50,16 @@ class _DishGallerySectionState extends State<DishGallerySection> {
     final dishes = await context
         .read<CanteenProvider>()
         .loadDishes(widget.canteenId);
-    if (mounted) {
-      setState(() {
-        _dishes = dishes;
-        _isLoading = false;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _dishes = dishes;
+      _isLoading = false;
+    });
+    // 回传真实统计：/dishes 只返回有 approved 实拍的公开菜，photoCount 即实拍数
+    widget.onStatsChanged?.call(
+      dishes.length,
+      dishes.fold(0, (sum, d) => sum + d.photoCount),
+    );
   }
 
   @override
@@ -70,7 +83,7 @@ class _DishGallerySectionState extends State<DishGallerySection> {
               ),
               const Spacer(),
               InkWell(
-                onTap: widget.onUpload,
+                onTap: widget.onViewAll,
                 borderRadius: BorderRadius.circular(CanteenTheme.radiusSm),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(

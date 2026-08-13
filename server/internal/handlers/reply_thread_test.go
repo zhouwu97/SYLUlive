@@ -463,6 +463,164 @@ func TestReplyCreateRejectsDirectReplyToTombstoneRoot(t *testing.T) {
 	require.Zero(t, notifyCount, "已删根作者不得收到通知")
 }
 
+// performGetContextRequest 请求 GET /api/posts/:id/replies/:replyId/context。
+func performGetContextRequest(
+	t *testing.T,
+	db *gorm.DB,
+	postID, replyID uint,
+	userID uint,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	url := fmt.Sprintf("/api/posts/%d/replies/%d/context", postID, replyID)
+	ctx.Request = httptest.NewRequest(http.MethodGet, url, nil)
+	ctx.Params = gin.Params{
+		{Key: "id", Value: fmt.Sprint(postID)},
+		{Key: "replyId", Value: fmt.Sprint(replyID)},
+	}
+	if userID != 0 {
+		ctx.Set("user_id", userID)
+	}
+	NewReplyHandler(db, "", "").GetReplyContext(ctx)
+	return recorder
+}
+
+// TestGetReplyContextChildTarget 子回复目标的 context：reply=目标，root=线程根。
+func TestGetReplyContextChildTarget(t *testing.T) {
+	db := newReplyTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	now := time.Now()
+	post := models.Post{
+		Title: "context 测试帖", Content: "正文",
+		BoardID: models.BoardShuitie, AuthorID: 1,
+		ContentKind: models.PostContentKindNormal,
+		Status: models.PostStatusNormal,
+		CreatedAt: now, LastActivityAt: now,
+	}
+	require.NoError(t, db.Create(&post).Error)
+	root := models.Reply{PostID: post.ID, AuthorID: 2, Content: "root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	require.NoError(t, db.Create(&root).Error)
+	child := models.Reply{PostID: post.ID, ParentReplyID: &root.ID, AuthorID: 1, Content: "deep-child", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Minute)}
+	require.NoError(t, db.Create(&child).Error)
+
+	rec := performGetContextRequest(t, db, post.ID, child.ID, 0)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp replyContextResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "deep-child", resp.Reply.Content)
+	require.Equal(t, "root", resp.RootReply.Content)
+	require.Equal(t, root.ID, resp.RootReplyID)
+	require.Equal(t, 1, resp.RootReply.ChildReplyCount)
+}
+
+// TestGetReplyContextRootTarget 根评论目标的 context：reply 与 root 相同。
+func TestGetReplyContextRootTarget(t *testing.T) {
+	db := newReplyTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	now := time.Now()
+	post := models.Post{
+		Title: "context 根目标帖", Content: "正文",
+		BoardID: models.BoardShuitie, AuthorID: 1,
+		ContentKind: models.PostContentKindNormal,
+		Status: models.PostStatusNormal,
+		CreatedAt: now, LastActivityAt: now,
+	}
+	require.NoError(t, db.Create(&post).Error)
+	root := models.Reply{PostID: post.ID, AuthorID: 1, Content: "root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	require.NoError(t, db.Create(&root).Error)
+
+	rec := performGetContextRequest(t, db, post.ID, root.ID, 0)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp replyContextResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "root", resp.Reply.Content)
+	require.Equal(t, root.ID, resp.RootReplyID)
+	require.Equal(t, resp.Reply.ID, resp.RootReply.ID)
+}
+
+// TestGetReplyContextCrossPost 跨帖 URL 请求 context → 404。
+func TestGetReplyContextCrossPost(t *testing.T) {
+	db := newReplyTestDB(t)
+	postA := createReplyTestPost(t, db)
+	now := time.Now()
+	postB := models.Post{
+		Title: "帖子B", Content: "正文",
+		BoardID: models.BoardShuitie, AuthorID: 1,
+		ContentKind: models.PostContentKindNormal,
+		Status: models.PostStatusNormal,
+		CreatedAt: now, LastActivityAt: now,
+	}
+	require.NoError(t, db.Create(&postB).Error)
+	rootB := models.Reply{PostID: postB.ID, AuthorID: 1, Content: "B 的根", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	require.NoError(t, db.Create(&rootB).Error)
+
+	rec := performGetContextRequest(t, db, postA.ID, rootB.ID, 0)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// TestGetChildrenBeforeReplyIDAnchor 深链锚点窗口：
+// before_reply_id 返回以锚点结尾的一页，next_cursor 从锚点继续向后。
+func TestGetChildrenBeforeReplyIDAnchor(t *testing.T) {
+	db := newReplyTestDB(t)
+	post := createReplyTestPost(t, db)
+	now := time.Now()
+	root := models.Reply{PostID: post.ID, AuthorID: 1, Content: "root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	require.NoError(t, db.Create(&root).Error)
+	var anchorID uint
+	for i := 1; i <= 60; i++ {
+		ch := models.Reply{PostID: post.ID, ParentReplyID: &root.ID, AuthorID: 1, Content: fmt.Sprintf("ch%d", i), Status: models.ReplyStatusNormal, CreatedAt: now.Add(time.Duration(i) * time.Second)}
+		require.NoError(t, db.Create(&ch).Error)
+		if i == 40 {
+			anchorID = ch.ID
+		}
+	}
+
+	rec := performGetChildrenRequest(t, db, post.ID, root.ID,
+		fmt.Sprintf("before_reply_id=%d&limit=10", anchorID), 0)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp struct {
+		Replies    []models.Reply `json:"replies"`
+		NextCursor string         `json:"next_cursor"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Replies, 10)
+	require.Equal(t, anchorID, resp.Replies[len(resp.Replies)-1].ID, "窗口必须以锚点结尾")
+	require.NotEmpty(t, resp.NextCursor, "锚点之后还有 ch41..ch60")
+
+	// 用 next_cursor 继续向后：应得到 ch41..。
+	next := performGetChildrenRequest(t, db, post.ID, root.ID,
+		"limit=10&cursor="+url.QueryEscape(resp.NextCursor), 0)
+	require.Equal(t, http.StatusOK, next.Code)
+	var nextResp struct {
+		Replies    []models.Reply `json:"replies"`
+		NextCursor string         `json:"next_cursor"`
+	}
+	require.NoError(t, json.Unmarshal(next.Body.Bytes(), &nextResp))
+	require.Len(t, nextResp.Replies, 10)
+	require.Equal(t, "ch41", nextResp.Replies[0].Content)
+}
+
+// TestGetChildrenBeforeReplyIDRejectsForeignAnchor before_reply_id 不属于该线程 → 400。
+func TestGetChildrenBeforeReplyIDRejectsForeignAnchor(t *testing.T) {
+	db := newReplyTestDB(t)
+	post := createReplyTestPost(t, db)
+	now := time.Now()
+	rootA := models.Reply{PostID: post.ID, AuthorID: 1, Content: "rootA", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	rootB := models.Reply{PostID: post.ID, AuthorID: 1, Content: "rootB", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-30 * time.Minute)}
+	require.NoError(t, db.Create(&rootA).Error)
+	require.NoError(t, db.Create(&rootB).Error)
+	childB := models.Reply{PostID: post.ID, ParentReplyID: &rootB.ID, AuthorID: 1, Content: "B 的子", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Minute)}
+	require.NoError(t, db.Create(&childB).Error)
+
+	rec := performGetChildrenRequest(t, db, post.ID, rootA.ID,
+		fmt.Sprintf("before_reply_id=%d", childB.ID), 0)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "不属于该线程")
+}
+
 // TestGetChildrenRejectsCrossPostURL children 接口必须校验 URL postId 与根评论所属帖子一致。
 func TestGetChildrenRejectsCrossPostURL(t *testing.T) {
 	db := newReplyTestDB(t)

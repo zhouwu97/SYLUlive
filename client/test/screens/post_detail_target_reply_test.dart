@@ -494,6 +494,92 @@ class FakeDio extends Fake implements Dio {
         } as dynamic,
       );
     }
+    // 帖子 107：通知深链目标不在已加载列表时的 context 定位 fixture。
+    if (path.startsWith('/posts/107/replies/') && path.endsWith('/context')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'reply': {
+            "id": 900,
+            "post_id": 107,
+            "parent_reply_id": 800,
+            "content": "context-target-child",
+            "author_id": 3,
+            "author": {
+              "id": 3,
+              "nickname": "User3",
+              "avatar": "",
+              "student_id": "3"
+            },
+            "created_at": "2026-01-01T00:00:00.000Z"
+          },
+          'root_reply': {
+            "id": 800,
+            "post_id": 107,
+            "content": "context-root",
+            "author_id": 2,
+            "author": {
+              "id": 2,
+              "nickname": "User2",
+              "avatar": "",
+              "student_id": "2"
+            },
+            "child_reply_count": 1,
+            "created_at": "2026-01-01T00:00:00.000Z"
+          },
+          'root_reply_id': 800,
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/107/replies/') && path.endsWith('/children')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'replies': <dynamic>[
+            {
+              "id": 900,
+              "post_id": 107,
+              "parent_reply_id": 800,
+              "content": "context-target-child",
+              "author_id": 3,
+              "author": {
+                "id": 3,
+                "nickname": "User3",
+                "avatar": "",
+                "student_id": "3"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
+            }
+          ],
+          'next_cursor': '',
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/107/replies')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          'replies': <dynamic>[],
+          'total': 1,
+          'next_cursor': '',
+        } as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/107')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: {
+          "id": 107,
+          "title": "深链定位测试帖",
+          "content": "Content",
+          "board_id": 1,
+          "author_id": 1,
+          "post_type": "",
+          "created_at": "2026-01-01T00:00:00.000Z",
+          "images": <dynamic>[],
+        } as dynamic,
+      );
+    }
     throw DioException(requestOptions: RequestOptions(path: path));
   }
 }
@@ -1056,6 +1142,56 @@ void main() {
     expect(FakeDio.childrenRequestCount, 1);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('相关回复共 51 条'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('通知深链目标不在已加载列表时通过 context 打开线程 sheet 定位', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final post = Post(
+      id: 107,
+      title: '深链定位测试帖',
+      content: 'Content',
+      boardId: 1,
+      authorId: 1,
+      author: User(
+        id: 1,
+        studentId: '123',
+        nickname: 'TestUser',
+        avatar: '',
+        createdAt: DateTime.now(),
+      ),
+      createdAt: DateTime.now(),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>(
+              create: (_) => FakeAuthProvider()),
+          ChangeNotifierProvider<PostProvider>(
+              create: (_) => FakePostProvider()),
+          ChangeNotifierProvider<ThemeProvider>(
+              create: (_) => FakeThemeProvider()),
+        ],
+        child: MaterialApp(
+          home: PostDetailScreen(
+            postId: 107,
+            initialPost: post,
+            targetReplyId: 900, // 不在列表分页里的子回复目标
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 目标不在列表 → context 接口 → 直接打开楼中楼 sheet 锚定目标。
+    expect(find.text('评论详情'), findsOneWidget);
+    expect(find.textContaining('context-root'), findsOneWidget);
+    expect(find.textContaining('context-target-child'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

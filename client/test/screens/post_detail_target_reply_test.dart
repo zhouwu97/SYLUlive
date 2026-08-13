@@ -196,7 +196,11 @@ class FakeDio extends Fake implements Dio {
         path.startsWith('/posts/105/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [] as dynamic,
+        data: {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/104') || path.startsWith('/posts/105')) {
       final hasContact = path.startsWith('/posts/104');
@@ -228,7 +232,11 @@ class FakeDio extends Fake implements Dio {
     if (path.startsWith('/posts/102/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [] as dynamic,
+        data: {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/102')) {
       return Response<T>(
@@ -243,7 +251,11 @@ class FakeDio extends Fake implements Dio {
     if (path.startsWith('/posts/103/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [] as dynamic,
+        data: {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/103')) {
       return Response<T>(
@@ -261,7 +273,11 @@ class FakeDio extends Fake implements Dio {
     if (path.startsWith('/posts/101/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [] as dynamic,
+        data: {
+          'replies': <dynamic>[],
+          'total': 0,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/101')) {
       return Response<T>(
@@ -320,8 +336,9 @@ class FakeDio extends Fake implements Dio {
     if (path.startsWith('/posts/100/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
-        data: [
-          ...List.generate(
+        data: {
+          'replies': <dynamic>[
+            ...List.generate(
               30,
               (index) => {
                     "id": 10 + index,
@@ -336,48 +353,51 @@ class FakeDio extends Fake implements Dio {
                     },
                     "created_at": "2026-01-01T00:00:00.000Z"
                   }),
-          {
-            "id": 1,
-            "post_id": 100,
-            "content": "First level reply",
-            "author_id": 2,
-            "author": {
+            {
+              "id": 1,
+              "post_id": 100,
+              "content": "First level reply",
+              "author_id": 2,
+              "author": {
+                "id": 2,
+                "nickname": "User2",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "2"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
+            },
+            {
               "id": 2,
-              "nickname": "User2",
-              "avatar": "http://example.com/avatar.png",
-              "student_id": "2"
+              "post_id": 100,
+              "parent_reply_id": 1,
+              "content": "Second level reply",
+              "author_id": 3,
+              "author": {
+                "id": 3,
+                "nickname": "User3",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "3"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
             },
-            "created_at": "2026-01-01T00:00:00.000Z"
-          },
-          {
-            "id": 2,
-            "post_id": 100,
-            "parent_reply_id": 1,
-            "content": "Second level reply",
-            "author_id": 3,
-            "author": {
+            {
               "id": 3,
-              "nickname": "User3",
-              "avatar": "http://example.com/avatar.png",
-              "student_id": "3"
-            },
-            "created_at": "2026-01-01T00:00:00.000Z"
-          },
-          {
-            "id": 3,
-            "post_id": 100,
-            "parent_reply_id": 1,
-            "content": "Target second level reply",
-            "author_id": 4,
-            "author": {
-              "id": 4,
-              "nickname": "User4",
-              "avatar": "http://example.com/avatar.png",
-              "student_id": "4"
-            },
-            "created_at": "2026-01-01T00:00:00.000Z"
-          }
-        ] as dynamic,
+              "post_id": 100,
+              "parent_reply_id": 1,
+              "content": "Target second level reply",
+              "author_id": 4,
+              "author": {
+                "id": 4,
+                "nickname": "User4",
+                "avatar": "http://example.com/avatar.png",
+                "student_id": "4"
+              },
+              "created_at": "2026-01-01T00:00:00.000Z"
+            }
+          ],
+          'total': 33,
+          'next_cursor': '',
+        } as dynamic,
       );
     } else if (path.startsWith('/posts/100')) {
       return Response<T>(

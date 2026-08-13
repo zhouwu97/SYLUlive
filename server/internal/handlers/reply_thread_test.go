@@ -303,3 +303,139 @@ func TestReplyCreateRejectsReplyToReplyWithoutParent(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "精确回复目标需要父评论")
 }
+
+// TestReplyCreateIgnoresForgedReplyToUserID 恶意客户端伪造 reply_to_user_id 时，
+// 服务端必须强制推导为 reply_to_reply_id 目标的作者，通知绝不发给伪造对象。
+func TestReplyCreateIgnoresForgedReplyToUserID(t *testing.T) {
+	db := newReplyTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice") // 帖子作者
+	createMessageTestUser(t, db, 2, "Bob")   // 根评论作者
+	createMessageTestUser(t, db, 3, "Carol") // 子回复 A 作者（真实目标）
+	createMessageTestUser(t, db, 4, "Dave")  // 攻击者 C
+	now := time.Now()
+	post := models.Post{
+		Title: "伪造通知目标测试帖", Content: "正文",
+		BoardID: models.BoardShuitie, AuthorID: 1,
+		ContentKind: models.PostContentKindNormal,
+		Status: models.PostStatusNormal,
+		CreatedAt: now, LastActivityAt: now,
+	}
+	require.NoError(t, db.Create(&post).Error)
+
+	root := models.Reply{PostID: post.ID, AuthorID: 2, Content: "root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	require.NoError(t, db.Create(&root).Error)
+	childA := models.Reply{PostID: post.ID, ParentReplyID: &root.ID, ReplyToUserID: &[]uint{2}[0], ReplyToReplyID: &root.ID, AuthorID: 3, Content: "A 回复 B", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-30 * time.Minute)}
+	require.NoError(t, db.Create(&childA).Error)
+
+	// 攻击者 C 故意把 reply_to_user_id 指向任意用户 999。
+	rec := performReplyCreateRequestAs(t, db, post.ID, 4, url.Values{
+		"content":          {"@Carol 你好"},
+		"parent_reply_id":  {fmt.Sprint(root.ID)},
+		"reply_to_user_id": {"999"},
+		"reply_to_reply_id": {fmt.Sprint(childA.ID)},
+	})
+	require.Equal(t, http.StatusCreated, rec.Code, "body=%s", rec.Body.String())
+
+	var created models.Reply
+	require.NoError(t, db.Where("author_id = ? AND content = ?", 4, "@Carol 你好").First(&created).Error)
+	// 持久化与通知目标都必须强制为真实目标 3，而不是伪造的 999。
+	require.NotNil(t, created.ReplyToUserID)
+	require.Equal(t, uint(3), *created.ReplyToUserID, "ReplyToUserID 必须由服务端推导")
+
+	var n models.Notification
+	require.NoError(t, db.Where("type = ? AND related_id = ?", "reply", created.ID).First(&n).Error)
+	require.Equal(t, uint(3), n.UserID, "通知必须发给真实目标 3")
+
+	var forgedCount int64
+	db.Model(&models.Notification{}).Where("user_id = ?", 999).Count(&forgedCount)
+	require.Zero(t, forgedCount, "伪造对象 999 不得收到通知")
+}
+
+// TestReplyCreateUnderTombstoneRoot tombstone 根（已删除但仍有正常子回复）
+// 允许继续讨论：删除只隐藏根内容，不结束 thread。
+func TestReplyCreateUnderTombstoneRoot(t *testing.T) {
+	db := newReplyTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	createMessageTestUser(t, db, 3, "Carol")
+	now := time.Now()
+	post := models.Post{
+		Title: "tombstone 续聊测试帖", Content: "正文",
+		BoardID: models.BoardShuitie, AuthorID: 1,
+		ContentKind: models.PostContentKindNormal,
+		Status: models.PostStatusNormal,
+		CreatedAt: now, LastActivityAt: now,
+	}
+	require.NoError(t, db.Create(&post).Error)
+
+	root := models.Reply{PostID: post.ID, AuthorID: 2, Content: "root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	require.NoError(t, db.Create(&root).Error)
+	childA := models.Reply{PostID: post.ID, ParentReplyID: &root.ID, AuthorID: 3, Content: "A", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-30 * time.Minute)}
+	require.NoError(t, db.Create(&childA).Error)
+
+	// 删除 root → tombstone。
+	delRec := performDeleteReplyRequest(t, db, root.ID, 2)
+	require.Equal(t, http.StatusOK, delRec.Code)
+
+	// 回复 tombstone 下的 A：应成功，通知 A 的作者 3。
+	rec := performReplyCreateRequestAs(t, db, post.ID, 1, url.Values{
+		"content":          {"回复A"},
+		"parent_reply_id":  {fmt.Sprint(root.ID)},
+		"reply_to_reply_id": {fmt.Sprint(childA.ID)},
+	})
+	require.Equal(t, http.StatusCreated, rec.Code, "body=%s", rec.Body.String())
+
+	var created models.Reply
+	require.NoError(t, db.Where("content = ?", "回复A").First(&created).Error)
+	require.Equal(t, uint(3), *created.ReplyToUserID)
+}
+
+// TestReplyCreateRejectsReplyUnderFrozenTombstone tombstone 根已无正常子回复时，
+// 不允许再在其下回复（thread 已结束）。
+func TestReplyCreateRejectsReplyUnderFrozenTombstone(t *testing.T) {
+	db := newReplyTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	now := time.Now()
+	post := models.Post{
+		Title: "冻结 tombstone 测试帖", Content: "正文",
+		BoardID: models.BoardShuitie, AuthorID: 1,
+		ContentKind: models.PostContentKindNormal,
+		Status: models.PostStatusNormal,
+		CreatedAt: now, LastActivityAt: now,
+	}
+	require.NoError(t, db.Create(&post).Error)
+
+	root := models.Reply{PostID: post.ID, AuthorID: 2, Content: "root", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	require.NoError(t, db.Create(&root).Error)
+	delRec := performDeleteReplyRequest(t, db, root.ID, 2)
+	require.Equal(t, http.StatusOK, delRec.Code)
+
+	rec := performReplyCreateRequestAs(t, db, post.ID, 1, url.Values{
+		"content":         {"回复已删根"},
+		"parent_reply_id": {fmt.Sprint(root.ID)},
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "已不可回复")
+}
+
+// TestGetChildrenRejectsCrossPostURL children 接口必须校验 URL postId 与根评论所属帖子一致。
+func TestGetChildrenRejectsCrossPostURL(t *testing.T) {
+	db := newReplyTestDB(t)
+	postA := createReplyTestPost(t, db)
+	now := time.Now()
+	postB := models.Post{
+		Title: "帖子B", Content: "正文",
+		BoardID: models.BoardShuitie, AuthorID: 1,
+		ContentKind: models.PostContentKindNormal,
+		Status: models.PostStatusNormal,
+		CreatedAt: now, LastActivityAt: now,
+	}
+	require.NoError(t, db.Create(&postB).Error)
+	rootB := models.Reply{PostID: postB.ID, AuthorID: 1, Content: "B 的根", Status: models.ReplyStatusNormal, CreatedAt: now.Add(-time.Hour)}
+	require.NoError(t, db.Create(&rootB).Error)
+
+	// 用帖子 A 的 URL 请求帖子 B 的根评论子回复 → 404。
+	rec := performGetChildrenRequest(t, db, postA.ID, rootB.ID, "", 0)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}

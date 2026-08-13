@@ -4010,7 +4010,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ? parentReply.childReplyCount
         : sheetChildren.length;
     String? sheetChildrenCursor;
-    bool sheetChildrenLoading = childrenTotal > sheetChildren.length;
+    // loading 只表示"请求在途"；"还需要继续加载"由 hasMoreChildren 单独判断。
+    // 之前用 needsLoad 初始化 loading 会在 loadMoreChildren 入口被自身挡住，
+    // 导致首轮请求永远不发（死锁）。
+    bool sheetChildrenLoading = false;
     bool sheetChildrenError = false;
     VoidCallback? sheetUpdater;
 
@@ -4052,8 +4055,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     // 打开 sheet 前就开始补拉剩余子回复，避免打开后再闪 loading。
-    if (sheetChildrenLoading) {
-      loadMoreChildren();
+    if (childrenTotal > sheetChildren.length) {
+      unawaited(loadMoreChildren());
     }
 
     await showModalBottomSheet<void>(
@@ -5338,8 +5341,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         final next = data['next_cursor'] as String?;
         _repliesNextCursor = (next != null && next.isNotEmpty) ? next : null;
         _repliesHasMore = _repliesNextCursor != null;
-        _isRepliesLoading = false;
-        _loadingMoreReplies = false;
         // 保持评论数与服务端口径一致（total 含 tombstone 根）。
         if (_post != null) {
           _post = _post!.copyWith(replyCount: _totalReplies);
@@ -5348,18 +5349,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } on DioException catch (e) {
       if (!mounted || requestVersion != _replyRequestVersion) return;
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载回复失败');
-      setState(() {
-        _isRepliesLoading = false;
-        _loadingMoreReplies = false;
-      });
       AppFeedback.showSnackBar(context, msg, isError: true);
     } catch (e) {
       if (!mounted || requestVersion != _replyRequestVersion) return;
-      setState(() {
-        _isRepliesLoading = false;
-        _loadingMoreReplies = false;
-      });
       AppFeedback.showSnackBar(context, '加载回复失败: $e', isError: true);
+    } finally {
+      // 统一收口：任何路径（含响应结构异常直接 return）都复位 loading 标志，
+      // 避免新旧服务 schema 错配时页面一直转圈。
+      if (mounted &&
+          requestVersion == _replyRequestVersion &&
+          (_isRepliesLoading || _loadingMoreReplies)) {
+        setState(() {
+          _isRepliesLoading = false;
+          _loadingMoreReplies = false;
+        });
+      }
     }
   }
 

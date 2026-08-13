@@ -15,12 +15,12 @@ import (
 	"shenliyuan/internal/models"
 )
 
-// performReplyListRequest 请求 GET /api/posts/:id/replies?sort=xxx。
+// performReplyListRequest 请求 GET /api/posts/:id/replies?query=...。
 func performReplyListRequest(
 	t *testing.T,
 	db *gorm.DB,
 	postID uint,
-	sortParam string,
+	query string,
 	userID uint,
 ) *httptest.ResponseRecorder {
 	t.Helper()
@@ -28,8 +28,8 @@ func performReplyListRequest(
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
 	url := fmt.Sprintf("/api/posts/%d/replies", postID)
-	if sortParam != "" {
-		url += "?sort=" + sortParam
+	if query != "" {
+		url += "?" + query
 	}
 	context.Request = httptest.NewRequest(http.MethodGet, url, nil)
 	context.Params = gin.Params{{Key: "id", Value: fmt.Sprint(postID)}}
@@ -38,6 +38,14 @@ func performReplyListRequest(
 	}
 	NewReplyHandler(db, "", "").GetList(context)
 	return recorder
+}
+
+// decodeReplyList 解析 GetList 的对象响应。
+func decodeReplyList(t *testing.T, body []byte) replyListResponse {
+	t.Helper()
+	var resp replyListResponse
+	require.NoError(t, json.Unmarshal(body, &resp))
+	return resp
 }
 
 // replyTestFixture 构造 1 个根评论 + 2 个根的评论数据。
@@ -88,9 +96,10 @@ func TestReplyListDefaultSortIsHot(t *testing.T) {
 	recorder := performReplyListRequest(t, db, postID, "", 0)
 	require.Equal(t, http.StatusOK, recorder.Code)
 
-	var replies []models.Reply
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &replies))
+	resp := decodeReplyList(t, recorder.Body.Bytes())
+	replies := resp.Replies
 	require.Len(t, replies, 4, "deleted 回复不应进入结果")
+	require.EqualValues(t, 4, resp.Total)
 	// hot：rootA（30赞）在 rootB（1赞）之前。
 	require.Equal(t, "老高赞", replies[0].Content)
 	require.Equal(t, "A 子2", replies[1].Content)
@@ -102,11 +111,10 @@ func TestReplyListDefaultSortIsHot(t *testing.T) {
 func TestReplyListSortHot(t *testing.T) {
 	db := newReplyTestDB(t)
 	postID, _ := replyTestFixture(t, db)
-	recorder := performReplyListRequest(t, db, postID, "hot", 0)
+	recorder := performReplyListRequest(t, db, postID, "sort=hot", 0)
 	require.Equal(t, http.StatusOK, recorder.Code)
 
-	var replies []models.Reply
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &replies))
+	replies := decodeReplyList(t, recorder.Body.Bytes()).Replies
 	require.Equal(t, "老高赞", replies[0].Content)
 	require.Equal(t, "A 子2", replies[1].Content)
 	require.Equal(t, "A 子1", replies[2].Content)
@@ -117,11 +125,10 @@ func TestReplyListSortHot(t *testing.T) {
 func TestReplyListSortLatest(t *testing.T) {
 	db := newReplyTestDB(t)
 	postID, _ := replyTestFixture(t, db)
-	recorder := performReplyListRequest(t, db, postID, "latest", 0)
+	recorder := performReplyListRequest(t, db, postID, "sort=latest", 0)
 	require.Equal(t, http.StatusOK, recorder.Code)
 
-	var replies []models.Reply
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &replies))
+	replies := decodeReplyList(t, recorder.Body.Bytes()).Replies
 	// latest：rootB（新）在 rootA（旧）之前。
 	require.Equal(t, "新低赞", replies[0].Content)
 	require.Equal(t, "老高赞", replies[1].Content)
@@ -134,7 +141,7 @@ func TestReplyListSortLatest(t *testing.T) {
 func TestReplyListInvalidSortReturns400(t *testing.T) {
 	db := newReplyTestDB(t)
 	postID, _ := replyTestFixture(t, db)
-	recorder := performReplyListRequest(t, db, postID, "top", 0)
+	recorder := performReplyListRequest(t, db, postID, "sort=top", 0)
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
 	body := recorder.Body.String()
 	require.Contains(t, body, "无效的评论排序方式")
@@ -143,45 +150,45 @@ func TestReplyListInvalidSortReturns400(t *testing.T) {
 // 登录用户 → is_liked 正确。
 func TestReplyListIsLikedForLoggedInUser(t *testing.T) {
 	db := newReplyTestDB(t)
-	postID, replies := replyTestFixture(t, db)
-	_ = replies
+	postID, _ := replyTestFixture(t, db)
 	// user 2 点赞了 rootB（id 为 fixture 中第 2 个 root）。
-	recorder := performReplyListRequest(t, db, postID, "hot", 2)
+	recorder := performReplyListRequest(t, db, postID, "sort=hot", 2)
 	require.Equal(t, http.StatusOK, recorder.Code)
 
-	var list []models.Reply
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &list))
+	replies := decodeReplyList(t, recorder.Body.Bytes()).Replies
 	var rootB models.Reply
-	for _, r := range list {
+	for _, r := range replies {
 		if r.Content == "新低赞" {
 			rootB = r
 		}
 	}
 	require.True(t, rootB.IsLiked, "user2 点赞过 rootB，应 is_liked=true")
-	require.False(t, list[0].IsLiked, "rootA 未被点赞")
+	require.False(t, replies[0].IsLiked, "rootA 未被点赞")
 }
 
 // 未登录用户 → 正常读取，is_liked 全 false。
 func TestReplyListAnonymousRead(t *testing.T) {
 	db := newReplyTestDB(t)
 	postID, _ := replyTestFixture(t, db)
-	recorder := performReplyListRequest(t, db, postID, "hot", 0)
+	recorder := performReplyListRequest(t, db, postID, "sort=hot", 0)
 	require.Equal(t, http.StatusOK, recorder.Code)
 
-	var list []models.Reply
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &list))
-	for _, r := range list {
+	replies := decodeReplyList(t, recorder.Body.Bytes()).Replies
+	for _, r := range replies {
 		require.False(t, r.IsLiked)
 	}
 }
 
-// 响应仍是 List<Reply>（平铺 JSON，不是 wrapper）。
+// 响应是 {replies, total, next_cursor} 对象（分页重构后的稳定形状）。
 func TestReplyListResponseShape(t *testing.T) {
 	db := newReplyTestDB(t)
 	postID, _ := replyTestFixture(t, db)
-	recorder := performReplyListRequest(t, db, postID, "hot", 0)
+	recorder := performReplyListRequest(t, db, postID, "sort=hot", 0)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	body := recorder.Body.String()
 	require.True(t, json.Valid([]byte(body)))
-	require.True(t, len(body) > 0 && body[0] == '[', "响应应为 JSON 数组")
+	require.True(t, len(body) > 0 && body[0] == '{', "响应应为 JSON 对象")
+	require.Contains(t, body, `"replies"`)
+	require.Contains(t, body, `"total"`)
+	require.Contains(t, body, `"next_cursor"`)
 }

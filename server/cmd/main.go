@@ -1236,6 +1236,8 @@ func main() {
 
 		posts.GET("/:id/replies", replyHandler.GetList)
 
+		posts.GET("/:id/replies/:replyId/children", replyHandler.GetChildren)
+
 	}
 
 	r.GET("/api/search", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), searchHandler.Search)

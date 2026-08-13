@@ -92,19 +92,30 @@ void main() {
     expect(find.text('一食堂二楼'), findsOneWidget);
   });
 
-  testWidgets('FAB 文案为提交食堂', (tester) async {
+  testWidgets('无 FAB，列表末尾提供提交食堂入口', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('提交食堂'), findsOneWidget);
+    // FAB 已删除
+    expect(find.byType(FloatingActionButton), findsNothing);
+    // 列表末尾的提交入口
+    expect(find.textContaining('提交新的食堂'), findsOneWidget);
   });
 
   testWidgets('菜品统计在卡片中渲染', (tester) async {
     await tester.pumpWidget(_buildApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('12 道菜 · 26 张同学实拍'), findsOneWidget);
-    expect(find.text('暂无实拍'), findsOneWidget);
+    expect(find.text('12 道菜 · 26 张实拍'), findsOneWidget);
+    expect(find.text('暂无同学实拍'), findsOneWidget);
+  });
+
+  testWidgets('排名使用排版数字且无 badge 容器', (tester) async {
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('01'), findsOneWidget);
+    expect(find.text('02'), findsOneWidget);
   });
 
   testWidgets('搜索过滤食堂', (tester) async {
@@ -116,5 +127,16 @@ void main() {
 
     expect(find.text('一食堂二楼'), findsOneWidget);
     expect(find.text('二食堂'), findsNothing);
+  });
+
+  testWidgets('搜索无结果时提供提交这家店 CTA', (tester) async {
+    await tester.pumpWidget(_buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '不存在的食堂');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('没有找到'), findsOneWidget);
+    expect(find.text('提交这家店'), findsOneWidget);
   });
 }

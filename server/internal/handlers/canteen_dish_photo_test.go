@@ -329,6 +329,28 @@ func TestDishPhotoValidationErrors(t *testing.T) {
 		t.Fatalf("empty dish name status=%d body=%s", resp.Code, resp.Body.String())
 	}
 
+	// 菜名超过 40 个可见字符 → 400（而非数据库 size:100 错误）
+	longName := strings.Repeat("长", MaxDishNameLength+1)
+	fileLong := createTestFile(t, db, 75, 2, models.FileAccessPrivate)
+	resp = performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
+		2, fmt.Sprintf(`{"dish_name":%q,"file_id":%d}`, longName, fileLong.ID))
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("long dish name status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
+	// 恰好 40 个字符 → 400 之后的边界：40 字应成功
+	boundaryName := strings.Repeat("短", MaxDishNameLength)
+	fileOk := createTestFile(t, db, 76, 2, models.FileAccessPrivate)
+	resp = performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,
+		fmt.Sprintf("/api/canteens/%d/dish-photos", canteen.ID),
+		gin.Params{{Key: "canteenId", Value: fmt.Sprint(canteen.ID)}},
+		2, fmt.Sprintf(`{"dish_name":%q,"file_id":%d}`, boundaryName, fileOk.ID))
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("40-char dish name status=%d body=%s", resp.Code, resp.Body.String())
+	}
+
 	// 引用他人 private File → 400（owner 校验）
 	fileOther := createTestFile(t, db, 72, 3, models.FileAccessPrivate)
 	resp = performDishPhotoRequest(t, submit.SubmitDishPhoto, http.MethodPost,

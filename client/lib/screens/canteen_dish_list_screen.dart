@@ -27,6 +27,7 @@ class CanteenDishListScreen extends StatefulWidget {
 class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
   List<CanteenDish> _dishes = [];
   bool _isLoading = true;
+  bool _loadFailed = false;
 
   @override
   void initState() {
@@ -35,12 +36,17 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
     final dishes =
         await context.read<CanteenProvider>().loadDishes(widget.canteenId);
     if (mounted) {
       setState(() {
-        _dishes = dishes;
+        _dishes = dishes ?? _dishes;
         _isLoading = false;
+        _loadFailed = dishes == null;
       });
     }
   }
@@ -78,15 +84,23 @@ class _CanteenDishListScreenState extends State<CanteenDishListScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _dishes.isEmpty
+          : _loadFailed
               ? CanteenEmptyState(
-                  icon: Icons.photo_camera_outlined,
-                  title: '还没有实拍菜品',
-                  subtitle: '上传第一道菜的第一张实拍吧',
-                  actionLabel: '上传第一道菜实拍',
-                  onAction: _openUploadSheet,
+                  icon: Icons.wifi_off_rounded,
+                  title: '菜品加载失败',
+                  subtitle: '请检查网络后重试',
+                  actionLabel: '点击重试',
+                  onAction: _load,
                 )
-              : GridView.builder(
+              : _dishes.isEmpty
+                  ? CanteenEmptyState(
+                      icon: Icons.photo_camera_outlined,
+                      title: '还没有实拍菜品',
+                      subtitle: '上传第一道菜的第一张实拍吧',
+                      actionLabel: '上传第一道菜实拍',
+                      onAction: _openUploadSheet,
+                    )
+                  : GridView.builder(
                   padding: const EdgeInsets.all(16),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,

@@ -51,8 +51,16 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   bool _isVoting = false;
   int _requestGeneration = 0;
   int _reviewDataVersion = 0;
+
+  // UI 当前选择（点击即切换，立即反馈选中态）
   String _reviewSort = 'best';
   String _reviewFilter = 'all';
+
+  // _canteenData 实际对应的「最后成功 applied」状态。
+  // 失败回滚时以 applied 为准，而不是上一个瞬时 UI 状态，
+  // 避免「with_image 失败 → 回滚到 high → 标签 high 但数据仍是 all」错位。
+  String _appliedReviewSort = 'best';
+  String _appliedReviewFilter = 'all';
 
   // 菜品/实拍统计：初值来自列表页入口快照，随后由图鉴区真实数据刷新
   late int _dishCount;
@@ -74,35 +82,45 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     setState(() => _initialLoading = true);
     final data = await context.read<CanteenProvider>().loadCanteenDetail(
           widget.canteenId,
-          reviewSort: _reviewSort,
-          reviewFilter: _reviewFilter,
+          reviewSort: _appliedReviewSort,
+          reviewFilter: _appliedReviewFilter,
         );
     if (!mounted || generation != _requestGeneration) return;
     setState(() {
-      _canteenData = data;
+      if (data.isNotEmpty && data['canteen'] != null) {
+        _canteenData = data;
+        _appliedReviewSort = _reviewSort;
+        _appliedReviewFilter = _reviewFilter;
+        _reviewDataVersion++;
+      }
       _initialLoading = false;
-      _reviewDataVersion++;
     });
   }
 
   /// 筛选/排序切换：Hero、店铺信息、菜品区一律不动，只刷新评价区。
+  /// 参数在发起请求时冻结，不读取可变全局。
   /// 返回三态：
-  /// - `true`：成功应用
-  /// - `false`：请求失败（调用方回滚筛选/排序并提示）
+  /// - `true`：成功应用（同步更新 applied 状态）
+  /// - `false`：请求失败（调用方恢复 UI 为 applied 状态并提示）
   /// - `null`：已被更新的请求取代（stale，调用方不做任何事）
-  Future<bool?> _refreshReviews() async {
+  Future<bool?> _refreshReviews({
+    required String sort,
+    required String filter,
+  }) async {
     final generation = ++_requestGeneration;
     setState(() => _reviewsRefreshing = true);
     final data = await context.read<CanteenProvider>().loadCanteenDetail(
           widget.canteenId,
-          reviewSort: _reviewSort,
-          reviewFilter: _reviewFilter,
+          reviewSort: sort,
+          reviewFilter: filter,
         );
     if (!mounted || generation != _requestGeneration) return null;
     final success = data.isNotEmpty && data['canteen'] != null;
     setState(() {
       if (success) {
         _canteenData = data;
+        _appliedReviewSort = sort;
+        _appliedReviewFilter = filter;
         _reviewDataVersion++;
       }
       _reviewsRefreshing = false;
@@ -119,8 +137,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
     final data = await context.read<CanteenProvider>().loadCanteenDetail(
           widget.canteenId,
-          reviewSort: _reviewSort,
-          reviewFilter: _reviewFilter,
+          reviewSort: _appliedReviewSort,
+          reviewFilter: _appliedReviewFilter,
         );
     if (!mounted || generation != _requestGeneration) return;
     setState(() {
@@ -209,23 +227,34 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     currentUserId: context.read<AuthProvider>().user?.id,
                     onSortChanged: (value) async {
                       if (_reviewSort == value) return;
-                      final previous = _reviewSort;
                       setState(() => _reviewSort = value);
-                      final result = await _refreshReviews();
+                      final result = await _refreshReviews(
+                        sort: value,
+                        filter: _reviewFilter,
+                      );
                       if (!mounted) return;
                       if (result == false) {
-                        setState(() => _reviewSort = previous);
+                        // 恢复为「最后成功 applied」状态（sort/filter 一起回滚）
+                        setState(() {
+                          _reviewSort = _appliedReviewSort;
+                          _reviewFilter = _appliedReviewFilter;
+                        });
                         _showRefreshFailed();
                       }
                     },
                     onFilterChanged: (value) async {
                       if (_reviewFilter == value) return;
-                      final previous = _reviewFilter;
                       setState(() => _reviewFilter = value);
-                      final result = await _refreshReviews();
+                      final result = await _refreshReviews(
+                        sort: _reviewSort,
+                        filter: value,
+                      );
                       if (!mounted) return;
                       if (result == false) {
-                        setState(() => _reviewFilter = previous);
+                        setState(() {
+                          _reviewSort = _appliedReviewSort;
+                          _reviewFilter = _appliedReviewFilter;
+                        });
                         _showRefreshFailed();
                       }
                     },

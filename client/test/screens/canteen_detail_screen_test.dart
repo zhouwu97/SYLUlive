@@ -231,6 +231,72 @@ void main() {
     expect(find.text('刷新失败，请重试'), findsOneWidget);
   });
 
+  testWidgets('快速切换且最新请求失败：回滚到最后成功 applied 状态，而非瞬时 previous', (tester) async {
+    // 场景：all 成功 → with_image 挂起 → high 发出且失败 → with_image stale
+    // 最终必须回到 all（数据与标签一致）
+    final dio = Dio(BaseOptions(baseUrl: 'http://test'));
+    final pending = <({String filter, Completer<ResponseBody> completer})>[];
+    var highFailed = false;
+    dio.httpClientAdapter = FakeAdapter((options) async {
+      if (options.path == '/canteens/1' && options.method == 'GET') {
+        final filter =
+            options.queryParameters['review_filter']?.toString() ?? 'all';
+        if (filter == 'high') {
+          highFailed = true;
+          return _json('{"error":"internal"}', 500);
+        }
+        final completer = Completer<ResponseBody>();
+        pending.add((filter: filter, completer: completer));
+        return completer.future;
+      }
+      return _json('{"error":"not found"}', 404);
+    });
+
+    await tester.pumpWidget(_buildApp(dio));
+    for (var i = 0; i < 50 && pending.isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    expect(pending, isNotEmpty, reason: '首个 all 请求未发出');
+    pending[0].completer.complete(_json(_detailJson(ratingCount: 3), 200));
+    await tester.pumpAndSettle();
+
+    // 点击「有图」→ with_image 挂起
+    await tester.ensureVisible(find.text('有图'));
+    await tester.pump();
+    await tester.tap(find.text('有图'), warnIfMissed: true);
+    for (var i = 0; i < 50 &&
+        !pending.any((r) => r.filter == 'with_image'); i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+
+    // 再点「高分」→ high 请求立即失败（500）
+    await tester.ensureVisible(find.text('高分'));
+    await tester.pump();
+    await tester.tap(find.text('高分'), warnIfMissed: true);
+    for (var i = 0; i < 50 && !highFailed; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    expect(highFailed, isTrue, reason: 'high 请求未发出');
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // high 失败 → 回滚到 applied（all）：评分计数恢复为 all 数据
+    expect(find.text('· 3'), findsOneWidget);
+    expect(find.text('刷新失败，请重试'), findsOneWidget);
+
+    // with_image 随后返回 200 但 stale → 必须被丢弃，不覆盖 all
+    final withImageReq = pending.firstWhere((r) => r.filter == 'with_image');
+    withImageReq.completer.complete(_json(_detailJson(ratingCount: 1, ratings: [
+      {'id': '9', 'comment': '带图评价', 'star': '5'},
+    ]), 200));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // 仍停留在 all：数据未被带图评价覆盖
+    expect(find.text('· 3'), findsOneWidget);
+    expect(find.text('带图评价'), findsNothing);
+  });
+
   testWidgets('320px 宽度渲染无溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));

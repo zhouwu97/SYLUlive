@@ -100,6 +100,73 @@ func TestApplyExploration(t *testing.T) {
 	require.Equal(t, uint(2), out[1])
 }
 
+// TestApplyExplorationInvariants：探索必须是无损交换 ——
+// 长度不变、ID 集合不变、无重复 ID。
+func TestApplyExplorationInvariants(t *testing.T) {
+	now := time.Now()
+	buildInput := func() ([]uint, []HomeFeedCandidate) {
+		var candidates []HomeFeedCandidate
+		var ranked []uint
+		for i := 1; i <= 30; i++ {
+			p := models.Post{ID: uint(i), AuthorID: 1, PostType: "campus_life", CreatedAt: now.Add(-time.Hour * time.Duration(i))}
+			candidates = append(candidates, HomeFeedCandidate{Post: p})
+			ranked = append(ranked, uint(i))
+		}
+		return ranked, candidates
+	}
+
+	ranked, candidates := buildInput()
+	features := UserFeedFeatures{HasSignal: true}
+	out := applyExploration(ranked, candidates, features, now)
+
+	// 不变量 1：长度不变。
+	require.Equal(t, len(ranked), len(out))
+	// 不变量 2：ID 集合不变（set(before)==set(after)）。
+	beforeSet := map[uint]bool{}
+	for _, id := range ranked {
+		beforeSet[id] = true
+	}
+	afterSet := map[uint]bool{}
+	for _, id := range out {
+		afterSet[id] = true
+	}
+	require.Equal(t, len(beforeSet), len(afterSet), "探索后不应丢失任何帖子")
+	for id := range beforeSet {
+		require.True(t, afterSet[id], "探索后帖子 %d 丢失", id)
+	}
+	// 不变量 3：无重复 ID。
+	seen := map[uint]bool{}
+	for _, id := range out {
+		require.False(t, seen[id], "探索后出现重复帖子 ID %d", id)
+		seen[id] = true
+	}
+	// 不变量 4：top-20 之外的帖子允许被提升，但绝不能出现两个同 ID。
+	require.Len(t, out, len(ranked))
+}
+
+// TestApplyExplorationRequiresPositiveScore：探索分为 0 的帖子不得占用探索槽。
+// 构造所有候选都"无探索价值"（老帖 + 强版块/作者亲和），探索槽必须保持原位。
+func TestApplyExplorationRequiresPositiveScore(t *testing.T) {
+	now := time.Now()
+	var candidates []HomeFeedCandidate
+	var ranked []uint
+	for i := 1; i <= 30; i++ {
+		// 老帖（>48h）+ 用户已深度接触版块/作者 → 探索分必然为 0。
+		p := models.Post{ID: uint(i), AuthorID: 7, PostType: "dorm_life", CreatedAt: now.Add(-72 * time.Hour)}
+		candidates = append(candidates, HomeFeedCandidate{Post: p})
+		ranked = append(ranked, uint(i))
+	}
+	features := UserFeedFeatures{
+		HasSignal: true,
+		LikedSectionCount: map[string]float64{"dorm_life": 10},
+		LikedAuthorCount:  map[uint]float64{7: 10},
+	}
+	before := append([]uint(nil), ranked...)
+	out := applyExploration(ranked, candidates, features, now)
+	// 探索分为 0 → 无任何替换，顺序原样保留。
+	require.Equal(t, before, out, "探索分为 0 时不得提权任何帖子")
+}
+
 func TestBuildSnapshotShadowAndRollout(t *testing.T) {
 	db := newPersonalizationTestDB(t)
 	now := time.Now()

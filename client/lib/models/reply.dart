@@ -77,6 +77,42 @@ class Reply {
   bool get isSticker => hasSticker;
 
   String get stickerUrl => hasSticker ? '/stickers/$stickerId' : '';
+
+  /// 创建副本，仅覆盖显式传入的字段；其余字段（含 parentReplyId、images、
+  /// sticker、author、createdAt）完整保留。
+  Reply copyWith({
+    int? id,
+    int? postId,
+    int? parentReplyId,
+    int? authorId,
+    String? content,
+    String? stickerId,
+    String? status,
+    int? likeCount,
+    bool? isLiked,
+    int? expEarned,
+    List<ExpAward>? expAwards,
+    List<ReplyImage>? images,
+    User? author,
+    DateTime? createdAt,
+  }) {
+    return Reply(
+      id: id ?? this.id,
+      postId: postId ?? this.postId,
+      parentReplyId: parentReplyId ?? this.parentReplyId,
+      authorId: authorId ?? this.authorId,
+      content: content ?? this.content,
+      stickerId: stickerId ?? this.stickerId,
+      status: status ?? this.status,
+      likeCount: likeCount ?? this.likeCount,
+      isLiked: isLiked ?? this.isLiked,
+      expEarned: expEarned ?? this.expEarned,
+      expAwards: expAwards ?? this.expAwards,
+      images: images ?? this.images,
+      author: author ?? this.author,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 }
 
 // 回复图片模型

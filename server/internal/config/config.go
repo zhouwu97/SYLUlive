@@ -18,6 +18,8 @@ type Config struct {
 	UploadDir                      string // 文件上传目录
 	HomeFeedPersonalizationShadow  bool   // FEED-5 个性化 shadow（只计算+trace，不改用户排序）
 	HomeFeedPersonalizationPercent int    // FEED-5 个性化 active rollout 百分比（0~100）
+	HomeFeedV5PersonalizationShadow  bool // FEED-V5 个性化 shadow
+	HomeFeedV5PersonalizationPercent int // FEED-V5 个性化 active rollout 百分比（0~100）
 	CompetitionAwardEvidenceDir    string // 竞赛证明材料私有目录
 	ExamPaperDir                   string // 试卷私有文件目录
 	ExamPaperStorageMode           string // 试卷文件存储模式
@@ -360,11 +362,13 @@ func Load() *Config {
 	}
 
 	return &Config{
-		JWTSecret:                      jwtSecret,
-		DSN:                            dsn,
-		UploadDir:                      uploadDir,
-		HomeFeedPersonalizationShadow:  homeFeedShadow(),
-		HomeFeedPersonalizationPercent: homeFeedPercent(),
+	JWTSecret:                      jwtSecret,
+	DSN:                            dsn,
+	UploadDir:                      uploadDir,
+	HomeFeedPersonalizationShadow:  homeFeedShadow(),
+	HomeFeedPersonalizationPercent: homeFeedPercent(),
+	HomeFeedV5PersonalizationShadow:  homeFeedV5Shadow(),
+	HomeFeedV5PersonalizationPercent: homeFeedV5Percent(),
 		CompetitionAwardEvidenceDir:    competitionAwardEvidenceDir,
 		ExamPaperDir:                   examPaperDir,
 		ExamPaperStorageMode:           examPaperStorageMode,
@@ -692,6 +696,28 @@ func homeFeedShadow() bool {
 // homeFeedPercent 读取 FEED-5 个性化 active rollout 百分比（默认 0）。
 func homeFeedPercent() int {
 	v := os.Getenv("HOME_FEED_PERSONALIZATION_PERCENT")
+	if v == "" {
+		return 0
+	}
+	p, err := strconv.Atoi(v)
+	if err != nil || p < 0 {
+		return 0
+	}
+	if p > 100 {
+		return 100
+	}
+	return p
+}
+
+// homeFeedV5Shadow 读取 FEED-V5 个性化 shadow 开关（默认关闭：V5 不主动上线）。
+func homeFeedV5Shadow() bool {
+	v := os.Getenv("HOME_FEED_V5_PERSONALIZATION_SHADOW")
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
+// homeFeedV5Percent 读取 FEED-V5 个性化 active rollout 百分比（默认 0）。
+func homeFeedV5Percent() int {
+	v := os.Getenv("HOME_FEED_V5_PERSONALIZATION_PERCENT")
 	if v == "" {
 		return 0
 	}

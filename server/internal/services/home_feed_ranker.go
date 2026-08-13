@@ -73,6 +73,38 @@ func ScoreHomeFeedCandidate(candidate *HomeFeedCandidate, now time.Time) {
 	}
 }
 
+// ScoreHomeFeedCandidateV5 FEED-V5 质量分：去掉裸 view_count 的正向奖励，
+// 避免"推荐越高 → view 越高 → quality 越高 → 推荐更高"的反馈环。
+// 后续数据足够后再使用 like/reply/open 相对 impressions 的比率，而非 raw view。
+func ScoreHomeFeedCandidateV5(candidate *HomeFeedCandidate, now time.Time) {
+	effectiveReplies := math.Min(float64(candidate.Post.ReplyCount), float64(candidate.UniqueReplierCount*3+5))
+	candidate.Quality = 4*math.Log1p(float64(candidate.Post.LikeCount)) +
+		6*math.Log1p(float64(candidate.UniqueReplierCount)) +
+		2*math.Log1p(effectiveReplies)
+	publishedAge := math.Max(now.Sub(candidate.Post.CreatedAt).Hours(), 0)
+	activityAt := candidate.Post.LastActivityAt
+	if activityAt.IsZero() {
+		activityAt = candidate.Post.CreatedAt
+	}
+	activityAge := math.Max(now.Sub(activityAt).Hours(), 0)
+	candidate.HotScore = (6 + candidate.Quality) / math.Pow(publishedAge+6, 0.9)
+	candidate.ActivityScore = (4 + candidate.Quality) / math.Pow(activityAge+4, 0.8)
+	if candidate.IsPoll {
+		participantBonus := math.Min(3.5, math.Log1p(float64(candidate.ParticipantCount)))
+		voteActivityBonus := 0.0
+		if candidate.PollLastVoteAt != nil {
+			voteAge := math.Max(now.Sub(*candidate.PollLastVoteAt).Hours(), 0)
+			voteActivityBonus = math.Min(3, 3/(1+voteAge/12))
+		}
+		candidate.HotScore += participantBonus + voteActivityBonus
+		candidate.ActivityScore += participantBonus*0.5 + voteActivityBonus
+		if candidate.PollEnded {
+			candidate.HotScore *= 0.35
+			candidate.ActivityScore *= 0.35
+		}
+	}
+}
+
 type PlacementPolicy struct {
 	MaxAuthorFirst10  int
 	MaxAuthorPage     int
@@ -122,6 +154,18 @@ func RankHomeFeed(candidates []HomeFeedCandidate, now time.Time) []uint {
 	for i := range candidates {
 		ScoreHomeFeedCandidate(&candidates[i], now)
 	}
+	return rankHomeFeedImpl(candidates, now)
+}
+
+// RankHomeFeedV5 FEED-V5：使用去 raw view 的质量公式评分后走同一槽位逻辑。
+func RankHomeFeedV5(candidates []HomeFeedCandidate, now time.Time) []uint {
+	for i := range candidates {
+		ScoreHomeFeedCandidateV5(&candidates[i], now)
+	}
+	return rankHomeFeedImpl(candidates, now)
+}
+
+func rankHomeFeedImpl(candidates []HomeFeedCandidate, now time.Time) []uint {
 	byHot := append([]HomeFeedCandidate(nil), candidates...)
 	byFresh := append([]HomeFeedCandidate(nil), candidates...)
 	byActivity := append([]HomeFeedCandidate(nil), candidates...)

@@ -189,6 +189,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int? _highlightedReplyId;
   Timer? _highlightTimer;
 
+  // ---- 评论排序 + 点赞状态 ----
+
+  /// 当前评论排序：'hot' | 'latest'。
+  String _replySort = 'hot';
+  bool _isRepliesLoading = false;
+
+  /// 回复请求版本号：切换排序后旧请求返回时直接丢弃。
+  int _replyRequestVersion = 0;
+
+  /// 在途的评论点赞 mutation：replyId -> 本次 mutation 的目标点赞状态。
+  /// 同时充当防连点锁；列表重载时用它覆盖服务端旧状态，避免点赞闪烁。
+  final Map<int, bool> _pendingReplyLikeTargets = {};
+
   @override
   void initState() {
     super.initState();
@@ -246,7 +259,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
         return;
       }
-      final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
 
       try {
         final statusResponse = await _dio
@@ -267,16 +279,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           : fetchedPost;
       if (mounted)
         setState(() {
-          _replies = (repliesResponse.data as List)
-              .map((e) => Reply.fromJson(e))
-              .toList();
-          _post = mergedPost.copyWith(replyCount: _replies.length);
+          _post = mergedPost;
           _isLoading = false;
         });
       // 同步到外部列表以更新浏览量等数据
       if (mounted) {
         context.read<PostProvider>().updatePostInCache(_post!);
       }
+      // 评论区独立加载：切换 Hot/Latest 只刷新回复，不重复拉帖子详情。
+      await _loadReplies(sort: _replySort);
       await _loadWaterSectionPermission(forceRefresh: true);
       _loadUnreadReplyNotifications();
       if (_activeTargetReplyId != null && !_hasScrolledToTarget) {
@@ -522,15 +533,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         _showReplyRewardFeedback(createdReply);
       }
-      // 静默刷新获取真实 ID
-      final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
-      if (mounted && repliesResponse.data is List) {
-        setState(() {
-          _replies = (repliesResponse.data as List)
-              .map((r) => Reply.fromJson(r))
-              .toList();
-        });
-      }
+      // 静默刷新获取真实 ID（沿用当前排序，避免切回 hot 前的旧顺序残留）。
+      await _loadReplies(sort: _replySort);
       return true;
     } on DioException catch (e) {
       if (mounted) {
@@ -2765,13 +2769,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         // 评论标题
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Text(
-            '评论 ${_post?.replyCount ?? _replies.length}',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : Colors.black87,
-            ),
+          child: Row(
+            children: [
+              Text(
+                '评论 ${_post?.replyCount ?? _replies.length}',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              const Spacer(),
+              _buildReplySortSelector(isDark),
+            ],
           ),
         ),
         const SizedBox(height: 10),
@@ -3403,6 +3413,129 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // ---- 评论区 ----
 
+  /// 评论排序选择器：热门 / 最新。
+  Widget _buildReplySortSelector(bool isDark) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _showReplySortSheet(isDark),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          key: const ValueKey('reply-sort-selector'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isRepliesLoading) ...[
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.6,
+                  color: isDark ? Colors.white38 : Colors.grey[500],
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              _replySort == 'hot' ? '热门' : '最新',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white54 : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.arrow_drop_down,
+              size: 18,
+              color: isDark ? Colors.white38 : Colors.grey[500],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReplySortSheet(bool isDark) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF1E1E32) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white24 : Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.whatshot_outlined,
+                color: _replySort == 'hot'
+                    ? Theme.of(ctx).primaryColor
+                    : (isDark ? Colors.white54 : Colors.grey[500]),
+              ),
+              title: Text(
+                '热门',
+                style: TextStyle(
+                  color: _replySort == 'hot'
+                      ? Theme.of(ctx).primaryColor
+                      : (isDark ? Colors.white70 : Colors.black87),
+                  fontWeight: _replySort == 'hot'
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                ),
+              ),
+              trailing: _replySort == 'hot'
+                  ? Icon(Icons.check,
+                      size: 18, color: Theme.of(ctx).primaryColor)
+                  : null,
+              onTap: () {
+                Navigator.pop(ctx);
+                _changeReplySort('hot');
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.schedule,
+                color: _replySort == 'latest'
+                    ? Theme.of(ctx).primaryColor
+                    : (isDark ? Colors.white54 : Colors.grey[500]),
+              ),
+              title: Text(
+                '最新',
+                style: TextStyle(
+                  color: _replySort == 'latest'
+                      ? Theme.of(ctx).primaryColor
+                      : (isDark ? Colors.white70 : Colors.black87),
+                  fontWeight: _replySort == 'latest'
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                ),
+              ),
+              trailing: _replySort == 'latest'
+                  ? Icon(Icons.check,
+                      size: 18, color: Theme.of(ctx).primaryColor)
+                  : null,
+              onTap: () {
+                Navigator.pop(ctx);
+                _changeReplySort('latest');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCommentsHeader(bool isDark) {
     return Row(
       children: [
@@ -3420,6 +3553,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             color: isDark ? Colors.white38 : Colors.grey[500],
           ),
         ),
+        const Spacer(),
+        _buildReplySortSelector(isDark),
       ],
     );
   }
@@ -3620,6 +3755,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         onStickerLongPress: _showStickerFavoriteAction,
         onImageLongPress: _showImageFavoriteAction,
+        onLike: () => _toggleReplyLike(r),
+        likePending: _pendingReplyLikeTargets.containsKey(r.id),
       ),
     );
   }
@@ -4003,6 +4140,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ),
                     const Spacer(),
+                    _buildSheetReplyLikeButton(r, isDark),
                     GestureDetector(
                       onTap: () {
                         Navigator.pop(sheetContext);
@@ -4172,6 +4310,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         ),
                       ),
                       const Spacer(),
+                      _buildSheetReplyLikeButton(child, isDark),
                       if (isOwn || isAdmin)
                         GestureDetector(
                           onTap: () async {
@@ -4310,6 +4449,41 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+    /// BottomSheet 内的回复点赞按钮：完整线程视图中展示点赞操作。
+  Widget _buildSheetReplyLikeButton(Reply r, bool isDark) {
+    final pending = _pendingReplyLikeTargets.containsKey(r.id);
+    final activeColor = Theme.of(context).primaryColor;
+    final idleColor = isDark ? Colors.white38 : Colors.grey[400];
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: pending ? null : () => _toggleReplyLike(r),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              r.isLiked ? Icons.favorite : Icons.favorite_border,
+              size: 15,
+              color: r.isLiked ? activeColor : idleColor,
+            ),
+            if (r.likeCount > 0) ...[
+              const SizedBox(width: 4),
+              Text(
+                '${r.likeCount}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: r.isLiked ? activeColor : idleColor,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -4807,20 +4981,133 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  Future<void> _loadReplies() async {
+  /// 加载回复列表。切换排序只调用此方法，不重新拉帖子详情。
+  ///
+  /// 受 [_replyRequestVersion] 保护：用户快速切换 Hot/Latest 时，
+  /// 后发出的请求版本号更大，先返回的旧响应会被直接丢弃。
+  /// 加载完成后，用 [_pendingReplyLikeTargets] 覆盖在途点赞的目标状态，
+  /// 避免"♥13 → 切排序 → ♡12 → 请求完成 → ♥13"的闪烁。
+  Future<void> _loadReplies({String? sort}) async {
+    final effectiveSort = sort ?? _replySort;
+    final requestVersion = ++_replyRequestVersion;
+    if (mounted) {
+      setState(() => _isRepliesLoading = true);
+    }
     try {
-      final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
-      if (mounted)
-        setState(() {
-          _replies = (repliesResponse.data as List)
-              .map((e) => Reply.fromJson(e))
-              .toList();
-        });
+      final repliesResponse = await _dio.get(
+        '/posts/${widget.postId}/replies',
+        queryParameters: {'sort': effectiveSort},
+      );
+      if (!mounted || requestVersion != _replyRequestVersion) return;
+      if (repliesResponse.data is! List) return;
+      setState(() {
+        var replies = (repliesResponse.data as List)
+            .map((e) => Reply.fromJson(e))
+            .toList();
+        // 覆盖在途点赞目标，防止服务端旧状态覆盖乐观 UI。
+        if (_pendingReplyLikeTargets.isNotEmpty) {
+          replies = [
+            for (final r in replies)
+              _pendingReplyLikeTargets.containsKey(r.id)
+                  ? r.copyWith(isLiked: _pendingReplyLikeTargets[r.id])
+                  : r,
+          ];
+        }
+        _replies = replies;
+        _isRepliesLoading = false;
+        // 保持评论数与列表一致（乐观临时评论除外）。
+        if (_post != null) {
+          _post = _post!.copyWith(replyCount: _replies.length);
+        }
+      });
     } on DioException catch (e) {
+      if (!mounted || requestVersion != _replyRequestVersion) return;
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载回复失败');
-      if (mounted) {
-        AppFeedback.showSnackBar(context, msg, isError: true);
-      }
+      setState(() => _isRepliesLoading = false);
+      AppFeedback.showSnackBar(context, msg, isError: true);
+    } catch (e) {
+      if (!mounted || requestVersion != _replyRequestVersion) return;
+      setState(() => _isRepliesLoading = false);
+      AppFeedback.showSnackBar(context, '加载回复失败: $e', isError: true);
+    }
+  }
+
+  /// 切换评论排序（热门/最新）。只刷新回复列表，不重新请求帖子详情。
+  Future<void> _changeReplySort(String sort) async {
+    if (sort == _replySort) return;
+    setState(() {
+      _replySort = sort;
+    });
+    await _loadReplies(sort: sort);
+  }
+
+  /// 评论点赞入口：登录检查 → pending 防连点 → optimistic 翻转 →
+  /// 请求服务端 → 成功保持 / 失败 rollback / 4xx 冲突重拉列表。
+  Future<void> _toggleReplyLike(Reply reply) async {
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先登录')));
+      return;
+    }
+    if (_pendingReplyLikeTargets.containsKey(reply.id)) return; // 防连点
+
+    final targetLiked = !reply.isLiked;
+    final original = reply;
+    final optimistic = reply.copyWith(
+      isLiked: targetLiked,
+      likeCount: (reply.likeCount + (targetLiked ? 1 : -1)).clamp(0, 1 << 30),
+    );
+
+    setState(() {
+      _pendingReplyLikeTargets[reply.id] = targetLiked;
+      _replaceReplyInList(reply.id, optimistic);
+    });
+
+    final provider = context.read<PostProvider>();
+    final result = targetLiked
+        ? await provider.likeReply(reply.id)
+        : await provider.unlikeReply(reply.id);
+    if (!mounted) return;
+
+    if (result.success) {
+      // 保持 optimistic 状态，清除 pending。
+      setState(() {
+        _pendingReplyLikeTargets.remove(reply.id);
+      });
+      return;
+    }
+    if (result.conflict) {
+      // 4xx 业务冲突（评论已删除等）：回滚 + 重新拉取，本地列表可能已陈旧。
+      setState(() {
+        _pendingReplyLikeTargets.remove(reply.id);
+        _replaceReplyInList(reply.id, original);
+      });
+      AppFeedback.showSnackBar(
+        context,
+        result.errorMessage ?? '操作失败，请稍后重试',
+        isError: true,
+      );
+      _loadReplies();
+      return;
+    }
+    // 网络失败：回滚旧状态。
+    setState(() {
+      _pendingReplyLikeTargets.remove(reply.id);
+      _replaceReplyInList(reply.id, original);
+    });
+    AppFeedback.showSnackBar(
+      context,
+      result.errorMessage ?? '点赞失败，请稍后重试',
+      isError: true,
+    );
+  }
+
+  /// 用 replacement 替换 _replies 中同 id 的回复（原地，不重建列表引用）。
+  void _replaceReplyInList(int replyId, Reply replacement) {
+    final index = _replies.indexWhere((r) => r.id == replyId);
+    if (index >= 0) {
+      _replies[index] = replacement;
     }
   }
 

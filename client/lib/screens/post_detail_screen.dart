@@ -342,27 +342,45 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final targetId = _activeTargetReplyId;
     if (targetId == null) return;
 
-    // 游标分页后目标评论可能不在第一页：最多向后翻 5 页查找。
-    for (var page = 0; page < 5; page++) {
-      if (_replies.any((r) => r.id == targetId)) break;
-      if (!_repliesHasMore || !mounted) return;
-      await _loadReplies(sort: _replySort, loadMore: true);
+    // 快速路径：目标已在已加载分页中 → 原有滚动/高亮逻辑。
+    final loadedTarget =
+        _replies.where((r) => r.id == targetId).firstOrNull;
+    if (loadedTarget != null) {
+      setState(() {}); // 触发重新渲染，确保子组件挂载
+      _scheduleScrollToTarget(targetId, 3);
+      return;
+    }
+
+    // 精确路径：目标不在已加载分页（第 6 页以后的根 / 第 51+ 条子回复）时，
+    // 用 context 接口拿目标与线程根，直接打开楼中楼 sheet 锚定目标，
+    // 不再盲翻分页页。
+    final Reply target;
+    final Reply root;
+    try {
+      final resp =
+          await _dio.get('/posts/${widget.postId}/replies/$targetId/context');
+      final data = resp.data;
+      if (data is! Map<String, dynamic>) return;
+      final rawTarget = data['reply'];
+      final rawRoot = data['root_reply'];
+      if (rawTarget is! Map<String, dynamic> ||
+          rawRoot is! Map<String, dynamic>) {
+        return;
+      }
+      target = Reply.fromJson(rawTarget);
+      root = Reply.fromJson(rawRoot);
+    } on DioException {
+      return; // 目标已被删除或网络失败：保持默认页面。
+    } catch (_) {
+      return;
     }
     if (!mounted) return;
-
-    // 寻找目标回复
-    final targetReply =
-        _replies.where((r) => r.id == targetId).firstOrNull;
-    if (targetReply == null) return;
-
-    if (targetReply.parentReplyId != null) {
-      // 目标是子回复时，在面板改版后我们依然只高亮/滚动到顶级父回复
-      // 因为子回复现在包裹在 BottomSheet 里面
-    }
-
-    setState(() {}); // 触发重新渲染，确保子组件挂载
-
-    _scheduleScrollToTarget(targetId, 3);
+    // 目标是根评论本身时打开线程 sheet；子回复目标则锚定到该条并高亮。
+    final anchored = target.parentReplyId != null;
+    await _showReplyThreadSheet(
+      parentReply: root,
+      anchorReply: anchored ? target : null,
+    );
   }
 
   void _scheduleScrollToTarget(int targetId, int retries) {
@@ -4005,16 +4023,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     var isSending = false;
 
     // 楼中楼 sheet 的子回复快照：初始取已在列表中的数据，剩余懒加载。
-    final sheetChildren = <Reply>[..._collectThreadChildren(parentReply.id)];
+    // 深链锚定（anchorReply 为子回复）时跳过列表预览，首屏直接加载以目标
+    // 结尾的窗口页（before_reply_id），并在窗口中高亮目标。
+    final anchored = anchorReply != null;
+    final sheetChildren = <Reply>[
+      if (!anchored) ..._collectThreadChildren(parentReply.id),
+    ];
     var childrenTotal = parentReply.childReplyCount > 0
         ? parentReply.childReplyCount
         : sheetChildren.length;
+    if (anchored && childrenTotal == 0) childrenTotal = 1;
     String? sheetChildrenCursor;
     // loading 只表示"请求在途"；"还需要继续加载"由 hasMoreChildren 单独判断。
     // 之前用 needsLoad 初始化 loading 会在 loadMoreChildren 入口被自身挡住，
     // 导致首轮请求永远不发（死锁）。
     bool sheetChildrenLoading = false;
     bool sheetChildrenError = false;
+    bool firstChildrenRequest = true;
     VoidCallback? sheetUpdater;
 
     Future<void> loadMoreChildren() async {
@@ -4027,9 +4052,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           '/posts/${widget.postId}/replies/${parentReply.id}/children',
           queryParameters: {
             'limit': 50,
+            if (anchored && firstChildrenRequest)
+              'before_reply_id': anchorReply!.id,
             if (sheetChildrenCursor != null) 'cursor': sheetChildrenCursor,
           },
         );
+        firstChildrenRequest = false;
         final data = resp.data;
         if (data is Map<String, dynamic> && data['replies'] is List) {
           final fetched = (data['replies'] as List)
@@ -4182,6 +4210,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   error: sheetChildrenError,
                                   hasMore: sheetChildrenCursor != null,
                                   onLoadMore: loadMoreChildren,
+                                  highlightReplyId:
+                                      anchored ? anchorReply!.id : null,
                                 ),
                               ),
                             ],
@@ -4465,6 +4495,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     required bool error,
     required bool hasMore,
     required VoidCallback onLoadMore,
+    int? highlightReplyId,
   }) {
     final hasTrailer = loading || error || hasMore;
     if (children.isEmpty && !loading) {
@@ -4482,6 +4513,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               children[index],
               isDark,
               onReply: () => onReply(children[index]),
+              highlight: children[index].id == highlightReplyId,
             );
           }
           if (loading) {
@@ -4540,6 +4572,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     Reply child,
     bool isDark, {
     required VoidCallback onReply,
+    bool highlight = false,
   }) {
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == child.authorId;
@@ -4548,11 +4581,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onReply,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+        padding: highlight
+            ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+            : EdgeInsets.zero,
+        decoration: highlight
+            ? BoxDecoration(
+                color: Theme.of(context)
+                    .primaryColor
+                    .withValues(alpha: isDark ? 0.16 : 0.08),
+                borderRadius: BorderRadius.circular(10),
+              )
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             GestureDetector(
               onTap: () {
                 Navigator.pop(sheetContext);
@@ -4650,6 +4697,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
           ],
+          ),
         ),
       ),
     );

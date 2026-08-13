@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -32,13 +33,13 @@ func NewReplyHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *ReplyH
 	}
 }
 
-// 评论列表分页与子回复上限。
+// 评论列表分页与子回复预览上限。
 const (
 	defaultReplyPageLimit = 20
 	maxReplyPageLimit     = 50
-	// maxChildrenPerRoot 列表响应中每个根评论最多携带的子回复数；
+	// maxChildrenPreviewPerRoot 列表响应中每个根评论最多携带的子回复预览数；
 	// 其余子回复通过 GET /api/posts/:id/replies/:replyId/children 懒加载。
-	maxChildrenPerRoot = 50
+	maxChildrenPreviewPerRoot = 2
 )
 
 // replyListResponse GetList 的响应结构。
@@ -157,7 +158,8 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		nextCursor = strconv.FormatUint(uint64(pageRootIDs[len(pageRootIDs)-1]), 10)
 	}
 
-	// 5) 组装本页：根（含 preload）+ 其正常子回复（ASC，每根最多 maxChildrenPerRoot 条）。
+	// 5) 组装本页：根（含 preload）+ 其子回复预览（ASC，每根最多
+	//    maxChildrenPreviewPerRoot 条，数据库级 ROW_NUMBER 截断）。
 	pageRoots := make([]models.Reply, 0, len(pageRootIDs))
 	if len(pageRootIDs) > 0 {
 		if err := h.db.Where("id IN ?", pageRootIDs).
@@ -173,17 +175,50 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 	}
 	childrenByParent := map[uint][]models.Reply{}
 	if len(pageRootIDs) > 0 {
-		var children []models.Reply
-		if err := h.db.Where("post_id = ? AND status = ? AND parent_reply_id IN ?",
-			postID, models.ReplyStatusNormal, pageRootIDs).
-			Order("created_at ASC, id ASC").
-			Preload("Author").Preload("Images").Preload("Images.File").
-			Find(&children).Error; err != nil {
+		// 数据库级 child preview：每个根只取最早 maxChildrenPreviewPerRoot 条，
+		// 避免某根数千条子回复时全量 SELECT+Preload 再在内存截断。
+		placeholders := strings.TrimRight(strings.Repeat("?,", len(pageRootIDs)), ",")
+		args := []interface{}{postID, string(models.ReplyStatusNormal)}
+		for _, id := range pageRootIDs {
+			args = append(args, id)
+		}
+		args = append(args, maxChildrenPreviewPerRoot)
+		rawSQL := fmt.Sprintf(`
+			SELECT id, post_id, parent_reply_id, author_id, content, sticker_id, status,
+			       like_count, created_at, updated_at, reply_to_user_id, reply_to_reply_id
+			FROM (
+				SELECT r.*, ROW_NUMBER() OVER (PARTITION BY r.parent_reply_id ORDER BY r.created_at ASC, r.id ASC) AS rn
+				FROM replies r
+				WHERE r.post_id = ? AND r.status = ? AND r.parent_reply_id IN (%s)
+			) sub WHERE sub.rn <= ?
+			ORDER BY parent_reply_id ASC, created_at ASC, id ASC`, placeholders)
+		var previews []models.Reply
+		if err := h.db.Raw(rawSQL, args...).Scan(&previews).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取回复列表失败"})
 			return
 		}
-		for _, ch := range children {
-			childrenByParent[*ch.ParentReplyID] = append(childrenByParent[*ch.ParentReplyID], ch)
+		// 按 ID 补 preload（作者/图片），再按 preview 顺序回填到各根。
+		previewIDs := make([]uint, 0, len(previews))
+		for _, p := range previews {
+			previewIDs = append(previewIDs, p.ID)
+		}
+		if len(previewIDs) > 0 {
+			var loaded []models.Reply
+			if err := h.db.Where("id IN ?", previewIDs).
+				Preload("Author").Preload("Images").Preload("Images.File").
+				Find(&loaded).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取回复列表失败"})
+				return
+			}
+			byID := make(map[uint]models.Reply, len(loaded))
+			for _, r := range loaded {
+				byID[r.ID] = r
+			}
+			for _, p := range previews {
+				if full, ok := byID[p.ID]; ok {
+					childrenByParent[*p.ParentReplyID] = append(childrenByParent[*p.ParentReplyID], full)
+				}
+			}
 		}
 	}
 
@@ -193,9 +228,6 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		root.ChildReplyCount = int(childCounts[rid])
 		ordered = append(ordered, root)
 		kids := childrenByParent[rid]
-		if len(kids) > maxChildrenPerRoot {
-			kids = kids[:maxChildrenPerRoot]
-		}
 		ordered = append(ordered, kids...)
 	}
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
+import '../config/api_constants.dart';
 import '../providers/canteen_provider.dart';
 import '../widgets/canteen/canteen_theme.dart';
 import '../widgets/canteen/dish_photo_mosaic.dart';
@@ -239,6 +241,7 @@ class _DishPhotoUploadSheet extends StatefulWidget {
 
 class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
   int? _fileId;
+  UploadedImage? _selectedImage;
   bool _submitting = false;
   late final TextEditingController _dishNameCtrl;
 
@@ -272,6 +275,10 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Container(
+        // 键盘弹出/横屏/小屏时内容可滚动，避免 Column overflow。
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
         decoration: BoxDecoration(
           color: CanteenTheme.surfaceBg(isDark),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -279,10 +286,11 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         child: SafeArea(
           top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Center(
                 child: Container(
                   width: 42,
@@ -371,7 +379,10 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                       emptySubtitle: '建议上传清晰菜品照片',
                       onImagesUploaded: (images) {
                         if (images.isNotEmpty) {
-                          setState(() => _fileId = images.first.fileId);
+                          setState(() {
+                            _fileId = images.first.fileId;
+                            _selectedImage = images.first;
+                          });
                         }
                       },
                     )
@@ -399,6 +410,7 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
                     : const Text('提交审核'),
               ),
             ],
+            ),
           ),
         ),
       ),
@@ -406,49 +418,81 @@ class _DishPhotoUploadSheetState extends State<_DishPhotoUploadSheet> {
   }
 
   Widget _buildSelectedImage(bool isDark, Color accent) {
+    final preview = _selectedImage?.previewBytes;
+    final url = _selectedImage?.url ?? '';
     return Container(
       height: 140,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(CanteenTheme.radiusMd),
         border: Border.all(color: accent.withValues(alpha: 0.3)),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Icon(
-            Icons.check_circle_rounded,
-            size: 40,
-            color: accent,
-          ),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.photo_rounded, size: 32),
-                const SizedBox(height: 6),
-                Text(
-                  '已选择 1 张实拍',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: CanteenTheme.textSecondaryColor(isDark),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          if (preview != null)
+            Image.memory(
+              preview,
+              fit: BoxFit.cover,
+              // 本地字节可能损坏/非图片：解码失败时优雅回退占位图。
+              errorBuilder: (_, __, ___) => _previewPlaceholder(isDark),
+            )
+          else if (url.isNotEmpty)
+            CachedNetworkImage(
+              imageUrl: ApiConstants.fullUrl(url),
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => _previewPlaceholder(isDark),
+              placeholder: (_, __) => _previewPlaceholder(isDark),
+            )
+          else
+            _previewPlaceholder(isDark),
           Positioned(
             top: 6,
             right: 6,
             child: InkWell(
-              onTap: () => setState(() => _fileId = null),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: Colors.black54,
-                  shape: BoxShape.circle,
+              onTap: () => setState(() {
+                _fileId = null;
+                _selectedImage = null;
+              }),
+              // 48dp 最小触控目标（Material 无障碍基线）。
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close,
+                        size: 18, color: Colors.white),
+                  ),
                 ),
-                child: const Icon(Icons.close, size: 14, color: Colors.white),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _previewPlaceholder(bool isDark) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.photo_rounded,
+            size: 32,
+            color: CanteenTheme.textTertiaryColor(isDark),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '已选择 1 张实拍',
+            style: TextStyle(
+              fontSize: 12,
+              color: CanteenTheme.textSecondaryColor(isDark),
             ),
           ),
         ],

@@ -20,6 +20,7 @@ class _CanteenDishPhotoReviewScreenState
     extends State<CanteenDishPhotoReviewScreen> {
   List<Map<String, dynamic>> _items = [];
   bool _isLoading = true;
+  bool _loadFailed = false;
 
   @override
   void initState() {
@@ -28,12 +29,21 @@ class _CanteenDishPhotoReviewScreenState
   }
 
   Future<void> _load() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
     final items =
         await context.read<CanteenProvider>().adminListPendingDishPhotos();
     if (mounted) {
       setState(() {
-        _items = items;
+        if (items == null) {
+          // 请求失败：不得展示"暂无待审核"假空态。
+          _loadFailed = true;
+          _items = [];
+        } else {
+          _items = items;
+        }
         _isLoading = false;
       });
     }
@@ -121,6 +131,45 @@ class _CanteenDishPhotoReviewScreenState
   Widget _buildBody(bool isDark, Color accent) {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_loadFailed) {
+      return ListView(
+        children: [
+          const SizedBox(height: 120),
+          Center(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.error_outline_rounded,
+                  size: 48,
+                  color: RankingTokens.subColor(isDark),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '审核列表加载失败',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: RankingTokens.subColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _load,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text('重试'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
     }
     if (_items.isEmpty) {
       return ListView(

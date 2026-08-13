@@ -408,6 +408,12 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 				return
 			}
 			if parentReply.Status != models.ReplyStatusNormal {
+				// tombstone 根：只允许回复仍存活的子评论（精确目标必须通过
+				// reply_to_reply_id 指定），禁止直接把已删除根作为回复目标。
+				if input.ReplyToReplyID == nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "该评论已不可回复"})
+					return
+				}
 				var aliveChildren int64
 				if err := h.db.Model(&models.Reply{}).
 					Where("parent_reply_id = ? AND status = ?", *input.ParentReplyID, models.ReplyStatusNormal).
